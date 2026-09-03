@@ -11,6 +11,10 @@ No son lagunas que la IA deba rellenar. Cada respuesta se incorpora a requisitos
 
 ## Bloqueantes para cerrar G0
 
+Para responderlas hay una plantilla con los campos concretos que hacen falta:
+[`docs/templates/G0_INTAKE.md`](templates/G0_INTAKE.md). Se rellena en `local/`, fuera del control
+de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valores de planta.
+
 | ID | Pregunta | Por qué bloquea | Resolución prevista |
 |---|---|---|---|
 | OQ-B01 | ¿Cuáles son todos los formatos/encabezados reales de las fuentes y ejemplos mínimos de cada uno? | Define contrato de importación | Inventario local de fuentes y muestras controladas |

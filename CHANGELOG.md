@@ -25,6 +25,10 @@ contradicciones encontradas y conversión del gobierno en automatización bloque
 - Política de borrado y retención local, y política de bifurcación de linaje entre dispositivos.
 - Términos `cohorte`, `takt`, `soporte`, `oportunidad elegible` y `pastor` en el glosario.
 - RSK-021: dato real en repositorio público.
+- `docs/templates/G0_INTAKE.md`: admisión estructurada de las cinco preguntas bloqueantes de G0,
+  para rellenar en `local/` y devolver al repositorio solo la forma de cada respuesta. El guardián
+  rechaza una copia rellenada fuera de la plantilla, porque es markdown y la extensión no la
+  delata.
 
 ### Corregido
 

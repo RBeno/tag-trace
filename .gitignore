@@ -46,6 +46,9 @@ raw-data/
 real-data/
 private-data/
 
+# Respuestas de planta rellenadas: forma sí, valores nunca
+local/
+
 # Única excepción futura: datos inequívocamente sintéticos
 !fixtures/synthetic/**/*.csv
 !fixtures/synthetic/**/*.tsv

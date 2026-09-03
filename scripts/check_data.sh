@@ -63,7 +63,20 @@ for file in "${files[@]}"; do
   fi
 done
 
-# 3. Secretos evidentes. Patrones estrechos: buscamos credenciales, no la palabra credencial.
+# 3. Una admisión de G0 rellenada contiene valores de planta y es markdown: la extensión no la
+#    delata. Solo se admite la plantilla vacía en docs/templates/.
+for file in "${files[@]}"; do
+  case "$file" in
+    docs/templates/G0_INTAKE.md) continue ;;
+    *G0_INTAKE*|*g0_intake*)
+      note "posible admisión de G0 rellenada fuera de la plantilla: $file"
+      note "  guárdala en local/, que está excluido del control de versiones"
+      status=1
+      ;;
+  esac
+done
+
+# 4. Secretos evidentes. Patrones estrechos: buscamos credenciales, no la palabra credencial.
 secret_patterns=(
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'
   'AKIA[0-9A-Z]{16}'
