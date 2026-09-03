@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
 last_updated: 2026-09-03
 ---
@@ -85,7 +85,7 @@ El botón final usa una confirmación inequívoca. No existe consolidación auto
 
 ## 7. Móvil
 
-- Controles táctiles de al menos el tamaño accesible definido en diseño.
+- Controles táctiles de al menos 24×24 px CSS, conforme a WCAG 2.2 nivel AA.
 - Paneles apilados y detalle bajo demanda.
 - Importación mediante selector del sistema.
 - Progreso persistente aunque se cambie de vista dentro de la aplicación.
@@ -109,7 +109,8 @@ La aplicación diferencia:
 - proyecto incompatible/migrable;
 - almacenamiento insuficiente;
 - actualización disponible;
-- error recuperable y error que invalida el análisis.
+- error recuperable y error que invalida el análisis;
+- circuito en proceso de borrado, con lo que se pierde enumerado antes de confirmar.
 
 Un error nunca debe mostrar `0 lecturas válidas` sin explicar esquema detectado, causa, filas de ejemplo y acción de recuperación.
 

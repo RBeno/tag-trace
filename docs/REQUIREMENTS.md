@@ -1,6 +1,6 @@
 ---
 document_id: TT-REQ-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
 last_updated: 2026-09-03
 ---
@@ -39,12 +39,23 @@ Las expresiones **debe**, **no debe** y **solo** son normativas. Cada requisito 
 | FR-024 | Mantener un expediente vivo con evidencia, hipótesis, contramedidas y verificación posterior. | Must | F5 |
 | FR-025 | Comparar una incidencia con casos anteriores sin convertir semejanza en causalidad. | Should | F5 |
 | FR-026 | Generar informes locales exportables en HTML y datos tabulares, con versiones y trazabilidad. | Must | F5 |
-| FR-027 | Reabrir un `.agvproj` sin reimportar todo el bruto y advertir sobre evidencia externa no disponible. | Must | F4 |
+| FR-027 | Reabrir un `.agvproj` sin reimportar todo el bruto y advertir sobre evidencia externa no disponible. | Must | F1/F4 |
 | FR-028 | Mostrar primero conclusión, después evidencia y finalmente filas brutas. | Must | F3 |
-| FR-029 | Proporcionar vista de circuito, detalle AGV/tag, timeline, comparador, mapa/grafo y replay. | Must | F6 |
-| FR-030 | Permitir configurar calendarios, turnos, pausas, takt, zonas, criticidad y umbrales con vigencia temporal. | Must | F3 |
+| FR-029 | Proporcionar vista de circuito, detalle AGV/tag, timeline, comparador, mapa/grafo y replay. | Must | F2–F6 |
+| FR-030 | Permitir configurar calendarios, turnos, pausas, takt, zonas, criticidad y umbrales con vigencia temporal. | Must | F1/F3 |
 | FR-031 | Registrar versión de aplicación, algoritmos, reglas, configuración y formato en cada análisis. | Must | F1 |
 | FR-032 | Poder reproducir determinísticamente un análisis con las mismas entradas y versiones. | Must | F2 |
+
+### Requisitos repartidos entre fases
+
+Tres requisitos se entregan en dos tiempos y su fase lo indica con una barra:
+
+- **FR-027**: en F1 se demuestra el ciclo mínimo exportar–reabrir que exige G1; en F4 alcanza la
+  memoria consolidada completa.
+- **FR-029**: cada vista nace con la capacidad que la alimenta —grafo en F2, diagnóstico en F3,
+  comparador en F4, replay en F5— y F6 las unifica.
+- **FR-030**: F1 necesita ya zona horaria y calendario para validar fechas, y F2 las anclas de
+  vuelta y los límites de zona; F3 completa umbrales y criticidad.
 
 ## Requisitos no funcionales
 
@@ -62,7 +73,7 @@ Las expresiones **debe**, **no debe** y **solo** son normativas. Cada requisito 
 | NFR-010 | La aplicación funcionará tras la carga inicial sin depender de servicios de datos externos. | Must | F6 |
 | NFR-011 | Una actualización de PWA no se activará en mitad de un análisis o consolidación. | Must | F6 |
 | NFR-012 | Dependencias, configuraciones y builds serán fijados y reproducibles. | Must | F1 |
-| NFR-013 | Se conservará compatibilidad accesible: teclado, foco, contraste, etiquetas y objetivos táctiles. | Should | F6 |
+| NFR-013 | Se conservará compatibilidad accesible conforme a WCAG 2.2 nivel AA, con objetivo táctil mínimo de 24×24 px CSS. | Should | F6 |
 | NFR-014 | Cada conclusión mostrará categoría, evidencia, confianza, impacto, alternativas y comprobación recomendada. | Must | F3 |
 | NFR-015 | No existirán secretos, datos reales, mapas reales ni artefactos de análisis en GitHub. | Must | Todas |
 | NFR-016 | Las versiones publicadas podrán identificarse y revertirse. | Must | F6 |

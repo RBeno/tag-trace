@@ -1,6 +1,6 @@
 ---
-document_id: TT-MEMORY-001
-version: 0.1.0
+document_id: TT-PMEM-001
+version: 0.2.0
 status: baseline-candidate
 last_updated: 2026-09-03
 ---
@@ -28,6 +28,13 @@ last_updated: 2026-09-03
 - Consolidación mediante botón y revisión humana; historial append-only.
 - Incidencias vinculadas al circuito pero separadas de la memoria normal.
 - No SOC/batería; no control industrial; no IA opaca en el diagnóstico inicial.
+- Repositorio **público** con solo código, documentación y fixtures sintéticos (ADR-0014).
+  El guardián automático de datos es bloqueante y precede a la apertura.
+- `.agvproj` es un zip con manifiesto, secciones JSON y hash por sección (ADR-0012).
+- Tiempo canónico `t_utc` en milisegundos UTC, con cadena original, zona y marca DST; orden total
+  `(t_utc, source_hash, source_row)`; números canonicalizados antes del hash semántico (ADR-0013).
+- Una sola pasada de parseo, siempre dentro del Worker, y ningún cálculo de repuesto en el hilo
+  principal (`WORKER_PROTOCOL.md`).
 
 ## Modelo industrial conocido
 
@@ -59,4 +66,6 @@ F0 documentación → F1 base local e importación → F2 grafo físico → F3 d
 
 ## Próxima decisión
 
-Resolver las preguntas bloqueantes de F0 y aprobar el checkpoint. La frase de transición es `CONTINÚA FASE 1`.
+Quedan cinco preguntas bloqueantes de G0 —OQ-B01 a OQ-B05— que solo se responden con información
+de planta, más la licencia del repositorio (OQ-B07). Resueltas esas, se firma el checkpoint F0.
+La frase de transición sigue siendo `CONTINÚA FASE 1`.

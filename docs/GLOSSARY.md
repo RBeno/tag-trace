@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
 last_updated: 2026-09-03
 ---
@@ -33,6 +33,11 @@ last_updated: 2026-09-03
 | Replay | Reproducción determinista del estado/movimiento inferible de varios AGV sobre el grafo, mostrando incertidumbre. |
 | Bruto | Fuente original inmutable utilizada durante el análisis. No forma automáticamente parte de la memoria duradera. |
 | `.agvproj` | Contenedor local versionado de un circuito, su memoria compacta, configuraciones, incidencias y metadatos. |
+| Cohorte | Grupo de AGV o de modelos de lector cuyo comportamiento difiere de forma material del resto y exige perfiles esperados separados. Se declara en configuración, no se infiere sola. |
+| Takt | Ritmo de referencia entre unidades producidas, con unidad y vigencia definidas en la configuración local. No existe un valor universal en el código. |
+| Soporte | Cantidad de evidencia independiente que sostiene un nodo, una transición o un perfil: cuántos AGV y cuántas vueltas distintas lo respaldan. Un soporte alto de un solo AGV no equivale a consenso. |
+| Oportunidad elegible | Oportunidad cuyo contexto permite afirmar que el tag pudo leerse. Es el único denominador admitido para la tasa de lectura; las oportunidades censuradas, no recorridas o desconocidas quedan fuera. |
+| Pastor | Recorrido de asistencia o acompañamiento, ajeno al recorrido productivo, que debe excluirse del comportamiento esperado. Su identificación en las fuentes sigue abierta (OQ-103). |
 
 ## Estados de verdad
 

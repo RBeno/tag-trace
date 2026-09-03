@@ -35,6 +35,9 @@ Cada fase produce una capacidad vertical verificable y un paquete de evidencia. 
 - Roadmap, puertas, trazabilidad, riesgos y preguntas abiertas.
 - ADR, plantillas para trabajo con IA, memoria compacta y estado de proyecto.
 - Evaluación del prototipo anterior como referencia, sin migrar código.
+- Contrato del protocolo Worker↔UI y contrato de configuración de circuito.
+- Andamiaje de gobierno ejecutable: `CLAUDE.md`, esquema del estado de proyecto, guardián de datos
+  y verificación documental, en local mediante hook y en integración continua.
 
 ### Se formaliza
 
@@ -45,7 +48,16 @@ Cada fase produce una capacidad vertical verificable y un paquete de evidencia. 
 
 ### Salida
 
-Tag documental `docs-v0.1.0`, checkpoint F0 y aprobación explícita `CONTINÚA FASE 1`.
+Tag documental `docs-v0.2.0`, checkpoint F0 firmado y aprobación explícita `CONTINÚA FASE 1`.
+
+### F1a — Esqueleto vertical antes de F1 completa
+
+F1 se abre con un recorrido único extremo a extremo que valida la plataforma antes de invertir en
+diagnóstico: crear circuito, cargar un CSV sintético, parsear dentro del Worker con progreso y
+cancelación, normalizar conservando procedencia, navegar hasta la fila origen, exportar `.agvproj`
+y reabrirlo con hash semántico idéntico. Sale con los criterios de aceptación de
+`WORKER_PROTOCOL.md` §7, los casos TC-015, TC-019 y TC-020, los invariantes INV-001 a INV-006,
+INV-010 e INV-011, y PERF-D2 medido en los dispositivos de referencia.
 
 ## F1 — Base local e ingesta confiable
 

@@ -1,6 +1,6 @@
 ---
 document_id: TT-RISK-001
-version: 0.1.0
+version: 0.2.0
 status: active
 last_updated: 2026-09-03
 ---
@@ -31,7 +31,8 @@ Escala: probabilidad (P) e impacto (I) de 1 a 5. Exposición = P×I. Los valores
 | RSK-018 | El prototipo anterior condiciona mala arquitectura | 3 | 3 | 9 | Greenfield; reutilización solo tras auditoría | Arquitectura |
 | RSK-019 | Optimización elimina trazabilidad | 3 | 5 | 15 | Hash semántico, offsets compactos e INV-012 | Arquitectura |
 | RSK-020 | Alcance crece antes de validar valor | 4 | 4 | 16 | Fases cerradas, WIP limitado y no tiempo real hasta F8 | Producto |
+| RSK-021 | Un dato real llega a un repositorio público y queda indexado | 2 | 5 | 10 | Guardián en CI y hook local bloqueantes, historial verificado antes de abrir y revisión de diff | Seguridad |
 
 ## Riesgos que bloquean F1
 
-RSK-001, RSK-002, RSK-009, RSK-012 y RSK-013 deben tener controles verificables definidos en G0/G1. Los demás pueden mantenerse abiertos con mitigación y responsable explícitos.
+RSK-001, RSK-002, RSK-009, RSK-012, RSK-013 y RSK-021 deben tener controles verificables definidos en G0/G1. Los demás pueden mantenerse abiertos con mitigación y responsable explícitos.

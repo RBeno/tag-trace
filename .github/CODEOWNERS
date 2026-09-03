@@ -1,0 +1,13 @@
+# El propietario del producto revisa todo cambio. Las reglas industriales, la
+# consolidación y los cambios de fase no los aprueba ninguna IA (ADR-0010).
+*                       @RBeno
+
+# Zonas donde una revisión distraída tiene consecuencias irreversibles.
+/docs/RULE_CATALOG.md   @RBeno
+/docs/REQUIREMENTS.md   @RBeno
+/docs/decisions/        @RBeno
+/docs/project_state.json @RBeno
+/schemas/               @RBeno
+/scripts/check_data.sh  @RBeno
+/.githooks/             @RBeno
+/.github/workflows/     @RBeno

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Preguntas abiertas del proyecto
+    url: https://github.com/RBeno/tag-trace/blob/main/docs/OPEN_QUESTIONS.md
+    about: Antes de abrir una incidencia de dominio, comprueba si ya está registrada.

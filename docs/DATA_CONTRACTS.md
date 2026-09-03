@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
 last_updated: 2026-09-03
 ---
@@ -56,16 +56,35 @@ Campos adicionales se conservan en un espacio de atributos tipado, pero no se pr
 - Admitir coma, punto y coma y tabulador.
 - No inferir silenciosamente día/mes cuando el formato sea ambiguo.
 - La zona horaria forma parte de la configuración versionada.
-- Ordenar mediante `timestamp` y un desempate determinista documentado.
+- El orden canónico es `(t_utc, source_hash, source_row)`, definido en ADR-0013.
 - Conservar el orden original para auditoría.
-- Los cambios horario de verano/invierno deben detectarse y mostrarse.
+- Los cambios horario de verano/invierno deben detectarse y marcarse; una hora repetida o
+  inexistente no se usa para afirmar orden dentro de la ventana afectada.
+- La representación canónica del tiempo —`t_utc`, `t_raw`, `tz_id` y `t_flag`— está fijada en
+  ADR-0013 y es obligatoria para toda observación.
 
 ## 6. Duplicación y solapes
 
-- Duplicado exacto: mismo contenido canónico y procedencia equivalente.
-- Solape: fuentes distintas cubren el mismo periodo y contienen el mismo evento lógico.
-- No se elimina evidencia: la vista analítica deduplica, pero el registro de procedencia conserva todas las referencias.
-- Dos lecturas iguales pueden ser físicamente válidas; la deduplicación no se basa solo en AGV+tag.
+La deduplicación se apoya en una **huella canónica de evento**, no en la procedencia:
+
+```text
+huella = hash(t_utc, agv_id, tag_id, atributos canónicos declarados)
+```
+
+Sobre esa huella se distinguen dos situaciones que antes se confundían:
+
+| Situación | Definición | Tratamiento |
+|---|---|---|
+| Repetición dentro de una fuente | Misma huella y misma `source_id` | Se conserva; puede ser físicamente válida. Solo se colapsa si además coincide `source_row`, es decir, si es la misma fila leída dos veces. |
+| Solape entre fuentes | Misma huella y `source_id` distinta | Es un único evento lógico con varias procedencias: cuenta una vez y conserva todas las referencias. |
+
+Reglas:
+
+- No se elimina evidencia: la vista analítica deduplica, pero el registro de procedencia conserva
+  todas las referencias.
+- Dos lecturas iguales pueden ser físicamente válidas; la huella no se reduce nunca a AGV+tag.
+- Los atributos que entran en la huella se declaran de forma explícita; añadir uno cambia la versión
+  del algoritmo ALG-002 y no recalcula históricos por su cuenta.
 
 ## 7. Afinidad de circuito
 
@@ -80,7 +99,9 @@ No debe bloquearse el primer archivo de un circuito vacío por falta de memoria 
 
 ## 8. Formato `.agvproj`
 
-El formato definitivo se formalizará en F1/F4 mediante esquema. Como mínimo contendrá:
+El contenedor está decidido en ADR-0012: zip con manifiesto, secciones JSON separadas, hash por
+sección y hash global, límites de descompresión y carga transaccional. El esquema ejecutable se
+formaliza en F1a y se completa en F4. Como mínimo contendrá:
 
 - manifiesto, versión e integridad;
 - identidad del circuito;
@@ -94,6 +115,20 @@ El formato definitivo se formalizará en F1/F4 mediante esquema. Como mínimo co
 
 No incluirá el bruto completo por defecto. Un expediente puede conservar un recorte normalizado mínimo cuando sea necesario para reproducir una incidencia.
 
-## 9. Datos reales y GitHub
+## 9. Borrado y retención local
+
+El usuario debe poder eliminar lo que ha creado, y esa eliminación debe ser verificable:
+
+- Borrar un circuito elimina sus fuentes normalizadas, memoria, incidencias y análisis, previa
+  confirmación inequívoca que nombra lo que se pierde y ofrece exportar antes.
+- Borrar es irreversible desde la aplicación: no hay papelera. La copia de seguridad es el
+  `.agvproj` exportado.
+- Un análisis descartado libera sus estructuras al terminar la sesión; no queda residuo consultable.
+- La aplicación indica cuánto ocupa cada circuito y avisa cuando el navegador puede reclamar el
+  almacenamiento, solicitando persistencia explícita (RSK-011, TH-009).
+- El bruto original nunca es propiedad de la aplicación: se referencia por hash y permanece donde
+  el usuario lo tenga.
+
+## 10. Datos reales y GitHub
 
 Ninguna fuente real, aunque esté parcialmente anonimizada, se añade al repositorio. Los fixtures sintéticos deben usar identificadores, geometría, horarios y distribuciones inventados y llevar un manifiesto `synthetic: true`.

@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.1.0
+version: 0.2.0
 status: active
 last_updated: 2026-09-03
 ---
@@ -18,7 +18,7 @@ No son lagunas que la IA deba rellenar. Cada respuesta se incorpora a requisitos
 | OQ-B03 | ¿Qué móvil Android y PC serán dispositivos de referencia? | Permite aprobar presupuesto | Registrar modelo, RAM, navegador y versión |
 | OQ-B04 | ¿Cuáles son los límites exactos de zona cargada/vacía, número y límites de calles CO, puntos críticos y anclas de vuelta del piloto? | Necesario para reglas topológicas | Configuración local inicial versionada, no publicada |
 | OQ-B05 | ¿Qué datos reales podrán usarse localmente para aceptar F1–F5 y quién valida los resultados? | Evita pruebas solo sintéticas | Plan de aceptación local |
-| OQ-B06 | ¿El repositorio `RBeno/tag-trace` debe permanecer privado durante todo el piloto? | Política de publicación | Confirmación del propietario; por defecto privado |
+| OQ-B07 | ¿Bajo qué licencia se publica el repositorio? Sin fichero `LICENSE` queda con todos los derechos reservados. | Afecta a reutilización y contribuciones externas | Decisión del propietario antes de abrirlo |
 
 ## Necesarias durante F1–F3
 
@@ -47,6 +47,12 @@ No son lagunas que la IA deba rellenar. Cada respuesta se incorpora a requisitos
 | OQ-P06 | ¿Cuándo existe suficiente evidencia para promover deriva a cambio real? | F4 |
 | OQ-P07 | ¿Qué métricas hacen que una contramedida sea eficaz, parcial o ineficaz? | F5 |
 
+## Preguntas cerradas
+
+| ID | Pregunta | Respuesta | Fecha | Documentos |
+|---|---|---|---|---|
+| OQ-B06 | ¿El repositorio debe permanecer privado durante todo el piloto? | No. Pasa a público conteniendo solo código, documentación y fixtures sintéticos, tras verificar el historial y activar el guardián de datos. | 2026-09-03 | ADR-0014, `SECURITY_PRIVACY.md` |
+
 ## Registro de cierre
 
-Al cerrar una pregunta se añade: respuesta, estado de verdad, evidencia, fecha, responsable y documentos modificados. No se borra la pregunta; se mueve a una sección histórica en una versión posterior.
+Al cerrar una pregunta se añade: respuesta, estado de verdad, evidencia, fecha, responsable y documentos modificados. No se borra la pregunta; se mueve a la sección de preguntas cerradas.

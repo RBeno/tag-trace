@@ -1,3 +1,10 @@
+---
+document_id: TT-TPL-ALGORITHM-001
+version: 0.2.0
+status: template
+last_updated: 2026-09-03
+---
+
 # Especificación de algoritmo
 
 - ID y versión:

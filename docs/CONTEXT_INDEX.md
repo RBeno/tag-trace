@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONTEXT-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
 last_updated: 2026-09-03
 ---
@@ -21,14 +21,16 @@ Este documento evita que una persona o IA tenga que interpretar todo el reposito
 | Trabajo | Documentos obligatorios |
 |---|---|
 | Requisitos o alcance | `PROJECT_CHARTER.md`, `REQUIREMENTS.md`, `OPEN_QUESTIONS.md` |
-| Importación/normalización | `DATA_CONTRACTS.md`, `RULE_CATALOG.md`, `SECURITY_PRIVACY.md` |
+| Importación/normalización | `DATA_CONTRACTS.md`, `RULE_CATALOG.md`, `SECURITY_PRIVACY.md`, ADR-0013 |
 | Grafo/topología | `DOMAIN_MODEL.md`, `RULE_CATALOG.md`, `ALGORITHM_CATALOG.md` |
 | Salud/diagnóstico | `RULE_CATALOG.md`, `ALGORITHM_CATALOG.md`, `TEST_STRATEGY.md` |
 | Consolidación | `MEMORY_CONSOLIDATION.md`, `VERSIONING.md`, ADR-0005 |
 | Incidencias/replay | `INCIDENTS_REPORTING.md`, `UX_SPEC.md`, ADR-0006 |
 | Interfaz | `UX_SPEC.md`, `ARCHITECTURE.md`, `PERFORMANCE_BUDGET.md` |
-| Persistencia `.agvproj` | `DATA_CONTRACTS.md`, `MEMORY_CONSOLIDATION.md`, `VERSIONING.md` |
-| Seguridad/publicación | `SECURITY_PRIVACY.md`, `ARCHITECTURE.md`, ADR-0001 y ADR-0007 |
+| Workers y trabajos pesados | `WORKER_PROTOCOL.md`, `ARCHITECTURE.md`, ADR-0008 |
+| Configuración de circuito | `CONFIG_SCHEMA.md`, `RULE_CATALOG.md`, `VERSIONING.md` |
+| Persistencia `.agvproj` | `DATA_CONTRACTS.md`, `MEMORY_CONSOLIDATION.md`, `VERSIONING.md`, ADR-0012 |
+| Seguridad/publicación | `SECURITY_PRIVACY.md`, `ARCHITECTURE.md`, ADR-0001, ADR-0007 y ADR-0014 |
 | Cambio de fase | `ROADMAP.md`, `PHASE_GATES.md`, `DEFINITION_OF_DONE.md` |
 
 ## Estado documental

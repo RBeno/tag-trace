@@ -25,6 +25,13 @@ test-results/
 *.xlsx
 *.xls
 *.parquet
+*.ods
+*.mdb
+*.accdb
+*.dump
+*.bak
+*.geojson
+*.kml
 *.duckdb
 *.sqlite
 *.sqlite3
@@ -44,6 +51,10 @@ private-data/
 !fixtures/synthetic/**/*.tsv
 !fixtures/synthetic/**/*.txt
 !fixtures/synthetic/**/*.agvproj
+
+# Este fichero no es el control: git add -f lo ignora. El control real es
+# scripts/check_data.sh, que ejecutan el hook de .githooks/pre-commit y la
+# integración continua. Actívalo con: git config core.hooksPath .githooks
 
 # Sistema/editor
 .DS_Store

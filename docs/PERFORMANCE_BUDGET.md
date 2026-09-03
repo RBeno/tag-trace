@@ -1,6 +1,6 @@
 ---
 document_id: TT-PERF-001
-version: 0.1.0
+version: 0.2.0
 status: provisional-budget
 last_updated: 2026-09-03
 ---
@@ -68,7 +68,9 @@ Presupuesto técnico candidato para la representación canónica: 16–40 bytes 
 ## 6. Replay eficiente
 
 - Guardar eventos/puntos de cambio, no fotogramas.
-- Interpolar solo al renderizar y marcarlo `inferred`.
+- Interpolar solo al renderizar y marcarlo `inferred`. La interpolación sitúa el AGV como
+  **fracción temporal recorrida del tramo**, nunca como posición física: el grafo es topológico y
+  no contiene distancias.
 - Ventana temporal deslizante.
 - Nivel de detalle: ocultar etiquetas/aristas no relevantes al alejarse.
 - Precalcular índices por AGV y tiempo, reutilizables.
