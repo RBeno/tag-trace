@@ -1,0 +1,52 @@
+# Dependencias y compilación futura
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+.vite/
+playwright-report/
+test-results/
+
+# Configuración local y secretos
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Datos industriales y proyectos locales: nunca versionar
+*.csv
+*.tsv
+*.txt
+*.agvproj
+*.xlsx
+*.xls
+*.parquet
+*.duckdb
+*.sqlite
+*.sqlite3
+*.db
+*.log
+*.zip
+*.7z
+*.rar
+reports/
+exports/
+raw-data/
+real-data/
+private-data/
+
+# Única excepción futura: datos inequívocamente sintéticos
+!fixtures/synthetic/**/*.csv
+!fixtures/synthetic/**/*.tsv
+!fixtures/synthetic/**/*.txt
+!fixtures/synthetic/**/*.agvproj
+
+# Sistema/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
