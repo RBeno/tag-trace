@@ -1,8 +1,8 @@
 ---
 document_id: TT-RULES-001
-version: 0.1.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-11
 ---
 
 # Catálogo de reglas industriales
@@ -27,8 +27,10 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-DAT-002 | accepted | Se admiten coma, punto y coma y tabulador, con previsualización. |
 | R-DAT-003 | accepted | El catálogo de funciones puede ser parcial; ausencia significa `función no documentada`, no fallo. |
 | R-DAT-004 | accepted | Un tag puede tener funciones distintas según multicircuito/configuración y vigencia. |
-| R-DAT-005 | accepted | Solapes se deduplican para cálculo sin perder procedencia. |
+| R-DAT-005 | accepted | Los solapes entre cortes de una misma fuente se unen por el tramo contiguo común, no por identidad de fila, para no fusionar pasos repetidos legítimos. La procedencia de todas las fuentes se conserva. |
 | R-DAT-006 | accepted | Un archivo probable de otro circuito no puede consolidarse en el circuito activo. |
+| R-DAT-007 | accepted | La cobertura es la unión de los intervalos de las fuentes aceptadas. Fuera de cobertura el estado es `sin datos cargados`: no se analiza y no es nunca una parada ni un silencio. |
+| R-DAT-008 | accepted | El orden de una fuente es una propiedad suya que se mide, no que se supone. Las inversiones no son error de parseo: son evidencia de entrega diferida y se conservan señaladas. |
 
 ## Circuito y topología
 
@@ -51,6 +53,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-OPP-004 | accepted | Si antes y después del hueco la secuencia y tiempo son coherentes y no hay intercambio de AGV, puede inferirse continuidad con confianza, nunca como observación. |
 | R-OPP-005 | accepted | Un hueco sin contexto suficiente queda censurado. |
 | R-OPP-006 | configurable | El intervalo de lectura normal se obtiene de configuración/perfil local con vigencia; no existe un umbral universal en el código. |
+| R-OPP-007 | accepted | El multicircuito condiciona la oportunidad de lectura: puede alterar las condiciones físicas de detección, de modo que bajo ciertos multicircuitos una ausencia es esperable. Perfiles separados por multicircuito; y si el multicircuito no se conoce para un periodo, la salud declara ese confusor junto a la conclusión. |
 
 ## AGV, lector y configuración
 
@@ -100,6 +103,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-TIM-004 | configurable | Pausas, descansos y paradas planificadas pertenecen al calendario local versionado. |
 | R-TIM-005 | configurable | Los valores operativos reales conocidos se validarán localmente y no se incluirán en GitHub. |
 | R-TIM-006 | accepted | Un periodo se compara con lo esperado para su horario/estado, no con una media que mezcle producción, pausa y parada. |
+| R-TIM-007 | accepted | El análisis es muestral, no continuo. Comparar dos muestras exige contexto de calendario equivalente; cuando no lo es, la comparación se marca como no comparable en lugar de presentarse como evolución del circuito. |
 
 ## Consolidación e incidencias
 

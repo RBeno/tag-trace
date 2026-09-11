@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.1.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-11
 ---
 
 # Estrategia de pruebas y evaluación
@@ -42,6 +42,8 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | INV-010 | Mismo input+configuración+versiones produce el mismo hash semántico. |
 | INV-011 | Exportar/importar sin migración conserva el estado semántico. |
 | INV-012 | Optimizar representación no cambia hallazgos ni evidencia. |
+| INV-013 | Un intervalo fuera de la cobertura nunca produce un hallazgo. |
+| INV-014 | Unir dos fuentes solapadas no cambia el número de eventos lógicos ni elimina pasos repetidos legítimos. |
 
 ## 4. Catálogo inicial de casos de oro
 
@@ -67,6 +69,11 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-018 | Cambio colectivo sostenido y confirmado | Propuesta de nueva versión del grafo | Reescritura de histórico |
 | TC-019 | CSV con coma/punto y coma/tab | Importación equivalente | Pérdida de IDs/fechas |
 | TC-020 | Worker termina/cancela en orden adverso | Estado consistente | `0 lecturas` por carrera/sincronización |
+| TC-021 | Dos exportaciones solapadas que contienen un paso repetido A→B→A | Unión por tramo común: el solape cuenta una vez y el paso repetido se conserva | Fusión del paso repetido en un solo evento |
+| TC-022 | Consulta sobre un intervalo fuera de la cobertura cargada | `sin datos cargados` | Parada, silencio colectivo o degradación de salud |
+| TC-023 | Fuente con inversiones de orden respecto a su sentido declarado | Señal de entrega diferida, con las filas conservadas | Rechazo del fichero o reordenación silenciosa |
+| TC-024 | Tag sano durante un multicircuito que reduce el alcance de detección | Ausencias tratadas como esperables en ese contexto | Diagnóstico de tag degradado |
+| TC-025 | Periodo sin multicircuito conocido | Salud publicada con el confusor declarado | Conclusión presentada como si el contexto fuera homogéneo |
 
 ## 5. Estructura de un caso de oro
 

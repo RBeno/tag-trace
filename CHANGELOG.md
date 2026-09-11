@@ -2,6 +2,44 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [0.3.0] - 2026-09-11
+
+Contraste de la línea base contra la fuente real. El propietario aportó una muestra de lecturas y
+el informe ampliado de Vsystem; ambos se leyeron solo en local y al repositorio vuelve la forma,
+nunca los valores.
+
+### Corregido
+
+- **ADR-0013 fijaba un orden canónico incorrecto.** Definía el desempate como `source_row`
+  ascendente, pero la fuente entrega los eventos como una pila, del más reciente al más antiguo.
+  Con una resolución más gruesa que el paso real de un AGV, esa regla reconstruía los tramos al
+  revés: contrastadas las dos hipótesis sobre la muestra real, la incorrecta producía 1.173 aristas
+  con dominancia 0,691 frente a 299 aristas con 0,916. El grafo habría salido plausible y falso sin
+  ningún síntoma. La ADR se corrige en el sitio porque vivía en una propuesta sin fusionar y nunca
+  llegó a estar en vigor; el sentido pasa a medirse en cada fichero en lugar de suponerse.
+- **La deduplicación por huella de fila destruía evidencia.** De 116 filas idénticas de la muestra,
+  114 tenían otra lectura del mismo AGV entre medias: son pasos repetidos reales, el retroceso que
+  contempla R-CO-005. Se sustituye por unión del tramo contiguo común entre cortes de la misma pila,
+  que elimina el solape de forma exacta y conserva las maniobras.
+
+### Añadido
+
+- Regla de cobertura: fuera de los intervalos cargados el estado es `sin datos cargados`, que no es
+  una parada ni un silencio (R-DAT-007, INV-013).
+- El orden de una fuente se mide; las inversiones son evidencia de entrega diferida y se conservan
+  señaladas (R-DAT-008).
+- El análisis es muestral y dos muestras solo se comparan con contexto de calendario equivalente
+  (R-TIM-007).
+- El multicircuito condiciona la oportunidad de lectura y puede alterar las condiciones físicas de
+  detección; sin él, la salud declara el confusor (R-OPP-007, TC-024, TC-025).
+- DS-011, informe ampliado con segundos, circuito declarado, multicircuito y eventos de uso; y el
+  contrato de los eventos que no son lecturas.
+- Atributos canónicos opcionales `circuit_declared`, `mtc` y `resolution`, y el ajuste del análisis
+  temporal a la resolución declarada de cada fuente.
+- TC-021 a TC-025 e INV-013/INV-014.
+- Glosario: `cobertura`, `sin datos cargados`, `muestra` y `multicircuito (MTC)`, separando este
+  último de «varios circuitos», que es el alcance de F7 y se renombra para no colisionar.
+
 ## [0.2.0] - 2026-09-03
 
 Auditoría de la línea base 0.1.0 y del prototipo `RBeno/tag-trace-agv`, cierre de las

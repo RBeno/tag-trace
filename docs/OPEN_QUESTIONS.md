@@ -1,8 +1,8 @@
 ---
 document_id: TT-OPEN-001
-version: 0.2.0
+version: 0.3.0
 status: active
-last_updated: 2026-09-03
+last_updated: 2026-09-11
 ---
 
 # Preguntas abiertas
@@ -17,8 +17,8 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 
 | ID | Pregunta | Por qué bloquea | Resolución prevista |
 |---|---|---|---|
-| OQ-B01 | ¿Cuáles son todos los formatos/encabezados reales de las fuentes y ejemplos mínimos de cada uno? | Define contrato de importación | Inventario local de fuentes y muestras controladas |
-| OQ-B02 | ¿Qué zona horaria representan los timestamps y cómo se registra el cambio horario? | Evita secuencias/turnos erróneos | Confirmación + casos DST |
+| OQ-B01 | ¿Cuáles son los formatos/encabezados reales de DS-002 a DS-009? DS-001 y DS-011 ya están determinados. | Define contrato de importación | Inventario local de fuentes y muestras controladas |
+| OQ-B02 | ¿Qué zona horaria representan los timestamps y cómo se registra el cambio horario? El dato no lleva desplazamiento, así que no puede deducirse de la fuente. | Evita secuencias/turnos erróneos | Confirmación + casos DST |
 | OQ-B03 | ¿Qué móvil Android y PC serán dispositivos de referencia? | Permite aprobar presupuesto | Registrar modelo, RAM, navegador y versión |
 | OQ-B04 | ¿Cuáles son los límites exactos de zona cargada/vacía, número y límites de calles CO, puntos críticos y anclas de vuelta del piloto? | Necesario para reglas topológicas | Configuración local inicial versionada, no publicada |
 | OQ-B05 | ¿Qué datos reales podrán usarse localmente para aceptar F1–F5 y quién valida los resultados? | Evita pruebas solo sintéticas | Plan de aceptación local |
@@ -38,6 +38,10 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-108 | ¿Qué periodos/versiones exactos tienen los calendarios y takt conocidos? | Configuración obligatoria por vigencia |
 | OQ-109 | ¿Cómo se reconocen movimientos manuales y sentido contrario? | Señalar desconocido/excepción |
 | OQ-110 | ¿Qué diferencias conocidas existen entre memorias de AGV y cómo se obtienen sin descarga global? | Importación/revisión manual versionada |
+| OQ-111 | ¿Cuál es la lista completa del catálogo de usos y su significado operativo? | Los eventos de uso se conservan con su texto original, sin interpretarse ni alimentar diagnóstico |
+| OQ-112 | ¿Cuál es el rango exacto de multicircuitos y qué hace cada uno? Se conoce que altera el comportamiento al leer tags y que algún modo reduce el alcance de detección. | Perfiles separados por multicircuito; sin la tabla completa no se puede afirmar qué ausencias son esperables |
+| OQ-113 | ¿Qué representa la columna de defecto del informe ampliado? | Se conserva como atributo sin promover ni interpretar |
+| OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
 
 ## Decisiones de producto posteriores
 

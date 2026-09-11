@@ -1,8 +1,8 @@
 ---
 document_id: TT-PERF-001
-version: 0.2.0
+version: 0.3.0
 status: provisional-budget
-last_updated: 2026-09-03
+last_updated: 2026-09-11
 ---
 
 # Presupuesto de rendimiento y recursos
@@ -22,6 +22,11 @@ Estos límites son **candidatos medibles**, no promesas definitivas. F1 establec
 | PERF-D5 | 1.000.000+ eventos sintéticos | Estrés de escritorio, no puerta de cada cambio |
 
 Los datasets del repositorio serán sintéticos y conservarán solo la forma estadística necesaria, nunca la topología real.
+
+PERF-D2 y PERF-D4 se contrastaron contra una muestra real y describen bien su forma: el orden de
+magnitud de eventos, AGV y tags coincide. El generador sintético debe reproducir también las
+propiedades que complican la ingesta —orden descendente de pila, resolución gruesa, identificadores
+con y sin ceros iniciales— y no solo el volumen.
 
 ## 3. Presupuestos candidatos
 

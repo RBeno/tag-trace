@@ -1,8 +1,8 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.1.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-11
 ---
 
 # Etapas, entregables y resultados
@@ -93,7 +93,8 @@ Diagnósticos complejos, consolidación definitiva o rediseño visual completo.
 - Grafo observado por AGV/vuelta.
 - Consenso físico con rutas alternativas.
 - Comparador Vsystem/plano frente a observado.
-- Tiempos robustos por transición.
+- Tiempos robustos por transición, acotados a las transiciones cuyo intervalo supera la resolución
+  de la fuente; por debajo de ella la secuencia es `observed` y el tiempo `unknown`.
 - Replay básico observado/inferido/desconocido.
 
 ### Se formaliza

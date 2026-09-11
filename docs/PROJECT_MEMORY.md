@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.2.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-11
 ---
 
 # Memoria compacta del proyecto
@@ -41,7 +41,13 @@ last_updated: 2026-09-03
 - Los eventos mínimos contienen fecha/hora, AGV y tag.
 - IDs se conservan como texto, incluidos ceros iniciales.
 - El catálogo funcional de tags puede estar incompleto.
-- Un tag puede ejecutar funciones diferentes según el multicircuito/configuración.
+- Un tag puede ejecutar funciones diferentes según el multicircuito/configuración, y un
+  multicircuito puede además alterar las condiciones físicas de detección. Es contexto obligatorio
+  de la salud; cuando se desconoce, el confusor se declara.
+- La fuente mínima siempre disponible es Fecha–AGV–Tag. Existe un informe ampliado con segundos,
+  circuito declarado, multicircuito y eventos de uso, que se admite como fuente opcional.
+- El análisis es muestral, no continuo: periodos de pocos días sobre una fuente con ventana
+  deslizante. Fuera de la cobertura cargada el estado es `sin datos cargados`, nunca una parada.
 - El circuito incluye carga online; mantenimiento y asistencia se excluyen.
 - Zona cargada: FIFO esperado, salvo excepciones justificadas.
 - Zona vacía y carga online: puede haber reordenación.
@@ -62,7 +68,10 @@ last_updated: 2026-09-03
 
 ## Orden de implementación
 
-F0 documentación → F1 base local e importación → F2 grafo físico → F3 diagnóstico → F4 consolidación/evolución → F5 incidencias/replay → F6 piloto endurecido → F7 ampliación multicircuito → F8 observación cercana a tiempo real.
+F0 documentación → F1 base local e importación → F2 grafo físico → F3 diagnóstico → F4 consolidación/evolución → F5 incidencias/replay → F6 piloto endurecido → F7 ampliación a varios circuitos → F8 observación cercana a tiempo real.
+
+En F7, «varios circuitos» significa PC2 y otros circuitos como agregados aislados. No confundir con
+el multicircuito (MTC), que es un modo de comportamiento dentro de un mismo circuito.
 
 ## Próxima decisión
 

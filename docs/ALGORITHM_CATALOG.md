@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.1.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-11
 ---
 
 # Catálogo de algoritmos
@@ -42,8 +42,8 @@ flowchart TD
 | ID | Acción | Proceso | Salida esperada | Complejidad objetivo | Fase |
 |---|---|---|---|---|---:|
 | ALG-001 | Ingesta | Parseo incremental, asignación de columnas y cuarentena | Observaciones normalizadas + informe de calidad | O(n), memoria acotada por lote | F1 |
-| ALG-002 | Deduplicación | Huella de evento y procedencias múltiples | Vista analítica sin doble cómputo | O(n) esperado | F1 |
-| ALG-003 | Afinidad de circuito | Tags, transiciones, AGV y contradicciones | compatible/parcial/ajeno/desconocido | O(n+e) | F1 |
+| ALG-002 | Unión de fuentes | Alineación del tramo contiguo común entre cortes de la misma pila | Vista analítica sin doble cómputo, conservando pasos repetidos legítimos | O(n) esperado | F1 |
+| ALG-003 | Afinidad de circuito | Circuito declarado cuando existe; si no, tags, transiciones, AGV y contradicciones | compatible/parcial/ajeno/desconocido | O(n+e) | F1 |
 | ALG-004 | Segmentación | Cortes por AGV, tiempo, contexto y anclas | Sesiones y vueltas con confianza | O(n log n) por ordenación; O(n) posterior | F2 |
 | ALG-005 | Grafo observado | Conteo de transiciones por AGV/vuelta | Multigrafo trazable | O(n) | F2 |
 | ALG-006 | Consenso topológico | Soporte entre AGV/vueltas y estadística robusta | Grafo físico inferido con alternativas | O(e·a) acotado | F2 |
@@ -76,6 +76,27 @@ R_{tag,agv,contexto}=\frac{lecturas\ observadas}{oportunidades\ elegibles}
 \]
 
 La salud publicada no será solo `R`. Incorporará estabilidad temporal, acuerdo con pares, calidad de datos y criticidad, mostrando cada componente por separado. Los pesos no se fijan hasta calibración con casos de oro.
+
+El multicircuito vigente forma parte del contexto de la oportunidad, porque puede alterar las
+condiciones físicas de detección: bajo un multicircuito de alcance reducido una ausencia es
+esperable y no debe contar como degradación. Cuando la fuente no aporta el multicircuito, la salud
+del periodo se publica con el confusor declarado, no como si el contexto fuera homogéneo.
+
+## 4.1 Resolución de la fuente y análisis temporal
+
+Cada fuente declara su resolución temporal y el análisis se ajusta a ella. Una transición cuyo
+intervalo observado cae por debajo de la resolución **no tiene tiempo medible**: es `observed` en
+secuencia y `unknown` en tiempo. Agregar esos ceros produciría medianas y dispersiones falsas.
+
+En la práctica esto separa dos familias:
+
+- **Fenómenos lentos** —permanencia en calles CO, intervalos en puntos críticos, huecos— donde el
+  tiempo es varias veces la resolución y la estadística robusta es válida.
+- **Transiciones rápidas**, donde solo el orden es utilizable mientras la fuente no aporte más
+  resolución.
+
+Una fuente de mayor resolución no invalida los análisis anteriores: cambia lo que es lícito medir a
+partir de ella, y eso queda registrado con el resultado.
 
 ## 5. Estadística robusta
 
