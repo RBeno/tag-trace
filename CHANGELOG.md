@@ -2,6 +2,22 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [0.4.0] - 2026-09-16
+
+### Añadido
+
+- `docs/golden/` con los seis casos de oro desarrollados que **no dependen de información de
+  planta**, y que son los criterios de aceptación de F1a: TC-015 solape entre exportaciones,
+  TC-019 delimitadores e identidad, TC-020 carrera entre Worker e interfaz, TC-021 solape que
+  contiene una maniobra, TC-022 intervalo fuera de la cobertura y TC-023 entrega diferida.
+  Cada uno con propósito, reglas cubiertas, fixture sintético, resultado esperado, resultados
+  expresamente prohibidos, tolerancias, evidencia navegable y criterio de estabilidad, según
+  `TEST_STRATEGY.md` §5.
+- Enlaces desde el catálogo de casos y ruta de lectura en el índice de contexto.
+
+Las pruebas se escriben antes que el motor que deben superar. Los casos restantes se desarrollarán
+cuando se cierren las preguntas abiertas de las que dependen.
+
 ## [0.3.0] - 2026-09-11
 
 Contraste de la línea base contra la fuente real. El propietario aportó una muestra de lecturas y

@@ -1,12 +1,12 @@
 {
   "project": "TAG TRACE",
   "repository": "RBeno/tag-trace",
-  "documentationVersion": "0.3.0",
+  "documentationVersion": "0.4.0",
   "currentPhase": "F0",
   "phaseName": "Definicion y gobierno",
   "status": "awaiting_product_owner_approval",
   "baseline": "candidate",
-  "lastUpdated": "2026-09-11",
+  "lastUpdated": "2026-09-16",
   "implementationStarted": false,
   "legacyRepository": "RBeno/tag-trace-agv",
   "nextTransition": {
