@@ -1,6 +1,6 @@
 ---
 document_id: TT-RULES-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
 last_updated: 2026-09-16
 ---
@@ -66,6 +66,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-AGV-004 | accepted | Diferencias de modelo de lector/AGV pueden requerir cohortes y perfiles separados. |
 | R-AGV-005 | accepted | Vsystem muestra la última lectura conocida; no demuestra posición actual durante un hueco. |
 | R-AGV-006 | accepted | Un AGV detenido no emite lecturas. Por tanto la inactividad y el fallo de comunicación producen el mismo silencio y **no se distinguen por la ausencia en sí**: se discriminan por el contexto colectivo, por el punto donde se produjo la última lectura y por el calendario vigente. |
+| R-AGV-007 | accepted | La forma de la reaparición discrimina lo que el silencio no. Reaparecer conservando la posición relativa entre los mismos vecinos demuestra permanencia en el circuito y descarta salida o retirada, pero no distingue por sí solo detención de circulación sin lectura: eso lo decide dónde reaparece frente a cuánto avanzaron sus vecinos. |
 
 ## Comunicación
 
@@ -94,6 +95,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-CO-003 | accepted | La salida se relaciona con mayor antigüedad según la información disponible, no con SOC. |
 | R-CO-004 | accepted | SOC puede quedar congelado/no fiable durante carga y se excluye del diagnóstico. |
 | R-CO-005 | accepted | Retrocesos o maniobras pueden producir doble lectura; deben evaluarse topológica y temporalmente. |
+| R-CO-006 | accepted | Un silencio cuya última lectura es el tag de parada de una calle CO configurada y cuya reanudación recorre en orden la secuencia declarada de esa calle se infiere como permanencia en carga online. Sin calles configuradas la firma no se reconoce y el silencio queda `unknown`; no se sustituye por proximidad. |
 
 ## Producción y calendario
 

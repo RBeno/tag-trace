@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.3.0
+version: 0.6.0
 status: active
 last_updated: 2026-09-11
 ---
@@ -42,6 +42,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-112 | ¿Cuál es el rango exacto de multicircuitos y qué hace cada uno? Se conoce que altera el comportamiento al leer tags y que algún modo reduce el alcance de detección. | Perfiles separados por multicircuito; sin la tabla completa no se puede afirmar qué ausencias son esperables |
 | OQ-113 | ¿Qué representa la columna de defecto del informe ampliado? | Se conserva como atributo sin promover ni interpretar |
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
+| OQ-115 | Cuando un AGV «reaparece en su hueco», ¿se observa con el grupo habiendo avanzado, o con el grupo alcanzándole? Cambia cuál de las dos hipótesis de R-AGV-007 es prioritaria. | Ambas se presentan con su evidencia, sin priorizar una |
 
 ## Decisiones de producto posteriores
 

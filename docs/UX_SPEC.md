@@ -71,7 +71,7 @@ Ambos expedientes comparten estructura, y cada bloque dice también **qué no se
 | Bloque | AGV | Tag |
 |---|---|---|
 | Actividad | Lecturas en el periodo frente a su cohorte, no frente a la flota entera | AGV que lo leyeron frente a los que pasaron por su tramo |
-| Inactividad | Periodos de silencio clasificados y su instante de cambio | Desde cuándo dejó de leerlo cada AGV |
+| Inactividad | Periodos de silencio clasificados, su instante de cambio y **cómo reapareció** | Desde cuándo dejó de leerlo cada AGV |
 | Ausencias | Tags con oportunidad elegible no materializada | Pasos en los que no fue leído, y por quién |
 | Contraparte | Qué hicieron los demás durante sus silencios | Qué AGV siguen leyéndolo con normalidad |
 | Cobertura | Qué periodo está cargado y cuál no | Igual |
@@ -85,6 +85,8 @@ Reglas de presentación:
 - Un silencio se presenta con sus hipótesis ordenadas y su evidencia; nunca como una causa única.
   Inactividad y fallo de comunicación producen el mismo dato (R-AGV-006) y la interfaz debe decirlo
   en lugar de elegir por el usuario.
+- Un silencio se muestra con sus dos extremos: cómo se fue y cómo volvió. La reaparición es parte
+  de la evidencia, no un detalle: es lo que distingue una parada en carga de una avería.
 - Los periodos sin cobertura se dibujan distintos de los silencios, y nunca degradan ninguna cifra.
 - Desde cualquier cifra se llega a la evidencia y de ahí a las filas de origen.
 

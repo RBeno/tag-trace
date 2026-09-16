@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
 last_updated: 2026-09-16
 ---
@@ -78,6 +78,9 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-027 | Todos los AGV callan a la vez dentro de la cobertura | Hipótesis colectiva: infraestructura, proceso o parada | Inactividad individual imputada a cada AGV |
 | TC-028 | AGV que nunca recorre una rama del circuito | Los tags de esa rama no cuentan como ausencias | Lista de «tags no leídos» obtenida restando el catálogo a lo leído |
 | TC-029 | Un solo AGV deja de leer un tag que los demás siguen leyendo | Hipótesis sobre ese AGV o su lector, con el instante de cambio | Tag declarado defectuoso |
+| TC-030 | Silencio cuya última lectura es el tag de parada de una calle CO configurada y que reanuda por su secuencia declarada | Permanencia en carga online, inferida, con la calle identificada | Avería, inactividad anómala o salida de circuito |
+| TC-031 | Desaparición y reaparición conservando los mismos vecinos, sin intercambio de AGV | Permanencia en el circuito demostrada, con la causa aún abierta entre detención y circulación sin lectura | Salida de circuito, retirada, o una causa única afirmada |
+| TC-032 | La misma firma de calle CO pero sin calles configuradas | `unknown` declarando que falta la configuración | Inferencia de carga online por proximidad al último tag |
 
 Los casos enlazados están desarrollados en `docs/golden/` con la estructura de §5. Son los seis que
 no dependen de información de planta, y constituyen los criterios de aceptación de F1a. El resto se

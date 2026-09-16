@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
 last_updated: 2026-09-16
 ---
@@ -106,7 +106,7 @@ Un AGV detenido **no emite lecturas** (R-AGV-006). La consecuencia es incómoda 
 la inactividad real, el fallo de comunicación y la salida del circuito producen exactamente el mismo
 dato, que es la ausencia de dato. No se distinguen mirando el silencio, sino su contexto.
 
-ALG-019 clasifica cada silencio de un objeto usando cuatro discriminantes, en este orden:
+ALG-019 clasifica cada silencio de un objeto usando cinco discriminantes, en este orden:
 
 1. **Cobertura.** Si el intervalo cae fuera de lo cargado, es `sin datos cargados` y el análisis
    termina ahí (R-DAT-007). Ninguna de las hipótesis siguientes llega a plantearse.
@@ -117,6 +117,9 @@ ALG-019 clasifica cada silencio de un objeto usando cuatro discriminantes, en es
    calle de carga, una zona de mantenimiento o un punto intermedio del recorrido productivo
    sugieren hipótesis distintas.
 4. **Calendario.** Un silencio que coincide con una parada prevista no es una anomalía.
+5. **Forma de la reaparición.** Los cuatro anteriores miran hacia atrás y hacia los lados. Este
+   mira hacia delante, y es el único que puede elevar un silencio de `unknown` a una inferencia
+   con soporte. Ver §4.3.
 
 La salida es un periodo de inactividad con hipótesis ordenadas y su evidencia, nunca una causa
 única. El **instante de cambio** se sitúa en la última lectura antes del silencio, y se marca como
@@ -126,6 +129,46 @@ funcionar, que puede ser posterior y desconocido.
 Para un tag, el mismo algoritmo responde otra pregunta: desde cuándo dejó de leerlo **cada** AGV.
 Que un solo AGV deje de leerlo mientras los demás siguen apunta a ese AGV o su lector; que dejen
 todos a la vez apunta al tag, a su ubicación o a un cambio físico (R-GRA-005).
+
+## 4.3 Firmas de reaparición
+
+Cómo vuelve un objeto informa tanto como cómo se fue. Dos firmas están identificadas.
+
+### Firma de carga online
+
+La última lectura antes del silencio es el tag de parada de una calle CO **configurada**, y la
+reanudación recorre en orden la secuencia de tags declarada para esa calle y las posteriores.
+
+No es una corazonada: la secuencia está en la configuración (DS-004), así que la firma se comprueba
+contra un valor declarado, no contra una expectativa del algoritmo. Salida: `en carga online`,
+estado `inferred`, con la calle identificada y el grado de coincidencia de la secuencia.
+
+Degradación explícita: sin calles CO configuradas la firma **no puede reconocerse**, y el silencio
+permanece `unknown` declarando esa razón. No se sustituye por una heurística de proximidad.
+
+### Firma de hueco conservado
+
+El objeto desaparece y reaparece manteniendo su posición relativa entre los mismos vecinos, sin
+intercambio de AGV. Es R-OPP-004 aplicado al expediente de un objeto.
+
+Demuestra una cosa concreta: **permaneció en el circuito**. Descarta salida y retirada. No demuestra
+por sí sola si estuvo detenido o si siguió circulando sin ser leído; eso lo discrimina dónde
+reaparece frente a cuánto avanzaron sus vecinos en la misma ventana:
+
+| Reaparece | Vecinos | Hipótesis prioritaria |
+|---|---|---|
+| Más adelante, coherente con el avance del grupo | Avanzaron lo esperado | Circuló sin ser leído: lector o comunicación |
+| Cerca de donde desapareció | Avanzaron y volvieron a alcanzarle | Estuvo detenido |
+| Siguiendo la secuencia de una calle CO | — | Firma de carga online |
+
+Ambas firmas producen inferencias, nunca observaciones: no se crea ninguna lectura para rellenar el
+silencio (R-EVI-002).
+
+### El umbral no es un número
+
+La duración que hace significativo un silencio es configuración con vigencia y se expresa **relativa
+al ciclo local del tramo**, no en minutos absolutos (R-OPP-006, R-FLO-004). El mismo silencio puede
+ser normal en un tramo y anómalo en otro, y ninguna cifra de referencia se fija en el código.
 
 ## 5. Estadística robusta
 

@@ -2,6 +2,28 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [0.6.0] - 2026-09-16
+
+### Añadido
+
+- **Quinto discriminante de ALG-019: la forma de la reaparición.** Los cuatro anteriores miraban
+  hacia atrás y hacia los lados; este mira hacia delante, y es el único capaz de elevar un silencio
+  de `unknown` a una inferencia con soporte.
+- **R-CO-006, firma de carga online**: última lectura en el tag de parada de una calle configurada
+  más reanudación que recorre en orden su secuencia declarada. Se comprueba contra DS-004, no
+  contra una expectativa del algoritmo. Sin calles configuradas la firma no se reconoce y el
+  silencio queda `unknown`; no se sustituye por proximidad.
+- **R-AGV-007, firma de hueco conservado**: reaparecer entre los mismos vecinos sin intercambio de
+  AGV demuestra permanencia en el circuito y descarta salida o retirada, pero no distingue por sí
+  solo detención de circulación sin lectura. Eso lo decide dónde reaparece frente a cuánto
+  avanzaron sus vecinos.
+- El umbral que hace significativo un silencio es configuración con vigencia y **relativo al ciclo
+  local del tramo**, nunca minutos absolutos en el código.
+- TC-030 a TC-032, incluido el caso que prohíbe inferir carga online por proximidad cuando falta la
+  configuración de calles.
+- OQ-115: si «reaparecer en su hueco» se observa con el grupo avanzando o alcanzándole, que decide
+  cuál de las dos hipótesis de R-AGV-007 va primero.
+
 ## [0.5.0] - 2026-09-16
 
 ### Añadido
