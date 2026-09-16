@@ -2,6 +2,33 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [0.7.0] - 2026-09-16
+
+Cierre de OQ-115 con una precisión del propietario que añade una hipótesis que faltaba.
+
+### Añadido
+
+- **R-AGV-008**: si los vecinos de un objeto tampoco avanzaron durante su silencio, la causa es de
+  la línea y no del objeto. Atribuirle un fallo individual sería un falso diagnóstico, así que la
+  comprobación tiene **prioridad sobre cualquier hipótesis individual**. Es la diferencia entre un
+  vehículo averiado y una línea parada, y la matriz anterior no la contemplaba.
+- **R-FLO-006**: el vecindario se deriva del orden relativo y solo es firme donde el orden está
+  garantizado. Fuerte en zona cargada, débil en zona vacía por la reordenación admitida, y no
+  aplicable a una entrada en calle CO, que es una salida legítima del orden. Donde es débil, las
+  firmas que dependen de él bajan de confianza en lugar de aplicarse igual.
+- La matriz de reaparición de ALG-019 pasa a cuatro filas y añade el contraste con el tiempo
+  esperado del tramo: un objeto que reaparece en posición muy por encima del esperado robusto indica
+  detención individual anómala. El factor que hace significativo ese exceso es configuración con
+  vigencia, no un umbral absoluto.
+- TC-033 a TC-035, incluido el caso en zona vacía que debe rebajar la confianza en lugar de concluir
+  igual que en zona cargada.
+
+### Precisado
+
+- La reaparición se busca **hacia delante en el tiempo**, no en el mismo instante.
+- Estas detenciones duran varias veces la resolución de la fuente, así que su exceso de tiempo sí es
+  medible pese a que la mayoría de las transiciones no lo sea (§4.1).
+
 ## [0.6.0] - 2026-09-16
 
 ### Añadido

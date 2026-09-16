@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.6.0
+version: 0.7.0
 status: active
 last_updated: 2026-09-11
 ---
@@ -42,7 +42,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-112 | ¿Cuál es el rango exacto de multicircuitos y qué hace cada uno? Se conoce que altera el comportamiento al leer tags y que algún modo reduce el alcance de detección. | Perfiles separados por multicircuito; sin la tabla completa no se puede afirmar qué ausencias son esperables |
 | OQ-113 | ¿Qué representa la columna de defecto del informe ampliado? | Se conserva como atributo sin promover ni interpretar |
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
-| OQ-115 | Cuando un AGV «reaparece en su hueco», ¿se observa con el grupo habiendo avanzado, o con el grupo alcanzándole? Cambia cuál de las dos hipótesis de R-AGV-007 es prioritaria. | Ambas se presentan con su evidencia, sin priorizar una |
+
 
 ## Decisiones de producto posteriores
 
@@ -61,6 +61,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | ID | Pregunta | Respuesta | Fecha | Documentos |
 |---|---|---|---|---|
 | OQ-B06 | ¿El repositorio debe permanecer privado durante todo el piloto? | No. Pasa a público conteniendo solo código, documentación y fixtures sintéticos, tras verificar el historial y activar el guardián de datos. | 2026-09-03 | ADR-0014, `SECURITY_PRIVACY.md` |
+| OQ-115 | ¿«Reaparecer en su hueco» se observa con el grupo avanzando o alcanzándole? | La reaparición se busca hacia delante en el tiempo, y lo que discrimina es si los vecinos avanzaron: si tampoco lo hicieron, el fallo es de la línea y no del objeto. Si avanzaron con normalidad y el objeto reaparece en posición muy por encima del tiempo esperado del tramo, la detención es individual. | 2026-09-16 | R-AGV-007, R-AGV-008, R-FLO-006, `ALGORITHM_CATALOG.md` §4.3 |
 
 ## Registro de cierre
 

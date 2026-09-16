@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.6.0
+version: 0.7.0
 status: baseline-candidate
 last_updated: 2026-09-16
 ---
@@ -151,15 +151,35 @@ permanece `unknown` declarando esa razón. No se sustituye por una heurística d
 El objeto desaparece y reaparece manteniendo su posición relativa entre los mismos vecinos, sin
 intercambio de AGV. Es R-OPP-004 aplicado al expediente de un objeto.
 
-Demuestra una cosa concreta: **permaneció en el circuito**. Descarta salida y retirada. No demuestra
-por sí sola si estuvo detenido o si siguió circulando sin ser leído; eso lo discrimina dónde
-reaparece frente a cuánto avanzaron sus vecinos en la misma ventana:
+La reaparición se busca **hacia delante en el tiempo**: no es volver a verlo en el mismo instante,
+sino más tarde, y lo que discrimina es qué hicieron sus vecinos durante ese intervalo.
 
-| Reaparece | Vecinos | Hipótesis prioritaria |
-|---|---|---|
-| Más adelante, coherente con el avance del grupo | Avanzaron lo esperado | Circuló sin ser leído: lector o comunicación |
-| Cerca de donde desapareció | Avanzaron y volvieron a alcanzarle | Estuvo detenido |
-| Siguiendo la secuencia de una calle CO | — | Firma de carga online |
+Demuestra una cosa concreta: **permaneció en el circuito**. Descarta salida y retirada. Lo demás lo
+deciden dos contrastes: si los vecinos avanzaron, y cuánto se aparta el tiempo del esperado para ese
+tramo.
+
+| El objeto | Sus vecinos en la misma ventana | Tiempo frente al esperado del tramo | Lectura prioritaria |
+|---|---|---|---|
+| Reaparece conservando posición | **Tampoco avanzaron** | — | Fallo **colectivo**: la línea está detenida. No es de este objeto, y buscarle causa propia sería un error |
+| Reaparece conservando posición | Avanzaron con normalidad | Muy por encima del esperado | Fallo **individual**: estuvo detenido de forma anómala |
+| Reaparece más adelante, coherente con el grupo | Avanzaron lo esperado | Dentro de lo normal | Circuló **sin ser leído**: lector o comunicación |
+| Reaparece siguiendo la secuencia de una calle CO | — | — | Firma de carga online, que se comprueba antes que las demás |
+
+Que los vecinos tampoco avanzaran es la señal que separa un vehículo averiado de una línea parada,
+y tiene prioridad sobre las demás: es R-FLO-005 leído desde el expediente de un objeto. Si el que va
+delante tampoco se movió, la causa está aguas arriba y atribuirla a este objeto sería un falso
+diagnóstico individual.
+
+**Dónde vale esta firma.** El vecindario se deriva del orden relativo, que solo es estable donde
+está garantizado. En zona cargada se espera FIFO (R-FLO-001) y la firma es fuerte. En zona vacía se
+admite reordenación (R-FLO-002), así que el vecindario es débil y la firma baja de confianza en
+lugar de aplicarse igual. Una calle CO queda fuera del FIFO cargado (R-FLO-003), y por eso su firma
+se comprueba primero: entrar a cargar es una salida legítima del orden, no una anomalía.
+
+**El exceso de tiempo sí es medible.** Aunque a resolución gruesa la mayoría de las transiciones no
+tiene tiempo observable (§4.1), estas detenciones duran varias veces la resolución. La firma vive
+precisamente en la banda que sí se puede medir. El esperado del tramo es robusto —mediana y
+dispersión de ALG-010— y el factor que hace «bastante» un exceso es configuración con vigencia.
 
 Ambas firmas producen inferencias, nunca observaciones: no se crea ninguna lectura para rellenar el
 silencio (R-EVI-002).

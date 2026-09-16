@@ -1,6 +1,6 @@
 ---
 document_id: TT-RULES-001
-version: 0.6.0
+version: 0.7.0
 status: baseline-candidate
 last_updated: 2026-09-16
 ---
@@ -66,7 +66,8 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-AGV-004 | accepted | Diferencias de modelo de lector/AGV pueden requerir cohortes y perfiles separados. |
 | R-AGV-005 | accepted | Vsystem muestra la última lectura conocida; no demuestra posición actual durante un hueco. |
 | R-AGV-006 | accepted | Un AGV detenido no emite lecturas. Por tanto la inactividad y el fallo de comunicación producen el mismo silencio y **no se distinguen por la ausencia en sí**: se discriminan por el contexto colectivo, por el punto donde se produjo la última lectura y por el calendario vigente. |
-| R-AGV-007 | accepted | La forma de la reaparición discrimina lo que el silencio no. Reaparecer conservando la posición relativa entre los mismos vecinos demuestra permanencia en el circuito y descarta salida o retirada, pero no distingue por sí solo detención de circulación sin lectura: eso lo decide dónde reaparece frente a cuánto avanzaron sus vecinos. |
+| R-AGV-007 | accepted | La forma de la reaparición discrimina lo que el silencio no. Reaparecer más tarde conservando la posición relativa entre los mismos vecinos demuestra permanencia en el circuito y descarta salida o retirada, pero no distingue por sí solo detención de circulación sin lectura: eso lo deciden el avance de los vecinos y el exceso sobre el tiempo esperado del tramo. |
+| R-AGV-008 | accepted | Si los vecinos de un objeto tampoco avanzaron durante su silencio, la causa no es de ese objeto sino de la línea, y atribuirle un fallo individual es un falso diagnóstico. Esta comprobación tiene prioridad sobre cualquier hipótesis individual. |
 
 ## Comunicación
 
@@ -85,6 +86,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-FLO-003 | accepted | Carga online se modela dentro de la zona vacía y queda fuera del FIFO cargado. |
 | R-FLO-004 | configurable | El tiempo de ciclo entre puntos funcionales es local, depende del contexto y posee vigencia. |
 | R-FLO-005 | accepted | Falta de lecturas de varios AGV puede representar parada o saturación, no ausencia individual automática. |
+| R-FLO-006 | accepted | El vecindario se deriva del orden relativo y solo es firme donde el orden está garantizado: fuerte en zona cargada, débil en zona vacía por la reordenación admitida, y no aplicable a una entrada en calle CO, que es una salida legítima del orden. Donde el vecindario es débil, las firmas que dependen de él bajan de confianza en lugar de aplicarse igual. |
 
 ## Carga online
 
