@@ -44,7 +44,9 @@ ni `sandbox`, así que se compensa con:
   considera insuficiente, la alternativa es un alojamiento estático con cabeceras propias, lo que
   exigiría una ADR nueva.
 
-## Pendiente
+## Licencia
 
-La licencia del repositorio no se decide aquí. Sin fichero `LICENSE`, un repositorio público queda
-por defecto con todos los derechos reservados. Registrado como OQ-B07.
+**No se añade fichero `LICENSE`.** Un repositorio público sin licencia queda con todos los derechos
+reservados: cualquiera puede leerlo, nadie puede reutilizarlo. Es lo que corresponde a software de
+diagnóstico industrial propio, y es una decisión, no un olvido: quien llegue al repositorio debe
+poder entender que la ausencia es deliberada. Cierra OQ-B07.

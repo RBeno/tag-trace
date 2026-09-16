@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.1.0
+version: 0.8.0
 status: baseline-candidate
 last_updated: 2026-09-03
 ---
@@ -25,15 +25,23 @@ Una excepción necesita responsable, justificación, fecha límite y riesgo acep
 - [ ] Alcance, exclusiones y principios revisados.
 - [ ] Reglas `accepted`, `candidate` y `configurable` correctamente clasificadas.
 - [ ] Preguntas bloqueantes resueltas o convertidas en criterio explícito de F1.
-- [ ] Fuentes reales disponibles para prueba local, sin subirlas al repositorio.
-- [ ] Formatos/encabezados y zona horaria identificados.
+- [ ] Fuente de lecturas disponible para prueba local, sin subirla al repositorio.
+- [ ] Formato, encabezados y zona horaria de las lecturas identificados.
 - [ ] Dispositivos de referencia definidos.
 - [ ] Riesgo de datos y separación industrial aceptados.
 - [ ] Checkpoint F0 firmado por el propietario.
 - [ ] Aprobación literal registrada: `CONTINÚA FASE 1`.
 
+**Qué se movió y por qué.** G0 exigía además los límites de zona, las calles CO, los puntos críticos
+y las anclas de vuelta (OQ-B04), y el plan de aceptación completo de F1 a F5 (OQ-B05). Nada de eso
+interviene en importar un fichero de lecturas: son insumos del grafo y del diagnóstico. Estaban
+bloqueando el arranque sin usarse, así que pasan a G1 y G2, que es donde se necesitan. El propio G0
+ya contemplaba esta salida al admitir preguntas «resueltas **o convertidas en criterio explícito de
+F1**».
+
 ## G1 — Autorizar F2
 
+- [ ] Plan de aceptación local de F1 acordado, con responsable de validación (OQ-B05, parte de F1).
 - [ ] Circuitos aislados y afinidad funcionando.
 - [ ] Importación correcta para delimitadores y esquemas acordados.
 - [ ] Procedencia hasta fila original.
@@ -45,6 +53,8 @@ Una excepción necesita responsable, justificación, fecha límite y riesgo acep
 
 ## G2 — Autorizar F3
 
+- [ ] Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta configurados
+      y versionados (OQ-B04).
 - [ ] Vueltas completas, parciales y desconocidas representadas.
 - [ ] Grafos por AGV/vuelta y consenso con soporte.
 - [ ] Vsystem y físico permanecen separados.

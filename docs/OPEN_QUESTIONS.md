@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.7.0
+version: 0.8.0
 status: active
 last_updated: 2026-09-11
 ---
@@ -18,11 +18,18 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | ID | Pregunta | Por qué bloquea | Resolución prevista |
 |---|---|---|---|
 | OQ-B01 | ¿Cuáles son los formatos/encabezados reales de DS-002 a DS-009? DS-001 y DS-011 ya están determinados. | Define contrato de importación | Inventario local de fuentes y muestras controladas |
-| OQ-B02 | ¿Qué zona horaria representan los timestamps y cómo se registra el cambio horario? El dato no lleva desplazamiento, así que no puede deducirse de la fuente. | Evita secuencias/turnos erróneos | Confirmación + casos DST |
+| OQ-B02 | **Parcial.** La zona es `Europe/Madrid`. Queda por comprobar cómo aparece el cambio estacional: hace falta una exportación que cruce el cambio de octubre o de marzo. | Evita secuencias/turnos erróneos | Exportación que cruce el cambio |
 | OQ-B03 | ¿Qué móvil Android y PC serán dispositivos de referencia? | Permite aprobar presupuesto | Registrar modelo, RAM, navegador y versión |
-| OQ-B04 | ¿Cuáles son los límites exactos de zona cargada/vacía, número y límites de calles CO, puntos críticos y anclas de vuelta del piloto? | Necesario para reglas topológicas | Configuración local inicial versionada, no publicada |
-| OQ-B05 | ¿Qué datos reales podrán usarse localmente para aceptar F1–F5 y quién valida los resultados? | Evita pruebas solo sintéticas | Plan de aceptación local |
-| OQ-B07 | ¿Bajo qué licencia se publica el repositorio? Sin fichero `LICENSE` queda con todos los derechos reservados. | Afecta a reutilización y contribuciones externas | Decisión del propietario antes de abrirlo |
+
+
+
+
+## Movidas a puertas posteriores
+
+| ID | Pregunta | Puerta |
+|---|---|---|
+| OQ-B04 | Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta. | G2: son insumos del grafo y el diagnóstico, no de la importación. |
+| OQ-B05 | Qué datos reales se usan para aceptar cada fase y quién valida. | G1 para la parte de F1; el resto con cada puerta. |
 
 ## Necesarias durante F1–F3
 
@@ -62,6 +69,8 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 |---|---|---|---|---|
 | OQ-B06 | ¿El repositorio debe permanecer privado durante todo el piloto? | No. Pasa a público conteniendo solo código, documentación y fixtures sintéticos, tras verificar el historial y activar el guardián de datos. | 2026-09-03 | ADR-0014, `SECURITY_PRIVACY.md` |
 | OQ-115 | ¿«Reaparecer en su hueco» se observa con el grupo avanzando o alcanzándole? | La reaparición se busca hacia delante en el tiempo, y lo que discrimina es si los vecinos avanzaron: si tampoco lo hicieron, el fallo es de la línea y no del objeto. Si avanzaron con normalidad y el objeto reaparece en posición muy por encima del tiempo esperado del tramo, la detención es individual. | 2026-09-16 | R-AGV-007, R-AGV-008, R-FLO-006, `ALGORITHM_CATALOG.md` §4.3 |
+| OQ-B07 | ¿Bajo qué licencia se publica el repositorio? | Sin fichero `LICENSE`: el repositorio público queda con todos los derechos reservados. Se lee, no se reutiliza. | 2026-09-16 | ADR-0014 |
+| OQ-P05 | ¿Qué framework de interfaz? | Ninguno para F1a: TypeScript y DOM directo. La elección se pospone a F2 o F5, cuando exista una pantalla —grafo, timeline o replay— que la justifique, y con medidas de esa pantalla. | 2026-09-16 | ADR-0009 |
 
 ## Registro de cierre
 

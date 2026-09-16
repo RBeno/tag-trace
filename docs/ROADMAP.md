@@ -1,6 +1,6 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.5.0
+version: 0.8.0
 status: baseline-candidate
 last_updated: 2026-09-16
 ---
@@ -49,6 +49,19 @@ Cada fase produce una capacidad vertical verificable y un paquete de evidencia. 
 ### Salida
 
 Tag documental `docs-v0.2.0`, checkpoint F0 firmado y aprobación explícita `CONTINÚA FASE 1`.
+
+### F1a·0 — Importador mínimo
+
+El primer entregable ejecutable, y deliberadamente más pequeño que F1a: cargar un fichero de
+lecturas, procesarlo **dentro del Worker** con progreso y cancelación, normalizarlo conservando
+procedencia, y mostrar la tabla con navegación hasta la fila de origen.
+
+Sin `.agvproj`, sin PWA, sin persistencia, sin salud. El objetivo no es cerrar una puerta: es poner
+el protocolo de Workers y el contrato de importación frente a datos reales cuanto antes, que es lo
+único que ha demostrado encontrar errores en este proyecto.
+
+Sale con TC-019, TC-020 e INV-002 en verde, y con el perfil que demuestra que no hay parseo en el
+hilo principal.
 
 ### F1a — Esqueleto vertical antes de F1 completa
 

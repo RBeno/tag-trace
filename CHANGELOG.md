@@ -2,6 +2,30 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [0.8.0] - 2026-09-16
+
+Decisiones del propietario que desbloquean el arranque de la programación.
+
+### Decidido
+
+- **Zona horaria `Europe/Madrid`.** OQ-B02 queda parcial: falta comprobar cómo aparece el cambio
+  estacional, para lo que hace falta una exportación que cruce octubre o marzo.
+- **Sin marco de interfaz en F1a**: TypeScript y DOM directo. ADR-0009 pasa a `accepted` con un
+  criterio explícito para retomar la decisión —cuando exista una pantalla que la justifique y con
+  medidas de esa pantalla— en lugar de dejarla abierta indefinidamente.
+- **Sin fichero `LICENSE`**: repositorio público con todos los derechos reservados. Cierra OQ-B07.
+- **Primer entregable: importador mínimo** (F1a·0), más pequeño que F1a. Sin `.agvproj`, sin PWA,
+  sin persistencia.
+
+### Corregido
+
+- **Las puertas estaban mal cortadas.** G0 exigía los límites de zona, las calles CO, los puntos
+  críticos, las anclas de vuelta (OQ-B04) y el plan de aceptación completo de F1 a F5 (OQ-B05).
+  Nada de eso interviene en importar un fichero de lecturas: son insumos del grafo y del
+  diagnóstico. Bloqueaban el arranque sin usarse, y pasan a G2 y G1 respectivamente. No es una
+  relajación: el propio G0 ya admitía preguntas «resueltas o convertidas en criterio explícito
+  de F1».
+
 ## [0.7.0] - 2026-09-16
 
 Cierre de OQ-115 con una precisión del propietario que añade una hipótesis que faltaba.
