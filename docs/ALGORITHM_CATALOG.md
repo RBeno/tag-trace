@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.3.0
+version: 0.5.0
 status: baseline-candidate
-last_updated: 2026-09-11
+last_updated: 2026-09-16
 ---
 
 # Catálogo de algoritmos
@@ -58,6 +58,8 @@ flowchart TD
 | ALG-015 | Retroceso causal | Búsqueda temporal/topológica hacia atrás | Cadena de hechos e hipótesis alternativas | Limitada a ventana/subgrafo | F5 |
 | ALG-016 | Replay multi-AGV | Estado observado/inferido por instante | Movimiento sobre grafo con incertidumbre | Precálculo + consulta incremental | F5 |
 | ALG-017 | Similitud de casos | Características explicables de incidencias | Casos comparables y diferencias | O(k·d) | F5 |
+| ALG-018 | Expediente por objeto | Agregación por AGV o por tag y contraste con su cohorte | Recuentos, tags leídos y no leídos, contraparte que sí leyó, y evidencia navegable | O(n) sobre agregados | F2 reducido, F3 completo |
+| ALG-019 | Inactividad e instante de cambio | Detección de silencios por objeto y del punto donde el comportamiento cambia | Periodos de inactividad clasificados e instante de cambio con alternativas | O(n) por objeto | F2 reducido, F3 completo |
 
 ## 4. Oportunidades y salud
 
@@ -97,6 +99,33 @@ En la práctica esto separa dos familias:
 
 Una fuente de mayor resolución no invalida los análisis anteriores: cambia lo que es lícito medir a
 partir de ella, y eso queda registrado con el resultado.
+
+## 4.2 Inactividad e instante de cambio
+
+Un AGV detenido **no emite lecturas** (R-AGV-006). La consecuencia es incómoda y hay que asumirla:
+la inactividad real, el fallo de comunicación y la salida del circuito producen exactamente el mismo
+dato, que es la ausencia de dato. No se distinguen mirando el silencio, sino su contexto.
+
+ALG-019 clasifica cada silencio de un objeto usando cuatro discriminantes, en este orden:
+
+1. **Cobertura.** Si el intervalo cae fuera de lo cargado, es `sin datos cargados` y el análisis
+   termina ahí (R-DAT-007). Ninguna de las hipótesis siguientes llega a plantearse.
+2. **Contexto colectivo.** Si el resto de la flota sigue emitiendo con normalidad, el silencio es
+   propio del objeto. Si callan muchos a la vez, apunta a infraestructura, proceso o parada
+   (R-COM-003, R-FLO-005).
+3. **Punto de la última lectura.** Dónde calló discrimina más que cuánto calló: el final de una
+   calle de carga, una zona de mantenimiento o un punto intermedio del recorrido productivo
+   sugieren hipótesis distintas.
+4. **Calendario.** Un silencio que coincide con una parada prevista no es una anomalía.
+
+La salida es un periodo de inactividad con hipótesis ordenadas y su evidencia, nunca una causa
+única. El **instante de cambio** se sitúa en la última lectura antes del silencio, y se marca como
+`inferred`: es el último momento del que hay evidencia, no el instante en que el objeto dejó de
+funcionar, que puede ser posterior y desconocido.
+
+Para un tag, el mismo algoritmo responde otra pregunta: desde cuándo dejó de leerlo **cada** AGV.
+Que un solo AGV deje de leerlo mientras los demás siguen apunta a ese AGV o su lector; que dejen
+todos a la vez apunta al tag, a su ubicación o a un cambio físico (R-GRA-005).
 
 ## 5. Estadística robusta
 

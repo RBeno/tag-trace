@@ -2,6 +2,32 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [0.5.0] - 2026-09-16
+
+### Añadido
+
+- FR-033 a FR-035: expediente por AGV y por tag desde su identificador, y detección de periodos de
+  inactividad e instante de cambio. Versión reducida en F2, completa en F3.
+- ALG-018 expediente por objeto y ALG-019 inactividad e instante de cambio, con los cuatro
+  discriminantes de un silencio: cobertura, contexto colectivo, punto de la última lectura y
+  calendario.
+- `UX_SPEC.md` §4.1: estructura del expediente, simétrica para AGV y tag, donde cada bloque dice
+  también qué no se sabe.
+- Glosario: `periodo de inactividad`, `instante de cambio` y `expediente de objeto`.
+- Clase `técnico` en el catálogo de tags especiales (DS-006).
+- TC-026 a TC-029.
+
+### Decidido
+
+- **R-AGV-006**: un AGV detenido no emite lecturas. La inactividad y el fallo de comunicación
+  producen el mismo silencio y no se distinguen por la ausencia en sí. Es un límite del dato, no
+  del algoritmo, y la interfaz debe declararlo en lugar de elegir una causa.
+- **R-OPP-008**: «tags que un AGV no ha leído» nunca se calcula restando el catálogo del circuito a
+  lo leído. Solo cuentan las oportunidades elegibles; una rama que ese AGV no recorre no es una
+  ausencia.
+- El instante de cambio es `inferred`: marca el último momento con evidencia, no el instante real
+  en que el objeto dejó de funcionar.
+
 ## [0.4.0] - 2026-09-16
 
 ### Añadido

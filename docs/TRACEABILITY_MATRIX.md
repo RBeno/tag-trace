@@ -1,8 +1,8 @@
 ---
 document_id: TT-TRACE-001
-version: 0.3.0
+version: 0.5.0
 status: baseline-candidate
-last_updated: 2026-09-11
+last_updated: 2026-09-16
 ---
 
 # Matriz de trazabilidad
@@ -15,6 +15,7 @@ La matriz se ampliará hasta una relación automática cuando exista código. En
 | FR-004–008 | R-DAT-001–008, ADR-0002, ADR-0013 | ALG-001–002 | TC-015, TC-019–023, INV-001–006, INV-013–014 | F1/G1 |
 | FR-009–011 | R-GRA-001–006, ADR-0003 | ALG-004–006 | TC-001, TC-005–006, TC-018 | F2/G2 |
 | FR-012–015 | R-EVI-001–005, R-AGV-001–005, R-OPP-007 | ALG-007–010 | TC-002–007, TC-016, TC-024–025 | F3/G3 |
+| FR-033–035 | R-AGV-001, R-AGV-004, R-AGV-006, R-OPP-008, R-COM-003, R-DAT-007 | ALG-018–019 | TC-026–029 | F2/G2 reducido y F3/G3 completo |
 | FR-016 | R-FLO-001–005, R-CO-001–005 | ALG-011–013 | TC-008–012 | F3/G3 |
 | FR-017, FR-030 | R-TIM-001–007, `CONFIG_SCHEMA.md` | ALG-010, ALG-013 | TC-012–013 | F1/G1 y F3/G3 |
 | FR-018–021, FR-027 | R-MEM-001–003, ADR-0005, ADR-0012 | ALG-014 | TC-017–018, INV-006–011 | F1/G1 y F4/G4 |

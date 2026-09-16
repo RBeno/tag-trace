@@ -1,8 +1,8 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.3.0
+version: 0.5.0
 status: baseline-candidate
-last_updated: 2026-09-11
+last_updated: 2026-09-16
 ---
 
 # Etapas, entregables y resultados
@@ -96,6 +96,9 @@ Diagnósticos complejos, consolidación definitiva o rediseño visual completo.
 - Tiempos robustos por transición, acotados a las transiciones cuyo intervalo supera la resolución
   de la fuente; por debajo de ella la secuencia es `observed` y el tiempo `unknown`.
 - Replay básico observado/inferido/desconocido.
+- Expediente reducido de AGV y de tag: búsqueda por identificador, recuentos frente a la cohorte,
+  periodos de inactividad, última lectura conocida e instante de cambio. Sin tasa de salud, que
+  llega en F3 con las oportunidades.
 
 ### Se formaliza
 

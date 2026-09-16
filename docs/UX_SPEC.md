@@ -2,7 +2,7 @@
 document_id: TT-UX-001
 version: 0.2.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-16
 ---
 
 # Especificación de experiencia de usuario
@@ -27,6 +27,7 @@ La interfaz no debe obligar a revisar AGV por AGV para descubrir un patrón cole
 | Circuito | Grafo/plano, capas teórica–observada–validada y evolución. |
 | Timeline y replay | Movimiento multi-AGV, estados e incertidumbre. |
 | Diagnóstico | Tags, AGV, tramos, FIFO, CO, críticos y explicaciones. |
+| Expediente de AGV o tag | Buscar por identificador y ver todo lo conocido sobre ese objeto: contraste con su cohorte, inactividad, instante de cambio y evidencia. |
 | Comparador | Periodo actual frente a consolidado, periodo o configuración. |
 | Consolidación | Revisión de cambios y creación de memoria vN+1. |
 | Incidencias | Expedientes, replay, casos similares y contramedidas. |
@@ -59,6 +60,36 @@ Cada tarjeta de hallazgo muestra:
 - acceso a grafo, timeline y filas.
 
 El color nunca será el único medio de distinguir estados.
+
+## 4.1 Expediente de un AGV o de un tag
+
+Se entra escribiendo un identificador. Es la vía de trabajo más frecuente —«qué le pasa al 3524»,
+«quién ha dejado de leer el 58021»— y debe resolverse sin recorrer AGV por AGV.
+
+Ambos expedientes comparten estructura, y cada bloque dice también **qué no se sabe**:
+
+| Bloque | AGV | Tag |
+|---|---|---|
+| Actividad | Lecturas en el periodo frente a su cohorte, no frente a la flota entera | AGV que lo leyeron frente a los que pasaron por su tramo |
+| Inactividad | Periodos de silencio clasificados y su instante de cambio | Desde cuándo dejó de leerlo cada AGV |
+| Ausencias | Tags con oportunidad elegible no materializada | Pasos en los que no fue leído, y por quién |
+| Contraparte | Qué hicieron los demás durante sus silencios | Qué AGV siguen leyéndolo con normalidad |
+| Cobertura | Qué periodo está cargado y cuál no | Igual |
+
+Reglas de presentación:
+
+- La comparación es **contra la cohorte**, no contra la flota: modelos distintos de AGV o de lector
+  pueden diferir sin que ninguno esté degradado (R-AGV-004).
+- Las ausencias salen del modelo de oportunidades, nunca de restar el catálogo del circuito a lo
+  leído (R-OPP-008). Una rama que ese AGV no recorre no es una ausencia.
+- Un silencio se presenta con sus hipótesis ordenadas y su evidencia; nunca como una causa única.
+  Inactividad y fallo de comunicación producen el mismo dato (R-AGV-006) y la interfaz debe decirlo
+  en lugar de elegir por el usuario.
+- Los periodos sin cobertura se dibujan distintos de los silencios, y nunca degradan ninguna cifra.
+- Desde cualquier cifra se llega a la evidencia y de ahí a las filas de origen.
+
+En F2 el expediente existe con recuentos, inactividad, última lectura conocida e instante de cambio,
+y **sin tasa de salud**: sin oportunidades no hay denominador legítimo. F3 lo completa.
 
 ## 5. Grafo y plano
 

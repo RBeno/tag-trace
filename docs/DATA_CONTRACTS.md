@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.3.0
+version: 0.5.0
 status: baseline-candidate
-last_updated: 2026-09-11
+last_updated: 2026-09-16
 ---
 
 # Contratos de datos y procedencia
@@ -20,7 +20,7 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-003 | Secuencia/plano | Orden, nodo o relación disponible | Teórico, opcional al inicio |
 | DS-004 | Carga online | Calle, tag de parada y secuencia de tags | Configuración |
 | DS-005 | Tags críticos | Tag, función, grado 1–3 y redundancias | Catálogo parcial |
-| DS-006 | Tags especiales | Tag y clase: noche, mantenimiento, asistencia/pastor u otra | Catálogo parcial |
+| DS-006 | Tags especiales | Tag y clase: noche, mantenimiento, técnico, asistencia/pastor u otra | Catálogo parcial |
 | DS-007 | Tags y acciones | Tag y una o varias funciones/condiciones | Catálogo parcial |
 | DS-008 | Memoria/configuración por AGV | AGV, versión o inventario conocido | Evidencia de divergencia |
 | DS-009 | Calendario productivo | vigencia, turnos, pausas, paradas y takt | Contexto versionado |

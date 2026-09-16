@@ -1,8 +1,8 @@
 ---
 document_id: TT-RULES-001
-version: 0.3.0
+version: 0.5.0
 status: baseline-candidate
-last_updated: 2026-09-11
+last_updated: 2026-09-16
 ---
 
 # Catálogo de reglas industriales
@@ -54,6 +54,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-OPP-005 | accepted | Un hueco sin contexto suficiente queda censurado. |
 | R-OPP-006 | configurable | El intervalo de lectura normal se obtiene de configuración/perfil local con vigencia; no existe un umbral universal en el código. |
 | R-OPP-007 | accepted | El multicircuito condiciona la oportunidad de lectura: puede alterar las condiciones físicas de detección, de modo que bajo ciertos multicircuitos una ausencia es esperable. Perfiles separados por multicircuito; y si el multicircuito no se conoce para un periodo, la salud declara ese confusor junto a la conclusión. |
+| R-OPP-008 | accepted | «Tags que un AGV no ha leído» nunca se calcula como diferencia entre el catálogo del circuito y lo que leyó. Solo cuentan las oportunidades elegibles: un tag de una rama que ese AGV no recorre, o de un contexto que no le aplica, no es una ausencia. |
 
 ## AGV, lector y configuración
 
@@ -64,6 +65,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-AGV-003 | candidate | Tras un cambio, los AGV dispondrían de una ventana automática aproximada de 30 min para actualizar; un reenvío manual ampliaría la ventana y podría requerir parada. Debe verificarse. |
 | R-AGV-004 | accepted | Diferencias de modelo de lector/AGV pueden requerir cohortes y perfiles separados. |
 | R-AGV-005 | accepted | Vsystem muestra la última lectura conocida; no demuestra posición actual durante un hueco. |
+| R-AGV-006 | accepted | Un AGV detenido no emite lecturas. Por tanto la inactividad y el fallo de comunicación producen el mismo silencio y **no se distinguen por la ausencia en sí**: se discriminan por el contexto colectivo, por el punto donde se produjo la última lectura y por el calendario vigente. |
 
 ## Comunicación
 
