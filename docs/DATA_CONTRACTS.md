@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -188,6 +188,29 @@ y se queda ahí.
   inexistente no se usa para afirmar orden dentro de la ventana afectada.
 - La representación canónica del tiempo —`t_utc`, `t_raw`, `tz_id` y `t_flag`— está fijada en
   ADR-0013 y es obligatoria para toda observación.
+
+### 5.1 Lecturas en el mismo instante
+
+Cuando dos lecturas caen en el mismo instante, el orden canónico se resuelve por `source_row` y el
+reloj no interviene. Ese desempate hace falta para que el orden sea total y reproducible, pero **es
+`inferred`**, y R-DAT-013 prohíbe construir topología sobre él.
+
+El resumen de fuente declara cuánta de la fuente está en ese régimen, y la cifra se cuenta **por
+vehículo**:
+
+```text
+sameInstantPairs : pares consecutivos del MISMO vehículo que comparten instante
+vehiclePairs     : pares consecutivos del mismo vehículo en total
+```
+
+La distinción no es un matiz. Contando los pares consecutivos del fichero —todos los vehículos
+mezclados— una exportación real da un 39 %; contando por vehículo, un 3 %. Las dos cifras son
+ciertas y responden a preguntas distintas: la primera describe lo gruesa que es la resolución
+frente al ritmo de eventos, y solo la segunda dice qué parte de la secuencia de un vehículo no la
+ordena el reloj. Publicar la primera como si fuera la segunda es un error de trece veces.
+
+El informe de monotonía conserva el recuento del fichero (`tiedPairs`) como lo que es: los pares
+que no aportaron evidencia de sentido.
 
 ## 6. Solapes: unión por secuencia, no por huella de fila
 

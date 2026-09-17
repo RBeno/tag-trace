@@ -88,6 +88,16 @@ export interface SourceSummary {
   readonly header: readonly string[];
   readonly monotonicity: MonotonicityReport;
   readonly direction: SourceDirection;
+  /**
+   * Pares de lecturas consecutivas **del mismo vehículo** que comparten instante (R-DAT-013).
+   *
+   * Su orden no lo da el reloj sino la posición en la pila, así que es `inferred` y una arista
+   * construida sobre ellos no sostiene topología. Es distinto de `monotonicity.tiedPairs`, que
+   * cuenta el fichero entero con todos los vehículos mezclados.
+   */
+  readonly sameInstantPairs: number;
+  /** Pares consecutivos del mismo vehículo en total, que es contra lo que se lee el anterior. */
+  readonly vehiclePairs: number;
   readonly totalRows: number;
   readonly acceptedRows: number;
   /** Solo filas con un defecto real. Las que no son lecturas van aparte, no aquí. */

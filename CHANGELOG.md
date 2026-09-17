@@ -2,6 +2,45 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [1.7.0] - 2026-09-17
+
+R-DAT-013 deja de vivir solo en el catálogo. La regla se escribió ayer; hasta hoy el producto no la
+medía y el circuito reconstruido que se entregó afirmaba un orden que el reloj no da.
+
+### Añadido
+
+- **El resumen de fuente declara cuántas lecturas consecutivas del mismo vehículo comparten
+  instante**, con su peso sobre los pares de ese vehículo. Es el límite de lo que la fuente afirma
+  sobre su propia secuencia, y va junto al separador y la codificación, donde el usuario ya mira qué
+  es la fuente. Nuevo `src/ingestion/same-instant.ts`, con `sameInstantPairs` y `vehiclePairs` en
+  `SourceSummary`.
+- `MonotonicityReport` gana `tiedPairs`: los pares del fichero que no aportaron evidencia de
+  sentido. Se contaban implícitamente desde siempre; ahora se declaran.
+- Columna `orden_evidencia` en el circuito reconstruido: `reloj`, `mismo-instante (n/N)` o
+  `sin-arista`. Una arista degradada dice **por qué**, en lugar de degradarse en silencio.
+
+### Corregido
+
+- **La primera versión de este recuento medía otra cosa y habría engañado.** Contaba pares
+  consecutivos del fichero, con todos los vehículos mezclados, y sobre una exportación real daba
+  **39,3 %**. Pero dos AGV distintos leyendo en el mismo segundo es lo normal y no compromete
+  ningún orden; lo que amenaza la topología son dos lecturas **del mismo vehículo**, que en esa
+  misma exportación son el **2,9 %**. Las dos cifras son ciertas y responden a preguntas distintas.
+  Publicar la primera como si fuera la segunda es un error de trece veces, y del tipo peligroso:
+  trazable hasta filas reales y completamente equivocado. Las dos se conservan, separadas y con su
+  significado escrito.
+- **Tres de las 164 aristas que el circuito reconstruido declaraba `observed` pasan a `inferred`**,
+  porque la mayoría de sus transiciones caen en el mismo instante: su orden lo da la posición en la
+  pila. El fichero entregado afirmaba de más y se vuelve a entregar corregido.
+- **El análisis del circuito suponía que la exportación era un solo circuito.** Ahora lo mide con el
+  detector de aristas exclusivas y lo imprime —1 circuito de 54 vehículos—, y se detiene si sale más
+  de uno: reconstruir un anillo sobre dos flotas produce un circuito que no existe (R-DAT-012).
+
+### Documentado
+
+- `DATA_CONTRACTS.md` §5.1: la forma del recuento, por qué se cuenta por vehículo y qué pasa si se
+  confunde con el del fichero.
+
 ## [1.6.0] - 2026-09-17
 
 Los cruces son una **clase de función** de los tags críticos, no un concepto paralelo, y el

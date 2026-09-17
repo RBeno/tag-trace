@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { decodeSource } from "../../src/ingestion/decode.js";
 import { detectDelimiter } from "../../src/ingestion/delimiter.js";
 import { measureMonotonicity } from "../../src/ingestion/monotonicity.js";
+import { measureSameInstant } from "../../src/ingestion/same-instant.js";
 import { compareReadings, sortReadings } from "../../src/domain/order.js";
 import { detectFieldOrder, parseTimestamp } from "../../src/domain/time.js";
 import {
@@ -36,10 +37,10 @@ function runFixture(name: string) {
   );
 }
 
-function reading(utcMs: number, sourceRow: number, tagId: string): Reading {
+function reading(utcMs: number, sourceRow: number, tagId: string, agvId = "0007"): Reading {
   return {
     time: { utcMs, raw: String(utcMs), zone: ZONE, flag: "ok" },
-    agvId: "0007",
+    agvId,
     tagId,
     provenance: { sourceId: "s", sourceHash: "s", sourceRow },
   };
@@ -109,6 +110,7 @@ describe("monotonía · R-DAT-008", () => {
     expect(report.direction).toBe("newest-first");
     expect(report.inversions).toBe(0);
     expect(report.confidence).toBe(1);
+    expect(report.tiedPairs).toBe(0);
   });
 
   it("cuenta las inversiones como evidencia de entrega diferida, sin rechazar", () => {
@@ -116,10 +118,58 @@ describe("monotonía · R-DAT-008", () => {
     expect(report.direction).toBe("newest-first");
     expect(report.inversions).toBe(1);
     expect(report.confidence).toBeLessThan(1);
+    expect(report.tiedPairs).toBe(0);
   });
 
   it("los instantes iguales no aportan evidencia de sentido", () => {
     expect(measureMonotonicity([100, 100, 100]).direction).toBe("unknown");
+  });
+});
+
+describe("instantes empatados · R-DAT-013", () => {
+  // Que no ordenen no los convierte en ruido descartable: son el régimen en el que la secuencia
+  // se apoya en la posición en el fichero, y eso hay que poder decirlo con una cifra.
+  it("los cuenta en lugar de tirarlos, sin confundirlos con inversiones", () => {
+    const report = measureMonotonicity([500, 500, 400, 400, 300]);
+    expect(report.direction).toBe("newest-first");
+    expect(report.inversions).toBe(0);
+    expect(report.tiedPairs).toBe(2);
+    // La coherencia se mide solo sobre los pares que sí ordenan: un empate no la degrada.
+    expect(report.comparedPairs).toBe(2);
+    expect(report.confidence).toBe(1);
+  });
+
+  it("una fuente que solo empata no tiene sentido, pero sí recuento", () => {
+    const report = measureMonotonicity([100, 100, 100]);
+    expect(report.direction).toBe("unknown");
+    expect(report.comparedPairs).toBe(0);
+    expect(report.tiedPairs).toBe(2);
+  });
+
+  // La distinción que separa una cifra útil de una convincente y equivocada. Sobre una exportación
+  // real, contar el fichero entero da un 39 % y contar por vehículo un 3 %: las dos son ciertas y
+  // solo la segunda habla de la topología.
+  it("dos vehículos distintos a la vez no comprometen ningún orden", () => {
+    const report = measureSameInstant([
+      reading(1000, 1, "a", "2001"),
+      reading(1000, 2, "b", "2002"),
+      reading(1000, 3, "c", "2003"),
+    ]);
+    expect(report.pairs).toBe(0);
+    expect(report.vehiclePairs).toBe(0);
+  });
+
+  it("dos lecturas del mismo vehículo a la vez sí, y se cuentan sobre sus propios pares", () => {
+    const report = measureSameInstant([
+      reading(1000, 1, "a", "2001"),
+      reading(1000, 2, "b", "2001"),
+      reading(2000, 3, "c", "2001"),
+      reading(1000, 4, "d", "2002"),
+      reading(3000, 5, "e", "2002"),
+    ]);
+    // 2001: a→b empatados, b→c no. 2002: d→e no. Tres pares de vehículo, uno empatado.
+    expect(report.pairs).toBe(1);
+    expect(report.vehiclePairs).toBe(3);
   });
 });
 

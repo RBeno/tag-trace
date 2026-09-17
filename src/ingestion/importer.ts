@@ -11,6 +11,7 @@
 
 import { rankDelimiters, type Delimiter, type DelimiterDetection } from "./delimiter.js";
 import { measureMonotonicity } from "./monotonicity.js";
+import { measureSameInstant } from "./same-instant.js";
 import {
   detectFieldOrder,
   parseTimestamp,
@@ -394,6 +395,9 @@ export function importReadings(
   callbacks.onProgress("ordering", 0, 1, "Midiendo el sentido de la fuente");
   const monotonicity = measureMonotonicity(utcSequence);
   sortReadings(readings, monotonicity.direction);
+  // Después de ordenar, no antes: dos lecturas «consecutivas» de un vehículo solo lo son una vez
+  // la secuencia está en orden cronológico (R-DAT-013).
+  const sameInstant = measureSameInstant(readings);
 
   const warnings: string[] = [];
   if (detection.confidence < CLEAN_DELIMITER_CONSISTENCY) {
@@ -443,6 +447,8 @@ export function importReadings(
       header,
       monotonicity,
       direction: monotonicity.direction,
+      sameInstantPairs: sameInstant.pairs,
+      vehiclePairs: sameInstant.vehiclePairs,
       totalRows: dataRows,
       acceptedRows: readings.length,
       quarantinedRows: defectiveRows,

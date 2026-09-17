@@ -143,6 +143,23 @@ function renderSummary(summary: SourceSummary): void {
 
   const delimiterName =
     summary.delimiter === "\t" ? "tabulador" : summary.delimiter === ";" ? "punto y coma" : "coma";
+  /**
+   * Los pares de un mismo vehículo que el reloj no ordena, con su peso sobre el total.
+   *
+   * Se dice lo que significan, no solo cuántos son: un recuento sin su consecuencia invita a
+   * leerlo como un defecto de la fuente, y no lo es — es el límite de lo que la fuente afirma.
+   */
+  const describeSameInstant = (facts: SourceSummary): string => {
+    if (facts.vehiclePairs === 0) return "sin pares que comparar";
+    if (facts.sameInstantPairs === 0) return "ninguno: el reloj ordena toda la secuencia";
+    const share = ((facts.sameInstantPairs / facts.vehiclePairs) * 100).toFixed(1);
+    return (
+      `${facts.sameInstantPairs.toLocaleString("es-ES")} de ` +
+      `${facts.vehiclePairs.toLocaleString("es-ES")} (${share} %) — su orden lo da la posición en ` +
+      "el fichero, no el reloj"
+    );
+  };
+
   const directionName =
     summary.direction === "newest-first"
       ? "pila: lo más reciente primero"
@@ -170,6 +187,10 @@ function renderSummary(summary: SourceSummary): void {
       "Sentido de la fuente",
       `${directionName} (coherencia ${(summary.monotonicity.confidence * 100).toFixed(1)} %)`,
     ],
+    // El reloj no ordena dentro de un instante: ahí manda la posición en el fichero, que es
+    // `inferred` (R-DAT-013). Se cuenta **por vehículo**, que es donde amenaza a la topología;
+    // dos AGV distintos leyendo a la vez es lo normal y no dice nada.
+    ["Mismo instante, mismo vehículo", describeSameInstant(summary)],
     ["Filas de datos", summary.totalRows.toLocaleString("es-ES")],
     ["Aceptadas", summary.acceptedRows.toLocaleString("es-ES")],
     // Se separan a propósito: una fila sin tag no es una fila rota, y mezclarlas haría parecer
