@@ -42,6 +42,30 @@ export interface StartMessage {
   readonly zone: string;
   /** Si el usuario ya fijó el orden de campos, se respeta; si no, se detecta y puede fallar. */
   readonly fieldOrder?: FieldOrder;
+  /**
+   * Circuito en el que **acumular** esta fuente, si lo hay.
+   *
+   * Va el identificador y no las lecturas ya guardadas: el Worker las lee del almacén por su
+   * cuenta. Mandárselas por `postMessage` las clonaría y duplicaría el pico de memoria, que es
+   * exactamente el defecto P4 del prototipo.
+   */
+  readonly circuitId?: string;
+  readonly circuitName?: string;
+}
+
+/** Lo que la acumulación en un circuito añade al resultado de una importación. */
+export interface AccumulationReport {
+  readonly circuitId: string;
+  /** Intervalos analizables del circuito tras sumar esta fuente (R-DAT-007). */
+  readonly coverage: readonly { readonly from: number; readonly to: number }[];
+  /** Lecturas del circuito entero, ya unidas. */
+  readonly totalReadings: number;
+  /** Fuentes acumuladas en el circuito. */
+  readonly sources: number;
+  /** Eventos que esta fuente ya traía otra: se cuentan una vez y conservan las dos procedencias. */
+  readonly shared: number;
+  /** Eventos del tramo común que solo una de las dos trae. La fuente se contradice consigo misma. */
+  readonly disagreements: number;
 }
 
 export interface CancelMessage {
@@ -123,6 +147,8 @@ export interface CompleteMessage extends Envelope {
   readonly readings: readonly Reading[];
   readonly quarantine: readonly QuarantinedRow[];
   readonly warnings: readonly string[];
+  /** Presente solo si la importación se acumuló en un circuito. */
+  readonly accumulation?: AccumulationReport;
 }
 
 export interface ErrorMessage extends Envelope {

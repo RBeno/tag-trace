@@ -2,6 +2,61 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [2.0.0] - 2026-09-17
+
+F1a: el producto deja de olvidar. Hasta ahora importaba un fichero y lo perdía al cerrar la
+pestaña, lo cual es inservible cuando el servidor de planta guarda dos o tres días y el modo de
+trabajo real es acumular muchas extracciones pequeñas a lo largo de meses. Todo lo que ha tenido
+valor en este proyecto salió de comparar dos ventanas separadas por semanas, y eso solo existe si
+alguien las guarda.
+
+### Añadido
+
+- **Almacén local con migraciones explícitas desde la versión 1** (`src/persistence/store.ts`). Es
+  la única parte del sistema cuyos datos no se pueden volver a pedir: una ventana perdida no vuelve.
+  El prototipo se quedó en IndexedDB v1 sin ninguna ruta de migración, así que su primer cambio de
+  forma le habría costado justo esos datos. Subir la versión sin escribir su peldaño falla al abrir.
+- **Contenedor `.agvproj`** (ADR-0012) con manifiesto, hash por sección y hash global, límites de
+  descompresión y **carga transaccional**: una sección corrupta invalida la carga entera y el
+  almacén local no se toca. Zip propio, **sin dependencias nuevas**, sobre `CompressionStream`.
+- **Unión de varias exportaciones** (ALG-002, `src/ingestion/union.ts`). Dos exportaciones son
+  cortes de la misma pila: el solape se cuenta una vez y conserva las dos procedencias. Nunca se
+  deduplica por huella de fila, que habría borrado 114 maniobras legítimas de 116 filas idénticas.
+- **Cobertura** (R-DAT-007, `src/domain/coverage.ts`). Fuera de lo cargado no hay silencio, hay
+  ausencia de datos. La cobertura de una fuente termina en su último instante **completo**: el
+  último es el momento en que se pulsó el botón y casi nunca está entero.
+- **Hash semántico** (`src/domain/semantic-hash.ts`) con serialización canónica y la
+  canonicalización numérica que ADR-0013 exige, versionada: si la regla cambia, los hashes viejos
+  dejan de coincidir a propósito en lugar de coincidir por casualidad.
+- La interfaz acumula en un circuito con nombre, muestra la cobertura junto a cualquier cifra
+  temporal, y exporta y reabre `.agvproj`.
+
+### Decidido
+
+- **El dispositivo acumula, el fichero viaja** (`DATA_CONTRACTS.md` §9.1). `.agvproj` no lleva el
+  bruto, así que son dos almacenes con propósitos distintos. La acumulación ocurre dentro del
+  Worker, que lee y escribe el almacén por su cuenta: mandarle las lecturas guardadas por
+  `postMessage` las clonaría —defecto P4 del prototipo— y unirlas en el hilo principal recorrería
+  dos series de cientos de miles de elementos donde WP-001 lo prohíbe.
+
+### Corregido durante el desarrollo
+
+- **El guardián de ratio de descompresión rechazaba datos legítimos** y no protegía de lo que decía
+  proteger: un JSON de lecturas comprime muchísimo por sus claves repetidas, y una cabecera que
+  mienta sobre el tamaño ya habría expandido la memoria cuando se comprobase. Se sustituye por un
+  tope **aplicado mientras se descomprime**, que corta el flujo en cuanto la salida excede lo
+  declarado.
+- **La primera unión duplicaba la cola de las fuentes.** Excluir el instante cortado de la
+  comparación es correcto —una ausencia ahí no es un desacuerdo— pero entonces un evento que las dos
+  exportaciones traen en ese instante entraba dos veces. Son dos rangos distintos: se empareja sobre
+  el solape completo y solo se juzga desacuerdo donde ambas están completas.
+
+### Verificado contra dato real
+
+- Las dos ventanas de PC2 en un circuito: 268.724 lecturas, cobertura en **dos tramos** y el hueco
+  de 38,8 días declarado como `sin datos cargados`, nunca como silencio. Volver a cargar la misma
+  exportación encima no cambia ninguna cifra.
+
 ## [1.9.0] - 2026-09-17
 
 El propietario cierra una puerta: el servidor guarda **dos o tres días**, así que la exportación de

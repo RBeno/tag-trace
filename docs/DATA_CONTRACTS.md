@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -307,6 +307,24 @@ formaliza en F1a y se completa en F4. Como mínimo contendrá:
 - registro append-only de consolidaciones y migraciones.
 
 No incluirá el bruto completo por defecto. Un expediente puede conservar un recorte normalizado mínimo cuando sea necesario para reproducir una incidencia.
+
+### 9.1 El dispositivo acumula, el fichero viaja
+
+Que `.agvproj` no lleve el bruto tiene una consecuencia de arquitectura que conviene dejar escrita,
+porque de otro modo se descubre tarde: **son dos almacenes distintos con propósitos distintos**.
+
+| | Dónde vive | Qué guarda | Por qué |
+|---|---|---|---|
+| Almacén local | el dispositivo | las lecturas acumuladas de todas las fuentes, su procedencia y la cobertura | El servidor de planta es una ventana deslizante de pocos días: lo que no se extraiga y se guarde aquí no se recupera |
+| `.agvproj` | fichero portable | identidad, configuración, inventario de fuentes con sus hashes, cobertura y estado derivado | Es lo que se lleva a otro dispositivo, y el intercambio es manual (CON-002) |
+
+El almacén local exige **migraciones explícitas desde su primera versión**. Es la única parte del
+sistema cuyos datos no se pueden volver a pedir: una ventana perdida no vuelve.
+
+La acumulación —unión y escritura— ocurre **dentro del Worker**, que lee y escribe el almacén por su
+cuenta. Mandarle al Worker las lecturas ya guardadas por `postMessage` las clonaría y duplicaría el
+pico de memoria, que es exactamente el defecto P4 del prototipo; y hacer la unión en el hilo
+principal recorrería dos series de cientos de miles de elementos donde WP-001 lo prohíbe.
 
 ## 10. Borrado y retención local
 

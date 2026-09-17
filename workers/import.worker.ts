@@ -23,6 +23,11 @@ import {
   importReadings,
 } from "../src/ingestion/importer.js";
 import { decodeSource } from "../src/ingestion/decode.js";
+import { unionReadings } from "../src/ingestion/union.js";
+import { mergeIntervals, sourceCoverage, type Interval } from "../src/domain/coverage.js";
+import { isAvailable, loadCircuit, saveCircuit } from "../src/persistence/store.js";
+import type { Reading } from "../src/domain/reading.js";
+import type { AccumulationReport } from "../src/application/protocol.js";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -41,6 +46,62 @@ async function hashFile(buffer: ArrayBuffer): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+
+/**
+ * Suma una fuente recién importada al circuito, uniéndola con lo ya guardado.
+ *
+ * El almacén se lee y se escribe **aquí**, no en el hilo principal: así ni las lecturas guardadas
+ * ni las nuevas cruzan un `postMessage`, y la unión —que recorre las dos series— tampoco bloquea la
+ * interfaz.
+ */
+async function accumulate(
+  circuitId: string,
+  circuitName: string,
+  zone: string,
+  result: { summary: { sourceId: string; sourceHash: string; fileName: string; acceptedRows: number };
+    readings: readonly Reading[] },
+): Promise<AccumulationReport | undefined> {
+  if (!isAvailable()) return undefined;
+
+  const existing = await loadCircuit(circuitId);
+  const previous = existing?.readings ?? [];
+  const union = unionReadings(previous, result.readings);
+  const complete = sourceCoverage(result.readings).complete;
+
+  const sources = [
+    ...(existing?.sources ?? []),
+    {
+      sourceId: result.summary.sourceId,
+      sourceHash: result.summary.sourceHash,
+      fileName: result.summary.fileName,
+      importedAt: Date.now(),
+      acceptedRows: result.summary.acceptedRows,
+      complete,
+    },
+  ];
+  const coverage = mergeIntervals(
+    sources.map((source) => source.complete).filter((span): span is Interval => span !== null),
+  );
+
+  await saveCircuit({
+    circuitId,
+    name: existing?.name ?? circuitName,
+    zone,
+    sources,
+    coverage,
+    readings: union.readings,
+    updatedAt: Date.now(),
+  });
+
+  return {
+    circuitId,
+    coverage,
+    totalReadings: union.readings.length,
+    sources: sources.length,
+    shared: union.shared,
+    disagreements: union.disagreements,
+  };
+}
 
 async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise<void> {
   const { jobId, file, zone } = message;
@@ -89,6 +150,13 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         isCancelled: () => cancelRequested,
       },
     );
+    // La acumulación ocurre **después** de que la importación haya terminado del todo, y en una
+    // sola transacción: cancelar a mitad no deja nada escrito (INV-006).
+    const accumulation =
+      message.circuitId === undefined
+        ? undefined
+        : await accumulate(message.circuitId, message.circuitName ?? message.circuitId, zone, result);
+
     emit(
       {
         type: "complete",
@@ -96,6 +164,7 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         readings: result.readings,
         quarantine: result.quarantine,
         warnings: result.warnings,
+        ...(accumulation === undefined ? {} : { accumulation }),
       },
       jobId,
     );

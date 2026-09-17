@@ -17,6 +17,8 @@ import {
 } from "../application/protocol.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
+import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
+import { isAvailable, loadCircuit } from "../persistence/store.js";
 
 /** Zona horaria del piloto. Es configuración: vivirá en el circuito cuando exista (F1b). */
 const ZONE = "Europe/Madrid";
@@ -87,10 +89,30 @@ fileInput.accept = ".csv,.tsv,.txt,text/csv,text/plain";
 fileInput.id = "source-file";
 const fileLabel = element("label", undefined, "Fichero de lecturas");
 fileLabel.htmlFor = "source-file";
+
+// El circuito es lo que convierte «importar un fichero» en «acumular». Con una ventana de servidor
+// de pocos días, lo que no se acumule aquí se pierde: por eso el campo va junto al selector y no
+// escondido en una pantalla aparte.
+const circuitInput = element("input");
+circuitInput.type = "text";
+circuitInput.id = "circuit-name";
+circuitInput.placeholder = "por ejemplo, PC2";
+const circuitLabel = element("label", undefined, "Acumular en el circuito");
+circuitLabel.htmlFor = "circuit-name";
+const exportButton = element("button", undefined, "Exportar .agvproj");
+exportButton.type = "button";
+const projectInput = element("input");
+projectInput.type = "file";
+projectInput.accept = ".agvproj";
+projectInput.id = "project-file";
+const projectLabel = element("label", undefined, "Abrir un .agvproj");
+projectLabel.htmlFor = "project-file";
 const cancelButton = element("button", "danger", "Cancelar");
 cancelButton.type = "button";
 cancelButton.hidden = true;
-picker.append(fileLabel, fileInput, cancelButton);
+picker.append(fileLabel, fileInput, circuitLabel, circuitInput, cancelButton);
+const projectPanel = element("section", "panel");
+projectPanel.append(element("h2", undefined, "Proyecto"), exportButton, projectLabel, projectInput);
 
 const progressPanel = element("section", "panel");
 progressPanel.hidden = true;
@@ -123,7 +145,7 @@ const filterNote = element("p", "muted", "");
 agvFilter.addEventListener("input", () => applyFilter());
 tagFilter.addEventListener("input", () => applyFilter());
 
-app.append(header, picker, progressPanel, messagePanel, summaryPanel, tablePanel);
+app.append(header, picker, projectPanel, progressPanel, messagePanel, summaryPanel, tablePanel);
 
 // --- Presentación ----------------------------------------------------------
 
@@ -380,6 +402,7 @@ function handleMessage(message: FromWorker): void {
         showMessage("warn", "Advertencias", message.warnings);
       }
       renderSummary(message.summary);
+      if (message.accumulation !== undefined) renderAccumulation(message.accumulation);
       renderTableSkeleton();
       agvFilter.value = "";
       tagFilter.value = "";
@@ -446,6 +469,7 @@ function startImport(file: File, fieldOrder?: FieldOrder): void {
   progressNote.textContent = "Preparando";
   progressBar.value = 0;
 
+  const circuitName = circuitInput.value.trim();
   const start: ToWorker = {
     type: "start",
     protocolVersion: PROTOCOL_VERSION,
@@ -454,6 +478,9 @@ function startImport(file: File, fieldOrder?: FieldOrder): void {
     zone: ZONE,
     // Solo viaja si el usuario lo fijó: sin él, la detección manda y puede declararse incapaz.
     ...(fieldOrder === undefined ? {} : { fieldOrder }),
+    // Solo el identificador: las lecturas ya guardadas las lee el Worker del almacén, para no
+    // clonarlas entre hilos (defecto P4 del prototipo).
+    ...(circuitName === "" ? {} : { circuitId: circuitName, circuitName }),
   };
   state.file = file;
   worker.postMessage(start);
@@ -474,4 +501,147 @@ cancelButton.addEventListener("click", () => {
     reason: "petición del usuario",
   };
   state.worker.postMessage(cancel);
+});
+
+// --- Proyecto: acumular en el dispositivo y llevárselo ----------------------
+
+function formatSpan(from: number, to: number): string {
+  return `${formatInstant(from)} → ${formatInstant(to)}`;
+}
+
+/**
+ * Lo que la acumulación añade al resumen.
+ *
+ * La cobertura va **siempre** junto a cualquier cifra temporal (R-DAT-007): fuera de ella no hay
+ * silencio, hay ausencia de datos, y dar una cifra sin decir qué periodo cubre invita justo a la
+ * confusión que la regla prohíbe.
+ */
+function renderAccumulation(report: {
+  readonly circuitId: string;
+  readonly coverage: readonly { readonly from: number; readonly to: number }[];
+  readonly totalReadings: number;
+  readonly sources: number;
+  readonly shared: number;
+  readonly disagreements: number;
+}): void {
+  summaryPanel.append(element("h2", undefined, `Circuito «${report.circuitId}»`));
+  const rows: readonly (readonly [string, string])[] = [
+    ["Fuentes acumuladas", String(report.sources)],
+    ["Lecturas del circuito", report.totalReadings.toLocaleString("es-ES")],
+    [
+      "Cobertura",
+      report.coverage.length === 0
+        ? "sin ningún tramo completo todavía"
+        : report.coverage.map((span) => formatSpan(span.from, span.to)).join("  ·  "),
+    ],
+    [
+      "Solape con lo ya cargado",
+      report.shared === 0
+        ? "ninguno: esta fuente no repite nada"
+        : `${report.shared.toLocaleString("es-ES")} eventos ya estaban y se cuentan una vez`,
+    ],
+  ];
+  const list = element("dl", "facts");
+  for (const [term, value] of rows) {
+    list.append(element("dt", undefined, term), element("dd", undefined, value));
+  }
+  summaryPanel.append(list);
+
+  if (report.coverage.length > 1) {
+    summaryPanel.append(
+      element(
+        "p",
+        "muted",
+        "Entre esos tramos no hay datos cargados. Ese hueco no es un silencio del circuito y no " +
+          "puede diagnosticarse: simplemente no se exportó ese periodo.",
+      ),
+    );
+  }
+  if (report.disagreements > 0) {
+    summaryPanel.append(
+      element(
+        "p",
+        "muted",
+        `${report.disagreements} eventos del tramo común los trae solo una de las dos ` +
+          "exportaciones. Se conservan los dos lados: la fuente no entregó lo mismo dos veces, y " +
+          "eso es información sobre la fuente, no algo que se resuelva eligiendo.",
+      ),
+    );
+  }
+}
+
+exportButton.addEventListener("click", () => {
+  void (async () => {
+    const circuitId = circuitInput.value.trim();
+    if (circuitId === "") {
+      showMessage("warn", "Falta el circuito", ["Escribe el nombre del circuito que quieres exportar."]);
+      return;
+    }
+    if (!isAvailable()) {
+      showMessage("error", "No hay almacén local", [
+        "Este navegador no permite guardar datos de sitio, así que no hay nada acumulado que exportar.",
+      ]);
+      return;
+    }
+    const circuit = await loadCircuit(circuitId);
+    if (circuit === undefined) {
+      showMessage("warn", "Ese circuito no existe todavía", [
+        "Importa al menos una fuente indicando ese circuito y vuelve a intentarlo.",
+      ]);
+      return;
+    }
+    // Sin el bruto, por ADR-0012: el dispositivo acumula las lecturas y el fichero lleva el
+    // proyecto. Meter doscientas mil lecturas en cada exportación haría el fichero inmanejable
+    // sin añadir nada que el dispositivo de destino no pueda volver a importar.
+    const bytes = await writeProject(
+      circuitId,
+      {
+        circuito: { id: circuit.circuitId, nombre: circuit.name, zona: circuit.zone },
+        fuentes: circuit.sources,
+        cobertura: circuit.coverage,
+      },
+      Date.now(),
+    );
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
+    const link = element("a");
+    link.href = url;
+    link.download = `${circuitId}.agvproj`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showMessage("info", "Proyecto exportado", [
+      `${circuit.sources.length} fuentes y su cobertura. Las lecturas se quedan en este dispositivo.`,
+    ]);
+  })();
+});
+
+projectInput.addEventListener("change", () => {
+  void (async () => {
+    const file = projectInput.files?.[0];
+    if (file === undefined) return;
+    clearMessages();
+    try {
+      const project = await readProject(new Uint8Array(await file.arrayBuffer()));
+      const circuito = project.sections["circuito"] as { nombre?: string } | undefined;
+      const fuentes = project.sections["fuentes"] as readonly unknown[] | undefined;
+      const cobertura = project.sections["cobertura"] as
+        | readonly { from: number; to: number }[]
+        | undefined;
+      showMessage("info", `Proyecto «${circuito?.nombre ?? project.manifest.circuit_id}»`, [
+        `${fuentes?.length ?? 0} fuentes declaradas, exportado el ${formatInstant(project.manifest.exported_at)}.`,
+        cobertura === undefined || cobertura.length === 0
+          ? "Sin cobertura declarada."
+          : `Cobertura: ${cobertura.map((span) => formatSpan(span.from, span.to)).join("  ·  ")}`,
+        "Integridad verificada: manifiesto y todas sus secciones coinciden con sus hashes.",
+      ]);
+    } catch (error) {
+      if (error instanceof ProjectError) {
+        showMessage("error", "No se pudo abrir el proyecto", [error.reason, error.recovery]);
+        return;
+      }
+      showMessage("error", "No se pudo abrir el proyecto", [
+        "El fichero no tiene la forma de un `.agvproj`.",
+        "Comprueba que es el fichero correcto. El almacén local no se ha tocado.",
+      ]);
+    }
+  })();
 });
