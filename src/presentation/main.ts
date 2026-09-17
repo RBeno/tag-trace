@@ -486,6 +486,24 @@ function startImport(file: File, fieldOrder?: FieldOrder): void {
   worker.postMessage(start);
 }
 
+/**
+ * Permite volver a elegir **el mismo fichero** y que vuelva a importarse.
+ *
+ * Sin esto, `change` no se dispara la segunda vez y el usuario ve que no pasa nada. No es un caso
+ * raro en este producto: los solapes entre exportaciones son deliberados y reimportar una que ya
+ * está cargada es una operación normal.
+ *
+ * El valor se reinicia **al abrir el selector**, no al procesar el fichero. Limpiarlo después de
+ * elegir vacía la `FileList` y con ella el `File` que aún no se ha leído: `arrayBuffer()` falla y
+ * la carga se rechaza sola. Es exactamente el defecto que introdujo el primer intento de arreglo
+ * de esto, y lo destapó la prueba de navegador en la misma ejecución.
+ */
+for (const input of [fileInput, projectInput]) {
+  input.addEventListener("click", () => {
+    input.value = "";
+  });
+}
+
 fileInput.addEventListener("change", () => {
   const file = fileInput.files?.[0];
   if (file !== undefined) startImport(file);
@@ -602,15 +620,19 @@ exportButton.addEventListener("click", () => {
       },
       Date.now(),
     );
+    // La confirmación se muestra **antes** de disparar la descarga, no después. Al revés, esta
+    // línea se ejecuta cuando el navegador ya ha entregado el fichero, y si para entonces el
+    // usuario ya ha hecho otra cosa —abrir un proyecto, por ejemplo— le pisa su mensaje con uno
+    // que corresponde a la acción anterior.
+    showMessage("info", "Proyecto exportado", [
+      `${circuit.sources.length} fuentes y su cobertura. Las lecturas se quedan en este dispositivo.`,
+    ]);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
     const link = element("a");
     link.href = url;
     link.download = `${circuitId}.agvproj`;
     link.click();
     URL.revokeObjectURL(url);
-    showMessage("info", "Proyecto exportado", [
-      `${circuit.sources.length} fuentes y su cobertura. Las lecturas se quedan en este dispositivo.`,
-    ]);
   })();
 });
 
@@ -645,3 +667,20 @@ projectInput.addEventListener("change", () => {
     }
   })();
 });
+
+// --- Sin red -----------------------------------------------------------------
+
+/**
+ * Registra el service worker para que la aplicación abra sin conexión.
+ *
+ * Va al final y sin bloquear nada: si el registro falla —contexto no seguro, permisos del
+ * navegador, modo privado— la aplicación sigue funcionando exactamente igual con red. Una PWA que
+ * se rompe porque no pudo instalarse es peor que no tenerla.
+ */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {
+      // No se informa al usuario: no ha perdido ninguna capacidad, solo la de abrir sin red.
+    });
+  });
+}

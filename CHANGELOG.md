@@ -2,6 +2,47 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [2.1.0] - 2026-09-17
+
+Pruebas de navegador. Existen porque `src/persistence/store.ts` y la acumulación del Worker
+**no se habían ejecutado nunca**: compilaban, estaban tipadas y ninguna prueba las tocaba. Las 71
+pruebas de Node cubrían las piezas puras, que son las que corren sin navegador, y con ellas se
+estaba afirmando que el producto acumula.
+
+Encontraron cuatro defectos en la primera ejecución. Era el objetivo.
+
+### Corregido
+
+- **`npm run preview` no había servido nunca una compilación funcional.** `vite.config.ts` usaba la
+  base `/tag-trace/` al compilar y `/` al servir, porque solo miraba `command`, que vale `"serve"`
+  tanto en desarrollo como en vista previa. El resultado: la vista previa devolvía `index.html` para
+  cada recurso y la página salía en blanco. No se notaba porque en desarrollo funciona y publicado
+  también; solo fallaba justo donde uno va a comprobar el build antes de publicarlo.
+- **La confirmación de exportación pisaba mensajes posteriores.** Se emitía *después* de disparar la
+  descarga, así que llegaba cuando el usuario ya podía haber hecho otra cosa y sobrescribía el
+  mensaje de esa otra cosa. Ahora se muestra antes.
+- **Volver a elegir el mismo fichero no importaba nada**, y en este producto reimportar una
+  exportación ya cargada es normal: los solapes son deliberados. El valor del selector se reinicia
+  al abrirlo.
+- **Y el primer arreglo de eso introdujo uno peor**, que la misma ejecución destapó: limpiar el
+  valor al procesar el fichero vacía la `FileList` y con ella el `File` que aún no se ha leído, así
+  que `arrayBuffer()` fallaba y un `.agvproj` válido se rechazaba solo.
+
+### Añadido
+
+- **Nueve pruebas de navegador** (TC-036 a TC-041): acumulación real con dos exportaciones
+  solapadas y con dos disjuntas, persistencia al recargar, cancelación que no deja nada escrito,
+  ida y vuelta de `.agvproj` con un byte alterado que se rechaza **sin tocar el almacén**, y la
+  **prueba de red** de `SECURITY_PRIVACY.md` §4, que llevaba desde F0 sin ejecutarse nunca.
+- **PWA**: manifiesto, icono y un service worker que sirve el esqueleto sin red. Red primero, caché
+  como respaldo, y solo el propio origen. CSP por `<meta>` con el límite que ADR-0014 ya declara.
+- **PERF-D2 medido** y registrado con sus condiciones (`PERFORMANCE_BUDGET.md` §3.1): 100.000
+  eventos en 1.330 ms, con p95 de hueco de fotograma de **17 ms** frente al objetivo de 50. El
+  **máximo de 341 ms no cumple** y se dice: es el clon de las cien mil lecturas al llegar del
+  Worker, y se corrige enviando una página en lugar de todo. La cifra **no** es la del móvil de
+  referencia, que solo puede medir el propietario.
+- Las pruebas de navegador entran en CI como trabajo aparte, con su rastro guardado si fallan.
+
 ## [2.0.0] - 2026-09-17
 
 F1a: el producto deja de olvidar. Hasta ahora importaba un fichero y lo perdía al cerrar la

@@ -1,0 +1,14 @@
+{
+  "name": "TAG TRACE",
+  "short_name": "TAG TRACE",
+  "description": "Diagnóstico de circuitos AGV a partir de lecturas de tags. Todo el proceso ocurre en el dispositivo.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#12151a",
+  "theme_color": "#12151a",
+  "lang": "es",
+  "icons": [
+    { "src": "./icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
