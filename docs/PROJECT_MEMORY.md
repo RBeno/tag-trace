@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.4.0
+version: 0.5.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -12,7 +12,10 @@ last_updated: 2026-09-17
 - Nombre: **TAG TRACE**.
 - Naturaleza: diagnóstico histórico longitudinal y gemelo digital de circuitos AGV.
 - Primer circuito piloto: PC2.
-- Estado: **F1 en curso**. El primer entregable ejecutable es el importador mínimo (F1a·0).
+- Estado: **F2 en curso** desde el 2026-09-17, autorizada por el propietario con «Continúa Fase 2».
+  F1 entregó el importador, la acumulación por circuito, `.agvproj`, la PWA y las pruebas de
+  navegador. G1 se cerró con tres criterios sin cumplir, declarados y arrastrados a G2: el plan de
+  aceptación de F1, la afinidad de circuito y PERF-D2 en el móvil de referencia.
 - Repositorio anterior: `RBeno/tag-trace-agv`, solo referencia.
 
 ## Decisiones firmes
@@ -81,6 +84,10 @@ el multicircuito (MTC), que es un modo de comportamiento dentro de un mismo circ
 
 ## Próxima decisión
 
-Quedan cinco preguntas bloqueantes de G0 —OQ-B01 a OQ-B05— que solo se responden con información
-de planta, más la licencia del repositorio (OQ-B07). Resueltas esas, se firma el checkpoint F0.
-La frase de transición sigue siendo `CONTINÚA FASE 1`.
+F2 reconstruye el circuito. Lo que la limita no es el algoritmo —está validado contra tres
+exportaciones reales, con dominancia mediana 1,000— sino la información de planta que convierte una
+reconstrucción en un diagnóstico: los límites de zona, las calles CO, los puntos críticos y las
+anclas de vuelta (OQ-B04), que G2 exige configurados y versionados.
+
+La frase de transición a F3 es `CONTINÚA FASE 3`, y ninguna IA la escribe por el propietario
+(ADR-0010).

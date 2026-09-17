@@ -2,6 +2,58 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.0.0] - 2026-09-17
+
+**F2 abierta** por el propietario con «Continúa Fase 2», y su cimiento entregado: el grafo observado.
+
+### Gobierno
+
+- `docs/project_state.json` pasa a `F2 / Grafo físico y replay básico`, con `CONTINÚA FASE 3` como
+  siguiente transición. La aprobación es del propietario; ninguna IA aprueba su propio cambio de
+  fase (ADR-0010).
+- **G1 se cierra con tres criterios sin cumplir, y se dicen en lugar de marcarse**: el plan de
+  aceptación local de F1 (OQ-B05), la afinidad de circuito —que hoy no impide cargar en un circuito
+  la exportación de otro— y PERF-D2 en el Galaxy S23 FE, que solo puede medir el propietario. Los
+  tres pasan a G2 como deuda declarada. Marcar una casilla no demostrada convertiría la puerta en un
+  trámite, que es justo lo que `AI_DEVELOPMENT_GOVERNANCE.md` prohíbe.
+
+### Añadido
+
+- **`src/domain/graph.ts`**: transiciones por vehículo y grafo observado con soporte, vehículos
+  distintos, cuota entre las salidas del nodo, y estado de verdad **separado para la secuencia y
+  para el tiempo**. Un tramo puede ser `observed` en secuencia y `unknown` en tiempo, y con
+  resolución de minuto eso es lo normal, no la excepción.
+- TC-048 a TC-052 con diez pruebas.
+
+### Las tres trampas que el grafo evita, y por qué tienen prueba propia
+
+Ninguna produce un error visible: las tres producen un grafo **plausible y equivocado**.
+
+- **Una transición no cruza un hueco de cobertura.** Entre dos ventanas separadas por semanas, la
+  última lectura de una y la primera de la otra son consecutivas en la lista y no en la realidad.
+  Emparejarlas inventa una arista entre dos puntos cualesquiera del circuito, con un tiempo de tramo
+  de semanas. Se descartan y **se cuentan**: si la cifra es alta, lo que se está mirando son varias
+  ventanas y conviene saberlo antes de leer el grafo.
+- **Dos lecturas en el mismo instante no ordenan nada** (R-DAT-013). Una arista sostenida en ellas
+  no puede ser `observed` **por mucha cuota y mucho soporte que tenga**: lo que la sostiene es la
+  posición en la pila, no el reloj. Dos tags leídos siempre a la vez son un punto, no dos.
+- **El sentido de la fuente decide la dirección.** La misma pila leída al revés produce el grafo
+  invertido, y sin síntoma. Es el hallazgo que obligó a corregir ADR-0013, y ahora tiene prueba.
+
+### Decidido
+
+- Los umbrales del grafo tampoco tienen valor por defecto, por la misma razón que los del
+  inventario. La resolución de la fuente entra como parámetro porque es una propiedad **medida** del
+  fichero (R-DAT-015), no un umbral elegido.
+
+### Pendiente, y dicho para que no parezca terminado
+
+`graph.ts` e `inventory.ts` están probados y **no son alcanzables desde la interfaz**. El dominio
+crece mientras la superficie visible del producto no se mueve, que es la forma exacta en que el
+prototipo acabó con un monolito y doce pruebas. El siguiente incremento es la vista que los expone,
+no un módulo más. Siguen fuera: las vueltas (ALG-004), el agrupamiento por circuito (R-DAT-012), el
+contraste contra Vsystem y el replay.
+
 ## [2.2.0] - 2026-09-17
 
 El universo de memoria, y el tag que existe en la lista y no en el suelo.

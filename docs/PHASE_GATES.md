@@ -1,8 +1,8 @@
 ---
 document_id: TT-GATES-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-17
 ---
 
 # Puertas de fase
@@ -41,15 +41,26 @@ F1**».
 
 ## G1 — Autorizar F2
 
+**Cerrada el 2026-09-17 por decisión del propietario** («Continúa Fase 2»), con tres criterios sin
+cumplir que se declaran en lugar de darse por buenos. Marcar una casilla que no se ha demostrado
+sería exactamente lo que `AI_DEVELOPMENT_GOVERNANCE.md` prohíbe: convertir una puerta en un trámite.
+
 - [ ] Plan de aceptación local de F1 acordado, con responsable de validación (OQ-B05, parte de F1).
-- [ ] Circuitos aislados y afinidad funcionando.
-- [ ] Importación correcta para delimitadores y esquemas acordados.
-- [ ] Procedencia hasta fila original.
-- [ ] Solapes, inválidos y cuarentena demostrados.
-- [ ] Worker con progreso/cancelación sin carreras.
-- [ ] Mismo input produce mismo resultado normalizado.
-- [ ] `.agvproj` mínimo valida, exporta y reabre.
-- [ ] PERF-D2 ejecutado en PC y móvil de referencia.
+- [ ] Circuitos aislados y afinidad funcionando. **Parcial**: los circuitos están aislados y la
+      acumulación es por circuito, pero la afinidad de ALG-003 no está implementada, así que nada
+      impide hoy cargar en un circuito la exportación de otro.
+- [x] Importación correcta para delimitadores y esquemas acordados.
+- [x] Procedencia hasta fila original.
+- [x] Solapes, inválidos y cuarentena demostrados.
+- [x] Worker con progreso/cancelación sin carreras.
+- [x] Mismo input produce mismo resultado normalizado.
+- [x] `.agvproj` mínimo valida, exporta y reabre.
+- [ ] PERF-D2 ejecutado en PC y móvil de referencia. **Parcial**: medido en PC y en móvil emulado;
+      el Samsung Galaxy S23 FE solo puede medirlo el propietario, y lo emulado no lo sustituye.
+
+Los tres pendientes no desaparecen al abrirse F2: pasan a G2 como deuda declarada, porque la
+afinidad protege de mezclar circuitos —que es justo el error que R-DAT-012 documenta— y el móvil es
+el dispositivo donde cayó el prototipo.
 
 ## G2 — Autorizar F3
 

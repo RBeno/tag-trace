@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -56,11 +56,23 @@ regla exista: la matriz no es una lista de intenciones.
 | R-DAT-016 obsoleto y averiado no se separan con una ventana | `src/domain/inventory.ts` (`classify`) | «un tag en memoria que nadie ha leído jamás…» |
 | R-OPP-011 en memoria **y** existente | `src/domain/inventory.ts` | «…es candidato a obsoleto, y queda unknown» |
 | R-OPP-012 la memoria individual no se observa | `src/domain/inventory.ts` (`truth: "inferred"`) | «un tag que unos leen siempre y otro nunca…» |
+| FR-009 / ALG-005 grafo observado por transiciones | `src/domain/graph.ts` | `tests/unit/graph.test.ts` |
+| FR-011 soporte, cuota y confianza por arista | `src/domain/graph.ts` (`Edge`) | «reconstruye las aristas de un anillo…», «una bifurcación reparte la cuota…» |
+| TC-048 una transición no cruza un hueco de cobertura | `src/domain/graph.ts` (`straddlesGap`) | «no empareja a través de un hueco de cobertura, y lo dice» |
+| TC-049 / R-DAT-013 el mismo instante no ordena | `src/domain/graph.ts` (`sequenceTruth`) | «una arista sostenida en pares del mismo instante…» |
+| TC-050 secuencia `observed` con tiempo `unknown` | `src/domain/graph.ts` (`summariseTime`) | «con la resolución de la fuente por encima del paso real…» |
+| TC-052 / ADR-0013 el sentido decide la dirección | `src/domain/order.ts`, `src/domain/graph.ts` | «el sentido de la fuente decide la dirección…» |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
-planta (DS-002, DS-006, DS-008), que es lo que conecta `inventory.ts` con la interfaz; el grafo y las
-vueltas, sin los cuales la normalización de R-OPP-010 sigue siendo aproximada; y la comparación entre
-dos periodos distantes, que es la única que separa un obsoleto de un tag averiado.
+planta (DS-002, DS-006, DS-008); las **vueltas** (ALG-004), sin las cuales la normalización de
+R-OPP-010 sigue siendo aproximada y el grafo no puede estudiarse por vuelta como exige R-GRA-002; el
+**agrupamiento por circuito** de R-DAT-012; el contraste contra Vsystem; el replay; y la comparación
+entre dos periodos distantes, que es la única que separa un obsoleto de un tag averiado.
+
+**Y una advertencia que no es una fila de la tabla:** `inventory.ts` y `graph.ts` están probados y
+**no son alcanzables desde la interfaz**. El dominio crece mientras la superficie visible del
+producto no se mueve, que es la forma exacta en que el prototipo acabó con un monolito de 1.580
+líneas y doce pruebas. El siguiente incremento es la vista que los expone, no un módulo más.
 
 ## Regla de mantenimiento
 

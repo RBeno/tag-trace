@@ -2,17 +2,17 @@
   "project": "TAG TRACE",
   "repository": "RBeno/tag-trace",
   "documentationVersion": "1.0.0",
-  "currentPhase": "F1",
-  "phaseName": "Base local e ingesta confiable",
+  "currentPhase": "F2",
+  "phaseName": "Grafo físico y replay básico",
   "status": "in_progress",
   "baseline": "approved",
   "lastUpdated": "2026-09-17",
   "implementationStarted": true,
   "legacyRepository": "RBeno/tag-trace-agv",
   "nextTransition": {
-    "targetPhase": "F2",
-    "requiredApproval": "CONTINÚA FASE 2",
-    "gate": "G1"
+    "targetPhase": "F3",
+    "requiredApproval": "CONTINÚA FASE 3",
+    "gate": "G2"
   },
   "dataPolicy": {
     "processing": "local-only",
