@@ -2,6 +2,31 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [1.9.0] - 2026-09-17
+
+El propietario cierra una puerta: el servidor guarda **dos o tres días**, así que la exportación de
+septiembre no se puede rehacer con segundos. Su 73 % de pasos sin ordenar por el reloj es
+definitivo, y esa ventana queda `inferred` para siempre. La consecuencia no es sobre ese fichero:
+es sobre **cuándo** hay que avisar.
+
+### Añadido
+
+- **Aviso de resolución degradada al importar** (**R-DAT-015**). Si una proporción apreciable de los
+  pasos de un vehículo comparte instante, se dice al cargar el fichero y no al sacar el informe.
+  Con una ventana deslizante de pocos días, un aviso que llega con el informe llega tarde: al
+  importar puede que todavía se esté a tiempo de volver a extraer la fuente bien. El texto dice qué
+  proporción de la secuencia no la ordena el reloj y qué se puede hacer mientras se pueda.
+- El corolario de procedimiento queda en la regla: cuando la planta ofrezca varias salidas se elige
+  la de mayor resolución y se comprueba **antes** de que la ventana gire, porque el coste de
+  equivocarse no es repetir la extracción sino perder el periodo.
+
+### Medido
+
+- Las dos exportaciones de PC2 salieron de sitios distintos, y se distingue sin preguntar: la de
+  julio trae segundos y **ninguna** fila sin tag; la de septiembre no trae segundos y el 24 % de sus
+  filas no son lecturas, de las cuales el 94 % comparte minuto con una. Una salida incluye eventos
+  de vehículo y la otra no.
+
 ## [1.8.0] - 2026-09-17
 
 Una exportación real de dos días al principio de un mes **no se podía importar**, y el mensaje de

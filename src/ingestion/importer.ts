@@ -60,6 +60,16 @@ const CHECKPOINT_ROWS = 20_000;
 /** Cuántos valores de fecha bastan para determinar el orden de campos en un fichero sano. */
 const SAMPLE_LIMIT = 5_000;
 
+/**
+ * Proporción de pasos de un vehículo que comparten instante a partir de la cual se avisa.
+ *
+ * No es una magnitud industrial —no describe la planta, sino la relación entre la resolución de la
+ * fuente y su ritmo de eventos—, así que vive aquí y no en la configuración del circuito. El valor
+ * es deliberadamente bajo: por encima de una décima parte ya hay tramos enteros de secuencia cuyo
+ * orden no lo da el reloj, y eso hay que decirlo mientras la fuente todavía se pueda reexportar.
+ */
+const DEGRADED_RESOLUTION = 0.1;
+
 export interface ImportOptions {
   readonly sourceId: string;
   readonly fileName: string;
@@ -458,6 +468,23 @@ export function importReadings(
   }
   if (defectiveRows > 0) {
     warnings.push(`${defectiveRows} filas quedaron en cuarentena y se conservan con su motivo.`);
+  }
+  // Se avisa **ahora**, no en el informe. La fuente es una ventana deslizante: lo que cae por
+  // debajo se pierde, así que una exportación con la resolución degradada puede no poder rehacerse
+  // pasados unos días. Si el aviso llega al analizar, ya es tarde; si llega al importar, puede que
+  // todavía se esté a tiempo de volver a extraerla bien (R-DAT-015).
+  if (
+    sameInstant.vehiclePairs > 0 &&
+    sameInstant.pairs / sameInstant.vehiclePairs >= DEGRADED_RESOLUTION
+  ) {
+    const share = ((sameInstant.pairs / sameInstant.vehiclePairs) * 100).toFixed(0);
+    warnings.push(
+      `En el ${share} % de los pasos de un vehículo al siguiente, las dos lecturas comparten ` +
+        `instante: el reloj de la fuente no los ordena y su orden sale de la posición en el ` +
+        `fichero. La secuencia de esta fuente es en esa medida inferida, no observada. Si la ` +
+        `fuente admite exportar con una resolución más fina, conviene rehacerla mientras sus ` +
+        `datos sigan disponibles.`,
+    );
   }
 
   callbacks.onProgress("done", dataRows, dataRows, "Importación terminada");

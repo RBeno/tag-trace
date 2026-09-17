@@ -173,6 +173,50 @@ describe("instantes empatados · R-DAT-013", () => {
   });
 });
 
+describe("resolución degradada · R-DAT-015", () => {
+  // El aviso tiene que salir al IMPORTAR. La fuente es una ventana deslizante de pocos días: si el
+  // problema se descubre al analizar, la exportación buena ya no se puede pedir.
+  function csv(lines: readonly string[]): string {
+    return ["Fecha;AGV;Tag", ...lines].join("\n");
+  }
+
+  it("avisa cuando el reloj de la fuente no ordena los pasos de un vehículo", () => {
+    // Resolución de minuto con varias lecturas por minuto: el caso de una exportación real.
+    const rows = [
+      "24/01/2026 10:00;0007;A",
+      "24/01/2026 10:00;0007;B",
+      "24/01/2026 10:00;0007;C",
+      "24/01/2026 10:01;0007;D",
+    ];
+    const { warnings, summary } = importReadings(
+      csv(rows),
+      { sourceId: "s", fileName: "s.csv", byteSize: 200, zone: ZONE },
+      silent,
+    );
+    expect(summary.sameInstantPairs).toBe(2);
+    expect(summary.vehiclePairs).toBe(3);
+    const aviso = warnings.find((line) => line.includes("comparten"));
+    expect(aviso).toBeDefined();
+    // El aviso sirve de poco si no dice qué hacer mientras aún se puede.
+    expect(aviso).toContain("rehacerla");
+  });
+
+  it("una fuente con resolución suficiente no arrastra el aviso", () => {
+    const rows = [
+      "24/01/2026 10:00:01;0007;A",
+      "24/01/2026 10:00:09;0007;B",
+      "24/01/2026 10:00:18;0007;C",
+    ];
+    const { warnings, summary } = importReadings(
+      csv(rows),
+      { sourceId: "s", fileName: "s.csv", byteSize: 200, zone: ZONE },
+      silent,
+    );
+    expect(summary.sameInstantPairs).toBe(0);
+    expect(warnings.some((line) => line.includes("comparten"))).toBe(false);
+  });
+});
+
 describe("formato de fecha · no se adivina", () => {
   it("un día mayor que doce determina el orden", () => {
     const detection = detectFieldOrder(["24/01/2026 5:03"]);
