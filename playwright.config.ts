@@ -43,9 +43,16 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npm run preview -- --port 4173 --strictPort",
+    // `--host 127.0.0.1` no es decorativo: sin él Vite anuncia `localhost`, que en un runner de CI
+    // puede resolver a IPv6 mientras Playwright sondea la IPv4. El servidor arranca, nadie lo
+    // encuentra, y el fallo que se ve es «timed out waiting for webServer», que no dice nada.
+    command: "npm run preview -- --port 4173 --strictPort --host 127.0.0.1",
     url: "http://127.0.0.1:4173/tag-trace/",
     reuseExistingServer: process.env["CI"] === undefined,
     timeout: 60_000,
+    // Su salida al registro: si vuelve a no arrancar, el motivo estará escrito en lugar de haber
+    // que deducirlo.
+    stdout: "pipe",
+    stderr: "pipe",
   },
 });

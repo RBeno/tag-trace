@@ -27,6 +27,11 @@ Encontraron cuatro defectos en la primera ejecución. Era el objetivo.
 - **Y el primer arreglo de eso introdujo uno peor**, que la misma ejecución destapó: limpiar el
   valor al procesar el fichero vacía la `FileList` y con ella el `File` que aún no se ha leído, así
   que `arrayBuffer()` fallaba y un `.agvproj` válido se rechazaba solo.
+- **En CI el servidor de vista previa arrancaba y nadie lo encontraba.** Sin `--host`, Vite anuncia
+  `localhost`, que en un runner puede resolver a IPv6 mientras Playwright sondea la IPv4 que tiene
+  declarada. El único síntoma era «timed out waiting for webServer», que no dice qué pasó. Se fija
+  `--host 127.0.0.1` y se redirige la salida del servidor al registro, para que un fallo futuro
+  traiga escrito su motivo en lugar de haber que deducirlo.
 
 ### Añadido
 
