@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.13.0
+version: 0.14.0
 status: active
 last_updated: 2026-09-17
 ---
@@ -50,7 +50,8 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-116 | ¿Qué hace que un tag emita su multicircuito en una pasada y no en la siguiente? Medido: ningún tag declara dos valores distintos, unos lo emiten en todas sus pasadas y otros solo en una fracción, y el mismo vehículo sobre el mismo tag unas veces lo trae y otras no. | Ausente es `unknown`: no se reconstruye por continuidad desde la lectura anterior (R-DAT-011) |
 | OQ-117 | Dos tags declarados por el propietario dentro de las calles de carga no tienen **ninguna** lectura en una ventana de casi 18 h, y el tramo que ocuparían se recorre en directo decenas de veces. ¿Siguen instalados? | Salen en el circuito reconstruido como `unknown`, nunca omitidos. Si están instalados es un diagnóstico; si no, la lista está desactualizada |
 | OQ-118 | **Respondida en su mayor parte.** El fenómeno eran tres cosas mezcladas: circuitos distintos compartiendo fichero, tags que no están en la memoria del vehículo, y detección. Lo que queda abierto es solo el resto **con patrón de gradiente** —todos leen algo, unos menos—, que sí es candidato a detección. | Se separan los tres con la prueba de tiempos (en línea o desvío) y la normalización por vueltas (bimodal o gradiente). Solo el gradiente queda `unknown` |
-| OQ-119 | ¿Qué tags marcan el paso de un circuito a otro? Medido: un vehículo sale y vuelve por tags **ordinarios** que todos leen, no por una puerta dedicada. **Y cruzar exportaciones no lo resuelve**: si el vehículo no lleva en memoria los tags del circuito de destino, no aparece en su exportación. | Se detecta la salida por R-AGV-009 y el intervalo queda `sin datos cargados` para ese objeto. La confirmación por el otro lado no está disponible con este tipo de fuente |
+| OQ-119 | **Reformulada.** La pregunta ya no es adónde fue el vehículo —cruzar exportaciones no lo resuelve, porque sin esos tags en memoria no aparece en la del destino—, sino **qué cruce falló y de qué modo**. | Se detecta la salida por R-AGV-009 y se señala el punto exacto; el modo de fallo necesita OQ-121 |
+| OQ-121 | ¿Cuáles son los **pares de tags de protección** de cada cruce, y qué tag toca si el giro se ejecuta? Sin ellos se puede decir dónde se salió un vehículo, pero no si falló la lectura de la protección o la orden de la centralita. Hipótesis a confirmar, inferida por posición en la secuencia: en el circuito largo de una exportación, los dos tags consecutivos que preceden a las dos salidas observadas. | El expediente señala la salida y enumera las tres hipótesis sin elegir. Los valores van a `crossings` en la configuración local, nunca al repositorio |
 | OQ-120 | ¿Qué tags lleva cada vehículo en memoria, y con qué vigencia? Sin eso, **ninguna tasa de lectura es salud**: «no lo detectó» y «no lo lleva cargado» producen el mismo dato (R-OPP-009). Medido: la ceguera se concentra en pocos vehículos y dos de ellos son ciegos a conjuntos que se solapan. | Se publican los hechos y sus hipótesis, nunca una tasa de salud. La ceguera bimodal sale señalada con la memoria como hipótesis prioritaria |
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
 

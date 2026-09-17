@@ -2,6 +2,47 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [1.5.0] - 2026-09-17
+
+Una corrección del propietario invierte R-AGV-009, y es la más importante de la serie porque la
+regla mal escrita habría hecho que el software **callara un fallo real**.
+
+### Corregido
+
+- **Salir del circuito no es una reubicación benigna: es una anomalía por diseño.** Los cruces
+  llevan un par de tags de protección precisamente para detener a un vehículo que se desvía, así
+  que si salió, algo no funcionó — el giro no se ejecutó, no leyó los tags, o la orden no se cursó.
+  R-AGV-009 decía lo contrario: que no era avería y que el intervalo era «sin datos cargados». Se
+  reescribe entera. Lo que sí se conserva del enunciado viejo es que **la ausencia de lecturas
+  mientras está fuera sigue sin ser medible**: el hallazgo es la salida, no el silencio. Eran dos
+  cosas y estaban mezcladas.
+
+### Añadido
+
+- **R-AGV-011**: el modo de fallo se discrimina con los propios tags de protección. Si aparecen en
+  las lecturas y el vehículo salió igual, la lectura funcionó y la orden no; si no aparecen, falló
+  la lectura. Ambas ramas son `inferred` y se presentan con su evidencia.
+- **`crossings`** en `CONFIG_SCHEMA.md` §3.4: por cada cruce, el par de tags de protección en el
+  orden en que se leen, el tag esperado si el giro se ejecuta y el circuito de destino, con
+  vigencia. Configuración de planta: la forma al repositorio, los valores fuera.
+- El expediente por vehículo presenta cada salida con **el sucesor que sus vecinos sí toman**, los
+  tags que leyó justo antes, y una marca cuando hubo intervención manual.
+
+### Medido
+
+En el circuito largo de una exportación, la secuencia del cruce la recorren los ocho vehículos
+entre siete y ocho veces cada uno **sin una sola excepción**, salvo uno que falla dos veces la misma
+tarde y de **dos maneras distintas**: una vez se desvía antes del segundo tag de protección, otra
+lee los dos y se va igual. Son exactamente los dos modos de fallo, separados por el propio dato. Las
+dos acaban con intervención humana: parada desde web en el segundo de reaparecer, parada manual,
+acceso al menú de administración.
+
+### Abierto
+
+- **OQ-121**: cuáles son los pares de protección de cada cruce. Sin ellos se puede señalar dónde se
+  salió un vehículo, pero no qué falló.
+- **OQ-119 reformulada**: la pregunta ya no es adónde fue, sino qué cruce falló y de qué modo.
+
 ## [1.4.0] - 2026-09-17
 
 Un hecho de dominio del propietario —un vehículo solo registra los tags que lleva en **memoria**—

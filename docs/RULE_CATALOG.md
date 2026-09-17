@@ -1,6 +1,6 @@
 ---
 document_id: TT-RULES-001
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -74,7 +74,8 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-AGV-006 | accepted | Un AGV detenido no emite lecturas. Por tanto la inactividad y el fallo de comunicación producen el mismo silencio y **no se distinguen por la ausencia en sí**: se discriminan por el contexto colectivo, por el punto donde se produjo la última lectura y por el calendario vigente. |
 | R-AGV-007 | accepted | La forma de la reaparición discrimina lo que el silencio no. Reaparecer más tarde conservando la posición relativa entre los mismos vecinos demuestra permanencia en el circuito y descarta salida o retirada, pero no distingue por sí solo detención de circulación sin lectura: eso lo deciden el avance de los vecinos y el exceso sobre el tiempo esperado del tramo. |
 | R-AGV-008 | accepted | Si los vecinos de un objeto tampoco avanzaron durante su silencio, la causa no es de ese objeto sino de la línea, y atribuirle un fallo individual es un falso diagnóstico. Esta comprobación tiene prioridad sobre cualquier hipótesis individual. |
-| R-AGV-009 | accepted | Reaparecer donde no se llega desde donde se desapareció —una transición que ningún vecino de circuito hace— es firma de haber **salido del circuito**, no de una avería. Mientras no se cargue la exportación del circuito de destino, ese intervalo es `sin datos cargados` para ese vehículo. Diagnosticarlo como silencio es un falso positivo trazable hasta filas reales. |
+| R-AGV-009 | accepted | Reaparecer donde no se llega desde donde se desapareció —una transición que ningún vecino de circuito hace— es firma de haber **salido del circuito**, y salir del circuito es **una anomalía por diseño**: los cruces llevan tags de protección precisamente para detener a un vehículo que se desvía. Por tanto es un hallazgo con hipótesis enumerables —giro no ejecutado, protección no leída, u orden no cursada— y nunca se archiva como reubicación benigna. Lo que sigue sin ser medible es la **ausencia de lecturas mientras está fuera**; el hallazgo es la salida, no el silencio. |
+| R-AGV-011 | accepted | El modo de fallo de una salida se discrimina con los tags de protección del cruce: si aparecen en las lecturas y el vehículo salió igual, la lectura funcionó y la orden no se ejecutó; si no aparecen, falló la lectura. Ambas ramas son `inferred` y se presentan con su evidencia, nunca como causa única. |
 | R-AGV-010 | accepted | Donde la carga se hace en el propio recorrido, una parada larga es el modo normal de operar y no un hallazgo. Lo que informa es si las paradas de un vehículo se salen de las de sus vecinos de circuito —en duración, en número o en dónde ocurren—, nunca que existan. |
 
 ## Comunicación

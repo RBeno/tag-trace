@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.2.0
+version: 0.3.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -56,6 +56,7 @@ nunca con una media que mezcle producción y parada.
 | `critical_points` | Tag, función, grado 1–3 y redundancias (DS-005). |
 | `lap_anchors` | Anclas que permiten cortar vueltas; admite varias y una confianza mínima (OQ-102). |
 | `excluded_contexts` | Mantenimiento, asistencia y pastor, fuera del recorrido productivo (R-GRA-004). |
+| `crossings` | Cruces hacia otro circuito. Por cada uno: identificador, **par de tags de protección** en el orden en que se leen, tag esperado si el giro se ejecuta, y circuito de destino. La protección existe para detener a un vehículo que se desvía, así que su par es lo que permite decir **qué** falló cuando alguien se sale (R-AGV-009, R-AGV-011). |
 
 ### 3.5 Parámetros de análisis
 

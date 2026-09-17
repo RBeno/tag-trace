@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -204,10 +204,22 @@ Medido sobre una exportación real de tres circuitos: trece de los catorce vehí
 asignado tenían cero o una reanudación de este tipo; el decimocuarto tenía cinco, y era
 efectivamente el que se iba a otro circuito. La señal separa sin umbrales que calibrar.
 
-Este discriminante tiene **prioridad sobre las hipótesis de avería**, junto a R-AGV-008: antes de
-atribuir un fallo hay que descartar que el objeto estuviera en otro sitio. El intervalo queda como
-`sin datos cargados` para ese objeto hasta que se cargue la exportación del circuito de destino, y
-entonces la comprobación es directa: buscar sus lecturas en ese intervalo.
+**Y salir del circuito no es una reubicación benigna: es una anomalía por diseño.** Los cruces
+llevan un par de tags de protección precisamente para detener a un vehículo que se desvía, así que
+un objeto que se fue significa que algo no funcionó. Las hipótesis son enumerables:
+
+| Evidencia en las lecturas | Hipótesis |
+|---|---|
+| los tags de protección aparecen y salió igual | la lectura funcionó; la orden no se ejecutó |
+| los tags de protección no aparecen | falló la lectura de la protección |
+| salió antes del segundo tag del par | se desvió entre uno y otro |
+
+Ambas ramas son `inferred` y se presentan con su evidencia, nunca como causa única. Lo que sigue sin
+ser medible es la **ausencia de lecturas mientras está fuera**; el hallazgo es la salida, no el
+silencio — son dos cosas distintas y conviene no mezclarlas.
+
+Cruzar exportaciones **no** confirma dónde estuvo: si el vehículo no lleva en memoria los tags del
+circuito de destino, no aparece en su exportación (R-OPP-009).
 
 ## 5. Estadística robusta
 
