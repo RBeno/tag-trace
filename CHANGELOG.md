@@ -2,6 +2,63 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [1.6.0] - 2026-09-17
+
+Los cruces son una **clase de función** de los tags críticos, no un concepto paralelo, y el
+propietario cierra la lista: parada precisa, cruce, semáforo, dejar/recoger carro, cambio de mapa
+importante y bifurcación. Buscar la firma de cada clase en el dato destapó de paso que la prueba de
+R-AGV-009 estaba mal, y que con ella el software habría inventado averías.
+
+### Corregido
+
+- **Una transición que ningún vecino hace no demuestra una salida: demuestra que se dejó de leer.**
+  Era el único criterio de R-AGV-009 y es insuficiente: un vehículo que recorre su línea sin
+  registrar catorce tags reaparece dando un salto que nadie más da, sin haberse movido. Se añade
+  **R-AGV-012** con la prueba de dos partes —¿se alcanza el tag de reanudación siguiendo la línea?,
+  y si se alcanza, ¿excedió el tiempo que tarda el cohorte por ese tramo medido de extremo a
+  extremo?—, y la comparación va contra ese recorrido medido, nunca contra la suma de medianas de
+  cada arista: donde la carga se hace en ruta, un tramo con parada de trabajo tiene una dispersión
+  tal que cualquier umbral sobre la suma dispara solo.
+- **Aplicada la prueba, las dos «salidas» que se habían presentado como fallo de cruce desaparecen.**
+  Las dos caen dentro del rango de recorrido de sus vecinos por ese mismo tramo. Lo que el vehículo
+  tiene son cuatro tramos recorridos sin leer, cuarenta tags, frente a cero o catorce de sus trece
+  compañeros: sigue siendo el anómalo de la exportación, pero por lectura y no por trayecto.
+- **La hipótesis del par de protección queda retirada** (OQ-121). Se apoyaba en esas dos salidas, y
+  sin ellas no tiene nada detrás. La sustituye una evidencia distinta: los cinco tags donde dos
+  circuitos siguen por sitios distintos llevan **todos** un tag acompañante leído pegado en 61 a 98
+  pasadas. Es la forma de un par en un punto; cuál protege qué giro sigue siendo dato de planta.
+- **`crossings` deja de ser un bloque suelto.** Pasa a ser `function: cruce` dentro de
+  `critical_points`, con los campos que esa función exige. Un cruce es un tag crítico, no otra cosa.
+- Releer el mismo tag dejaba de contar como quedarse quieto y salía como salida del circuito.
+
+### Añadido
+
+- **R-DAT-013**: dos lecturas de un mismo vehículo **en el mismo instante no ordenan nada**. Su
+  orden es posición de pila, no medida del reloj, así que es `inferred` (ADR-0013) y una arista
+  construida sobre ellas no sostiene topología: aparecen las dos direcciones y la minoritaria simula
+  un desvío que nunca ocurrió. Dos tags que se leen así de forma habitual son **un punto, no dos**.
+  Medido: 2,9 % y 3,3 % de las transiciones de dos exportaciones reales, y 3 de las 164 aristas que
+  un circuito reconstruido declaraba `observed` se apoyan en una de ellas.
+- **R-GRA-007**: qué es un tag crítico y cuáles son sus seis clases de función. La función es dato
+  de planta declarado; el fichero solo deja firmas que sirven para **proponer candidatos**. Dos
+  clases no dejan ninguna y se declaran como tales: un cambio de mapa es indistinguible de un tag
+  cualquiera, y un cruce que nadie ha fallado y que recorre un solo circuito tampoco, porque un
+  cruce existe justamente para que todos pasen igual.
+- **R-GRA-008**: un tag crítico no leído **no equivale** a un tag ordinario no leído. En el
+  ordinario la omisión degrada la reconstrucción; en el crítico se pierde la función que sostenía.
+  Se cuentan por separado, porque una tasa que los promedie oculta lo que hay que ver.
+- `CONFIG_SCHEMA.md` §3.4.1 con la forma de `critical_points` y de los campos propios de `cruce`.
+- **OQ-122**: qué tags son críticos y de qué clase, con los candidatos por firma pendientes de que
+  el propietario los confirme o los complete.
+
+### Cambiado
+
+- `ALGORITHM_CATALOG.md`: el sexto discriminante pasa de un criterio a dos, con la medida de lo que
+  cambia entre aplicar uno o los dos.
+- OQ-119 se reformula por segunda vez: ya no es «qué cruce falló», porque no queda ninguna salida
+  que sostener. Lo que queda abierto es la ceguera por tramos, y una cola de 234 min al final de la
+  ventana que no reanuda dentro de ella y por tanto no es contrastable.
+
 ## [1.5.0] - 2026-09-17
 
 Una corrección del propietario invierte R-AGV-009, y es la más importante de la serie porque la

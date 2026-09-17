@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.3.0
+version: 0.4.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -53,10 +53,38 @@ nunca con una media que mezcle producción y parada.
 | `loaded_zone` | Límites de la zona cargada, donde se espera FIFO (R-FLO-001). |
 | `empty_zone` | Límites de la zona vacía, donde se admite reordenación (R-FLO-002). |
 | `co_lanes` | Una entrada por calle de carga online: identificador, tag de parada, secuencia de tags, capacidad (R-CO-001). |
-| `critical_points` | Tag, función, grado 1–3 y redundancias (DS-005). |
+| `critical_points` | Los **tags críticos**: tag, clase de función, grado 1–3 y redundancias (DS-005, R-GRA-007). Ver §3.4.1. |
 | `lap_anchors` | Anclas que permiten cortar vueltas; admite varias y una confianza mínima (OQ-102). |
 | `excluded_contexts` | Mantenimiento, asistencia y pastor, fuera del recorrido productivo (R-GRA-004). |
-| `crossings` | Cruces hacia otro circuito. Por cada uno: identificador, **par de tags de protección** en el orden en que se leen, tag esperado si el giro se ejecuta, y circuito de destino. La protección existe para detener a un vehículo que se desvía, así que su par es lo que permite decir **qué** falló cuando alguien se sale (R-AGV-009, R-AGV-011). |
+
+#### 3.4.1 Tags críticos y sus clases de función
+
+Un tag es crítico cuando de él depende que el vehículo haga lo correcto, no por estar muy leído.
+Las clases son cerradas y las declara el propietario:
+
+```text
+critical_points : lista de { tag, function, grade, redundancy, valid_from, valid_to }
+function        : parada_precisa | cruce | semaforo | dejar_recoger_carro
+                | cambio_de_mapa | bifurcacion
+```
+
+`cruce` **no es un bloque aparte**: es una de las seis clases. Un tag de esa clase lleva además los
+campos que su función exige, y que ninguna otra necesita:
+
+```text
+cruce : { protection_pair: [tag, tag], expected_tag, target_circuit }
+```
+
+El par de protección existe para **detener** a un vehículo que se desvía, así que es lo que permite
+decir *qué* falló cuando alguien se sale, y no solo *dónde* (R-AGV-009, R-AGV-011). `expected_tag`
+es el tag que toca si el giro se ejecuta.
+
+**La función no se deduce del fichero.** El dato deja una firma por clase que sirve para proponer
+candidatos —una espera regular apunta a temporizada, una variable explicada por el vehículo de
+delante apunta a semáforo, dos ramas que reconvergen apuntan a bifurcación—, pero proponer no es
+asignar. Y dos clases no dejan firma ninguna: un `cambio_de_mapa` es indistinguible de un tag
+cualquiera, y un `cruce` que nadie ha fallado y que recorre un solo circuito tampoco se ve, porque
+un cruce existe justamente para que todos pasen igual. Sin declaración, esas dos quedan `unknown`.
 
 ### 3.5 Parámetros de análisis
 

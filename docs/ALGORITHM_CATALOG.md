@@ -195,14 +195,35 @@ ser normal en un tramo y anómalo en otro, y ninguna cifra de referencia se fija
 Los cinco anteriores miran hacia atrás, hacia los lados y hacia delante **dentro** del circuito.
 Ninguno contempla que el objeto se haya ido a otro.
 
-La comprobación es barata y no necesita configuración: si el par (último tag antes del silencio →
-primer tag después) es una transición que sus vecinos de circuito también hacen, el objeto estuvo
-**ahí parado**. Si ningún vecino hace ese salto, reapareció donde no se llega desde donde
-desapareció, y eso no es un silencio: es una **salida del circuito** (R-AGV-009).
+Si el par (último tag antes del silencio → primer tag después) es una transición que sus vecinos de
+circuito también hacen, el objeto estuvo **ahí parado**. Hasta ahí es barato. Lo que **no** vale es
+el recíproco, y darlo por bueno fue un error de este catálogo: que ningún vecino haga ese salto no
+demuestra que el objeto se fuera, demuestra que **dejó de leer**. Un vehículo que recorre su propia
+línea sin registrar catorce tags reaparece dando un salto que nadie más da, sin haberse movido.
 
-Medido sobre una exportación real de tres circuitos: trece de los catorce vehículos con circuito
-asignado tenían cero o una reanudación de este tipo; el decimocuarto tenía cinco, y era
-efectivamente el que se iba a otro circuito. La señal separa sin umbrales que calibrar.
+La comprobación completa tiene dos partes, y la segunda es la que decide (R-AGV-012):
+
+1. ¿Se alcanza el tag de reanudación siguiendo la línea desde donde desapareció? Si no, no se llega
+   desde ahí y la salida se sostiene.
+2. Si se alcanza, ¿cuánto tardó frente a lo que tarda el cohorte **por ese mismo tramo, medido de
+   extremo a extremo**? Dentro de su rango, el objeto estuvo ahí y lo que hay es un tramo recorrido
+   sin leer. Solo por encima se sostiene que estuvo en otro sitio.
+
+La comparación va contra el recorrido medido, nunca contra la suma de tiempos de cada arista: donde
+la carga se hace en ruta, un tramo con parada de trabajo tiene una dispersión tal que cualquier
+umbral sobre la suma dispara solo. Releer el mismo tag tampoco es ir a ninguna parte.
+
+Medido sobre una exportación real de tres circuitos, la diferencia entre aplicar solo el primer
+criterio y aplicar los dos es la diferencia entre un diagnóstico y un falso positivo: el vehículo
+que parecía irse cinco veces no se va **ninguna**. Lo que tiene son cuatro tramos recorridos sin
+leer, cuarenta tags en total, frente a cero o catorce de sus trece compañeros. Sigue siendo el
+vehículo anómalo de la exportación, pero por lectura y no por trayecto, y el hallazgo que se le
+atribuya cambia entero.
+
+Un corolario que hay que aplicar antes que nada de lo anterior: **dos lecturas en el mismo instante
+no ordenan nada** (R-DAT-013). Su orden es posición de pila, no medida del reloj, así que aparecen
+en las dos direcciones y la minoritaria simula un desvío que nunca ocurrió. Antes de discriminar
+nada, esas aristas se retiran del razonamiento topológico.
 
 **Y salir del circuito no es una reubicación benigna: es una anomalía por diseño.** Los cruces
 llevan un par de tags de protección precisamente para detener a un vehículo que se desvía, así que
