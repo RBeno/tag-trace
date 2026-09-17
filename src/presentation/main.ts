@@ -16,6 +16,7 @@ import {
   type ToWorker,
 } from "../application/protocol.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
+import type { FieldOrder } from "../domain/time.js";
 
 /** Zona horaria del piloto. Es configuración: vivirá en el circuito cuando exista (F1b). */
 const ZONE = "Europe/Madrid";
@@ -33,6 +34,8 @@ interface State {
   quarantine: readonly QuarantinedRow[];
   warnings: readonly string[];
   shown: number;
+  /** El último fichero elegido, para poder reintentar con el orden de fecha que fije el usuario. */
+  file: File | null;
 }
 
 const state: State = {
@@ -44,6 +47,7 @@ const state: State = {
   quarantine: [],
   warnings: [],
   shown: 0,
+  file: null,
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -134,6 +138,37 @@ function showMessage(kind: "error" | "warn" | "info", heading: string, lines: re
 function clearMessages(): void {
   messagePanel.replaceChildren();
   messagePanel.hidden = true;
+}
+
+/**
+ * La salida de una fuente cuya fecha no se puede resolver sola.
+ *
+ * Sin esto el mensaje de error pedía «indica el orden de los campos» y **no había forma de
+ * indicarlo**: una promesa que el programa no cumplía, y una exportación legítima de los primeros
+ * días de un mes quedaba fuera para siempre. El programa sigue sin elegir por el usuario; le da el
+ * alcance de cada lectura —que ya va en el mensaje— y un control para decidir (R-DAT-014).
+ */
+function offerFieldOrder(file: File): void {
+  const chooser = element("div", "chooser");
+  const select = element("select");
+  select.id = "field-order";
+  for (const [value, label] of [
+    ["day-first", "día/mes (31/12/2026)"],
+    ["month-first", "mes/día (12/31/2026)"],
+  ] as const) {
+    const option = element("option", undefined, label);
+    option.value = value;
+    select.append(option);
+  }
+  const label = element("label", undefined, "Orden de los campos de fecha ");
+  label.htmlFor = "field-order";
+  const retry = element("button", undefined, "Importar con este orden");
+  retry.type = "button";
+  retry.addEventListener("click", () => {
+    startImport(file, select.value as FieldOrder);
+  });
+  chooser.append(label, select, retry);
+  messagePanel.append(chooser);
 }
 
 function renderSummary(summary: SourceSummary): void {
@@ -365,6 +400,9 @@ function handleMessage(message: FromWorker): void {
         lines.push(...message.sampleRows.map((row) => `Ejemplo: ${row}`));
       }
       showMessage("error", `No se pudo importar (${message.code})`, lines);
+      // Una fuente ambigua no es una fuente rota: es una que el programa no puede resolver solo.
+      // Se ofrece la salida en lugar de dejar al usuario con una instrucción que no puede seguir.
+      if (message.code === "DATE_AMBIGUOUS" && state.file !== null) offerFieldOrder(state.file);
       setBusy(false);
       disposeWorker();
       return;
@@ -380,7 +418,7 @@ function handleMessage(message: FromWorker): void {
   }
 }
 
-function startImport(file: File): void {
+function startImport(file: File, fieldOrder?: FieldOrder): void {
   disposeWorker();
   clearMessages();
   summaryPanel.hidden = true;
@@ -408,7 +446,16 @@ function startImport(file: File): void {
   progressNote.textContent = "Preparando";
   progressBar.value = 0;
 
-  const start: ToWorker = { type: "start", protocolVersion: PROTOCOL_VERSION, jobId, file, zone: ZONE };
+  const start: ToWorker = {
+    type: "start",
+    protocolVersion: PROTOCOL_VERSION,
+    jobId,
+    file,
+    zone: ZONE,
+    // Solo viaja si el usuario lo fijó: sin él, la detección manda y puede declararse incapaz.
+    ...(fieldOrder === undefined ? {} : { fieldOrder }),
+  };
+  state.file = file;
   worker.postMessage(start);
 }
 

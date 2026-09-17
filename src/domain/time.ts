@@ -202,9 +202,31 @@ export function parseTimestamp(raw: string, options: TimeParseOptions): TimePars
   return { ok: true, time: { utcMs, raw, zone: options.zone, flag } };
 }
 
+/**
+ * Qué abarcaría el fichero leído con cada uno de los dos órdenes posibles.
+ *
+ * Es lo que convierte una pregunta imposible en una obvia. Ante «01/09 y 02/09», nadie puede decir
+ * de memoria si son días o meses; ante «dos días seguidos» frente a «dos días a 31 días de
+ * distancia», cualquiera que conozca la planta responde al instante. El programa no elige: mide las
+ * dos lecturas y las pone delante.
+ */
+export interface FieldOrderInterpretation {
+  readonly order: FieldOrder;
+  /** Primera y última fecha bajo esta lectura, en formato `dd/mm/aaaa`. */
+  readonly from: string;
+  readonly to: string;
+  /** Días que separan la primera de la última. */
+  readonly spanDays: number;
+}
+
 export type FieldOrderDetection =
   | { readonly determined: true; readonly order: FieldOrder; readonly evidence: string }
-  | { readonly determined: false; readonly reason: "AMBIGUOUS" | "CONTRADICTORY" | "NO_DATES" };
+  | { readonly determined: false; readonly reason: "CONTRADICTORY" | "NO_DATES" }
+  | {
+      readonly determined: false;
+      readonly reason: "AMBIGUOUS";
+      readonly interpretations: readonly FieldOrderInterpretation[];
+    };
 
 /**
  * Determina el orden de los campos observando el conjunto de fechas.
@@ -221,6 +243,8 @@ export function detectFieldOrder(samples: readonly string[]): FieldOrderDetectio
   let firstExceedsTwelve = false;
   let secondExceedsTwelve = false;
   let recognised = 0;
+  // Las fechas distintas, no las filas: un fichero de doscientas mil líneas cubre unos pocos días.
+  const dates = new Set<string>();
 
   for (const sample of samples) {
     const match = WALL_PATTERN.exec(sample.trim());
@@ -228,6 +252,7 @@ export function detectFieldOrder(samples: readonly string[]): FieldOrderDetectio
     recognised += 1;
     if (Number(match[1]) > 12) firstExceedsTwelve = true;
     if (Number(match[2]) > 12) secondExceedsTwelve = true;
+    dates.add(`${match[1]}/${match[2]}/${match[3]}`);
   }
 
   if (recognised === 0) return { determined: false, reason: "NO_DATES" };
@@ -238,5 +263,40 @@ export function detectFieldOrder(samples: readonly string[]): FieldOrderDetectio
   if (secondExceedsTwelve) {
     return { determined: true, order: "month-first", evidence: "el segundo campo supera 12 en alguna fila" };
   }
-  return { determined: false, reason: "AMBIGUOUS" };
+  return { determined: false, reason: "AMBIGUOUS", interpretations: interpret(dates) };
+}
+
+/** El alcance del fichero bajo cada lectura posible, para que el usuario pueda elegir con datos. */
+function interpret(dates: ReadonlySet<string>): readonly FieldOrderInterpretation[] {
+  const out: FieldOrderInterpretation[] = [];
+  for (const order of ["day-first", "month-first"] as const) {
+    const stamps: number[] = [];
+    for (const key of dates) {
+      const [a, b, year] = key.split("/").map(Number) as [number, number, number];
+      const day = order === "day-first" ? a : b;
+      const month = order === "day-first" ? b : a;
+      // Ambiguo significa que ninguno de los dos campos supera doce, pero sí pueden ser cero: el
+      // patrón admite `00/05/2026`. Un mes cero daría diciembre del año anterior y un día cero el
+      // último del mes previo, así que una fecha imposible se descarta en vez de desplazarse.
+      if (day >= 1 && month >= 1 && day <= daysInMonth(year, month)) {
+        stamps.push(Date.UTC(year, month - 1, day));
+      }
+    }
+    if (stamps.length === 0) continue;
+    const min = Math.min(...stamps);
+    const max = Math.max(...stamps);
+    out.push({
+      order,
+      from: formatDate(min),
+      to: formatDate(max),
+      spanDays: Math.round((max - min) / 86_400_000),
+    });
+  }
+  return out;
+}
+
+function formatDate(utcMs: number): string {
+  const date = new Date(utcMs);
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return `${pad(date.getUTCDate())}/${pad(date.getUTCMonth() + 1)}/${date.getUTCFullYear()}`;
 }

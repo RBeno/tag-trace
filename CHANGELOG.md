@@ -2,6 +2,38 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [1.8.0] - 2026-09-17
+
+Una exportación real de dos días al principio de un mes **no se podía importar**, y el mensaje de
+error pedía al usuario algo que la aplicación no le permitía hacer. Lo encontró el propietario
+aportando el fichero; estaba anotado como riesgo desde hace dos días con la nota «hoy no hay fuente
+así; la habrá».
+
+### Corregido
+
+- **Una fuente de fecha ambigua ya tiene salida.** Cuando ninguna fecha supera el día 12 no se puede
+  distinguir día/mes de mes/día. Hasta ahora eso era un rechazo definitivo: el mensaje decía «indica
+  explícitamente el orden de los campos» y **no existía ninguna forma de indicarlo**. El parámetro
+  estaba en el núcleo y en el protocolo desde el principio; lo que faltaba era el control en la
+  interfaz. Una promesa que el programa no cumple es peor que el rechazo.
+- **La detección se rendía antes de mirar el fichero entero.** El muestreo se cortaba en 5.000
+  valores, y como la fuente entrega en pila esas filas son todas del mismo día. Un día 13 en la fila
+  cincuenta mil resolvía la ambigüedad y nunca se llegaba a leer: se declaraba irresoluble un
+  fichero que se resuelve solo. Ahora, cuando la muestra no decide, se recorre el resto de la
+  columna de fecha, que es barato y solo ocurre en ese caso.
+- Una fecha imposible dejaba de descartarse y se desplazaba: un mes `00` daba diciembre del año
+  anterior. Se descarta.
+
+### Añadido
+
+- **El fallo entrega el alcance de las dos lecturas posibles**, que es lo que convierte una pregunta
+  imposible en una obvia: «día/mes: del 01/09/2026 al 02/09/2026 (dos días seguidos); mes/día: del
+  09/01/2026 al 09/02/2026 (31 días)». El programa sigue sin elegir; pone las dos medidas delante.
+- **R-DAT-014**: cómo se trata una fuente de fecha indeterminable, con las dos consecuencias que
+  este defecto demostró —el alcance se mide sobre todas las fechas, no sobre una muestra, y una
+  recuperación ofrecida tiene que existir de verdad.
+- Control de orden de fecha en la interfaz, que aparece solo cuando hace falta.
+
 ## [1.7.0] - 2026-09-17
 
 R-DAT-013 deja de vivir solo en el catálogo. La regla se escribió ayer; hasta hoy el producto no la

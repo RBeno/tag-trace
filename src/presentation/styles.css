@@ -50,6 +50,10 @@ tr.flagged { background: var(--flag); }
 .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .raw { color: var(--muted); }
 #show-more { margin-top: 12px; }
+/* La salida de una fuente de fecha ambigua: el usuario elige, el programa no adivina. */
+.chooser { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
+.chooser select { font: inherit; padding: 6px 10px; min-height: 24px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
 @media (max-width: 560px) {
   .facts { grid-template-columns: 1fr; gap: 2px 0; }
   .facts dd { margin-bottom: 8px; }

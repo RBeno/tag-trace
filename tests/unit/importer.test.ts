@@ -184,6 +184,34 @@ describe("formato de fecha · no se adivina", () => {
     expect(detection).toMatchObject({ determined: false, reason: "AMBIGUOUS" });
   });
 
+  // Una exportación de dos días al principio de un mes es legítima y no tiene ninguna fecha que
+  // supere el doce. Quedarse en «no se puede decidir» la deja fuera para siempre; lo que se puede
+  // hacer es enseñar qué abarca cada lectura, que convierte la pregunta en contestable.
+  it("una fuente ambigua entrega el alcance de las dos lecturas para que el usuario decida", () => {
+    const detection = detectFieldOrder(["01/09/2026 0:00", "02/09/2026 16:19"]);
+    expect(detection).toMatchObject({ determined: false, reason: "AMBIGUOUS" });
+    if (detection.determined || detection.reason !== "AMBIGUOUS") throw new Error("esperaba AMBIGUOUS");
+    expect(detection.interpretations).toEqual([
+      { order: "day-first", from: "01/09/2026", to: "02/09/2026", spanDays: 1 },
+      { order: "month-first", from: "09/01/2026", to: "09/02/2026", spanDays: 31 },
+    ]);
+  });
+
+  it("el alcance descarta la fecha imposible en lugar de desplazarla a otro mes", () => {
+    // `00/05` pasa el patrón y ningún campo supera doce, así que llega aquí. Un cero no es un día
+    // ni un mes: contarlo daría diciembre del año anterior y un alcance inventado.
+    const detection = detectFieldOrder(["00/05/2026 1:00", "04/05/2026 2:00", "06/05/2026 3:00"]);
+    if (detection.determined || detection.reason !== "AMBIGUOUS") throw new Error("esperaba AMBIGUOUS");
+    for (const view of detection.interpretations) {
+      expect(view.from.endsWith("/2026")).toBe(true);
+      expect(view.from.startsWith("00/")).toBe(false);
+      expect(view.to.startsWith("00/")).toBe(false);
+    }
+    // Solo cuentan 04/05 y 06/05: día/mes son el 4 y el 6 de mayo (2 días); mes/día, el 5 de abril
+    // y el 5 de junio (61). La del cero no aparece en ninguna de las dos.
+    expect(detection.interpretations.map((view) => view.spanDays)).toEqual([2, 61]);
+  });
+
   it("una fuente incoherente se señala en lugar de elegir un orden", () => {
     const detection = detectFieldOrder(["24/01/2026 5:03", "01/24/2026 5:03"]);
     expect(detection).toMatchObject({ determined: false, reason: "CONTRADICTORY" });

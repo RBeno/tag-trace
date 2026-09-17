@@ -1,6 +1,6 @@
 ---
 document_id: TT-RULES-001
-version: 0.12.0
+version: 0.13.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -36,6 +36,8 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-DAT-011 | accepted | El multicircuito va declarado en el tag, no reconstruido por continuidad: un tag nunca declara dos valores, pero puede no declararlo en una pasada. Ausente es `unknown`, no «el mismo de antes». |
 | R-DAT-012 | accepted | Una exportación puede contener **varios circuitos** bajo un mismo nombre de circuito. El cohorte de comparación es el circuito, nunca el fichero. Los circuitos se separan por **aristas exclusivas** —transiciones que un grupo recorre y ningún otro—, no por el nombre ni por el parecido a secas. Un vehículo sin circuito asignable no se compara contra nada: se declara y se para. |
 | R-DAT-013 | accepted | **Dos lecturas de un mismo vehículo en el mismo instante no ordenan nada.** Su orden en el fichero es posición de pila, no medida del reloj, así que es `inferred` (ADR-0013) y una arista construida sobre ellas **no sostiene una afirmación de topología**: las dos direcciones aparecen y la minoritaria simula un desvío que nunca ocurrió. Dos tags que se leen así de forma habitual son **un punto, no dos**, y se presentan como par sin orden. Cerca en el tiempo no es lo mismo que a la vez: el régimen es el instante idéntico, no una vecindad de segundos. |
+| R-DAT-014 | accepted | Una fuente cuyo orden de campos de fecha no se puede determinar **no se resuelve por mayoría, por idioma ni por el país del usuario**, pero tampoco se rechaza sin salida: el programa mide **qué abarcaría el fichero con cada lectura** y deja que el usuario elija. Ante «01/09 y 02/09» nadie contesta de memoria; ante «dos días seguidos» frente a «dos días a 31 días de distancia», cualquiera que conozca la planta responde. Dos consecuencias obligatorias: el alcance se calcula sobre **todas** las fechas del fichero y no sobre una muestra —en una pila las primeras miles de filas son el mismo día y el alcance saldría nulo—, y una recuperación que se le ofrece al usuario tiene que existir de verdad en la interfaz. Un mensaje que pide algo que el programa no permite hacer es peor que el rechazo. |
+
 ## Circuito y topología
 
 | ID | Estado | Regla |

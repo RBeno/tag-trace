@@ -112,6 +112,12 @@ export interface ImportResult {
   readonly warnings: string[];
 }
 
+/** El alcance en palabras, para que el mensaje se lea como una frase y no como un volcado. */
+function describeSpan(days: number): string {
+  if (days === 0) return "un solo día";
+  return days === 1 ? "dos días seguidos" : `${days} días`;
+}
+
 /** Recorta un valor para que pueda mostrarse sin volcar una fila entera. */
 function excerpt(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -279,9 +285,17 @@ export function importReadings(
 
     let timeSamples = collectTimeSamples(SAMPLE_LIMIT);
     let order = detectFieldOrder(timeSamples);
-    if (!order.determined && order.reason === "NO_DATES" && timeSamples.length >= SAMPLE_LIMIT) {
-      // La muestra no aportó ninguna fecha reconocible. Antes de rendirse se mira el resto del
-      // fichero: es barato —solo la columna de fecha— y solo ocurre en un caso patológico.
+    const inconclusive =
+      !order.determined && (order.reason === "NO_DATES" || order.reason === "AMBIGUOUS");
+    if (inconclusive && timeSamples.length >= SAMPLE_LIMIT) {
+      // La muestra no decidió. Antes de rendirse se mira el resto del fichero: es barato —solo la
+      // columna de fecha— y solo ocurre cuando ya se ha agotado el recurso normal.
+      //
+      // Para `AMBIGUOUS` no es un lujo, es obligatorio, y por dos motivos. Uno: la fuente entrega
+      // como pila, así que las primeras cinco mil filas son el mismo día, y un día 13 que resolvería
+      // la ambigüedad puede estar en la fila cincuenta mil. Rendirse antes declara irresoluble un
+      // fichero que se resuelve solo. Dos: el alcance que se le enseña al usuario para que decida
+      // sale de estas fechas, y calculado sobre un solo día no distingue nada.
       timeSamples = collectTimeSamples(Number.POSITIVE_INFINITY);
       order = detectFieldOrder(timeSamples);
     }
@@ -295,12 +309,28 @@ export function importReadings(
       fieldOrderEvidence =
         "provisional: ninguna fecha de la fuente encaja con los formatos admitidos";
     } else if (!order.determined) {
+      // La ambigüedad no se resuelve por mayoría ni por idioma, pero tampoco se deja al usuario a
+      // ciegas: se le enseña qué abarcaría el fichero con cada lectura. «01/09 y 02/09» no se puede
+      // contestar de memoria; «dos días seguidos o dos días a 31 días» sí (R-DAT-014).
+      const alcances =
+        order.reason === "AMBIGUOUS"
+          ? order.interpretations
+              .map(
+                (view) =>
+                  `${view.order === "day-first" ? "día/mes" : "mes/día"}: del ${view.from} al ` +
+                  `${view.to} (${describeSpan(view.spanDays)})`,
+              )
+              .join("; ")
+          : "";
       throw new ImportFailure(
         "DATE_AMBIGUOUS",
         order.reason === "AMBIGUOUS"
-          ? "Ninguna fecha supera el día 12, así que no puede distinguirse día/mes de mes/día."
+          ? "Ninguna fecha supera el día 12, así que no puede distinguirse día/mes de mes/día. " +
+            `Leído ${alcances}.`
           : "Hay fechas que solo encajan como día/mes y otras solo como mes/día: la fuente es incoherente.",
-        "Indica explícitamente el orden de los campos de fecha antes de importar.",
+        order.reason === "AMBIGUOUS"
+          ? "Elige el orden de los campos de fecha y vuelve a importar."
+          : "Corrige la fuente: ninguno de los dos órdenes explica todas sus fechas.",
         header,
         timeSamples.slice(0, 3).map(excerpt),
       );
