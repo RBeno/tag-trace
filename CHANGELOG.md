@@ -42,6 +42,11 @@ Encontraron cuatro defectos en la primera ejecución. Era el objetivo.
   Worker, y se corrige enviando una página en lugar de todo. La cifra **no** es la del móvil de
   referencia, que solo puede medir el propietario.
 - Las pruebas de navegador entran en CI como trabajo aparte, con su rastro guardado si fallan.
+- **`vitest.config.ts` declara el territorio de cada corredor**: Vitest solo `tests/unit/`,
+  Playwright solo `tests/e2e/`. Sin eso Vitest recogía también los ficheros de Playwright —el patrón
+  por defecto no los distingue— y fallaba con «Playwright Test did not expect test.describe() to be
+  called here». Lo detectó CI y no la ejecución local, porque el filtro con el que se revisó la
+  salida local no incluía la palabra `FAIL` y se dio por verde algo que estaba en rojo.
 
 ## [2.0.0] - 2026-09-17
 
