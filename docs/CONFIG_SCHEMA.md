@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.4.0
+version: 0.5.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -126,6 +126,36 @@ ningún diagnóstico.
 **Las listas literales no viven en este repositorio.** Son vocabulario del sistema de un cliente:
 van en la configuración local del circuito, junto al resto de valores de planta. Aquí queda su
 forma y su régimen de vigencia.
+
+### 3.8 Listas de tags: memoria, circuito virtual y especiales
+
+Cuatro listas que entran como configuración versionada, no como fuente de lecturas. Cada una con su
+**fecha de extracción**, que no es metadato prescindible: una lista de marzo no puede clasificar una
+ventana de septiembre, y sin vigencia declarada el inventario sale `unknown` diciendo por qué
+(OQ-123).
+
+```text
+tag_lists:
+  memory      : { tags[], extracted_at, scope: master | per_vehicle, valid_from, valid_to }
+  virtual     : { tags[], extracted_at, ordered: bool, valid_from, valid_to }
+  maintenance : { tags[], extracted_at, valid_from, valid_to }
+  emergency   : { tags[], extracted_at, valid_from, valid_to }
+```
+
+`scope` no es un detalle de formato: decide el estado de verdad de todo lo que se derive.
+
+| `scope` | Qué es la lista | Memoria del vehículo individual |
+|---|---|---|
+| `master` | la que cada vehículo **debería** llevar | `expected`; la desviación se infiere (R-OPP-012) |
+| `per_vehicle` | el inventario real de cada uno | `observed`; la discordancia se lee directamente |
+
+Hoy lo disponible es `master`. El esquema admite `per_vehicle` porque cerraría R-OPP-009 del todo,
+no porque exista.
+
+**La lista de memoria no es el universo de oportunidades**, y confundirlas es el error que
+R-OPP-011 impide: contiene tags obsoletos que ya no están instalados, y contarlos como oportunidad
+fabrica averías. El universo elegible es la lista de memoria **menos** lo que no existe, y lo que no
+existe se determina con dos ventanas, no con configuración.
 
 ## 4. Vigencia y versionado
 

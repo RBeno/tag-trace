@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.7.0
+version: 0.8.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -29,7 +29,7 @@ La matriz se ampliará hasta una relación automática cuando exista código. En
 | NFR-010–012, NFR-016 | ADR-0001, ADR-0009, ADR-0014 | Build/PWA | Offline, update, rollback | F6/G6 |
 | NFR-013 | UX specification | Presentación | E2E/accesibilidad | F6/G6 |
 
-## Implementación en F1a·0
+## Implementación
 
 Lo cubierto hoy por código ejecutable. Lo que no aparece aquí **no está implementado**, aunque su
 regla exista: la matriz no es una lista de intenciones.
@@ -48,9 +48,19 @@ regla exista: la matriz no es una lista de intenciones.
 | Cuarentena con motivo y procedencia | `src/domain/reading.ts`, `src/ingestion/importer.ts` | «filas no aceptadas · se conservan con su motivo» |
 | R-DAT-009 una fila sin tag no es un defecto | `src/domain/reading.ts` (`isDefect`), `src/ingestion/importer.ts` | «una fila con instante y AGV pero sin tag no es un defecto» |
 | R-DAT-010 codificación detectada y declarada | `src/ingestion/decode.ts` | «codificación · no se supone UTF-8» |
+| TC-015 / TC-021 unión por tramo común | `src/ingestion/union.ts` | `tests/unit/circuit.test.ts` |
+| R-DAT-007 cobertura y borde parcial | `src/domain/coverage.ts` | `tests/unit/circuit.test.ts` |
+| INV-010 / INV-011 hash semántico e ida y vuelta | `src/domain/semantic-hash.ts`, `src/persistence/agvproj.ts` | `tests/unit/agvproj.test.ts`, `tests/e2e/protocolo.spec.ts` |
+| TC-036–TC-041 acumulación, persistencia, protocolo y red | `src/persistence/store.ts`, `workers/import.worker.ts` | `tests/e2e/` |
+| TC-042–TC-047 inventario contrastado | `src/domain/inventory.ts` | `tests/unit/inventory.test.ts` |
+| R-DAT-016 obsoleto y averiado no se separan con una ventana | `src/domain/inventory.ts` (`classify`) | «un tag en memoria que nadie ha leído jamás…» |
+| R-OPP-011 en memoria **y** existente | `src/domain/inventory.ts` | «…es candidato a obsoleto, y queda unknown» |
+| R-OPP-012 la memoria individual no se observa | `src/domain/inventory.ts` (`truth: "inferred"`) | «un tag que unos leen siempre y otro nunca…» |
 
-No implementado todavía y por tanto sin fila: TC-015 (unión con solape), `.agvproj` y su ida y
-vuelta, INV-010/INV-011 (hash semántico), PERF-D2 medido y la prueba de red.
+**Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
+planta (DS-002, DS-006, DS-008), que es lo que conecta `inventory.ts` con la interfaz; el grafo y las
+vueltas, sin los cuales la normalización de R-OPP-010 sigue siendo aproximada; y la comparación entre
+dos periodos distantes, que es la única que separa un obsoleto de un tag averiado.
 
 ## Regla de mantenimiento
 

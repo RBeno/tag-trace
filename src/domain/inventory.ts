@@ -1,0 +1,261 @@
+/**
+ * Inventario contrastado: declarado × memoria × observado (`DATA_CONTRACTS.md` §3.5).
+ *
+ * Cruzar los tres conjuntos clasifica cada tag **sin grafo, sin vueltas y sin ninguna constante
+ * industrial**: es pertenencia a conjuntos y recuentos. Lo que aporta no es un cálculo difícil, sino
+ * una separación que hasta ahora no existía y cuya ausencia producía el peor tipo de error.
+ *
+ * El error que este módulo impide: la memoria de un vehículo contiene tags del circuito virtual, de
+ * mantenimiento, de sustitución de emergencia **y obsoletos que se retiraron del suelo y nunca se
+ * borraron de la lista**. Un obsoleto no produce lectura, exactamente igual que un tag que falla.
+ * Tratar «está en la memoria» como sinónimo de «pudo leerse» —que es lo que parecía obvio— convierte
+ * cada obsoleto en una avería inventada, y viene con una lista detrás, así que parece fundada. La
+ * condición correcta tiene dos partes: **en memoria y existente** (R-OPP-011).
+ *
+ * Lo que este módulo **no** hace, y es deliberado:
+ *
+ * - No emite ninguna tasa de salud. Eso es F3 y depende de las vueltas, que aquí no existen.
+ * - No decide si un candidato a obsoleto es obsoleto o está averiado. Con una sola ventana las dos
+ *   explicaciones producen el mismo dato y el estado es `unknown` (R-DAT-016). Lo resuelve comparar
+ *   dos periodos distantes, no analizar más el mismo.
+ * - No afirma qué lleva un vehículo concreto en memoria. Con una lista maestra eso es `expected`, y
+ *   la desviación individual solo se infiere del patrón bimodal (R-OPP-012).
+ */
+
+import type { Reading } from "./reading.js";
+import type { TruthState } from "./truth.js";
+
+/**
+ * Las cuatro listas de planta, ya normalizadas a conjuntos de texto.
+ *
+ * Son configuración versionada con vigencia (`CONFIG_SCHEMA.md` §3.8), no fuente de lecturas. Los
+ * identificadores son texto: `0040` no es 40 (R-DAT-001).
+ */
+export interface TagLists {
+  /** Tags que Vsystem declara como parte del circuito. */
+  readonly virtual: ReadonlySet<string>;
+  /** Lista maestra de memoria: lo que cada vehículo *debería* llevar cargado. */
+  readonly memory: ReadonlySet<string>;
+  /** Tags de mantenimiento: fuera del recorrido productivo (R-GRA-004). */
+  readonly maintenance: ReadonlySet<string>;
+  /** Tags de sustitución de emergencia. */
+  readonly emergency: ReadonlySet<string>;
+}
+
+/**
+ * Umbrales del criterio de ceguera parcial.
+ *
+ * **No tienen valor por defecto a propósito.** Son magnitudes de planta, y
+ * `AI_DEVELOPMENT_GOVERNANCE.md` §4 prohíbe fijarlas en el código; un valor por defecto es una
+ * constante industrial disfrazada, con el agravante de que nadie la ve. Quien llame a esta función
+ * tiene que sacarlos de la configuración del circuito (`CONFIG_SCHEMA.md` §3.5, `min_support`), y si
+ * no existen, no hay clasificación de ceguera: la hay de todo lo demás.
+ */
+export interface BlindnessThresholds {
+  /**
+   * Lecturas mínimas de un vehículo para que su silencio sobre un tag signifique algo.
+   *
+   * Sin esto, un vehículo con tres lecturas en toda la ventana «no lee» casi todos los tags del
+   * circuito y saldría como ciego a todos ellos. El recuento bruto está contaminado por cuántas
+   * vueltas dio cada uno (R-OPP-010); mientras no existan las vueltas, el total de lecturas del
+   * vehículo es la aproximación honesta, y por eso el umbral se declara en lugar de suponerse.
+   */
+  readonly minReadingsPerVehicle: number;
+  /** Vehículos que sí leen el tag, por debajo de los cuales no hay contraste que sostenga nada. */
+  readonly minReadersForContrast: number;
+}
+
+/** Clases del inventario. Describen la discordancia, no una causa. */
+export type TagClass =
+  /** Declarado, en memoria y leído por los vehículos que podían leerlo. Nada que ver aquí. */
+  | "activo"
+  /** Unos vehículos lo leen y otros nunca, teniendo recorrido de sobra: patrón bimodal. */
+  | "ciego-parcial"
+  /** Está en la memoria y **nadie lo ha leído jamás**. Obsoleto o averiado: no se sabe. */
+  | "obsoleto-candidato"
+  /** El circuito virtual lo declara y la lista maestra de memoria no lo tiene. */
+  | "declarado-sin-memoria"
+  /** Se lee y el circuito virtual no lo declara: la lista del circuito está desactualizada. */
+  | "no-declarado-leido"
+  /** Mantenimiento o sustitución de emergencia: fuera del circuito y de toda tasa. */
+  | "especial";
+
+export interface TagInventoryRow {
+  readonly tagId: string;
+  readonly tagClass: TagClass;
+  /** Estado de verdad de lo que la clase afirma, no del hecho de que el tag exista. */
+  readonly truth: TruthState;
+  readonly inVirtual: boolean;
+  readonly inMemory: boolean;
+  readonly isSpecial: boolean;
+  /** Cuántos vehículos lo leyeron alguna vez. */
+  readonly readerCount: number;
+  /** Lecturas totales del tag en la cobertura cargada. */
+  readonly readingCount: number;
+  /**
+   * Vehículos con recorrido suficiente que **nunca** lo leyeron.
+   *
+   * Es la evidencia de `ciego-parcial`, y se entrega enumerada en lugar de resumida en un
+   * porcentaje: el expediente tiene que poder abrirse por el vehículo concreto.
+   */
+  readonly blindVehicles: readonly string[];
+}
+
+export interface TagInventory {
+  readonly rows: readonly TagInventoryRow[];
+  /** Vehículos con al menos una lectura en lo cargado. */
+  readonly activeVehicles: number;
+  /** De ellos, los que superan `minReadingsPerVehicle` y por tanto pueden sostener una ceguera. */
+  readonly vehiclesWithEnoughRecord: number;
+  /**
+   * Si el criterio de ceguera llegó a aplicarse.
+   *
+   * Falso cuando ningún vehículo alcanza el mínimo: entonces `ciego-parcial` no puede salir y la
+   * interfaz debe decir que no se ha comprobado, en vez de dejar creer que se comprobó y no había.
+   */
+  readonly blindnessEvaluated: boolean;
+}
+
+/** Recuento por tag y por vehículo, en una sola pasada sobre las lecturas. */
+interface Observation {
+  readonly readersByTag: Map<string, Set<string>>;
+  readonly readingsByTag: Map<string, number>;
+  readonly readingsByVehicle: Map<string, number>;
+}
+
+function observe(readings: readonly Reading[]): Observation {
+  const readersByTag = new Map<string, Set<string>>();
+  const readingsByTag = new Map<string, number>();
+  const readingsByVehicle = new Map<string, number>();
+
+  for (const reading of readings) {
+    const { tagId, agvId } = reading;
+    let readers = readersByTag.get(tagId);
+    if (readers === undefined) {
+      readers = new Set<string>();
+      readersByTag.set(tagId, readers);
+    }
+    readers.add(agvId);
+    readingsByTag.set(tagId, (readingsByTag.get(tagId) ?? 0) + 1);
+    readingsByVehicle.set(agvId, (readingsByVehicle.get(agvId) ?? 0) + 1);
+  }
+
+  return { readersByTag, readingsByTag, readingsByVehicle };
+}
+
+/**
+ * Clasifica el universo de tags cruzando las listas con lo observado.
+ *
+ * El universo es la unión de las cuatro listas y de lo leído: un tag que se lee sin estar en ninguna
+ * lista **no se descarta**, porque es precisamente la señal de que una lista está desactualizada.
+ * Descartarlo por no estar declarado sería decidir que la lista tiene razón frente al dato.
+ */
+export function buildTagInventory(
+  readings: readonly Reading[],
+  lists: TagLists,
+  thresholds: BlindnessThresholds,
+): TagInventory {
+  const { readersByTag, readingsByTag, readingsByVehicle } = observe(readings);
+
+  const witnesses: string[] = [];
+  for (const [agvId, count] of readingsByVehicle) {
+    if (count >= thresholds.minReadingsPerVehicle) witnesses.push(agvId);
+  }
+  witnesses.sort();
+  const blindnessEvaluated = witnesses.length > 0;
+
+  const universe = new Set<string>([
+    ...lists.virtual,
+    ...lists.memory,
+    ...lists.maintenance,
+    ...lists.emergency,
+    ...readersByTag.keys(),
+  ]);
+
+  const rows: TagInventoryRow[] = [];
+  for (const tagId of [...universe].sort()) {
+    const inVirtual = lists.virtual.has(tagId);
+    const inMemory = lists.memory.has(tagId);
+    const isSpecial = lists.maintenance.has(tagId) || lists.emergency.has(tagId);
+    const readers = readersByTag.get(tagId) ?? new Set<string>();
+    const readingCount = readingsByTag.get(tagId) ?? 0;
+
+    const blindVehicles =
+      readers.size >= thresholds.minReadersForContrast
+        ? witnesses.filter((agvId) => !readers.has(agvId))
+        : [];
+
+    const { tagClass, truth } = classify({
+      inVirtual,
+      inMemory,
+      isSpecial,
+      readerCount: readers.size,
+      blindCount: blindVehicles.length,
+    });
+
+    rows.push({
+      tagId,
+      tagClass,
+      truth,
+      inVirtual,
+      inMemory,
+      isSpecial,
+      readerCount: readers.size,
+      readingCount,
+      blindVehicles,
+    });
+  }
+
+  return {
+    rows,
+    activeVehicles: readingsByVehicle.size,
+    vehiclesWithEnoughRecord: witnesses.length,
+    blindnessEvaluated,
+  };
+}
+
+interface ClassifyInput {
+  readonly inVirtual: boolean;
+  readonly inMemory: boolean;
+  readonly isSpecial: boolean;
+  readonly readerCount: number;
+  readonly blindCount: number;
+}
+
+/**
+ * El orden de las comprobaciones es la regla, no un detalle de implementación.
+ *
+ * `especial` va primero porque mantenimiento y emergencia están legítimamente fuera del recorrido
+ * productivo (R-GRA-004): contarlos con el resto ensucia cualquier cifra. Y entre los leídos, la
+ * discordancia de lista manda sobre la ceguera: si el tag se lee y una lista no lo tiene, el hallazgo
+ * es la lista, no el vehículo.
+ */
+function classify(input: ClassifyInput): { tagClass: TagClass; truth: TruthState } {
+  if (input.isSpecial) return { tagClass: "especial", truth: "observed" };
+
+  if (input.readerCount === 0) {
+    // En memoria y nadie lo ha leído nunca. Obsoleto o averiado: el dato es idéntico y no se elige
+    // (R-DAT-016). Prevalece sobre `declarado-sin-memoria` porque estar en la memoria es lo que
+    // hace que la ausencia total signifique algo.
+    if (input.inMemory) return { tagClass: "obsoleto-candidato", truth: "unknown" };
+    // Declarado, fuera de la memoria maestra y sin una sola lectura: nadie puede leerlo aunque
+    // exista. Es un punto ciego de configuración, no una avería.
+    return { tagClass: "declarado-sin-memoria", truth: "observed" };
+  }
+
+  if (!input.inVirtual) return { tagClass: "no-declarado-leido", truth: "observed" };
+  // Se lee, luego alguna memoria real lo tiene, y la lista maestra no: la lista va por detrás.
+  if (!input.inMemory) return { tagClass: "declarado-sin-memoria", truth: "observed" };
+  // La memoria del vehículo individual no se observa, así que la ceguera es inferencia (R-OPP-012).
+  if (input.blindCount > 0) return { tagClass: "ciego-parcial", truth: "inferred" };
+  return { tagClass: "activo", truth: "observed" };
+}
+
+/** Recuento por clase, para el resumen. El orden es el de `TagClass`, no el de aparición. */
+export function countByClass(inventory: TagInventory): ReadonlyMap<TagClass, number> {
+  const counts = new Map<TagClass, number>();
+  for (const row of inventory.rows) {
+    counts.set(row.tagClass, (counts.get(row.tagClass) ?? 0) + 1);
+  }
+  return counts;
+}

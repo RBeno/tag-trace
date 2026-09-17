@@ -2,6 +2,64 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [2.2.0] - 2026-09-17
+
+El universo de memoria, y el tag que existe en la lista y no en el suelo.
+
+El propietario aporta qué contiene realmente la memoria de un vehículo: los tags del circuito
+virtual, los de mantenimiento, los de sustitución de emergencia y **tags obsoletos que se retiraron
+del suelo y nunca se borraron de la lista**. Los vehículos, además, pueden no estar bien
+actualizados, así que uno arrastra obsoletos que otro ya no tiene.
+
+Esa cuarta categoría es la que cambia las cuentas, y en la dirección contraria a la esperada. DS-008
+llevaba desde F0 declarada como «requisito de toda tasa de lectura», con la idea implícita de que
+tenerla desbloquearía la salud. **No la desbloquea: primero hay que restarle lo que no existe.** Un
+tag obsoleto está en memoria y no es una oportunidad, así que aplicar la regla tal como estaba
+escrita habría pasado de «no hay tasa de lectura» a «una tasa que cuenta como fallo tags que no están
+instalados» — peor, porque vendría con una lista detrás y parecería fundada.
+
+### Añadido
+
+- **`src/domain/inventory.ts`**: clasificación del universo de tags cruzando **declarado × memoria ×
+  observado**. Seis clases, sin grafo, sin vueltas y sin ninguna constante industrial: es pertenencia
+  a conjuntos y recuentos. Distingue el punto ciego de configuración (declarado y en ninguna memoria)
+  del candidato a obsoleto (en memoria y jamás leído) y de la ceguera parcial (unos lo leen siempre y
+  otros nunca).
+- **`src/domain/truth.ts`**: los cinco estados de verdad como tipo propio. Existían solo en el
+  glosario y en la prosa; ahora el compilador los conoce.
+- **R-OPP-011**: una oportunidad elegible exige **dos** condiciones, en memoria **y existente**.
+- **R-OPP-012**: con lista maestra, la memoria de un vehículo concreto es `expected`, nunca
+  `observed`; la desviación individual se infiere y se declara como inferencia.
+- **R-DAT-016**: un tag en memoria que nadie ha leído jamás es candidato a obsoleto, no un hallazgo.
+  Con una sola ventana, obsoleto y averiado producen el mismo dato y el estado es `unknown`.
+- **R-TIM-008**: la cadencia de extracción y la detección de cambios son cosas distintas. Extraer
+  poco y espaciado degrada la fidelidad con que se reconstruye el circuito, pero **no impide detectar
+  cambios entre dos periodos distantes**: eso exige dos muestras buenas, no continuidad.
+- TC-042 a TC-047 y nueve pruebas que las ejercitan, incluida la que hoy no se sabría producir a mano
+  —un tag declarado que ninguna memoria contiene— y la que impide que un vehículo con dos lecturas
+  en toda la ventana convierta en ciego a medio circuito.
+- `CONFIG_SCHEMA.md` §3.8: las cuatro listas como configuración versionada, con `scope` distinguiendo
+  una lista maestra de un inventario por vehículo, porque decide el estado de verdad de todo lo
+  derivado.
+
+### Corregido
+
+- **`TRACEABILITY_MATRIX.md` afirmaba que no estaban implementados** TC-015, `.agvproj`,
+  INV-010/INV-011, PERF-D2 y la prueba de red. Los cinco lo están desde [2.0.0] y [2.1.0]. Una matriz
+  de trazabilidad desactualizada es peor que no tenerla: se consulta para saber qué está cubierto.
+
+### Decidido
+
+- Los umbrales del criterio de ceguera **no tienen valor por defecto**, y la función no compila sin
+  ellos. Un valor por defecto es una constante industrial disfrazada con el agravante de que nadie la
+  ve; obligando a pasarlos, quien los elige tiene que sacarlos de la configuración del circuito.
+
+### Pendiente, y dicho para que no parezca terminado
+
+`inventory.ts` está probado pero **todavía no es alcanzable desde la interfaz**: falta importar las
+listas de planta (DS-002, DS-006, DS-008), y para eso hace falta ver un fichero real. Escribir un
+lector para una forma que no se ha visto es lo que ha fallado cada vez en este proyecto.
+
 ## [2.1.0] - 2026-09-17
 
 Pruebas de navegador. Existen porque `src/persistence/store.ts` y la acumulación del Worker

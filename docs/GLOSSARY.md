@@ -1,8 +1,8 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
-last_updated: 2026-09-16
+last_updated: 2026-09-17
 ---
 
 # Glosario controlado
@@ -43,7 +43,9 @@ last_updated: 2026-09-16
 | Cohorte | Grupo de AGV o de modelos de lector cuyo comportamiento difiere de forma material del resto y exige perfiles esperados separados. Se declara en configuración, no se infiere sola. |
 | Takt | Ritmo de referencia entre unidades producidas, con unidad y vigencia definidas en la configuración local. No existe un valor universal en el código. |
 | Soporte | Cantidad de evidencia independiente que sostiene un nodo, una transición o un perfil: cuántos AGV y cuántas vueltas distintas lo respaldan. Un soporte alto de un solo AGV no equivale a consenso. |
-| Oportunidad elegible | Oportunidad cuyo contexto permite afirmar que el tag pudo leerse. Es el único denominador admitido para la tasa de lectura; las oportunidades censuradas, no recorridas o desconocidas quedan fuera. |
+| Oportunidad elegible | Oportunidad cuyo contexto permite afirmar que el tag pudo leerse. Es el único denominador admitido para la tasa de lectura; las oportunidades censuradas, no recorridas o desconocidas quedan fuera. Exige **dos** condiciones sobre el tag: que esté en la memoria del vehículo y que **exista físicamente** (R-OPP-011). Un tag obsoleto cumple la primera y no la segunda. |
+| Tag obsoleto | Tag que sigue en la lista de memoria de los vehículos y **ya no existe en el suelo**, porque se retiró y nunca se borró de la lista. No produce lectura y no es una oportunidad. No se distingue de un tag averiado dentro de una sola ventana (R-DAT-016). |
+| Universo de memoria | Conjunto de tags que un vehículo puede llegar a leer: circuito virtual, mantenimiento, sustitución de emergencia y obsoletos no borrados. Acota por arriba cualquier tasa de lectura. Cuando la lista es **maestra** —la que cada vehículo debería llevar— el universo es de flota y el contenido individual es `expected`, no `observed` (R-OPP-012). |
 | Pastor | Recorrido de asistencia o acompañamiento, ajeno al recorrido productivo, que debe excluirse del comportamiento esperado. Su identificación en las fuentes sigue abierta (OQ-103). |
 
 ## Estados de verdad
