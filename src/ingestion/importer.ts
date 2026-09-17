@@ -18,6 +18,7 @@ import {
   type TimeParseOptions,
 } from "../domain/time.js";
 import { sortReadings } from "../domain/order.js";
+import { isDefect } from "../domain/reading.js";
 import type { Provenance, QuarantinedRow, Reading, RejectionCode } from "../domain/reading.js";
 import type { ImportErrorCode, SourceSummary, Stage } from "../application/protocol.js";
 
@@ -64,6 +65,12 @@ export interface ImportOptions {
   readonly byteSize: number;
   readonly zone: string;
   readonly fieldOrder?: FieldOrder | undefined;
+  /**
+   * Codificación con la que el llamante decodificó el texto. El núcleo recibe texto ya decodificado
+   * y no puede averiguarla, así que solo la transporta. Si nadie la declara se dice «desconocida»,
+   * no se supone `utf-8`.
+   */
+  readonly encoding?: string | undefined;
 }
 
 export interface ImportCallbacks {
@@ -337,8 +344,14 @@ export function importReadings(
     const agvId = (fields[columns.agv] ?? "").trim();
     const tagId = (fields[columns.tag] ?? "").trim();
 
-    if (rawTime === "" || agvId === "" || tagId === "") {
+    if (rawTime === "" || agvId === "") {
       reject("EMPTY_FIELD");
+      continue;
+    }
+    if (tagId === "") {
+      // Instante y AGV pero sin tag: no es una lectura defectuosa, es otra cosa. Se conserva con su
+      // procedencia y se cuenta aparte, sin decidir qué es.
+      reject("NO_TAG");
       continue;
     }
 
@@ -355,6 +368,9 @@ export function importReadings(
 
   if (callbacks.isCancelled()) throw new ImportCancelled("parsing");
 
+  const defectiveRows = quarantine.filter((row) => isDefect(row.code)).length;
+  const rowsWithoutTag = quarantine.length - defectiveRows;
+
   // Cero filas aceptadas es una respuesta legítima, pero nunca sin explicar por qué (WP-005).
   if (readings.length === 0) {
     const reasons = new Map<RejectionCode, number>();
@@ -364,7 +380,10 @@ export function importReadings(
       .join(", ");
     throw new ImportFailure(
       "NO_ACCEPTED_ROWS",
-      `Se leyeron ${dataRows} filas y ninguna superó la validación (${breakdown}).`,
+      rowsWithoutTag === dataRows
+        ? `Se leyeron ${dataRows} filas y ninguna trae tag: traen instante y AGV, así que esta ` +
+          `fuente no contiene lecturas de tag (${breakdown}).`
+        : `Se leyeron ${dataRows} filas y ninguna superó la validación (${breakdown}).`,
       "Revisa la asignación de columnas y el formato de fecha en la vista previa.",
       header,
       quarantine.slice(0, 3).map((row) => row.rawExcerpt),
@@ -396,8 +415,15 @@ export function importReadings(
         `deben usarse para afirmar orden dentro de esa ventana.`,
     );
   }
-  if (quarantine.length > 0) {
-    warnings.push(`${quarantine.length} filas quedaron en cuarentena y se conservan con su motivo.`);
+  if (rowsWithoutTag > 0) {
+    warnings.push(
+      `${rowsWithoutTag} filas traen instante y AGV pero no traen tag, así que no son lecturas. ` +
+        `Se conservan con su procedencia y no cuentan como filas defectuosas. Si la fuente mezcla ` +
+        `eventos de vehículo con lecturas, esos eventos necesitan su propio contrato.`,
+    );
+  }
+  if (defectiveRows > 0) {
+    warnings.push(`${defectiveRows} filas quedaron en cuarentena y se conservan con su motivo.`);
   }
 
   callbacks.onProgress("done", dataRows, dataRows, "Importación terminada");
@@ -413,12 +439,14 @@ export function importReadings(
       fieldOrder,
       fieldOrderEvidence,
       zone: options.zone,
+      encoding: options.encoding ?? "desconocida",
       header,
       monotonicity,
       direction: monotonicity.direction,
       totalRows: dataRows,
       acceptedRows: readings.length,
-      quarantinedRows: quarantine.length,
+      quarantinedRows: defectiveRows,
+      rowsWithoutTag,
       dstFlagged,
       elapsedMs: Date.now() - startedAt,
     },

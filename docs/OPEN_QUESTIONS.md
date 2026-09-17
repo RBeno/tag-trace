@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.9.0
+version: 0.10.0
 status: active
 last_updated: 2026-09-17
 ---
@@ -17,9 +17,8 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 
 | ID | Pregunta | Por qué bloquea | Resolución prevista |
 |---|---|---|---|
-| OQ-B01 | ¿Cuáles son los formatos/encabezados reales de DS-002 a DS-009? DS-001 y DS-011 ya están determinados. | Define contrato de importación | Inventario local de fuentes y muestras controladas |
+| OQ-B01 | ¿Cuáles son los formatos/encabezados reales de DS-002 a DS-009? DS-001 y DS-011 están determinados, y DS-011 ya contra una exportación completa y no solo una captura. | Define contrato de importación | Inventario local de fuentes y muestras controladas |
 | OQ-B02 | **Parcial.** La zona es `Europe/Madrid`. El tratamiento del cambio estacional ya está implementado y probado de forma sintética —hora repetida, hora inexistente y horas de guarda—, pero **no verificado contra una exportación real**: sigue sin saberse cómo representa la fuente la hora repetida de octubre, y eso no se deduce, se observa. | Evita secuencias/turnos erróneos | Exportación que cruce el cambio de octubre o de marzo |
-| OQ-B03 | ¿Qué móvil Android y PC serán dispositivos de referencia? | Permite aprobar presupuesto | Registrar modelo, RAM, navegador y versión |
 
 
 
@@ -45,9 +44,11 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-108 | ¿Qué periodos/versiones exactos tienen los calendarios y takt conocidos? | Configuración obligatoria por vigencia |
 | OQ-109 | ¿Cómo se reconocen movimientos manuales y sentido contrario? | Señalar desconocido/excepción |
 | OQ-110 | ¿Qué diferencias conocidas existen entre memorias de AGV y cómo se obtienen sin descarga global? | Importación/revisión manual versionada |
-| OQ-111 | ¿Cuál es la lista completa del catálogo de usos y su significado operativo? | Los eventos de uso se conservan con su texto original, sin interpretarse ni alimentar diagnóstico |
+| OQ-111 | **Parcial.** La lista está obtenida y es cerrada; falta el *significado operativo* de cada valor, que es lo que decide cuáles implican parada real. | Los eventos de uso se conservan con su texto original, sin interpretarse ni alimentar diagnóstico |
 | OQ-112 | ¿Cuál es el rango exacto de multicircuitos y qué hace cada uno? Se conoce que altera el comportamiento al leer tags y que algún modo reduce el alcance de detección. | Perfiles separados por multicircuito; sin la tabla completa no se puede afirmar qué ausencias son esperables |
-| OQ-113 | ¿Qué representa la columna de defecto del informe ampliado? | Se conserva como atributo sin promover ni interpretar |
+| OQ-113 | **Parcial.** La lista está obtenida: son averías de equipo emparejadas error/restablecimiento y avisos de nivel de batería. Falta confirmar si alguna debe suspender el diagnóstico del vehículo mientras dure. | Se conserva como atributo sin promover ni interpretar |
+| OQ-116 | ¿Qué hace que un tag emita su multicircuito en una pasada y no en la siguiente? Medido: ningún tag declara dos valores distintos, unos lo emiten en todas sus pasadas y otros solo en una fracción, y el mismo vehículo sobre el mismo tag unas veces lo trae y otras no. | Ausente es `unknown`: no se reconstruye por continuidad desde la lectura anterior (R-DAT-011) |
+| OQ-117 | Dos tags declarados por el propietario dentro de las calles de carga no tienen **ninguna** lectura en una ventana de casi 18 h, y el tramo que ocuparían se recorre en directo decenas de veces. ¿Siguen instalados? | Salen en el circuito reconstruido como `unknown`, nunca omitidos. Si están instalados es un diagnóstico; si no, la lista está desactualizada |
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
 
 
@@ -71,6 +72,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-115 | ¿«Reaparecer en su hueco» se observa con el grupo avanzando o alcanzándole? | La reaparición se busca hacia delante en el tiempo, y lo que discrimina es si los vecinos avanzaron: si tampoco lo hicieron, el fallo es de la línea y no del objeto. Si avanzaron con normalidad y el objeto reaparece en posición muy por encima del tiempo esperado del tramo, la detención es individual. | 2026-09-16 | R-AGV-007, R-AGV-008, R-FLO-006, `ALGORITHM_CATALOG.md` §4.3 |
 | OQ-B07 | ¿Bajo qué licencia se publica el repositorio? | Sin fichero `LICENSE`: el repositorio público queda con todos los derechos reservados. Se lee, no se reutiliza. | 2026-09-16 | ADR-0014 |
 | OQ-P05 | ¿Qué framework de interfaz? | Ninguno para F1a: TypeScript y DOM directo. La elección se pospone a F2 o F5, cuando exista una pantalla —grafo, timeline o replay— que la justifique, y con medidas de esa pantalla. | 2026-09-16 | ADR-0009 |
+| OQ-B03 | ¿Qué dispositivos de referencia? | PC de 6 núcleos y 12 hilos con 32 GB, y Samsung Galaxy S23 FE. Los dos de gama alta, lo que **sesga las medidas hacia el optimismo** y queda declarado junto al presupuesto en lugar de darse por bueno. | 2026-09-16 | `PERFORMANCE_BUDGET.md` §2.1 |
 
 ## Registro de cierre
 

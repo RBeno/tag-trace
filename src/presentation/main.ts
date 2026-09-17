@@ -143,12 +143,16 @@ function renderSummary(summary: SourceSummary): void {
       `${summary.fieldOrder === "day-first" ? "día/mes" : "mes/día"} — ${summary.fieldOrderEvidence}`,
     ],
     ["Zona horaria", summary.zone],
+    ["Codificación", summary.encoding],
     [
       "Sentido de la fuente",
       `${directionName} (coherencia ${(summary.monotonicity.confidence * 100).toFixed(1)} %)`,
     ],
     ["Filas de datos", summary.totalRows.toLocaleString("es-ES")],
     ["Aceptadas", summary.acceptedRows.toLocaleString("es-ES")],
+    // Se separan a propósito: una fila sin tag no es una fila rota, y mezclarlas haría parecer
+    // averiada una fuente que solo trae eventos además de lecturas.
+    ["Sin tag (no son lecturas)", summary.rowsWithoutTag.toLocaleString("es-ES")],
     ["En cuarentena", summary.quarantinedRows.toLocaleString("es-ES")],
     ["Tiempo de proceso", `${summary.elapsedMs.toLocaleString("es-ES")} ms`],
   ];

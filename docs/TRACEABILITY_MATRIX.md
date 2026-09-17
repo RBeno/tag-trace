@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.6.0
+version: 0.7.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -46,6 +46,8 @@ regla exista: la matriz no es una lista de intenciones.
 | WP-003 mensajes caducados descartados | `src/application/protocol.ts` (`isCurrent`) | Pendiente de prueba propia |
 | WP-005 cero filas con causa | `src/ingestion/importer.ts` | «WP-005 · cero filas es una respuesta con causa» |
 | Cuarentena con motivo y procedencia | `src/domain/reading.ts`, `src/ingestion/importer.ts` | «filas no aceptadas · se conservan con su motivo» |
+| R-DAT-009 una fila sin tag no es un defecto | `src/domain/reading.ts` (`isDefect`), `src/ingestion/importer.ts` | «una fila con instante y AGV pero sin tag no es un defecto» |
+| R-DAT-010 codificación detectada y declarada | `src/ingestion/decode.ts` | «codificación · no se supone UTF-8» |
 
 No implementado todavía y por tanto sin fila: TC-015 (unión con solape), `.agvproj` y su ida y
 vuelta, INV-010/INV-011 (hash semántico), PERF-D2 medido y la prueba de red.

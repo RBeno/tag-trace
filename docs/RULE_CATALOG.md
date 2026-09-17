@@ -1,8 +1,8 @@
 ---
 document_id: TT-RULES-001
-version: 0.7.0
+version: 0.8.0
 status: baseline-candidate
-last_updated: 2026-09-16
+last_updated: 2026-09-17
 ---
 
 # Catálogo de reglas industriales
@@ -31,6 +31,9 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-DAT-006 | accepted | Un archivo probable de otro circuito no puede consolidarse en el circuito activo. |
 | R-DAT-007 | accepted | La cobertura es la unión de los intervalos de las fuentes aceptadas. Fuera de cobertura el estado es `sin datos cargados`: no se analiza y no es nunca una parada ni un silencio. |
 | R-DAT-008 | accepted | El orden de una fuente es una propiedad suya que se mide, no que se supone. Las inversiones no son error de parseo: son evidencia de entrega diferida y se conservan señaladas. |
+| R-DAT-009 | accepted | Una fila con instante y vehículo pero sin tag **no es una lectura defectuosa**: es otro tipo de evento. Se conserva con su procedencia y se cuenta aparte de la cuarentena. Qué es lo dice el discriminador de la fuente, nunca el importador. |
+| R-DAT-010 | accepted | La codificación de una fuente se detecta y se declara junto al separador. Decodificar de forma tolerante está prohibido: sustituye en silencio lo que no entiende y convierte un fichero corrompido en uno de apariencia correcta. |
+| R-DAT-011 | accepted | El multicircuito va declarado en el tag, no reconstruido por continuidad: un tag nunca declara dos valores, pero puede no declararlo en una pasada. Ausente es `unknown`, no «el mismo de antes». |
 
 ## Circuito y topología
 

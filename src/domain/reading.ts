@@ -25,12 +25,25 @@ export interface Reading {
   readonly provenance: Provenance;
 }
 
-/** Por qué una fila no llegó a ser lectura. Los códigos son estables. */
+/**
+ * Por qué una fila no llegó a ser lectura. Los códigos son estables.
+ *
+ * `NO_TAG` no es un defecto y por eso está separado del resto: la fila trae instante y AGV pero no
+ * trae tag. Una fuente que mezcla eventos de vehículo con lecturas produce muchas así, y contarlas
+ * como filas defectuosas dice que el 40 % del fichero está roto cuando no lo está. Qué significan
+ * esos eventos es una regla de dominio que el importador no conoce y no debe suponer.
+ */
 export type RejectionCode =
   | "FIELD_COUNT"
   | "EMPTY_FIELD"
   | "DATE_UNPARSEABLE"
-  | "DATE_INVALID";
+  | "DATE_INVALID"
+  | "NO_TAG";
+
+/** Las filas que sí son un defecto de la fuente. `NO_TAG` queda fuera a propósito. */
+export function isDefect(code: RejectionCode): boolean {
+  return code !== "NO_TAG";
+}
 
 /** Una fila rechazada se conserva: no se descarta en silencio. */
 export interface QuarantinedRow {

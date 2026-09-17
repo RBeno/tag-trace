@@ -22,6 +22,7 @@ import {
   ImportFailure,
   importReadings,
 } from "../src/ingestion/importer.js";
+import { decodeSource } from "../src/ingestion/decode.js";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -40,10 +41,6 @@ async function hashFile(buffer: ArrayBuffer): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** Decodifica respetando el BOM si lo hay. */
-function decode(buffer: ArrayBuffer): string {
-  return new TextDecoder("utf-8", { fatal: false }).decode(buffer).replace(/^\ufeff/, "");
-}
 
 async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise<void> {
   const { jobId, file, zone } = message;
@@ -73,7 +70,7 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
   }
 
   const sourceHash = await hashFile(buffer);
-  const text = decode(buffer);
+  const { text, encoding } = decodeSource(buffer);
 
   try {
     const result = importReadings(
@@ -83,6 +80,7 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         fileName: file.name,
         byteSize: file.size,
         zone,
+        encoding,
         fieldOrder: message.fieldOrder,
       },
       {

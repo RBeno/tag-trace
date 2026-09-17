@@ -2,6 +2,54 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [1.1.0] - 2026-09-17
+
+El importador se enfrenta por primera vez a una exportación real del informe ampliado (DS-011), de
+un circuito distinto al de la muestra anterior. Funcionó, y destapó dos defectos que ninguna prueba
+sintética habría encontrado porque ninguna los había imaginado.
+
+### Corregido
+
+- **La decodificación mentía.** `TextDecoder("utf-8", { fatal: false })` no falla nunca: sustituye
+  en silencio cada byte que no entiende por un carácter de reemplazo. La fuente real exporta en
+  Windows-1252, así que la cabecera llegaba corrompida y la importación seguía adelante como si
+  nada. Ahora se intenta UTF-8 **estricto**, se cae a Windows-1252 cuando falla, y la codificación
+  elegida se declara en el resumen junto al separador (R-DAT-010). La decodificación vive en
+  `src/ingestion/decode.ts`, no en el Worker, porque es una decisión de ingesta y hay que poder
+  probarla.
+- **Cuatro de cada diez filas se contaban como defectuosas sin serlo.** La fuente entrelaza
+  lecturas con eventos de vehículo, y un evento trae instante y AGV pero no trae tag. El importador
+  los mandaba a cuarentena como `EMPTY_FIELD`: habría dicho que casi la mitad del fichero está roto
+  y enterrado las filas realmente defectuosas entre decenas de miles de falsas. Ahora se separan
+  por su forma —`NO_TAG`—, se conservan con su procedencia y se cuentan aparte (R-DAT-009). El
+  importador dice **que no son lecturas**; qué son lo dice el discriminador de la fuente, no él.
+
+### Añadido
+
+- `SourceSummary` declara `encoding` y `rowsWithoutTag`, y la interfaz los muestra. Si nadie declara
+  la codificación se dice `desconocida`: el núcleo recibe texto ya decodificado y no puede saberlo,
+  así que no lo supone.
+- R-DAT-009, R-DAT-010 y R-DAT-011; §3.7 de `CONFIG_SCHEMA.md` con los catálogos de la fuente como
+  enumeración versionada con vigencia.
+
+### Precisado
+
+- **El multicircuito va declarado en el tag.** Medido sobre la exportación real: ningún tag declara
+  jamás dos valores distintos, pero solo una parte de los tags lo declara, y de esos unos lo emiten
+  en todas sus pasadas y otros solo en una fracción —el mismo vehículo sobre el mismo tag unas veces
+  lo trae y otras no—. Qué dispara esa emisión no está en el dato: se registra como pregunta abierta
+  (OQ-116) y, mientras tanto, ausente es `unknown` y nunca «el mismo de antes» (R-DAT-011).
+
+### Cerrado
+
+- **OQ-B03**, dispositivos de referencia, con la advertencia de que ambos son de gama alta y sesgan
+  las medidas hacia el optimismo.
+- **OQ-111 y OQ-113 quedan parciales**, no cerradas: las listas de usos y de defectos están
+  obtenidas y son cerradas, pero saber que un valor existe no dice si implica una parada real, y de
+  eso depende que un silencio se explique o se diagnostique.
+- **Nueva OQ-117**: dos tags declarados dentro de las calles de carga no tienen ninguna lectura en
+  casi 18 h, mientras el tramo que ocuparían se recorre en directo decenas de veces.
+
 ## [1.0.0] - 2026-09-17
 
 Primer código de aplicación del proyecto. F1 abierta con la aprobación del propietario; el

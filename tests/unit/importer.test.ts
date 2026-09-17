@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+import { decodeSource } from "../../src/ingestion/decode.js";
 import { detectDelimiter } from "../../src/ingestion/delimiter.js";
 import { measureMonotonicity } from "../../src/ingestion/monotonicity.js";
 import { compareReadings, sortReadings } from "../../src/domain/order.js";
@@ -275,6 +276,54 @@ describe("filas no aceptadas · se conservan con su motivo", () => {
     expect(result.warnings.some((warning) => warning.includes("separador"))).toBe(true);
   });
 
+  it("una fila con instante y AGV pero sin tag no es un defecto: es otra cosa", () => {
+    // Una fuente que mezcla eventos de vehículo con lecturas produce muchas así. Contarlas como
+    // defectuosas diría que el 40 % del fichero está roto cuando no lo está.
+    const text =
+      "Tipo;Fecha;AGV;Tag\nTag;24/01/2026 5:03;0007;58022\nUso;24/01/2026 5:04;0007;\n";
+    const result = importReadings(
+      text,
+      { sourceId: "x", fileName: "x", byteSize: text.length, zone: ZONE },
+      silent,
+    );
+    expect(result.summary.acceptedRows).toBe(1);
+    expect(result.summary.rowsWithoutTag).toBe(1);
+    expect(result.summary.quarantinedRows).toBe(0);
+    // No se descarta: conserva su procedencia para poder volver a la fila.
+    expect(result.quarantine[0]?.code).toBe("NO_TAG");
+    expect(result.quarantine[0]?.provenance.sourceRow).toBe(3);
+    expect(result.warnings.some((w) => w.includes("no son lecturas"))).toBe(true);
+  });
+
+  it("si ninguna fila trae tag, se dice eso y no que la fuente esté mal", () => {
+    const text = "Fecha;AGV;Tag\n24/01/2026 5:03;0007;\n24/01/2026 5:04;0042;\n";
+    try {
+      importReadings(text, { sourceId: "x", fileName: "x", byteSize: text.length, zone: ZONE }, silent);
+      expect.unreachable("debía fallar");
+    } catch (error) {
+      const failure = error as ImportFailure;
+      expect(failure.code).toBe("NO_ACCEPTED_ROWS");
+      expect(failure.reason).toContain("no contiene lecturas de tag");
+    }
+  });
+
+  it("la codificación se transporta y, si nadie la declara, no se supone", () => {
+    const text = "Fecha;AGV;Tag\n24/01/2026 5:03;0007;58022\n";
+    const sin = importReadings(
+      text,
+      { sourceId: "x", fileName: "x", byteSize: text.length, zone: ZONE },
+      silent,
+    );
+    expect(sin.summary.encoding).toBe("desconocida");
+
+    const con = importReadings(
+      text,
+      { sourceId: "x", fileName: "x", byteSize: text.length, zone: ZONE, encoding: "windows-1252" },
+      silent,
+    );
+    expect(con.summary.encoding).toBe("windows-1252");
+  });
+
   it("un campo vacío no se rellena con un valor por defecto", () => {
     const text = "Fecha;AGV;Tag\n24/01/2026 5:03;;58022\n";
     try {
@@ -283,6 +332,26 @@ describe("filas no aceptadas · se conservan con su motivo", () => {
     } catch (error) {
       expect((error as ImportFailure).reason).toContain("EMPTY_FIELD");
     }
+  });
+});
+
+describe("codificación · no se supone UTF-8", () => {
+  it("una cabecera en Windows-1252 se lee entera en lugar de corromperse", () => {
+    // `MTC nº` en cp1252: el `º` es el byte 0xBA, que no es UTF-8 válido. Antes llegaba como
+    // `MTC n�` y la importación seguía adelante sin decir nada.
+    const bytes = new Uint8Array([
+      0x4d, 0x54, 0x43, 0x20, 0x6e, 0xba, 0x3b, 0x41, 0x47, 0x56, // "MTC nº;AGV"
+    ]);
+    const result = decodeSource(bytes.buffer);
+    expect(result.encoding).toBe("windows-1252");
+    expect(result.text).toBe("MTC nº;AGV");
+    expect(result.text).not.toContain("�");
+  });
+
+  it("un fichero UTF-8 se lee como UTF-8 y se le quita el BOM", () => {
+    const bytes = new TextEncoder().encode("﻿Fecha;AGV;Tag");
+    const result = decodeSource(bytes.buffer as ArrayBuffer);
+    expect(result).toEqual({ text: "Fecha;AGV;Tag", encoding: "utf-8" });
   });
 });
 

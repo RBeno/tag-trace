@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-17
 ---
 
 # Configuración de circuito
@@ -74,6 +74,29 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 
 Agrupaciones de AGV o de modelos de lector cuyo comportamiento difiere de forma material
 (R-AGV-004). Una cohorte declarada obliga a perfiles esperados separados.
+
+### 3.7 Catálogos de la fuente
+
+Las fuentes enriquecidas traen columnas con vocabulario cerrado del sistema de planta: el catálogo
+de **usos** (acciones y paradas de vehículo) y el de **defectos de equipo**. Ambos están obtenidos y
+son cerrados; buena parte de sus valores llevan además un código numérico propio, y los defectos
+aparecen emparejados error/restablecimiento.
+
+Son configuración versionada, no constantes del código:
+
+```text
+usage_catalog  : lista de { code, text, implies_stop, valid_from, valid_to }
+defect_catalog : lista de { code, text, pairs_with, valid_from, valid_to }
+```
+
+`implies_stop` es la parte que **no** está resuelta: saber que un valor existe no dice si implica
+una parada real del vehículo, y de eso depende que un silencio se explique o se diagnostique. Hasta
+que el propietario lo confirme (OQ-111), un evento de uso se conserva con su texto y no alimenta
+ningún diagnóstico.
+
+**Las listas literales no viven en este repositorio.** Son vocabulario del sistema de un cliente:
+van en la configuración local del circuito, junto al resto de valores de planta. Aquí queda su
+forma y su régimen de vigencia.
 
 ## 4. Vigencia y versionado
 

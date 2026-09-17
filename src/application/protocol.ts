@@ -83,12 +83,17 @@ export interface SourceSummary {
   readonly fieldOrder: FieldOrder;
   readonly fieldOrderEvidence: string;
   readonly zone: string;
+  /** Codificación con la que se decodificó el fichero, o `desconocida` si nadie la declaró. */
+  readonly encoding: string;
   readonly header: readonly string[];
   readonly monotonicity: MonotonicityReport;
   readonly direction: SourceDirection;
   readonly totalRows: number;
   readonly acceptedRows: number;
+  /** Solo filas con un defecto real. Las que no son lecturas van aparte, no aquí. */
   readonly quarantinedRows: number;
+  /** Filas con instante y AGV pero sin tag: no son lecturas y tampoco son un defecto. */
+  readonly rowsWithoutTag: number;
   readonly dstFlagged: number;
   readonly elapsedMs: number;
 }

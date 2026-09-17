@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
-last_updated: 2026-09-16
+last_updated: 2026-09-17
 ---
 
 # Contratos de datos y procedencia
@@ -61,6 +61,16 @@ más allá de las funciones: un multicircuito puede **cambiar las condiciones f�
 —por ejemplo reduciendo el alcance del sensor en un modo degradado por climatología—. Bajo ese
 multicircuito, una lectura ausente es **esperable**, no un defecto.
 
+**Lo que se observa en una exportación real de esta forma**, y que acota la regla anterior: ningún
+tag declara jamás dos valores de multicircuito distintos —el valor va pegado al tag—, pero solo una
+parte de los tags lo declara, y de esos, unos lo emiten en **todas** sus pasadas y otros solo en una
+fracción. El mismo vehículo sobre el mismo tag unas veces lo trae y otras no.
+
+Qué dispara esa emisión es una regla de dominio que **no está en el dato** y no se deduce de él. Se
+registra en `OPEN_QUESTIONS.md` y hasta que se responda `mtc` se trata como lo que se puede
+sostener: un contexto declarado en la lectura, presente o `unknown`, nunca reconstruido por
+continuidad desde la lectura anterior.
+
 Por tanto `mtc` es un contexto de primer nivel para las oportunidades y la salud:
 
 - dos lecturas del mismo tag bajo multicircuitos distintos no son eventos funcionalmente
@@ -88,10 +98,24 @@ hipótesis de configuración y de acción de FR-012 y R-AGV-002.
 Las demás columnas del informe que todavía no tienen semántica confirmada se conservan en el espacio
 de atributos sin promoverse ni interpretarse.
 
+**Una fila sin tag no es una fila defectuosa, y la diferencia no es cosmética.** En una exportación
+real de esta forma, **cuatro de cada diez filas** no son lecturas. Contarlas como cuarentena diría
+que casi la mitad del fichero está roto, y quien lo lea buscará una avería que no existe; peor aún,
+enterraría las filas realmente defectuosas entre decenas de miles de falsas.
+
+El importador las separa por su **forma**, sin necesidad del discriminador de la fuente y sin fijar
+ninguna constante industrial: una fila con instante y AGV pero sin tag se marca `NO_TAG`, se conserva
+con su procedencia y se cuenta aparte de la cuarentena. **Qué es** cada una de esas filas lo dice el
+discriminador de la fuente cuando existe, no el importador.
+
 ## 4. Proceso de importación
 
 1. Calcular hash y metadatos sin enviar el contenido.
-2. Detectar codificación, delimitador y cabecera con puntuación de confianza.
+2. Detectar codificación, delimitador y cabecera con puntuación de confianza. La codificación se
+   **declara siempre** en el resumen, junto al separador. Decodificar en UTF-8 de forma tolerante
+   está prohibido: no falla nunca, sustituye en silencio cada byte que no entiende y deja pasar un
+   fichero corrompido con aspecto de correcto. Se intenta UTF-8 estricto y, si falla, Windows-1252,
+   que es lo que exporta la fuente real.
 3. Mostrar muestra y asignación de columnas al usuario.
 4. Validar fechas, IDs y campos obligatorios.
 5. Clasificar filas: aceptada, duplicada exacta, solapada, inválida o ambigua.
