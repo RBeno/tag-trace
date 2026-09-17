@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.1.0
+version: 0.7.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-16
 ---
 
 # Estrategia de pruebas y evaluación
@@ -42,6 +42,8 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | INV-010 | Mismo input+configuración+versiones produce el mismo hash semántico. |
 | INV-011 | Exportar/importar sin migración conserva el estado semántico. |
 | INV-012 | Optimizar representación no cambia hallazgos ni evidencia. |
+| INV-013 | Un intervalo fuera de la cobertura nunca produce un hallazgo. |
+| INV-014 | Unir dos fuentes solapadas no cambia el número de eventos lógicos ni elimina pasos repetidos legítimos. |
 
 ## 4. Catálogo inicial de casos de oro
 
@@ -61,12 +63,31 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-012 | Punto crítico sin llegada diez minutos | Ventana de impacto y retroceso | Causa única no demostrada |
 | TC-013 | Parada planificada | Comparación con calendario | Incidencia productiva falsa |
 | TC-014 | Archivo de otro circuito | Cuarentena/bloqueo de consolidación | Mezcla de memoria |
-| TC-015 | Solape de dos CSV | Deduplicación con doble procedencia | Doble recuento |
+| [TC-015](golden/TC-015-solape-entre-exportaciones.md) | Solape de dos CSV | Unión con doble procedencia | Doble recuento |
 | TC-016 | Catálogo funcional parcial | `función no documentada` | Tag defectuoso |
 | TC-017 | Incidencia guardada | Expediente reproducible separado | Cambio del esperado |
 | TC-018 | Cambio colectivo sostenido y confirmado | Propuesta de nueva versión del grafo | Reescritura de histórico |
-| TC-019 | CSV con coma/punto y coma/tab | Importación equivalente | Pérdida de IDs/fechas |
-| TC-020 | Worker termina/cancela en orden adverso | Estado consistente | `0 lecturas` por carrera/sincronización |
+| [TC-019](golden/TC-019-delimitadores-e-identidad.md) | CSV con coma/punto y coma/tab | Importación equivalente | Pérdida de IDs/fechas |
+| [TC-020](golden/TC-020-carrera-worker-interfaz.md) | Worker termina/cancela en orden adverso | Estado consistente | `0 lecturas` por carrera/sincronización |
+| [TC-021](golden/TC-021-solape-con-maniobra.md) | Dos exportaciones solapadas que contienen un paso repetido A→B→A | Unión por tramo común: el solape cuenta una vez y el paso repetido se conserva | Fusión del paso repetido en un solo evento |
+| [TC-022](golden/TC-022-fuera-de-cobertura.md) | Consulta sobre un intervalo fuera de la cobertura cargada | `sin datos cargados` | Parada, silencio colectivo o degradación de salud |
+| [TC-023](golden/TC-023-entrega-diferida.md) | Fuente con inversiones de orden respecto a su sentido declarado | Señal de entrega diferida, con las filas conservadas | Rechazo del fichero o reordenación silenciosa |
+| TC-024 | Tag sano durante un multicircuito que reduce el alcance de detección | Ausencias tratadas como esperables en ese contexto | Diagnóstico de tag degradado |
+| TC-025 | Periodo sin multicircuito conocido | Salud publicada con el confusor declarado | Conclusión presentada como si el contexto fuera homogéneo |
+| TC-026 | Un AGV deja de emitir mientras el resto sigue con normalidad | Periodo de inactividad individual, con última lectura conocida e hipótesis ordenadas | Avería, pérdida de comunicación o salida de circuito afirmadas como causa única |
+| TC-027 | Todos los AGV callan a la vez dentro de la cobertura | Hipótesis colectiva: infraestructura, proceso o parada | Inactividad individual imputada a cada AGV |
+| TC-028 | AGV que nunca recorre una rama del circuito | Los tags de esa rama no cuentan como ausencias | Lista de «tags no leídos» obtenida restando el catálogo a lo leído |
+| TC-029 | Un solo AGV deja de leer un tag que los demás siguen leyendo | Hipótesis sobre ese AGV o su lector, con el instante de cambio | Tag declarado defectuoso |
+| TC-030 | Silencio cuya última lectura es el tag de parada de una calle CO configurada y que reanuda por su secuencia declarada | Permanencia en carga online, inferida, con la calle identificada | Avería, inactividad anómala o salida de circuito |
+| TC-031 | Desaparición y reaparición conservando los mismos vecinos, sin intercambio de AGV | Permanencia en el circuito demostrada, con la causa aún abierta entre detención y circulación sin lectura | Salida de circuito, retirada, o una causa única afirmada |
+| TC-032 | La misma firma de calle CO pero sin calles configuradas | `unknown` declarando que falta la configuración | Inferencia de carga online por proximidad al último tag |
+| TC-033 | Un AGV calla y sus vecinos tampoco avanzan durante la ventana | Fallo colectivo de la línea, con la causa buscada aguas arriba | Fallo individual atribuido al AGV que se consultó |
+| TC-034 | Un AGV calla, sus vecinos avanzan con normalidad y él reaparece en posición muy por encima del tiempo esperado del tramo | Detención individual anómala, con el exceso cuantificado frente al esperado robusto | Conclusión basada en un umbral absoluto en lugar del esperado del tramo |
+| TC-035 | La misma firma de vecindario observada en zona vacía, donde se admite reordenación | Confianza reducida y declarada | La misma conclusión que en zona cargada, sin ajustar la confianza |
+
+Los casos enlazados están desarrollados en `docs/golden/` con la estructura de §5. Son los seis que
+no dependen de información de planta, y constituyen los criterios de aceptación de F1a. El resto se
+desarrollará cuando se cierren las preguntas abiertas correspondientes.
 
 ## 5. Estructura de un caso de oro
 

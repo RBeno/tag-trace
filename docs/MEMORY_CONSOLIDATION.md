@@ -1,6 +1,6 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
 last_updated: 2026-09-03
 ---
@@ -114,7 +114,28 @@ Objetivo candidato: en periodos normales, el incremento consolidado debe ocupar 
 
 No se eliminará información confirmada solo para cumplir un porcentaje; primero se eliminan duplicaciones y derivados reconstruibles.
 
-## 10. Portabilidad
+## 10. Bifurcación de linaje entre dispositivos
+
+El intercambio entre dispositivos es manual (CON-002) y cada consolidación encadena el hash de la
+anterior. Dos dispositivos que consolidan en paralelo a partir de la misma versión producen dos
+linajes distintos e igualmente válidos. Esto no es un error a evitar: es una consecuencia del
+diseño y hay que tratarla.
+
+- Al abrir un `.agvproj`, la aplicación compara la cadena de hashes con la memoria local y
+  clasifica la relación como `idéntica`, `local adelantada`, `entrante adelantada` o `bifurcada`.
+- Una bifurcación **no se fusiona automáticamente**. Fusionar dos historiales append-only exigiría
+  reinterpretar decisiones humanas, y eso está prohibido por R-MEM-002.
+- Ante una bifurcación la aplicación muestra ambos linajes con su periodo, autor y decisiones, y
+  ofrece tres salidas: conservar el local, adoptar el entrante conservando el local como histórico
+  archivado, o volver al ancestro común y consolidar de nuevo el periodo en disputa.
+- La elección queda registrada como un evento más del historial, con su justificación.
+- Mientras una bifurcación esté sin resolver, la comparación histórica se marca como incompleta y
+  la consolidación queda bloqueada.
+
+La forma de evitarla es organizativa, no técnica: consolidar siempre desde el mismo dispositivo, o
+exportar e importar antes de consolidar. La aplicación lo recuerda, no lo impone.
+
+## 11. Portabilidad
 
 El `.agvproj` contiene manifiesto, versión, hashes e integridad. Al abrirlo:
 

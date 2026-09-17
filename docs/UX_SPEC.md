@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.1.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-17
 ---
 
 # Especificación de experiencia de usuario
@@ -27,6 +27,7 @@ La interfaz no debe obligar a revisar AGV por AGV para descubrir un patrón cole
 | Circuito | Grafo/plano, capas teórica–observada–validada y evolución. |
 | Timeline y replay | Movimiento multi-AGV, estados e incertidumbre. |
 | Diagnóstico | Tags, AGV, tramos, FIFO, CO, críticos y explicaciones. |
+| Expediente de AGV o tag | Buscar por identificador y ver todo lo conocido sobre ese objeto: contraste con su cohorte, inactividad, instante de cambio y evidencia. |
 | Comparador | Periodo actual frente a consolidado, periodo o configuración. |
 | Consolidación | Revisión de cambios y creación de memoria vN+1. |
 | Incidencias | Expedientes, replay, casos similares y contramedidas. |
@@ -60,6 +61,38 @@ Cada tarjeta de hallazgo muestra:
 
 El color nunca será el único medio de distinguir estados.
 
+## 4.1 Expediente de un AGV o de un tag
+
+Se entra escribiendo un identificador. Es la vía de trabajo más frecuente —«qué le pasa al 3524»,
+«quién ha dejado de leer el 58021»— y debe resolverse sin recorrer AGV por AGV.
+
+Ambos expedientes comparten estructura, y cada bloque dice también **qué no se sabe**:
+
+| Bloque | AGV | Tag |
+|---|---|---|
+| Actividad | Lecturas en el periodo frente a su cohorte, no frente a la flota entera | AGV que lo leyeron frente a los que pasaron por su tramo |
+| Inactividad | Periodos de silencio clasificados, su instante de cambio y **cómo reapareció** | Desde cuándo dejó de leerlo cada AGV |
+| Ausencias | Tags con oportunidad elegible no materializada | Pasos en los que no fue leído, y por quién |
+| Contraparte | Qué hicieron los demás durante sus silencios | Qué AGV siguen leyéndolo con normalidad |
+| Cobertura | Qué periodo está cargado y cuál no | Igual |
+
+Reglas de presentación:
+
+- La comparación es **contra la cohorte**, no contra la flota: modelos distintos de AGV o de lector
+  pueden diferir sin que ninguno esté degradado (R-AGV-004).
+- Las ausencias salen del modelo de oportunidades, nunca de restar el catálogo del circuito a lo
+  leído (R-OPP-008). Una rama que ese AGV no recorre no es una ausencia.
+- Un silencio se presenta con sus hipótesis ordenadas y su evidencia; nunca como una causa única.
+  Inactividad y fallo de comunicación producen el mismo dato (R-AGV-006) y la interfaz debe decirlo
+  en lugar de elegir por el usuario.
+- Un silencio se muestra con sus dos extremos: cómo se fue y cómo volvió. La reaparición es parte
+  de la evidencia, no un detalle: es lo que distingue una parada en carga de una avería.
+- Los periodos sin cobertura se dibujan distintos de los silencios, y nunca degradan ninguna cifra.
+- Desde cualquier cifra se llega a la evidencia y de ahí a las filas de origen.
+
+En F2 el expediente existe con recuentos, inactividad, última lectura conocida e instante de cambio,
+y **sin tasa de salud**: sin oportunidades no hay denominador legítimo. F3 lo completa.
+
 ## 5. Grafo y plano
 
 - Alternar capas: Vsystem, observado del periodo, validado y divergencias.
@@ -68,6 +101,36 @@ El color nunca será el único medio de distinguir estados.
 - Seleccionar un tag/tramo para ver AGV, vueltas, tiempos y cambios.
 - Filtrar sin recalcular el análisis completo.
 - Degradar detalle de forma progresiva en móvil.
+
+## 5.1 Vistas de periodo y de circuito
+
+Cuatro representaciones probadas contra una exportación real. Ninguna diagnostica: **dibujan solo lo
+observado**. Cada una lleva escrito su propio límite, porque un gráfico que no dice lo que no sabe
+convence más de lo que debería.
+
+| Vista | Qué responde | El límite, escrito en la propia vista |
+|---|---|---|
+| **Banda de actividad**, vehículo × tiempo | dónde hay lecturas y dónde no | un hueco es **ausencia de lecturas**, no una parada demostrada |
+| **Pista de eventos**, alineada bajo cada vehículo | qué evento cae en ese instante | los eventos se agrupan por la **palabra del catálogo**, no por su significado (OQ-111) |
+| **Perfil horario** | el régimen de actividad que da contexto a un silencio | las horas de los bordes están **cortadas** y no se comparan con una hora entera |
+| **Tira del circuito** y **ranking de omisión** | la secuencia, y a cuáles mirar | el eje es orden topológico, **nunca distancia**: el dato no tiene geometría |
+
+Reglas que se derivan de haberlas dibujado:
+
+- **La ausencia necesita un fondo.** Sin un carril continuo detrás de cada vehículo, un hueco se
+  confunde con el papel, y el hueco es justo lo que hay que ver.
+- **Secuencia y magnitud son dos gráficos.** «Quién va después de quién» y «a cuáles mirar» son
+  preguntas distintas; juntarlas en un eje deja lo importante fuera de la pantalla.
+- **Ningún gráfico exige desplazamiento horizontal para llegar a su contenido útil.** Lo que hay
+  que ir a buscar no se lee.
+- Una clase de evento ocupa además **una altura propia** dentro de su banda: el color nunca es el
+  único canal (§4), y aquí hay cuatro clases sobre un fondo denso.
+- Toda vista con color tiene su **equivalente en tabla**, que es a la vez la vía accesible y el
+  respaldo cuando el color falla.
+
+**Estas vistas se generan y se miran en local.** Contienen identificadores y fechas de planta, así
+que no se publican ni se alojan (ADR-0007, ADR-0014); lo que puede vivir en el repositorio es la
+misma vista contra un fixture sintético.
 
 ## 6. Consolidación
 
@@ -85,7 +148,7 @@ El botón final usa una confirmación inequívoca. No existe consolidación auto
 
 ## 7. Móvil
 
-- Controles táctiles de al menos el tamaño accesible definido en diseño.
+- Controles táctiles de al menos 24×24 px CSS, conforme a WCAG 2.2 nivel AA.
 - Paneles apilados y detalle bajo demanda.
 - Importación mediante selector del sistema.
 - Progreso persistente aunque se cambie de vista dentro de la aplicación.
@@ -109,7 +172,8 @@ La aplicación diferencia:
 - proyecto incompatible/migrable;
 - almacenamiento insuficiente;
 - actualización disponible;
-- error recuperable y error que invalida el análisis.
+- error recuperable y error que invalida el análisis;
+- circuito en proceso de borrado, con lo que se pierde enumerado antes de confirmar.
 
 Un error nunca debe mostrar `0 lecturas válidas` sin explicar esquema detectado, causa, filas de ejemplo y acción de recuperación.
 

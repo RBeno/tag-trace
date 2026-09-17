@@ -1,8 +1,8 @@
 ---
 document_id: TT-PERF-001
-version: 0.1.0
+version: 0.3.0
 status: provisional-budget
-last_updated: 2026-09-03
+last_updated: 2026-09-11
 ---
 
 # Presupuesto de rendimiento y recursos
@@ -22,6 +22,33 @@ Estos límites son **candidatos medibles**, no promesas definitivas. F1 establec
 | PERF-D5 | 1.000.000+ eventos sintéticos | Estrés de escritorio, no puerta de cada cambio |
 
 Los datasets del repositorio serán sintéticos y conservarán solo la forma estadística necesaria, nunca la topología real.
+
+PERF-D2 y PERF-D4 se contrastaron contra una muestra real y describen bien su forma: el orden de
+magnitud de eventos, AGV y tags coincide. El generador sintético debe reproducir también las
+propiedades que complican la ingesta —orden descendente de pila, resolución gruesa, identificadores
+con y sin ceros iniciales— y no solo el volumen.
+
+## 2.1 Dispositivos de referencia
+
+| | PC | Móvil |
+|---|---|---|
+| Equipo | Intel de 6 núcleos y 12 hilos, 32 GB RAM, GPU dedicada | Samsung Galaxy S23 FE |
+| Papel | Medida de escritorio y desarrollo | Medida móvil y puerta de fase |
+
+**Los dos son de gama alta, y eso sesga las medidas hacia el optimismo.** Con 32 GB de RAM el
+presupuesto de memoria de escritorio no se rozará, y el móvil tiene holgura suficiente para que un
+consumo excesivo no se note. Conviene tenerlo presente al interpretar un resultado en verde: que
+quepa aquí no demuestra que quepa en el equipo de un operario.
+
+Dos consecuencias prácticas:
+
+- Los presupuestos de RAM se verifican además con las herramientas de medición del navegador, no
+  solo por ausencia de bloqueo o de cierre de pestaña.
+- La GPU dedicada del PC no interviene en la importación, pero sí influirá en el grafo y el replay
+  de F2 y F5. Ese dato de escritorio no es representativo y se declarará como tal.
+
+Lo que sí detecta este móvil sin dificultad es el defecto del prototipo: parsear cien mil filas en
+el hilo principal bloquea cualquier teléfono, por bueno que sea.
 
 ## 3. Presupuestos candidatos
 
@@ -68,7 +95,9 @@ Presupuesto técnico candidato para la representación canónica: 16–40 bytes 
 ## 6. Replay eficiente
 
 - Guardar eventos/puntos de cambio, no fotogramas.
-- Interpolar solo al renderizar y marcarlo `inferred`.
+- Interpolar solo al renderizar y marcarlo `inferred`. La interpolación sitúa el AGV como
+  **fracción temporal recorrida del tramo**, nunca como posición física: el grafo es topológico y
+  no contiene distancias.
 - Ventana temporal deslizante.
 - Nivel de detalle: ocultar etiquetas/aristas no relevantes al alejarse.
 - Precalcular índices por AGV y tiempo, reutilizables.

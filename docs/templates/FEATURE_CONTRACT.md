@@ -1,3 +1,10 @@
+---
+document_id: TT-TPL-FEATURE-001
+version: 0.2.0
+status: template
+last_updated: 2026-09-03
+---
+
 # Contrato de tarea
 
 ## Identidad

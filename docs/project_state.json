@@ -1,22 +1,32 @@
 {
   "project": "TAG TRACE",
   "repository": "RBeno/tag-trace",
-  "documentationVersion": "0.1.0",
-  "currentPhase": "F0",
-  "phaseName": "Definicion y gobierno",
-  "status": "awaiting_product_owner_approval",
-  "baseline": "candidate",
-  "lastUpdated": "2026-09-03",
-  "implementationStarted": false,
+  "documentationVersion": "1.0.0",
+  "currentPhase": "F1",
+  "phaseName": "Base local e ingesta confiable",
+  "status": "in_progress",
+  "baseline": "approved",
+  "lastUpdated": "2026-09-17",
+  "implementationStarted": true,
   "legacyRepository": "RBeno/tag-trace-agv",
   "nextTransition": {
-    "targetPhase": "F1",
-    "requiredApproval": "CONTINÚA FASE 1",
-    "gate": "G0"
+    "targetPhase": "F2",
+    "requiredApproval": "CONTINÚA FASE 2",
+    "gate": "G1"
   },
   "dataPolicy": {
     "processing": "local-only",
-    "githubAllowed": ["source-code", "documentation", "synthetic-fixtures"],
-    "githubForbidden": ["real-csv", "real-projects", "real-reports", "real-graphs", "real-configurations"]
+    "githubAllowed": [
+      "source-code",
+      "documentation",
+      "synthetic-fixtures"
+    ],
+    "githubForbidden": [
+      "real-csv",
+      "real-projects",
+      "real-reports",
+      "real-graphs",
+      "real-configurations"
+    ]
   }
 }

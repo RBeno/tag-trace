@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.1.0
+version: 0.9.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-17
 ---
 
 # Catálogo de algoritmos
@@ -42,8 +42,8 @@ flowchart TD
 | ID | Acción | Proceso | Salida esperada | Complejidad objetivo | Fase |
 |---|---|---|---|---|---:|
 | ALG-001 | Ingesta | Parseo incremental, asignación de columnas y cuarentena | Observaciones normalizadas + informe de calidad | O(n), memoria acotada por lote | F1 |
-| ALG-002 | Deduplicación | Huella de evento y procedencias múltiples | Vista analítica sin doble cómputo | O(n) esperado | F1 |
-| ALG-003 | Afinidad de circuito | Tags, transiciones, AGV y contradicciones | compatible/parcial/ajeno/desconocido | O(n+e) | F1 |
+| ALG-002 | Unión de fuentes | Alineación del tramo contiguo común entre cortes de la misma pila | Vista analítica sin doble cómputo, conservando pasos repetidos legítimos | O(n) esperado | F1 |
+| ALG-003 | Afinidad de circuito | Circuito declarado cuando existe; si no, tags, transiciones, AGV y contradicciones | compatible/parcial/ajeno/desconocido | O(n+e) | F1 |
 | ALG-004 | Segmentación | Cortes por AGV, tiempo, contexto y anclas | Sesiones y vueltas con confianza | O(n log n) por ordenación; O(n) posterior | F2 |
 | ALG-005 | Grafo observado | Conteo de transiciones por AGV/vuelta | Multigrafo trazable | O(n) | F2 |
 | ALG-006 | Consenso topológico | Soporte entre AGV/vueltas y estadística robusta | Grafo físico inferido con alternativas | O(e·a) acotado | F2 |
@@ -58,6 +58,8 @@ flowchart TD
 | ALG-015 | Retroceso causal | Búsqueda temporal/topológica hacia atrás | Cadena de hechos e hipótesis alternativas | Limitada a ventana/subgrafo | F5 |
 | ALG-016 | Replay multi-AGV | Estado observado/inferido por instante | Movimiento sobre grafo con incertidumbre | Precálculo + consulta incremental | F5 |
 | ALG-017 | Similitud de casos | Características explicables de incidencias | Casos comparables y diferencias | O(k·d) | F5 |
+| ALG-018 | Expediente por objeto | Agregación por AGV o por tag y contraste con su cohorte | Recuentos, tags leídos y no leídos, contraparte que sí leyó, y evidencia navegable | O(n) sobre agregados | F2 reducido, F3 completo |
+| ALG-019 | Inactividad e instante de cambio | Detección de silencios por objeto y del punto donde el comportamiento cambia | Periodos de inactividad clasificados e instante de cambio con alternativas | O(n) por objeto | F2 reducido, F3 completo |
 
 ## 4. Oportunidades y salud
 
@@ -76,6 +78,169 @@ R_{tag,agv,contexto}=\frac{lecturas\ observadas}{oportunidades\ elegibles}
 \]
 
 La salud publicada no será solo `R`. Incorporará estabilidad temporal, acuerdo con pares, calidad de datos y criticidad, mostrando cada componente por separado. Los pesos no se fijan hasta calibración con casos de oro.
+
+El multicircuito vigente forma parte del contexto de la oportunidad, porque puede alterar las
+condiciones físicas de detección: bajo un multicircuito de alcance reducido una ausencia es
+esperable y no debe contar como degradación. Cuando la fuente no aporta el multicircuito, la salud
+del periodo se publica con el confusor declarado, no como si el contexto fuera homogéneo.
+
+## 4.1 Resolución de la fuente y análisis temporal
+
+Cada fuente declara su resolución temporal y el análisis se ajusta a ella. Una transición cuyo
+intervalo observado cae por debajo de la resolución **no tiene tiempo medible**: es `observed` en
+secuencia y `unknown` en tiempo. Agregar esos ceros produciría medianas y dispersiones falsas.
+
+En la práctica esto separa dos familias:
+
+- **Fenómenos lentos** —permanencia en calles CO, intervalos en puntos críticos, huecos— donde el
+  tiempo es varias veces la resolución y la estadística robusta es válida.
+- **Transiciones rápidas**, donde solo el orden es utilizable mientras la fuente no aporte más
+  resolución.
+
+Una fuente de mayor resolución no invalida los análisis anteriores: cambia lo que es lícito medir a
+partir de ella, y eso queda registrado con el resultado.
+
+## 4.2 Inactividad e instante de cambio
+
+Un AGV detenido **no emite lecturas** (R-AGV-006). La consecuencia es incómoda y hay que asumirla:
+la inactividad real, el fallo de comunicación y la salida del circuito producen exactamente el mismo
+dato, que es la ausencia de dato. No se distinguen mirando el silencio, sino su contexto.
+
+ALG-019 clasifica cada silencio de un objeto usando cinco discriminantes, en este orden:
+
+1. **Cobertura.** Si el intervalo cae fuera de lo cargado, es `sin datos cargados` y el análisis
+   termina ahí (R-DAT-007). Ninguna de las hipótesis siguientes llega a plantearse.
+2. **Contexto colectivo.** Si el resto de la flota sigue emitiendo con normalidad, el silencio es
+   propio del objeto. Si callan muchos a la vez, apunta a infraestructura, proceso o parada
+   (R-COM-003, R-FLO-005).
+3. **Punto de la última lectura.** Dónde calló discrimina más que cuánto calló: el final de una
+   calle de carga, una zona de mantenimiento o un punto intermedio del recorrido productivo
+   sugieren hipótesis distintas.
+4. **Calendario.** Un silencio que coincide con una parada prevista no es una anomalía.
+5. **Forma de la reaparición.** Los cuatro anteriores miran hacia atrás y hacia los lados. Este
+   mira hacia delante, y es el único que puede elevar un silencio de `unknown` a una inferencia
+   con soporte. Ver §4.3.
+
+La salida es un periodo de inactividad con hipótesis ordenadas y su evidencia, nunca una causa
+única. El **instante de cambio** se sitúa en la última lectura antes del silencio, y se marca como
+`inferred`: es el último momento del que hay evidencia, no el instante en que el objeto dejó de
+funcionar, que puede ser posterior y desconocido.
+
+Para un tag, el mismo algoritmo responde otra pregunta: desde cuándo dejó de leerlo **cada** AGV.
+Que un solo AGV deje de leerlo mientras los demás siguen apunta a ese AGV o su lector; que dejen
+todos a la vez apunta al tag, a su ubicación o a un cambio físico (R-GRA-005).
+
+## 4.3 Firmas de reaparición
+
+Cómo vuelve un objeto informa tanto como cómo se fue. Dos firmas están identificadas.
+
+### Firma de carga online
+
+La última lectura antes del silencio es el tag de parada de una calle CO **configurada**, y la
+reanudación recorre en orden la secuencia de tags declarada para esa calle y las posteriores.
+
+No es una corazonada: la secuencia está en la configuración (DS-004), así que la firma se comprueba
+contra un valor declarado, no contra una expectativa del algoritmo. Salida: `en carga online`,
+estado `inferred`, con la calle identificada y el grado de coincidencia de la secuencia.
+
+Degradación explícita: sin calles CO configuradas la firma **no puede reconocerse**, y el silencio
+permanece `unknown` declarando esa razón. No se sustituye por una heurística de proximidad.
+
+### Firma de hueco conservado
+
+El objeto desaparece y reaparece manteniendo su posición relativa entre los mismos vecinos, sin
+intercambio de AGV. Es R-OPP-004 aplicado al expediente de un objeto.
+
+La reaparición se busca **hacia delante en el tiempo**: no es volver a verlo en el mismo instante,
+sino más tarde, y lo que discrimina es qué hicieron sus vecinos durante ese intervalo.
+
+Demuestra una cosa concreta: **permaneció en el circuito**. Descarta salida y retirada. Lo demás lo
+deciden dos contrastes: si los vecinos avanzaron, y cuánto se aparta el tiempo del esperado para ese
+tramo.
+
+| El objeto | Sus vecinos en la misma ventana | Tiempo frente al esperado del tramo | Lectura prioritaria |
+|---|---|---|---|
+| Reaparece conservando posición | **Tampoco avanzaron** | — | Fallo **colectivo**: la línea está detenida. No es de este objeto, y buscarle causa propia sería un error |
+| Reaparece conservando posición | Avanzaron con normalidad | Muy por encima del esperado | Fallo **individual**: estuvo detenido de forma anómala |
+| Reaparece más adelante, coherente con el grupo | Avanzaron lo esperado | Dentro de lo normal | Circuló **sin ser leído**: lector o comunicación |
+| Reaparece siguiendo la secuencia de una calle CO | — | — | Firma de carga online, que se comprueba antes que las demás |
+
+Que los vecinos tampoco avanzaran es la señal que separa un vehículo averiado de una línea parada,
+y tiene prioridad sobre las demás: es R-FLO-005 leído desde el expediente de un objeto. Si el que va
+delante tampoco se movió, la causa está aguas arriba y atribuirla a este objeto sería un falso
+diagnóstico individual.
+
+**Dónde vale esta firma.** El vecindario se deriva del orden relativo, que solo es estable donde
+está garantizado. En zona cargada se espera FIFO (R-FLO-001) y la firma es fuerte. En zona vacía se
+admite reordenación (R-FLO-002), así que el vecindario es débil y la firma baja de confianza en
+lugar de aplicarse igual. Una calle CO queda fuera del FIFO cargado (R-FLO-003), y por eso su firma
+se comprueba primero: entrar a cargar es una salida legítima del orden, no una anomalía.
+
+**El exceso de tiempo sí es medible.** Aunque a resolución gruesa la mayoría de las transiciones no
+tiene tiempo observable (§4.1), estas detenciones duran varias veces la resolución. La firma vive
+precisamente en la banda que sí se puede medir. El esperado del tramo es robusto —mediana y
+dispersión de ALG-010— y el factor que hace «bastante» un exceso es configuración con vigencia.
+
+Ambas firmas producen inferencias, nunca observaciones: no se crea ninguna lectura para rellenar el
+silencio (R-EVI-002).
+
+### El umbral no es un número
+
+La duración que hace significativo un silencio es configuración con vigencia y se expresa **relativa
+al ciclo local del tramo**, no en minutos absolutos (R-OPP-006, R-FLO-004). El mismo silencio puede
+ser normal en un tramo y anómalo en otro, y ninguna cifra de referencia se fija en el código.
+
+### Sexto discriminante: reaparecer donde el circuito no llega
+
+Los cinco anteriores miran hacia atrás, hacia los lados y hacia delante **dentro** del circuito.
+Ninguno contempla que el objeto se haya ido a otro.
+
+Si el par (último tag antes del silencio → primer tag después) es una transición que sus vecinos de
+circuito también hacen, el objeto estuvo **ahí parado**. Hasta ahí es barato. Lo que **no** vale es
+el recíproco, y darlo por bueno fue un error de este catálogo: que ningún vecino haga ese salto no
+demuestra que el objeto se fuera, demuestra que **dejó de leer**. Un vehículo que recorre su propia
+línea sin registrar catorce tags reaparece dando un salto que nadie más da, sin haberse movido.
+
+La comprobación completa tiene dos partes, y la segunda es la que decide (R-AGV-012):
+
+1. ¿Se alcanza el tag de reanudación siguiendo la línea desde donde desapareció? Si no, no se llega
+   desde ahí y la salida se sostiene.
+2. Si se alcanza, ¿cuánto tardó frente a lo que tarda el cohorte **por ese mismo tramo, medido de
+   extremo a extremo**? Dentro de su rango, el objeto estuvo ahí y lo que hay es un tramo recorrido
+   sin leer. Solo por encima se sostiene que estuvo en otro sitio.
+
+La comparación va contra el recorrido medido, nunca contra la suma de tiempos de cada arista: donde
+la carga se hace en ruta, un tramo con parada de trabajo tiene una dispersión tal que cualquier
+umbral sobre la suma dispara solo. Releer el mismo tag tampoco es ir a ninguna parte.
+
+Medido sobre una exportación real de tres circuitos, la diferencia entre aplicar solo el primer
+criterio y aplicar los dos es la diferencia entre un diagnóstico y un falso positivo: el vehículo
+que parecía irse cinco veces no se va **ninguna**. Lo que tiene son cuatro tramos recorridos sin
+leer, cuarenta tags en total, frente a cero o catorce de sus trece compañeros. Sigue siendo el
+vehículo anómalo de la exportación, pero por lectura y no por trayecto, y el hallazgo que se le
+atribuya cambia entero.
+
+Un corolario que hay que aplicar antes que nada de lo anterior: **dos lecturas en el mismo instante
+no ordenan nada** (R-DAT-013). Su orden es posición de pila, no medida del reloj, así que aparecen
+en las dos direcciones y la minoritaria simula un desvío que nunca ocurrió. Antes de discriminar
+nada, esas aristas se retiran del razonamiento topológico.
+
+**Y salir del circuito no es una reubicación benigna: es una anomalía por diseño.** Los cruces
+llevan un par de tags de protección precisamente para detener a un vehículo que se desvía, así que
+un objeto que se fue significa que algo no funcionó. Las hipótesis son enumerables:
+
+| Evidencia en las lecturas | Hipótesis |
+|---|---|
+| los tags de protección aparecen y salió igual | la lectura funcionó; la orden no se ejecutó |
+| los tags de protección no aparecen | falló la lectura de la protección |
+| salió antes del segundo tag del par | se desvió entre uno y otro |
+
+Ambas ramas son `inferred` y se presentan con su evidencia, nunca como causa única. Lo que sigue sin
+ser medible es la **ausencia de lecturas mientras está fuera**; el hallazgo es la salida, no el
+silencio — son dos cosas distintas y conviene no mezclarlas.
+
+Cruzar exportaciones **no** confirma dónde estuvo: si el vehículo no lleva en memoria los tags del
+circuito de destino, no aparece en su exportación (R-OPP-009).
 
 ## 5. Estadística robusta
 

@@ -1,8 +1,8 @@
 ---
 document_id: TT-DOMAIN-001
-version: 0.1.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-11
 ---
 
 # Modelo de dominio
@@ -97,6 +97,9 @@ stateDiagram-v2
 ## Contextos que no deben mezclarse
 
 - Circuitos diferentes.
+- Multicircuitos distintos dentro de un mismo circuito: cambian el comportamiento al leer un tag y
+  pueden cambiar las condiciones físicas de detección, así que sus lecturas no son comparables.
+- Periodos con multicircuito conocido y periodos en los que se desconoce.
 - Zona cargada y zona vacía.
 - Operación normal, pausas, parada planificada e incidencia.
 - Versiones de configuración distintas.

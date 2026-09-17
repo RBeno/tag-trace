@@ -1,8 +1,8 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.1.0
+version: 0.8.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-16
 ---
 
 # Etapas, entregables y resultados
@@ -35,6 +35,9 @@ Cada fase produce una capacidad vertical verificable y un paquete de evidencia. 
 - Roadmap, puertas, trazabilidad, riesgos y preguntas abiertas.
 - ADR, plantillas para trabajo con IA, memoria compacta y estado de proyecto.
 - Evaluación del prototipo anterior como referencia, sin migrar código.
+- Contrato del protocolo Worker↔UI y contrato de configuración de circuito.
+- Andamiaje de gobierno ejecutable: `CLAUDE.md`, esquema del estado de proyecto, guardián de datos
+  y verificación documental, en local mediante hook y en integración continua.
 
 ### Se formaliza
 
@@ -45,7 +48,29 @@ Cada fase produce una capacidad vertical verificable y un paquete de evidencia. 
 
 ### Salida
 
-Tag documental `docs-v0.1.0`, checkpoint F0 y aprobación explícita `CONTINÚA FASE 1`.
+Tag documental `docs-v0.2.0`, checkpoint F0 firmado y aprobación explícita `CONTINÚA FASE 1`.
+
+### F1a·0 — Importador mínimo
+
+El primer entregable ejecutable, y deliberadamente más pequeño que F1a: cargar un fichero de
+lecturas, procesarlo **dentro del Worker** con progreso y cancelación, normalizarlo conservando
+procedencia, y mostrar la tabla con navegación hasta la fila de origen.
+
+Sin `.agvproj`, sin PWA, sin persistencia, sin salud. El objetivo no es cerrar una puerta: es poner
+el protocolo de Workers y el contrato de importación frente a datos reales cuanto antes, que es lo
+único que ha demostrado encontrar errores en este proyecto.
+
+Sale con TC-019, TC-020 e INV-002 en verde, y con el perfil que demuestra que no hay parseo en el
+hilo principal.
+
+### F1a — Esqueleto vertical antes de F1 completa
+
+F1 se abre con un recorrido único extremo a extremo que valida la plataforma antes de invertir en
+diagnóstico: crear circuito, cargar un CSV sintético, parsear dentro del Worker con progreso y
+cancelación, normalizar conservando procedencia, navegar hasta la fila origen, exportar `.agvproj`
+y reabrirlo con hash semántico idéntico. Sale con los criterios de aceptación de
+`WORKER_PROTOCOL.md` §7, los casos TC-015, TC-019 y TC-020, los invariantes INV-001 a INV-006,
+INV-010 e INV-011, y PERF-D2 medido en los dispositivos de referencia.
 
 ## F1 — Base local e ingesta confiable
 
@@ -81,8 +106,12 @@ Diagnósticos complejos, consolidación definitiva o rediseño visual completo.
 - Grafo observado por AGV/vuelta.
 - Consenso físico con rutas alternativas.
 - Comparador Vsystem/plano frente a observado.
-- Tiempos robustos por transición.
+- Tiempos robustos por transición, acotados a las transiciones cuyo intervalo supera la resolución
+  de la fuente; por debajo de ella la secuencia es `observed` y el tiempo `unknown`.
 - Replay básico observado/inferido/desconocido.
+- Expediente reducido de AGV y de tag: búsqueda por identificador, recuentos frente a la cohorte,
+  periodos de inactividad, última lectura conocida e instante de cambio. Sin tasa de salud, que
+  llega en F3 con las oportunidades.
 
 ### Se formaliza
 

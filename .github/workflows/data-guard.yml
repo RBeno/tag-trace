@@ -1,0 +1,50 @@
+name: Guardián de datos
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guardian:
+    name: Extensiones prohibidas, fixtures sintéticos y secretos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio con historial
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Revisar el árbol vigente
+        run: bash scripts/check_data.sh
+
+      - name: Revisar los ficheros añadidos por la propuesta
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mapfile -t changed < <(git diff --name-only --diff-filter=ACMR "$BASE" "$HEAD")
+          if [ "${#changed[@]}" -eq 0 ]; then
+            echo "La propuesta no añade ficheros."
+            exit 0
+          fi
+          bash scripts/check_data.sh "${changed[@]}"
+
+      - name: Comprobar que ningún commit del historial introdujo datos
+        run: |
+          # El repositorio es público: también importa lo que existió, no solo lo que existe.
+          prohibidas='\.(csv|tsv|agvproj|xlsx|xls|xlsm|parquet|duckdb|sqlite3?|db|pem|p12|pfx)$'
+          if git log --all --pretty=format: --name-only --diff-filter=A \
+               | sort -u | grep -Ev '^$' | grep -E "$prohibidas" \
+               | grep -v '^fixtures/synthetic/'; then
+            echo
+            echo "Un commit del historial introdujo un fichero de datos prohibido."
+            echo "Abrir el repositorio expone también el pasado: revisa antes de publicar."
+            exit 1
+          fi
+          echo "Historial limpio."

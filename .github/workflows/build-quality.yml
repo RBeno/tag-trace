@@ -1,0 +1,40 @@
+name: Calidad del código
+
+# Desde F1a·0 el repositorio contiene aplicación, no solo documentación. El `DEFINITION_OF_DONE.md`
+# exige tipos, análisis estático y pruebas superadas; sin este flujo esa exigencia sería otra vez
+# solo texto, que es exactamente el hallazgo B1 de la auditoría de F0.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  codigo:
+    name: Tipos, pruebas y compilación
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias exactas
+        run: npm ci
+
+      - name: Comprobar tipos
+        run: npm run typecheck
+
+      - name: Ejecutar pruebas
+        run: npm test
+
+      - name: Compilar
+        run: npm run build

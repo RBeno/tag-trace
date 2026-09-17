@@ -1,6 +1,6 @@
 ---
 document_id: TT-DECISIONS-001
-version: 0.1.0
+version: 0.2.0
 status: active
 last_updated: 2026-09-03
 ---
@@ -20,6 +20,9 @@ last_updated: 2026-09-03
 | [ADR-0009](decisions/ADR-0009-candidate-web-stack.md) | Stack web candidato y selección por prueba | Proposed |
 | [ADR-0010](decisions/ADR-0010-phase-gated-ai-development.md) | Desarrollo con IA gobernado por fases y pruebas | Accepted |
 | [ADR-0011](decisions/ADR-0011-greenfield-repository.md) | Nuevo repositorio; prototipo como referencia | Accepted |
+| [ADR-0012](decisions/ADR-0012-agvproj-container.md) | Contenedor `.agvproj`: zip, manifiesto y hash por sección | Accepted |
+| [ADR-0013](decisions/ADR-0013-canonical-time-and-determinism.md) | Tiempo canónico, orden total y determinismo numérico | Accepted |
+| [ADR-0014](decisions/ADR-0014-public-repository-and-publication.md) | Repositorio público y publicación en GitHub Pages | Accepted |
 
 ## Convención
 

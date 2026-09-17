@@ -9,9 +9,11 @@ Cada cambio debe ser comprensible, medible, reversible y trazable desde una nece
 1. Crear una tarea usando `docs/templates/FEATURE_CONTRACT.md`.
 2. Relacionarla con requisitos y reglas mediante sus IDs.
 3. Trabajar en una rama con nombre `type/descripcion-breve`.
+   Antes del primer commit: `git config core.hooksPath .githooks`.
 4. Añadir o actualizar pruebas y documentación.
 5. Abrir una solicitud de cambio con la plantilla del repositorio.
-6. Superar validaciones automáticas.
+6. Superar las validaciones automáticas: `python3 scripts/check_docs.py` y
+   `bash scripts/check_data.sh` en local, y los mismos guardianes en integración continua.
 7. Obtener la validación funcional del propietario del producto cuando afecte al dominio.
 
 ## Tamaño y alcance

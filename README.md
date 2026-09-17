@@ -29,23 +29,45 @@ El principio central es **diagnosticar desviaciones respecto al comportamiento t
 
 ## Navegación documental
 
-- [Índice de contexto](docs/CONTEXT_INDEX.md)
+Empieza por el [índice de contexto](docs/CONTEXT_INDEX.md): indica qué leer según el tipo de tarea.
+
+**Qué se construye y por qué**
+
 - [Carta del proyecto](docs/PROJECT_CHARTER.md)
 - [Requisitos](docs/REQUIREMENTS.md)
+- [Modelo de dominio](docs/DOMAIN_MODEL.md)
+- [Glosario controlado](docs/GLOSSARY.md)
 - [Reglas industriales](docs/RULE_CATALOG.md)
-- [Datos y procedencia](docs/DATA_CONTRACTS.md)
+
+**Cómo se construye**
+
 - [Arquitectura](docs/ARCHITECTURE.md)
+- [Protocolo de Workers](docs/WORKER_PROTOCOL.md)
 - [Algoritmos](docs/ALGORITHM_CATALOG.md)
+- [Datos y procedencia](docs/DATA_CONTRACTS.md)
+- [Configuración de circuito](docs/CONFIG_SCHEMA.md)
 - [Memoria y consolidación](docs/MEMORY_CONSOLIDATION.md)
 - [Incidencias e informes](docs/INCIDENTS_REPORTING.md)
 - [Experiencia de usuario](docs/UX_SPEC.md)
-- [Pruebas](docs/TEST_STRATEGY.md)
+
+**Cómo se verifica**
+
+- [Estrategia de pruebas](docs/TEST_STRATEGY.md)
 - [Rendimiento](docs/PERFORMANCE_BUDGET.md)
 - [Seguridad y privacidad](docs/SECURITY_PRIVACY.md)
+- [Definición de terminado](docs/DEFINITION_OF_DONE.md)
+- [Matriz de trazabilidad](docs/TRACEABILITY_MATRIX.md)
+
+**Cómo se gobierna**
+
 - [Etapas y entregables](docs/ROADMAP.md)
 - [Puertas de fase](docs/PHASE_GATES.md)
 - [Decisiones](docs/DECISIONS.md)
+- [Desarrollo con IA](docs/AI_DEVELOPMENT_GOVERNANCE.md)
+- [Memoria del proyecto](docs/PROJECT_MEMORY.md)
+- [Registro de riesgos](docs/RISK_REGISTER.md)
 - [Preguntas abiertas](docs/OPEN_QUESTIONS.md)
+- [Versionado](docs/VERSIONING.md)
 
 ## Versionado
 
@@ -57,4 +79,17 @@ El producto, los algoritmos, el formato `.agvproj`, las configuraciones de circu
 
 ## Privacidad del repositorio
 
-La visibilidad inicial se decide antes de publicarlo. GitHub Pages desde un repositorio privado personal depende del plan contratado; un repositorio público permite el prototipo gratuito siempre que solo contenga documentación, código y datos sintéticos. Ninguna visibilidad convierte en publicables los datos industriales. La ausencia de datos reales está reforzada por `.gitignore` y por las normas para agentes.
+Este repositorio es **público** y contiene únicamente código, documentación y fixtures sintéticos
+(ADR-0014). Ningún dato industrial real entra aquí, ni siquiera anonimizado: la estructura de un
+CSV de planta sigue revelando topología, horarios y capacidad.
+
+La regla no depende de la buena voluntad. Un guardián en integración continua y un hook local
+rechazan las extensiones prohibidas y los ficheros sospechosos antes de que lleguen a GitHub. Para
+instalar el hook en tu copia:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Los datos de planta —CSV, proyectos `.agvproj`, informes, grafos y configuraciones reales— se
+quedan en el dispositivo del usuario.

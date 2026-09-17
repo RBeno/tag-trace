@@ -9,6 +9,7 @@
 
 ## Antes de cambiar algo
 
+0. Activar el guardián local una sola vez: `git config core.hooksPath .githooks`.
 1. Leer `docs/CONTEXT_INDEX.md`, `docs/PROJECT_MEMORY.md` y `docs/project_state.json`.
 2. Leer los documentos indicados para el tipo de cambio.
 3. Confirmar objetivo, alcance, exclusiones, pruebas y presupuesto de recursos.
@@ -35,6 +36,17 @@
 - Prohibido transmitir datos de usuario, usar telemetría o llamar a servicios externos durante un análisis.
 - Prohibido implementar control industrial, escritura sobre equipos o acciones `START`, `STOP`, `RESET`.
 - Nunca registrar contenido bruto en consola, trazas de error o analítica.
+- El repositorio es público (ADR-0014). Un error aquí no se puede deshacer.
+
+## Verificación obligatoria antes de proponer un cambio
+
+```bash
+python3 scripts/check_docs.py    # frontmatter, identificadores, enlaces y estado de fase
+bash scripts/check_data.sh       # extensiones prohibidas, fixtures sintéticos y secretos
+```
+
+Ambas se ejecutan también en integración continua y son bloqueantes. No se saltan con `git add -f`
+ni desactivando el hook.
 
 ## Pruebas y aceptación
 

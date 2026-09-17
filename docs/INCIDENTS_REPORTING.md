@@ -1,6 +1,6 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
 last_updated: 2026-09-03
 ---
@@ -65,7 +65,9 @@ El replay muestra por instante:
 - capa esperada para el mismo contexto;
 - eventos y divergencias sincronizados.
 
-No se dibuja una posición exacta cuando solo se conoce un tramo. El usuario puede filtrar AGV, tag, zona, tipo de evidencia y acelerar/pausar el tiempo.
+No se dibuja una posición exacta cuando solo se conoce un tramo: la posición inferida sobre una
+arista es una fracción del tiempo transcurrido entre sus extremos, no una distancia recorrida, y la
+interfaz debe representarla como banda y no como punto. El usuario puede filtrar AGV, tag, zona, tipo de evidencia y acelerar/pausar el tiempo.
 
 ## 6. Comparación con casos anteriores
 

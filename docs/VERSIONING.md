@@ -52,6 +52,6 @@ Tienen `valid_from`, `valid_to` opcional, origen y estado. Una consolidación cr
 
 ## Tags Git
 
-- `docs-v0.1.0`: candidata documental inicial.
+- `docs-v0.2.0`: candidata documental vigente. `docs-v0.1.0` fue la primera, sin gobierno ejecutable.
 - `phase-fN-approved`: checkpoint aprobado de fase.
 - `vX.Y.Z`: release ejecutable futura.

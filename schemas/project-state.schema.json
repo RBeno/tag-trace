@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/RBeno/tag-trace/schemas/project-state.schema.json",
+  "title": "Estado del proyecto TAG TRACE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project", "repository", "documentationVersion", "currentPhase", "phaseName",
+    "status", "baseline", "lastUpdated", "implementationStarted", "legacyRepository",
+    "nextTransition", "dataPolicy"
+  ],
+  "properties": {
+    "project": { "const": "TAG TRACE" },
+    "repository": { "const": "RBeno/tag-trace" },
+    "documentationVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "currentPhase": { "enum": ["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"] },
+    "phaseName": { "type": "string", "minLength": 1 },
+    "status": {
+      "enum": ["awaiting_product_owner_approval", "in_progress", "awaiting_gate_review", "blocked"]
+    },
+    "baseline": { "enum": ["candidate", "approved"] },
+    "lastUpdated": { "type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "implementationStarted": { "type": "boolean" },
+    "legacyRepository": { "type": "string" },
+    "nextTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetPhase", "requiredApproval", "gate"],
+      "properties": {
+        "targetPhase": { "enum": ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"] },
+        "requiredApproval": { "type": "string", "minLength": 1 },
+        "gate": { "pattern": "^G[0-8]$" }
+      }
+    },
+    "dataPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["processing", "githubAllowed", "githubForbidden"],
+      "properties": {
+        "processing": { "const": "local-only" },
+        "githubAllowed": {
+          "type": "array",
+          "items": { "enum": ["source-code", "documentation", "synthetic-fixtures"] },
+          "uniqueItems": true
+        },
+        "githubForbidden": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "contains": { "const": "real-csv" }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "currentPhase": { "const": "F0" } }, "required": ["currentPhase"] },
+      "then": {
+        "properties": { "implementationStarted": { "const": false } },
+        "description": "En F0 no puede haber programación de aplicación iniciada."
+      }
+    },
+    {
+      "if": { "properties": { "baseline": { "const": "candidate" } }, "required": ["baseline"] },
+      "then": {
+        "properties": { "implementationStarted": { "const": false } },
+        "description": "Una línea base candidata no autoriza programar."
+      }
+    }
+  ]
+}

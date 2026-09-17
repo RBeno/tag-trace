@@ -1,8 +1,8 @@
 ---
 document_id: TT-OPEN-001
-version: 0.1.0
+version: 0.15.0
 status: active
-last_updated: 2026-09-03
+last_updated: 2026-09-17
 ---
 
 # Preguntas abiertas
@@ -11,14 +11,24 @@ No son lagunas que la IA deba rellenar. Cada respuesta se incorpora a requisitos
 
 ## Bloqueantes para cerrar G0
 
+Para responderlas hay una plantilla con los campos concretos que hacen falta:
+[`docs/templates/G0_INTAKE.md`](templates/G0_INTAKE.md). Se rellena en `local/`, fuera del control
+de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valores de planta.
+
 | ID | Pregunta | Por qué bloquea | Resolución prevista |
 |---|---|---|---|
-| OQ-B01 | ¿Cuáles son todos los formatos/encabezados reales de las fuentes y ejemplos mínimos de cada uno? | Define contrato de importación | Inventario local de fuentes y muestras controladas |
-| OQ-B02 | ¿Qué zona horaria representan los timestamps y cómo se registra el cambio horario? | Evita secuencias/turnos erróneos | Confirmación + casos DST |
-| OQ-B03 | ¿Qué móvil Android y PC serán dispositivos de referencia? | Permite aprobar presupuesto | Registrar modelo, RAM, navegador y versión |
-| OQ-B04 | ¿Cuáles son los límites exactos de zona cargada/vacía, número y límites de calles CO, puntos críticos y anclas de vuelta del piloto? | Necesario para reglas topológicas | Configuración local inicial versionada, no publicada |
-| OQ-B05 | ¿Qué datos reales podrán usarse localmente para aceptar F1–F5 y quién valida los resultados? | Evita pruebas solo sintéticas | Plan de aceptación local |
-| OQ-B06 | ¿El repositorio `RBeno/tag-trace` debe permanecer privado durante todo el piloto? | Política de publicación | Confirmación del propietario; por defecto privado |
+| OQ-B01 | ¿Cuáles son los formatos/encabezados reales de DS-002 a DS-009? DS-001 y DS-011 están determinados, y DS-011 ya contra una exportación completa y no solo una captura. | Define contrato de importación | Inventario local de fuentes y muestras controladas |
+| OQ-B02 | **Parcial.** La zona es `Europe/Madrid`. El tratamiento del cambio estacional ya está implementado y probado de forma sintética —hora repetida, hora inexistente y horas de guarda—, pero **no verificado contra una exportación real**: sigue sin saberse cómo representa la fuente la hora repetida de octubre, y eso no se deduce, se observa. | Evita secuencias/turnos erróneos | Exportación que cruce el cambio de octubre o de marzo |
+
+
+
+
+## Movidas a puertas posteriores
+
+| ID | Pregunta | Puerta |
+|---|---|---|
+| OQ-B04 | Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta. | G2: son insumos del grafo y el diagnóstico, no de la importación. |
+| OQ-B05 | Qué datos reales se usan para aceptar cada fase y quién valida. | G1 para la parte de F1; el resto con cada puerta. |
 
 ## Necesarias durante F1–F3
 
@@ -34,6 +44,18 @@ No son lagunas que la IA deba rellenar. Cada respuesta se incorpora a requisitos
 | OQ-108 | ¿Qué periodos/versiones exactos tienen los calendarios y takt conocidos? | Configuración obligatoria por vigencia |
 | OQ-109 | ¿Cómo se reconocen movimientos manuales y sentido contrario? | Señalar desconocido/excepción |
 | OQ-110 | ¿Qué diferencias conocidas existen entre memorias de AGV y cómo se obtienen sin descarga global? | Importación/revisión manual versionada |
+| OQ-111 | **Parcial.** La lista está obtenida y es cerrada; falta el *significado operativo* de cada valor, que es lo que decide cuáles implican parada real. | Los eventos de uso se conservan con su texto original, sin interpretarse ni alimentar diagnóstico |
+| OQ-112 | ¿Cuál es el rango exacto de multicircuitos y qué hace cada uno? Se conoce que altera el comportamiento al leer tags y que algún modo reduce el alcance de detección. | Perfiles separados por multicircuito; sin la tabla completa no se puede afirmar qué ausencias son esperables |
+| OQ-113 | **Parcial.** La lista está obtenida: son averías de equipo emparejadas error/restablecimiento y avisos de nivel de batería. Falta confirmar si alguna debe suspender el diagnóstico del vehículo mientras dure. | Se conserva como atributo sin promover ni interpretar |
+| OQ-116 | ¿Qué hace que un tag emita su multicircuito en una pasada y no en la siguiente? Medido: ningún tag declara dos valores distintos, unos lo emiten en todas sus pasadas y otros solo en una fracción, y el mismo vehículo sobre el mismo tag unas veces lo trae y otras no. | Ausente es `unknown`: no se reconstruye por continuidad desde la lectura anterior (R-DAT-011) |
+| OQ-117 | Dos tags declarados por el propietario dentro de las calles de carga no tienen **ninguna** lectura en una ventana de casi 18 h, y el tramo que ocuparían se recorre en directo decenas de veces. ¿Siguen instalados? | Salen en el circuito reconstruido como `unknown`, nunca omitidos. Si están instalados es un diagnóstico; si no, la lista está desactualizada |
+| OQ-118 | **Respondida en su mayor parte.** El fenómeno eran tres cosas mezcladas: circuitos distintos compartiendo fichero, tags que no están en la memoria del vehículo, y detección. Lo que queda abierto es solo el resto **con patrón de gradiente** —todos leen algo, unos menos—, que sí es candidato a detección. | Se separan los tres con la prueba de tiempos (en línea o desvío) y la normalización por vueltas (bimodal o gradiente). Solo el gradiente queda `unknown` |
+| OQ-119 | **Reformulada dos veces.** Ya no es adónde fue el vehículo —cruzar exportaciones no lo resuelve, porque sin esos tags en memoria no aparece en la del destino—, ni tampoco «qué cruce falló»: aplicada la prueba de R-AGV-012, en la exportación analizada **no queda ninguna salida que sostener**. Lo que sí queda es un vehículo con cuatro tramos recorridos sin leer, cuarenta tags, frente a cero o catorce de sus trece compañeros, y una cola de 234 min al final de la ventana que **no reanuda dentro de ella** y por tanto no es contrastable. La pregunta es qué explica esa ceguera por tramos. | El expediente cuenta los tramos sin leer aparte de las salidas y no llama avería a lo segundo sin la prueba. La cola sin reanudación queda `unknown`, no se completa con la hipótesis más probable |
+| OQ-121 | ¿Cuáles son los **pares de tags de protección** de cada cruce, y qué tag toca si el giro se ejecuta? **La hipótesis anterior queda retirada**: se apoyaba en dos salidas que la prueba de R-AGV-012 ha desmentido —el vehículo recorrió su línea sin leer, no se fue—, así que los dos tags que la sostenían no tienen nada detrás. La sustituye una evidencia distinta y mejor: los cinco tags donde dos circuitos de una exportación siguen por sitios distintos llevan **todos** un tag acompañante leído pegado en 61 a 98 pasadas, y en dos de ellos más de la mitad caen en el mismo instante. Eso es la forma de un par en un punto; cuál protege qué giro no lo dice el dato. | El expediente señala la salida y enumera las hipótesis sin elegir. Los valores van a `critical_points` con `function: cruce` en la configuración local, nunca al repositorio |
+| OQ-122 | ¿Qué tags son **críticos** y de qué clase —parada precisa, cruce, semáforo, dejar/recoger carro, cambio de mapa importante, bifurcación—? Hay candidatos propuestos por firma para las cuatro clases que dejan alguna, con su evidencia y su soporte. Dos no dejan ninguna: un cambio de mapa es indistinguible de un tag cualquiera, y un cruce que nadie ha fallado y que recorre un solo circuito tampoco, porque existe para que todos pasen igual. | Los candidatos se entregan para confirmar o completar, nunca se dan por asignados (R-GRA-007). Sin declaración, la función es `unknown`, y un tag crítico no leído se cuenta aparte del ordinario (R-GRA-008) |
+| OQ-120 | ¿Qué tags lleva cada vehículo en memoria, y con qué vigencia? Sin eso, **ninguna tasa de lectura es salud**: «no lo detectó» y «no lo lleva cargado» producen el mismo dato (R-OPP-009). Medido: la ceguera se concentra en pocos vehículos y dos de ellos son ciegos a conjuntos que se solapan. | Se publican los hechos y sus hipótesis, nunca una tasa de salud. La ceguera bimodal sale señalada con la memoria como hipótesis prioritaria |
+| OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
+
 
 ## Decisiones de producto posteriores
 
@@ -47,6 +69,16 @@ No son lagunas que la IA deba rellenar. Cada respuesta se incorpora a requisitos
 | OQ-P06 | ¿Cuándo existe suficiente evidencia para promover deriva a cambio real? | F4 |
 | OQ-P07 | ¿Qué métricas hacen que una contramedida sea eficaz, parcial o ineficaz? | F5 |
 
+## Preguntas cerradas
+
+| ID | Pregunta | Respuesta | Fecha | Documentos |
+|---|---|---|---|---|
+| OQ-B06 | ¿El repositorio debe permanecer privado durante todo el piloto? | No. Pasa a público conteniendo solo código, documentación y fixtures sintéticos, tras verificar el historial y activar el guardián de datos. | 2026-09-03 | ADR-0014, `SECURITY_PRIVACY.md` |
+| OQ-115 | ¿«Reaparecer en su hueco» se observa con el grupo avanzando o alcanzándole? | La reaparición se busca hacia delante en el tiempo, y lo que discrimina es si los vecinos avanzaron: si tampoco lo hicieron, el fallo es de la línea y no del objeto. Si avanzaron con normalidad y el objeto reaparece en posición muy por encima del tiempo esperado del tramo, la detención es individual. | 2026-09-16 | R-AGV-007, R-AGV-008, R-FLO-006, `ALGORITHM_CATALOG.md` §4.3 |
+| OQ-B07 | ¿Bajo qué licencia se publica el repositorio? | Sin fichero `LICENSE`: el repositorio público queda con todos los derechos reservados. Se lee, no se reutiliza. | 2026-09-16 | ADR-0014 |
+| OQ-P05 | ¿Qué framework de interfaz? | Ninguno para F1a: TypeScript y DOM directo. La elección se pospone a F2 o F5, cuando exista una pantalla —grafo, timeline o replay— que la justifique, y con medidas de esa pantalla. | 2026-09-16 | ADR-0009 |
+| OQ-B03 | ¿Qué dispositivos de referencia? | PC de 6 núcleos y 12 hilos con 32 GB, y Samsung Galaxy S23 FE. Los dos de gama alta, lo que **sesga las medidas hacia el optimismo** y queda declarado junto al presupuesto en lugar de darse por bueno. | 2026-09-16 | `PERFORMANCE_BUDGET.md` §2.1 |
+
 ## Registro de cierre
 
-Al cerrar una pregunta se añade: respuesta, estado de verdad, evidencia, fecha, responsable y documentos modificados. No se borra la pregunta; se mueve a una sección histórica en una versión posterior.
+Al cerrar una pregunta se añade: respuesta, estado de verdad, evidencia, fecha, responsable y documentos modificados. No se borra la pregunta; se mueve a la sección de preguntas cerradas.
