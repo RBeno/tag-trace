@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.3.0
+version: 0.4.0
 status: baseline-candidate
-last_updated: 2026-09-11
+last_updated: 2026-09-17
 ---
 
 # Memoria compacta del proyecto
@@ -12,7 +12,7 @@ last_updated: 2026-09-11
 - Nombre: **TAG TRACE**.
 - Naturaleza: diagnóstico histórico longitudinal y gemelo digital de circuitos AGV.
 - Primer circuito piloto: PC2.
-- Estado: F0, especificación candidata; todavía sin código nuevo.
+- Estado: **F1 en curso**. El primer entregable ejecutable es el importador mínimo (F1a·0).
 - Repositorio anterior: `RBeno/tag-trace-agv`, solo referencia.
 
 ## Decisiones firmes
@@ -35,6 +35,12 @@ last_updated: 2026-09-11
   `(t_utc, source_hash, source_row)`; números canonicalizados antes del hash semántico (ADR-0013).
 - Una sola pasada de parseo, siempre dentro del Worker, y ningún cálculo de repuesto en el hilo
   principal (`WORKER_PROTOCOL.md`).
+- El tiempo de zona se resuelve **sin librería**: `Intl.DateTimeFormat` y dos sondeos del
+  desplazamiento alrededor del instante. No se itera hasta converger, porque esa convergencia oculta
+  precisamente la hora repetida del cambio de octubre. La validez del calendario se comprueba antes
+  de aplicar la zona: un día imposible es una fila inválida, no un instante inexistente.
+- El umbral de consistencia del separador **identifica** al separador; no juzga la calidad de la
+  fuente. Las filas discordantes son cuarentena, no motivo de rechazo del fichero.
 
 ## Modelo industrial conocido
 

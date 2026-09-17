@@ -1,8 +1,8 @@
 ---
 document_id: TT-OPEN-001
-version: 0.8.0
+version: 0.9.0
 status: active
-last_updated: 2026-09-11
+last_updated: 2026-09-17
 ---
 
 # Preguntas abiertas
@@ -18,7 +18,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | ID | Pregunta | Por qué bloquea | Resolución prevista |
 |---|---|---|---|
 | OQ-B01 | ¿Cuáles son los formatos/encabezados reales de DS-002 a DS-009? DS-001 y DS-011 ya están determinados. | Define contrato de importación | Inventario local de fuentes y muestras controladas |
-| OQ-B02 | **Parcial.** La zona es `Europe/Madrid`. Queda por comprobar cómo aparece el cambio estacional: hace falta una exportación que cruce el cambio de octubre o de marzo. | Evita secuencias/turnos erróneos | Exportación que cruce el cambio |
+| OQ-B02 | **Parcial.** La zona es `Europe/Madrid`. El tratamiento del cambio estacional ya está implementado y probado de forma sintética —hora repetida, hora inexistente y horas de guarda—, pero **no verificado contra una exportación real**: sigue sin saberse cómo representa la fuente la hora repetida de octubre, y eso no se deduce, se observa. | Evita secuencias/turnos erróneos | Exportación que cruce el cambio de octubre o de marzo |
 | OQ-B03 | ¿Qué móvil Android y PC serán dispositivos de referencia? | Permite aprobar presupuesto | Registrar modelo, RAM, navegador y versión |
 
 

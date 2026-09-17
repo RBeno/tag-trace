@@ -1,13 +1,13 @@
 ---
 document_id: TT-TRACE-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
-last_updated: 2026-09-16
+last_updated: 2026-09-17
 ---
 
 # Matriz de trazabilidad
 
-La matriz se ampliará hasta una relación automática cuando exista código. En F0 demuestra que cada bloque de valor posee reglas, algoritmos, pruebas y puerta.
+La matriz se ampliará hasta una relación automática cuando exista código. En F0 demuestra que cada bloque de valor posee reglas, algoritmos, pruebas y puerta. Desde F1a·0 ya existe código, y la sección final relaciona cada caso cubierto con el módulo y la prueba que lo sostienen.
 
 | Requisitos | Reglas/decisión | Algoritmos | Pruebas | Fase/puerta |
 |---|---|---|---|---|
@@ -28,6 +28,27 @@ La matriz se ampliará hasta una relación automática cuando exista código. En
 | NFR-007–008 | ADR-0005 | ALG-014 | Round-trip y crecimiento | F4/G4 |
 | NFR-010–012, NFR-016 | ADR-0001, ADR-0009, ADR-0014 | Build/PWA | Offline, update, rollback | F6/G6 |
 | NFR-013 | UX specification | Presentación | E2E/accesibilidad | F6/G6 |
+
+## Implementación en F1a·0
+
+Lo cubierto hoy por código ejecutable. Lo que no aparece aquí **no está implementado**, aunque su
+regla exista: la matriz no es una lista de intenciones.
+
+| Caso o invariante | Módulo | Prueba |
+|---|---|---|
+| TC-019 delimitadores e identidad | `src/ingestion/delimiter.ts` | `tests/unit/importer.test.ts` · «TC-019 · delimitadores e identidad» |
+| TC-020 cancelación cooperativa (parte de importación) | `src/ingestion/importer.ts`, `workers/import.worker.ts` | «TC-020 · cancelación cooperativa» |
+| INV-002 ceros iniciales conservados | `src/ingestion/importer.ts` | «INV-002 · los ceros iniciales sobreviven al recorrido completo» |
+| ADR-0013 orden de pila y desempate intra-instante | `src/domain/order.ts` | «orden canónico · la corrección de ADR-0013» |
+| ADR-0013 tiempo canónico y marca DST | `src/domain/time.ts` | «cambio horario · ADR-0013» |
+| R-DAT-008 monotonía medida, no exigida | `src/ingestion/monotonicity.ts` | «monotonía · R-DAT-008» |
+| WP-001/WP-002 sin cálculo en el hilo principal | `src/presentation/main.ts` (sin importar `ingestion/`) | `tests/unit/layering.test.ts` |
+| WP-003 mensajes caducados descartados | `src/application/protocol.ts` (`isCurrent`) | Pendiente de prueba propia |
+| WP-005 cero filas con causa | `src/ingestion/importer.ts` | «WP-005 · cero filas es una respuesta con causa» |
+| Cuarentena con motivo y procedencia | `src/domain/reading.ts`, `src/ingestion/importer.ts` | «filas no aceptadas · se conservan con su motivo» |
+
+No implementado todavía y por tanto sin fila: TC-015 (unión con solape), `.agvproj` y su ida y
+vuelta, INV-010/INV-011 (hash semántico), PERF-D2 medido y la prueba de red.
 
 ## Regla de mantenimiento
 

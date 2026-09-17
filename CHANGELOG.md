@@ -2,6 +2,55 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [1.0.0] - 2026-09-17
+
+Primer código de aplicación del proyecto. F1 abierta con la aprobación del propietario; el
+entregable es el **importador mínimo (F1a·0)**: fichero → Worker → normalización → tabla, con
+progreso, cancelación y navegación hasta la fila de origen.
+
+### Añadido
+
+- Núcleo de ingesta puro, probable en Node y sin DOM: `src/domain/` (tiempo canónico, orden,
+  lectura), `src/ingestion/` (delimitador, monotonía, importador) y `src/application/protocol.ts`.
+- `workers/import.worker.ts`: **el único lugar donde se parsea**. La presentación no importa nada de
+  `ingestion/`, así que el defecto del prototipo —parsear en el hilo principal «para comprobar» y
+  volver a parsear en el Worker— no es posible por construcción, no por disciplina (WP-001/WP-002).
+- Cancelación cooperativa con puntos de control cada 20.000 filas y descarte de mensajes caducados
+  por `jobId` (WP-003/WP-004). `terminate()` queda como último recurso, no como mecanismo.
+- Cuarentena con motivo y procedencia por fila, y `NO_ACCEPTED_ROWS` con desglose en lugar de una
+  tabla vacía (WP-005).
+- Fixtures sintéticos de importación con manifiesto y 28 pruebas: TC-019, TC-020, INV-002 y la
+  corrección de ADR-0013.
+
+### Corregido
+
+Tres defectos que encontraron las pruebas **antes del primer commit**, escritas antes que el código
+que debían verificar:
+
+- **La marca de hora ambigua no se activaba nunca.** El método iterativo de conversión converge
+  siempre al segundo instante en el cambio de octubre, así que una hora que ocurre dos veces se
+  importaba como si fuera única. Se sustituye por el sondeo de los dos regímenes de desplazamiento
+  que rodean cualquier transición, contando cuántos candidatos reproducen la hora pedida: dos
+  (repetida), uno (normal) o ninguno (inexistente).
+- **Un día imposible se confundía con un instante inexistente.** El 31 de abril sobrevivía a la
+  validación y se desplazaba al 1 de mayo. La validez del calendario se comprueba ahora antes de
+  tocar la zona horaria, que es donde corresponde.
+- **`DATE_AMBIGUOUS` tapaba a `NO_ACCEPTED_ROWS`.** Un fichero cuya columna de fecha no contiene
+  fechas pedía fijar el orden de unos campos inexistentes en vez de decir qué se rechazó y por qué.
+  «No hay fechas» pasa a ser un motivo distinto de «las fechas no permiten decidir».
+- **Una sola fila mal formada rechazaba el fichero entero.** El umbral de consistencia del separador
+  se aplicaba como si midiera la calidad de la fuente. Ahora identifica al separador —viable si
+  explica más de la mitad de la muestra con más de un campo— y las filas discordantes van a
+  cuarentena, que es donde el contrato ya sabía tratarlas. Entre 0,5 y 0,9 se importa **con
+  advertencia explícita**, y el empate entre dos candidatos sigue siendo `DELIMITER_AMBIGUOUS`,
+  porque elegir uno sería adivinar.
+
+### Limitación declarada
+
+Todavía no existe vista previa con elección manual de separador ni de orden de campos, así que la
+recuperación de esos errores dice lo que el usuario puede hacer hoy y no promete lo que la
+aplicación hará después. Llega con F1a·1.
+
 ## [0.8.0] - 2026-09-16
 
 Decisiones del propietario que desbloquean el arranque de la programación.

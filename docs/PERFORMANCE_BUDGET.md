@@ -28,6 +28,28 @@ magnitud de eventos, AGV y tags coincide. El generador sintético debe reproduci
 propiedades que complican la ingesta —orden descendente de pila, resolución gruesa, identificadores
 con y sin ceros iniciales— y no solo el volumen.
 
+## 2.1 Dispositivos de referencia
+
+| | PC | Móvil |
+|---|---|---|
+| Equipo | Intel de 6 núcleos y 12 hilos, 32 GB RAM, GPU dedicada | Samsung Galaxy S23 FE |
+| Papel | Medida de escritorio y desarrollo | Medida móvil y puerta de fase |
+
+**Los dos son de gama alta, y eso sesga las medidas hacia el optimismo.** Con 32 GB de RAM el
+presupuesto de memoria de escritorio no se rozará, y el móvil tiene holgura suficiente para que un
+consumo excesivo no se note. Conviene tenerlo presente al interpretar un resultado en verde: que
+quepa aquí no demuestra que quepa en el equipo de un operario.
+
+Dos consecuencias prácticas:
+
+- Los presupuestos de RAM se verifican además con las herramientas de medición del navegador, no
+  solo por ausencia de bloqueo o de cierre de pestaña.
+- La GPU dedicada del PC no interviene en la importación, pero sí influirá en el grafo y el replay
+  de F2 y F5. Ese dato de escritorio no es representativo y se declarará como tal.
+
+Lo que sí detecta este móvil sin dificultad es el defecto del prototipo: parsear cien mil filas en
+el hilo principal bloquea cualquier teléfono, por bueno que sea.
+
 ## 3. Presupuestos candidatos
 
 | Métrica | Objetivo candidato | Condición |

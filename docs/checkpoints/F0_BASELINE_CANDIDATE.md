@@ -1,9 +1,9 @@
 ---
 document_id: TT-CHECKPOINT-F0-001
 checkpoint: F0-G0
-version: 0.2.0
-status: candidate
-last_updated: 2026-09-03
+version: 0.3.0
+status: approved
+last_updated: 2026-09-17
 ---
 
 # Checkpoint F0 — candidata documental
@@ -47,8 +47,19 @@ El detalle está en el changelog.
 
 ## Decisión
 
-- [ ] Aprobado
+- [x] Aprobado
 - [ ] Requiere cambios
 - [ ] Rechazado
 
-Frase/fecha del propietario: pendiente.
+**Frase del propietario, literal:** «Continúa con Fase 1». Fecha: 2026-09-17.
+
+Se registra tal como se escribió. La frase canónica prevista era `CONTINÚA FASE 1`; la recibida no
+coincide carácter a carácter, pero llegó como respuesta directa a la petición de la frase de
+transición y su intención es inequívoca. Se deja constancia de la diferencia en lugar de normalizar
+el texto, porque un registro de aprobación que corrige lo que dijo la persona deja de ser un
+registro.
+
+**Estado resultante:** fase F1, línea base `approved`, `implementationStarted: true`.
+
+**Pendiente que no bloquea F1:** el comportamiento del cambio horario estacional (OQ-B02 parcial),
+que necesita una exportación que cruce octubre o marzo.

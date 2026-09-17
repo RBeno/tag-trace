@@ -1,0 +1,53 @@
+:root {
+  color-scheme: light dark;
+  --ink: #16181d;
+  --muted: #5b6270;
+  --line: #d9dde5;
+  --bg: #ffffff;
+  --panel: #f6f7f9;
+  --error: #8c1d18;
+  --warn: #7a5200;
+  --flag: #fff4d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e6e8ec; --muted: #9aa2b1; --line: #333844;
+    --bg: #14161a; --panel: #1c1f26;
+    --error: #ffb4ab; --warn: #f0c36d; --flag: #3a3212;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+#app { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.4rem; margin: 0; letter-spacing: 0.02em; }
+h2 { font-size: 1rem; margin: 0 0 12px; }
+.muted { color: var(--muted); margin: 4px 0 0; }
+.bar { margin-bottom: 20px; }
+.panel { background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+label { display: block; font-weight: 600; margin-bottom: 8px; }
+input[type="file"] { max-width: 100%; }
+button { font: inherit; padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+button.danger { border-color: var(--error); color: var(--error); margin-top: 12px; }
+progress { width: 100%; height: 8px; }
+.message.error h2 { color: var(--error); }
+.message.warn h2 { color: var(--warn); }
+.message p { margin: 6px 0; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+table.readings { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+table.readings th, table.readings td {
+  text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+table.readings th { color: var(--muted); font-weight: 600; }
+tr.flagged { background: var(--flag); }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.raw { color: var(--muted); }
+#show-more { margin-top: 12px; }
+@media (max-width: 560px) {
+  .facts { grid-template-columns: 1fr; gap: 2px 0; }
+  .facts dd { margin-bottom: 8px; }
+  table.readings th:nth-child(5), table.readings td:nth-child(5) { display: none; }
+}
