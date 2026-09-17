@@ -448,6 +448,9 @@ export function importReadings(
       quarantinedRows: defectiveRows,
       rowsWithoutTag,
       dstFlagged,
+      // Las lecturas ya están ordenadas, así que los extremos son los dos bordes de lo observado.
+      observedFrom: (readings[0] as Reading).time.utcMs,
+      observedTo: (readings[readings.length - 1] as Reading).time.utcMs,
       elapsedMs: Date.now() - startedAt,
     },
     readings,

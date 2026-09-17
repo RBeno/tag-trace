@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.2.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-16
+last_updated: 2026-09-17
 ---
 
 # Especificación de experiencia de usuario
@@ -101,6 +101,36 @@ y **sin tasa de salud**: sin oportunidades no hay denominador legítimo. F3 lo c
 - Seleccionar un tag/tramo para ver AGV, vueltas, tiempos y cambios.
 - Filtrar sin recalcular el análisis completo.
 - Degradar detalle de forma progresiva en móvil.
+
+## 5.1 Vistas de periodo y de circuito
+
+Cuatro representaciones probadas contra una exportación real. Ninguna diagnostica: **dibujan solo lo
+observado**. Cada una lleva escrito su propio límite, porque un gráfico que no dice lo que no sabe
+convence más de lo que debería.
+
+| Vista | Qué responde | El límite, escrito en la propia vista |
+|---|---|---|
+| **Banda de actividad**, vehículo × tiempo | dónde hay lecturas y dónde no | un hueco es **ausencia de lecturas**, no una parada demostrada |
+| **Pista de eventos**, alineada bajo cada vehículo | qué evento cae en ese instante | los eventos se agrupan por la **palabra del catálogo**, no por su significado (OQ-111) |
+| **Perfil horario** | el régimen de actividad que da contexto a un silencio | las horas de los bordes están **cortadas** y no se comparan con una hora entera |
+| **Tira del circuito** y **ranking de omisión** | la secuencia, y a cuáles mirar | el eje es orden topológico, **nunca distancia**: el dato no tiene geometría |
+
+Reglas que se derivan de haberlas dibujado:
+
+- **La ausencia necesita un fondo.** Sin un carril continuo detrás de cada vehículo, un hueco se
+  confunde con el papel, y el hueco es justo lo que hay que ver.
+- **Secuencia y magnitud son dos gráficos.** «Quién va después de quién» y «a cuáles mirar» son
+  preguntas distintas; juntarlas en un eje deja lo importante fuera de la pantalla.
+- **Ningún gráfico exige desplazamiento horizontal para llegar a su contenido útil.** Lo que hay
+  que ir a buscar no se lee.
+- Una clase de evento ocupa además **una altura propia** dentro de su banda: el color nunca es el
+  único canal (§4), y aquí hay cuatro clases sobre un fondo denso.
+- Toda vista con color tiene su **equivalente en tabla**, que es a la vez la vía accesible y el
+  respaldo cuando el color falla.
+
+**Estas vistas se generan y se miran en local.** Contienen identificadores y fechas de planta, así
+que no se publican ni se alojan (ADR-0007, ADR-0014); lo que puede vivir en el repositorio es la
+misma vista contra un fixture sintético.
 
 ## 6. Consolidación
 

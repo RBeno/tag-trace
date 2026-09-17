@@ -95,6 +95,15 @@ export interface SourceSummary {
   /** Filas con instante y AGV pero sin tag: no son lecturas y tampoco son un defecto. */
   readonly rowsWithoutTag: number;
   readonly dstFlagged: number;
+  /**
+   * Primer y último instante **aceptado**, en epoch UTC.
+   *
+   * No se llama cobertura a propósito. La cobertura de R-DAT-007 es la unión de los intervalos de
+   * todas las fuentes de un circuito y excluye el último minuto incompleto de una exportación; aquí
+   * solo hay una fuente y no hay circuito todavía. Esto es lo que se ha observado, ni más ni menos.
+   */
+  readonly observedFrom: number;
+  readonly observedTo: number;
   readonly elapsedMs: number;
 }
 

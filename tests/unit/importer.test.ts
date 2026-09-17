@@ -324,6 +324,21 @@ describe("filas no aceptadas · se conservan con su motivo", () => {
     expect(con.summary.encoding).toBe("windows-1252");
   });
 
+  it("la ventana observada son los dos bordes de lo aceptado, no lo que diga el fichero", () => {
+    const text =
+      "Fecha;AGV;Tag\n24/01/2026 5:05;0007;58024\n24/01/2026 5:03;0007;58022\nno-es-fecha;0007;1\n";
+    const result = importReadings(
+      text,
+      { sourceId: "x", fileName: "x", byteSize: text.length, zone: ZONE },
+      silent,
+    );
+    const { observedFrom, observedTo } = result.summary;
+    expect(observedTo - observedFrom).toBe(120_000);
+    // La fila rechazada no estira la ventana, y los extremos coinciden con las lecturas ordenadas.
+    expect(observedFrom).toBe(result.readings[0]?.time.utcMs);
+    expect(observedTo).toBe(result.readings[result.readings.length - 1]?.time.utcMs);
+  });
+
   it("un campo vacío no se rellena con un valor por defecto", () => {
     const text = "Fecha;AGV;Tag\n24/01/2026 5:03;;58022\n";
     try {

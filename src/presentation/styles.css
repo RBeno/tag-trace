@@ -38,6 +38,10 @@ progress { width: 100%; height: 8px; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }
+.filters label { margin: 0; }
+.filters input { font: inherit; padding: 6px 10px; min-height: 24px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); width: 11rem; }
 table.readings { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 table.readings th, table.readings td {
   text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }

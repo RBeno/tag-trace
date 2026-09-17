@@ -2,6 +2,52 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [1.2.0] - 2026-09-17
+
+Segundo escenario de exportación, auditoría de lo entregado y las primeras representaciones.
+
+### Añadido
+
+- **Filtro por AGV y por tag** en la tabla de lecturas. Sin él, una importación de sesenta mil filas
+  eran trescientas pulsaciones de «mostrar más» y no respondía a ninguna pregunta; la vía de trabajo
+  declarada como principal es justo esa —«qué le pasa al 3524»—. La comparación es exacta sobre el
+  texto recortado: `0040` y `40` son identificadores distintos (INV-002) y una coincidencia parcial
+  mezclaría `2032` con `20321`.
+- **Ventana observada** en el resumen de fuente. No se llama cobertura a propósito: la cobertura de
+  R-DAT-007 es la unión de los intervalos de todas las fuentes de un circuito y excluye el último
+  minuto incompleto; aquí solo hay una fuente y no hay circuito todavía.
+- `UX_SPEC.md` §5.1 con las cuatro representaciones y, para cada una, **el límite escrito en la
+  propia vista**: un hueco es ausencia de lecturas y no una parada; el agrupamiento de eventos es
+  léxico y no semántico; las horas de los bordes están cortadas; el eje del circuito es orden
+  topológico y nunca distancia.
+
+### Corregido
+
+- **Un error de clasificación en el circuito reconstruido, encontrado al auditar lo ya entregado.**
+  Etiquetar como «derivación» todo lo que queda fuera del anillo afirma que el vehículo tomó otro
+  camino. Contrastando tiempos, la mayoría no lo tomó: si pasar por un tag cuesta lo mismo que no
+  pasar, el tag está en la línea y lo que varía es **si se leyó**. Llamarlo rasgo del circuito lo
+  archiva y lo saca del diagnóstico para siempre, que es exactamente el hallazgo que este producto
+  existe para dar.
+- **Y un error en la primera versión de esa corrección.** Con solo la prueba de tiempos, treinta y
+  un tags con más de 370 lecturas salían como «leídos a medias»: basta una omisión entre
+  cuatrocientas para que exista el salto directo que la prueba busca. Hace falta además que ese
+  salto ocurra en una fracción apreciable de las pasadas. Con las dos condiciones la clase pasa de
+  44 tags a 11, y la cifra que lo hace visible —la tasa de omisión— es ahora una columna.
+
+### Abierto
+
+- **OQ-118**: por qué ciertos tags de la línea se leen solo en parte de las pasadas, con omisiones
+  medidas entre el 12 % y el 99 %. Que están en la línea está probado; la causa no. Candidatos: el
+  multicircuito, el lector, o un tramo paralelo demasiado corto para notarse en los tiempos.
+
+### Verificado contra la fuente real
+
+Un segundo escenario de exportación —sin las columnas de multicircuito y uso y sin las filas de
+uso— ejercita los caminos contrarios al del primero: se decodifica por la rama de UTF-8 **estricto**
+en vez de por el respaldo, y las filas sin tag bajan del 40 % al 0,17 %, que es el caso difícil de
+contar bien. Los dos escenarios coinciden en vehículos y tags, así que se validan mutuamente.
+
 ## [1.1.0] - 2026-09-17
 
 El importador se enfrenta por primera vez a una exportación real del informe ampliado (DS-011), de

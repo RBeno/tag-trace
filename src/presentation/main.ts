@@ -28,6 +28,8 @@ interface State {
   jobId: string | null;
   summary: SourceSummary | null;
   readings: readonly Reading[];
+  /** Lo que la tabla está mostrando: todas las lecturas, o las que pasan el filtro. */
+  visible: readonly Reading[];
   quarantine: readonly QuarantinedRow[];
   warnings: readonly string[];
   shown: number;
@@ -38,6 +40,7 @@ const state: State = {
   jobId: null,
   summary: null,
   readings: [],
+  visible: [],
   quarantine: [],
   warnings: [],
   shown: 0,
@@ -102,6 +105,20 @@ summaryPanel.hidden = true;
 const tablePanel = element("section", "panel");
 tablePanel.hidden = true;
 
+const agvFilter = element("input");
+agvFilter.type = "search";
+agvFilter.id = "filter-agv";
+agvFilter.placeholder = "identificador exacto";
+agvFilter.inputMode = "numeric";
+const tagFilter = element("input");
+tagFilter.type = "search";
+tagFilter.id = "filter-tag";
+tagFilter.placeholder = "identificador exacto";
+tagFilter.inputMode = "numeric";
+const filterNote = element("p", "muted", "");
+agvFilter.addEventListener("input", () => applyFilter());
+tagFilter.addEventListener("input", () => applyFilter());
+
 app.append(header, picker, progressPanel, messagePanel, summaryPanel, tablePanel);
 
 // --- Presentación ----------------------------------------------------------
@@ -145,6 +162,11 @@ function renderSummary(summary: SourceSummary): void {
     ["Zona horaria", summary.zone],
     ["Codificación", summary.encoding],
     [
+      "Observado",
+      `${formatInstant(summary.observedFrom)} → ${formatInstant(summary.observedTo)} ` +
+        `(${(((summary.observedTo - summary.observedFrom) / 3_600_000) || 0).toFixed(1)} h)`,
+    ],
+    [
       "Sentido de la fuente",
       `${directionName} (coherencia ${(summary.monotonicity.confidence * 100).toFixed(1)} %)`,
     ],
@@ -164,10 +186,55 @@ function renderSummary(summary: SourceSummary): void {
   summaryPanel.append(list);
 }
 
+/**
+ * Filtro por AGV y por tag.
+ *
+ * Es la vía de trabajo declarada como principal —«qué le pasa al 3524»— y sin ella una importación
+ * de sesenta mil filas no responde a ninguna pregunta: son trescientas pulsaciones de «mostrar más»
+ * para llegar al final.
+ *
+ * La comparación es **exacta sobre el texto recortado**, nunca numérica ni parcial: `0040` y `40`
+ * son identificadores distintos (INV-002) y una coincidencia parcial mezclaría `2032` con `20321`.
+ */
+function applyFilter(): void {
+  const agv = agvFilter.value.trim();
+  const tag = tagFilter.value.trim();
+  state.visible =
+    agv === "" && tag === ""
+      ? state.readings
+      : state.readings.filter(
+          (entry) => (agv === "" || entry.agvId === agv) && (tag === "" || entry.tagId === tag),
+        );
+  state.shown = 0;
+  const body = tablePanel.querySelector("tbody");
+  if (body !== null) body.replaceChildren();
+  renderCount();
+  appendRows();
+}
+
+function renderCount(): void {
+  const total = state.readings.length.toLocaleString("es-ES");
+  const shown = state.visible.length.toLocaleString("es-ES");
+  filterNote.textContent =
+    state.visible.length === state.readings.length
+      ? `${total} lecturas`
+      : state.visible.length === 0
+        ? `Ninguna de las ${total} lecturas coincide. El identificador se compara entero: los ceros iniciales cuentan.`
+        : `${shown} de ${total} lecturas`;
+}
+
 function renderTableSkeleton(): void {
   tablePanel.replaceChildren();
   tablePanel.hidden = false;
   tablePanel.append(element("h2", undefined, "Lecturas normalizadas"));
+
+  const filters = element("div", "filters");
+  const agvLabel = element("label", undefined, "AGV");
+  agvLabel.htmlFor = "filter-agv";
+  const tagLabel = element("label", undefined, "Tag");
+  tagLabel.htmlFor = "filter-tag";
+  filters.append(agvLabel, agvFilter, tagLabel, tagFilter);
+  tablePanel.append(filters, filterNote);
 
   const table = element("table", "readings");
   const head = element("thead");
@@ -190,9 +257,9 @@ function appendRows(): void {
   const body = tablePanel.querySelector("tbody");
   if (body === null) return;
 
-  const end = Math.min(state.shown + PAGE_SIZE, state.readings.length);
+  const end = Math.min(state.shown + PAGE_SIZE, state.visible.length);
   for (let index = state.shown; index < end; index += 1) {
-    const reading = state.readings[index] as Reading;
+    const reading = state.visible[index] as Reading;
     const row = element("tr");
     if (reading.time.flag !== "ok") row.className = "flagged";
 
@@ -208,8 +275,8 @@ function appendRows(): void {
 
   const more = tablePanel.querySelector<HTMLButtonElement>("#show-more");
   if (more !== null) {
-    more.hidden = state.shown >= state.readings.length;
-    more.textContent = `Mostrar más (${(state.readings.length - state.shown).toLocaleString("es-ES")} restantes)`;
+    more.hidden = state.shown >= state.visible.length;
+    more.textContent = `Mostrar más (${(state.visible.length - state.shown).toLocaleString("es-ES")} restantes)`;
   }
 }
 
@@ -247,6 +314,7 @@ function handleMessage(message: FromWorker): void {
     case "complete": {
       state.summary = message.summary;
       state.readings = message.readings;
+      state.visible = message.readings;
       state.quarantine = message.quarantine;
       state.warnings = message.warnings;
       state.shown = 0;
@@ -257,6 +325,9 @@ function handleMessage(message: FromWorker): void {
       }
       renderSummary(message.summary);
       renderTableSkeleton();
+      agvFilter.value = "";
+      tagFilter.value = "";
+      renderCount();
       appendRows();
       setBusy(false);
       disposeWorker();
