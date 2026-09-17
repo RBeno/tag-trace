@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.11.0
+version: 0.12.0
 status: active
 last_updated: 2026-09-17
 ---
@@ -49,7 +49,8 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-113 | **Parcial.** La lista está obtenida: son averías de equipo emparejadas error/restablecimiento y avisos de nivel de batería. Falta confirmar si alguna debe suspender el diagnóstico del vehículo mientras dure. | Se conserva como atributo sin promover ni interpretar |
 | OQ-116 | ¿Qué hace que un tag emita su multicircuito en una pasada y no en la siguiente? Medido: ningún tag declara dos valores distintos, unos lo emiten en todas sus pasadas y otros solo en una fracción, y el mismo vehículo sobre el mismo tag unas veces lo trae y otras no. | Ausente es `unknown`: no se reconstruye por continuidad desde la lectura anterior (R-DAT-011) |
 | OQ-117 | Dos tags declarados por el propietario dentro de las calles de carga no tienen **ninguna** lectura en una ventana de casi 18 h, y el tramo que ocuparían se recorre en directo decenas de veces. ¿Siguen instalados? | Salen en el circuito reconstruido como `unknown`, nunca omitidos. Si están instalados es un diagnóstico; si no, la lista está desactualizada |
-| OQ-118 | Hay tags que **están en la línea y solo se leen en parte de las pasadas**, con omisiones medidas entre el 12 % y el 99 %. Que están en la línea está probado: pasar por ellos cuesta el mismo tiempo que no pasar. ¿Por qué no se leen siempre? Candidatos: el multicircuito, el lector, o un tramo paralelo demasiado corto para notarse en los tiempos. | Clase `EN-LINEA-PARCIAL` con su tasa de omisión, y la causa `unknown`. **No se archivan como «derivación»**: llamarlo rasgo del circuito los sacaría del diagnóstico para siempre |
+| OQ-118 | **Parcial.** En una exportación lo que parecían «rutas distintas» resultaron ser tres circuitos compartiendo fichero, así que parte del fenómeno era de agrupación y no de lectura. Queda lo que no se explica así: hay tags que **están en la línea y solo se leen en parte de las pasadas**, con omisiones medidas entre el 12 % y el 99 %. Que están en la línea está probado: pasar por ellos cuesta el mismo tiempo que no pasar. ¿Por qué no se leen siempre? Candidatos: el multicircuito, el lector, o un tramo paralelo demasiado corto para notarse en los tiempos. | Clase `EN-LINEA-PARCIAL` con su tasa de omisión, y la causa `unknown`. **No se archivan como «derivación»**: llamarlo rasgo del circuito los sacaría del diagnóstico para siempre |
+| OQ-119 | ¿Qué tags marcan el paso de un circuito a otro? Medido: un vehículo sale y vuelve por tags **ordinarios** que todos leen, no por una puerta dedicada, así que el paso no se reconoce por el tag sino por la incoherencia de la reanudación. | Se detecta la salida por R-AGV-009 y el intervalo queda `sin datos cargados` para ese objeto; cargar la exportación del circuito de destino lo convierte en `observed` |
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
 
 

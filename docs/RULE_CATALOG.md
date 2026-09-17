@@ -1,6 +1,6 @@
 ---
 document_id: TT-RULES-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -34,6 +34,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-DAT-009 | accepted | Una fila con instante y vehículo pero sin tag **no es una lectura defectuosa**: es otro tipo de evento. Se conserva con su procedencia y se cuenta aparte de la cuarentena. Qué es lo dice el discriminador de la fuente, nunca el importador. |
 | R-DAT-010 | accepted | La codificación de una fuente se detecta y se declara junto al separador. Decodificar de forma tolerante está prohibido: sustituye en silencio lo que no entiende y convierte un fichero corrompido en uno de apariencia correcta. |
 | R-DAT-011 | accepted | El multicircuito va declarado en el tag, no reconstruido por continuidad: un tag nunca declara dos valores, pero puede no declararlo en una pasada. Ausente es `unknown`, no «el mismo de antes». |
+| R-DAT-012 | accepted | Una exportación puede contener **varios circuitos** bajo un mismo nombre de circuito. El cohorte de comparación es el circuito, nunca el fichero. Los circuitos se separan por **aristas exclusivas** —transiciones que un grupo recorre y ningún otro—, no por el nombre ni por el parecido a secas. Un vehículo sin circuito asignable no se compara contra nada: se declara y se para. |
 
 ## Circuito y topología
 
@@ -71,6 +72,8 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-AGV-006 | accepted | Un AGV detenido no emite lecturas. Por tanto la inactividad y el fallo de comunicación producen el mismo silencio y **no se distinguen por la ausencia en sí**: se discriminan por el contexto colectivo, por el punto donde se produjo la última lectura y por el calendario vigente. |
 | R-AGV-007 | accepted | La forma de la reaparición discrimina lo que el silencio no. Reaparecer más tarde conservando la posición relativa entre los mismos vecinos demuestra permanencia en el circuito y descarta salida o retirada, pero no distingue por sí solo detención de circulación sin lectura: eso lo deciden el avance de los vecinos y el exceso sobre el tiempo esperado del tramo. |
 | R-AGV-008 | accepted | Si los vecinos de un objeto tampoco avanzaron durante su silencio, la causa no es de ese objeto sino de la línea, y atribuirle un fallo individual es un falso diagnóstico. Esta comprobación tiene prioridad sobre cualquier hipótesis individual. |
+| R-AGV-009 | accepted | Reaparecer donde no se llega desde donde se desapareció —una transición que ningún vecino de circuito hace— es firma de haber **salido del circuito**, no de una avería. Mientras no se cargue la exportación del circuito de destino, ese intervalo es `sin datos cargados` para ese vehículo. Diagnosticarlo como silencio es un falso positivo trazable hasta filas reales. |
+| R-AGV-010 | accepted | Donde la carga se hace en el propio recorrido, una parada larga es el modo normal de operar y no un hallazgo. Lo que informa es si las paradas de un vehículo se salen de las de sus vecinos de circuito —en duración, en número o en dónde ocurren—, nunca que existan. |
 
 ## Comunicación
 

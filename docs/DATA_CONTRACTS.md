@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.6.0
+version: 0.7.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -50,7 +50,7 @@ valor por defecto.
 
 | Campo | Tipo | Regla |
 |---|---|---|
-| `circuit_declared` | texto | Circuito declarado por la fuente. Cuando existe, la afinidad se comprueba en lugar de inferirse. |
+| `circuit_declared` | texto | Circuito declarado por la fuente. Cuando existe, la afinidad se comprueba en lugar de inferirse — pero **no basta para separar circuitos**: ver §3.2. |
 | `mtc` | texto | Multicircuito vigente en esa lectura. Es **contexto**, no un atributo decorativo: ver §3.1. |
 | `resolution` | duración | Resolución temporal declarada de la fuente. Condiciona qué análisis temporal es lícito. |
 
@@ -79,7 +79,26 @@ Por tanto `mtc` es un contexto de primer nivel para las oportunidades y la salud
   arrastra un **confusor no cuantificado** y debe declararlo junto a la conclusión, en lugar de
   presentar el resultado como si el contexto fuera homogéneo.
 
-### 3.2 Eventos que no son lecturas
+### 3.2 Un nombre de circuito puede esconder varios circuitos
+
+Observado en una exportación real: bajo un único valor de `Circuito` convivían **tres circuitos**
+distintos, con flotas disjuntas y recorridos propios. El nombre agrupaba por zona o por informe, no
+por circuito.
+
+Separarlos importa porque **el cohorte de comparación es el circuito**: comparar un vehículo contra
+otros que recorren un trazado distinto no mide su estado, mide el trazado. En esa exportación, un
+vehículo quedaba «en la mediana» de la flota entera y era **el último de los ocho** de su circuito.
+
+La separación se hace por **aristas exclusivas**: si un conjunto de vehículos recorre transiciones
+que ningún otro recorre jamás, están en circuitos distintos. El parecido entre conjuntos de tags
+agrupa, pero no decide: un vehículo que simplemente lee peor se separaría solo y acabaría siendo su
+propio cohorte, que es la forma más silenciosa de no comparar nada.
+
+Un vehículo con muy pocas lecturas no se asigna a ningún circuito, y entonces **no se compara**: se
+declara que no hay evidencia y se para. Un informe de comparaciones contra un cohorte vacío es peor
+que no tener informe, porque parece un análisis.
+
+### 3.3 Eventos que no son lecturas
 
 DS-011 entrelaza en un mismo flujo filas de tipos distintos. Una fila de tipo *uso* lleva instante,
 AGV y circuito, pero **no lleva tag**: no describe dónde estuvo el AGV sino qué hizo. No encaja en

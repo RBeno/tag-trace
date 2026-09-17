@@ -2,6 +2,44 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [1.3.0] - 2026-09-17
+
+Tres hechos de dominio del propietario invalidan la comparación que sostenía el análisis por
+vehículo, y con ella su conclusión. La corrección vale más que el análisis original.
+
+### Corregido
+
+- **El cohorte era el fichero, y tiene que ser el circuito.** Una exportación resultó contener
+  **tres circuitos** bajo un mismo nombre, con flotas disjuntas. Comparar un vehículo contra otros
+  que recorren un trazado distinto no mide su estado: mide el trazado. El vehículo analizado salía
+  «en la mediana» de la flota entera y era **el último de los ocho** de su circuito. Se separan por
+  aristas exclusivas (R-DAT-012).
+- **Una parada larga se estaba contando como hallazgo.** Donde la carga se hace en el propio
+  recorrido, parar mucho es el modo normal de operar: los vehículos de esa exportación pasan entre
+  el 77 % y el 87 % del tiempo parados. Lo que informa es si las paradas de uno se salen de las de
+  sus vecinos, no que existan (R-AGV-010). Con el criterio corregido, el vehículo analizado es **el
+  que menos para** de su circuito y para en los mismos tags que ellos.
+- **Un silencio se estaba leyendo como avería cuando era una salida del circuito.** Reaparecer
+  donde no se llega desde donde se desapareció es firma de haber estado en otro sitio, no de un
+  fallo (R-AGV-009). El intervalo es `sin datos cargados` para ese vehículo hasta cargar la
+  exportación del circuito de destino.
+
+### Añadido
+
+- Sexto discriminante en `ALGORITHM_CATALOG.md`: la reanudación incoherente con el circuito. Sobre
+  datos reales separó sin umbrales que calibrar — trece vehículos con cero o una, y el que
+  efectivamente cambiaba de circuito con cinco.
+- R-DAT-012, R-AGV-009 y R-AGV-010; `DATA_CONTRACTS.md` §3.2 sobre nombres de circuito que esconden
+  varios circuitos.
+- **Un vehículo sin circuito asignable ya no se analiza**: se declara que no hay evidencia y se
+  para. Un informe de comparaciones contra un cohorte vacío es peor que no tener informe, porque
+  parece un análisis.
+
+### Abierto
+
+- **OQ-119**: qué marca el paso entre circuitos. Medido que ocurre por tags ordinarios que todos
+  leen, no por una puerta dedicada.
+
 ## [1.2.0] - 2026-09-17
 
 Segundo escenario de exportación, auditoría de lo entregado y las primeras representaciones.

@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.7.0
+version: 0.8.0
 status: baseline-candidate
-last_updated: 2026-09-16
+last_updated: 2026-09-17
 ---
 
 # Catálogo de algoritmos
@@ -189,6 +189,25 @@ silencio (R-EVI-002).
 La duración que hace significativo un silencio es configuración con vigencia y se expresa **relativa
 al ciclo local del tramo**, no en minutos absolutos (R-OPP-006, R-FLO-004). El mismo silencio puede
 ser normal en un tramo y anómalo en otro, y ninguna cifra de referencia se fija en el código.
+
+### Sexto discriminante: reaparecer donde el circuito no llega
+
+Los cinco anteriores miran hacia atrás, hacia los lados y hacia delante **dentro** del circuito.
+Ninguno contempla que el objeto se haya ido a otro.
+
+La comprobación es barata y no necesita configuración: si el par (último tag antes del silencio →
+primer tag después) es una transición que sus vecinos de circuito también hacen, el objeto estuvo
+**ahí parado**. Si ningún vecino hace ese salto, reapareció donde no se llega desde donde
+desapareció, y eso no es un silencio: es una **salida del circuito** (R-AGV-009).
+
+Medido sobre una exportación real de tres circuitos: trece de los catorce vehículos con circuito
+asignado tenían cero o una reanudación de este tipo; el decimocuarto tenía cinco, y era
+efectivamente el que se iba a otro circuito. La señal separa sin umbrales que calibrar.
+
+Este discriminante tiene **prioridad sobre las hipótesis de avería**, junto a R-AGV-008: antes de
+atribuir un fallo hay que descartar que el objeto estuviera en otro sitio. El intervalo queda como
+`sin datos cargados` para ese objeto hasta que se cargue la exportación del circuito de destino, y
+entonces la comprobación es directa: buscar sus lecturas en ese intervalo.
 
 ## 5. Estadística robusta
 
