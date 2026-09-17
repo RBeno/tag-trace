@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.7.0
+version: 0.8.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -22,7 +22,7 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-005 | Tags críticos | Tag, función, grado 1–3 y redundancias | Catálogo parcial |
 | DS-006 | Tags especiales | Tag y clase: noche, mantenimiento, técnico, asistencia/pastor u otra | Catálogo parcial |
 | DS-007 | Tags y acciones | Tag y una o varias funciones/condiciones | Catálogo parcial |
-| DS-008 | Memoria/configuración por AGV | AGV, versión o inventario conocido | Evidencia de divergencia |
+| DS-008 | Memoria/configuración por AGV | AGV, versión o inventario conocido | **Requisito de toda tasa de lectura**: ver §3.4 |
 | DS-009 | Calendario productivo | vigencia, turnos, pausas, paradas y takt | Contexto versionado |
 | DS-010 | Proyecto anterior | `.agvproj` con manifiesto y versión | Persistencia local |
 | DS-011 | Informe ampliado de Vsystem | Tipo, fecha con segundos, AGV, circuito y, según el tipo, tag o uso | Enriquecida, opcional |
@@ -126,6 +126,36 @@ El importador las separa por su **forma**, sin necesidad del discriminador de la
 ninguna constante industrial: una fila con instante y AGV pero sin tag se marca `NO_TAG`, se conserva
 con su procedencia y se cuenta aparte de la cuarentena. **Qué es** cada una de esas filas lo dice el
 discriminador de la fuente cuando existe, no el importador.
+
+### 3.4 Sin la memoria del vehículo no hay tasa de lectura
+
+Un vehículo **solo registra los tags que lleva en su memoria**. Si un tag no está en ella, pasa por
+encima y no queda ninguna fila. La ausencia no distingue entre «el lector no lo detectó» y «el
+vehículo no lo lleva cargado», porque el dato es idéntico.
+
+Eso convierte DS-008 de fuente auxiliar en **requisito**: sin el inventario de memoria, cualquier
+tasa de lectura por vehículo mezcla dos causas de naturaleza distinta —una avería y una
+configuración— y presentarla como salud es afirmar lo que no se sabe.
+
+**La forma de la ausencia sí discrimina, y es gratis.** Normalizando el recuento de cada vehículo
+por sus propias vueltas —el recuento bruto lo contamina, porque quien da menos vueltas lee menos de
+todo— un tag de la ruta cae en uno de dos patrones:
+
+| Patrón | Qué se observa | Hipótesis prioritaria |
+|---|---|---|
+| **Bimodal** | unos vehículos lo leen en todas sus pasadas, otros **nunca**, sin término medio | no está en la memoria de esos vehículos (R-AGV-002) |
+| **Gradiente** | todos lo leen algo, unos bastante menos | condiciones de detección |
+
+Medido sobre dos exportaciones reales: el patrón bimodal existe, **se concentra en pocos vehículos**
+—en una de ellas, seis de cincuenta y tres acumulan el 91 % de los casos— y los conjuntos de tags a
+los que dos de esos vehículos son ciegos **se solapan**. Un vehículo con más de mil lecturas y
+ciento setenta tags distintos que nunca lee dos tags concretos que sus cincuenta compañeros leen
+siempre no es una casualidad de detección.
+
+**Consecuencia operativa que no es evidente:** cuando un vehículo pasa a otro circuito cuyos tags no
+tiene en memoria, **no aparece en la exportación de ese circuito**. Cruzar exportaciones no sirve
+para confirmar dónde estuvo; la salida se detecta por la incoherencia de la reanudación (R-AGV-009)
+y se queda ahí.
 
 ## 4. Proceso de importación
 

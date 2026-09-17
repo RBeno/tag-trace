@@ -1,6 +1,6 @@
 ---
 document_id: TT-RULES-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -59,6 +59,8 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-OPP-006 | configurable | El intervalo de lectura normal se obtiene de configuración/perfil local con vigencia; no existe un umbral universal en el código. |
 | R-OPP-007 | accepted | El multicircuito condiciona la oportunidad de lectura: puede alterar las condiciones físicas de detección, de modo que bajo ciertos multicircuitos una ausencia es esperable. Perfiles separados por multicircuito; y si el multicircuito no se conoce para un periodo, la salud declara ese confusor junto a la conclusión. |
 | R-OPP-008 | accepted | «Tags que un AGV no ha leído» nunca se calcula como diferencia entre el catálogo del circuito y lo que leyó. Solo cuentan las oportunidades elegibles: un tag de una rama que ese AGV no recorre, o de un contexto que no le aplica, no es una ausencia. |
+| R-OPP-009 | accepted | **Un tag que no está en la memoria del vehículo no produce lectura**: el vehículo pasa por encima y no queda registro. Por tanto una oportunidad solo es elegible si el tag está en la memoria de ese vehículo, y **sin el inventario de memoria (DS-008) ninguna tasa de lectura es interpretable como salud**: «no lo detectó» y «no lo lleva cargado» producen exactamente el mismo dato. Mientras falte, se publican los hechos y sus hipótesis, nunca una tasa. |
+| R-OPP-010 | accepted | Una ausencia total y una ausencia parcial no son el mismo hecho y se separan normalizando por las vueltas de cada vehículo. **Bimodal** —unos lo leen siempre y otros nunca— apunta a memoria o configuración, no a avería. **Gradiente** —todos algo, unos menos— es donde cabe hablar de detección. El recuento bruto no sirve para distinguirlas: lo contamina cuántas vueltas dio cada uno. |
 
 ## AGV, lector y configuración
 

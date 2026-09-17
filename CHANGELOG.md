@@ -2,6 +2,44 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [1.4.0] - 2026-09-17
+
+Un hecho de dominio del propietario —un vehículo solo registra los tags que lleva en **memoria**—
+cierra una pregunta abierta y abre una restricción que afecta a todo el diagnóstico.
+
+### Corregido
+
+- **La confirmación cruzada entre circuitos no existe.** Se había propuesto cargar la exportación
+  del circuito de destino y buscar allí las lecturas del vehículo que se va. Si no lleva esos tags
+  en memoria **no aparece en esa exportación**: no hay nada que buscar. La salida se sigue
+  detectando por la incoherencia de la reanudación (R-AGV-009) y se queda en `inferred`.
+
+### Añadido
+
+- **R-OPP-009**: una oportunidad solo es elegible si el tag está en la memoria de ese vehículo, y
+  **sin el inventario de memoria ninguna tasa de lectura es interpretable como salud** — «no lo
+  detectó» y «no lo lleva cargado» producen exactamente el mismo dato. DS-008 pasa de fuente
+  auxiliar a requisito.
+- **R-OPP-010** y `DATA_CONTRACTS.md` §3.4: la forma de la ausencia sí discrimina, y es gratis.
+  Normalizando por las vueltas de cada vehículo —el recuento bruto las contamina, porque quien da
+  menos vueltas lee menos de todo—, un tag cae en **bimodal** (unos siempre, otros nunca → memoria)
+  o **gradiente** (todos algo, unos menos → detección).
+- Sección de ceguera en el expediente por vehículo, con sus hipótesis ordenadas y sin publicar
+  ninguna tasa de salud.
+
+### Medido
+
+El patrón bimodal existe y se concentra: en una exportación de 53 vehículos, **seis acumulan el
+91 %** de los casos de ceguera, y los conjuntos de dos de ellos **se solapan**. Un vehículo con más
+de mil lecturas y 170 tags distintos que nunca lee dos tags concretos que sus cincuenta compañeros
+leen siempre no es una casualidad de detección.
+
+### Cerrado
+
+- **OQ-118** en su mayor parte: eran tres cosas mezcladas —circuitos distintos en un mismo fichero,
+  tags fuera de memoria, y detección—. Solo queda abierto el resto con patrón de gradiente.
+- **OQ-120** abierta: qué lleva cada vehículo en memoria y con qué vigencia.
+
 ## [1.3.0] - 2026-09-17
 
 Tres hechos de dominio del propietario invalidan la comparación que sostenía el análisis por
