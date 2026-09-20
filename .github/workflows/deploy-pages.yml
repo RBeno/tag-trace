@@ -59,8 +59,14 @@ jobs:
       - name: Compilar
         run: npm run build
 
+      # `enablement` no es `true` por defecto: sin él, la acción solo comprueba que el sitio de
+      # Pages ya existe y falla con 404 si el repositorio nunca lo activó (comprobado: el primer
+      # despliegue falló exactamente así). Con `pages: write` ya concedido arriba, la propia acción
+      # puede crear el sitio la primera vez.
       - name: Preparar Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Empaquetar el resultado
         uses: actions/upload-pages-artifact@v3

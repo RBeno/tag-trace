@@ -2,6 +2,16 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.4.1] - 2026-09-20
+
+### Corregido
+
+- **El primer despliegue en GitHub Pages falló**: `actions/configure-pages@v5` trae `enablement`
+  en `false` por defecto, así que se limitó a comprobar que el sitio de Pages ya existía y falló
+  con 404 en vez de crearlo — el repositorio nunca había tenido Pages activado. Con `enablement:
+  true` explícito, la propia acción lo crea la primera vez, usando el permiso `pages: write` que
+  el workflow ya concede.
+
 ## [3.4.0] - 2026-09-20
 
 Despliegue en GitHub Pages, adelantado desde G6 para poder medir por fin PERF-D2 en el dispositivo
