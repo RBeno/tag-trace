@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildTagInventory,
   countByClass,
+  describeAction,
   type BlindnessThresholds,
   type TagLists,
 } from "../../src/domain/inventory.js";
@@ -87,6 +88,36 @@ describe("inventario contrastado", () => {
     // explicaciones. Con una ventana, obsoleto y averiado son el mismo dato (R-DAT-016).
     expect(row?.truth).toBe("unknown");
     expect(row?.readingCount).toBe(0);
+    // Y el programa no elige por el técnico: enuncia la pregunta que él tiene que resolver yendo
+    // a mirar, y la deja registrada con el hallazgo.
+    expect(row?.action).toBe("valorar-sustituir-o-eliminar");
+    expect(describeAction(row?.action ?? "ninguna")).toContain("sigue instalado");
+  });
+
+  it("cada clase indica qué hay que valorar, y solo dos no abren ninguna tarea", () => {
+    const readings = [
+      ...laps("A", [...RUTA, "0555"], 5),
+      ...laps("B", RUTA, 5, 100_000),
+      ...laps("C", ["0100", "0300"], 8, 200_000),
+    ];
+    const inventory = buildTagInventory(
+      readings,
+      lists({
+        virtual: [...RUTA, "0777"],
+        memory: [...RUTA, "0555", "0800"],
+        maintenance: ["0800"],
+      }),
+      THRESHOLDS,
+    );
+
+    const actionOf = (tagId: string): string =>
+      inventory.rows.find((row) => row.tagId === tagId)?.action ?? "";
+
+    expect(actionOf("0100")).toBe("ninguna");
+    expect(actionOf("0200")).toBe("revisar-memoria-de-vehiculos");
+    expect(actionOf("0777")).toBe("anadir-a-la-memoria");
+    expect(actionOf("0555")).toBe("declarar-en-vsystem");
+    expect(actionOf("0800")).toBe("ninguna");
   });
 
   it("un tag que unos leen siempre y otro nunca sale ciego-parcial, y como inferencia", () => {

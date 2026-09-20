@@ -1,6 +1,6 @@
 ---
 document_id: TT-RULES-001
-version: 0.15.0
+version: 0.16.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -18,6 +18,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-EVI-003 | accepted | Todo diagnóstico separa evidencia, inferencia, confianza, impacto y comprobación recomendada. |
 | R-EVI-004 | accepted | `unknown` es preferible a una clasificación no sustentada. |
 | R-EVI-005 | accepted | Una inferencia confirmada conserva su origen inferido y añade la confirmación humana. |
+| R-EVI-006 | accepted | **El programa enuncia la pregunta; la decisión es de una persona.** Hay hallazgos que el dato no resuelve: si un tag sin lecturas hay que sustituirlo o retirarlo del inventario teórico depende de si sigue instalado, y eso se comprueba yendo a mirarlo. La aplicación no elige, pero **tampoco se calla**: indica en cada caso qué hay que valorar, y esa indicación queda registrada junto al hallazgo y con el estado del circuito, de modo que no haya que reconstruirla cada vez que alguien abra el análisis. |
 
 ## Identidad y fuentes
 

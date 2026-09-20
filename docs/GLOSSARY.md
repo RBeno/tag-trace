@@ -1,8 +1,8 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.6.0
+version: 0.7.0
 status: baseline-candidate
-last_updated: 2026-09-17
+last_updated: 2026-09-18
 ---
 
 # Glosario controlado
@@ -11,6 +11,8 @@ last_updated: 2026-09-17
 |---|---|
 | AGV | Vehículo guiado automático identificado como texto y analizado de forma individual y colectiva. |
 | Circuito | Unidad principal de trabajo. Agrupa configuración, fuentes, grafo, memoria, análisis e incidencias sin mezclarse con otros circuitos. |
+| Afinidad de circuito | Comparación de los tags de una fuente contra los que el circuito ya conoce, antes de aceptarla como suya. No rechaza la importación —una fuente sospechosa se analiza igual (FR-003)— pero sí impide que se consolide con el resto: una vez unida, no hay forma de separarla, porque la unión no conserva de qué circuito venía cada lectura (R-DAT-006, ALG-003). |
+| Acción a valorar | Lo que el programa indica que hace falta comprobar en planta ante un hallazgo que el dato no resuelve por sí solo, como un tag sin lecturas que puede estar retirado o averiado. El programa no decide ninguna de estas cosas: enuncia la pregunta y la deja registrada; la decisión es siempre de una persona (R-EVI-006). |
 | Vsystem | Fuente teórica/configurada que se contrasta con el comportamiento físico observado; no se asume como verdad física. |
 | Tag | Identificador físico/lógico leído por un AGV. Puede tener una o varias funciones según la configuración o el multicircuito. |
 | Multicircuito (MTC) | Modo de comportamiento vigente **dentro de** un circuito, identificado por un número. Determina cómo actúa un AGV al leer un tag y puede alterar las condiciones físicas de detección, por ejemplo reduciendo el alcance del sensor en un modo degradado. No confundir con «varios circuitos», que es el alcance de F7. |

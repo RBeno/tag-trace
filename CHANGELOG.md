@@ -2,6 +2,75 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.1.0] - 2026-09-18
+
+Cuatro peticiones del propietario, todas dentro de F2: la afinidad que faltaba en G1, las listas de
+tags declaradas por el importador, la acción a valorar cuando el dato no decide, y las primeras
+cuatro vistas del producto.
+
+### Añadido
+
+- **`src/domain/affinity.ts`**: afinidad de circuito (FR-003, R-DAT-006, ALG-003). Compara los tags
+  de una fuente contra los que el circuito ya conoce **antes** de escribir en el almacén, porque una
+  vez unida una fuente ajena no hay forma de separarla —la unión no conserva de qué circuito venía
+  cada lectura—. **No rechaza la importación**: una fuente sospechosa se sigue mostrando, y lo que
+  se niega es consolidarla (FR-003 separa analizar de consolidar). El primer fichero de un circuito
+  vacío se acepta declarando que no se ha comprobado, en vez de bloquear el arranque del circuito.
+- **`src/ingestion/catalog.ts`** y **`src/domain/tag-lists.ts`**: importador de listas de tags
+  (circuito virtual, memoria, mantenimiento, emergencia, carga online, críticos). Estas listas **se
+  crean a mano** porque no existe forma de descargarlas del sistema de planta, así que el programa
+  declara su propia estructura mínima (`lista;tag`, con `orden` y `nota` opcionales) y la enseña en
+  la interfaz **antes** de pedir el fichero. Tolera lo que una persona escribe de verdad: acentos,
+  mayúsculas, plural. Una lista con un nombre que el producto no reconoce **se conserva con su
+  nombre y se avisa**, nunca se rechaza — el propietario ya anticipó ampliaciones.
+- **Las listas viajan con el circuito**, no aparte (`src/persistence/store.ts`, `STORE_VERSION` 2
+  con su peldaño de migración). Son parte del estado del circuito en el momento del análisis:
+  repetir un análisis de hace tres meses usa las listas de hace tres meses. Si se cargan de nuevo
+  tras aplicar los cambios que el inventario propone, el análisis siguiente las recoge actualizadas
+  sin alterar los anteriores.
+- **R-EVI-006**: el programa enuncia la pregunta, la persona decide. Un tag en memoria sin ninguna
+  lectura puede estar retirado o averiado, y el dato no distingue las dos cosas (R-DAT-016); el
+  programa no elige, pero tampoco calla — indica qué hay que valorar (`src/domain/inventory.ts`,
+  `TagAction`) y esa indicación queda junto al hallazgo, no hay que reconstruirla cada vez.
+- **Cuatro vistas** (`src/presentation/charts.ts`, `src/domain/activity.ts`): cobertura cargada,
+  perfil horario, actividad por vehículo e inventario de tags. SVG propio y sin dependencias
+  (ADR-0014); los agregados se calculan en el Worker y viajan como unos cientos de números, nunca
+  las lecturas otra vez (WP-001). Paleta de un solo tono en rampa ordinal, validada en los dos modos
+  contra sus superficies reales. Cada gráfico lleva su tabla equivalente, así que el color nunca es
+  el único medio (UX §4), y los tramos sin cobertura se dibujan con trama, distintos de un silencio
+  (R-DAT-007).
+- `src/domain/config.ts`: los umbrales de afinidad, ceguera y grafo en un solo sitio, marcados
+  `draft` mientras no los fije el propietario. Ninguno tiene valor por defecto en su función: la
+  llamada no compila sin decidirlos, que es la forma de que no se cuelen como constantes ocultas.
+- Fixtures sintéticos: `fixtures/synthetic/listas/` y `fixtures/synthetic/acumulacion/circuito-ajeno.csv`.
+- TC-053 a TC-058, y 22 pruebas nuevas (Node y navegador): `tests/unit/affinity.test.ts`,
+  `tests/unit/catalog.test.ts`, `tests/e2e/vistas.spec.ts`.
+
+### Corregido
+
+- **Cargar una fuente nueva borraba en silencio las listas del circuito.** `saveCircuit` reescribe
+  el objeto entero, y `accumulate()` no arrastraba `lists` al guardar. Lo destapó la prueba de
+  navegador que carga listas y después importa una segunda ventana: el inventario desaparecía sin
+  que nada lo dijera.
+- **El texto de los gráficos se leía ilegible.** El SVG se escala con su `viewBox`; con un lienzo de
+  1000 unidades pintado en un panel de unos 600 píxeles, las etiquetas de los vehículos se
+  encogían hasta pisarse. Ni los tipos ni las pruebas lo detectan — solo mirar el render. El lienzo
+  se acercó al ancho real de pintado.
+
+### Verificación
+
+- `tsc --noEmit` limpio, **109 pruebas de Node y 15 de navegador en verde**, `vite build` correcto,
+  guardianes documental y de datos correctos.
+- Render inspeccionado a mano tras el ajuste de escala: las cuatro vistas legibles en el ancho real
+  del panel.
+
+### Pendiente
+
+- Las listas se contrastan hoy sin las **vueltas** del vehículo (ALG-004): la normalización de
+  R-OPP-010 sigue siendo aproximada hasta que existan.
+- La afinidad usa umbrales `draft` (60 % compatible, 20 % ajeno, 5 tags mínimos), justificados por
+  el contraste de PC2 pero no aprobados por el propietario.
+
 ## [3.0.0] - 2026-09-17
 
 **F2 abierta** por el propietario con «Continúa Fase 2», y su cimiento entregado: el grafo observado.

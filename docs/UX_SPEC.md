@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.3.0
+version: 0.4.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -131,6 +131,37 @@ Reglas que se derivan de haberlas dibujado:
 **Estas vistas se generan y se miran en local.** Contienen identificadores y fechas de planta, así
 que no se publican ni se alojan (ADR-0007, ADR-0014); lo que puede vivir en el repositorio es la
 misma vista contra un fixture sintético.
+
+## 5.2 Las que ya están en el producto
+
+Cuatro, dibujadas en SVG propio y sin ninguna dependencia (ADR-0014). Dos venían de §5.1 y dos son
+nuevas, porque al construirlas quedó claro que faltaban:
+
+| Vista | Qué responde | Su límite, escrito al lado |
+|---|---|---|
+| **Cobertura cargada** | qué periodo se puede analizar | lo que queda fuera no es un silencio: no hay datos (R-DAT-007) |
+| **Perfil horario** | el régimen de actividad que da contexto a un silencio | un valle **no es una parada**: distinguirlo exige el calendario (OQ-108) |
+| **Actividad por vehículo** | quién lee, cuándo, y quién no aparece | una celda vacía **dentro** de cobertura es ausencia de lecturas, no avería |
+| **Inventario de tags** | qué declara cada lista frente a lo observado | ninguna clase es un diagnóstico; la última columna dice qué hay que valorar |
+
+**La cobertura es nueva y era la que faltaba.** Sin ella, R-DAT-007 vivía en una frase de una lista
+de datos y nadie la relacionaba con las cifras de al lado. Dibujada, el hueco entre dos
+exportaciones se ve antes de que a nadie le dé tiempo a preguntarse por qué el circuito «se calló».
+
+Dos decisiones de dibujo que conviene no deshacer:
+
+- **La magnitud se codifica por claridad dentro de un solo tono**, no por matiz. Un daltónico ve
+  exactamente lo mismo que los demás, y no hace falta una paleta categórica para un dato que es
+  ordinal. La rampa está validada contra las dos superficies, clara y oscura, y el modo oscuro son
+  los mismos tonos re-escalonados y no el claro invertido.
+- **Ninguna clase del inventario lleva color de severidad.** Pintar `obsoleto-candidato` de rojo
+  diría que es un problema, y todavía no lo es: es una pregunta para el técnico. El estado de verdad
+  y la acción van escritos, que es donde no se pueden malinterpretar.
+
+**Y una restricción técnica que solo aparece al mirar el render:** el texto de un SVG se escala con
+su `viewBox`. Un lienzo mucho más ancho que el hueco donde se pinta encoge las etiquetas hasta que
+se pisan, y ni los tipos ni las pruebas lo detectan. El lienzo se mantiene cerca del ancho real de
+pintado.
 
 ## 6. Consolidación
 

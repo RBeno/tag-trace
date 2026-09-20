@@ -14,7 +14,7 @@ import type { Interval } from "../domain/coverage.js";
 import type { Reading } from "../domain/reading.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 1;
+export const STORE_VERSION = 2;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
@@ -29,6 +29,23 @@ export interface StoredSource {
   readonly complete: Interval | null;
 }
 
+/**
+ * Una lista de tags declarada por planta, tal como se cargó (`CONFIG_SCHEMA.md` §3.8).
+ *
+ * Se guarda **con el circuito** y no aparte porque es parte de su estado en el momento del
+ * análisis: repetir un análisis de hace tres meses tiene que usar las listas de hace tres meses, no
+ * las de hoy. Si el técnico aplica los cambios propuestos y vuelve a cargarlas, el análisis
+ * siguiente las recoge ya actualizadas, y el anterior sigue explicándose con las suyas.
+ */
+export interface StoredTagList {
+  readonly list: string;
+  readonly tags: readonly string[];
+  /** Cuándo se extrajo de planta. Sin esto no se sabe qué periodo puede juzgar (OQ-123). */
+  readonly extractedAt: number | null;
+  readonly loadedAt: number;
+  readonly fileName: string;
+}
+
 export interface StoredCircuit {
   readonly circuitId: string;
   readonly name: string;
@@ -36,6 +53,8 @@ export interface StoredCircuit {
   readonly sources: readonly StoredSource[];
   readonly coverage: readonly Interval[];
   readonly readings: readonly Reading[];
+  /** Listas de planta vigentes. Ausente en circuitos guardados antes de la versión 2. */
+  readonly lists?: readonly StoredTagList[];
   readonly updatedAt: number;
 }
 
@@ -51,6 +70,16 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
     apply: (db) => {
       db.createObjectStore(CIRCUITS, { keyPath: "circuitId" });
     },
+  },
+  {
+    to: 2,
+    // Las listas de tags entran en el circuito. No hay nada que reescribir: el campo es opcional
+    // al leer, así que un circuito de la versión 1 se abre sin listas y las gana cuando se carguen.
+    //
+    // El peldaño existe igualmente, y no es burocracia: es lo que deja constancia de que la forma
+    // cambió aquí. Sin él, la próxima persona que suba la versión no sabría en qué estado encuentra
+    // una base vieja, que es exactamente cómo el prototipo se quedó sin ruta de migración.
+    apply: () => {},
   },
 ];
 

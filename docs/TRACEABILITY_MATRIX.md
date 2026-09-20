@@ -62,6 +62,13 @@ regla exista: la matriz no es una lista de intenciones.
 | TC-049 / R-DAT-013 el mismo instante no ordena | `src/domain/graph.ts` (`sequenceTruth`) | «una arista sostenida en pares del mismo instante…» |
 | TC-050 secuencia `observed` con tiempo `unknown` | `src/domain/graph.ts` (`summariseTime`) | «con la resolución de la fuente por encima del paso real…» |
 | TC-052 / ADR-0013 el sentido decide la dirección | `src/domain/order.ts`, `src/domain/graph.ts` | «el sentido de la fuente decide la dirección…» |
+| FR-003 / R-DAT-006 / ALG-003 afinidad de circuito | `src/domain/affinity.ts`, `workers/import.worker.ts` | `tests/unit/affinity.test.ts`, `tests/e2e/vistas.spec.ts` |
+| TC-053 una fuente ajena no se consolida | `workers/import.worker.ts` (`accumulate`) | «una exportación de otro circuito no se acumula…» |
+| DS-002 / DS-006 / DS-008 importación de listas | `src/ingestion/catalog.ts`, `src/domain/tag-lists.ts` | `tests/unit/catalog.test.ts` |
+| TC-056 las listas sobreviven a una importación | `workers/import.worker.ts` (`accumulate`) | «cargar listas y ver el inventario contrastado…» |
+| R-EVI-006 el programa enuncia, la persona decide | `src/domain/inventory.ts` (`describeAction`) | «cada clase indica qué hay que valorar…» |
+| FR-030 umbrales fuera del código | `src/domain/config.ts` | Todos los módulos los exigen como parámetro: sin ellos no compilan |
+| UX §5.2 las cuatro vistas | `src/domain/activity.ts`, `src/presentation/charts.ts` | `tests/e2e/vistas.spec.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008); las **vueltas** (ALG-004), sin las cuales la normalización de

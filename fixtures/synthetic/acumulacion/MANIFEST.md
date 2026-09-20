@@ -26,6 +26,14 @@ Unidas deben dar 9 lecturas distintas, no 12, y el solape debe conservar las dos
 como un **segundo tramo**, y el hueco entre medias como `sin datos cargados` — nunca como un
 silencio del circuito, que es el falso diagnóstico que R-DAT-007 existe para evitar.
 
+`circuito-ajeno` no comparte **ningún** tag con las otras tres, y sus vehículos tampoco llevan ceros
+iniciales. Cargado sobre un circuito ya formado, la afinidad debe señalarlo como probablemente de
+otro circuito y **negar la acumulación** (FR-003, R-DAT-006). Sus lecturas sí deben mostrarse: FR-003
+separa analizar de consolidar, y ver el contenido del fichero dudoso es cómo se averigua si lo es.
+
+**Prohibido**: que se acumule. Una vez unido, no hay forma de separarlo —la unión no conserva de qué
+circuito venía cada lectura— y el circuito queda con dos anillos superpuestos sin que nada lo avise.
+
 Cada fichero está en orden de pila descendente, como la fuente real: la primera fila es la más
 reciente. La cobertura de cada uno termina en su penúltimo instante distinto, porque el último
 viene cortado.

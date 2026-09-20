@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
-last_updated: 2026-09-17
+last_updated: 2026-09-18
 ---
 
 # Memoria compacta del proyecto
@@ -15,7 +15,18 @@ last_updated: 2026-09-17
 - Estado: **F2 en curso** desde el 2026-09-17, autorizada por el propietario con «Continúa Fase 2».
   F1 entregó el importador, la acumulación por circuito, `.agvproj`, la PWA y las pruebas de
   navegador. G1 se cerró con tres criterios sin cumplir, declarados y arrastrados a G2: el plan de
-  aceptación de F1, la afinidad de circuito y PERF-D2 en el móvil de referencia.
+  aceptación de F1, la afinidad de circuito y PERF-D2 en el móvil de referencia. **La afinidad de
+  circuito se cerró el 2026-09-18**, así que de los tres solo quedan dos.
+- Las listas de tags (circuito virtual, memoria, mantenimiento, emergencia, carga online, críticos)
+  **se crean a mano**: no hay forma de descargarlas del sistema de planta. El importador declara su
+  propia estructura mínima (`lista;tag`, con `orden` y `nota` opcionales) y la enseña en la interfaz
+  antes de pedir el fichero, en vez de esperar un formato que nadie puede adivinar. Una lista con un
+  nombre que el producto no reconoce se conserva con su nombre y se avisa, nunca se rechaza: el
+  propietario ya anticipó ampliaciones.
+- Las listas se guardan **con el circuito**, no aparte, porque son parte de su estado en el momento
+  del análisis: repetir un análisis de hace tres meses usa las listas de hace tres meses. Si se
+  aplican los cambios que el inventario propone y se vuelven a cargar, el análisis siguiente las
+  recoge ya actualizadas sin tocar los anteriores.
 - Repositorio anterior: `RBeno/tag-trace-agv`, solo referencia.
 
 ## Decisiones firmes

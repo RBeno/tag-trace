@@ -80,11 +80,33 @@ export type TagClass =
   /** Mantenimiento o sustitución de emergencia: fuera del circuito y de toda tasa. */
   | "especial";
 
+/**
+ * Qué tiene que **valorar una persona** en cada caso.
+ *
+ * El programa no decide ninguna de estas cosas y no puede: si un tag sin lecturas hay que
+ * sustituirlo o borrarlo de Vsystem depende de si sigue instalado, y eso se comprueba yendo a
+ * mirarlo. Lo que sí puede es **decir cuál es la pregunta**, para que quede reflejada junto al
+ * hallazgo y no haya que reconstruirla cada vez que alguien abra el análisis.
+ */
+export type TagAction =
+  /** Nada que valorar. */
+  | "ninguna"
+  /** Ir a ver si el tag sigue instalado, y según eso sustituirlo o retirarlo de Vsystem. */
+  | "valorar-sustituir-o-eliminar"
+  /** Revisar la memoria de los vehículos que nunca lo leen. */
+  | "revisar-memoria-de-vehiculos"
+  /** Está declarado en el circuito y no en la lista de memoria: nadie puede leerlo. */
+  | "anadir-a-la-memoria"
+  /** Se lee y no está declarado: la lista del circuito va por detrás del suelo. */
+  | "declarar-en-vsystem";
+
 export interface TagInventoryRow {
   readonly tagId: string;
   readonly tagClass: TagClass;
   /** Estado de verdad de lo que la clase afirma, no del hecho de que el tag exista. */
   readonly truth: TruthState;
+  /** Lo que hay que valorar, y que decide una persona. Queda registrado con el análisis. */
+  readonly action: TagAction;
   readonly inVirtual: boolean;
   readonly inMemory: boolean;
   readonly isSpecial: boolean;
@@ -197,6 +219,7 @@ export function buildTagInventory(
       tagId,
       tagClass,
       truth,
+      action: ACTION_BY_CLASS[tagClass],
       inVirtual,
       inMemory,
       isSpecial,
@@ -249,6 +272,35 @@ function classify(input: ClassifyInput): { tagClass: TagClass; truth: TruthState
   // La memoria del vehículo individual no se observa, así que la ceguera es inferencia (R-OPP-012).
   if (input.blindCount > 0) return { tagClass: "ciego-parcial", truth: "inferred" };
   return { tagClass: "activo", truth: "observed" };
+}
+
+/** Qué valorar en cada clase. Es una tabla y no una cadena de `if` porque es una decisión, no lógica. */
+const ACTION_BY_CLASS: Readonly<Record<TagClass, TagAction>> = {
+  activo: "ninguna",
+  // El caso que el propietario nombró: el programa no puede saber si el tag sigue en el suelo.
+  "obsoleto-candidato": "valorar-sustituir-o-eliminar",
+  "ciego-parcial": "revisar-memoria-de-vehiculos",
+  "declarado-sin-memoria": "anadir-a-la-memoria",
+  "no-declarado-leido": "declarar-en-vsystem",
+  // Mantenimiento y emergencia están fuera del recorrido productivo: su silencio no significa lo
+  // mismo y no abre ninguna tarea.
+  especial: "ninguna",
+};
+
+/** La acción, en la frase que se le enseña a quien tiene que decidir. */
+export function describeAction(action: TagAction): string {
+  switch (action) {
+    case "ninguna":
+      return "Nada que valorar";
+    case "valorar-sustituir-o-eliminar":
+      return "Comprobar en planta si sigue instalado: si lo está, sustituirlo; si no, retirarlo de Vsystem";
+    case "revisar-memoria-de-vehiculos":
+      return "Revisar la memoria de los vehículos que nunca lo leen";
+    case "anadir-a-la-memoria":
+      return "Añadirlo a la lista de memoria: está declarado y nadie puede leerlo";
+    case "declarar-en-vsystem":
+      return "Declararlo en Vsystem: existe y se lee, pero no está en la lista del circuito";
+  }
 }
 
 /** Recuento por clase, para el resumen. El orden es el de `TagClass`, no el de aparición. */

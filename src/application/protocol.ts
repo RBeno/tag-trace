@@ -13,6 +13,8 @@
  * hacia la presentación**. La interfaz no puede parsear aunque quiera.
  */
 
+import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
+import type { AffinityReport } from "../domain/affinity.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { SourceDirection } from "../domain/order.js";
 import type { MonotonicityReport } from "../ingestion/monotonicity.js";
@@ -66,6 +68,16 @@ export interface AccumulationReport {
   readonly shared: number;
   /** Eventos del tramo común que solo una de las dos trae. La fuente se contradice consigo misma. */
   readonly disagreements: number;
+  /** Qué tan de este circuito es la fuente (FR-003, R-DAT-006). */
+  readonly affinity: AffinityReport;
+  /**
+   * Si la fuente llegó a escribirse en el circuito.
+   *
+   * Es falso cuando la afinidad la señala como de otro circuito. La importación sí se hizo y sus
+   * lecturas se muestran —FR-003 separa analizar de consolidar—, pero el almacén no se tocó, y las
+   * cifras de este informe son las que el circuito **ya tenía**, no las que tendría con la fuente.
+   */
+  readonly accumulated: boolean;
 }
 
 export interface CancelMessage {
@@ -75,7 +87,34 @@ export interface CancelMessage {
   readonly reason: string;
 }
 
-export type ToWorker = StartMessage | CancelMessage;
+/**
+ * Cargar las listas de tags de un circuito.
+ *
+ * Va por el Worker aunque el fichero sea pequeño, y no por comodidad: la presentación no tiene
+ * forma de alcanzar `ingestion/` (WP-001/WP-002), y esa imposibilidad es lo que impide que alguien
+ * añada «una comprobación rápida» en el hilo principal el día que haga falta.
+ */
+export interface LoadListsMessage {
+  readonly type: "lists";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly file: File;
+  readonly circuitId: string;
+  /** Cuándo se extrajo de planta, si el usuario lo sabe. Sin fecha no se sabe qué periodo juzga. */
+  readonly extractedAt?: number;
+}
+
+export interface ListsLoadedMessage extends Envelope {
+  readonly type: "lists-loaded";
+  readonly circuitId: string;
+  readonly lists: readonly { readonly list: string; readonly tags: number }[];
+  readonly accepted: number;
+  readonly rejected: number;
+  readonly warnings: readonly string[];
+  readonly unknownLists: readonly string[];
+}
+
+export type ToWorker = StartMessage | CancelMessage | LoadListsMessage;
 
 interface Envelope {
   readonly protocolVersion: number;
@@ -141,6 +180,23 @@ export interface SourceSummary {
   readonly elapsedMs: number;
 }
 
+/**
+ * Los agregados que alimentan las vistas.
+ *
+ * Viajan ya calculados porque recorrer las lecturas para contarlas es trabajo, y el hilo principal
+ * no hace trabajo (WP-001). Son unos cientos de números frente a las cientos de miles de lecturas
+ * que los produjeron.
+ */
+export interface CircuitViews {
+  readonly hourly: HourlyProfile;
+  readonly activity: ActivityBand;
+  /** Solo cuando el circuito tiene listas de planta cargadas: sin ellas no hay con qué contrastar. */
+  readonly inventory?: {
+    readonly counts: readonly { readonly tagClass: string; readonly count: number; readonly truth: string; readonly action: string }[];
+    readonly listsLoaded: readonly string[];
+  };
+}
+
 export interface CompleteMessage extends Envelope {
   readonly type: "complete";
   readonly summary: SourceSummary;
@@ -149,6 +205,8 @@ export interface CompleteMessage extends Envelope {
   readonly warnings: readonly string[];
   /** Presente solo si la importación se acumuló en un circuito. */
   readonly accumulation?: AccumulationReport;
+  /** Vistas del conjunto analizado. Ausente si no hubo nada que agregar. */
+  readonly views?: CircuitViews;
 }
 
 export interface ErrorMessage extends Envelope {
@@ -171,7 +229,8 @@ export type FromWorker =
   | ProgressMessage
   | CompleteMessage
   | ErrorMessage
-  | CancelledMessage;
+  | CancelledMessage
+  | ListsLoadedMessage;
 
 /**
  * `Omit` sobre una unión colapsa a las claves comunes y pierde el discriminante. Distribuyendo

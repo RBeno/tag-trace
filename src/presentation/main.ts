@@ -11,10 +11,14 @@
 import {
   PROTOCOL_VERSION,
   isCurrent,
+  type AccumulationReport,
+  type CircuitViews,
   type FromWorker,
   type SourceSummary,
   type ToWorker,
 } from "../application/protocol.js";
+import { EXPECTED_STRUCTURE, LIST_PURPOSE } from "../domain/tag-lists.js";
+import { activityChart, coverageChart, hourlyChart, inventoryChart } from "./charts.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
@@ -38,6 +42,8 @@ interface State {
   shown: number;
   /** El último fichero elegido, para poder reintentar con el orden de fecha que fije el usuario. */
   file: File | null;
+  /** Cobertura del circuito, que las vistas necesitan para dibujar los huecos como lo que son. */
+  coverage: readonly { readonly from: number; readonly to: number }[];
 }
 
 const state: State = {
@@ -50,6 +56,7 @@ const state: State = {
   warnings: [],
   shown: 0,
   file: null,
+  coverage: [],
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -128,6 +135,59 @@ messagePanel.hidden = true;
 const summaryPanel = element("section", "panel");
 summaryPanel.hidden = true;
 
+/**
+ * Las listas de tags del circuito, con su estructura a la vista **antes** de pedir el fichero.
+ *
+ * No hay forma de descargarlas del sistema de planta: se escriben a mano. Cuando el formato lo
+ * decide quien escribe el fichero, enseñarle el que esperamos es la diferencia entre que acierte a
+ * la primera y que adivine tres veces. Por eso el ejemplo va aquí y no en un mensaje de error.
+ */
+const listsPanel = element("section", "panel");
+const listsInput = element("input");
+listsInput.type = "file";
+listsInput.accept = ".csv,.txt,text/csv,text/plain";
+listsInput.id = "lists-file";
+const listsLabel = element("label", undefined, "Listas de tags del circuito");
+listsLabel.htmlFor = "lists-file";
+const listsNote = element("p", "muted", "");
+
+{
+  listsPanel.append(element("h2", undefined, "Listas declaradas"), listsLabel, listsInput);
+  const structure = element("details");
+  structure.append(element("summary", undefined, "Qué forma tiene que tener el fichero"));
+  structure.append(
+    element(
+      "p",
+      "muted",
+      `Una fila por tag. Cabecera «${EXPECTED_STRUCTURE.header.join(";")}»; ` +
+        `«${EXPECTED_STRUCTURE.optional.join("» y «")}» son opcionales. El separador se detecta.`,
+    ),
+  );
+  const example = element("pre", "mono raw", EXPECTED_STRUCTURE.example.join("\n"));
+  example.style.overflowX = "auto";
+  structure.append(example);
+  const purposes = element("dl", "facts");
+  for (const list of EXPECTED_STRUCTURE.lists) {
+    purposes.append(
+      element("dt", "mono", list),
+      element("dd", undefined, LIST_PURPOSE[list]),
+    );
+  }
+  structure.append(purposes);
+  structure.append(
+    element(
+      "p",
+      "muted",
+      "Una lista con un nombre que no esté en esa tabla no se rechaza: se conserva con su nombre y " +
+        "se avisa, porque una categoría nueva es información y no un defecto.",
+    ),
+  );
+  listsPanel.append(structure, listsNote);
+}
+
+const viewsPanel = element("section", "panel");
+viewsPanel.hidden = true;
+
 const tablePanel = element("section", "panel");
 tablePanel.hidden = true;
 
@@ -145,7 +205,17 @@ const filterNote = element("p", "muted", "");
 agvFilter.addEventListener("input", () => applyFilter());
 tagFilter.addEventListener("input", () => applyFilter());
 
-app.append(header, picker, projectPanel, progressPanel, messagePanel, summaryPanel, tablePanel);
+app.append(
+  header,
+  picker,
+  listsPanel,
+  projectPanel,
+  progressPanel,
+  messagePanel,
+  summaryPanel,
+  viewsPanel,
+  tablePanel,
+);
 
 // --- Presentación ----------------------------------------------------------
 
@@ -402,7 +472,12 @@ function handleMessage(message: FromWorker): void {
         showMessage("warn", "Advertencias", message.warnings);
       }
       renderSummary(message.summary);
-      if (message.accumulation !== undefined) renderAccumulation(message.accumulation);
+      if (message.accumulation !== undefined) {
+        state.coverage = message.accumulation.coverage;
+        renderAccumulation(message.accumulation);
+        renderAffinity(message.accumulation);
+      }
+      if (message.views !== undefined) renderViews(message.views);
       renderTableSkeleton();
       agvFilter.value = "";
       tagFilter.value = "";
@@ -426,6 +501,27 @@ function handleMessage(message: FromWorker): void {
       // Una fuente ambigua no es una fuente rota: es una que el programa no puede resolver solo.
       // Se ofrece la salida en lugar de dejar al usuario con una instrucción que no puede seguir.
       if (message.code === "DATE_AMBIGUOUS" && state.file !== null) offerFieldOrder(state.file);
+      setBusy(false);
+      disposeWorker();
+      return;
+    }
+
+    case "lists-loaded": {
+      const detail = message.lists
+        .map((entry) => `${entry.list}: ${entry.tags.toLocaleString("es-ES")} tags`)
+        .join(" · ");
+      listsNote.textContent = `Circuito «${message.circuitId}» — ${detail}`;
+      const lines = [
+        `${message.accepted.toLocaleString("es-ES")} filas aceptadas en ${message.lists.length} lista(s).`,
+        ...message.warnings,
+      ];
+      if (message.rejected > 0) {
+        lines.push(`${message.rejected} fila(s) sin lista o sin tag, que no se han cargado.`);
+      }
+      lines.push(
+        "Vuelve a importar una fuente de lecturas de este circuito para ver el inventario contrastado.",
+      );
+      showMessage(message.warnings.length > 0 ? "warn" : "info", "Listas cargadas", lines);
       setBusy(false);
       disposeWorker();
       return;
@@ -486,6 +582,39 @@ function startImport(file: File, fieldOrder?: FieldOrder): void {
   worker.postMessage(start);
 }
 
+/** Arranca la carga de listas. Mismo Worker y mismo protocolo: el parseo no vive aquí. */
+function startLists(file: File, circuitId: string): void {
+  disposeWorker();
+  clearMessages();
+
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    showMessage("error", "El proceso auxiliar se detuvo", [
+      "Las listas no llegaron a cargarse y el circuito no se ha modificado.",
+    ]);
+    setBusy(false);
+    disposeWorker();
+  };
+
+  setBusy(true);
+  progressNote.textContent = "Leyendo las listas";
+  progressBar.value = 0;
+  const load: ToWorker = {
+    type: "lists",
+    protocolVersion: PROTOCOL_VERSION,
+    jobId,
+    file,
+    circuitId,
+  };
+  worker.postMessage(load);
+}
+
 /**
  * Permite volver a elegir **el mismo fichero** y que vuelva a importarse.
  *
@@ -498,11 +627,24 @@ function startImport(file: File, fieldOrder?: FieldOrder): void {
  * la carga se rechaza sola. Es exactamente el defecto que introdujo el primer intento de arreglo
  * de esto, y lo destapó la prueba de navegador en la misma ejecución.
  */
-for (const input of [fileInput, projectInput]) {
+for (const input of [fileInput, projectInput, listsInput]) {
   input.addEventListener("click", () => {
     input.value = "";
   });
 }
+
+listsInput.addEventListener("change", () => {
+  const file = listsInput.files?.[0];
+  if (file === undefined) return;
+  const circuitId = circuitInput.value.trim();
+  if (circuitId === "") {
+    showMessage("warn", "Falta el circuito", [
+      "Las listas pertenecen a un circuito concreto: escribe cuál antes de cargarlas.",
+    ]);
+    return;
+  }
+  startLists(file, circuitId);
+});
 
 fileInput.addEventListener("change", () => {
   const file = fileInput.files?.[0];
@@ -586,6 +728,64 @@ function renderAccumulation(report: {
       ),
     );
   }
+}
+
+/**
+ * El veredicto de afinidad, que es lo que impide el error que no avisa.
+ *
+ * Cargar en un circuito la exportación de otro no produce ningún mensaje: las columnas son las
+ * mismas y las fechas también. Lo que produce es un circuito con dos anillos superpuestos y
+ * conclusiones equivocadas meses después, cuando ya no hay forma de separarlos.
+ */
+function renderAffinity(report: AccumulationReport): void {
+  const { affinity } = report;
+  if (!report.accumulated) {
+    showMessage("error", "No se ha acumulado: parece de otro circuito", [
+      affinity.reason,
+      `Coinciden ${affinity.sharedTags} de los ${affinity.sourceTags} tags de la fuente.`,
+      "Las lecturas se muestran abajo para que puedas comprobarlo —analizar no es consolidar—, " +
+        "pero el circuito no se ha tocado. Si de verdad es de este circuito, cárgalo en el suyo o " +
+        "revisa el nombre que has escrito.",
+    ]);
+    return;
+  }
+  if (affinity.verdict === "partially-compatible") {
+    summaryPanel.append(element("p", "muted", `Afinidad: ${affinity.reason}`));
+  }
+  if (affinity.verdict === "unknown") {
+    summaryPanel.append(element("p", "muted", `Afinidad: ${affinity.reason}`));
+  }
+}
+
+/** Las cuatro vistas, en el orden en que responden preguntas: qué hay, cuándo, quién, y qué falta. */
+function renderViews(views: CircuitViews): void {
+  viewsPanel.replaceChildren();
+  viewsPanel.hidden = false;
+  viewsPanel.append(element("h2", undefined, "Vistas"));
+
+  if (state.coverage.length > 0) viewsPanel.append(coverageChart(state.coverage, formatInstant));
+  viewsPanel.append(hourlyChart({ counts: views.hourly.counts, days: views.hourly.days }));
+  viewsPanel.append(
+    activityChart(
+      {
+        rows: views.activity.rows,
+        binStarts: views.activity.binStarts,
+        uncoveredBins: views.activity.uncoveredBins,
+        maxPerBin: views.activity.maxPerBin,
+      },
+      formatInstant,
+    ),
+  );
+  viewsPanel.append(
+    inventoryChart(
+      (views.inventory?.counts ?? []).map((entry) => ({
+        label: entry.tagClass,
+        count: entry.count,
+        truth: entry.truth,
+        action: entry.action,
+      })),
+    ),
+  );
 }
 
 exportButton.addEventListener("click", () => {
