@@ -16,6 +16,7 @@
 import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
+import type { ReadMatrix } from "../domain/read-matrix.js";
 import type { VehicleReplayState } from "../domain/replay.js";
 import type { VsystemComparisonRow } from "../domain/vsystem.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
@@ -200,6 +201,30 @@ export interface CircuitViews {
   };
   /** Grupos detectados por aristas exclusivas (R-DAT-012). Uno solo si no hay circuitos mezclados. */
   readonly cohorts: readonly { readonly id: number; readonly vehicles: readonly string[] }[];
+  /**
+   * Composición del circuito de cada cohorte: **cuántos tags lo forman y en qué orden**.
+   *
+   * Sale del ciclo dominante, así que el orden es `inferred` —sucesor mayoritario, no trazado
+   * medido— y un cohorte sin ciclo limpio no aparece aquí en lugar de aparecer con un orden
+   * inventado.
+   */
+  readonly shapes: readonly {
+    readonly cohortId: number;
+    readonly vehicles: number;
+    readonly tags: readonly string[];
+    readonly anchorTagId: string;
+    readonly weakestShare: number;
+    /**
+     * Tags leídos por el cohorte que **no** están en el anillo.
+     *
+     * O son ramas que solo algunos recorren, o son tags de la línea que se leen tan poco que el
+     * sucesor dominante los saltó. Se enumeran porque el segundo caso es justamente el más
+     * sospechoso, y callarlo lo haría invisible por ser sospechoso.
+     */
+    readonly offRingTags: readonly { readonly tagId: string; readonly readers: number }[];
+  }[];
+  /** Tasa de lectura por tag y vehículo, normalizada por pasada (R-OPP-010). Nunca es salud. */
+  readonly readMatrices: readonly ReadMatrix[];
   /** Expediente reducido por AGV: búsqueda por identificador (UX_SPEC §4.1). Sin tasa de salud. */
   readonly agvDossiers: readonly AgvDossier[];
   /** Expediente reducido por tag. */

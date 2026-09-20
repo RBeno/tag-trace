@@ -1,6 +1,6 @@
 ---
 document_id: TT-PERF-001
-version: 0.4.0
+version: 0.5.0
 status: provisional-budget
 last_updated: 2026-09-11
 ---
@@ -88,6 +88,13 @@ sin aceleración, fuente sintética con semilla de 100.000 filas, 40 AGV y 120 t
 segundo. **No es el PC de referencia ni el móvil de referencia.** La medida del Samsung Galaxy S23
 FE solo la puede tomar el propietario, y hasta entonces la puerta de fase que depende del móvil
 sigue sin cerrarse: una cifra emulada no la sustituye.
+
+**Primera prueba en el dispositivo de referencia (2026-09-20).** Con la aplicación ya publicada, el
+propietario la abrió en el Samsung Galaxy S23 FE y confirma que **corre con fluidez**. Es una
+observación suya, cualitativa, y se registra como tal: **no es el p95 de hueco de fotograma que este
+presupuesto exige**, así que PERF-D2 sigue sin cerrarse. Lo que sí permite afirmar es que el
+producto es usable en el dispositivo donde cayó el prototipo, que no es poco, y que la medida
+formal ya no está bloqueada por no tener dónde ejecutarla.
 
 ## 4. Modelo de memoria
 

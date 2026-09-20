@@ -31,7 +31,8 @@ import { activityBand, hourlyProfile } from "../src/domain/activity.js";
 import { buildTagInventory, describeAction } from "../src/domain/inventory.js";
 import { assignCohorts } from "../src/domain/cohort.js";
 import { buildTransitions } from "../src/domain/graph.js";
-import { findDominantCycle, segmentLaps, type Lap } from "../src/domain/laps.js";
+import { findDominantCycle, segmentLaps, type Lap, type LapAnchor } from "../src/domain/laps.js";
+import { buildReadMatrix } from "../src/domain/read-matrix.js";
 import { buildAllAgvDossiers, buildAllTagDossiers } from "../src/domain/dossier.js";
 import { compareAgainstVsystem } from "../src/domain/vsystem.js";
 import { buildReplayFrames } from "../src/domain/replay.js";
@@ -191,13 +192,60 @@ async function buildViews(
   const cohortAssignment = assignCohorts(readings, transitions);
 
   const laps: Lap[] = [];
+  const shapes: CircuitViews["shapes"][number][] = [];
+  const matrices: CircuitViews["readMatrices"][number][] = [];
+  /** El ancla de cada cohorte, guardada para no volver a buscar el mismo ciclo más abajo. */
+  const anchors = new Map<number, LapAnchor>();
+
   for (const cohort of cohortAssignment.cohorts) {
     const vehicleSet = new Set(cohort.vehicles);
     const cohortTransitions = transitions.filter((entry) => vehicleSet.has(entry.agvId));
     const anchor = findDominantCycle(cohortTransitions);
     if (anchor === null) continue; // Sin ciclo dominante limpio: ese cohorte no tiene vueltas segmentadas.
+    anchors.set(cohort.id, anchor);
     const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
     laps.push(...segmentLaps(cohortReadings, direction, coverage, anchor.tagId));
+
+    // El ciclo dominante **es** la composición del circuito: cuántos tags lo forman y en qué orden.
+    // Estaba calculado desde F2 y se descartaba entero salvo el tag de ancla.
+    //
+    // Y lo que queda fuera del ciclo no se puede callar: un tag que se lee tan poco que el sucesor
+    // dominante lo salta **desaparecería del análisis justo por ser el más sospechoso**. Se cuentan
+    // aparte, con sus lectores, sin decidir si son ramas o tags de la línea mal leídos — eso lo
+    // separa la prueba de tiempos de OQ-118, que todavía no está implementada.
+    const inRing = new Set(anchor.cycle);
+    const offRing = new Map<string, Set<string>>();
+    for (const entry of cohortReadings) {
+      if (inRing.has(entry.tagId)) continue;
+      let readers = offRing.get(entry.tagId);
+      if (readers === undefined) {
+        readers = new Set();
+        offRing.set(entry.tagId, readers);
+      }
+      readers.add(entry.agvId);
+    }
+
+    shapes.push({
+      cohortId: cohort.id,
+      vehicles: cohort.vehicles.length,
+      tags: anchor.cycle,
+      anchorTagId: anchor.tagId,
+      weakestShare: anchor.weakestShare,
+      offRingTags: [...offRing.entries()]
+        .map(([tagId, readers]) => ({ tagId, readers: readers.size }))
+        .sort((a, b) => b.readers - a.readers),
+    });
+    matrices.push(
+      buildReadMatrix(
+        cohort.id,
+        cohortReadings,
+        direction,
+        coverage,
+        anchor.cycle,
+        anchor.tagId,
+        PROVISIONAL_CONFIG.readRate,
+      ),
+    );
   }
 
   const coverageEnd =
@@ -221,6 +269,8 @@ async function buildViews(
     hourly: hourlyProfile(readings, zone),
     activity: activityBand(readings, coverage, ACTIVITY_BINS),
     cohorts: cohortAssignment.cohorts,
+    shapes,
+    readMatrices: matrices,
     agvDossiers,
     tagDossiers,
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
@@ -258,14 +308,12 @@ async function buildViews(
   const declaredOrder = [...byName("circuito")];
 
   let vsystemContrast: CircuitViews["vsystemContrast"];
-  if (declaredOrder.length > 0 && cohortAssignment.cohorts[0] !== undefined) {
+  const mainCohort = cohortAssignment.cohorts[0];
+  if (declaredOrder.length > 0 && mainCohort !== undefined) {
     // El anillo observado con el que se contrasta: el ciclo dominante del cohorte mayor, que es el
-    // que tiene más soporte y por tanto la reconstrucción más fiable.
-    const mainCohort = cohortAssignment.cohorts[0];
-    const vehicleSet = new Set(mainCohort.vehicles);
-    const mainTransitions = transitions.filter((entry) => vehicleSet.has(entry.agvId));
-    const anchor = findDominantCycle(mainTransitions);
-    if (anchor !== null) {
+    // que tiene más soporte y por tanto la reconstrucción más fiable. Ya se calculó arriba.
+    const anchor = anchors.get(mainCohort.id);
+    if (anchor !== undefined) {
       vsystemContrast = compareAgainstVsystem(
         declaredOrder,
         anchor.cycle,

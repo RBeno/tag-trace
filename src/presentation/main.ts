@@ -18,7 +18,15 @@ import {
   type ToWorker,
 } from "../application/protocol.js";
 import { EXPECTED_STRUCTURE, LIST_PURPOSE } from "../domain/tag-lists.js";
-import { activityChart, coverageChart, hourlyChart, inventoryChart, plainTable } from "./charts.js";
+import {
+  activityChart,
+  coverageChart,
+  hourlyChart,
+  inventoryChart,
+  lazyDetails,
+  plainTable,
+  scrollBox,
+} from "./charts.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
@@ -855,13 +863,26 @@ function renderViews(views: CircuitViews): void {
 
   // Cohortes (R-DAT-012): un solo grupo es lo esperado; más de uno avisa de que el fichero mezcla
   // circuitos, que es justo el error que la comparación por cohorte existe para impedir.
+  //
+  // El recuento de tags va junto al de vehículos porque responde la misma pregunta —de qué está
+  // hecho esto— y sale del ciclo dominante, no de contar identificadores distintos: un tag leído
+  // una vez desde una rama no forma parte del anillo.
+  const shapeOf = (cohortId: number): CircuitViews["shapes"][number] | undefined =>
+    views.shapes.find((shape) => shape.cohortId === cohortId);
+  const describe = (cohort: { readonly id: number; readonly vehicles: readonly string[] }): string => {
+    const shape = shapeOf(cohort.id);
+    return shape === undefined
+      ? `${cohort.vehicles.length} vehículos, sin anillo reconocible`
+      : `${cohort.vehicles.length} vehículos y ${shape.tags.length} tags en el anillo`;
+  };
   const cohortLine =
-    views.cohorts.length === 1
-      ? `1 circuito de ${views.cohorts[0]?.vehicles.length ?? 0} vehículos`
+    views.cohorts.length === 1 && views.cohorts[0] !== undefined
+      ? `1 circuito de ${describe(views.cohorts[0])}`
       : `${views.cohorts.length} circuitos detectados en el mismo fichero: ` +
-        views.cohorts.map((cohort) => `${cohort.vehicles.length} vehículos`).join(", ");
-  viewsPanel.append(element("h3", undefined, "Agrupamiento por circuito"));
+        views.cohorts.map(describe).join("; ");
+  viewsPanel.append(element("h3", undefined, "Composición del circuito"));
   viewsPanel.append(element("p", "muted", cohortLine));
+  renderShapes(views);
 
   if (views.vsystemContrast !== undefined) {
     viewsPanel.append(element("h3", undefined, "Contraste contra Vsystem"));
@@ -888,6 +909,245 @@ function renderViews(views: CircuitViews): void {
       ),
     );
   }
+}
+
+type Matrix = CircuitViews["readMatrices"][number];
+type TagRow = Matrix["tags"][number];
+
+/** Cuántos casos se enseñan de entrada. Es un parámetro de pantalla, no una magnitud de planta. */
+const HIGHLIGHTS = 8;
+
+function percent(rate: number | null): string {
+  return rate === null ? "—" : `${Math.round(rate * 100)} %`;
+}
+
+/**
+ * El anillo, los casos destacados y la matriz completa.
+ *
+ * El orden importa tanto como el contenido: primero **a cuáles mirar**, y solo después el conjunto
+ * entero, plegado. Enseñar de golpe ciento cincuenta tags por cincuenta vehículos no es informar,
+ * es esconder el hallazgo dentro de una cuadrícula (`UX_SPEC.md` §5.1).
+ */
+function renderShapes(views: CircuitViews): void {
+  for (const shape of views.shapes) {
+    const matrix = views.readMatrices.find((entry) => entry.cohortId === shape.cohortId);
+
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        `Anillo de ${shape.tags.length} tags, cerrado por «${shape.anchorTagId}». El orden es ` +
+          "inferido del sucesor dominante, no una medida del trazado, y su arista más débil se " +
+          `sostiene en el ${Math.round(shape.weakestShare * 100)} % de las pasadas.`,
+      ),
+    );
+
+    // La lista ordenada, plegada: es la que se contrasta con el circuito virtual y con la memoria.
+    viewsPanel.append(
+      lazyDetails(`Ver los ${shape.tags.length} tags del anillo, en orden`, () =>
+        plainTable(
+          ["Posición", "Tag", "Leído por pasada", "Patrón"],
+          shape.tags.map((tagId, index) => {
+            const row = matrix?.tags.find((entry) => entry.tagId === tagId);
+            return [
+              String(index + 1),
+              tagId,
+              row?.isAnchor === true ? "— (ancla)" : percent(row?.rate ?? null),
+              row?.isAnchor === true ? "cierra la vuelta" : (row?.pattern ?? "sin datos"),
+            ];
+          }),
+        ),
+      ),
+    );
+
+    if (shape.offRingTags.length > 0) {
+      viewsPanel.append(
+        element(
+          "p",
+          "muted",
+          (shape.offRingTags.length === 1
+            ? "1 tag se lee y no está en el anillo. "
+            : `${shape.offRingTags.length} tags se leen y no están en el anillo. `) +
+            "O son ramas que solo algunos recorren, o son tags de la línea que se leen tan poco " +
+            "que el sucesor " +
+            "dominante los saltó — y ese segundo caso es de los más sospechosos. Separarlos exige " +
+            "la prueba de tiempos (OQ-118), que todavía no está implementada, así que aquí salen " +
+            "enumerados y sin clasificar.",
+        ),
+      );
+      viewsPanel.append(
+        lazyDetails(
+          shape.offRingTags.length === 1
+            ? "Ver el tag que queda fuera del anillo"
+            : `Ver los ${shape.offRingTags.length} tags fuera del anillo`,
+          () =>
+          plainTable(
+            ["Tag", "Vehículos que lo leen"],
+            shape.offRingTags.map((tag) => [tag.tagId, String(tag.readers)]),
+          ),
+        ),
+      );
+    }
+
+    if (matrix === undefined || !matrix.supported) {
+      viewsPanel.append(
+        element(
+          "p",
+          "muted",
+          "Sin vueltas cerradas no hay tasa de lectura que sostener: haría falta que los vehículos " +
+            "pasen más de una vez por el tag que cierra la vuelta.",
+        ),
+      );
+      continue;
+    }
+
+    renderHighlights(matrix);
+    renderFullMatrix(matrix);
+  }
+}
+
+/** Lo que hay que mirar, visible de entrada: los tags y los vehículos que se salen de lo normal. */
+function renderHighlights(matrix: Matrix): void {
+  const notable = matrix.tags
+    .filter((tag) => tag.pattern === "bimodal-candidato" || tag.pattern === "uniforme-bajo")
+    .sort((a, b) => (a.rate ?? 1) - (b.rate ?? 1));
+  // Los vehículos se destacan por **en cuántos tags son ellos los que no leen**, no por una tasa
+  // global con un corte inventado aquí: un 99 % de acierto sobre ciento cincuenta tags puede ser
+  // exactamente el vehículo que falla los dos que importan.
+  const blindCount = new Map<string, number>();
+  for (const tag of matrix.tags) {
+    if (tag.pattern !== "bimodal-candidato") continue;
+    for (const agvId of tag.lowReaders) blindCount.set(agvId, (blindCount.get(agvId) ?? 0) + 1);
+  }
+  const quietVehicles = [...matrix.vehicles]
+    .filter((vehicle) => (blindCount.get(vehicle.agvId) ?? 0) > 0)
+    .sort(
+      (a, b) => (blindCount.get(b.agvId) ?? 0) - (blindCount.get(a.agvId) ?? 0),
+    )
+    .slice(0, HIGHLIGHTS);
+
+  viewsPanel.append(element("h3", undefined, "Lo que hay que mirar"));
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      "Porcentaje sobre las veces que el vehículo pasó por el punto, probadas por haber leído los " +
+        "dos tags vecinos en la misma vuelta: una rama que no recorre no cuenta como fallo suyo " +
+        "(R-OPP-008). No es una tasa de salud — eso exige saber qué lleva cada vehículo en memoria " +
+        "y qué sigue instalado.",
+    ),
+  );
+
+  if (notable.length === 0) {
+    viewsPanel.append(
+      element("p", "muted", "Ningún tag con patrón destacable: todos los que se pasan se leen."),
+    );
+  } else {
+    for (const tag of notable.slice(0, HIGHLIGHTS)) {
+      viewsPanel.append(
+        finding(
+          `Tag ${tag.tagId} · posición ${tag.position + 1} de ${matrix.ring.length}`,
+          `${percent(tag.rate)} de las pasadas · ${tag.pattern}`,
+          explain(tag),
+        ),
+      );
+    }
+    if (notable.length > HIGHLIGHTS) {
+      viewsPanel.append(
+        element(
+          "p",
+          "muted",
+          `Y ${notable.length - HIGHLIGHTS} más con el mismo tipo de patrón, en la matriz completa.`,
+        ),
+      );
+    }
+  }
+
+  if (quietVehicles.length === 0) {
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        "Ningún vehículo concentra tags sin leer: lo que falte, falta para todos por igual.",
+      ),
+    );
+    return;
+  }
+  for (const vehicle of quietVehicles) {
+    const blind = blindCount.get(vehicle.agvId) ?? 0;
+    viewsPanel.append(
+      finding(
+        `AGV ${vehicle.agvId} · ${vehicle.laps} vueltas`,
+        `${blind} ${blind === 1 ? "tag que no lee" : "tags que no lee"} y los demás sí · ` +
+          `${percent(vehicle.rate)} de lo que pasa`,
+        "Revisar lector, WiFi o memoria de este vehículo: el tag no es el problema, porque el " +
+          "resto de la flota lo lee.",
+      ),
+    );
+  }
+}
+
+/**
+ * Un hallazgo, como tarjeta y no como fila.
+ *
+ * `UX_SPEC.md` §4 ya lo pedía así —conclusión, objeto, evidencia— y la razón se ve al mirarlo en un
+ * móvil: una tabla de cinco columnas en 360 px parte los encabezados letra a letra. Cabe, y es
+ * ilegible.
+ */
+function finding(title: string, figure: string, evidence: string): HTMLElement {
+  const card = element("div", "finding");
+  card.append(
+    element("p", "finding-title", title),
+    element("p", "finding-figure", figure),
+    element("p", "muted", evidence),
+  );
+  return card;
+}
+
+/** La frase que acompaña a cada patrón. Enuncia la pregunta; no la responde (R-EVI-006). */
+function explain(tag: TagRow): string {
+  if (tag.pattern === "bimodal-candidato") {
+    return (
+      `${tag.lowReaders.length} vehículos casi nunca lo leen y ${tag.highReaders.length} casi ` +
+      `siempre (${tag.lowReaders.slice(0, 3).join(", ")}…): revisar esos vehículos, no el tag`
+    );
+  }
+  return "todos los que pasan lo leen poco: revisar el tag o su punto";
+}
+
+/** La matriz entera, plegada y construida solo si alguien la abre. */
+function renderFullMatrix(matrix: Matrix): void {
+  const vehicles = matrix.vehicles.map((vehicle) => vehicle.agvId);
+  viewsPanel.append(
+    lazyDetails(
+      `Ver la matriz completa: ${matrix.tags.length} tags × ${vehicles.length} vehículos`,
+      () =>
+        scrollBox(
+          plainTable(
+            ["Tag", ...vehicles],
+            matrix.tags.map((tag) => {
+              const byVehicle = new Map(tag.byVehicle.map((cell) => [cell.agvId, cell]));
+              return [
+                tag.tagId,
+                ...vehicles.map((agvId) => {
+                  const cell = byVehicle.get(agvId);
+                  // Sin pasadas no es un cero: es que ese vehículo no pasó por ahí.
+                  return cell === undefined ? "·" : `${Math.round((cell.hits / cell.passes) * 100)}`;
+                }),
+              ];
+            }),
+          ),
+        ),
+    ),
+  );
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      "En la matriz, «·» es que ese vehículo no pasó por ese punto — distinto de un 0, que sí " +
+        "sería un hecho.",
+    ),
+  );
 }
 
 /**

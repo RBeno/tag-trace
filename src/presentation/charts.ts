@@ -139,6 +139,36 @@ function table(headers: readonly string[], rows: readonly (readonly string[])[])
   return details;
 }
 
+/**
+ * Un bloque plegado cuyo contenido **no se construye hasta que alguien lo abre**.
+ *
+ * La matriz completa de un circuito real son miles de celdas. Construirlas de entrada para dejarlas
+ * escondidas dentro de un `<details>` es pagar el coste entero sin enseñar nada — que es justo el
+ * defecto que la banda de actividad tenía con sus rótulos por celda. Aquí el conjunto completo está
+ * disponible y no pesa hasta que se pide.
+ */
+export function lazyDetails(summary: string, build: () => HTMLElement): HTMLElement {
+  const details = document.createElement("details");
+  const label = document.createElement("summary");
+  label.textContent = summary;
+  details.append(label);
+  let built = false;
+  details.addEventListener("toggle", () => {
+    if (!details.open || built) return;
+    built = true;
+    details.append(build());
+  });
+  return details;
+}
+
+/** Contenedor con desplazamiento propio: una matriz ancha se desplaza dentro, no rompe la página. */
+export function scrollBox(node: HTMLElement): HTMLElement {
+  const box = document.createElement("div");
+  box.className = "scrollbox";
+  box.append(node);
+  return box;
+}
+
 function legendList(items: readonly (readonly [string, string])[]): HTMLElement {
   const list = document.createElement("ul");
   list.className = "legend";

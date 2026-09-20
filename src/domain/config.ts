@@ -16,6 +16,7 @@
 import type { AffinityThresholds } from "./affinity.js";
 import type { BlindnessThresholds } from "./inventory.js";
 import type { GraphThresholds } from "./graph.js";
+import type { ReadRateThresholds } from "./read-matrix.js";
 
 export interface SilenceThresholds {
   /**
@@ -40,6 +41,7 @@ export interface AnalysisConfig {
   readonly blindness: BlindnessThresholds;
   readonly graph: Omit<GraphThresholds, "resolutionMs">;
   readonly silence: SilenceThresholds;
+  readonly readRate: ReadRateThresholds;
 }
 
 /**
@@ -59,6 +61,10 @@ export interface AnalysisConfig {
  *   (`ALGORITHM_CATALOG.md` §4.2), no la duración real de ningún descanso ni parada de un circuito
  *   concreto — esas son configuración de planta y no se fijan aquí (R-TIM-005). Sirve para no
  *   confundir el tiempo normal de tránsito (segundos) con un hueco que merece explicarse.
+ * - **Tasa de lectura.** Tres pasadas es lo mínimo para que una celda no sea anécdota, y dos
+ *   vehículos lo mínimo para que exista contraste. El 0,8 y el 0,2 separan «lo lee» de «no lo lee»
+ *   dejando en medio una franja ancha que sale como **gradiente**, que es `unknown` a propósito
+ *   (OQ-118): estrechar esa franja convertiría en bimodal lo que todavía no se sabe qué es.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -67,6 +73,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   blindness: { minReadingsPerVehicle: 10, minReadersForContrast: 2 },
   graph: { minShareForObserved: 0.9, minSupportForObserved: 3, maxSameInstantShare: 0.5 },
   silence: { minGapMs: 5 * 60_000 },
+  readRate: { minPassesPerPair: 3, minVehiclesForContrast: 2, highRate: 0.8, lowRate: 0.2 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

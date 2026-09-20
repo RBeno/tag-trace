@@ -31,8 +31,10 @@ test.describe("grafo, cohortes y vueltas", () => {
     await page.locator("#source-file").setInputFiles(`${ANILLO}lecturas.csv`);
     await expect(page.getByText("Circuito «anillo»")).toBeVisible({ timeout: 15_000 });
 
-    await expect(page.getByText("Agrupamiento por circuito")).toBeVisible();
-    await expect(page.getByText("1 circuito de 2 vehículos")).toBeVisible();
+    // El bloque pasó a llamarse «Composición del circuito» cuando dejó de decir solo cuántos
+    // vehículos hay para decir también de cuántos tags está hecho: es la misma pregunta.
+    await expect(page.getByText("Composición del circuito")).toBeVisible();
+    await expect(page.getByText(/1 circuito de 2 vehículos/)).toBeVisible();
   });
 
   test("el expediente de un AGV cuenta sus vueltas frente a la cohorte, no frente a la flota", async ({
@@ -60,6 +62,39 @@ test.describe("grafo, cohortes y vueltas", () => {
 
     await page.locator("#dossier-search").fill("9999");
     await expect(page.getByText(/Ningún AGV ni tag/)).toBeVisible();
+  });
+});
+
+test.describe("composición del circuito y tasa de lectura", () => {
+  test("el número y el orden de los tags salen junto al número de vehículos", async ({ page }) => {
+    await freshPage(page);
+    await page.locator("#circuit-name").fill("anillo");
+    await page.locator("#source-file").setInputFiles(`${ANILLO}lecturas.csv`);
+    await expect(page.getByText("Circuito «anillo»")).toBeVisible({ timeout: 15_000 });
+
+    await expect(page.getByText("Composición del circuito")).toBeVisible();
+    // El anillo del fixture son cuatro tags, y el recuento sale del ciclo dominante — no de contar
+    // identificadores distintos, que incluiría cualquier tag leído una vez desde una rama.
+    await expect(page.getByText("1 circuito de 2 vehículos y 4 tags en el anillo")).toBeVisible();
+
+    // La lista ordenada existe y se despliega: es la que se contrasta con Vsystem y con la memoria.
+    await page.getByText("Ver los 4 tags del anillo, en orden").click();
+    const orden = page.locator("table.data", { hasText: "Posición" }).first();
+    await expect(orden.getByRole("cell", { name: "0100", exact: true })).toBeVisible();
+  });
+
+  test("la tasa de lectura no se calcula sobre vueltas que el vehículo no pasó por ahí", async ({
+    page,
+  }) => {
+    await freshPage(page);
+    await page.locator("#circuit-name").fill("anillo");
+    await page.locator("#source-file").setInputFiles(`${ANILLO}lecturas.csv`);
+    await expect(page.getByText("Circuito «anillo»")).toBeVisible({ timeout: 15_000 });
+
+    // Lo que nunca puede desaparecer del texto: que el porcentaje es por pasada y que esto no es
+    // una tasa de salud. Sin esas dos frases, el número afirma más de lo que el dato sostiene.
+    await expect(page.getByText(/pasó por el punto/)).toBeVisible();
+    await expect(page.getByText(/No es una tasa de salud/)).toBeVisible();
   });
 });
 

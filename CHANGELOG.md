@@ -2,6 +2,48 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.5.0] - 2026-09-20
+
+Probado el producto publicado en el Galaxy S23 FE: corre con fluidez. A partir de ahí, lo que el
+propietario pidió — pasar de «qué se leyó» a «a qué hay que mirar, y de quién es el problema».
+
+### Añadido
+
+- **Composición del circuito: cuántos tags lo forman y en qué orden.** No hizo falta calcular nada
+  nuevo: `findDominantCycle` devolvía el anillo entero desde F2 y el Worker se quedaba solo con el
+  tag de ancla, tirando el resto. Ahora el recuento sale junto al de vehículos —«1 circuito de 54
+  vehículos y 147 tags en el anillo»— y la lista ordenada se despliega. Es la misma lista que se
+  contrasta con el circuito virtual y con la de memoria cuando están cargadas.
+- **`src/domain/read-matrix.ts`: matriz de lectura tag × AGV** (R-OPP-013, nueva). Para cada par,
+  qué porcentaje de las veces que ese vehículo **pasó por el punto** leyó el tag. El patrón que
+  resulta —`bimodal-candidato`, `uniforme-bajo`, `gradiente`, `sin-soporte`— es lo que distingue
+  «son unos vehículos» de «es el tag», que era justamente la pregunta.
+- **Destacados primero, conjunto completo a demanda** (`UX_SPEC.md` §4.2, nueva): los hallazgos
+  como tarjetas, y el anillo, los tags fuera de él y la matriz entera plegados y construidos
+  **solo al abrirlos**.
+- **R-GRA-011**: lo que el ciclo dominante deja fuera se enumera, no desaparece.
+
+### Decisiones que el dato obligó a tomar
+
+- **El denominador es la pasada probada, no la vuelta.** R-OPP-010 daba por bueno normalizar por
+  vueltas; construyéndolo se vio que no basta: un vehículo que no recorre una rama saldría fallando
+  todos sus tags, que es el falso positivo que TC-028 prohíbe. Y exigir **un** vecino tampoco vale
+  —el anillo cierra, así que el tag de ancla es vecino del último y lo lee todo el mundo—. Hacen
+  falta **los dos vecinos en la misma vuelta**. Lo destapó una prueba escrita antes que la
+  corrección.
+- **Un tag que se lee muy poco puede caer fuera del anillo precisamente por leerse poco**: el
+  sucesor dominante lo salta. Comprobado con un circuito sintético realista, donde el tag omitido el
+  85 % de las veces desaparecía del análisis por ser el más sospechoso. Ahora se enumera aparte, sin
+  clasificar: separar una rama legítima de un tag de la línea mal leído exige la prueba de tiempos
+  de OQ-118, que sigue sin implementarse.
+- **Ni esto ni nada de lo anterior es una tasa de salud**, y la vista lo dice donde está el número.
+  La salud exige oportunidad elegible —en memoria y existente, R-OPP-011—, y eso necesita OQ-B04.
+
+### Corregido
+
+- La tabla de hallazgos partía los encabezados letra a letra en 360 px. Los hallazgos pasan a
+  tarjeta, que es lo que `UX_SPEC.md` §4 pedía desde F0.
+
 ## [3.4.1] - 2026-09-20
 
 ### Corregido

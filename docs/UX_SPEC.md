@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
 last_updated: 2026-09-20
 ---
@@ -102,6 +102,30 @@ cuando. La vía de trabajo más frecuente no puede ser la que más cuesta alcanz
 **Lo que se muestra antes de la primera lectura de un objeto.** Ni posición inventada ni silencio:
 `sin datos`, diciendo cuándo llega esa primera lectura (R-GRA-010). Un silencio afirma que una
 posición conocida deja de confirmarse; antes de la primera lectura no hay ninguna.
+
+## 4.2 Destacados primero, conjunto completo a demanda
+
+Un circuito real son ciento cincuenta tags por cincuenta vehículos: siete mil quinientas celdas.
+Enseñarlas de golpe no es informar, es esconder el hallazgo dentro de una cuadrícula. La vista se
+ordena al revés de como se calcula:
+
+1. **Cuántos vehículos y cuántos tags** forman el circuito, en una línea. El número de tags sale del
+   ciclo dominante, no de contar identificadores distintos.
+2. **Lo que hay que mirar**: los tags con patrón destacable y los vehículos que concentran tags sin
+   leer, cada uno como **tarjeta de hallazgo** (§4) y no como fila de tabla. La razón es medible: en
+   360 px una tabla de cinco columnas parte los encabezados letra a letra — cabe y es ilegible.
+3. **El conjunto completo**, plegado: el anillo en orden, los tags fuera del anillo y la matriz
+   entera. Se construye **solo al abrirlo**; dejarlo montado de entrada para tenerlo escondido paga
+   el coste sin enseñar nada.
+
+Dos cosas que la vista dice siempre, porque el número solo no las lleva escritas:
+
+- el porcentaje es **sobre las pasadas probadas** por ese punto, no sobre las vueltas (R-OPP-013);
+- **no es una tasa de salud**, y no lo será mientras no exista la oportunidad elegible de R-OPP-011.
+
+Una matriz es bidimensional por naturaleza, así que se desplaza **dentro de su caja**. Eso no
+contradice la regla de §5.1 —ningún gráfico exige desplazamiento para llegar a su contenido útil—
+porque el contenido útil ya está arriba, sin desplegar nada.
 
 ## 5. Grafo y plano
 
