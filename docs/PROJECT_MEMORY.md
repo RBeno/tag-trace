@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
 last_updated: 2026-09-20
 ---
@@ -149,7 +149,20 @@ La frase de transición a F4 es `CONTINÚA FASE 4`, y ninguna IA la escribe por 
 `deploy-pages.yml` publica desde `main` en `https://rbeno.github.io/tag-trace/`, solo si las tres
 verificaciones existentes (tipos/pruebas/build, guardián de datos, calidad documental) terminan en
 verde (ADR-0014). Se adelantó desde G6 para poder medir PERF-D2 en el Samsung Galaxy S23 FE, no
-como aprobación de piloto. **La URL no estará activa hasta que este cambio se fusione en `main`**:
-el workflow dispara con `push` a `main` (y `workflow_dispatch` a mano), no con el push a esta rama.
-Si `actions/configure-pages` no puede habilitar Pages por sí solo, el propietario debe activarlo una
-vez desde Settings → Pages → Source: GitHub Actions.
+como aprobación de piloto.
+
+**Publicado y en verde el 2026-09-20**, tras dos intentos fallidos que valen la pena registrar
+porque el segundo no era del workflow:
+
+1. Primer intento: `actions/configure-pages@v5` trae `enablement: false` por defecto, así que solo
+   comprobó que el sitio de Pages ya existiera (404) en vez de crearlo. Corregido con
+   `enablement: true` explícito.
+2. Segundo intento, ya con `enablement: true`: `Create Pages site failed... Resource not
+   accessible by integration`. La causa no era el workflow — **el repositorio seguía privado**, y
+   GitHub Pages para repositorios privados exige un plan de pago. `ADR-0014` fechaba la decisión de
+   hacerlo público el 2026-09-03, con el guardián de datos como condición previa; el guardián lleva
+   corriendo en verde desde entonces, pero **el cambio de visibilidad en los ajustes de GitHub
+   nunca se había ejecutado** hasta hoy. La ADR no cambia: solo se anota que la fecha de ejecución
+   real de la visibilidad es el 2026-09-20, no el 2026-09-03.
+
+Con el repositorio ya público, el tercer intento (`workflow_dispatch`) desplegó sin tocar nada más.
