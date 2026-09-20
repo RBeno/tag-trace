@@ -1,6 +1,6 @@
 ---
 document_id: TT-PERF-001
-version: 0.3.0
+version: 0.4.0
 status: provisional-budget
 last_updated: 2026-09-11
 ---
@@ -66,6 +66,28 @@ el hilo principal bloquea cualquier teléfono, por bueno que sea.
 | Incremento consolidado normal | <5 % del bruto equivalente | Excluye recorte deliberado de incidencias |
 
 Si un objetivo no es realista tras medir, se cambia mediante decisión documentada, no rebajándolo para ocultar una regresión.
+
+### 3.1 Primera medida de PERF-D2 (2026-09-17)
+
+Medida en el navegador y a través del Worker, que es donde el presupuesto tiene sentido: lo que
+acota no es la velocidad de una función sino si la interfaz sigue respondiendo.
+
+| Métrica | Medida | Objetivo |
+|---|---:|---:|
+| Núcleo de importación, 100.000 eventos | 1.330 ms | — |
+| Hueco de fotograma en el hilo principal, p95 | **17 ms** | <50 ms |
+| Hueco de fotograma, máximo | **341 ms** | — |
+
+El p95 cumple con holgura. El máximo **no**, y no se disimula: es un único tirón, y su causa está
+identificada —el resultado completo viaja del Worker al hilo principal en un `postMessage`, así que
+clonar cien mil lecturas cuesta ese fotograma—. Se corrige enviando una página en lugar de todo,
+que es trabajo de F1b y no de aquí.
+
+**Condiciones, porque sin ellas la cifra no significa nada**: contenedor de desarrollo con Chromium
+sin aceleración, fuente sintética con semilla de 100.000 filas, 40 AGV y 120 tags, resolución de
+segundo. **No es el PC de referencia ni el móvil de referencia.** La medida del Samsung Galaxy S23
+FE solo la puede tomar el propietario, y hasta entonces la puerta de fase que depende del móvil
+sigue sin cerrarse: una cifra emulada no la sustituye.
 
 ## 4. Modelo de memoria
 

@@ -1,0 +1,32 @@
+lista;tag;orden;nota
+circuito;58021;1;
+circuito;58022;2;
+circuito;58023;3;
+circuito;58024;4;
+circuito;58026;5;
+circuito;58027;6;
+circuito;58029;7;
+circuito;58030;8;
+circuito;58031;9;
+circuito;20107;10;
+circuito;20108;11;
+circuito;20110;12;
+circuito;20115;13;
+circuito;58999;14;retirado del suelo hace tiempo, nunca borrado de la lista
+memoria;58021;;
+memoria;58022;;
+memoria;58023;;
+memoria;58024;;
+memoria;58026;;
+memoria;58027;;
+memoria;58029;;
+memoria;58030;;
+memoria;58031;;
+memoria;20107;;
+memoria;20108;;
+memoria;20110;;
+memoria;20115;;
+memoria;58999;;el obsoleto sigue en la memoria de los vehiculos
+Mantenimiento;57544;;acento y mayuscula a proposito: se normaliza
+emergencia;57545;;
+semaforo-nuevo;58077;;lista que el producto todavia no conoce

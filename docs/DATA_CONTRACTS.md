@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.9.0
+version: 0.11.0
 status: baseline-candidate
 last_updated: 2026-09-17
 ---
@@ -22,7 +22,7 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-005 | Tags críticos | Tag, función, grado 1–3 y redundancias | Catálogo parcial |
 | DS-006 | Tags especiales | Tag y clase: noche, mantenimiento, técnico, asistencia/pastor u otra | Catálogo parcial |
 | DS-007 | Tags y acciones | Tag y una o varias funciones/condiciones | Catálogo parcial |
-| DS-008 | Memoria/configuración por AGV | AGV, versión o inventario conocido | **Requisito de toda tasa de lectura**: ver §3.4 |
+| DS-008 | Memoria de vehículo | Lista maestra de tags cargables, con su fecha | **Requisito de toda tasa de lectura**, y por sí sola **no suficiente**: ver §3.4 |
 | DS-009 | Calendario productivo | vigencia, turnos, pausas, paradas y takt | Contexto versionado |
 | DS-010 | Proyecto anterior | `.agvproj` con manifiesto y versión | Persistencia local |
 | DS-011 | Informe ampliado de Vsystem | Tipo, fecha con segundos, AGV, circuito y, según el tipo, tag o uso | Enriquecida, opcional |
@@ -137,6 +137,35 @@ Eso convierte DS-008 de fuente auxiliar en **requisito**: sin el inventario de m
 tasa de lectura por vehículo mezcla dos causas de naturaleza distinta —una avería y una
 configuración— y presentarla como salud es afirmar lo que no se sabe.
 
+#### Qué contiene realmente la memoria
+
+Cuatro conjuntos, y el cuarto es el que cambia las cuentas:
+
+1. los tags del **circuito virtual** declarado en Vsystem,
+2. los de **mantenimiento**,
+3. los de **sustitución de emergencia**,
+4. y **tags obsoletos: ya no existen físicamente, y nunca se borraron de la lista**.
+
+El cuarto abre un agujero en la regla que parecía obvia. «Está en la memoria» se estaba tratando
+como lo que hace *elegible* una oportunidad, pero **un tag obsoleto está en memoria y no es una
+oportunidad**: el vehículo pasa por donde estaría y no hay nada que leer. Cargar DS-008 y aplicar la
+regla tal cual llevaría de «no hay tasa de lectura» a «una tasa que cuenta como fallo tags que no
+están instalados», que es peor, porque vendría con una lista detrás y parecería fundada.
+
+La condición correcta tiene **dos partes**: el tag está en la memoria **y existe** (R-OPP-011).
+
+#### La lista es maestra, no por vehículo, y eso cierra menos de lo que parece
+
+DS-008 se escribió esperando un inventario por vehículo. Lo que existe es una **lista maestra
+común**: la que cada AGV *debería* llevar. Los vehículos pueden no estar bien actualizados, así que
+uno puede arrastrar obsoletos que otro ya no tiene, o faltarle tags que otro sí lleva.
+
+La consecuencia es de estado de verdad, no de detalle: la lista maestra acota el **universo** —el
+techo de lo que cualquier vehículo podría leer— pero la memoria de un vehículo concreto es
+`expected`, nunca `observed`, y su desviación solo se infiere del comportamiento (R-OPP-012).
+Presentar DS-008 como si desbloqueara la salud por vehículo sería falso: cierra la mitad de flota de
+la pregunta y deja abierta la individual.
+
 **La forma de la ausencia sí discrimina, y es gratis.** Normalizando el recuento de cada vehículo
 por sus propias vueltas —el recuento bruto lo contamina, porque quien da menos vueltas lee menos de
 todo— un tag de la ruta cae en uno de dos patrones:
@@ -156,6 +185,54 @@ siempre no es una casualidad de detección.
 tiene en memoria, **no aparece en la exportación de ese circuito**. Cruzar exportaciones no sirve
 para confirmar dónde estuvo; la salida se detecta por la incoherencia de la reanudación (R-AGV-009)
 y se queda ahí.
+
+#### Obsoleto y muerto no se separan con una sola ventana
+
+Un tag que está en la lista maestra y que **ningún vehículo de la flota ha leído jamás** en toda la
+cobertura es candidato a obsoleto. Pero exactamente el mismo dato lo produce un tag que sí existe y
+ha dejado de funcionar. Con una ventana no hay forma de distinguirlos, y elegir uno sería sustituir
+`unknown` por la hipótesis más probable, que es justo lo que este proyecto no hace.
+
+Lo que sí los separa es **el tiempo**:
+
+| Entre dos ventanas separadas | Conclusión |
+|---|---|
+| Se leía antes y ahora no | **cambió**: murió, se sustituyó o se retiró — y eso es un hallazgo |
+| No se leyó en ninguna de las dos | obsoleto consolidado: deja de ser candidato |
+| Aparece uno que antes no estaba | sustitución o instalación nueva |
+
+Esto **no exige continuidad de cobertura**: exige dos muestras buenas, separadas y comparables en
+calendario (R-TIM-007). La cadencia de extracción determina la fidelidad con que se representa el
+circuito, no la capacidad de detectar estos cambios (R-TIM-008).
+
+Y hay un refinamiento que llega con el grafo, no antes: si el tramo donde estaría el tag se recorre
+y el tiempo directo entre sus vecinos coincide con el de pasar por él, el tag está **en la línea** y
+simplemente no se lee. Eso descarta que el tramo no se visite, que es la otra explicación inocente.
+
+### 3.5 Inventario contrastado: declarado × memoria × observado
+
+Cruzar los tres conjuntos —lo que Vsystem declara del circuito, lo que la lista maestra dice que los
+vehículos pueden leer, y lo que se ha leído de verdad— clasifica cada tag sin necesidad de grafo, de
+vueltas ni de ninguna constante industrial. Es pertenencia a conjuntos y recuentos:
+
+| Clase | Declarado | En memoria | Leído | Qué afirma |
+|---|---|---|---|---|
+| `activo` | sí | sí | por la flota | nada que ver aquí |
+| `obsoleto-candidato` | indiferente | sí | **por nadie, nunca** | está en la lista y probablemente no en el suelo → `unknown` |
+| `ciego-parcial` | sí | sí | unos siempre, otros nunca | bimodal: memoria desactualizada en esos vehículos → `inferred` |
+| `no-declarado-leido` | **no** | indiferente | sí | existe y nadie lo declaró: la lista del circuito está desactualizada |
+| `declarado-sin-memoria` | sí | **no** | no | nadie puede leerlo aunque exista: punto ciego de configuración |
+| `especial` | — | sí | ocasional | mantenimiento o sustitución de emergencia: fuera del circuito y de toda tasa |
+
+Dos límites que se muestran junto a la tabla y no en una nota al pie:
+
+- `obsoleto-candidato` **no es un diagnóstico**. Es una hipótesis con su prueba pendiente, y lo que
+  la resuelve es la comparación entre periodos, no más análisis de la misma ventana.
+- `ciego-parcial` señala vehículos, no tags: el tag está bien y la lista de alguien no lo está. Es
+  `inferred` porque la memoria real de un vehículo concreto no se observa (R-OPP-012).
+
+Ninguna de las seis clases emite una tasa de salud. Publican hechos y, donde toca, la hipótesis
+prioritaria con su estado de verdad.
 
 ## 4. Proceso de importación
 
@@ -307,6 +384,24 @@ formaliza en F1a y se completa en F4. Como mínimo contendrá:
 - registro append-only de consolidaciones y migraciones.
 
 No incluirá el bruto completo por defecto. Un expediente puede conservar un recorte normalizado mínimo cuando sea necesario para reproducir una incidencia.
+
+### 9.1 El dispositivo acumula, el fichero viaja
+
+Que `.agvproj` no lleve el bruto tiene una consecuencia de arquitectura que conviene dejar escrita,
+porque de otro modo se descubre tarde: **son dos almacenes distintos con propósitos distintos**.
+
+| | Dónde vive | Qué guarda | Por qué |
+|---|---|---|---|
+| Almacén local | el dispositivo | las lecturas acumuladas de todas las fuentes, su procedencia y la cobertura | El servidor de planta es una ventana deslizante de pocos días: lo que no se extraiga y se guarde aquí no se recupera |
+| `.agvproj` | fichero portable | identidad, configuración, inventario de fuentes con sus hashes, cobertura y estado derivado | Es lo que se lleva a otro dispositivo, y el intercambio es manual (CON-002) |
+
+El almacén local exige **migraciones explícitas desde su primera versión**. Es la única parte del
+sistema cuyos datos no se pueden volver a pedir: una ventana perdida no vuelve.
+
+La acumulación —unión y escritura— ocurre **dentro del Worker**, que lee y escribe el almacén por su
+cuenta. Mandarle al Worker las lecturas ya guardadas por `postMessage` las clonaría y duplicaría el
+pico de memoria, que es exactamente el defecto P4 del prototipo; y hacer la unión en el hilo
+principal recorrería dos series de cientos de miles de elementos donde WP-001 lo prohíbe.
 
 ## 10. Borrado y retención local
 

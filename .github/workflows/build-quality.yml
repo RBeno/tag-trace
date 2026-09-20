@@ -9,6 +9,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Reutilizable desde deploy-pages.yml: la publicación exige la misma verificación que un push
+  # normal a main, no una copia de sus pasos (ADR-0014, «solo se despliega una compilación que haya
+  # superado todas las verificaciones»).
+  workflow_call:
 
 permissions:
   contents: read
@@ -38,3 +42,43 @@ jobs:
 
       - name: Compilar
         run: npm run build
+
+  navegador:
+    name: Pruebas de navegador
+    runs-on: ubuntu-latest
+    # Van en un trabajo aparte porque necesitan navegador y tardan más. Si compartieran trabajo con
+    # los tipos, un fallo de tipos dejaría sin ejecutar la prueba de red, que es de release.
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias exactas
+        run: npm ci
+
+      - name: Instalar el navegador
+        run: npx playwright install --with-deps chromium
+
+      - name: Compilar
+        run: npm run build
+
+      # Comprueban lo que ninguna prueba de Node puede: que el almacén local guarda de verdad, que
+      # cancelar no deja nada escrito, que `.agvproj` sobrevive a la ida y vuelta por la interfaz, y
+      # que el flujo analítico **no sale a la red** (SECURITY_PRIVACY §4).
+      - name: Ejecutar pruebas de navegador
+        run: npm run test:e2e
+
+      - name: Conservar el rastro de los fallos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

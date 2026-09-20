@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="TAG TRACE">
+  <rect width="512" height="512" rx="96" fill="#12151a"/>
+  <!-- Un circuito cerrado con sus puntos de lectura: lo que la aplicación reconstruye. -->
+  <path d="M136 176h240a64 64 0 0 1 0 128H176a48 48 0 0 0 0 96h200"
+        fill="none" stroke="#5aa9e6" stroke-width="28" stroke-linecap="round"/>
+  <g fill="#e8eef5">
+    <circle cx="136" cy="176" r="26"/>
+    <circle cx="376" cy="176" r="26"/>
+    <circle cx="376" cy="400" r="26"/>
+  </g>
+</svg>

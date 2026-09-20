@@ -13,6 +13,11 @@
  * hacia la presentación**. La interfaz no puede parsear aunque quiera.
  */
 
+import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
+import type { AffinityReport } from "../domain/affinity.js";
+import type { AgvDossier, TagDossier } from "../domain/dossier.js";
+import type { VehicleReplayState } from "../domain/replay.js";
+import type { VsystemComparisonRow } from "../domain/vsystem.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { SourceDirection } from "../domain/order.js";
 import type { MonotonicityReport } from "../ingestion/monotonicity.js";
@@ -42,6 +47,40 @@ export interface StartMessage {
   readonly zone: string;
   /** Si el usuario ya fijó el orden de campos, se respeta; si no, se detecta y puede fallar. */
   readonly fieldOrder?: FieldOrder;
+  /**
+   * Circuito en el que **acumular** esta fuente, si lo hay.
+   *
+   * Va el identificador y no las lecturas ya guardadas: el Worker las lee del almacén por su
+   * cuenta. Mandárselas por `postMessage` las clonaría y duplicaría el pico de memoria, que es
+   * exactamente el defecto P4 del prototipo.
+   */
+  readonly circuitId?: string;
+  readonly circuitName?: string;
+}
+
+/** Lo que la acumulación en un circuito añade al resultado de una importación. */
+export interface AccumulationReport {
+  readonly circuitId: string;
+  /** Intervalos analizables del circuito tras sumar esta fuente (R-DAT-007). */
+  readonly coverage: readonly { readonly from: number; readonly to: number }[];
+  /** Lecturas del circuito entero, ya unidas. */
+  readonly totalReadings: number;
+  /** Fuentes acumuladas en el circuito. */
+  readonly sources: number;
+  /** Eventos que esta fuente ya traía otra: se cuentan una vez y conservan las dos procedencias. */
+  readonly shared: number;
+  /** Eventos del tramo común que solo una de las dos trae. La fuente se contradice consigo misma. */
+  readonly disagreements: number;
+  /** Qué tan de este circuito es la fuente (FR-003, R-DAT-006). */
+  readonly affinity: AffinityReport;
+  /**
+   * Si la fuente llegó a escribirse en el circuito.
+   *
+   * Es falso cuando la afinidad la señala como de otro circuito. La importación sí se hizo y sus
+   * lecturas se muestran —FR-003 separa analizar de consolidar—, pero el almacén no se tocó, y las
+   * cifras de este informe son las que el circuito **ya tenía**, no las que tendría con la fuente.
+   */
+  readonly accumulated: boolean;
 }
 
 export interface CancelMessage {
@@ -51,7 +90,34 @@ export interface CancelMessage {
   readonly reason: string;
 }
 
-export type ToWorker = StartMessage | CancelMessage;
+/**
+ * Cargar las listas de tags de un circuito.
+ *
+ * Va por el Worker aunque el fichero sea pequeño, y no por comodidad: la presentación no tiene
+ * forma de alcanzar `ingestion/` (WP-001/WP-002), y esa imposibilidad es lo que impide que alguien
+ * añada «una comprobación rápida» en el hilo principal el día que haga falta.
+ */
+export interface LoadListsMessage {
+  readonly type: "lists";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly file: File;
+  readonly circuitId: string;
+  /** Cuándo se extrajo de planta, si el usuario lo sabe. Sin fecha no se sabe qué periodo juzga. */
+  readonly extractedAt?: number;
+}
+
+export interface ListsLoadedMessage extends Envelope {
+  readonly type: "lists-loaded";
+  readonly circuitId: string;
+  readonly lists: readonly { readonly list: string; readonly tags: number }[];
+  readonly accepted: number;
+  readonly rejected: number;
+  readonly warnings: readonly string[];
+  readonly unknownLists: readonly string[];
+}
+
+export type ToWorker = StartMessage | CancelMessage | LoadListsMessage;
 
 interface Envelope {
   readonly protocolVersion: number;
@@ -117,12 +183,49 @@ export interface SourceSummary {
   readonly elapsedMs: number;
 }
 
+/**
+ * Los agregados que alimentan las vistas.
+ *
+ * Viajan ya calculados porque recorrer las lecturas para contarlas es trabajo, y el hilo principal
+ * no hace trabajo (WP-001). Son unos cientos de números frente a las cientos de miles de lecturas
+ * que los produjeron.
+ */
+export interface CircuitViews {
+  readonly hourly: HourlyProfile;
+  readonly activity: ActivityBand;
+  /** Solo cuando el circuito tiene listas de planta cargadas: sin ellas no hay con qué contrastar. */
+  readonly inventory?: {
+    readonly counts: readonly { readonly tagClass: string; readonly count: number; readonly truth: string; readonly action: string }[];
+    readonly listsLoaded: readonly string[];
+  };
+  /** Grupos detectados por aristas exclusivas (R-DAT-012). Uno solo si no hay circuitos mezclados. */
+  readonly cohorts: readonly { readonly id: number; readonly vehicles: readonly string[] }[];
+  /** Expediente reducido por AGV: búsqueda por identificador (UX_SPEC §4.1). Sin tasa de salud. */
+  readonly agvDossiers: readonly AgvDossier[];
+  /** Expediente reducido por tag. */
+  readonly tagDossiers: readonly TagDossier[];
+  /** Solo si el circuito tiene la lista `circuito` cargada con orden: sin ella no hay con qué alinear. */
+  readonly vsystemContrast?: readonly VsystemComparisonRow[];
+  /** Fotogramas del replay, en fracción temporal — nunca posición física (`PERFORMANCE_BUDGET.md` §6). */
+  readonly replay: readonly SerializedReplayFrame[];
+}
+
+/** `ReplayFrame` tal como cruza el `postMessage`: el mapa de vehículos, ya como pares. */
+export interface SerializedReplayFrame {
+  readonly atUtcMs: number;
+  readonly vehicles: readonly (readonly [string, VehicleReplayState])[];
+}
+
 export interface CompleteMessage extends Envelope {
   readonly type: "complete";
   readonly summary: SourceSummary;
   readonly readings: readonly Reading[];
   readonly quarantine: readonly QuarantinedRow[];
   readonly warnings: readonly string[];
+  /** Presente solo si la importación se acumuló en un circuito. */
+  readonly accumulation?: AccumulationReport;
+  /** Vistas del conjunto analizado. Ausente si no hubo nada que agregar. */
+  readonly views?: CircuitViews;
 }
 
 export interface ErrorMessage extends Envelope {
@@ -145,7 +248,8 @@ export type FromWorker =
   | ProgressMessage
   | CompleteMessage
   | ErrorMessage
-  | CancelledMessage;
+  | CancelledMessage
+  | ListsLoadedMessage;
 
 /**
  * `Omit` sobre una unión colapsa a las claves comunes y pierde el discriminante. Distribuyendo

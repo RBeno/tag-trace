@@ -1,8 +1,8 @@
 ---
 document_id: TT-TRACE-001
-version: 0.7.0
+version: 0.11.0
 status: baseline-candidate
-last_updated: 2026-09-17
+last_updated: 2026-09-20
 ---
 
 # Matriz de trazabilidad
@@ -29,7 +29,7 @@ La matriz se ampliará hasta una relación automática cuando exista código. En
 | NFR-010–012, NFR-016 | ADR-0001, ADR-0009, ADR-0014 | Build/PWA | Offline, update, rollback | F6/G6 |
 | NFR-013 | UX specification | Presentación | E2E/accesibilidad | F6/G6 |
 
-## Implementación en F1a·0
+## Implementación
 
 Lo cubierto hoy por código ejecutable. Lo que no aparece aquí **no está implementado**, aunque su
 regla exista: la matriz no es una lista de intenciones.
@@ -48,9 +48,47 @@ regla exista: la matriz no es una lista de intenciones.
 | Cuarentena con motivo y procedencia | `src/domain/reading.ts`, `src/ingestion/importer.ts` | «filas no aceptadas · se conservan con su motivo» |
 | R-DAT-009 una fila sin tag no es un defecto | `src/domain/reading.ts` (`isDefect`), `src/ingestion/importer.ts` | «una fila con instante y AGV pero sin tag no es un defecto» |
 | R-DAT-010 codificación detectada y declarada | `src/ingestion/decode.ts` | «codificación · no se supone UTF-8» |
+| TC-015 / TC-021 unión por tramo común | `src/ingestion/union.ts` | `tests/unit/circuit.test.ts` |
+| R-DAT-007 cobertura y borde parcial | `src/domain/coverage.ts` | `tests/unit/circuit.test.ts` |
+| INV-010 / INV-011 hash semántico e ida y vuelta | `src/domain/semantic-hash.ts`, `src/persistence/agvproj.ts` | `tests/unit/agvproj.test.ts`, `tests/e2e/protocolo.spec.ts` |
+| TC-036–TC-041 acumulación, persistencia, protocolo y red | `src/persistence/store.ts`, `workers/import.worker.ts` | `tests/e2e/` |
+| TC-042–TC-047 inventario contrastado | `src/domain/inventory.ts` | `tests/unit/inventory.test.ts` |
+| R-DAT-016 obsoleto y averiado no se separan con una ventana | `src/domain/inventory.ts` (`classify`) | «un tag en memoria que nadie ha leído jamás…» |
+| R-OPP-011 en memoria **y** existente | `src/domain/inventory.ts` | «…es candidato a obsoleto, y queda unknown» |
+| R-OPP-012 la memoria individual no se observa | `src/domain/inventory.ts` (`truth: "inferred"`) | «un tag que unos leen siempre y otro nunca…» |
+| FR-009 / ALG-005 grafo observado por transiciones | `src/domain/graph.ts` | `tests/unit/graph.test.ts` |
+| FR-011 soporte, cuota y confianza por arista | `src/domain/graph.ts` (`Edge`) | «reconstruye las aristas de un anillo…», «una bifurcación reparte la cuota…» |
+| TC-048 una transición no cruza un hueco de cobertura | `src/domain/graph.ts` (`straddlesGap`) | «no empareja a través de un hueco de cobertura, y lo dice» |
+| TC-049 / R-DAT-013 el mismo instante no ordena | `src/domain/graph.ts` (`sequenceTruth`) | «una arista sostenida en pares del mismo instante…» |
+| TC-050 secuencia `observed` con tiempo `unknown` | `src/domain/graph.ts` (`summariseTime`) | «con la resolución de la fuente por encima del paso real…» |
+| TC-052 / ADR-0013 el sentido decide la dirección | `src/domain/order.ts`, `src/domain/graph.ts` | «el sentido de la fuente decide la dirección…» |
+| FR-003 / R-DAT-006 / ALG-003 afinidad de circuito | `src/domain/affinity.ts`, `workers/import.worker.ts` | `tests/unit/affinity.test.ts`, `tests/e2e/vistas.spec.ts` |
+| TC-053 una fuente ajena no se consolida | `workers/import.worker.ts` (`accumulate`) | «una exportación de otro circuito no se acumula…» |
+| DS-002 / DS-006 / DS-008 importación de listas | `src/ingestion/catalog.ts`, `src/domain/tag-lists.ts` | `tests/unit/catalog.test.ts` |
+| TC-056 las listas sobreviven a una importación | `workers/import.worker.ts` (`accumulate`) | «cargar listas y ver el inventario contrastado…» |
+| R-EVI-006 el programa enuncia, la persona decide | `src/domain/inventory.ts` (`describeAction`) | «cada clase indica qué hay que valorar…» |
+| FR-030 umbrales fuera del código | `src/domain/config.ts` | Todos los módulos los exigen como parámetro: sin ellos no compilan |
+| UX §5.2 las cuatro vistas | `src/domain/activity.ts`, `src/presentation/charts.ts` | `tests/e2e/vistas.spec.ts` |
+| R-DAT-012 agrupamiento por circuito (aristas exclusivas, Union-Find) | `src/domain/cohort.ts` | `tests/unit/cohort.test.ts` |
+| ALG-004 vueltas por AGV, ancla por ciclo dominante (R-GRA-009) | `src/domain/laps.ts` | `tests/unit/laps.test.ts` |
+| ALG-018 expediente de AGV y tag (`UX_SPEC.md` §4.1) | `src/domain/dossier.ts` | `tests/unit/dossier.test.ts` |
+| R-GRA-001 contraste contra Vsystem por alineación de secuencia (LCS) | `src/domain/vsystem.ts` | `tests/unit/vsystem.test.ts` |
+| `PERFORMANCE_BUDGET.md` §6 replay básico determinista, posición como fracción temporal | `src/domain/replay.ts` | `tests/unit/replay.test.ts` |
+| R-GRA-010 / TC-065 antes de la primera lectura es `sin datos`, no silencio | `src/domain/replay.ts` (`stateAt`) | «antes de su primera lectura, el vehículo no tiene posición inventada **ni silencio**», `tests/e2e/f2.spec.ts` |
+| TC-067 / UX §4.1 los dos extremos de cada silencio | `src/domain/dossier.ts` (`InactivityPeriod`) | «cada silencio conserva sus dos extremos…» |
+| TC-068 la banda de actividad no emite un rótulo por celda | `src/presentation/charts.ts` (`activityChart`) | `tests/e2e/vistas.spec.ts` · «la banda de actividad no emite un rótulo por celda» |
 
-No implementado todavía y por tanto sin fila: TC-015 (unión con solape), `.agvproj` y su ida y
-vuelta, INV-010/INV-011 (hash semántico), PERF-D2 medido y la prueba de red.
+**Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
+planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` — y la
+comparación entre dos periodos distantes, que es la única que separa un obsoleto de un tag
+averiado.
+
+**La advertencia anterior queda cerrada, no borrada.** Hasta esta entrega, `inventory.ts` y
+`graph.ts` estaban probados y no eran alcanzables desde la interfaz. Ya lo son: el agrupamiento por
+circuito aparece en el resumen de circuito, las vueltas y la inactividad en el expediente de AGV y
+tag, el grafo contrastado en la tabla de Vsystem, y el propio grafo en el replay. La lección se
+mantiene para la próxima vez: un módulo de dominio nuevo no se da por entregado hasta que exista la
+vista que lo expone, no solo la prueba que lo verifica.
 
 ## Regla de mantenimiento
 

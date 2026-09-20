@@ -1,0 +1,80 @@
+name: Publicar en GitHub Pages
+
+# ADR-0014: «GitHub Pages desde main, con GitHub Actions como origen. Solo se despliega una
+# compilación que haya superado todas las verificaciones». Por eso este workflow no repite los
+# pasos de calidad: llama a los tres ya existentes como workflows reutilizables y el despliegue
+# depende de que los tres terminen en verde, exactamente igual que exige cualquier otro push a main.
+#
+# Se abre en F3, antes de que G6 lo pida formalmente, porque el propietario necesita una URL real
+# para medir PERF-D2 en el dispositivo de referencia (Samsung Galaxy S23 FE) — deuda declarada
+# desde G1 que no se puede cerrar sin esto. No es una aprobación de piloto: el resto de G6
+# (accesibilidad, PERF-D2–D4 completos, informe de aceptación) sigue sin cerrarse.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  codigo:
+    name: Tipos, pruebas y compilación
+    uses: ./.github/workflows/build-quality.yml
+
+  datos:
+    name: Guardián de datos
+    uses: ./.github/workflows/data-guard.yml
+
+  documentos:
+    name: Calidad documental
+    uses: ./.github/workflows/docs-quality.yml
+
+  build:
+    name: Compilar para publicar
+    needs: [codigo, datos, documentos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias exactas
+        run: npm ci
+
+      # Vuelve a comprobar tipos antes de empaquetar (ya lo hace `npm run build`), pero el resultado
+      # que se publica es exactamente el de este paso, no una copia de otra ejecución.
+      - name: Compilar
+        run: npm run build
+
+      - name: Preparar Pages
+        uses: actions/configure-pages@v5
+
+      - name: Empaquetar el resultado
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  pages:
+    name: Publicar
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Desplegar en GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

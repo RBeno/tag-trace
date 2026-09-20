@@ -8,12 +8,37 @@
   --error: #8c1d18;
   --warn: #7a5200;
   --flag: #fff4d6;
+
+  /* Paleta de las vistas. Un solo tono, en rampa ordinal de menor a mayor: la magnitud se lee por
+     claridad y no por matiz, así que un daltónico ve exactamente lo mismo. Validada contra esta
+     superficie (#f6f7f9): L monótona, saltos >= 0.06 y el extremo claro por encima de 2:1. */
+  --viz-series: #2a78d6;
+  --viz-1: #6da7ec;
+  --viz-2: #3987e5;
+  --viz-3: #256abf;
+  --viz-4: #184f95;
+  --viz-5: #0d366b;
+  --viz-grid: #e3e7ee;
+  /* «Sin datos cargados» no es un valor bajo: es la ausencia de dato. Va en gris y con trama, para
+     que no se confunda con un cero ni dependa del color (UX §4, R-DAT-007). */
+  --viz-empty: #9aa2b1;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --ink: #e6e8ec; --muted: #9aa2b1; --line: #333844;
     --bg: #14161a; --panel: #1c1f26;
     --error: #ffb4ab; --warn: #f0c36d; --flag: #3a3212;
+    /* El modo oscuro no es el claro invertido: son los mismos tonos re-escalonados para esta
+       superficie (#1c1f26) y validados contra ella. La rampa se recorre al revés porque aquí lo
+       cercano a cero es lo que debe fundirse con el fondo. */
+    --viz-series: #3987e5;
+    --viz-1: #184f95;
+    --viz-2: #256abf;
+    --viz-3: #3987e5;
+    --viz-4: #86b6ef;
+    --viz-5: #cde2fb;
+    --viz-grid: #2a2f3a;
+    --viz-empty: #5b6270;
   }
 }
 * { box-sizing: border-box; }
@@ -54,6 +79,36 @@ tr.flagged { background: var(--flag); }
 .chooser { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
 .chooser select { font: inherit; padding: 6px 10px; min-height: 24px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+/* --- Vistas ---------------------------------------------------------------
+   Nada de esto diagnostica: dibuja lo observado. El color nunca es el único medio (UX §4), así que
+   cada gráfico lleva además rótulos directos y su tabla equivalente. */
+.chart { margin: 0 0 20px; }
+.chart:last-child { margin-bottom: 0; }
+.chart figcaption { color: var(--muted); font-size: 0.85rem; margin: 0 0 8px; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .axis { fill: var(--muted); font-size: 10px; }
+.chart .value { fill: var(--ink); font-size: 10px; font-weight: 600; }
+.chart .grid { stroke: var(--viz-grid); stroke-width: 1; }
+/* Alternativa accesible: la misma información en tabla, plegada para no duplicar la pantalla. */
+.chart details { margin-top: 8px; }
+.chart details summary { color: var(--muted); font-size: 0.85rem; cursor: pointer; }
+.chart table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 8px; }
+.chart table th, .chart table td {
+  text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.chart table th { color: var(--muted); font-weight: 600; }
+/* Tablas de datos fuera de un gráfico: expediente, contraste contra Vsystem y replay. Ajustan al
+   ancho disponible y parten el texto largo, porque una tabla que obliga a arrastrar en horizontal
+   no se lee (UX §5.1). */
+table.data { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 8px; }
+table.data th, table.data td {
+  text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line);
+  vertical-align: top; overflow-wrap: anywhere; }
+table.data th { color: var(--muted); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 0;
+  color: var(--muted); font-size: 0.8rem; list-style: none; padding: 0; }
+.legend li { display: flex; align-items: center; gap: 6px; }
+.legend .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+
 @media (max-width: 560px) {
   .facts { grid-template-columns: 1fr; gap: 2px 0; }
   .facts dd { margin-bottom: 8px; }

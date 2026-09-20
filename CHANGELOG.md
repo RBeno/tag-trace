@@ -2,6 +2,400 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.4.0] - 2026-09-20
+
+Despliegue en GitHub Pages, adelantado desde G6 para poder medir por fin PERF-D2 en el dispositivo
+de referencia (Samsung Galaxy S23 FE) — deuda declarada desde G1 que necesitaba una URL real.
+
+### Añadido
+
+- **`.github/workflows/deploy-pages.yml`**: publica en GitHub Pages desde `main`. No repite las
+  verificaciones existentes: llama a `build-quality.yml`, `data-guard.yml` y `docs-quality.yml`
+  como *reusable workflows* (`workflow_call`, añadido a los tres) y solo compila y despliega si los
+  tres terminan en verde, tal como fija `ADR-0014` («solo se despliega una compilación que haya
+  superado todas las verificaciones»). No hizo falta tocar `vite.config.ts` ni `public/`: ya
+  publican bajo `/tag-trace/` con rutas relativas desde que se escribió la PWA.
+
+### Notas
+
+- Esto es infraestructura de despliegue, no la aprobación del piloto: `PHASE_GATES.md` G6 marca
+  solo este punto, y el resto —accesibilidad, PERF-D2–D4 completos, informe de aceptación— sigue
+  sin cerrarse.
+
+## [3.3.0] - 2026-09-20
+
+F3 abierta por el propietario («Continúa con Fase 3»), y la primera prueba del producto en un
+navegador contra un circuito de forma realista —54 vehículos, 150 tags, 98.400 lecturas, 18 h a
+resolución de segundo—. Encontró tres cosas que la suite en verde no había detectado.
+
+### Corregido
+
+- **El replay llamaba «silencio» a un vehículo que aún no había tenido su primera lectura**
+  (R-GRA-010, nueva). Un silencio afirma que una posición conocida deja de confirmarse; antes de la
+  primera lectura no hay posición que dejar de confirmar, así que lo que hay es **ausencia de datos
+  para ese objeto** —R-DAT-007 acotado a un objeto—. En el primer fotograma de una ventana real eso
+  presentaba 53 de 54 vehículos como averiados, con estado `unknown` y una fecha de inicio del
+  silencio que además cambiaba al mover el deslizador. Ahora sale `sin datos` y dice cuándo llega
+  esa primera lectura, que es lo único que el dato sostiene.
+  **El caso de prueba TC-065 pedía literalmente el comportamiento defectuoso**, y la prueba
+  correspondiente pasaba. Se corrigen los dos, y queda anotado en `TEST_STRATEGY.md`: lo que hay que
+  recordar no es el defecto, sino que una prueba en verde lo sostenía.
+- **La banda de actividad emitía un rótulo por celda**: con 54 vehículos y 96 tramos son 10.368
+  nodos, el 86 % de toda la página, y una tarea de **958 ms** bloqueando el hilo principal justo
+  después de importar — el modo de fallo exacto con el que el prototipo se cayó en el móvil. La
+  celda se deduce ahora de la posición del puntero y se lee en una región viva, que además se
+  comporta mejor con lector de pantalla que cinco mil títulos. Medido después: **7.275 nodos en vez
+  de 12.458 y 340 ms en vez de 958**.
+- **Las tablas del expediente, del contraste y del replay no tenían estilo propio** y usaban el del
+  navegador, que dimensiona por contenido: en pantalla de móvil la del expediente medía 469 px sobre
+  360 y había que arrastrar en horizontal para leerla, justo lo que `UX_SPEC.md` §5.1 prohíbe.
+
+### Añadido
+
+- **Cada periodo de inactividad muestra sus dos extremos**: por dónde se fue y por dónde volvió
+  (`UX_SPEC.md` §4.1, que lo exigía desde F0). Volver al mismo tag y volver más adelante son hechos
+  distintos —el primero dice que estuvo ahí parado, el segundo que siguió circulando sin ser leído—
+  y el expediente los muestra **sin elegir entre ellos**: separarlos del todo exige el contraste con
+  la cohorte y las calles configuradas que OQ-B04 aún no ha dado.
+- **El replay ordena por estado**, no por identificador: primero lo que tiene posición, después lo
+  que no. Con 54 vehículos, el orden alfabético enterraba a los pocos en movimiento.
+- **El expediente va antes que las vistas.** Es la vía de trabajo declarada más frecuente y quedaba
+  a 3.569 px del principio en móvil; ahora, a 2.120.
+
+### Cambiado
+
+- El subtítulo decía «Importador de lecturas · F1a·0» cuando el producto acumula circuitos, contrasta
+  inventario, segmenta vueltas y reproduce el recorrido.
+
+## [3.2.0] - 2026-09-20
+
+Los cinco elementos programables que quedaban pendientes de G2 (Parte 20), construidos, probados y
+alcanzables desde la interfaz, más dos decisiones del propietario sobre el circuito de referencia y
+el plan de aceptación.
+
+### Añadido
+
+- **`src/domain/cohort.ts`** (R-DAT-012): agrupamiento por circuito mediante Union-Find sobre las
+  aristas observadas. Un vehículo sin ninguna arista compartida sale en su propio cohorte de uno, en
+  vez de forzarse dentro de un grupo ajeno.
+- **`src/domain/laps.ts`** (ALG-004): segmentación de vueltas por AGV usando como ancla el ciclo
+  dominante del grafo cuando no hay ancla declarada (R-GRA-009, nueva). Toda vuelta segmentada así
+  es `inferred`, nunca `observed`, y la segmentación se hace por cohorte para no mezclar circuitos.
+- **`src/domain/dossier.ts`** (ALG-018, `UX_SPEC.md` §4.1): expediente navegable de AGV y de tag —
+  vueltas, inactividad, última lectura, comparación contra la mediana del cohorte, nunca de la
+  flota entera.
+- **`src/domain/vsystem.ts`**: contraste contra Vsystem por alineación de secuencia (LCS),
+  reproduciendo en forma general el método validado a mano sobre PC2. Marca sustituciones
+  candidatas con su evidencia y su estado `inferred`.
+- **`src/domain/replay.ts`**: replay básico determinista. La posición en un tramo es fracción
+  temporal, nunca física (`PERFORMANCE_BUDGET.md` §6); los fotogramas se precalculan enteros en el
+  Worker y viajan como datos pequeños, nunca las lecturas otra vez (WP-001).
+- **`fixtures/synthetic/anillo/`**: los fixtures de `acumulacion/` son deliberadamente lineales y no
+  sirven para ejercitar un ciclo real, así que estos cinco módulos necesitaban su propio fixture con
+  un anillo que de verdad se repite.
+
+### Corregido
+
+- El expediente de AGV/tag calculaba cada uno por separado, comparando contra el resto del cohorte
+  con un filtrado propio: O(vehículos² × lecturas). Se corrigió a una sola pasada de agrupamiento
+  por vehículo antes de construir cualquier expediente, sin cambiar el resultado.
+- El replay devolvía un vehículo en tránsito con fracción 0 cuando un fotograma caía exactamente en
+  el instante de una lectura con otra lectura próxima después. Debía salir en el tag, con estado
+  `observed`.
+
+### Decidido
+
+- **SE2/4 pasa a ser el circuito priorizado** para las pruebas de aceptación de F2, mientras se
+  recoge más volumen de PC2. Los hechos operativos concretos son de planta y quedan fuera del
+  repositorio.
+- **OQ-B05 aceptada de forma acotada**: el propietario valida en persona con los datos reales ya
+  aportados, en su propio dispositivo. El criterio de rechazo de una fase sigue sin definirse.
+
+## [3.1.0] - 2026-09-18
+
+Cuatro peticiones del propietario, todas dentro de F2: la afinidad que faltaba en G1, las listas de
+tags declaradas por el importador, la acción a valorar cuando el dato no decide, y las primeras
+cuatro vistas del producto.
+
+### Añadido
+
+- **`src/domain/affinity.ts`**: afinidad de circuito (FR-003, R-DAT-006, ALG-003). Compara los tags
+  de una fuente contra los que el circuito ya conoce **antes** de escribir en el almacén, porque una
+  vez unida una fuente ajena no hay forma de separarla —la unión no conserva de qué circuito venía
+  cada lectura—. **No rechaza la importación**: una fuente sospechosa se sigue mostrando, y lo que
+  se niega es consolidarla (FR-003 separa analizar de consolidar). El primer fichero de un circuito
+  vacío se acepta declarando que no se ha comprobado, en vez de bloquear el arranque del circuito.
+- **`src/ingestion/catalog.ts`** y **`src/domain/tag-lists.ts`**: importador de listas de tags
+  (circuito virtual, memoria, mantenimiento, emergencia, carga online, críticos). Estas listas **se
+  crean a mano** porque no existe forma de descargarlas del sistema de planta, así que el programa
+  declara su propia estructura mínima (`lista;tag`, con `orden` y `nota` opcionales) y la enseña en
+  la interfaz **antes** de pedir el fichero. Tolera lo que una persona escribe de verdad: acentos,
+  mayúsculas, plural. Una lista con un nombre que el producto no reconoce **se conserva con su
+  nombre y se avisa**, nunca se rechaza — el propietario ya anticipó ampliaciones.
+- **Las listas viajan con el circuito**, no aparte (`src/persistence/store.ts`, `STORE_VERSION` 2
+  con su peldaño de migración). Son parte del estado del circuito en el momento del análisis:
+  repetir un análisis de hace tres meses usa las listas de hace tres meses. Si se cargan de nuevo
+  tras aplicar los cambios que el inventario propone, el análisis siguiente las recoge actualizadas
+  sin alterar los anteriores.
+- **R-EVI-006**: el programa enuncia la pregunta, la persona decide. Un tag en memoria sin ninguna
+  lectura puede estar retirado o averiado, y el dato no distingue las dos cosas (R-DAT-016); el
+  programa no elige, pero tampoco calla — indica qué hay que valorar (`src/domain/inventory.ts`,
+  `TagAction`) y esa indicación queda junto al hallazgo, no hay que reconstruirla cada vez.
+- **Cuatro vistas** (`src/presentation/charts.ts`, `src/domain/activity.ts`): cobertura cargada,
+  perfil horario, actividad por vehículo e inventario de tags. SVG propio y sin dependencias
+  (ADR-0014); los agregados se calculan en el Worker y viajan como unos cientos de números, nunca
+  las lecturas otra vez (WP-001). Paleta de un solo tono en rampa ordinal, validada en los dos modos
+  contra sus superficies reales. Cada gráfico lleva su tabla equivalente, así que el color nunca es
+  el único medio (UX §4), y los tramos sin cobertura se dibujan con trama, distintos de un silencio
+  (R-DAT-007).
+- `src/domain/config.ts`: los umbrales de afinidad, ceguera y grafo en un solo sitio, marcados
+  `draft` mientras no los fije el propietario. Ninguno tiene valor por defecto en su función: la
+  llamada no compila sin decidirlos, que es la forma de que no se cuelen como constantes ocultas.
+- Fixtures sintéticos: `fixtures/synthetic/listas/` y `fixtures/synthetic/acumulacion/circuito-ajeno.csv`.
+- TC-053 a TC-058, y 22 pruebas nuevas (Node y navegador): `tests/unit/affinity.test.ts`,
+  `tests/unit/catalog.test.ts`, `tests/e2e/vistas.spec.ts`.
+
+### Corregido
+
+- **Cargar una fuente nueva borraba en silencio las listas del circuito.** `saveCircuit` reescribe
+  el objeto entero, y `accumulate()` no arrastraba `lists` al guardar. Lo destapó la prueba de
+  navegador que carga listas y después importa una segunda ventana: el inventario desaparecía sin
+  que nada lo dijera.
+- **El texto de los gráficos se leía ilegible.** El SVG se escala con su `viewBox`; con un lienzo de
+  1000 unidades pintado en un panel de unos 600 píxeles, las etiquetas de los vehículos se
+  encogían hasta pisarse. Ni los tipos ni las pruebas lo detectan — solo mirar el render. El lienzo
+  se acercó al ancho real de pintado.
+
+### Verificación
+
+- `tsc --noEmit` limpio, **109 pruebas de Node y 15 de navegador en verde**, `vite build` correcto,
+  guardianes documental y de datos correctos.
+- Render inspeccionado a mano tras el ajuste de escala: las cuatro vistas legibles en el ancho real
+  del panel.
+
+### Pendiente
+
+- Las listas se contrastan hoy sin las **vueltas** del vehículo (ALG-004): la normalización de
+  R-OPP-010 sigue siendo aproximada hasta que existan.
+- La afinidad usa umbrales `draft` (60 % compatible, 20 % ajeno, 5 tags mínimos), justificados por
+  el contraste de PC2 pero no aprobados por el propietario.
+
+## [3.0.0] - 2026-09-17
+
+**F2 abierta** por el propietario con «Continúa Fase 2», y su cimiento entregado: el grafo observado.
+
+### Gobierno
+
+- `docs/project_state.json` pasa a `F2 / Grafo físico y replay básico`, con `CONTINÚA FASE 3` como
+  siguiente transición. La aprobación es del propietario; ninguna IA aprueba su propio cambio de
+  fase (ADR-0010).
+- **G1 se cierra con tres criterios sin cumplir, y se dicen en lugar de marcarse**: el plan de
+  aceptación local de F1 (OQ-B05), la afinidad de circuito —que hoy no impide cargar en un circuito
+  la exportación de otro— y PERF-D2 en el Galaxy S23 FE, que solo puede medir el propietario. Los
+  tres pasan a G2 como deuda declarada. Marcar una casilla no demostrada convertiría la puerta en un
+  trámite, que es justo lo que `AI_DEVELOPMENT_GOVERNANCE.md` prohíbe.
+
+### Añadido
+
+- **`src/domain/graph.ts`**: transiciones por vehículo y grafo observado con soporte, vehículos
+  distintos, cuota entre las salidas del nodo, y estado de verdad **separado para la secuencia y
+  para el tiempo**. Un tramo puede ser `observed` en secuencia y `unknown` en tiempo, y con
+  resolución de minuto eso es lo normal, no la excepción.
+- TC-048 a TC-052 con diez pruebas.
+
+### Las tres trampas que el grafo evita, y por qué tienen prueba propia
+
+Ninguna produce un error visible: las tres producen un grafo **plausible y equivocado**.
+
+- **Una transición no cruza un hueco de cobertura.** Entre dos ventanas separadas por semanas, la
+  última lectura de una y la primera de la otra son consecutivas en la lista y no en la realidad.
+  Emparejarlas inventa una arista entre dos puntos cualesquiera del circuito, con un tiempo de tramo
+  de semanas. Se descartan y **se cuentan**: si la cifra es alta, lo que se está mirando son varias
+  ventanas y conviene saberlo antes de leer el grafo.
+- **Dos lecturas en el mismo instante no ordenan nada** (R-DAT-013). Una arista sostenida en ellas
+  no puede ser `observed` **por mucha cuota y mucho soporte que tenga**: lo que la sostiene es la
+  posición en la pila, no el reloj. Dos tags leídos siempre a la vez son un punto, no dos.
+- **El sentido de la fuente decide la dirección.** La misma pila leída al revés produce el grafo
+  invertido, y sin síntoma. Es el hallazgo que obligó a corregir ADR-0013, y ahora tiene prueba.
+
+### Decidido
+
+- Los umbrales del grafo tampoco tienen valor por defecto, por la misma razón que los del
+  inventario. La resolución de la fuente entra como parámetro porque es una propiedad **medida** del
+  fichero (R-DAT-015), no un umbral elegido.
+
+### Pendiente, y dicho para que no parezca terminado
+
+`graph.ts` e `inventory.ts` están probados y **no son alcanzables desde la interfaz**. El dominio
+crece mientras la superficie visible del producto no se mueve, que es la forma exacta en que el
+prototipo acabó con un monolito y doce pruebas. El siguiente incremento es la vista que los expone,
+no un módulo más. Siguen fuera: las vueltas (ALG-004), el agrupamiento por circuito (R-DAT-012), el
+contraste contra Vsystem y el replay.
+
+## [2.2.0] - 2026-09-17
+
+El universo de memoria, y el tag que existe en la lista y no en el suelo.
+
+El propietario aporta qué contiene realmente la memoria de un vehículo: los tags del circuito
+virtual, los de mantenimiento, los de sustitución de emergencia y **tags obsoletos que se retiraron
+del suelo y nunca se borraron de la lista**. Los vehículos, además, pueden no estar bien
+actualizados, así que uno arrastra obsoletos que otro ya no tiene.
+
+Esa cuarta categoría es la que cambia las cuentas, y en la dirección contraria a la esperada. DS-008
+llevaba desde F0 declarada como «requisito de toda tasa de lectura», con la idea implícita de que
+tenerla desbloquearía la salud. **No la desbloquea: primero hay que restarle lo que no existe.** Un
+tag obsoleto está en memoria y no es una oportunidad, así que aplicar la regla tal como estaba
+escrita habría pasado de «no hay tasa de lectura» a «una tasa que cuenta como fallo tags que no están
+instalados» — peor, porque vendría con una lista detrás y parecería fundada.
+
+### Añadido
+
+- **`src/domain/inventory.ts`**: clasificación del universo de tags cruzando **declarado × memoria ×
+  observado**. Seis clases, sin grafo, sin vueltas y sin ninguna constante industrial: es pertenencia
+  a conjuntos y recuentos. Distingue el punto ciego de configuración (declarado y en ninguna memoria)
+  del candidato a obsoleto (en memoria y jamás leído) y de la ceguera parcial (unos lo leen siempre y
+  otros nunca).
+- **`src/domain/truth.ts`**: los cinco estados de verdad como tipo propio. Existían solo en el
+  glosario y en la prosa; ahora el compilador los conoce.
+- **R-OPP-011**: una oportunidad elegible exige **dos** condiciones, en memoria **y existente**.
+- **R-OPP-012**: con lista maestra, la memoria de un vehículo concreto es `expected`, nunca
+  `observed`; la desviación individual se infiere y se declara como inferencia.
+- **R-DAT-016**: un tag en memoria que nadie ha leído jamás es candidato a obsoleto, no un hallazgo.
+  Con una sola ventana, obsoleto y averiado producen el mismo dato y el estado es `unknown`.
+- **R-TIM-008**: la cadencia de extracción y la detección de cambios son cosas distintas. Extraer
+  poco y espaciado degrada la fidelidad con que se reconstruye el circuito, pero **no impide detectar
+  cambios entre dos periodos distantes**: eso exige dos muestras buenas, no continuidad.
+- TC-042 a TC-047 y nueve pruebas que las ejercitan, incluida la que hoy no se sabría producir a mano
+  —un tag declarado que ninguna memoria contiene— y la que impide que un vehículo con dos lecturas
+  en toda la ventana convierta en ciego a medio circuito.
+- `CONFIG_SCHEMA.md` §3.8: las cuatro listas como configuración versionada, con `scope` distinguiendo
+  una lista maestra de un inventario por vehículo, porque decide el estado de verdad de todo lo
+  derivado.
+
+### Corregido
+
+- **`TRACEABILITY_MATRIX.md` afirmaba que no estaban implementados** TC-015, `.agvproj`,
+  INV-010/INV-011, PERF-D2 y la prueba de red. Los cinco lo están desde [2.0.0] y [2.1.0]. Una matriz
+  de trazabilidad desactualizada es peor que no tenerla: se consulta para saber qué está cubierto.
+
+### Decidido
+
+- Los umbrales del criterio de ceguera **no tienen valor por defecto**, y la función no compila sin
+  ellos. Un valor por defecto es una constante industrial disfrazada con el agravante de que nadie la
+  ve; obligando a pasarlos, quien los elige tiene que sacarlos de la configuración del circuito.
+
+### Pendiente, y dicho para que no parezca terminado
+
+`inventory.ts` está probado pero **todavía no es alcanzable desde la interfaz**: falta importar las
+listas de planta (DS-002, DS-006, DS-008), y para eso hace falta ver un fichero real. Escribir un
+lector para una forma que no se ha visto es lo que ha fallado cada vez en este proyecto.
+
+## [2.1.0] - 2026-09-17
+
+Pruebas de navegador. Existen porque `src/persistence/store.ts` y la acumulación del Worker
+**no se habían ejecutado nunca**: compilaban, estaban tipadas y ninguna prueba las tocaba. Las 71
+pruebas de Node cubrían las piezas puras, que son las que corren sin navegador, y con ellas se
+estaba afirmando que el producto acumula.
+
+Encontraron cuatro defectos en la primera ejecución. Era el objetivo.
+
+### Corregido
+
+- **`npm run preview` no había servido nunca una compilación funcional.** `vite.config.ts` usaba la
+  base `/tag-trace/` al compilar y `/` al servir, porque solo miraba `command`, que vale `"serve"`
+  tanto en desarrollo como en vista previa. El resultado: la vista previa devolvía `index.html` para
+  cada recurso y la página salía en blanco. No se notaba porque en desarrollo funciona y publicado
+  también; solo fallaba justo donde uno va a comprobar el build antes de publicarlo.
+- **La confirmación de exportación pisaba mensajes posteriores.** Se emitía *después* de disparar la
+  descarga, así que llegaba cuando el usuario ya podía haber hecho otra cosa y sobrescribía el
+  mensaje de esa otra cosa. Ahora se muestra antes.
+- **Volver a elegir el mismo fichero no importaba nada**, y en este producto reimportar una
+  exportación ya cargada es normal: los solapes son deliberados. El valor del selector se reinicia
+  al abrirlo.
+- **Y el primer arreglo de eso introdujo uno peor**, que la misma ejecución destapó: limpiar el
+  valor al procesar el fichero vacía la `FileList` y con ella el `File` que aún no se ha leído, así
+  que `arrayBuffer()` fallaba y un `.agvproj` válido se rechazaba solo.
+- **En CI el servidor de vista previa arrancaba y nadie lo encontraba.** Sin `--host`, Vite anuncia
+  `localhost`, que en un runner puede resolver a IPv6 mientras Playwright sondea la IPv4 que tiene
+  declarada. El único síntoma era «timed out waiting for webServer», que no dice qué pasó. Se fija
+  `--host 127.0.0.1` y se redirige la salida del servidor al registro, para que un fallo futuro
+  traiga escrito su motivo en lugar de haber que deducirlo.
+
+### Añadido
+
+- **Nueve pruebas de navegador** (TC-036 a TC-041): acumulación real con dos exportaciones
+  solapadas y con dos disjuntas, persistencia al recargar, cancelación que no deja nada escrito,
+  ida y vuelta de `.agvproj` con un byte alterado que se rechaza **sin tocar el almacén**, y la
+  **prueba de red** de `SECURITY_PRIVACY.md` §4, que llevaba desde F0 sin ejecutarse nunca.
+- **PWA**: manifiesto, icono y un service worker que sirve el esqueleto sin red. Red primero, caché
+  como respaldo, y solo el propio origen. CSP por `<meta>` con el límite que ADR-0014 ya declara.
+- **PERF-D2 medido** y registrado con sus condiciones (`PERFORMANCE_BUDGET.md` §3.1): 100.000
+  eventos en 1.330 ms, con p95 de hueco de fotograma de **17 ms** frente al objetivo de 50. El
+  **máximo de 341 ms no cumple** y se dice: es el clon de las cien mil lecturas al llegar del
+  Worker, y se corrige enviando una página en lugar de todo. La cifra **no** es la del móvil de
+  referencia, que solo puede medir el propietario.
+- Las pruebas de navegador entran en CI como trabajo aparte, con su rastro guardado si fallan.
+- **`vitest.config.ts` declara el territorio de cada corredor**: Vitest solo `tests/unit/`,
+  Playwright solo `tests/e2e/`. Sin eso Vitest recogía también los ficheros de Playwright —el patrón
+  por defecto no los distingue— y fallaba con «Playwright Test did not expect test.describe() to be
+  called here». Lo detectó CI y no la ejecución local, porque el filtro con el que se revisó la
+  salida local no incluía la palabra `FAIL` y se dio por verde algo que estaba en rojo.
+
+## [2.0.0] - 2026-09-17
+
+F1a: el producto deja de olvidar. Hasta ahora importaba un fichero y lo perdía al cerrar la
+pestaña, lo cual es inservible cuando el servidor de planta guarda dos o tres días y el modo de
+trabajo real es acumular muchas extracciones pequeñas a lo largo de meses. Todo lo que ha tenido
+valor en este proyecto salió de comparar dos ventanas separadas por semanas, y eso solo existe si
+alguien las guarda.
+
+### Añadido
+
+- **Almacén local con migraciones explícitas desde la versión 1** (`src/persistence/store.ts`). Es
+  la única parte del sistema cuyos datos no se pueden volver a pedir: una ventana perdida no vuelve.
+  El prototipo se quedó en IndexedDB v1 sin ninguna ruta de migración, así que su primer cambio de
+  forma le habría costado justo esos datos. Subir la versión sin escribir su peldaño falla al abrir.
+- **Contenedor `.agvproj`** (ADR-0012) con manifiesto, hash por sección y hash global, límites de
+  descompresión y **carga transaccional**: una sección corrupta invalida la carga entera y el
+  almacén local no se toca. Zip propio, **sin dependencias nuevas**, sobre `CompressionStream`.
+- **Unión de varias exportaciones** (ALG-002, `src/ingestion/union.ts`). Dos exportaciones son
+  cortes de la misma pila: el solape se cuenta una vez y conserva las dos procedencias. Nunca se
+  deduplica por huella de fila, que habría borrado 114 maniobras legítimas de 116 filas idénticas.
+- **Cobertura** (R-DAT-007, `src/domain/coverage.ts`). Fuera de lo cargado no hay silencio, hay
+  ausencia de datos. La cobertura de una fuente termina en su último instante **completo**: el
+  último es el momento en que se pulsó el botón y casi nunca está entero.
+- **Hash semántico** (`src/domain/semantic-hash.ts`) con serialización canónica y la
+  canonicalización numérica que ADR-0013 exige, versionada: si la regla cambia, los hashes viejos
+  dejan de coincidir a propósito en lugar de coincidir por casualidad.
+- La interfaz acumula en un circuito con nombre, muestra la cobertura junto a cualquier cifra
+  temporal, y exporta y reabre `.agvproj`.
+
+### Decidido
+
+- **El dispositivo acumula, el fichero viaja** (`DATA_CONTRACTS.md` §9.1). `.agvproj` no lleva el
+  bruto, así que son dos almacenes con propósitos distintos. La acumulación ocurre dentro del
+  Worker, que lee y escribe el almacén por su cuenta: mandarle las lecturas guardadas por
+  `postMessage` las clonaría —defecto P4 del prototipo— y unirlas en el hilo principal recorrería
+  dos series de cientos de miles de elementos donde WP-001 lo prohíbe.
+
+### Corregido durante el desarrollo
+
+- **El guardián de ratio de descompresión rechazaba datos legítimos** y no protegía de lo que decía
+  proteger: un JSON de lecturas comprime muchísimo por sus claves repetidas, y una cabecera que
+  mienta sobre el tamaño ya habría expandido la memoria cuando se comprobase. Se sustituye por un
+  tope **aplicado mientras se descomprime**, que corta el flujo en cuanto la salida excede lo
+  declarado.
+- **La primera unión duplicaba la cola de las fuentes.** Excluir el instante cortado de la
+  comparación es correcto —una ausencia ahí no es un desacuerdo— pero entonces un evento que las dos
+  exportaciones traen en ese instante entraba dos veces. Son dos rangos distintos: se empareja sobre
+  el solape completo y solo se juzga desacuerdo donde ambas están completas.
+
+### Verificado contra dato real
+
+- Las dos ventanas de PC2 en un circuito: 268.724 lecturas, cobertura en **dos tramos** y el hueco
+  de 38,8 días declarado como `sin datos cargados`, nunca como silencio. Volver a cargar la misma
+  exportación encima no cambia ninguna cifra.
+
 ## [1.9.0] - 2026-09-17
 
 El propietario cierra una puerta: el servidor guarda **dos o tres días**, así que la exportación de

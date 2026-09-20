@@ -1,8 +1,8 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.5.0
+version: 0.7.0
 status: baseline-candidate
-last_updated: 2026-09-16
+last_updated: 2026-09-18
 ---
 
 # Glosario controlado
@@ -11,6 +11,8 @@ last_updated: 2026-09-16
 |---|---|
 | AGV | Vehículo guiado automático identificado como texto y analizado de forma individual y colectiva. |
 | Circuito | Unidad principal de trabajo. Agrupa configuración, fuentes, grafo, memoria, análisis e incidencias sin mezclarse con otros circuitos. |
+| Afinidad de circuito | Comparación de los tags de una fuente contra los que el circuito ya conoce, antes de aceptarla como suya. No rechaza la importación —una fuente sospechosa se analiza igual (FR-003)— pero sí impide que se consolide con el resto: una vez unida, no hay forma de separarla, porque la unión no conserva de qué circuito venía cada lectura (R-DAT-006, ALG-003). |
+| Acción a valorar | Lo que el programa indica que hace falta comprobar en planta ante un hallazgo que el dato no resuelve por sí solo, como un tag sin lecturas que puede estar retirado o averiado. El programa no decide ninguna de estas cosas: enuncia la pregunta y la deja registrada; la decisión es siempre de una persona (R-EVI-006). |
 | Vsystem | Fuente teórica/configurada que se contrasta con el comportamiento físico observado; no se asume como verdad física. |
 | Tag | Identificador físico/lógico leído por un AGV. Puede tener una o varias funciones según la configuración o el multicircuito. |
 | Multicircuito (MTC) | Modo de comportamiento vigente **dentro de** un circuito, identificado por un número. Determina cómo actúa un AGV al leer un tag y puede alterar las condiciones físicas de detección, por ejemplo reduciendo el alcance del sensor en un modo degradado. No confundir con «varios circuitos», que es el alcance de F7. |
@@ -43,7 +45,9 @@ last_updated: 2026-09-16
 | Cohorte | Grupo de AGV o de modelos de lector cuyo comportamiento difiere de forma material del resto y exige perfiles esperados separados. Se declara en configuración, no se infiere sola. |
 | Takt | Ritmo de referencia entre unidades producidas, con unidad y vigencia definidas en la configuración local. No existe un valor universal en el código. |
 | Soporte | Cantidad de evidencia independiente que sostiene un nodo, una transición o un perfil: cuántos AGV y cuántas vueltas distintas lo respaldan. Un soporte alto de un solo AGV no equivale a consenso. |
-| Oportunidad elegible | Oportunidad cuyo contexto permite afirmar que el tag pudo leerse. Es el único denominador admitido para la tasa de lectura; las oportunidades censuradas, no recorridas o desconocidas quedan fuera. |
+| Oportunidad elegible | Oportunidad cuyo contexto permite afirmar que el tag pudo leerse. Es el único denominador admitido para la tasa de lectura; las oportunidades censuradas, no recorridas o desconocidas quedan fuera. Exige **dos** condiciones sobre el tag: que esté en la memoria del vehículo y que **exista físicamente** (R-OPP-011). Un tag obsoleto cumple la primera y no la segunda. |
+| Tag obsoleto | Tag que sigue en la lista de memoria de los vehículos y **ya no existe en el suelo**, porque se retiró y nunca se borró de la lista. No produce lectura y no es una oportunidad. No se distingue de un tag averiado dentro de una sola ventana (R-DAT-016). |
+| Universo de memoria | Conjunto de tags que un vehículo puede llegar a leer: circuito virtual, mantenimiento, sustitución de emergencia y obsoletos no borrados. Acota por arriba cualquier tasa de lectura. Cuando la lista es **maestra** —la que cada vehículo debería llevar— el universo es de flota y el contenido individual es `expected`, no `observed` (R-OPP-012). |
 | Pastor | Recorrido de asistencia o acompañamiento, ajeno al recorrido productivo, que debe excluirse del comportamiento esperado. Su identificación en las fuentes sigue abierta (OQ-103). |
 
 ## Estados de verdad
