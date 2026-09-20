@@ -9,6 +9,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Reutilizable desde deploy-pages.yml: la publicación exige la misma verificación que un push
+  # normal a main, no una copia de sus pasos (ADR-0014, «solo se despliega una compilación que haya
+  # superado todas las verificaciones»).
+  workflow_call:
 
 permissions:
   contents: read

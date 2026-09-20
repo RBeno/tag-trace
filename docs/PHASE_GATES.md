@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.11.0
+version: 0.12.0
 status: baseline-candidate
 last_updated: 2026-09-20
 ---
@@ -132,7 +132,12 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
 - [ ] Accesibilidad esencial y errores recuperables.
 - [ ] Pruebas de ausencia de red y datos reales.
 - [ ] Actualización PWA no interrumpe tareas críticas.
-- [ ] GitHub Pages publica solo builds aprobadas.
+- [x] GitHub Pages publica solo builds aprobadas. **Adelantado en F3 (2026-09-20)**: no es la
+      aprobación del piloto, es la infraestructura que la hace posible. `deploy-pages.yml` llama a
+      los tres workflows de verificación como *reusable workflows* y solo despliega si los tres
+      terminan en verde (ADR-0014), sin repetir sus pasos. Se abrió ahora porque medir PERF-D2 en el
+      dispositivo de referencia (Samsung Galaxy S23 FE) —deuda declarada desde G1— exige una URL
+      real, y hasta hoy no existía ninguna.
 - [ ] Release identificable, changelog y retorno verificados.
 - [ ] Informe de aceptación del propietario.
 

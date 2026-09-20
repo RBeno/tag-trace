@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
 last_updated: 2026-09-20
 ---
@@ -143,3 +143,13 @@ existe en `src/`.
 
 La frase de transición a F4 es `CONTINÚA FASE 4`, y ninguna IA la escribe por el propietario
 (ADR-0010).
+
+## Despliegue en GitHub Pages (2026-09-20)
+
+`deploy-pages.yml` publica desde `main` en `https://rbeno.github.io/tag-trace/`, solo si las tres
+verificaciones existentes (tipos/pruebas/build, guardián de datos, calidad documental) terminan en
+verde (ADR-0014). Se adelantó desde G6 para poder medir PERF-D2 en el Samsung Galaxy S23 FE, no
+como aprobación de piloto. **La URL no estará activa hasta que este cambio se fusione en `main`**:
+el workflow dispara con `push` a `main` (y `workflow_dispatch` a mano), no con el push a esta rama.
+Si `actions/configure-pages` no puede habilitar Pages por sí solo, el propietario debe activarlo una
+vez desde Settings → Pages → Source: GitHub Actions.

@@ -2,6 +2,26 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.4.0] - 2026-09-20
+
+Despliegue en GitHub Pages, adelantado desde G6 para poder medir por fin PERF-D2 en el dispositivo
+de referencia (Samsung Galaxy S23 FE) — deuda declarada desde G1 que necesitaba una URL real.
+
+### Añadido
+
+- **`.github/workflows/deploy-pages.yml`**: publica en GitHub Pages desde `main`. No repite las
+  verificaciones existentes: llama a `build-quality.yml`, `data-guard.yml` y `docs-quality.yml`
+  como *reusable workflows* (`workflow_call`, añadido a los tres) y solo compila y despliega si los
+  tres terminan en verde, tal como fija `ADR-0014` («solo se despliega una compilación que haya
+  superado todas las verificaciones»). No hizo falta tocar `vite.config.ts` ni `public/`: ya
+  publican bajo `/tag-trace/` con rutas relativas desde que se escribió la PWA.
+
+### Notas
+
+- Esto es infraestructura de despliegue, no la aprobación del piloto: `PHASE_GATES.md` G6 marca
+  solo este punto, y el resto —accesibilidad, PERF-D2–D4 completos, informe de aceptación— sigue
+  sin cerrarse.
+
 ## [3.3.0] - 2026-09-20
 
 F3 abierta por el propietario («Continúa con Fase 3»), y la primera prueba del producto en un

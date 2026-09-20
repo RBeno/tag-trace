@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Reutilizable desde deploy-pages.yml (ADR-0014): la publicación exige la misma verificación
+  # documental que cualquier otro push a main.
+  workflow_call:
 
 permissions:
   contents: read
