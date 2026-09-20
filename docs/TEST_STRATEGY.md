@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
-last_updated: 2026-09-17
+last_updated: 2026-09-20
 ---
 
 # Estrategia de pruebas y evaluación
@@ -107,6 +107,14 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-056 | Importar una fuente en un circuito que ya tenía listas cargadas | Las listas sobreviven a la importación | Que reescribir el circuito las borre en silencio |
 | TC-057 | Tag declarado y en memoria sin ninguna lectura, visto en la interfaz | `obsoleto-candidato`, `unknown`, y la acción a valorar escrita al lado | Presentarlo como avería, o no decir qué hay que hacer con él (R-EVI-006) |
 | TC-058 | Las cuatro vistas con dos ventanas separadas | Cada una con su tabla equivalente; la cobertura en dos tramos y el hueco con trama | Que un hueco de datos se dibuje igual que un silencio (R-DAT-007) |
+| TC-059 | Dos vehículos que comparten todas sus aristas, en el mismo fichero | Un solo cohorte de dos | Separarlos porque no coinciden exactamente a la vez |
+| TC-060 | Fichero con tres circuitos mezclados bajo un mismo nombre | Tres cohortes, sin pista previa | Que el tercer vehículo, sin transición compartida, se cuele en un grupo ajeno |
+| TC-061 | Ancla de vuelta hallada como ciclo dominante de un cohorte | Vueltas segmentadas, siempre `inferred` aunque los datos sean perfectos | Que una vuelta completa salga `observed` |
+| TC-062 | Una vuelta que cruzaría un hueco de cobertura | Se degrada a parcial | Fingir un recorrido que no se observó |
+| TC-063 | Expediente de un AGV, recuento contra su cohorte | Mediana de los compañeros, no de la flota | Comparar contra vehículos de otro circuito |
+| TC-064 | Un tag declarado sin lecturas, con el anillo observado ocupando su hueco | `sustituido-candidato`, con el tag observado como evidencia | Confundirlo con un tag que sí se lee en otra posición del anillo |
+| TC-065 | Replay en un instante anterior a la primera lectura de un vehículo | `silencio`, sin posición inventada | Interpolar una posición de partida |
+| TC-066 | Replay en un instante exacto de lectura, con otra lectura después | `en-tag`, `observed` | `en-tránsito` con fracción 0 |
 
 Los casos enlazados están desarrollados en `docs/golden/` con la estructura de §5. Son los seis que
 no dependen de información de planta, y constituyen los criterios de aceptación de F1a. El resto se

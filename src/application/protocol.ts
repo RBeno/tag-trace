@@ -15,6 +15,9 @@
 
 import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
 import type { AffinityReport } from "../domain/affinity.js";
+import type { AgvDossier, TagDossier } from "../domain/dossier.js";
+import type { VehicleReplayState } from "../domain/replay.js";
+import type { VsystemComparisonRow } from "../domain/vsystem.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { SourceDirection } from "../domain/order.js";
 import type { MonotonicityReport } from "../ingestion/monotonicity.js";
@@ -195,6 +198,22 @@ export interface CircuitViews {
     readonly counts: readonly { readonly tagClass: string; readonly count: number; readonly truth: string; readonly action: string }[];
     readonly listsLoaded: readonly string[];
   };
+  /** Grupos detectados por aristas exclusivas (R-DAT-012). Uno solo si no hay circuitos mezclados. */
+  readonly cohorts: readonly { readonly id: number; readonly vehicles: readonly string[] }[];
+  /** Expediente reducido por AGV: búsqueda por identificador (UX_SPEC §4.1). Sin tasa de salud. */
+  readonly agvDossiers: readonly AgvDossier[];
+  /** Expediente reducido por tag. */
+  readonly tagDossiers: readonly TagDossier[];
+  /** Solo si el circuito tiene la lista `circuito` cargada con orden: sin ella no hay con qué alinear. */
+  readonly vsystemContrast?: readonly VsystemComparisonRow[];
+  /** Fotogramas del replay, en fracción temporal — nunca posición física (`PERFORMANCE_BUDGET.md` §6). */
+  readonly replay: readonly SerializedReplayFrame[];
+}
+
+/** `ReplayFrame` tal como cruza el `postMessage`: el mapa de vehículos, ya como pares. */
+export interface SerializedReplayFrame {
+  readonly atUtcMs: number;
+  readonly vehicles: readonly (readonly [string, VehicleReplayState])[];
 }
 
 export interface CompleteMessage extends Envelope {

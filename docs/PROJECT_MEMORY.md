@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.6.0
+version: 0.7.0
 status: baseline-candidate
-last_updated: 2026-09-18
+last_updated: 2026-09-20
 ---
 
 # Memoria compacta del proyecto
@@ -92,6 +92,18 @@ F0 documentación → F1 base local e importación → F2 grafo físico → F3 d
 
 En F7, «varios circuitos» significa PC2 y otros circuitos como agregados aislados. No confundir con
 el multicircuito (MTC), que es un modo de comportamiento dentro de un mismo circuito.
+
+## Decisión del propietario (2026-09-20)
+
+- F2 gana expediente navegable de AGV y tag, agrupamiento por circuito, vueltas segmentadas por
+  ciclo dominante, contraste contra Vsystem y replay básico — los cinco alcanzables desde la
+  interfaz, no solo probados en el dominio.
+- **SE2/4 pasa a ser el circuito priorizado** para las pruebas de aceptación, mientras se recoge más
+  volumen de PC2. Los hechos operativos concretos que lo motivan son de planta y quedan fuera del
+  repositorio (`local/notas-se24.md`).
+- **OQ-B05 aceptada de forma acotada**: el propietario valida en persona con los datos reales ya
+  aportados, en su propio dispositivo. El criterio de rechazo de una fase sigue sin definirse y no
+  se inventa.
 
 ## Próxima decisión
 

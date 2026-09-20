@@ -29,10 +29,17 @@ import { mergeIntervals, sourceCoverage, type Interval } from "../src/domain/cov
 import { assessAffinity, tagsOf } from "../src/domain/affinity.js";
 import { activityBand, hourlyProfile } from "../src/domain/activity.js";
 import { buildTagInventory, describeAction } from "../src/domain/inventory.js";
+import { assignCohorts } from "../src/domain/cohort.js";
+import { buildTransitions } from "../src/domain/graph.js";
+import { findDominantCycle, segmentLaps, type Lap } from "../src/domain/laps.js";
+import { buildAllAgvDossiers, buildAllTagDossiers } from "../src/domain/dossier.js";
+import { compareAgainstVsystem } from "../src/domain/vsystem.js";
+import { buildReplayFrames } from "../src/domain/replay.js";
 import { PROVISIONAL_CONFIG } from "../src/domain/config.js";
 import type { CircuitViews } from "../src/application/protocol.js";
 import { isAvailable, loadCircuit, saveCircuit } from "../src/persistence/store.js";
 import type { Reading } from "../src/domain/reading.js";
+import type { SourceDirection } from "../src/domain/order.js";
 import type { AccumulationReport } from "../src/application/protocol.js";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
@@ -141,17 +148,31 @@ async function accumulate(
 const ACTIVITY_BINS = 96;
 
 /**
+ * Fotogramas del replay. No es configuración de planta —no representa nada del circuito, solo
+ * cuántos puntos tiene el control temporal de la interfaz— así que vive aquí como parámetro técnico,
+ * igual que `ACTIVITY_BINS`.
+ */
+const REPLAY_FRAMES = 200;
+
+/**
  * Los agregados que alimentan las vistas.
  *
  * Se calculan **aquí** y no en la interfaz: recorrer doscientas mil lecturas para contarlas por
  * hora es justo el trabajo que WP-001 mantiene fuera del hilo principal, y lo que cruza el
  * `postMessage` son unos cientos de números en lugar de las lecturas otra vez.
+ *
+ * El grafo, las vueltas y el replay se recorren sobre `direction` de la **última fuente
+ * importada**. Para un circuito con varias fuentes de sentido distinto esto es una aproximación: el
+ * reloj (`utcMs`) ya decide el orden cronológico salvo empates exactos, y esos empates son
+ * justamente los que R-DAT-013 marca `inferred` sin sostener topología — el desempate no cambia esa
+ * conclusión, solo cuál de las dos direcciones empatadas se etiqueta.
  */
 async function buildViews(
   circuitId: string | undefined,
   accumulation: AccumulationReport | undefined,
   imported: readonly Reading[],
   zone: string,
+  direction: SourceDirection,
 ): Promise<CircuitViews | undefined> {
   const stored =
     circuitId !== undefined && accumulation?.accumulated === true && isAvailable()
@@ -161,9 +182,48 @@ async function buildViews(
   const coverage = stored?.coverage ?? [];
   if (readings.length === 0) return undefined;
 
+  // --- Grafo, cohortes y vueltas (F2) -------------------------------------------------------
+  //
+  // El agrupamiento va primero porque las vueltas se segmentan **por cohorte**: dos circuitos
+  // mezclados no comparten ancla, y buscar un ciclo dominante sobre los dos a la vez produciría un
+  // ancla sin sentido para ninguno.
+  const { transitions } = buildTransitions(readings, direction, coverage);
+  const cohortAssignment = assignCohorts(readings, transitions);
+
+  const laps: Lap[] = [];
+  for (const cohort of cohortAssignment.cohorts) {
+    const vehicleSet = new Set(cohort.vehicles);
+    const cohortTransitions = transitions.filter((entry) => vehicleSet.has(entry.agvId));
+    const anchor = findDominantCycle(cohortTransitions);
+    if (anchor === null) continue; // Sin ciclo dominante limpio: ese cohorte no tiene vueltas segmentadas.
+    const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
+    laps.push(...segmentLaps(cohortReadings, direction, coverage, anchor.tagId));
+  }
+
+  const coverageEnd =
+    coverage.length > 0
+      ? Math.max(...coverage.map((span) => span.to))
+      : (readings[readings.length - 1] as Reading).time.utcMs;
+
+  const agvDossiers = buildAllAgvDossiers(
+    readings,
+    cohortAssignment,
+    laps,
+    coverageEnd,
+    PROVISIONAL_CONFIG.silence.minGapMs,
+  );
+  const vehicleIds = agvDossiers.map((dossier) => dossier.agvId);
+  const tagDossiers = buildAllTagDossiers(readings, vehicleIds);
+
+  const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, PROVISIONAL_CONFIG.silence.minGapMs);
+
   const views: CircuitViews = {
     hourly: hourlyProfile(readings, zone),
     activity: activityBand(readings, coverage, ACTIVITY_BINS),
+    cohorts: cohortAssignment.cohorts,
+    agvDossiers,
+    tagDossiers,
+    replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
   };
 
   const lists = stored?.lists ?? [];
@@ -191,6 +251,29 @@ async function buildViews(
     actionOf.set(row.tagClass, describeAction(row.action));
   }
 
+  // El contraste contra Vsystem exige un **orden**, no solo la pertenencia al circuito: sin orden,
+  // la lista es un conjunto y no hay secuencia con la que alinear el anillo. El orden declarado es
+  // el orden en que el fichero trae las filas de la lista `circuito` — el importador lo conserva
+  // (`Set` mantiene el primer orden de aparición) — así que no hace falta guardar una columna aparte.
+  const declaredOrder = [...byName("circuito")];
+
+  let vsystemContrast: CircuitViews["vsystemContrast"];
+  if (declaredOrder.length > 0 && cohortAssignment.cohorts[0] !== undefined) {
+    // El anillo observado con el que se contrasta: el ciclo dominante del cohorte mayor, que es el
+    // que tiene más soporte y por tanto la reconstrucción más fiable.
+    const mainCohort = cohortAssignment.cohorts[0];
+    const vehicleSet = new Set(mainCohort.vehicles);
+    const mainTransitions = transitions.filter((entry) => vehicleSet.has(entry.agvId));
+    const anchor = findDominantCycle(mainTransitions);
+    if (anchor !== null) {
+      vsystemContrast = compareAgainstVsystem(
+        declaredOrder,
+        anchor.cycle,
+        new Set(readings.map((entry) => entry.tagId)),
+      );
+    }
+  }
+
   return {
     ...views,
     inventory: {
@@ -202,6 +285,7 @@ async function buildViews(
       })),
       listsLoaded: lists.map((entry) => entry.list),
     },
+    ...(vsystemContrast === undefined ? {} : { vsystemContrast }),
   };
 }
 
@@ -263,7 +347,7 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
     // acumuló, y solo esta fuente si no. Calcularlas siempre sobre el circuito sería mentir cuando
     // la afinidad ha impedido acumular, porque el usuario estaría viendo un conjunto que no
     // incluye el fichero que acaba de cargar.
-    const views = await buildViews(message.circuitId, accumulation, result.readings, zone);
+    const views = await buildViews(message.circuitId, accumulation, result.readings, zone, result.summary.direction);
 
     emit(
       {

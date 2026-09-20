@@ -1,8 +1,8 @@
 ---
 document_id: TT-TRACE-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
-last_updated: 2026-09-17
+last_updated: 2026-09-20
 ---
 
 # Matriz de trazabilidad
@@ -69,17 +69,23 @@ regla exista: la matriz no es una lista de intenciones.
 | R-EVI-006 el programa enuncia, la persona decide | `src/domain/inventory.ts` (`describeAction`) | «cada clase indica qué hay que valorar…» |
 | FR-030 umbrales fuera del código | `src/domain/config.ts` | Todos los módulos los exigen como parámetro: sin ellos no compilan |
 | UX §5.2 las cuatro vistas | `src/domain/activity.ts`, `src/presentation/charts.ts` | `tests/e2e/vistas.spec.ts` |
+| R-DAT-012 agrupamiento por circuito (aristas exclusivas, Union-Find) | `src/domain/cohort.ts` | `tests/unit/cohort.test.ts` |
+| ALG-004 vueltas por AGV, ancla por ciclo dominante (R-GRA-009) | `src/domain/laps.ts` | `tests/unit/laps.test.ts` |
+| ALG-018 expediente de AGV y tag (`UX_SPEC.md` §4.1) | `src/domain/dossier.ts` | `tests/unit/dossier.test.ts` |
+| R-GRA-001 contraste contra Vsystem por alineación de secuencia (LCS) | `src/domain/vsystem.ts` | `tests/unit/vsystem.test.ts` |
+| `PERFORMANCE_BUDGET.md` §6 replay básico determinista, posición como fracción temporal | `src/domain/replay.ts` | `tests/unit/replay.test.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
-planta (DS-002, DS-006, DS-008); las **vueltas** (ALG-004), sin las cuales la normalización de
-R-OPP-010 sigue siendo aproximada y el grafo no puede estudiarse por vuelta como exige R-GRA-002; el
-**agrupamiento por circuito** de R-DAT-012; el contraste contra Vsystem; el replay; y la comparación
-entre dos periodos distantes, que es la única que separa un obsoleto de un tag averiado.
+planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` — y la
+comparación entre dos periodos distantes, que es la única que separa un obsoleto de un tag
+averiado.
 
-**Y una advertencia que no es una fila de la tabla:** `inventory.ts` y `graph.ts` están probados y
-**no son alcanzables desde la interfaz**. El dominio crece mientras la superficie visible del
-producto no se mueve, que es la forma exacta en que el prototipo acabó con un monolito de 1.580
-líneas y doce pruebas. El siguiente incremento es la vista que los expone, no un módulo más.
+**La advertencia anterior queda cerrada, no borrada.** Hasta esta entrega, `inventory.ts` y
+`graph.ts` estaban probados y no eran alcanzables desde la interfaz. Ya lo son: el agrupamiento por
+circuito aparece en el resumen de circuito, las vueltas y la inactividad en el expediente de AGV y
+tag, el grafo contrastado en la tabla de Vsystem, y el propio grafo en el replay. La lección se
+mantiene para la próxima vez: un módulo de dominio nuevo no se da por entregado hasta que exista la
+vista que lo expone, no solo la prueba que lo verifica.
 
 ## Regla de mantenimiento
 

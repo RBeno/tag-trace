@@ -101,11 +101,8 @@ function figure(title: string, caption: string): HTMLElement {
   return wrapper;
 }
 
-/** La tabla equivalente: la misma información, sin depender de ver el gráfico. */
-function table(headers: readonly string[], rows: readonly (readonly string[])[]): HTMLElement {
-  const details = document.createElement("details");
-  const summary = document.createElement("summary");
-  summary.textContent = "Ver los mismos datos en tabla";
+/** La tabla en sí, visible sin plegar: encabezados y filas de texto. */
+export function plainTable(headers: readonly string[], rows: readonly (readonly string[])[]): HTMLElement {
   const node = document.createElement("table");
   const head = document.createElement("tr");
   for (const label of headers) {
@@ -123,7 +120,18 @@ function table(headers: readonly string[], rows: readonly (readonly string[])[])
     }
     node.append(line);
   }
-  details.append(summary, node);
+  return node;
+}
+
+/**
+ * La tabla equivalente de un gráfico, plegada por defecto: es la vía accesible y el respaldo
+ * cuando el color falla, no la vista principal.
+ */
+function table(headers: readonly string[], rows: readonly (readonly string[])[]): HTMLElement {
+  const details = document.createElement("details");
+  const summary = document.createElement("summary");
+  summary.textContent = "Ver los mismos datos en tabla";
+  details.append(summary, plainTable(headers, rows));
   return details;
 }
 

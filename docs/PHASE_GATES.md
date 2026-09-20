@@ -1,8 +1,8 @@
 ---
 document_id: TT-GATES-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
-last_updated: 2026-09-17
+last_updated: 2026-09-20
 ---
 
 # Puertas de fase
@@ -65,14 +65,24 @@ el dispositivo donde cayó el prototipo.
 ## G2 — Autorizar F3
 
 - [ ] Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta configurados
-      y versionados (OQ-B04).
-- [ ] Vueltas completas, parciales y desconocidas representadas.
-- [ ] Grafos por AGV/vuelta y consenso con soporte.
-- [ ] Vsystem y físico permanecen separados.
-- [ ] Huecos no generan lecturas sintéticas.
-- [ ] Replay básico determinista.
-- [ ] Casos TC-001–TC-007 y TC-018 pasan.
-- [ ] Evidencia navegable hasta fuente/fila.
+      y versionados (OQ-B04). **Sigue abierta**: SE2/4 es ahora el circuito priorizado, con dos
+      hechos operativos aportados (punto de carga, descansos) pero sin tags exactos todavía.
+- [x] Vueltas completas, parciales y desconocidas representadas. **Con matiz**: el ancla es
+      inferida (ciclo dominante del cohorte, R-GRA-009), no declarada — nunca `observed` hasta que
+      exista `lap_anchors`.
+- [x] Grafos por AGV/vuelta y consenso con soporte.
+- [x] Vsystem y físico permanecen separados. Contraste por alineación de secuencia implementado
+      (`src/domain/vsystem.ts`); probado con una sustitución real detectada por posición.
+- [x] Huecos no generan lecturas sintéticas.
+- [x] Replay básico determinista. Fotogramas precalculados en el Worker; posición como fracción
+      temporal, nunca física.
+- [ ] Casos TC-001–TC-007 y TC-018 pasan. **Sin evaluar todavía**: son los casos de oro de F3
+      (oportunidades, salud, divergencias), que necesitan las vueltas ya cerradas con ancla real.
+- [x] Evidencia navegable hasta fuente/fila. Expediente de AGV y tag por identificador
+      (`UX_SPEC.md` §4.1), con inactividad, vueltas y última lectura.
+
+Los dos pendientes reales son de planta (OQ-B04) y de F3 (los casos de oro), no de código: los
+cinco elementos programables de esta puerta están construidos, probados y en el producto.
 
 ## G3 — Autorizar F4
 

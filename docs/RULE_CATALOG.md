@@ -1,8 +1,8 @@
 ---
 document_id: TT-RULES-001
-version: 0.16.0
+version: 0.17.0
 status: baseline-candidate
-last_updated: 2026-09-17
+last_updated: 2026-09-20
 ---
 
 # Catálogo de reglas industriales
@@ -53,6 +53,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-GRA-006 | configurable | Límites exactos de zona cargada, vacía, CO y puntos críticos pertenecen a configuración versionada. |
 | R-GRA-007 | accepted | Un **tag crítico** es el que cumple una función de la que depende que el vehículo haga lo correcto: parada precisa, cruce, semáforo, dejar o recoger carro, cambio de mapa importante, o bifurcación. La función es dato de planta declarado (DS-005), **no se deduce del fichero**. Lo que el dato sí deja es una firma por clase, que sirve para **proponer candidatos** al propietario, nunca para asignar la función. Dos clases no dejan firma alguna y se declaran como tales: un **cambio de mapa** no se distingue de un tag cualquiera, y un **cruce que nadie ha fallado y que recorre un solo circuito** tampoco, porque un cruce existe justamente para que todos pasen igual. |
 | R-GRA-008 | accepted | **Un tag crítico no leído no equivale a un tag ordinario no leído.** En un tag ordinario la omisión degrada la reconstrucción; en uno crítico se pierde la función que sostenía —la parada no se ejecuta, el giro no se ordena, la protección no detiene— así que la omisión es candidata a hallazgo por sí sola, con su clase de función nombrada. Una tasa de lectura que promedie tags críticos con ordinarios oculta exactamente lo que hay que ver, y por eso se cuentan por separado. Esto no convierte la omisión en avería: sigue sujeta a R-OPP-009, porque un tag que no está en la memoria del vehículo tampoco produce lectura siendo crítico. |
+| R-GRA-009 | accepted | **Sin ancla de vuelta declarada (OQ-102), la única disponible es la que el propio grafo revela: el ciclo dominante del cohorte**, siguiendo el sucesor mayoritario hasta que un tag se repite. Por eso una vuelta segmentada así **nunca es `observed`**, aunque sus datos sean perfectos: el ancla es inferida, no una configuración de planta. El corte se hace **por cohorte** (R-DAT-012), nunca sobre el fichero entero, porque dos circuitos mezclados no comparten ciclo dominante y buscarlo sobre los dos a la vez produce un ancla sin sentido para ninguno. Cuando exista `lap_anchors` en `CONFIG_SCHEMA.md`, esto se sustituye por el ancla real y las vueltas completas pasan a `observed`. |
 
 ## Lecturas, oportunidades y huecos
 

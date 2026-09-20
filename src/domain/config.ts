@@ -17,6 +17,16 @@ import type { AffinityThresholds } from "./affinity.js";
 import type { BlindnessThresholds } from "./inventory.js";
 import type { GraphThresholds } from "./graph.js";
 
+export interface SilenceThresholds {
+  /**
+   * Separación entre dos lecturas del mismo vehículo por encima de la cual cuenta como inactividad
+   * (expediente de AGV) o como silencio en vez de tránsito (replay). Es el mismo concepto en los
+   * dos sitios —"cuánto hay que esperar para que un hueco signifique algo"—, así que comparte un
+   * único valor en vez de duplicarlo con otro nombre.
+   */
+  readonly minGapMs: number;
+}
+
 export interface AnalysisConfig {
   /**
    * `draft` permite explorar y **no** permite consolidar (`CONFIG_SCHEMA.md` §4).
@@ -29,6 +39,7 @@ export interface AnalysisConfig {
   readonly affinity: AffinityThresholds;
   readonly blindness: BlindnessThresholds;
   readonly graph: Omit<GraphThresholds, "resolutionMs">;
+  readonly silence: SilenceThresholds;
 }
 
 /**
@@ -44,6 +55,10 @@ export interface AnalysisConfig {
  *   vueltas, que es la normalización correcta (R-OPP-010).
  * - **Grafo.** Una cuota del 90 % sobre tres pasadas distingue un sucesor dominante de un reparto;
  *   por encima de la mitad de pares en el mismo instante, el orden no lo da el reloj (R-DAT-013).
+ * - **Silencio.** Cinco minutos es una magnitud de piloto tomada de un caso ya documentado
+ *   (`ALGORITHM_CATALOG.md` §4.2), no la duración real de ningún descanso ni parada de un circuito
+ *   concreto — esas son configuración de planta y no se fijan aquí (R-TIM-005). Sirve para no
+ *   confundir el tiempo normal de tránsito (segundos) con un hueco que merece explicarse.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -51,6 +66,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   affinity: { compatible: 0.6, foreign: 0.2, minTagsToJudge: 5 },
   blindness: { minReadingsPerVehicle: 10, minReadersForContrast: 2 },
   graph: { minShareForObserved: 0.9, minSupportForObserved: 3, maxSameInstantShare: 0.5 },
+  silence: { minGapMs: 5 * 60_000 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

@@ -2,6 +2,50 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.2.0] - 2026-09-20
+
+Los cinco elementos programables que quedaban pendientes de G2 (Parte 20), construidos, probados y
+alcanzables desde la interfaz, más dos decisiones del propietario sobre el circuito de referencia y
+el plan de aceptación.
+
+### Añadido
+
+- **`src/domain/cohort.ts`** (R-DAT-012): agrupamiento por circuito mediante Union-Find sobre las
+  aristas observadas. Un vehículo sin ninguna arista compartida sale en su propio cohorte de uno, en
+  vez de forzarse dentro de un grupo ajeno.
+- **`src/domain/laps.ts`** (ALG-004): segmentación de vueltas por AGV usando como ancla el ciclo
+  dominante del grafo cuando no hay ancla declarada (R-GRA-009, nueva). Toda vuelta segmentada así
+  es `inferred`, nunca `observed`, y la segmentación se hace por cohorte para no mezclar circuitos.
+- **`src/domain/dossier.ts`** (ALG-018, `UX_SPEC.md` §4.1): expediente navegable de AGV y de tag —
+  vueltas, inactividad, última lectura, comparación contra la mediana del cohorte, nunca de la
+  flota entera.
+- **`src/domain/vsystem.ts`**: contraste contra Vsystem por alineación de secuencia (LCS),
+  reproduciendo en forma general el método validado a mano sobre PC2. Marca sustituciones
+  candidatas con su evidencia y su estado `inferred`.
+- **`src/domain/replay.ts`**: replay básico determinista. La posición en un tramo es fracción
+  temporal, nunca física (`PERFORMANCE_BUDGET.md` §6); los fotogramas se precalculan enteros en el
+  Worker y viajan como datos pequeños, nunca las lecturas otra vez (WP-001).
+- **`fixtures/synthetic/anillo/`**: los fixtures de `acumulacion/` son deliberadamente lineales y no
+  sirven para ejercitar un ciclo real, así que estos cinco módulos necesitaban su propio fixture con
+  un anillo que de verdad se repite.
+
+### Corregido
+
+- El expediente de AGV/tag calculaba cada uno por separado, comparando contra el resto del cohorte
+  con un filtrado propio: O(vehículos² × lecturas). Se corrigió a una sola pasada de agrupamiento
+  por vehículo antes de construir cualquier expediente, sin cambiar el resultado.
+- El replay devolvía un vehículo en tránsito con fracción 0 cuando un fotograma caía exactamente en
+  el instante de una lectura con otra lectura próxima después. Debía salir en el tag, con estado
+  `observed`.
+
+### Decidido
+
+- **SE2/4 pasa a ser el circuito priorizado** para las pruebas de aceptación de F2, mientras se
+  recoge más volumen de PC2. Los hechos operativos concretos son de planta y quedan fuera del
+  repositorio.
+- **OQ-B05 aceptada de forma acotada**: el propietario valida en persona con los datos reales ya
+  aportados, en su propio dispositivo. El criterio de rechazo de una fase sigue sin definirse.
+
 ## [3.1.0] - 2026-09-18
 
 Cuatro peticiones del propietario, todas dentro de F2: la afinidad que faltaba en G1, las listas de

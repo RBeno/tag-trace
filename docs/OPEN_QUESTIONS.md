@@ -1,8 +1,8 @@
 ---
 document_id: TT-OPEN-001
-version: 0.16.0
+version: 0.17.0
 status: active
-last_updated: 2026-09-17
+last_updated: 2026-09-20
 ---
 
 # Preguntas abiertas
@@ -27,8 +27,8 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 
 | ID | Pregunta | Puerta |
 |---|---|---|
-| OQ-B04 | Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta. | G2: son insumos del grafo y el diagnóstico, no de la importación. |
-| OQ-B05 | Qué datos reales se usan para aceptar cada fase y quién valida. | G1 para la parte de F1; el resto con cada puerta. |
+| OQ-B04 | Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta. **Parcial (2026-09-20)**: SE2/4 pasa a ser el circuito priorizado mientras se recoge más volumen de PC2, con dos hechos operativos cualitativos aportados (servicio inmediato en el punto de carga; descansos de duración larga y a cierta distancia), pero **sin tags exactos todavía** para `critical_points`. | G2: son insumos del grafo y el diagnóstico, no de la importación. |
+| OQ-B05 | Qué datos reales se usan para aceptar cada fase y quién valida. **Parcial (2026-09-20)**: el propietario acepta validar en persona F1–F5 con los datos reales ya aportados (PC2, ALF, SE2/4), ejecutados en local en su propio dispositivo. **Sigue sin especificar** el criterio de rechazo — qué resultado haría que una fase no se aceptara —, y no se inventa uno. | G1 para la parte de F1; el resto con cada puerta. |
 
 ## Necesarias durante F1–F3
 

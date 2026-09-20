@@ -18,7 +18,7 @@ import {
   type ToWorker,
 } from "../application/protocol.js";
 import { EXPECTED_STRUCTURE, LIST_PURPOSE } from "../domain/tag-lists.js";
-import { activityChart, coverageChart, hourlyChart, inventoryChart } from "./charts.js";
+import { activityChart, coverageChart, hourlyChart, inventoryChart, plainTable } from "./charts.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
@@ -44,6 +44,8 @@ interface State {
   file: File | null;
   /** Cobertura del circuito, que las vistas necesitan para dibujar los huecos como lo que son. */
   coverage: readonly { readonly from: number; readonly to: number }[];
+  /** Últimas vistas recibidas: el expediente y el replay se consultan sobre ellas, ya calculadas. */
+  views: CircuitViews | null;
 }
 
 const state: State = {
@@ -57,6 +59,7 @@ const state: State = {
   shown: 0,
   file: null,
   coverage: [],
+  views: null,
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -188,6 +191,39 @@ const listsNote = element("p", "muted", "");
 const viewsPanel = element("section", "panel");
 viewsPanel.hidden = true;
 
+/**
+ * Expediente de AGV o tag: la vía de trabajo declarada como principal — «qué le pasa al 3524» — y
+ * por eso se entra escribiendo un identificador en vez de navegar (UX_SPEC §4.1).
+ */
+const dossierPanel = element("section", "panel");
+dossierPanel.hidden = true;
+const dossierInput = element("input");
+dossierInput.type = "search";
+dossierInput.id = "dossier-search";
+dossierInput.placeholder = "identificador de AGV o de tag";
+dossierInput.inputMode = "numeric";
+const dossierLabel = element("label", undefined, "Expediente");
+dossierLabel.htmlFor = "dossier-search";
+const dossierResult = element("div");
+dossierInput.addEventListener("input", () => renderDossier());
+
+/**
+ * Replay básico (ROADMAP F2). Un control temporal y una tabla, no un mapa: el circuito es
+ * topológico y la posición es fracción temporal, nunca física (`PERFORMANCE_BUDGET.md` §6).
+ */
+const replayPanel = element("section", "panel");
+replayPanel.hidden = true;
+const replaySlider = element("input");
+replaySlider.type = "range";
+replaySlider.id = "replay-slider";
+replaySlider.min = "0";
+replaySlider.value = "0";
+const replayLabel = element("label", undefined, "Instante del replay");
+replayLabel.htmlFor = "replay-slider";
+const replayTime = element("p", "muted", "");
+const replayTable = element("div");
+replaySlider.addEventListener("input", () => renderReplayFrame());
+
 const tablePanel = element("section", "panel");
 tablePanel.hidden = true;
 
@@ -214,8 +250,27 @@ app.append(
   messagePanel,
   summaryPanel,
   viewsPanel,
+  dossierPanel,
+  replayPanel,
   tablePanel,
 );
+
+{
+  dossierPanel.append(element("h2", undefined, "Expediente de AGV o tag"), dossierLabel, dossierInput, dossierResult);
+  replayPanel.append(
+    element("h2", undefined, "Replay"),
+    replayLabel,
+    replaySlider,
+    replayTime,
+    element(
+      "p",
+      "muted",
+      "La posición es fracción temporal del tramo, nunca posición física: no hay plano, solo orden.",
+    ),
+    replayTable,
+  );
+}
+
 
 // --- Presentación ----------------------------------------------------------
 
@@ -478,6 +533,9 @@ function handleMessage(message: FromWorker): void {
         renderAffinity(message.accumulation);
       }
       if (message.views !== undefined) renderViews(message.views);
+      state.views = message.views ?? null;
+      renderDossier();
+      renderReplaySkeleton();
       renderTableSkeleton();
       agvFilter.value = "";
       tagFilter.value = "";
@@ -786,7 +844,162 @@ function renderViews(views: CircuitViews): void {
       })),
     ),
   );
+
+  // Cohortes (R-DAT-012): un solo grupo es lo esperado; más de uno avisa de que el fichero mezcla
+  // circuitos, que es justo el error que la comparación por cohorte existe para impedir.
+  const cohortLine =
+    views.cohorts.length === 1
+      ? `1 circuito de ${views.cohorts[0]?.vehicles.length ?? 0} vehículos`
+      : `${views.cohorts.length} circuitos detectados en el mismo fichero: ` +
+        views.cohorts.map((cohort) => `${cohort.vehicles.length} vehículos`).join(", ");
+  viewsPanel.append(element("h3", undefined, "Agrupamiento por circuito"));
+  viewsPanel.append(element("p", "muted", cohortLine));
+
+  if (views.vsystemContrast !== undefined) {
+    viewsPanel.append(element("h3", undefined, "Contraste contra Vsystem"));
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        "Alineación por secuencia entre lo declarado y el anillo observado del cohorte mayor. " +
+          "Ninguna fila es un hecho asignado: «sustituido-candidato» es una hipótesis con su evidencia.",
+      ),
+    );
+    viewsPanel.append(
+      plainTable(
+        ["Declarado", "Observado", "Veredicto", "Estado", "Evidencia"],
+        views.vsystemContrast
+          .filter((row) => row.verdict !== "coincide")
+          .map((row) => [
+            row.declaredTag ?? "—",
+            row.observedTag ?? "—",
+            row.verdict,
+            row.truth,
+            row.evidence,
+          ]),
+      ),
+    );
+  }
 }
+
+/**
+ * Expediente por identificador (UX_SPEC §4.1): busca primero en AGV, después en tags, y muestra lo
+ * que encuentre. Un identificador que no aparece en ninguno de los dos se dice, no se calla.
+ */
+function renderDossier(): void {
+  const query = dossierInput.value.trim();
+  dossierResult.replaceChildren();
+  if (query === "" || state.views === null) {
+    dossierPanel.hidden = state.views === null;
+    return;
+  }
+  dossierPanel.hidden = false;
+
+  const agv = state.views.agvDossiers.find((entry) => entry.agvId === query);
+  const tag = state.views.tagDossiers.find((entry) => entry.tagId === query);
+
+  if (agv === undefined && tag === undefined) {
+    dossierResult.append(
+      element("p", "muted", `Ningún AGV ni tag con el identificador exacto «${query}».`),
+    );
+    return;
+  }
+
+  if (agv !== undefined) {
+    const rows: readonly (readonly [string, string])[] = [
+      ["Cohorte", agv.cohortId === null ? "sin cohorte reconocible" : `${agv.cohortSize} vehículos`],
+      [
+        "Lecturas frente a la cohorte",
+        `${agv.readingCount.toLocaleString("es-ES")} — mediana del resto: ` +
+          agv.cohortMedianReadings.toLocaleString("es-ES"),
+      ],
+      [
+        "Vueltas (ancla inferida)",
+        `${agv.laps.completas} completas, ${agv.laps.parciales} parciales, ${agv.laps.desconocidas} desconocidas`,
+      ],
+      [
+        "Última lectura",
+        agv.lastReading === null
+          ? "ninguna"
+          : `${agv.lastReading.tagId} — ${formatInstant(agv.lastReading.utcMs)}`,
+      ],
+      [
+        "Silencio abierto",
+        agv.openSilenceSinceUtcMs === null
+          ? "no: hay lectura reciente o la cobertura ya terminó antes"
+          : `desde ${formatInstant(agv.openSilenceSinceUtcMs)}, sin cerrar dentro de la cobertura`,
+      ],
+    ];
+    const list = element("dl", "facts");
+    for (const [term, value] of rows) list.append(element("dt", undefined, term), element("dd", undefined, value));
+    dossierResult.append(element("h3", undefined, `AGV ${agv.agvId}`), list);
+    if (agv.inactivity.length > 0) {
+      dossierResult.append(
+        plainTable(
+          ["Desde", "Hasta", "Duración"],
+          agv.inactivity.map((period) => [
+            formatInstant(period.fromUtcMs),
+            formatInstant(period.toUtcMs),
+            `${Math.round(period.durationMs / 60_000)} min`,
+          ]),
+        ),
+      );
+    }
+  }
+
+  if (tag !== undefined) {
+    dossierResult.append(
+      element("h3", undefined, `Tag ${tag.tagId}`),
+      element("p", "muted", `${tag.totalReadings.toLocaleString("es-ES")} lecturas en total.`),
+      plainTable(
+        ["AGV", "Última lectura"],
+        tag.readers.map((reader) => [
+          reader.agvId,
+          reader.lastReadUtcMs === null ? "nunca" : formatInstant(reader.lastReadUtcMs),
+        ]),
+      ),
+    );
+  }
+}
+
+/** Prepara el control temporal del replay para el rango de fotogramas recibido. */
+function renderReplaySkeleton(): void {
+  const frames = state.views?.replay ?? [];
+  replayPanel.hidden = frames.length === 0;
+  if (frames.length === 0) return;
+  replaySlider.max = String(frames.length - 1);
+  replaySlider.value = "0";
+  renderReplayFrame();
+}
+
+/** Dibuja el fotograma seleccionado: qué tag o qué tramo, y con qué estado de verdad. */
+function renderReplayFrame(): void {
+  const frames = state.views?.replay ?? [];
+  const index = Math.min(frames.length - 1, Math.max(0, Number.parseInt(replaySlider.value, 10)));
+  const frame = frames[index];
+  replayTable.replaceChildren();
+  if (frame === undefined) return;
+
+  replayTime.textContent = formatInstant(frame.atUtcMs);
+  const rows: (readonly string[])[] = [];
+  for (const [agvId, vehicleState] of frame.vehicles) {
+    if (vehicleState.kind === "en-tag") {
+      rows.push([agvId, vehicleState.tagId, "—", vehicleState.truth]);
+    } else if (vehicleState.kind === "en-transito") {
+      rows.push([
+        agvId,
+        vehicleState.fromTagId,
+        `→ ${vehicleState.toTagId} (${Math.round(vehicleState.fraction * 100)} %)`,
+        vehicleState.truth,
+      ]);
+    } else {
+      rows.push([agvId, vehicleState.lastTagId || "—", `silencio desde ${formatInstant(vehicleState.sinceUtcMs)}`, "unknown"]);
+    }
+  }
+  rows.sort((a, b) => (a[0] as string).localeCompare(b[0] as string));
+  replayTable.append(plainTable(["AGV", "Tag", "Tránsito / silencio", "Estado"], rows));
+}
+
 
 exportButton.addEventListener("click", () => {
   void (async () => {

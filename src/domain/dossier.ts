@@ -1,0 +1,240 @@
+/**
+ * Expediente reducido de AGV y de tag (UX_SPEC §4.1, ROADMAP F2).
+ *
+ * "Reducido" es literal: recuentos frente a la cohorte, inactividad, última lectura conocida e
+ * instante de cambio. **Sin tasa de salud** — eso exige oportunidades elegibles, que es F3 y
+ * necesita las vueltas ya normalizadas y la memoria por vehículo, ninguna de las dos cerrada todavía.
+ *
+ * La comparación es siempre **contra la cohorte**, nunca contra la flota entera (R-AGV-001,
+ * R-AGV-004): un vehículo de otro circuito no es un par válido.
+ */
+
+import type { Cohort } from "./cohort.js";
+import type { Lap } from "./laps.js";
+import type { Reading } from "./reading.js";
+import type { TruthState } from "./truth.js";
+
+export interface InactivityPeriod {
+  readonly fromUtcMs: number;
+  readonly toUtcMs: number;
+  readonly durationMs: number;
+}
+
+export interface AgvDossier {
+  readonly agvId: string;
+  readonly cohortId: number | null;
+  readonly cohortSize: number;
+  readonly readingCount: number;
+  /** Mediana de lecturas de los demás vehículos del cohorte, para poner el recuento en contexto. */
+  readonly cohortMedianReadings: number;
+  readonly laps: { readonly completas: number; readonly parciales: number; readonly desconocidas: number };
+  readonly lastReading: { readonly tagId: string; readonly utcMs: number } | null;
+  readonly inactivity: readonly InactivityPeriod[];
+  /**
+   * Si el vehículo lleva silencio hasta el final de la cobertura, el último instante con evidencia
+   * (R-AGV-006: un AGV detenido no emite, así que esto no afirma cuándo dejó de funcionar, solo
+   * hasta cuándo hay prueba).
+   */
+  readonly openSilenceSinceUtcMs: number | null;
+}
+
+/**
+ * Construye el expediente de un vehículo.
+ *
+ * `minGapMs` decide qué separación entre lecturas cuenta como inactividad. **Sin valor por
+ * defecto**: es el intervalo normal de lectura, configuración de planta (R-OPP-006), y quien llame
+ * tiene que haberlo decidido.
+ *
+ * Agrupa `readings` por vehículo en cada llamada: correcto para una consulta aislada (como en las
+ * pruebas), pero quien construya el expediente de **todos** los vehículos de un circuito debe usar
+ * `buildAllAgvDossiers`, que agrupa una sola vez en vez de una vez por vehículo y por cada par de
+ * su cohorte.
+ */
+export function buildAgvDossier(
+  agvId: string,
+  readings: readonly Reading[],
+  cohorts: CohortLookup,
+  laps: readonly Lap[],
+  coverageEndUtcMs: number,
+  minGapMs: number,
+): AgvDossier {
+  return computeAgvDossier(agvId, groupByVehicle(readings), cohorts, laps, coverageEndUtcMs, minGapMs);
+}
+
+/**
+ * El expediente de todos los vehículos de un circuito, en una sola pasada de agrupamiento.
+ *
+ * Hacerlo vehículo a vehículo con `buildAgvDossier` sería O(vehículos² · lecturas) —cada consulta
+ * de la mediana de la cohorte volvería a filtrar el array entero por cada compañero—, inviable en
+ * un circuito de decenas de vehículos y cientos de miles de lecturas.
+ */
+export function buildAllAgvDossiers(
+  readings: readonly Reading[],
+  cohorts: CohortLookup,
+  laps: readonly Lap[],
+  coverageEndUtcMs: number,
+  minGapMs: number,
+): readonly AgvDossier[] {
+  const grouped = groupByVehicle(readings);
+  return [...grouped.keys()]
+    .sort()
+    .map((agvId) => computeAgvDossier(agvId, grouped, cohorts, laps, coverageEndUtcMs, minGapMs));
+}
+
+function groupByVehicle(readings: readonly Reading[]): ReadonlyMap<string, readonly Reading[]> {
+  const groups = new Map<string, Reading[]>();
+  for (const entry of readings) {
+    let list = groups.get(entry.agvId);
+    if (list === undefined) {
+      list = [];
+      groups.set(entry.agvId, list);
+    }
+    list.push(entry);
+  }
+  for (const list of groups.values()) list.sort((a, b) => a.time.utcMs - b.time.utcMs);
+  return groups;
+}
+
+function computeAgvDossier(
+  agvId: string,
+  grouped: ReadonlyMap<string, readonly Reading[]>,
+  cohorts: CohortLookup,
+  laps: readonly Lap[],
+  coverageEndUtcMs: number,
+  minGapMs: number,
+): AgvDossier {
+  const own = grouped.get(agvId) ?? [];
+
+  const cohortId = cohorts.cohortOf.get(agvId) ?? null;
+  const cohort = cohortId === null ? null : cohorts.cohorts[cohortId];
+  const peers = cohort?.vehicles.filter((id) => id !== agvId) ?? [];
+  const peerCounts = peers.map((peerId) => grouped.get(peerId)?.length ?? 0);
+
+  const ownLaps = laps.filter((lap) => lap.agvId === agvId);
+
+  const inactivity: InactivityPeriod[] = [];
+  for (let index = 1; index < own.length; index += 1) {
+    const previous = own[index - 1] as Reading;
+    const current = own[index] as Reading;
+    const gap = current.time.utcMs - previous.time.utcMs;
+    if (gap >= minGapMs) {
+      inactivity.push({
+        fromUtcMs: previous.time.utcMs,
+        toUtcMs: current.time.utcMs,
+        durationMs: gap,
+      });
+    }
+  }
+
+  const last = own[own.length - 1] ?? null;
+  const openSilence =
+    last !== null && coverageEndUtcMs - last.time.utcMs >= minGapMs ? last.time.utcMs : null;
+
+  return {
+    agvId,
+    cohortId,
+    cohortSize: cohort?.vehicles.length ?? 0,
+    readingCount: own.length,
+    cohortMedianReadings: median(peerCounts),
+    laps: {
+      completas: ownLaps.filter((lap) => lap.completeness === "completa").length,
+      parciales: ownLaps.filter((lap) => lap.completeness === "parcial").length,
+      desconocidas: ownLaps.filter((lap) => lap.completeness === "desconocida").length,
+    },
+    lastReading: last === null ? null : { tagId: last.tagId, utcMs: last.time.utcMs },
+    inactivity,
+    openSilenceSinceUtcMs: openSilence,
+  };
+}
+
+interface CohortLookup {
+  readonly cohorts: readonly Cohort[];
+  readonly cohortOf: ReadonlyMap<string, number>;
+}
+
+function median(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2
+    : (sorted[middle] as number);
+}
+
+// --- Expediente de tag --------------------------------------------------
+
+export interface TagReaderStatus {
+  readonly agvId: string;
+  /** `null` si ese vehículo nunca ha leído este tag. */
+  readonly lastReadUtcMs: number | null;
+}
+
+export interface TagDossier {
+  readonly tagId: string;
+  readonly readers: readonly TagReaderStatus[];
+  readonly totalReadings: number;
+}
+
+/**
+ * Expediente de un tag: qué vehículos lo leen y desde cuándo dejaron de hacerlo los que sí lo
+ * conocían. `vehicles` fija el universo a comprobar — normalmente el cohorte del tag, no la flota
+ * entera, por la misma razón que el expediente de AGV compara contra su cohorte.
+ *
+ * Para **todos** los tags de un circuito, usar `buildAllTagDossiers`: recorre las lecturas una vez
+ * en lugar de una vez por tag.
+ */
+export function buildTagDossier(
+  tagId: string,
+  readings: readonly Reading[],
+  vehicles: readonly string[],
+): TagDossier {
+  const lastByVehicle = new Map<string, number>();
+  let total = 0;
+  for (const entry of readings) {
+    if (entry.tagId !== tagId) continue;
+    total += 1;
+    const current = lastByVehicle.get(entry.agvId);
+    if (current === undefined || entry.time.utcMs > current) lastByVehicle.set(entry.agvId, entry.time.utcMs);
+  }
+
+  return { tagId, readers: readerStatuses(lastByVehicle, vehicles), totalReadings: total };
+}
+
+/** El expediente de todos los tags, en una sola pasada sobre las lecturas. */
+export function buildAllTagDossiers(
+  readings: readonly Reading[],
+  vehicles: readonly string[],
+): readonly TagDossier[] {
+  const lastByTagAndVehicle = new Map<string, Map<string, number>>();
+  const totalByTag = new Map<string, number>();
+  for (const entry of readings) {
+    totalByTag.set(entry.tagId, (totalByTag.get(entry.tagId) ?? 0) + 1);
+    let byVehicle = lastByTagAndVehicle.get(entry.tagId);
+    if (byVehicle === undefined) {
+      byVehicle = new Map<string, number>();
+      lastByTagAndVehicle.set(entry.tagId, byVehicle);
+    }
+    const current = byVehicle.get(entry.agvId);
+    if (current === undefined || entry.time.utcMs > current) byVehicle.set(entry.agvId, entry.time.utcMs);
+  }
+
+  return [...totalByTag.keys()].sort().map((tagId) => ({
+    tagId,
+    readers: readerStatuses(lastByTagAndVehicle.get(tagId) ?? new Map(), vehicles),
+    totalReadings: totalByTag.get(tagId) ?? 0,
+  }));
+}
+
+function readerStatuses(
+  lastByVehicle: ReadonlyMap<string, number>,
+  vehicles: readonly string[],
+): readonly TagReaderStatus[] {
+  return vehicles
+    .map((agvId) => ({ agvId, lastReadUtcMs: lastByVehicle.get(agvId) ?? null }))
+    .sort((a, b) => a.agvId.localeCompare(b.agvId));
+}
+
+/** Estado de verdad de un expediente: siempre `observed` en lo que cuenta, `inferred` en las vueltas. */
+export function dossierTruth(hasLaps: boolean): TruthState {
+  return hasLaps ? "inferred" : "observed";
+}
