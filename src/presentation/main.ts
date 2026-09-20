@@ -1001,6 +1001,17 @@ function renderShapes(views: CircuitViews): void {
       continue;
     }
 
+    // Cuánto puede apoyarse la prueba por tiempo: si pocos segmentos tienen mediana medida, un
+    // tramo largo sin leer no se puede contrastar y quedará sin sostener con más frecuencia.
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        `${matrix.segmentsWithTime} de los ${matrix.ring.length} segmentos del anillo tienen ` +
+          "tiempo mediano medido; solo esos permiten comprobar si un tramo sin lecturas se recorrió " +
+          "de verdad.",
+      ),
+    );
     renderHighlights(matrix);
     renderFullMatrix(matrix);
   }
@@ -1031,10 +1042,12 @@ function renderHighlights(matrix: Matrix): void {
     element(
       "p",
       "muted",
-      "Porcentaje sobre las veces que el vehículo pasó por el punto, probadas por haber leído los " +
-        "dos tags vecinos en la misma vuelta: una rama que no recorre no cuenta como fallo suyo " +
-        "(R-OPP-008). No es una tasa de salud — eso exige saber qué lleva cada vehículo en memoria " +
-        "y qué sigue instalado.",
+      "Porcentaje sobre las veces que el vehículo pasó por el punto. El paso se prueba encerrándolo " +
+        "entre dos lecturas suyas; si falta un tramo largo, decide el tiempo —¿tardó lo que ese " +
+        "tramo tarda?— y, cuando no hay tiempo con que comparar, el orden de los AGV que iban " +
+        "delante y detrás. Lo que ninguna de las tres sostiene no cuenta como pasada ni como fallo " +
+        "del tag. No es una tasa de salud: eso exige saber qué lleva cada vehículo en memoria y " +
+        "qué sigue instalado.",
     ),
   );
 
@@ -1081,7 +1094,11 @@ function renderHighlights(matrix: Matrix): void {
         `${blind} ${blind === 1 ? "tag que no lee" : "tags que no lee"} y los demás sí · ` +
           `${percent(vehicle.rate)} de lo que pasa`,
         "Revisar lector, WiFi o memoria de este vehículo: el tag no es el problema, porque el " +
-          "resto de la flota lo lee.",
+          "resto de la flota lo lee." +
+          (vehicle.unproven > 0
+            ? ` Además recorrió ${vehicle.unproven} tramos en menos tiempo del que tardan: o los ` +
+              "atajó, o hay una rama que el anillo no recoge."
+            : ""),
       ),
     );
   }
@@ -1106,13 +1123,18 @@ function finding(title: string, figure: string, evidence: string): HTMLElement {
 
 /** La frase que acompaña a cada patrón. Enuncia la pregunta; no la responde (R-EVI-006). */
 function explain(tag: TagRow): string {
-  if (tag.pattern === "bimodal-candidato") {
-    return (
-      `${tag.lowReaders.length} vehículos casi nunca lo leen y ${tag.highReaders.length} casi ` +
-      `siempre (${tag.lowReaders.slice(0, 3).join(", ")}…): revisar esos vehículos, no el tag`
-    );
-  }
-  return "todos los que pasan lo leen poco: revisar el tag o su punto";
+  const base =
+    tag.pattern === "bimodal-candidato"
+      ? `${tag.lowReaders.length} vehículos casi nunca lo leen y ${tag.highReaders.length} casi ` +
+        `siempre (${tag.lowReaders.slice(0, 3).join(", ")}…): revisar esos vehículos, no el tag`
+      : "todos los que pasan lo leen poco: revisar el tag o su punto";
+  // Cómo se probó el paso importa tanto como el porcentaje: una tasa sostenida por tiempo es más
+  // débil que una sostenida por los vecinos, y el usuario tiene que poder verlo sin preguntar.
+  const vias: string[] = [];
+  if (tag.byTime > 0) vias.push(`${tag.byTime} probadas por tiempo`);
+  if (tag.byOrder > 0) vias.push(`${tag.byOrder} por orden de convoy`);
+  if (tag.unproven > 0) vias.push(`${tag.unproven} tramos que nada sostiene`);
+  return vias.length === 0 ? base : `${base}. De sus pasadas: ${vias.join(", ")}`;
 }
 
 /** La matriz entera, plegada y construida solo si alguien la abre. */

@@ -65,6 +65,10 @@ export interface AnalysisConfig {
  *   vehículos lo mínimo para que exista contraste. El 0,8 y el 0,2 separan «lo lee» de «no lo lee»
  *   dejando en medio una franja ancha que sale como **gradiente**, que es `unknown` a propósito
  *   (OQ-118): estrechar esa franja convertiría en bimodal lo que todavía no se sabe qué es.
+ *   Un solo tag sin leer entre dos lecturas se da por recorrido sin más comprobación; en cuanto
+ *   faltan varios seguidos hay que mirar el tiempo, y el 0,6 admite que un tramo se recorra algo
+ *   más rápido de lo normal sin admitir que se recorra en la mitad, que ya es la firma de no
+ *   haberlo recorrido.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -73,7 +77,14 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   blindness: { minReadingsPerVehicle: 10, minReadersForContrast: 2 },
   graph: { minShareForObserved: 0.9, minSupportForObserved: 3, maxSameInstantShare: 0.5 },
   silence: { minGapMs: 5 * 60_000 },
-  readRate: { minPassesPerPair: 3, minVehiclesForContrast: 2, highRate: 0.8, lowRate: 0.2 },
+  readRate: {
+    minPassesPerPair: 3,
+    minVehiclesForContrast: 2,
+    highRate: 0.8,
+    lowRate: 0.2,
+    maxGapProvenByNeighbours: 1,
+    minTimeRatio: 0.6,
+  },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

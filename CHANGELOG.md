@@ -2,6 +2,37 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.6.0] - 2026-09-20
+
+### Corregido
+
+- **La pasada se perdía justo cuando el problema era peor.** Exigir los dos vecinos inmediatos
+  funciona si falta un solo tag; si un vehículo pierde **varios seguidos**, también falta el vecino,
+  el punto deja de estar encerrado y la evidencia desaparece — precisamente en el caso más grave.
+  Ahora el punto se encierra entre las lecturas que sí hubo, falten los tags que falten.
+
+### Añadido
+
+- **Prueba de paso en tres vías** (R-OPP-014, nueva), en este orden y sin mezclarlas:
+  1. **Vecinos**, cuando solo falta el tag en cuestión.
+  2. **Tiempo**, cuando falta un tramo: ¿tardó lo que ese tramo tarda? Las medianas por segmento se
+     miden del propio dato, donde los dos extremos se leyeron seguidos.
+  3. **Orden de convoy**, y solo cuando no hay tiempo con que comparar: salir del tramo entre los
+     mismos AGV con los que se entró demuestra permanencia en la línea (R-OPP-004).
+  Lo que ninguna sostiene **no cuenta como pasada ni como fallo del tag**: queda registrado como
+  tramo no sostenido, candidato a atajo o a rama.
+- La vista dice **cómo** se probó cada pasada, porque una tasa sostenida por tiempo es más débil que
+  una sostenida por vecinos, y cuántos segmentos del anillo tienen tiempo medido.
+
+### Dos defectos propios, encontrados construyendo esto
+
+- El vecino de convoy podía ser **el propio vehículo** en otra vuelta, con lo que cualquiera era
+  vecino de sí mismo y el orden «se conservaba» siempre.
+- Y podía ser uno que pasó **horas antes**: sin ventana temporal, «el de delante» no significa nada.
+  La ventana es el propio tiempo que tardó el tramo, así que se escala sola sin otro umbral.
+- Además, el orden ya no se usa para **contradecir** un tiempo que ya decidió: si el tiempo dice que
+  no recorrió el tramo, buscar otra vía que diga que sí es lavar una contradicción, no resolverla.
+
 ## [3.5.0] - 2026-09-20
 
 Probado el producto publicado en el Galaxy S23 FE: corre con fluidez. A partir de ahí, lo que el

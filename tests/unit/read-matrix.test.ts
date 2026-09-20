@@ -18,6 +18,8 @@ const THRESHOLDS: ReadRateThresholds = {
   minVehiclesForContrast: 2,
   highRate: 0.8,
   lowRate: 0.2,
+  maxGapProvenByNeighbours: 1,
+  minTimeRatio: 0.6,
 };
 
 let row = 0;
@@ -152,6 +154,72 @@ describe("matriz de lectura por pasada", () => {
     expect(matrix.supported).toBe(false);
     expect(matrix.vehicles[0]?.laps).toBe(0);
     expect(matrix.tags.every((tag) => tag.rate === null)).toBe(true);
+  });
+
+  it("varios tags seguidos sin leer siguen contando como pasada si el tiempo cuadra", () => {
+    // El caso que el encierro por vecinos inmediatos perdía: el vehículo pierde **tres** tags
+    // seguidos. Antes, al faltar también el vecino, la pasada desaparecía justo cuando el problema
+    // era peor. Ahora se encierra entre las lecturas que sí hubo y decide el tiempo.
+    clock = 0;
+    const anillo = ["0100", "0200", "0300", "0400", "0500", "0600"];
+    const readings: Reading[] = [];
+    const paso = (agvId: string, tagId: string, segundos: number): void => {
+      clock += segundos * 1000;
+      readings.push(reading(agvId, tagId));
+    };
+
+    // `A` recorre todo y fija el tiempo normal de cada segmento: 10 s.
+    for (let lap = 0; lap <= 5; lap += 1) for (const tagId of anillo) paso("A", tagId, 10);
+    paso("A", "0100", 10);
+
+    // `B` pierde 0300, 0400 y 0500, pero tarda lo que se tarda en recorrerlos: 40 s de 0200 a 0600.
+    for (let lap = 0; lap <= 5; lap += 1) {
+      paso("B", "0100", 10);
+      paso("B", "0200", 10);
+      paso("B", "0600", 40);
+    }
+    paso("B", "0100", 10);
+
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS);
+
+    const tag = matrix.tags.find((entry) => entry.tagId === "0400");
+    const celda = tag?.byVehicle.find((cell) => cell.agvId === "B");
+    expect(celda?.passes).toBeGreaterThan(0);
+    // Y consta **cómo** se probó: por tiempo, no por vecinos.
+    expect(celda?.byTime).toBeGreaterThan(0);
+    expect(celda?.byNeighbours).toBe(0);
+    expect(celda?.hits).toBe(0);
+  });
+
+  it("si el tiempo desmiente el tramo, no es una pasada ni un fallo del tag: es un atajo", () => {
+    clock = 0;
+    const anillo = ["0100", "0200", "0300", "0400", "0500", "0600"];
+    const readings: Reading[] = [];
+    const paso = (agvId: string, tagId: string, segundos: number): void => {
+      clock += segundos * 1000;
+      readings.push(reading(agvId, tagId));
+    };
+
+    for (let lap = 0; lap <= 5; lap += 1) for (const tagId of anillo) paso("A", tagId, 10);
+    paso("A", "0100", 10);
+
+    // `B` va de 0200 a 0600 en 3 s cuando ese tramo son 40: no lo recorrió.
+    for (let lap = 0; lap <= 5; lap += 1) {
+      paso("B", "0100", 10);
+      paso("B", "0200", 10);
+      paso("B", "0600", 3);
+    }
+    paso("B", "0100", 10);
+
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS);
+
+    const tag = matrix.tags.find((entry) => entry.tagId === "0400");
+    // `B` no aparece con pasadas, y el tramo queda registrado como no sostenido en vez de
+    // desaparecer sin más.
+    expect(tag?.byVehicle.find((cell) => cell.agvId === "B")).toBeUndefined();
+    expect(tag?.unproven).toBeGreaterThan(0);
+    // Y el tag no queda señalado por culpa de `B`: solo `A` tiene pasadas ahí.
+    expect(tag?.lowReaders).not.toContain("B");
   });
 
   it("una vuelta que cruza un hueco de cobertura no cuenta (R-DAT-007)", () => {

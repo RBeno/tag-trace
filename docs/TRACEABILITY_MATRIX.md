@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.12.0
+version: 0.13.0
 status: baseline-candidate
 last_updated: 2026-09-20
 ---
@@ -78,6 +78,7 @@ regla exista: la matriz no es una lista de intenciones.
 | TC-067 / UX §4.1 los dos extremos de cada silencio | `src/domain/dossier.ts` (`InactivityPeriod`) | «cada silencio conserva sus dos extremos…» |
 | R-OPP-013 / TC-069–073 tasa de lectura por pasada probada | `src/domain/read-matrix.ts` | `tests/unit/read-matrix.test.ts` |
 | TC-069 una rama no recorrida no es un fallo del vehículo | `src/domain/read-matrix.ts` (regla de los dos vecinos) | «una rama que un vehículo no recorre no cuenta como fallo suyo» |
+| R-OPP-014 / TC-076–079 paso probado por vecinos, tiempo u orden de convoy | `src/domain/read-matrix.ts` (`enclose`, `expectedTime`, `keptConvoy`) | `tests/unit/read-matrix.test.ts` |
 | R-GRA-011 / TC-074 lo que queda fuera del anillo se enumera | `workers/import.worker.ts` (`offRingTags`), `src/presentation/main.ts` | `tests/e2e/f2.spec.ts` |
 | Composición del circuito: número y orden de tags | `src/domain/laps.ts` (`findDominantCycle`), `workers/import.worker.ts` (`shapes`) | «el número y el orden de los tags salen junto al número de vehículos» |
 | TC-075 / UX §4 destacados primero, conjunto a demanda | `src/presentation/main.ts` (`finding`), `src/presentation/charts.ts` (`lazyDetails`) | `tests/e2e/f2.spec.ts` |
