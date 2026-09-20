@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
 last_updated: 2026-09-20
 ---
@@ -64,6 +64,11 @@ el dispositivo donde cayó el prototipo.
 
 ## G2 — Autorizar F3
 
+**Cerrada el 2026-09-20 por decisión del propietario** («Continúa con Fase 3»), con dos criterios
+sin cumplir que se declaran en lugar de marcarse. Es la misma salida que G1 y por la misma razón:
+una casilla que no se ha demostrado no se marca, y ninguna IA cierra una puerta por su cuenta
+(ADR-0010). Los dos pendientes pasan a G3 como deuda declarada.
+
 - [ ] Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta configurados
       y versionados (OQ-B04). **Sigue abierta**: SE2/4 es ahora el circuito priorizado, con dos
       hechos operativos aportados (punto de carga, descansos) pero sin tags exactos todavía.
@@ -83,6 +88,13 @@ el dispositivo donde cayó el prototipo.
 
 Los dos pendientes reales son de planta (OQ-B04) y de F3 (los casos de oro), no de código: los
 cinco elementos programables de esta puerta están construidos, probados y en el producto.
+
+**Lo que el paso por la puerta obliga a decir sobre F3.** El diagnóstico que F3 promete —salud,
+oportunidades, perfiles por calendario, máquinas de estado de FIFO y de calles CO— necesita
+denominadores y contexto que hoy no existen: sin OQ-B04 no hay oportunidad elegible, y sin
+calendario no hay perfil esperado. Así que F3 se abre por la parte que **no** depende de planta:
+las pruebas discriminantes que se sostienen solo con lo observado, con su incertidumbre declarada.
+Lo que dependa de la configuración queda enunciado y sin calcular, nunca estimado con un supuesto.
 
 ## G3 — Autorizar F4
 

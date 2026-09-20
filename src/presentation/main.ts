@@ -89,7 +89,11 @@ function formatInstant(utcMs: number): string {
 
 const header = element("header", "bar");
 const title = element("h1", undefined, "TAG TRACE");
-const subtitle = element("p", "muted", "Importador de lecturas · F1a·0");
+const subtitle = element(
+  "p",
+  "muted",
+  "Diagnóstico local de circuitos AGV · análisis y evidencia, nunca control",
+);
 header.append(title, subtitle);
 
 const picker = element("section", "panel");
@@ -249,8 +253,12 @@ app.append(
   progressPanel,
   messagePanel,
   summaryPanel,
-  viewsPanel,
+  // El expediente va **antes** que las vistas, no después. Es la vía de trabajo declarada más
+  // frecuente —«qué le pasa al 3524»— y medido en un circuito real quedaba a 3.569 px del principio
+  // en pantalla de móvil: cuatro pantallas y media de desplazamiento por delante de lo que más se
+  // usa, detrás de los agregados que se consultan de vez en cuando (`UX_SPEC.md` §4.1).
   dossierPanel,
+  viewsPanel,
   replayPanel,
   tablePanel,
 );
@@ -935,12 +943,24 @@ function renderDossier(): void {
     dossierResult.append(element("h3", undefined, `AGV ${agv.agvId}`), list);
     if (agv.inactivity.length > 0) {
       dossierResult.append(
+        element(
+          "p",
+          "muted",
+          `${agv.inactivity.length} periodos de inactividad. Cada uno con sus dos extremos: por ` +
+            "dónde se fue y por dónde volvió. Volver al mismo tag y volver más adelante son " +
+            "hechos distintos, y ninguno de los dos es por sí solo una avería (R-AGV-006).",
+        ),
+      );
+      dossierResult.append(
         plainTable(
-          ["Desde", "Hasta", "Duración"],
+          ["Desde", "Hasta", "Duración", "Se fue por", "Volvió por", "Reaparición"],
           agv.inactivity.map((period) => [
             formatInstant(period.fromUtcMs),
             formatInstant(period.toUtcMs),
             `${Math.round(period.durationMs / 60_000)} min`,
+            period.lastTagBefore,
+            period.firstTagAfter,
+            period.lastTagBefore === period.firstTagAfter ? "en el mismo tag" : "más adelante",
           ]),
         ),
       );
@@ -981,22 +1001,42 @@ function renderReplayFrame(): void {
   if (frame === undefined) return;
 
   replayTime.textContent = formatInstant(frame.atUtcMs);
-  const rows: (readonly string[])[] = [];
-  for (const [agvId, vehicleState] of frame.vehicles) {
-    if (vehicleState.kind === "en-tag") {
-      rows.push([agvId, vehicleState.tagId, "—", vehicleState.truth]);
-    } else if (vehicleState.kind === "en-transito") {
-      rows.push([
-        agvId,
-        vehicleState.fromTagId,
-        `→ ${vehicleState.toTagId} (${Math.round(vehicleState.fraction * 100)} %)`,
-        vehicleState.truth,
-      ]);
-    } else {
-      rows.push([agvId, vehicleState.lastTagId || "—", `silencio desde ${formatInstant(vehicleState.sinceUtcMs)}`, "unknown"]);
-    }
-  }
-  rows.sort((a, b) => (a[0] as string).localeCompare(b[0] as string));
+  // Primero lo que tiene posición, después lo que no: ordenar por identificador enterraba a los
+  // pocos vehículos en movimiento entre decenas de filas sin nada que mirar.
+  const RANK = { "en-transito": 0, "en-tag": 1, silencio: 2, "sin-datos": 3 } as const;
+  const rows = [...frame.vehicles]
+    .sort(([agvA, a], [agvB, b]) =>
+      RANK[a.kind] !== RANK[b.kind] ? RANK[a.kind] - RANK[b.kind] : agvA.localeCompare(agvB),
+    )
+    .map(([agvId, vehicleState]): readonly string[] => {
+      switch (vehicleState.kind) {
+        case "en-tag":
+          return [agvId, vehicleState.tagId, "—", vehicleState.truth];
+        case "en-transito":
+          return [
+            agvId,
+            vehicleState.fromTagId,
+            `→ ${vehicleState.toTagId} (${Math.round(vehicleState.fraction * 100)} %)`,
+            vehicleState.truth,
+          ];
+        case "silencio":
+          return [
+            agvId,
+            vehicleState.lastTagId,
+            `silencio desde ${formatInstant(vehicleState.sinceUtcMs)}`,
+            "unknown",
+          ];
+        default:
+          // Antes de su primera lectura no hay silencio que diagnosticar: hay ausencia de datos
+          // para ese vehículo, y lo que sí se sabe es cuándo deja de haberla.
+          return [
+            agvId,
+            "—",
+            `aún sin lecturas; la primera, a las ${formatInstant(vehicleState.firstReadingUtcMs)}`,
+            "sin datos",
+          ];
+      }
+    });
   replayTable.append(plainTable(["AGV", "Tag", "Tránsito / silencio", "Estado"], rows));
 }
 

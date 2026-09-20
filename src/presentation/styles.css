@@ -96,6 +96,14 @@ tr.flagged { background: var(--flag); }
 .chart table th, .chart table td {
   text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
 .chart table th { color: var(--muted); font-weight: 600; }
+/* Tablas de datos fuera de un gráfico: expediente, contraste contra Vsystem y replay. Ajustan al
+   ancho disponible y parten el texto largo, porque una tabla que obliga a arrastrar en horizontal
+   no se lee (UX §5.1). */
+table.data { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 8px; }
+table.data th, table.data td {
+  text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line);
+  vertical-align: top; overflow-wrap: anywhere; }
+table.data th { color: var(--muted); font-weight: 600; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 0;
   color: var(--muted); font-size: 0.8rem; list-style: none; padding: 0; }
 .legend li { display: flex; align-items: center; gap: 6px; }

@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.4.0
+version: 0.5.0
 status: baseline-candidate
-last_updated: 2026-09-17
+last_updated: 2026-09-20
 ---
 
 # Especificación de experiencia de usuario
@@ -92,6 +92,16 @@ Reglas de presentación:
 
 En F2 el expediente existe con recuentos, inactividad, última lectura conocida e instante de cambio,
 y **sin tasa de salud**: sin oportunidades no hay denominador legítimo. F3 lo completa.
+
+**Orden de la página, medido y corregido (2026-09-20).** El expediente se coloca inmediatamente
+después del resumen del circuito, por delante de las vistas agregadas. No es una preferencia: con un
+circuito real de 54 vehículos, el expediente quedaba a 3.569 px del principio en pantalla de móvil
+—cuatro pantallas y media de desplazamiento— detrás de unos agregados que se consultan de vez en
+cuando. La vía de trabajo más frecuente no puede ser la que más cuesta alcanzar.
+
+**Lo que se muestra antes de la primera lectura de un objeto.** Ni posición inventada ni silencio:
+`sin datos`, diciendo cuándo llega esa primera lectura (R-GRA-010). Un silencio afirma que una
+posición conocida deja de confirmarse; antes de la primera lectura no hay ninguna.
 
 ## 5. Grafo y plano
 

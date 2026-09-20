@@ -60,6 +60,22 @@ describe("expediente de AGV", () => {
     expect(dossier.inactivity[0]?.durationMs).toBe(60_000);
   });
 
+  it("cada silencio conserva sus dos extremos: por dónde se fue y por dónde volvió", () => {
+    // `UX_SPEC.md` §4.1 no pide la duración sola: pide cómo se fue y **cómo reapareció**, porque
+    // es lo que separa una parada en su sitio de un tramo recorrido sin leer. Sin los dos extremos
+    // el expediente muestra un hueco y obliga a ir a buscar el dato a la tabla de lecturas.
+    const quieto = [reading(0, "A", "0100"), reading(60_000, "A", "0100")];
+    const avanzado = [reading(0, "B", "0100"), reading(60_000, "B", "0400")];
+
+    const mismoTag = buildAgvDossier("A", quieto, LOOKUP, [], 60_000, 30_000).inactivity[0];
+    expect(mismoTag?.lastTagBefore).toBe("0100");
+    expect(mismoTag?.firstTagAfter).toBe("0100");
+
+    const masAdelante = buildAgvDossier("B", avanzado, LOOKUP, [], 60_000, 30_000).inactivity[0];
+    expect(masAdelante?.lastTagBefore).toBe("0100");
+    expect(masAdelante?.firstTagAfter).toBe("0400");
+  });
+
   it("un silencio que llega hasta el final de la cobertura queda abierto, y se distingue del que ya cerró", () => {
     const cerrado = [reading(0, "A", "0100"), reading(65_000, "A", "0200"), reading(66_000, "A", "0300")];
     const abierto = buildAgvDossier("A", cerrado.slice(0, 2), LOOKUP, [], 200_000, 30_000);

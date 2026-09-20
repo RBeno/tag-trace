@@ -18,6 +18,17 @@ export interface InactivityPeriod {
   readonly fromUtcMs: number;
   readonly toUtcMs: number;
   readonly durationMs: number;
+  /**
+   * Los dos extremos del silencio: por dónde se fue y por dónde volvió (`UX_SPEC.md` §4.1).
+   *
+   * No es adorno. La forma de la reaparición es el quinto discriminante de ALG-019 y lo único que
+   * separa una parada en carga de una avería: reaparecer en el mismo tag dice que estuvo ahí;
+   * reaparecer más adelante dice que siguió circulando sin ser leído. El expediente muestra los dos
+   * extremos y **no elige** entre esas lecturas: eso exige el contraste con la cohorte y la
+   * configuración de calles que OQ-B04 todavía no ha dado.
+   */
+  readonly lastTagBefore: string;
+  readonly firstTagAfter: string;
 }
 
 export interface AgvDossier {
@@ -122,6 +133,8 @@ function computeAgvDossier(
         fromUtcMs: previous.time.utcMs,
         toUtcMs: current.time.utcMs,
         durationMs: gap,
+        lastTagBefore: previous.tagId,
+        firstTagAfter: current.tagId,
       });
     }
   }

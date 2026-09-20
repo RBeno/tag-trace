@@ -60,14 +60,24 @@ describe("replay básico", () => {
     if (middle?.kind === "silencio") expect(middle.lastTagId).toBe("0100");
   });
 
-  it("sin lectura previa al fotograma, el vehículo no tiene posición inventada", () => {
+  it("antes de su primera lectura, el vehículo no tiene posición inventada **ni silencio**", () => {
     // B lee pronto; A no lee hasta bien entrada la ventana. El primer fotograma se alinea con la
     // lectura más temprana de cualquiera (la de B), momento en el que A no ha leído nada todavía.
+    //
+    // Esto salía `silencio` y era un defecto de fondo, no de redacción: un silencio afirma que una
+    // posición conocida dejó de confirmarse, y aquí nunca hubo posición conocida. En una ventana
+    // real, con decenas de vehículos que empiezan escalonados, el primer fotograma presentaba una
+    // avería colectiva que nadie había observado.
     const readings = [reading(0, "B", "0900"), reading(500_000, "A", "0100")];
     const frames = buildReplayFrames(readings, 2, 100_000);
 
     expect(frames[0]?.atUtcMs).toBe(0);
-    expect(frames[0]?.vehicles.get("A")?.kind).toBe("silencio");
+    const inicial = frames[0]?.vehicles.get("A");
+    expect(inicial?.kind).toBe("sin-datos");
+    // Y dice cuándo deja de haber ausencia, que es lo único que el dato sostiene aquí.
+    if (inicial?.kind === "sin-datos") expect(inicial.firstReadingUtcMs).toBe(500_000);
+    // B sí tiene posición en ese mismo instante: la distinción es por objeto, no por fotograma.
+    expect(frames[0]?.vehicles.get("B")?.kind).toBe("en-tag");
   });
 
   it("una última lectura reciente, sin siguiente, sigue en-tag hasta que pasa el umbral", () => {

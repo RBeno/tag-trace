@@ -28,7 +28,14 @@ export type VehicleReplayState =
       readonly fraction: number;
       readonly truth: TruthState;
     }
-  | { readonly kind: "silencio"; readonly lastTagId: string; readonly sinceUtcMs: number };
+  | { readonly kind: "silencio"; readonly lastTagId: string; readonly sinceUtcMs: number }
+  /**
+   * Antes de la primera lectura del vehículo en la ventana. No es un silencio: un silencio exige
+   * una posición conocida que deja de confirmarse, y aquí no la hay todavía. Es el estado «sin
+   * datos cargados» de R-DAT-007 acotado a un objeto, y se distingue porque confundirlos convierte
+   * el arranque de la ventana en una avería colectiva que nadie ha observado.
+   */
+  | { readonly kind: "sin-datos"; readonly firstReadingUtcMs: number };
 
 export interface ReplayFrame {
   readonly atUtcMs: number;
@@ -96,9 +103,10 @@ function stateAt(
   }
 
   if (before === null) {
-    // El vehículo no había leído nada todavía en este instante: no se sabe dónde está, y no se
-    // inventa una posición de partida.
-    return { kind: "silencio", lastTagId: "", sinceUtcMs: atUtcMs };
+    // El vehículo no había leído nada todavía en este instante. No se inventa una posición de
+    // partida, pero tampoco se declara un silencio que nadie ha observado: lo que se sabe es
+    // cuándo llega su primera lectura, y eso es un hecho, no una hipótesis.
+    return { kind: "sin-datos", firstReadingUtcMs: entries[0]?.time.utcMs ?? atUtcMs };
   }
 
   // El fotograma cae exactamente en una lectura: es observado, siempre — haya o no una lectura

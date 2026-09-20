@@ -93,7 +93,7 @@ test.describe("contraste contra Vsystem", () => {
 });
 
 test.describe("replay básico", () => {
-  test("la posición es fracción temporal, y un vehículo sin lectura previa sale en silencio", async ({
+  test("la posición es fracción temporal, y antes de la primera lectura no hay silencio sino ausencia de datos", async ({
     page,
   }) => {
     await freshPage(page);
@@ -103,7 +103,10 @@ test.describe("replay básico", () => {
 
     await expect(page.getByRole("heading", { name: "Replay" })).toBeVisible();
     // En el primer fotograma, 0042 —cuya primera lectura es dos minutos después del inicio del
-    // anillo— todavía no ha leído nada: no se le inventa una posición de partida.
-    await expect(page.getByText(/0042.*silencio desde/)).toBeVisible();
+    // anillo— todavía no ha leído nada: no se le inventa una posición de partida, y tampoco se le
+    // atribuye un silencio. Un silencio afirma que una posición conocida dejó de confirmarse, y
+    // aquí no la hubo nunca; lo que se dice es cuándo llega su primera lectura.
+    await expect(page.getByText(/aún sin lecturas; la primera, a las/)).toBeVisible();
+    await expect(page.getByRole("cell", { name: "sin datos", exact: true })).toBeVisible();
   });
 });

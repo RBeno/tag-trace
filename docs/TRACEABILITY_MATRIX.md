@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
 last_updated: 2026-09-20
 ---
@@ -74,6 +74,9 @@ regla exista: la matriz no es una lista de intenciones.
 | ALG-018 expediente de AGV y tag (`UX_SPEC.md` §4.1) | `src/domain/dossier.ts` | `tests/unit/dossier.test.ts` |
 | R-GRA-001 contraste contra Vsystem por alineación de secuencia (LCS) | `src/domain/vsystem.ts` | `tests/unit/vsystem.test.ts` |
 | `PERFORMANCE_BUDGET.md` §6 replay básico determinista, posición como fracción temporal | `src/domain/replay.ts` | `tests/unit/replay.test.ts` |
+| R-GRA-010 / TC-065 antes de la primera lectura es `sin datos`, no silencio | `src/domain/replay.ts` (`stateAt`) | «antes de su primera lectura, el vehículo no tiene posición inventada **ni silencio**», `tests/e2e/f2.spec.ts` |
+| TC-067 / UX §4.1 los dos extremos de cada silencio | `src/domain/dossier.ts` (`InactivityPeriod`) | «cada silencio conserva sus dos extremos…» |
+| TC-068 la banda de actividad no emite un rótulo por celda | `src/presentation/charts.ts` (`activityChart`) | `tests/e2e/vistas.spec.ts` · «la banda de actividad no emite un rótulo por celda» |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` — y la

@@ -159,4 +159,22 @@ test.describe("vistas", () => {
     expect(await cobertura.locator("table tr").count()).toBe(3);
     await expect(cobertura.getByText("sin datos cargados (con trama)")).toBeVisible();
   });
+
+  test("la banda de actividad no emite un rótulo por celda", async ({ page }) => {
+    await freshPage(page);
+    await importInto(page, "sintetico", "ventana-1.csv");
+    await expect(page.getByText("Cobertura cargada")).toBeVisible({ timeout: 15_000 });
+
+    // Medido en un circuito real de 54 vehículos y 96 tramos: un `<title>` por celda eran 10.368
+    // nodos, el 86 % de la página entera, y una tarea de 958 ms que bloqueaba el hilo principal
+    // justo después de importar — el fallo exacto con el que el prototipo se cayó en el móvil.
+    // La información no se pierde: se lee al pasar el puntero, en una región viva.
+    const banda = page.locator("figure.chart", { hasText: "Actividad por vehículo" });
+    const celdas = await banda.locator("svg rect").count();
+    const rotulos = await banda.locator("svg title").count();
+    expect(celdas).toBeGreaterThan(10);
+    // Solo el rótulo del gráfico entero, nunca uno por celda.
+    expect(rotulos).toBeLessThanOrEqual(1);
+    await expect(banda.getByText("Pasa el puntero por la banda para leer una celda.")).toBeVisible();
+  });
 });

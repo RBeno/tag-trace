@@ -104,6 +104,10 @@ function figure(title: string, caption: string): HTMLElement {
 /** La tabla en sí, visible sin plegar: encabezados y filas de texto. */
 export function plainTable(headers: readonly string[], rows: readonly (readonly string[])[]): HTMLElement {
   const node = document.createElement("table");
+  // Sin clase, estas tablas usaban el estilo por defecto del navegador, que dimensiona por
+  // contenido: en pantalla de móvil la del expediente medía 469 px sobre 360 y había que arrastrar
+  // en horizontal para leerla, que es justo lo que `UX_SPEC.md` §5.1 prohíbe.
+  node.className = "data";
   const head = document.createElement("tr");
   for (const label of headers) {
     const cell = document.createElement("th");
@@ -380,33 +384,27 @@ export function activityChart(data: ActivityData, format: (utcMs: number) => str
       }
       if (count === 0) {
         // Cero **dentro** de cobertura sí es un hecho: el vehículo no leyó ahí. Se deja en blanco
-        // con su borde, distinto de la trama, y el tooltip lo dice con todas las letras.
+        // con su borde, distinto de la trama, y la lectura al puntero lo dice con todas las letras.
         canvas.append(
-          withTooltip(
-            svg("rect", {
-              x,
-              y,
-              width: cellWidth,
-              height: rowHeight,
-              fill: "transparent",
-              stroke: "var(--viz-grid)",
-            }),
-            `${row.agvId} · ${format(data.binStarts[bin] ?? 0)} — sin lecturas, con datos cargados`,
-          ),
+          svg("rect", {
+            x,
+            y,
+            width: cellWidth,
+            height: rowHeight,
+            fill: "transparent",
+            stroke: "var(--viz-grid)",
+          }),
         );
         return;
       }
       canvas.append(
-        withTooltip(
-          svg("rect", {
-            x,
-            y,
-            width: Math.max(1, cellWidth - 1),
-            height: rowHeight,
-            fill: rampStep(count, data.maxPerBin),
-          }),
-          `${row.agvId} · ${format(data.binStarts[bin] ?? 0)} — ${count.toLocaleString("es-ES")} lecturas`,
-        ),
+        svg("rect", {
+          x,
+          y,
+          width: Math.max(1, cellWidth - 1),
+          height: rowHeight,
+          fill: rampStep(count, data.maxPerBin),
+        }),
       );
     });
   });
@@ -418,6 +416,46 @@ export function activityChart(data: ActivityData, format: (utcMs: number) => str
   );
 
   wrapper.append(canvas);
+
+  /**
+   * Una sola lectura para toda la banda, en vez de un `<title>` por celda.
+   *
+   * Medido en un circuito real (54 vehículos × 96 tramos): con un rótulo por celda la banda
+   * emitía 10.368 nodos —el 86 % de toda la página— y dejaba el hilo principal bloqueado casi un
+   * segundo justo después de importar, que es el fallo con el que el prototipo se cayó en el
+   * móvil. La celda se deduce de la posición del puntero, así que no hace falta ningún nodo
+   * adicional, y una región viva se lee mejor con lector de pantalla que cinco mil títulos.
+   */
+  const readout = document.createElement("p");
+  readout.className = "muted";
+  readout.setAttribute("aria-live", "polite");
+  const REPOSO = "Pasa el puntero por la banda para leer una celda.";
+  readout.textContent = REPOSO;
+  canvas.addEventListener("pointermove", (event) => {
+    const box = canvas.getBoundingClientRect();
+    if (box.width === 0 || box.height === 0) return;
+    const localX = ((event.clientX - box.left) * width) / box.width;
+    const localY = ((event.clientY - box.top) * height) / box.height;
+    const rowIndex = Math.floor(localY / (rowHeight + gap));
+    const bin = Math.floor((localX - labelWidth) / cellWidth);
+    const row = data.rows[rowIndex];
+    if (row === undefined || bin < 0 || bin >= binCount) {
+      readout.textContent = REPOSO;
+      return;
+    }
+    const instant = format(data.binStarts[bin] ?? 0);
+    const count = row.bins[bin] ?? 0;
+    readout.textContent = uncovered.has(bin)
+      ? `${row.agvId} · ${instant} — sin datos cargados: no se analiza, y no es un silencio`
+      : count === 0
+        ? `${row.agvId} · ${instant} — sin lecturas, con datos cargados`
+        : `${row.agvId} · ${instant} — ${count.toLocaleString("es-ES")} lecturas`;
+  });
+  canvas.addEventListener("pointerleave", () => {
+    readout.textContent = REPOSO;
+  });
+  wrapper.append(readout);
+
   wrapper.append(
     legendList([
       ["var(--viz-1)", "pocas lecturas"],

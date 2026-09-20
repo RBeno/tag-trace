@@ -2,6 +2,51 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.3.0] - 2026-09-20
+
+F3 abierta por el propietario («Continúa con Fase 3»), y la primera prueba del producto en un
+navegador contra un circuito de forma realista —54 vehículos, 150 tags, 98.400 lecturas, 18 h a
+resolución de segundo—. Encontró tres cosas que la suite en verde no había detectado.
+
+### Corregido
+
+- **El replay llamaba «silencio» a un vehículo que aún no había tenido su primera lectura**
+  (R-GRA-010, nueva). Un silencio afirma que una posición conocida deja de confirmarse; antes de la
+  primera lectura no hay posición que dejar de confirmar, así que lo que hay es **ausencia de datos
+  para ese objeto** —R-DAT-007 acotado a un objeto—. En el primer fotograma de una ventana real eso
+  presentaba 53 de 54 vehículos como averiados, con estado `unknown` y una fecha de inicio del
+  silencio que además cambiaba al mover el deslizador. Ahora sale `sin datos` y dice cuándo llega
+  esa primera lectura, que es lo único que el dato sostiene.
+  **El caso de prueba TC-065 pedía literalmente el comportamiento defectuoso**, y la prueba
+  correspondiente pasaba. Se corrigen los dos, y queda anotado en `TEST_STRATEGY.md`: lo que hay que
+  recordar no es el defecto, sino que una prueba en verde lo sostenía.
+- **La banda de actividad emitía un rótulo por celda**: con 54 vehículos y 96 tramos son 10.368
+  nodos, el 86 % de toda la página, y una tarea de **958 ms** bloqueando el hilo principal justo
+  después de importar — el modo de fallo exacto con el que el prototipo se cayó en el móvil. La
+  celda se deduce ahora de la posición del puntero y se lee en una región viva, que además se
+  comporta mejor con lector de pantalla que cinco mil títulos. Medido después: **7.275 nodos en vez
+  de 12.458 y 340 ms en vez de 958**.
+- **Las tablas del expediente, del contraste y del replay no tenían estilo propio** y usaban el del
+  navegador, que dimensiona por contenido: en pantalla de móvil la del expediente medía 469 px sobre
+  360 y había que arrastrar en horizontal para leerla, justo lo que `UX_SPEC.md` §5.1 prohíbe.
+
+### Añadido
+
+- **Cada periodo de inactividad muestra sus dos extremos**: por dónde se fue y por dónde volvió
+  (`UX_SPEC.md` §4.1, que lo exigía desde F0). Volver al mismo tag y volver más adelante son hechos
+  distintos —el primero dice que estuvo ahí parado, el segundo que siguió circulando sin ser leído—
+  y el expediente los muestra **sin elegir entre ellos**: separarlos del todo exige el contraste con
+  la cohorte y las calles configuradas que OQ-B04 aún no ha dado.
+- **El replay ordena por estado**, no por identificador: primero lo que tiene posición, después lo
+  que no. Con 54 vehículos, el orden alfabético enterraba a los pocos en movimiento.
+- **El expediente va antes que las vistas.** Es la vía de trabajo declarada más frecuente y quedaba
+  a 3.569 px del principio en móvil; ahora, a 2.120.
+
+### Cambiado
+
+- El subtítulo decía «Importador de lecturas · F1a·0» cuando el producto acumula circuitos, contrasta
+  inventario, segmenta vueltas y reproduce el recorrido.
+
 ## [3.2.0] - 2026-09-20
 
 Los cinco elementos programables que quedaban pendientes de G2 (Parte 20), construidos, probados y
