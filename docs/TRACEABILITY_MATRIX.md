@@ -1,8 +1,8 @@
 ---
 document_id: TT-TRACE-001
-version: 0.13.0
+version: 0.14.0
 status: baseline-candidate
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 ---
 
 # Matriz de trazabilidad
@@ -83,11 +83,15 @@ regla exista: la matriz no es una lista de intenciones.
 | Composición del circuito: número y orden de tags | `src/domain/laps.ts` (`findDominantCycle`), `workers/import.worker.ts` (`shapes`) | «el número y el orden de los tags salen junto al número de vehículos» |
 | TC-075 / UX §4 destacados primero, conjunto a demanda | `src/presentation/main.ts` (`finding`), `src/presentation/charts.ts` (`lazyDetails`) | `tests/e2e/f2.spec.ts` |
 | TC-068 la banda de actividad no emite un rótulo por celda | `src/presentation/charts.ts` (`activityChart`) | `tests/e2e/vistas.spec.ts` · «la banda de actividad no emite un rótulo por celda» |
+| `TEST_STRATEGY.md` §7 / G3 falsos positivos y desconocidos medidos por categoría | `tests/support/circuito-auditoria.ts` (verdad plantada) | `tests/audit/auditoria.test.ts` · informe por clase, cero falsos positivos y deuda que no se pudre |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` — y la
 comparación entre dos periodos distantes, que es la única que separa un obsoleto de un tag
-averiado.
+averiado. Desde el 2026-09-21 se añade una tercera, y esta la ha **medido** la auditoría en vez de
+deducirla: la **tasa a lo largo del tiempo**. Sin ella, una rotura súbita y una degradación
+progresiva salen como un porcentaje medio, y las dos clases figuran como deuda declarada en
+`tests/audit/auditoria.test.ts`.
 
 **La advertencia anterior queda cerrada, no borrada.** Hasta esta entrega, `inventory.ts` y
 `graph.ts` estaban probados y no eran alcanzables desde la interfaz. Ya lo son: el agrupamiento por

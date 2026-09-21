@@ -1,8 +1,8 @@
 ---
 document_id: TT-GATES-001
-version: 0.12.0
+version: 0.13.0
 status: baseline-candidate
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 ---
 
 # Puertas de fase
@@ -104,7 +104,11 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
 - [ ] FIFO cargado y reordenación vacía diferenciados.
 - [ ] Cinco calles CO modeladas sin SOC.
 - [ ] Puntos críticos y retroceso preliminar útiles.
-- [ ] Falsos positivos y desconocidos medidos por categoría.
+- [ ] Falsos positivos y desconocidos medidos por categoría. **El mecanismo ya existe** desde el
+      2026-09-21 (`tests/audit/`, con un circuito sintético de verdad plantada y un informe por
+      clase de fallo), pero eso **no marca la casilla**: la marcarán las cifras que produzca, y hoy
+      el informe declara dos clases sin detectar —rotura súbita y degradación progresiva— porque el
+      producto calcula una sola tasa sobre toda la ventana.
 
 ## G4 — Autorizar F5
 

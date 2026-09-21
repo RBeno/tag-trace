@@ -2,6 +2,72 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.7.0] - 2026-09-21
+
+Un banco de pruebas donde **todos los fallos conocidos están plantados a propósito**, para dejar de
+opinar sobre qué detecta el producto y empezar a contarlo. La frase del propietario fija el método:
+«como ya sabes dónde está el fallo y qué lo delata, podemos optimizar la aplicación». Medir primero,
+arreglar después, y que lo que se arregle lo decida una cifra.
+
+### Añadido
+
+- **`tests/support/circuito-auditoria.ts`** — generador con semilla: 150 tags declarados, 40
+  vehículos, 30 h, ~252.000 lecturas, con ocho clases de fallo plantadas en posiciones fijas del
+  anillo para que cualquiera pueda comprobarlas a mano. Devuelve, junto a los dos CSV, la **verdad
+  plantada**: por cada defecto, sus tags y vehículos, qué debe decir el producto y —igual de
+  importante— **qué no puede decir**; más la lista de tags limpios, que es contra la que se cuentan
+  los falsos positivos.
+- **`tests/audit/auditoria.test.ts`** — ejecuta el mismo encadenado que el Worker (importación →
+  transiciones → cohortes → ciclo dominante → vueltas → matriz de lectura → inventario) y publica un
+  informe por clase. `tests/audit/` es capa propia en `vitest.config.ts`: no comprueba una función,
+  mide cuánto de lo que puede ir mal llega a decirse.
+- **`scripts/generar-auditoria.ts`** — `npx vite-node scripts/generar-auditoria.ts` deja las dos CSV
+  en `local/` e imprime lo plantado con tags y AGV concretos, para cargarlo en el móvil y buscar en
+  la pantalla lo que el informe dice.
+- **`fixtures/synthetic/auditoria/MANIFEST.md`** con el escenario, los resultados esperados y los
+  **prohibidos**. Los datos no se versionan: se generan con semilla, igual que la fuente de cien mil
+  filas de `tests/e2e/rendimiento.spec.ts`.
+
+### El informe, que es el entregable
+
+```
+251.675 lecturas, 40 vehículos. Anillo reconstruido: 146 tags de 150 declarados. Fuera del anillo: 3.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 9/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  NO DETECTA  rotura-subita — con instante de cambio: 0/2 (se busca `changedAtUtcMs` en la fila del tag)
+  NO DETECTA  degradacion-progresiva — con tendencia a la baja: 0/2 (se busca `trend` en la fila del tag)
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+```
+
+Seis clases de ocho detectadas, **cero falsos positivos** sobre los tags sanos, y dos clases que no
+se detectan — que son el primer hallazgo de la auditoría, no un defecto suyo:
+
+- **Rotura súbita y degradación progresiva se escapan por la misma causa**: el producto calcula
+  **una sola tasa sobre toda la ventana**. Un tag que se leía al 100 % y desaparece de golpe, y otro
+  que va del 90 % al 40 %, salen los dos como un porcentaje medio indistinguible de un `gradiente`.
+  Separarlos exige mirar la tasa **a lo largo del tiempo**, que no está implementado. Queda medido y
+  enumerado; construirlo es el incremento siguiente.
+- El 10.º tag de lectura media no se señala porque su tasa plantada roza el umbral de `lowRate`. No
+  se toca el umbral para que la cifra quede bonita: se registra el 9/10.
+
+Las clases no detectadas viven en una lista explícita, y la prueba falla **también** si una empieza
+a detectarse sin sacarla de ella. Una lista de deuda que no se actualiza sola acaba mintiendo igual
+que un `TODO` viejo.
+
+### Gobierno
+
+- `docs/TEST_STRATEGY.md`: la auditoría como capa propia (§7) y en la tabla de capas.
+- `docs/PHASE_GATES.md` G3: el mecanismo de «falsos positivos y desconocidos medidos por categoría»
+  ya existe. **La casilla sigue sin marcar**: la marcarán las cifras, no el mecanismo.
+
+### Corregido
+
+- Una línea en blanco partía en dos la tabla de casos de oro de `TEST_STRATEGY.md` entre TC-075 y
+  TC-076, así que los cuatro últimos casos no se renderizaban como tabla.
+
 ## [3.6.0] - 2026-09-20
 
 ### Corregido

@@ -6,7 +6,7 @@
   "phaseName": "Diagnóstico explicable",
   "status": "in_progress",
   "baseline": "approved",
-  "lastUpdated": "2026-09-20",
+  "lastUpdated": "2026-09-21",
   "implementationStarted": true,
   "legacyRepository": "RBeno/tag-trace-agv",
   "nextTransition": {
