@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/2`
+- Dataset ID/version: `auditoria/3`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -30,7 +30,7 @@ imprime dónde está plantado cada fallo, con sus tags y vehículos.
 
 ## Escenario
 
-150 tags declarados en la lista `circuito`, 40 vehículos, 30 h de ventana, ~241.000 lecturas.
+150 tags declarados en la lista `circuito`, 40 vehículos, 30 h de ventana, ~239.000 lecturas.
 **147 tags llegan a leerse**; los otros 3 están declarados y no los lee nadie.
 
 Además, **cinco calles de carga online** de tres tags cada una —entrada, parada precisa y salida—,
@@ -53,6 +53,7 @@ esa magnitud es del escenario, no de planta, y por eso vive en el generador y no
 | `salida-fuera-de-antiguedad` | 1 AGV, 5 h dentro | el que más esperó, **el primero** de la lista (R-CO-003) | llamarlo avería: R-FLO-001 admite excepciones |
 | `carga-anterior-a-la-ventana` | 5 AGV | estaban dentro antes de la cobertura (R-CO-007) | que estuvieran ausentes, ni la calle vacía |
 | `zona-vacia-declarada` | 1/3 del anillo + calles | la zona se enumera y las calles caen dentro | que declararla mueva el veredicto de un tag sano |
+| `lector-agv-degradado` | 1 AGV, sin otro papel | tendencia a la baja en la fila del **vehículo** (R-OPP-015) | que los tags que lee ese AGV salgan con tendencia o rotura |
 
 ## Resultados prohibidos
 

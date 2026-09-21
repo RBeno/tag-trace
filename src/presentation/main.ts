@@ -1085,21 +1085,88 @@ function renderHighlights(matrix: Matrix): void {
         "Ningún vehículo concentra tags sin leer: lo que falte, falta para todos por igual.",
       ),
     );
+  } else {
+    for (const vehicle of quietVehicles) {
+      const blind = blindCount.get(vehicle.agvId) ?? 0;
+      viewsPanel.append(
+        finding(
+          `AGV ${vehicle.agvId} · ${vehicle.laps} vueltas`,
+          `${blind} ${blind === 1 ? "tag que no lee" : "tags que no lee"} y los demás sí · ` +
+            `${percent(vehicle.rate)} de lo que pasa`,
+          "Revisar lector, WiFi o memoria de este vehículo: el tag no es el problema, porque el " +
+            "resto de la flota lo lee." +
+            (vehicle.unproven > 0
+              ? ` Además recorrió ${vehicle.unproven} tramos en menos tiempo del que tardan: o los ` +
+                "atajó, o hay una rama que el anillo no recoge."
+              : ""),
+        ),
+      );
+    }
+  }
+
+  renderTrends(matrix);
+}
+
+/**
+ * Rotura súbita y degradación progresiva, sobre la misma matriz (R-OPP-015).
+ *
+ * Junto a los destacados de siempre y no en una sección aparte: es exactamente el tipo de caso que
+ * esa lista ya prioriza, y separarlo obligaría a mirar dos sitios para la misma pregunta.
+ */
+function renderTrends(matrix: Matrix): void {
+  const brokenTags = matrix.tags.filter((tag) => tag.changedAtUtcMs !== undefined);
+  const decliningTags = matrix.tags.filter((tag) => tag.trend === "bajando");
+  const brokenVehicles = matrix.vehicles.filter((vehicle) => vehicle.changedAtUtcMs !== undefined);
+  const decliningVehicles = matrix.vehicles.filter((vehicle) => vehicle.trend === "bajando");
+
+  if (
+    brokenTags.length === 0 &&
+    decliningTags.length === 0 &&
+    brokenVehicles.length === 0 &&
+    decliningVehicles.length === 0
+  ) {
     return;
   }
-  for (const vehicle of quietVehicles) {
-    const blind = blindCount.get(vehicle.agvId) ?? 0;
+
+  for (const tag of brokenTags) {
     viewsPanel.append(
       finding(
-        `AGV ${vehicle.agvId} · ${vehicle.laps} vueltas`,
-        `${blind} ${blind === 1 ? "tag que no lee" : "tags que no lee"} y los demás sí · ` +
-          `${percent(vehicle.rate)} de lo que pasa`,
-        "Revisar lector, WiFi o memoria de este vehículo: el tag no es el problema, porque el " +
-          "resto de la flota lo lee." +
-          (vehicle.unproven > 0
-            ? ` Además recorrió ${vehicle.unproven} tramos en menos tiempo del que tardan: o los ` +
-              "atajó, o hay una rama que el anillo no recoge."
-            : ""),
+        `Tag ${tag.tagId}: dejó de leerse en un instante concreto`,
+        `${percent(tag.rateBefore ?? null)} → ${percent(tag.rateAfter ?? null)} el ` +
+          formatInstant(tag.changedAtUtcMs as number),
+        "Un corte, no una fluctuación: se leía con normalidad y a partir de ahí casi nadie lo " +
+          "lee. Comprobar el tag en ese instante, no promediar toda la ventana (R-OPP-015).",
+      ),
+    );
+  }
+  for (const tag of decliningTags) {
+    viewsPanel.append(
+      finding(
+        `Tag ${tag.tagId}: baja de forma sostenida a lo largo de la ventana`,
+        (tag.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
+        "La caída es progresiva, no un promedio estable que la esconda: cuatro tramos temporales, " +
+          "cada uno peor que el anterior (R-OPP-015).",
+      ),
+    );
+  }
+  for (const vehicle of brokenVehicles) {
+    viewsPanel.append(
+      finding(
+        `AGV ${vehicle.agvId}: su lector dejó de responder en un instante concreto`,
+        `${percent(vehicle.rateBefore ?? null)} → ${percent(vehicle.rateAfter ?? null)} el ` +
+          formatInstant(vehicle.changedAtUtcMs as number),
+        "El corte es del vehículo, en todos los tags que recorre, no de uno solo: revisar su " +
+          "lector o su WiFi en ese instante (R-OPP-015).",
+      ),
+    );
+  }
+  for (const vehicle of decliningVehicles) {
+    viewsPanel.append(
+      finding(
+        `AGV ${vehicle.agvId}: su lector lee cada vez peor`,
+        (vehicle.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
+        "La caída es de este vehículo en conjunto, no de un tag concreto: sus compañeros siguen " +
+          "leyendo los mismos tags con normalidad (R-OPP-015).",
       ),
     );
   }

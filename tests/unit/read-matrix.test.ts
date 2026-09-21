@@ -14,6 +14,7 @@ import {
   type OrderEvidenceLimits,
   type ReadRateThresholds,
 } from "../../src/domain/read-matrix.js";
+import type { TrendThresholds } from "../../src/domain/read-rate-trend.js";
 import type { Reading } from "../../src/domain/reading.js";
 
 const ZONE = "Europe/Madrid";
@@ -24,6 +25,20 @@ const THRESHOLDS: ReadRateThresholds = {
   lowRate: 0.2,
   maxGapProvenByNeighbours: 1,
   minTimeRatio: 0.6,
+};
+
+/**
+ * Umbral de tendencia que no se alcanza con los escenarios pequeños de este fichero (unas pocas
+ * vueltas cada uno). No es que la búsqueda esté desactivada: es que aquí no hay pasadas de sobra
+ * para que signifique algo, y `read-rate-trend.test.ts` es donde se prueba el detector en sí.
+ */
+const SIN_TENDENCIA: TrendThresholds = {
+  minPassesForTrend: 10_000,
+  minRateDrop: 0.5,
+  minPassesEachSide: 5,
+  minShareEachSide: 0.15,
+  trendSegments: 4,
+  minGradientDrop: 0.3,
 };
 
 /**
@@ -74,7 +89,7 @@ describe("matriz de lectura por pasada", () => {
       ...laps("A", RING, 4),
       ...laps("B", RING, 4, (_lap, tagId) => tagId === "0300"),
     ];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
 
     const tag = matrix.tags.find((entry) => entry.tagId === "0300");
     expect(tag?.pattern).toBe("bimodal-candidato");
@@ -89,7 +104,7 @@ describe("matriz de lectura por pasada", () => {
     // de en medio existe justamente para no llamar bimodal ni uniforme a lo que no lo es.
     const omite = (lap: number, tagId: string): boolean => tagId === "0300" && lap % 6 !== 0;
     const readings = [...laps("A", RING, 11, omite), ...laps("B", RING, 11, omite)];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
 
     const tag = matrix.tags.find((entry) => entry.tagId === "0300");
     expect(tag?.pattern).toBe("uniforme-bajo");
@@ -105,7 +120,7 @@ describe("matriz de lectura por pasada", () => {
       // `B` hace el anillo corto: nunca pasa por 0900 ni por su vecindad inmediata.
       ...laps("B", ["0100", "0200", "0300"], 4),
     ];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], conRama, "0100", THRESHOLDS, SIN_ZONAS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], conRama, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
 
     const rama = matrix.tags.find((entry) => entry.tagId === "0900");
     // `B` no aparece como lector fallido de 0900: sencillamente no pasó por ahí. Si contara, `B`
@@ -124,7 +139,7 @@ describe("matriz de lectura por pasada", () => {
       ...laps("B", RING, 5, (lap, tagId) => tagId === "0300" && lap % 2 === 0),
       ...laps("C", RING, 5, (lap, tagId) => tagId === "0300" && lap % 3 !== 0),
     ];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
 
     const tag = matrix.tags.find((entry) => entry.tagId === "0300");
     expect(tag?.pattern).toBe("gradiente");
@@ -133,7 +148,7 @@ describe("matriz de lectura por pasada", () => {
 
   it("pocas pasadas no son un cero: salen sin soporte y con la razón declarada", () => {
     const readings = [...laps("A", RING, 1), ...laps("B", RING, 1)];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
 
     for (const tag of matrix.tags) {
       expect(tag.pattern).toBe("sin-soporte");
@@ -151,6 +166,7 @@ describe("matriz de lectura por pasada", () => {
       "0100",
       THRESHOLDS,
       SIN_ZONAS,
+      SIN_TENDENCIA,
     );
 
     const anchor = matrix.tags.find((entry) => entry.tagId === "0100");
@@ -162,7 +178,7 @@ describe("matriz de lectura por pasada", () => {
   it("sin vueltas cerradas no hay matriz que sostener, y se dice", () => {
     // Un vehículo que nunca vuelve a pasar por el ancla no cierra ninguna vuelta.
     const readings = [reading("A", "0100"), reading("A", "0200"), reading("A", "0300")];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
 
     expect(matrix.supported).toBe(false);
     expect(matrix.vehicles[0]?.laps).toBe(0);
@@ -193,7 +209,7 @@ describe("matriz de lectura por pasada", () => {
     }
     paso("B", "0100", 10);
 
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS, SIN_ZONAS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
 
     const tag = matrix.tags.find((entry) => entry.tagId === "0400");
     const celda = tag?.byVehicle.find((cell) => cell.agvId === "B");
@@ -224,7 +240,7 @@ describe("matriz de lectura por pasada", () => {
     }
     paso("B", "0100", 10);
 
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS, SIN_ZONAS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
 
     const tag = matrix.tags.find((entry) => entry.tagId === "0400");
     // `B` no aparece con pasadas, y el tramo queda registrado como no sostenido en vez de
@@ -247,8 +263,8 @@ describe("matriz de lectura por pasada", () => {
       { from: (segunda[0] as Reading).time.utcMs, to: clock },
     ];
 
-    const conHueco = buildReadMatrix(0, readings, "oldest-first", cobertura, RING, "0100", THRESHOLDS, SIN_ZONAS);
-    const sinHueco = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
+    const conHueco = buildReadMatrix(0, readings, "oldest-first", cobertura, RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
+    const sinHueco = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
 
     // La vuelta que va de un lado al otro del hueco se descarta: en medio no hubo circulación,
     // hubo ausencia de datos.
@@ -265,11 +281,11 @@ describe("matriz de lectura por pasada", () => {
     const enCargado = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS, {
       zoneOf: new Map(anillo.map((tagId) => [tagId, "cargado"])),
       laneEntryTags: new Set(),
-    });
+    }, SIN_TENDENCIA);
     const enVacio = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS, {
       zoneOf: new Map(anillo.map((tagId) => [tagId, "vacio"])),
       laneEntryTags: new Set(),
-    });
+    }, SIN_TENDENCIA);
 
     const porOrden = (matrix: typeof enCargado): number =>
       matrix.tags.find((entry) => entry.tagId === "0400")?.byOrder ?? 0;
@@ -288,10 +304,150 @@ describe("matriz de lectura por pasada", () => {
     const matrix = buildReadMatrix(0, convoyDeDos(), "oldest-first", [], anillo, "0100", THRESHOLDS, {
       zoneOf: new Map(anillo.map((tagId) => [tagId, "cargado"])),
       laneEntryTags: new Set(["0300"]),
-    });
+    }, SIN_TENDENCIA);
 
     expect(matrix.tags.find((entry) => entry.tagId === "0400")?.byOrder ?? 0).toBe(0);
     expect(matrix.orderWithheld).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Rotura súbita, degradación progresiva y lector de AGV degradado (R-OPP-015), extremo a extremo.
+ *
+ * El detector en sí ya está probado a fondo en `read-rate-trend.test.ts`, incluidos los casos que
+ * **no** deben disparar nada. Lo que hace falta aquí es el cableado: que `buildReadMatrix` reúna la
+ * línea temporal correcta para cada tag y cada vehículo, y que el campo aparezca en la fila que le
+ * corresponde y no en otra.
+ */
+const TREND: TrendThresholds = {
+  minPassesForTrend: 20,
+  minRateDrop: 0.5,
+  minPassesEachSide: 5,
+  minShareEachSide: 0.15,
+  trendSegments: 4,
+  minGradientDrop: 0.3,
+};
+
+/**
+ * Lecturas a ritmo constante: el vehículo avanza una posición del anillo cada 1000 ms, la lea o no.
+ *
+ * Con el ayudante `reading()` de arriba, saltarse varios tags seguidos acorta el reloj —cada
+ * llamada omitida es un segundo que no transcurre— y eso parece un atajo real (recorrer el tramo en
+ * mucho menos de lo que tarda), rechazado a propósito por `minTimeRatio`. Aquí el vehículo sigue
+ * circulando al mismo ritmo aunque no lea: es lo que hace falta para que un lector que se salta dos
+ * o tres tags seguidos siga demostrando el paso por tiempo, en vez de parecer un vehículo que se
+ * teletransporta.
+ */
+function constantPaceReadings(
+  agvId: string,
+  ring: readonly string[],
+  lapsCount: number,
+  skip: (lap: number, tagId: string) => boolean = () => false,
+): Reading[] {
+  const out: Reading[] = [];
+  let t = 0;
+  for (let lap = 0; lap <= lapsCount; lap += 1) {
+    for (const tagId of ring) {
+      t += 1000;
+      if (tagId !== ring[0] && skip(lap, tagId)) continue;
+      row += 1;
+      out.push({
+        time: { utcMs: t, raw: String(t), zone: ZONE, flag: "ok" },
+        agvId,
+        tagId,
+        provenance: { sourceId: "s", sourceHash: "s", sourceRow: row },
+      });
+    }
+  }
+  return out;
+}
+
+/** `hits` aciertos repartidos de forma pareja entre `total`, sin agrupar al principio ni al final. */
+function spread(hits: number, total: number): boolean[] {
+  const result: boolean[] = [];
+  let acc = 0;
+  for (let index = 0; index < total; index += 1) {
+    acc += hits;
+    if (acc >= total) {
+      acc -= total;
+      result.push(true);
+    } else {
+      result.push(false);
+    }
+  }
+  return result;
+}
+
+describe("rotura y degradación, extremo a extremo (R-OPP-015)", () => {
+  const RING6 = ["0100", "0200", "0300", "0400", "0500", "0600"];
+
+  it("un tag que toda la flota deja de leer a mitad de la ventana sale con su instante de cambio", () => {
+    const skip = (lap: number, tagId: string): boolean => tagId === "0300" && lap >= 40;
+    const readings = [
+      ...constantPaceReadings("H1", RING6, 80, skip),
+      ...constantPaceReadings("H2", RING6, 80, skip),
+      ...constantPaceReadings("H3", RING6, 80, skip),
+    ];
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING6, "0100", THRESHOLDS, SIN_ZONAS, TREND);
+
+    const tag = matrix.tags.find((entry) => entry.tagId === "0300");
+    expect(tag?.changedAtUtcMs).toBeTypeOf("number");
+    expect(tag?.rateBefore).toBeGreaterThan(0.9);
+    expect(tag?.rateAfter).toBeLessThan(0.1);
+    // El corte real cae en la vuelta 40, a seis posiciones por vuelta: sobre los 240.000 ms.
+    expect(tag?.changedAtUtcMs).toBeGreaterThan(200_000);
+    expect(tag?.changedAtUtcMs).toBeLessThan(280_000);
+    // Y no se confunde con una tendencia: es un corte, no una caída en varios tramos.
+    expect(tag?.trend).toBeUndefined();
+  });
+
+  it("un tag que toda la flota lee cada vez menos sale con una tendencia a la baja", () => {
+    // Mismo patrón 0,9 → 0,75 → 0,6 → 0,45 que fija `read-rate-trend.test.ts`, aplicado a las
+    // mismas vueltas de dos vehículos: es el tag el que se degrada, así que todos lo notan igual.
+    const hitPattern = [...spread(18, 20), ...spread(15, 20), ...spread(12, 20), ...spread(9, 20)];
+    const skip = (lap: number, tagId: string): boolean => tagId === "0300" && !hitPattern[lap];
+    const readings = [
+      ...constantPaceReadings("H1", RING6, 79, skip),
+      ...constantPaceReadings("H2", RING6, 79, skip),
+    ];
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING6, "0100", THRESHOLDS, SIN_ZONAS, TREND);
+
+    const tag = matrix.tags.find((entry) => entry.tagId === "0300");
+    expect(tag?.trend).toBe("bajando");
+    expect(tag?.segmentRates).toBeDefined();
+    const rates = tag?.segmentRates as readonly number[];
+    for (let index = 1; index < rates.length; index += 1) {
+      expect(rates[index]).toBeLessThanOrEqual(rates[index - 1] as number);
+    }
+    expect(tag?.changedAtUtcMs).toBeUndefined();
+  });
+
+  it("un AGV cuyo lector se degrada en varios tags sale marcado él, y sus tags siguen sanos", () => {
+    // `D` pierde, cada vez con más frecuencia, los tres tags no ancla de una misma vuelta —su
+    // lector falla, no un tag concreto—, mientras `H1` y `H2` los leen siempre. La flota diluye el
+    // efecto sobre cada tag por debajo del umbral; en `D` no hay con qué diluirlo.
+    const hitPattern = [...spread(18, 20), ...spread(15, 20), ...spread(12, 20), ...spread(9, 20)];
+    const skip = (lap: number, tagId: string): boolean => tagId !== "0100" && !hitPattern[lap];
+    const readings = [
+      ...constantPaceReadings("H1", RING6, 79),
+      ...constantPaceReadings("H2", RING6, 79),
+      ...constantPaceReadings("D", RING6, 79, skip),
+    ];
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING6, "0100", THRESHOLDS, SIN_ZONAS, TREND);
+
+    const vehicleD = matrix.vehicles.find((entry) => entry.agvId === "D");
+    expect(vehicleD?.trend).toBe("bajando");
+
+    for (const tagId of ["0200", "0300", "0400", "0500", "0600"]) {
+      const tag = matrix.tags.find((entry) => entry.tagId === tagId);
+      expect(tag?.trend, `${tagId} no debería mostrar tendencia`).toBeUndefined();
+      expect(tag?.changedAtUtcMs, `${tagId} no debería mostrar rotura`).toBeUndefined();
+    }
+    // Y las otras dos vueltas no deberían mostrar nada: leen siempre.
+    for (const agvId of ["H1", "H2"]) {
+      const vehicle = matrix.vehicles.find((entry) => entry.agvId === agvId);
+      expect(vehicle?.trend, `${agvId} no debería mostrar tendencia`).toBeUndefined();
+    }
   });
 });
 

@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.15.0
+version: 0.16.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -140,6 +140,12 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-088 | Calle declarada sin `parada-precisa`, o con dos tags con el mismo papel | No se monta, y el motivo se enseña junto al análisis | Elegir uno de los dos, o deducir el papel por la posición |
 | TC-089 | Tramo encerrado que cae en zona vacía, o que cruza una entrada de calle | La vía de orden **no se usa**; el tramo queda sin sostener y se cuenta (R-FLO-006) | Dar el paso por bueno donde la reordenación está admitida |
 | TC-090 | El mismo circuito analizado con y sin las listas de zona y calles | Ningún tag sano cambia de veredicto | Que declarar el contexto mueva un diagnóstico que no le corresponde |
+| TC-091 | Tag que toda la flota lee con normalidad y deja de leerse de golpe a mitad de la ventana | `changedAtUtcMs` con el instante del corte, `rateBefore`/`rateAfter` (R-OPP-015) | Una tasa media que mezcle el antes y el después como si fuera un régimen |
+| TC-092 | Tag que baja de forma sostenida en cuatro tramos temporales | `trend: "bajando"` con `segmentRates` monótonas | Una tasa media estable que esconda que va a peor, o llamarlo tendencia con una sola bajada aislada |
+| TC-093 | Tag `bimodal-candidato` con las dos poblaciones de vehículos entrelazadas en el tiempo | `sin-cambio`: ni corte ni tendencia | Confundir la mezcla de dos poblaciones con una rotura |
+| TC-094 | Un solo vehículo que se salta un tramo periódicamente (omisión conservando convoy) | `sin-cambio` en la línea temporal del tag | Leer el salto periódico como una tendencia del tag |
+| TC-095 | Línea larga con una racha corta de mala suerte al final (pocas pasadas sin acierto entre muchas) | `sin-cambio`: la racha no representa una fracción real de la línea | Un corte que se apoye solo en el mínimo absoluto de pasadas por lado |
+| TC-096 | AGV cuyo lector falla cada vez más en varios tags a la vez, con el resto de la flota leyendo con normalidad | `changedAtUtcMs`/`trend` en la fila del **vehículo**; ningún tag sano se ve afectado | Que el hallazgo se traslade a los tags que ese AGV lee |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

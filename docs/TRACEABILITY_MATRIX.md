@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.15.0
+version: 0.16.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -91,14 +91,15 @@ regla exista: la matriz no es una lista de intenciones.
 | R-CO-003 / TC-086 la salida se relaciona con mayor antigüedad | `src/domain/charging.ts` (`seniorityBreaches`) | `tests/unit/charging.test.ts` |
 | R-CO-008 / TC-083 una calle sin servicio no acusa a sus tags | `src/domain/inventory.ts` (`calle-sin-servicio`) | `tests/unit/inventory.test.ts` |
 | R-FLO-006 / TC-089 el orden de convoy no prueba nada en zona vacía | `src/domain/read-matrix.ts` (`orderUsableByPosition`, `stretchAllows`) | `tests/unit/read-matrix.test.ts` |
+| R-OPP-015 / ALG-020 / TC-091–096 rotura súbita y degradación progresiva, por tag y por AGV | `src/domain/read-rate-trend.ts` | `tests/unit/read-rate-trend.test.ts`, `tests/unit/read-matrix.test.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` — y la
 comparación entre dos periodos distantes, que es la única que separa un obsoleto de un tag
-averiado. Desde el 2026-09-21 se añade una tercera, y esta la ha **medido** la auditoría en vez de
-deducirla: la **tasa a lo largo del tiempo**. Sin ella, una rotura súbita y una degradación
-progresiva salen como un porcentaje medio, y las dos clases figuran como deuda declarada en
-`tests/audit/auditoria.test.ts`.
+averiado. La **tasa a lo largo del tiempo**, que hasta el 2026-09-21 era la tercera ausencia de esta
+lista, ya tiene fila: la auditoría la midió, no la dio por hecha, y las dos clases que dependían de
+ella —rotura súbita y degradación progresiva— salieron de `DEUDA_CONOCIDA` en
+`tests/audit/auditoria.test.ts` el mismo día que se detectaron.
 
 **La advertencia anterior queda cerrada, no borrada.** Hasta esta entrega, `inventory.ts` y
 `graph.ts` estaban probados y no eran alcanzables desde la interfaz. Ya lo son: el agrupamiento por

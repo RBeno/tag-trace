@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.7.0
+version: 0.8.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -200,6 +200,22 @@ Tres límites que se escriben junto a las cifras, no en una nota al pie:
 Y una que se dice por omisión deliberada: mientras la calle no esté declarada, sus paradas siguen
 apareciendo como silencios. Es la degradación que R-CO-006 exige, y la vista lo advierte en lugar
 de aproximar la calle por proximidad.
+
+### 5.2.2 Rotura súbita y degradación progresiva (R-OPP-015)
+
+Junto a los destacados de la matriz de lectura, no en una sección aparte: son exactamente el tipo de
+caso que esos destacados ya priorizan. Dos hallazgos, por tag y por AGV:
+
+- **Rotura**: «se leía con normalidad y dejó de leerse» en un instante, con el antes y el después en
+  porcentaje. El instante es el punto medio entre la última pasada de antes y la primera de después
+  —no se puede precisar más—, y la vista lo dice así, no como si fuera exacto.
+- **Degradación**: la tasa de cuatro tramos temporales, de peor a mejor por la izquierda, mostrando
+  que la caída es sostenida y no una fluctuación aislada.
+
+Un hallazgo de AGV **no se traslada a sus tags**: si el resto de la flota sigue leyéndolos con
+normalidad, esos tags no aparecen aquí. Es la misma regla que ya rige los destacados de la matriz
+—el objeto que falla es el que se señala, no todo lo que toca—, aplicada a una dimensión nueva, el
+tiempo.
 
 **La cobertura es nueva y era la que faltaba.** Sin ella, R-DAT-007 vivía en una frase de una lista
 de datos y nadie la relacionaba con las cifras de al lado. Dibujada, el hueco entre dos

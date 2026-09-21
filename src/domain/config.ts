@@ -18,6 +18,7 @@ import type { BlindnessThresholds } from "./inventory.js";
 import type { ChargingThresholds } from "./charging.js";
 import type { GraphThresholds } from "./graph.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
+import type { TrendThresholds } from "./read-rate-trend.js";
 
 export interface SilenceThresholds {
   /**
@@ -44,6 +45,7 @@ export interface AnalysisConfig {
   readonly silence: SilenceThresholds;
   readonly readRate: ReadRateThresholds;
   readonly charging: ChargingThresholds;
+  readonly trend: TrendThresholds;
 }
 
 /**
@@ -75,6 +77,14 @@ export interface AnalysisConfig {
  *   permanencia fuera de lo normal: relativo y no en minutos porque el tiempo de carga depende de
  *   la calle y de cuánto haya que cargar (R-FLO-004), y ningún minutaje de planta se fija aquí.
  *   Cuatro estancias es lo mínimo para que esa mediana no la decida un solo vehículo.
+ * - **Rotura y degradación (R-OPP-015).** Veinte pasadas mínimas para buscar algo, con cinco a cada
+ *   lado de cualquier corte candidato **o el 15 % de la línea, lo que sea mayor**: con líneas largas
+ *   un puñado de pasadas es ruido de borde, no una regla que se sostenga sobre una fracción real de
+ *   la ventana. El 0,5 de caída mínima para llamarlo rotura es deliberadamente exigente — el caso de
+ *   manual es 100 % → 0 %, y un umbral bajo cazaría fluctuaciones normales de un tag con ruido; el
+ *   0,3 para degradación es más laxo porque ahí la señal es la forma sostenida en cuatro tramos, no
+ *   un salto único. Los mismos umbrales sirven para AGV que para tags: la línea temporal es la misma
+ *   idea, solo cambia qué se agrupa.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -92,6 +102,14 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     minTimeRatio: 0.6,
   },
   charging: { longStayRatio: 2, minStaysForMedian: 4 },
+  trend: {
+    minPassesForTrend: 20,
+    minRateDrop: 0.5,
+    minPassesEachSide: 5,
+    minShareEachSide: 0.15,
+    trendSegments: 4,
+    minGradientDrop: 0.3,
+  },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

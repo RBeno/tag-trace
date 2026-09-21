@@ -28,6 +28,7 @@
 
 import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
 import { sortReadings, type SourceDirection } from "./order.js";
+import { detectTrend, type PassRecord, type TrendThresholds } from "./read-rate-trend.js";
 import type { Reading } from "./reading.js";
 import type { TruthState } from "./truth.js";
 
@@ -141,6 +142,17 @@ export interface TagReadRow {
   readonly unproven: number;
   /** Solo los pares con al menos una pasada: una celda sin pasadas no es un cero. */
   readonly byVehicle: readonly PairReadRate[];
+  /**
+   * Cambio sostenido a lo largo de la ventana, sobre la misma línea de pasadas ya usada para
+   * `passes`/`hits` (R-OPP-015). Presente solo si la búsqueda encontró algo: su ausencia no es un
+   * «no cambió», es «no se buscó suficiente o no hubo nada que sostener».
+   */
+  readonly changedAtUtcMs?: number;
+  readonly rateBefore?: number;
+  readonly rateAfter?: number;
+  /** Presente solo si la tendencia es sostenida a la baja (R-OPP-015). */
+  readonly trend?: "bajando";
+  readonly segmentRates?: readonly number[];
 }
 
 export interface VehicleReadRow {
@@ -152,6 +164,15 @@ export interface VehicleReadRow {
   readonly rate: number | null;
   /** Tramos que recorrió sin leer nada y que ni el tiempo ni el orden sostienen. */
   readonly unproven: number;
+  /**
+   * Cambio sostenido en **su propia** línea de pasadas, sobre todos los tags que recorre — un
+   * lector que se degrada en todo el circuito, no en un tag concreto (R-OPP-015).
+   */
+  readonly changedAtUtcMs?: number;
+  readonly rateBefore?: number;
+  readonly rateAfter?: number;
+  readonly trend?: "bajando";
+  readonly segmentRates?: readonly number[];
 }
 
 export interface ReadMatrix {
@@ -206,6 +227,7 @@ export function buildReadMatrix(
   anchor: string,
   thresholds: ReadRateThresholds,
   limits: OrderEvidenceLimits,
+  trendThresholds: TrendThresholds,
 ): ReadMatrix {
   const size = ring.length;
   const position = new Map<string, number>();
@@ -220,20 +242,34 @@ export function buildReadMatrix(
 
   const pairs = new Map<string, Map<string, Cell>>();
   const vehicleLaps = new Map<string, number>();
+  // Líneas temporales para la segunda pasada (R-OPP-015): una por tag, una por vehículo, con el
+  // instante y el acierto de cada pasada probada. No es una relectura de la fuente — es el mismo
+  // recorrido de abajo, reteniendo el instante en vez de tirarlo tras sumarlo a un contador.
+  const tagTimelines = new Map<string, PassRecord[]>();
+  const vehicleTimelines = new Map<string, PassRecord[]>();
+  const recordPass = (tagId: string, agvId: string, utcMs: number, hit: boolean): void => {
+    pushRecord(tagTimelines, tagId, { utcMs, hit });
+    pushRecord(vehicleTimelines, agvId, { utcMs, hit });
+  };
 
   for (const [agvId, laps] of lapsByVehicle) {
     vehicleLaps.set(agvId, laps.length);
     for (const steps of laps) {
       const readPositions = new Set(steps.map((step) => step.position));
+      // El instante de cada acierto, precalculado una vez por vuelta: buscarlo dentro del bucle de
+      // posiciones sería O(tamaño del anillo × pasos de la vuelta) en vez de O(pasos de la vuelta).
+      const utcMsAtPosition = new Map(steps.map((step) => [step.position, step.utcMs]));
       for (let index = 0; index < size; index += 1) {
         const rel = (index - anchorPosition + size) % size;
-        const cell = cellFor(pairs, ring[index] as string, agvId);
+        const tagId = ring[index] as string;
+        const cell = cellFor(pairs, tagId, agvId);
 
         if (readPositions.has(index)) {
           // Leyó el tag: no hay forma de leerlo sin estar ahí.
           cell.passes += 1;
           cell.hits += 1;
           cell.byNeighbours += 1;
+          recordPass(tagId, agvId, utcMsAtPosition.get(index) as number, true);
           continue;
         }
 
@@ -244,6 +280,7 @@ export function buildReadMatrix(
         if (gap <= thresholds.maxGapProvenByNeighbours) {
           cell.passes += 1;
           cell.byNeighbours += 1;
+          recordPass(tagId, agvId, bracket.after.utcMs, false);
           continue;
         }
 
@@ -257,6 +294,7 @@ export function buildReadMatrix(
           if (observed >= expected * thresholds.minTimeRatio) {
             cell.passes += 1;
             cell.byTime += 1;
+            recordPass(tagId, agvId, bracket.after.utcMs, false);
           } else {
             cell.unproven += 1;
           }
@@ -280,6 +318,7 @@ export function buildReadMatrix(
         if (keptConvoy(convoy, agvId, bracket.before, bracket.after, observed)) {
           cell.passes += 1;
           cell.byOrder += 1;
+          recordPass(tagId, agvId, bracket.after.utcMs, false);
           continue;
         }
 
@@ -311,11 +350,16 @@ export function buildReadMatrix(
     const high = supported.filter((cell) => cell.hits / cell.passes >= thresholds.highRate);
     const low = supported.filter((cell) => cell.hits / cell.passes <= thresholds.lowRate);
     const { pattern, truth } = classify(supported.length, high.length, low.length, thresholds);
+    const isAnchor = tagId === anchor;
+    // El ancla no se examina: su tasa es 1 por construcción (las vueltas se cortan justo por
+    // ella), así que su línea temporal no tiene nada que un cambio pudiera revelar.
+    const timeline = isAnchor ? undefined : tagTimelines.get(tagId);
+    if (timeline !== undefined) timeline.sort((a, b) => a.utcMs - b.utcMs);
 
     return {
       tagId,
       position: index,
-      isAnchor: tagId === anchor,
+      isAnchor,
       passes,
       hits,
       rate: passes === 0 ? null : hits / passes,
@@ -328,6 +372,7 @@ export function buildReadMatrix(
       byOrder: total((cell) => cell.byOrder),
       unproven: total((cell) => cell.unproven),
       byVehicle: byVehicle.filter((cell) => cell.passes > 0),
+      ...trendFields(timeline, trendThresholds),
     };
   });
 
@@ -343,7 +388,17 @@ export function buildReadMatrix(
         hits += cell.hits;
         unproven += cell.unproven;
       }
-      return { agvId, laps, passes, hits, rate: passes === 0 ? null : hits / passes, unproven };
+      // La línea temporal de un vehículo ya sale ordenada: sus vueltas se recorren en secuencia,
+      // a diferencia de la de un tag, que mezcla vehículos procesados uno detrás de otro.
+      return {
+        agvId,
+        laps,
+        passes,
+        hits,
+        rate: passes === 0 ? null : hits / passes,
+        unproven,
+        ...trendFields(vehicleTimelines.get(agvId), trendThresholds),
+      };
     })
     .sort((a, b) => a.agvId.localeCompare(b.agvId));
 
@@ -570,6 +625,35 @@ function cellFor(
     byTag.set(agvId, cell);
   }
   return cell;
+}
+
+function pushRecord(lines: Map<string, PassRecord[]>, key: string, record: PassRecord): void {
+  let list = lines.get(key);
+  if (list === undefined) {
+    list = [];
+    lines.set(key, list);
+  }
+  list.push(record);
+}
+
+/** Aplana el resultado de `detectTrend` en los campos opcionales de una fila. Sin línea, sin campos. */
+function trendFields(
+  timeline: readonly PassRecord[] | undefined,
+  thresholds: TrendThresholds,
+): Pick<TagReadRow, "changedAtUtcMs" | "rateBefore" | "rateAfter" | "trend" | "segmentRates"> {
+  if (timeline === undefined) return {};
+  const result = detectTrend(timeline, thresholds);
+  if (result.kind === "rotura-candidata") {
+    return {
+      changedAtUtcMs: result.changedAtUtcMs,
+      rateBefore: result.rateBefore,
+      rateAfter: result.rateAfter,
+    };
+  }
+  if (result.kind === "degradacion-candidata") {
+    return { trend: "bajando", segmentRates: result.segmentRates };
+  }
+  return {};
 }
 
 function classify(

@@ -273,6 +273,7 @@ async function buildViews(
         anchor.tagId,
         PROVISIONAL_CONFIG.readRate,
         orderLimits,
+        PROVISIONAL_CONFIG.trend,
       ),
     );
   }

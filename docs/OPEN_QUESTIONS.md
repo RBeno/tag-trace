@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.18.0
+version: 0.19.0
 status: active
 last_updated: 2026-09-21
 ---
@@ -57,6 +57,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-123 | ¿Con qué fecha se extrajo cada lista —memoria maestra, circuito virtual, mantenimiento, sustitución de emergencia— y cada cuánto se renuevan? Una lista sin fecha no puede juzgar una ventana: no se sabe si describe el circuito de esa semana o el de hace medio año. | Las listas se almacenan con `valid_from`/`valid_to`. Una lista sin vigencia declarada no se usa para clasificar: el inventario sale `unknown` y dice por qué |
 | OQ-124 | Las calles de carga ya se pueden declarar y analizar, pero con la forma que el propietario dio para el escenario sintético: **cinco calles de tres tags y media hora de carga de media**. ¿Cuántas calles hay de verdad, de cuántos tags y con qué capacidad, y cuánto dura una carga en cada una? La media hora es una magnitud inventada para poder probar, y vive en el generador: el producto no la usa, mide la mediana de cada calle del propio dato. | Ninguna duración de carga se fija en el código. La permanencia larga se mide **relativa a la mediana de su propia calle** (R-FLO-004), y sin estancias suficientes no se señala ninguna |
 | OQ-125 | ¿Qué excepciones legítimas admite el orden de salida de una calle (R-CO-003)? Está medido que dos vehículos cargando a la vez con duraciones distintas invierten el orden de salida con toda normalidad, así que la inversión por sí sola no separa la rutina del fallo. | Las inversiones se enumeran **ordenadas por lo que esperó cada uno** y no se llaman avería. R-FLO-001 ya admite excepciones documentadas; cuáles son, lo dice planta |
+| OQ-126 | ¿Qué caída mínima cuenta como rotura o como degradación en un tag o un AGV reales (R-OPP-015)? Los umbrales del sintético —0,5 de caída para rotura, 0,3 para degradación, cuatro tramos— están calibrados contra el ejemplo de manual (100 %→0 %, 90 %→40 %), no contra planta. | Ningún umbral se fija en el código: `TrendThresholds` es `draft` en `PROVISIONAL_CONFIG.trend` y sin valor por defecto en la función. Mientras tanto, el criterio exige además que el corte represente una fracción real de la línea (`minShareEachSide`), no solo un recuento mínimo |
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
 
 

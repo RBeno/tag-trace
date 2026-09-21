@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.14.0
+version: 0.15.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -109,11 +109,11 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
       excluye. **Sin marcar** porque solo se han ejercitado contra el circuito sintético de
       auditoría: los valores de planta de OQ-B04 y OQ-124 siguen sin llegar.
 - [ ] Puntos críticos y retroceso preliminar útiles.
-- [ ] Falsos positivos y desconocidos medidos por categoría. **El mecanismo ya existe** desde el
-      2026-09-21 (`tests/audit/`, con un circuito sintético de verdad plantada y un informe por
-      clase de fallo), pero eso **no marca la casilla**: la marcarán las cifras que produzca, y hoy
-      el informe declara dos clases sin detectar —rotura súbita y degradación progresiva— porque el
-      producto calcula una sola tasa sobre toda la ventana.
+- [ ] Falsos positivos y desconocidos medidos por categoría. El mecanismo existe desde el
+      2026-09-20 (`tests/audit/`, con un circuito sintético de verdad plantada y un informe por
+      clase de fallo). **Sigue sin marcarse**, no por falta de mecanismo sino por alcance: solo
+      cubre las clases de fallo ya identificadas en el sintético (14 de 14 detectadas al
+      2026-09-21, cero falsos positivos, `DEUDA_CONOCIDA` vacía), no todavía las de OQ-B04.
 
 ## G4 — Autorizar F5
 

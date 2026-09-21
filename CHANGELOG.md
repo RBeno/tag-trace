@@ -2,6 +2,86 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.9.0] - 2026-09-21
+
+Rotura súbita y degradación progresiva (R-OPP-015): las dos únicas clases que la auditoría de
+`[3.7.0]` dejaba como deuda, por la misma causa entonces diagnosticada — una sola tasa sobre toda la
+ventana no distingue un tag que se lee y deja de leerse de uno que siempre estuvo a la mitad. El
+propietario propuso el método: comparar en una segunda pasada, sobre los tags y los AGV con pasadas
+suficientes. Se implementa sin releer la fuente: la primera pasada es el mismo recorrido que ya
+construye la matriz de lectura, ampliado para retener el instante de cada pasada en vez de tirarlo;
+la segunda es un post-proceso barato sobre esas líneas ya construidas.
+
+### Añadido
+
+- **`src/domain/read-rate-trend.ts`** — `detectTrend()`: segmentación binaria de un único corte
+  (rotura), y solo si no la hay, caída monótona por tramos (degradación). En ese orden y sin
+  mezclarlas, mismo principio que R-OPP-014. Aplicado a tags **y** a AGV: un lector que se degrada
+  en varios tags a la vez se ve en su propia línea, sin que el hallazgo se traslade a los tags que
+  lee si el resto de la flota los sigue leyendo con normalidad.
+- `TagReadRow` y `VehicleReadRow` ganan `changedAtUtcMs`/`rateBefore`/`rateAfter` (rotura) y
+  `trend`/`segmentRates` (degradación), opcionales: presentes solo cuando la búsqueda encuentra algo.
+- `TrendThresholds` en `config.ts`, `draft` y sin valor por defecto en ninguna función.
+- Vista: hallazgos de rotura y tendencia junto a los destacados de la matriz, para tags y AGV.
+- Sexta clase plantada en el circuito de auditoría, `lector-agv-degradado`: un AGV libre de
+  cualquier otro papel cuyo lector falla cada vez más en cualquier tag, con la comprobación cruzada
+  de que su propio recuento cae entre la primera y la segunda mitad de la ventana.
+
+### Un riesgo real, encontrado construyendo el detector, y corregido
+
+Un corte único sin más guardas puede confundir una **racha corta de mala suerte al final de una
+línea larga** con una rotura: cinco pasadas sin acierto entre quinientas parecían, al principio, un
+corte más brusco que la propia tendencia que se estaba probando en el mismo escenario. `minSide`
+pasa a exigir **una proporción real de la línea, no solo un mínimo absoluto** (`minShareEachSide`).
+Con la corrección, la prueba que expuso el problema queda fijada como caso de regresión.
+
+### Un defecto real del generador de auditoría, no del detector
+
+Ejecutado contra el circuito completo, `rotura-subita` y `degradacion-progresiva` se detectaban con
+una separación perfecta (100 %→0 %) pero el instante publicado caía **dos horas antes** del
+plantado. La causa no estaba en `read-rate-trend.ts`: el generador etiqueta sus instantes como
+epoch UTC, pero los escribe como **dígitos** en el CSV, y la auditoría los importa con
+`zone: "Europe/Madrid"` — correcto, es lo que el `MANIFEST.md` declara y lo que un DS-001 real
+exige. El resultado es que esos dígitos se leen como hora local de Madrid y se convierten a UTC
+desplazándolos por el huso horario de verano (CEST, UTC+2). Ninguna prueba anterior lo notó porque
+todas comparaban proporciones o presencia de un campo, invariantes a un desplazamiento constante;
+la primera comparación de un instante absoluto contra otro lo destapó. Corregido en el generador:
+`fromUtcMs`, `toUtcMs` y los `atUtcMs` de los defectos pasan por la misma conversión de zona que
+aplicará el producto (`wallClockToUtc`, reutilizada de `src/domain/time.ts`), así que dejan de
+prometer «epoch UTC» y empiezan a serlo. Corrige de paso, en silencio hasta ahora, la ventana de
+cobertura que `analyse()` pasa a `buildChargingReport`.
+
+### El informe, con las catorce clases
+
+```
+238.782 lecturas, 40 vehículos. Anillo reconstruido: 146 tags de 150 declarados. Fuera del anillo: 15.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 9/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  DETECTA     rotura-subita — con el instante dentro de margen: 2/2
+  DETECTA     degradacion-progresiva — con tendencia sostenida: 2/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 94 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 1 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+  DETECTA     lector-agv-degradado — 7120: bajando (90% → 76% → 64% → 60%); tags con tendencia o rotura por su culpa: 0
+```
+
+**Catorce de catorce clases detectadas, cero falsos positivos, `DEUDA_CONOCIDA` vacía.** La tercera
+aserción de la auditoría (la deuda no se pudre en ninguna dirección) exigía sacar las dos clases en
+cuanto se detectaran, y así se hizo.
+
+### Gobierno
+
+- `RULE_CATALOG.md` R-OPP-015; `ALGORITHM_CATALOG.md` ALG-020 (§4.4); `TEST_STRATEGY.md` TC-091–096;
+  `TRACEABILITY_MATRIX.md`; `UX_SPEC.md` §5.2.2; `OPEN_QUESTIONS.md` OQ-126 (los umbrales de rotura y
+  degradación siguen sin fijar por planta); `PHASE_GATES.md` G3 con las catorce clases y cero deuda,
+  todavía sin marcar porque el sintético no cubre las clases que faltan de OQ-B04.
+
 ## [3.8.0] - 2026-09-21
 
 Las calles de carga online, la zona de vacíos y la configuración de planta como CSV. El propietario

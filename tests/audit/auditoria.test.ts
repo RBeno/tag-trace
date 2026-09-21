@@ -18,7 +18,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { buildAuditScenario, type DefectClass } from "../support/circuito-auditoria.js";
+import { buildAuditScenario, toRealUtc, type DefectClass } from "../support/circuito-auditoria.js";
 import { importReadings } from "../../src/ingestion/importer.js";
 import { buildTransitions } from "../../src/domain/graph.js";
 import { assignCohorts } from "../../src/domain/cohort.js";
@@ -36,19 +36,12 @@ import { PROVISIONAL_CONFIG } from "../../src/domain/config.js";
  *
  * No es una excusa: es el resultado de la auditoría, escrito donde se puede comprobar. Se saca de
  * aquí en cuanto el detector exista, y la prueba avisa si alguien lo implementa y se olvida.
+ *
+ * Vacía desde R-OPP-015: rotura súbita y degradación progresiva —las dos únicas que había— ya se
+ * detectan. Se deja el tipo declarado, y no se borra el mapa, porque la próxima clase de deuda que
+ * aparezca tiene que caer en la misma estructura, no reinventarla.
  */
-const DEUDA_CONOCIDA: ReadonlyMap<DefectClass, string> = new Map([
-  [
-    "rotura-subita",
-    "la tasa se calcula sobre toda la ventana, así que un tag que se lee y deja de leerse sale " +
-      "como un porcentaje medio; hace falta mirar la tasa a lo largo del tiempo",
-  ],
-  [
-    "degradacion-progresiva",
-    "mismo motivo: sin tasa por tramos temporales, una caída del 90 % al 40 % es indistinguible " +
-      "de un tag que siempre estuvo a la mitad",
-  ],
-]);
+const DEUDA_CONOCIDA: ReadonlyMap<DefectClass, string> = new Map([]);
 
 /**
  * Plazo por prueba.
@@ -59,6 +52,16 @@ const DEUDA_CONOCIDA: ReadonlyMap<DefectClass, string> = new Map([
  * prueba fallara por lenta en vez de por falsa.
  */
 const PLAZO = 120_000;
+
+/** Deshace `stamp()` del generador (`dd/mm/aaaa H:MM:SS`), para comprobaciones cruzadas por fecha. */
+function parseStamp(value: string): number {
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/);
+  if (match === null) throw new Error(`fecha inesperada en el CSV generado: ${value}`);
+  const [, day, month, year, hour, minute, second] = match as unknown as [
+    string, string, string, string, string, string, string,
+  ];
+  return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+}
 
 interface Analysis {
   readonly matrix: ReadMatrix | undefined;
@@ -135,6 +138,7 @@ function analyse(
           anchor.tagId,
           PROVISIONAL_CONFIG.readRate,
           { zoneOf: zoneConfig.zoneOf, laneEntryTags: laneEntryTags(laneConfig.lanes) },
+          PROVISIONAL_CONFIG.trend,
         );
 
   const ring = anchor?.cycle ?? [];
@@ -241,33 +245,45 @@ describe("auditoría del circuito con verdad conocida", () => {
       const acusados = tags.filter((tag) => rowOf(tag)?.lowReaders.includes(saltador) === true);
       return { ok: acusados.length === 0, detail: `tags acusados por su culpa: ${acusados.length}` };
     },
-    // Las dos clases de deuda **se sondean de verdad**, no se dan por falsas. Un `return false`
-    // fijo dejaría inerte la guardia de más abajo: el día que alguien implemente el detector, la
-    // auditoría seguiría diciendo que no existe. La sonda busca el campo que ese detector tendría
-    // que publicar, así que se enciende sola en cuanto exista.
+    // Las dos clases se sondean **con tolerancia real contra la verdad plantada**, no solo con la
+    // presencia del campo: ahora que el detector existe (R-OPP-015), basta con encender el campo no
+    // demuestra que apunte al sitio correcto.
     "rotura-subita": () => {
       const defect = scenario.defects.find((d) => d.kind === "rotura-subita");
       const tags = defect?.tags ?? [];
-      const conInstante = tags.filter((tag) => {
-        const row = rowOf(tag) as { readonly changedAtUtcMs?: number } | undefined;
-        return typeof row?.changedAtUtcMs === "number";
+      const plantado = defect?.atUtcMs ?? 0;
+      // Un par de vueltas de margen: el instante que se publica es el punto medio entre la última
+      // pasada de antes y la primera de después, nunca el corte plantado exacto. 20 s por tag es
+      // generoso frente a los 12-20 s reales del generador.
+      const margenMs = 2 * ring.length * 20_000;
+      const aciertos = tags.filter((tag) => {
+        const row = rowOf(tag);
+        return (
+          typeof row?.changedAtUtcMs === "number" &&
+          Math.abs(row.changedAtUtcMs - plantado) <= margenMs
+        );
       });
       return {
-        ok: conInstante.length === tags.length && tags.length > 0,
-        detail: `con instante de cambio: ${conInstante.length}/${tags.length} (se busca ` +
-          "`changedAtUtcMs` en la fila del tag)",
+        ok: aciertos.length === tags.length && tags.length > 0,
+        detail: `con el instante dentro de margen: ${aciertos.length}/${tags.length}`,
       };
     },
     "degradacion-progresiva": () => {
       const tags = scenario.defects.find((d) => d.kind === "degradacion-progresiva")?.tags ?? [];
       const conTendencia = tags.filter((tag) => {
-        const row = rowOf(tag) as { readonly trend?: string } | undefined;
-        return row?.trend === "bajando";
+        const row = rowOf(tag);
+        if (row?.trend !== "bajando") return false;
+        const rates = row.segmentRates ?? [];
+        // Estrictamente decreciente y con una caída real, no un empate declarado tendencia.
+        return (
+          rates.length >= 2 &&
+          rates.every((rate, index) => index === 0 || rate <= (rates[index - 1] as number)) &&
+          (rates[0] as number) - (rates[rates.length - 1] as number) > 0.2
+        );
       });
       return {
         ok: conTendencia.length === tags.length && tags.length > 0,
-        detail: `con tendencia a la baja: ${conTendencia.length}/${tags.length} (se busca ` +
-          "`trend` en la fila del tag)",
+        detail: `con tendencia sostenida: ${conTendencia.length}/${tags.length}`,
       };
     },
     "mantenimiento-aislado": () => {
@@ -360,6 +376,31 @@ describe("auditoría del circuito con verdad conocida", () => {
           `pasadas retiradas de la vía de orden: ${matrix?.orderWithheld ?? 0}`,
       };
     },
+    "lector-agv-degradado": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "lector-agv-degradado")
+        ?.vehicles ?? [])[0];
+      const vehicle = matrix?.vehicles.find((entry) => entry.agvId === esperado);
+      const rates = vehicle?.segmentRates ?? [];
+      const sostenida =
+        vehicle?.trend === "bajando" &&
+        rates.length >= 2 &&
+        rates.every((rate, index) => index === 0 || rate <= (rates[index - 1] as number));
+      // Y sus tags no pueden acusarse: el fallo es del vehículo, y la flota los diluye. Se mira
+      // solo sobre los tags **sanos**: `rotos` y `degradados` ya tienen su propia tendencia o
+      // rotura por derecho propio (son otras dos clases plantadas), y contarlos aquí confundiría
+      // el efecto de ese AGV con un hallazgo que no es suyo.
+      const tagsAcusados = scenario.cleanTags.filter((tagId) => {
+        const tag = matrix?.tags.find((entry) => entry.tagId === tagId);
+        return tag?.trend === "bajando" || tag?.changedAtUtcMs !== undefined;
+      });
+      return {
+        ok: sostenida && tagsAcusados.length === 0,
+        detail:
+          `${esperado ?? "?"}: ${vehicle?.trend ?? "sin tendencia"} ` +
+          `(${rates.map((r) => `${Math.round(r * 100)}%`).join(" → ")}); ` +
+          `tags con tendencia o rotura por su culpa: ${tagsAcusados.length}`,
+      };
+    },
   };
 
   it("publica el informe por clase", () => {
@@ -421,6 +462,26 @@ describe("auditoría del circuito con verdad conocida", () => {
       expect(proporcion, `${tag} debería leerse solo hasta la rotura`).toBeGreaterThan(0.3);
       expect(proporcion).toBeLessThan(0.75);
     }
+
+    // El lector degradado tiene que leer bastante menos en la segunda mitad de la ventana que en
+    // la primera: es su propio recuento, sin pasar por el producto, lo que prueba que el escenario
+    // planta lo que dice y no que el detector lo esté imaginando.
+    const degradado = (scenario.defects.find((d) => d.kind === "lector-agv-degradado")
+      ?.vehicles ?? [])[0];
+    const mitad = (scenario.fromUtcMs + scenario.toUtcMs) / 2;
+    let antes = 0;
+    let despues = 0;
+    for (const linea of scenario.readingsCsv.split("\r\n").slice(1)) {
+      const [fecha, agv] = linea.split(";");
+      if (agv !== degradado) continue;
+      // `parseStamp` deshace los dígitos del CSV; `scenario.fromUtcMs`/`toUtcMs` son el instante
+      // real una vez interpretados con la zona declarada (`toRealUtc`). Sin pasar los dos por el
+      // mismo marco, la comparación se desplaza dos horas (CEST) y compara cosas distintas.
+      if (toRealUtc(parseStamp(fecha as string)) < mitad) antes += 1;
+      else despues += 1;
+    }
+    expect(antes, "el lector degradado debería tener lecturas en la primera mitad").toBeGreaterThan(0);
+    expect(despues, "y bastantes menos en la segunda").toBeLessThan(antes * 0.8);
   }, PLAZO);
 
   it("no señala ningún tag sano: cero falsos positivos", () => {

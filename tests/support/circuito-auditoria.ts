@@ -13,6 +13,11 @@
  * Todo lo de aquí es inventado: identificadores, fechas y topología. No reproduce ninguna planta.
  */
 
+import { wallClockToUtc } from "../../src/domain/time.js";
+
+/** Zona declarada del escenario (`MANIFEST.md`): las fechas del CSV son hora local de Madrid. */
+const ZONE = "Europe/Madrid";
+
 /** Clases de fallo que el escenario planta. Cada una con su expectativa y su prohibición. */
 export type DefectClass =
   /** Declarado en el circuito virtual y sin una sola lectura de nadie. */
@@ -40,7 +45,9 @@ export type DefectClass =
   /** Vehículos que ya estaban cargando cuando empezó la ventana (R-CO-007). */
   | "carga-anterior-a-la-ventana"
   /** La zona de vacíos declarada: contexto, no defecto. Declararla no puede cambiar veredictos. */
-  | "zona-vacia-declarada";
+  | "zona-vacia-declarada"
+  /** Un AGV cuyo lector falla cada vez más en cualquier tag, no en uno concreto. */
+  | "lector-agv-degradado";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -117,6 +124,33 @@ function stamp(utcMs: number): string {
 }
 
 /**
+ * El instante UTC real de lo que `stamp()` va a escribir.
+ *
+ * El reloj interno del generador (`from`, `to`, `now`, `rotura`…) es un epoch UTC cualquiera, cómodo
+ * para la simulación. Pero `stamp()` lo escribe como **dígitos**, y el escenario declara la zona
+ * `Europe/Madrid` (`MANIFEST.md`): quien importe ese CSV con esa zona va a leer esos dígitos como
+ * hora local de Madrid y convertirlos a UTC, **desplazándolos** por el huso horario del momento
+ * (verano de 2026, CEST, UTC+2). Sin esta conversión, `fromUtcMs`/`toUtcMs`/`atUtcMs` prometen ser
+ * «epoch UTC» y en realidad son el epoch de unos dígitos que, leídos por el propio producto, caen
+ * dos horas antes — un desajuste que ninguna prueba relativa (proporciones, presencia de un campo)
+ * llega a notar, pero que revienta en cuanto se compara un instante absoluto contra otro.
+ */
+export function toRealUtc(digitsUtcMs: number): number {
+  const d = new Date(digitsUtcMs);
+  return wallClockToUtc(
+    {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      day: d.getUTCDate(),
+      hour: d.getUTCHours(),
+      minute: d.getUTCMinutes(),
+      second: d.getUTCSeconds(),
+    },
+    ZONE,
+  ).utcMs;
+}
+
+/**
  * Construye el escenario.
  *
  * El reparto de tags está fijado a propósito por posición y no al azar: así el escenario se puede
@@ -160,6 +194,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const arranqueEnFrio = vehicles.slice(VEHICLES - 5);
   /** El que se queda dentro mientras otros de su misma calle entran y salen (R-CO-003). */
   const esperaDeMas = vehicles[12] as string;
+  /**
+   * Su lector va fallando cada vez más en **cualquier** tag, no en uno concreto (R-OPP-015).
+   *
+   * Libre de cualquier otro papel a propósito: si arrastrara además `ciego` o `saltador`, la caída
+   * de su propio lector se mezclaría con otra causa y dejaría de ser un caso limpio.
+   */
+  const lectorDegradado = vehicles[20] as string;
 
   // --- Zonas (R-FLO-003: la carga online va dentro de la zona vacía) -------------------------
   //
@@ -223,6 +264,10 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       else if (degradados.includes(tag)) lee = random() < 0.9 - 0.5 * avance;
       else if (tasaAlta.has(tag)) lee = random() < (tasaAlta.get(tag) as number);
       else if (tasaMedia.has(tag)) lee = random() < (tasaMedia.get(tag) as number);
+
+      // Se aplica **después** de las reglas del tag, nunca en su lugar: el lector degradado sigue
+      // sin leer lo que nadie lee, y encima cada vez menos de lo que sí se lee, en cualquier tag.
+      if (lee && vehicle === lectorDegradado) lee = random() < 1 - 0.7 * avance;
 
       if (lee) filas.push({ t: now, v: vehicle, tag });
 
@@ -334,7 +379,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "rotura-subita",
       tags: rotos,
       vehicles: [],
-      atUtcMs: rotura,
+      atUtcMs: toRealUtc(rotura),
       expect: "un cambio con su instante: se leía y dejó de leerse",
       mustNotSay: "una tasa media que mezcle el antes y el después como si fuera un régimen",
     },
@@ -342,7 +387,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "degradacion-progresiva",
       tags: degradados,
       vehicles: [],
-      atUtcMs: from,
+      atUtcMs: toRealUtc(from),
       expect: "una tendencia a la baja a lo largo de la ventana",
       mustNotSay: "una tasa media estable que esconda que va a peor",
     },
@@ -392,6 +437,14 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       expect: "la zona se enumera y las calles caen dentro de ella (R-FLO-003)",
       mustNotSay: "que declarar la zona cambie el veredicto de ningún tag sano",
     },
+    {
+      kind: "lector-agv-degradado",
+      tags: [],
+      vehicles: [lectorDegradado],
+      atUtcMs: toRealUtc(from),
+      expect: "una tendencia a la baja en la fila del propio AGV, no del tag",
+      mustNotSay: "que los tags que lee ese AGV estén fallando",
+    },
   ];
 
   return {
@@ -401,8 +454,8 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     cleanTags: ring.filter((tag) => !plantados.has(tag)),
     declaredRing: ring,
     vehicles,
-    fromUtcMs: from,
-    toUtcMs: to,
+    fromUtcMs: toRealUtc(from),
+    toUtcMs: toRealUtc(to),
     lanes,
     zoneOf,
   };

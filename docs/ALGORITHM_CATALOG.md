@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
-last_updated: 2026-09-17
+last_updated: 2026-09-21
 ---
 
 # Catálogo de algoritmos
@@ -60,6 +60,7 @@ flowchart TD
 | ALG-017 | Similitud de casos | Características explicables de incidencias | Casos comparables y diferencias | O(k·d) | F5 |
 | ALG-018 | Expediente por objeto | Agregación por AGV o por tag y contraste con su cohorte | Recuentos, tags leídos y no leídos, contraparte que sí leyó, y evidencia navegable | O(n) sobre agregados | F2 reducido, F3 completo |
 | ALG-019 | Inactividad e instante de cambio | Detección de silencios por objeto y del punto donde el comportamiento cambia | Periodos de inactividad clasificados e instante de cambio con alternativas | O(n) por objeto | F2 reducido, F3 completo |
+| ALG-020 | Rotura y degradación de tasa de lectura | Segmentación binaria de un corte, después caída monótona por tramos | Instante de rotura o tendencia sostenida, por tag y por AGV | O(n) sobre la línea de pasadas | F3 |
 
 ## 4. Oportunidades y salud
 
@@ -241,6 +242,44 @@ silencio — son dos cosas distintas y conviene no mezclarlas.
 
 Cruzar exportaciones **no** confirma dónde estuvo: si el vehículo no lleva en memoria los tags del
 circuito de destino, no aparece en su exportación (R-OPP-009).
+
+## 4.4 Rotura súbita y degradación progresiva (R-OPP-015)
+
+La matriz de lectura de R-OPP-013 resume cada par (tag, AGV) en una tasa sobre toda la ventana, y
+esa tasa es ciega al **cuándo**: un tag que se lee al 100 % y desaparece de golpe a mitad de la
+ventana sale con el mismo aspecto que uno que siempre estuvo a la mitad. ALG-020 mira la misma
+evidencia —pasadas probadas, con acierto o sin él (R-OPP-014)— pero ordenada en el tiempo.
+
+**Es una segunda mirada sobre lo ya calculado, no una relectura de la fuente.** La primera pasada es
+el mismo recorrido que ya construye la matriz; lo único que cambia es que, además de sumar a un
+contador, se retiene el instante de cada pasada probada en una línea temporal por tag y por AGV. La
+segunda pasada es un post-proceso barato sobre esas líneas, del orden de las lecturas totales.
+
+Dos vías, en este orden y sin mezclarlas —el mismo principio que R-OPP-014 aplica a vecinos/tiempo/
+orden—:
+
+1. **Rotura súbita.** Segmentación binaria de un único corte: se prueba cada punto de la línea y se
+   queda el que maximiza la diferencia de tasa entre lo de antes y lo de después. El instante que se
+   publica es el punto medio entre la última pasada de antes y la primera de después —no se puede
+   precisar más—, y solo cuenta si la caída supera un umbral generoso (el caso de manual es
+   100 % → 0 %).
+2. **Degradación progresiva**, solo si no hubo rotura. La línea se divide en tramos **por recuento**,
+   no por tiempo —la densidad de pasadas no es uniforme—, y cuenta si la tasa de cada tramo no crece
+   nunca respecto al anterior y la caída entre el primero y el último supera un umbral propio.
+
+**El corte tiene que representar una fracción real de la línea, no solo un recuento.** Con líneas
+largas, una racha corta de mala suerte al final —cinco pasadas sin acierto entre quinientas— puede
+parecer un corte más brusco que una tendencia real repartida por toda la ventana. El mínimo a cada
+lado del corte se exige tanto en número absoluto como en proporción de la línea.
+
+**Un AGV se examina igual, sobre su propia línea.** Todas sus pasadas probadas, en cualquier tag,
+ordenadas en el tiempo: un lector que falla cada vez más lo hace en varios tags a la vez, y su
+propia línea lo muestra sin que haga falta mirar tag por tag. Lo que no puede pasar es que ese
+hallazgo se traslade a los tags que lee: si el resto de la flota los sigue leyendo con normalidad,
+esos tags no llevan ni corte ni tendencia — es un riesgo real, no teórico: un tag `bimodal-candidato`
+mezcla en una sola línea temporal los aciertos de quien siempre lo lee y los fallos de quien nunca lo
+lee, y si esas dos poblaciones estuvieran agrupadas por bloques de tiempo en vez de entrelazadas, un
+corte binario las confundiría con una rotura.
 
 ## 5. Estadística robusta
 
