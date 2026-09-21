@@ -26,6 +26,19 @@ export interface CatalogEntry {
   readonly tagId: string;
   /** Orden declarado dentro de la lista, si el fichero lo trae. El circuito virtual sí lo usa. */
   readonly order: number | null;
+  /**
+   * Qué papel cumple el tag dentro de su lista: `parada-precisa` y `salida` en una calle de carga,
+   * `cruce` o `bifurcacion` en la lista de críticos (`LIST_FUNCTIONS`).
+   *
+   * Se conserva **tal cual viene**, normalizado solo en forma. Un valor que no esté en la taxonomía
+   * no invalida la fila: el tag sigue perteneciendo a su lista, y es el consumidor quien decide que
+   * con eso no puede montar la calle y lo dice.
+   */
+  readonly funcion: string;
+  /** A qué agrupación pertenece: la calle en `carga-online`, la zona en `zona`. */
+  readonly grupo: string;
+  /** Capacidad declarada de la agrupación, cuando la tiene (R-CO-001). */
+  readonly capacidad: number | null;
   readonly note: string;
   /** Fila física del fichero, contando la cabecera como fila 1. */
   readonly sourceRow: number;
@@ -61,20 +74,30 @@ export class CatalogFailure extends Error {
 }
 
 /**
- * Normaliza el nombre de una lista.
+ * Baja un valor escrito a mano a su forma canónica: sin acentos, en minúsculas y con guiones.
  *
- * Quien escribe el fichero a mano escribirá `Crítico`, `critico` o `CRITICOS` según el día, y
- * ninguna de las tres es un error que merezca rechazar una fila. Se quitan acentos, se baja a
- * minúsculas y se admite el plural, porque lo contrario es castigar al usuario por escribir en su
- * idioma. Lo que **no** se hace es adivinar: un nombre que no se reconoce se conserva tal cual.
+ * Quien escribe el fichero escribirá `Parada Precisa`, `parada_precisa` o `PARADA-PRECISA` según el
+ * día, y ninguna de las tres es un error que merezca perder la fila. Se normaliza la **forma**, que
+ * es ortografía; nunca el **contenido**, que sería adivinar.
  */
-export function normaliseListName(raw: string): string {
-  const base = raw
+function normaliseToken(raw: string): string {
+  return raw
     .trim()
     .toLowerCase()
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .replace(/[_\s]+/g, "-");
+}
+
+/**
+ * Normaliza el nombre de una lista.
+ *
+ * Sobre la normalización de forma, admite además el plural —`Críticos` es `critico`— porque es la
+ * variación que más aparece escribiendo en español. Lo que **no** se hace es adivinar: un nombre
+ * que no se reconoce se conserva tal cual.
+ */
+export function normaliseListName(raw: string): string {
+  const base = normaliseToken(raw);
   const singular = base.endsWith("s") ? base.slice(0, -1) : base;
   return (KNOWN_LISTS as readonly string[]).includes(singular) ? singular : base;
 }
@@ -103,6 +126,19 @@ export function importCatalog(text: string): CatalogImport {
   }
   const orderColumn = header.indexOf("orden");
   const noteColumn = header.indexOf("nota");
+  const funcionColumn = header.indexOf("funcion");
+  const grupoColumn = header.indexOf("grupo");
+  const capacidadColumn = header.indexOf("capacidad");
+
+  /** Una celda opcional: ausente la columna, o ausente el campo en esta fila, es cadena vacía. */
+  const cell = (fields: readonly string[], column: number): string =>
+    column === -1 ? "" : (fields[column] ?? "").trim();
+  /** Un entero opcional. Vacío o ilegible es `null`, nunca un cero que parecería un dato. */
+  const integer = (raw: string): number | null => {
+    if (raw === "") return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
 
   const lists = new Map<string, CatalogEntry[]>();
   const rejected: CatalogRejectedRow[] = [];
@@ -133,9 +169,6 @@ export function importCatalog(text: string): CatalogImport {
     const list = normaliseListName(rawList);
     if (!(KNOWN_LISTS as readonly string[]).includes(list)) unknown.add(list);
 
-    const rawOrder = orderColumn === -1 ? "" : (fields[orderColumn] ?? "").trim();
-    const parsedOrder = rawOrder === "" ? null : Number.parseInt(rawOrder, 10);
-
     let entries = lists.get(list);
     if (entries === undefined) {
       entries = [];
@@ -144,8 +177,13 @@ export function importCatalog(text: string): CatalogImport {
     entries.push({
       list,
       tagId,
-      order: parsedOrder === null || Number.isNaN(parsedOrder) ? null : parsedOrder,
-      note: noteColumn === -1 ? "" : (fields[noteColumn] ?? "").trim(),
+      order: integer(cell(fields, orderColumn)),
+      // Misma normalización de forma que el nombre de lista: quien escribe a mano escribirá
+      // «Parada Precisa» y no es un error que merezca perder la fila.
+      funcion: normaliseToken(cell(fields, funcionColumn)),
+      grupo: normaliseToken(cell(fields, grupoColumn)),
+      capacidad: integer(cell(fields, capacidadColumn)),
+      note: cell(fields, noteColumn),
       sourceRow,
     });
     accepted += 1;

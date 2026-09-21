@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.14.0
+version: 0.15.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -129,6 +129,17 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-077 | Vehículo que recorre un tramo encerrado en mucho menos tiempo del que tarda | Ni pasada ni fallo del tag: tramo no sostenido, candidato a atajo o rama | Contarlo como pasada, o como tag no leído por ese vehículo |
 | TC-078 | Tramo sin tiempo mediano medido, con el vehículo saliendo entre los mismos AGV | Pasada probada **por orden de convoy** (R-OPP-004) | Usar el orden para contradecir un tiempo que ya decidió |
 | TC-079 | Convoy en el que el «vecino» es el propio vehículo en otra vuelta, o pasó horas antes | No cuenta como vecino: el orden no se da por conservado | Que cualquiera sea vecino de sí mismo y el orden se conserve siempre |
+| TC-080 | Parada entre la parada precisa y la salida de la **misma** calle CO configurada | `carga-online`, `inferred`, con la calle nombrada (R-CO-006) | Contar esa media hora como periodo de inactividad |
+| TC-081 | La misma parada **sin** las calles cargadas | Sigue siendo `silencio`: la firma no se reconoce | Aproximarla por proximidad a una calle cualquiera |
+| TC-082 | Parada en una calle y salida por **otra** | No es una carga: es algo que hay que mirar | Darla por carga normal con una clave por tag suelto |
+| TC-083 | Calle CO en la que no entró ningún vehículo en toda la cobertura | La calle se enumera sin servicio; sus tags, `calle-sin-servicio` y `unknown` (R-CO-008) | `obsoleto-candidato` sobre tres tags que nadie tuvo ocasión de leer |
+| TC-084 | Vehículo cuya primera lectura de la cobertura es el tag de salida de una calle | Estaba dentro antes de empezar: `inferred`, entrada desconocida (R-CO-007) | Contarlo como ausente, o declarar la calle vacía en ese tramo |
+| TC-085 | El mismo vehículo, pero con lecturas de anillo **antes** de esa salida | No es arranque en frío: entró y no se le vio entrar | Inferir una permanencia previa que el dato no sostiene |
+| TC-086 | Vehículo que entró antes y salió después que otros de su calle | Se enumera la espera, **ordenada por su magnitud** (R-CO-003) | Llamarlo avería: R-FLO-001 admite excepciones documentadas |
+| TC-087 | Calle con dos o tres estancias nada más | Sin mediana no se señala ninguna permanencia larga | Llamar «larga» a la mayor de dos |
+| TC-088 | Calle declarada sin `parada-precisa`, o con dos tags con el mismo papel | No se monta, y el motivo se enseña junto al análisis | Elegir uno de los dos, o deducir el papel por la posición |
+| TC-089 | Tramo encerrado que cae en zona vacía, o que cruza una entrada de calle | La vía de orden **no se usa**; el tramo queda sin sostener y se cuenta (R-FLO-006) | Dar el paso por bueno donde la reordenación está admitida |
+| TC-090 | El mismo circuito analizado con y sin las listas de zona y calles | Ningún tag sano cambia de veredicto | Que declarar el contexto mueva un diagnóstico que no le corresponde |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

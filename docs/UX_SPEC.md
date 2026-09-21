@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.6.0
+version: 0.7.0
 status: baseline-candidate
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 ---
 
 # Especificación de experiencia de usuario
@@ -177,6 +177,29 @@ nuevas, porque al construirlas quedó claro que faltaban:
 | **Perfil horario** | el régimen de actividad que da contexto a un silencio | un valle **no es una parada**: distinguirlo exige el calendario (OQ-108) |
 | **Actividad por vehículo** | quién lee, cuándo, y quién no aparece | una celda vacía **dentro** de cobertura es ausencia de lecturas, no avería |
 | **Inventario de tags** | qué declara cada lista frente a lo observado | ninguna clase es un diagnóstico; la última columna dice qué hay que valorar |
+
+### 5.2.1 Calles de carga online
+
+Mismo criterio que la matriz de lectura: **lo notable de entrada y el conjunto plegado**. Lo que
+aparece sin desplegar nada es una calle por la que no pasó nadie, la espera más larga de cada calle,
+una permanencia muy por encima de la mediana de la suya, los vehículos que ya estaban dentro cuando
+empezó la ventana, y cualquier calle declarada que no se haya podido montar. Lo que **no** aparece
+son las cargas normales: son casi todas, y enseñarlas es esconder lo otro.
+
+Tres límites que se escriben junto a las cifras, no en una nota al pie:
+
+- Una permanencia larga se mide **contra la mediana de su propia calle**, no contra un minutaje: el
+  tiempo de carga depende de la calle y de cuánto haya que cargar (R-FLO-004). Con pocas estancias
+  no hay mediana, y entonces no se señala ninguna.
+- Una espera fuera de antigüedad **no es una avería**. Dos vehículos cargando a la vez con
+  duraciones distintas invierten el orden de salida con toda normalidad, así que las esperas se
+  enumeran ordenadas por su magnitud y la conclusión la pone una persona (R-CO-003, R-FLO-001).
+- Una calle **sin servicio** no dice nada de sus tags: dice que no hubo ocasión de leerlos. La
+  pregunta que se enseña apunta a la calle (R-CO-008).
+
+Y una que se dice por omisión deliberada: mientras la calle no esté declarada, sus paradas siguen
+apareciendo como silencios. Es la degradación que R-CO-006 exige, y la vista lo advierte en lugar
+de aproximar la calle por proximidad.
 
 **La cobertura es nueva y era la que faltaba.** Sin ella, R-DAT-007 vivía en una frase de una lista
 de datos y nadie la relacionaba con las cifras de al lado. Dibujada, el hueco entre dos

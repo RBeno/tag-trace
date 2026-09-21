@@ -15,6 +15,7 @@
 
 import type { AffinityThresholds } from "./affinity.js";
 import type { BlindnessThresholds } from "./inventory.js";
+import type { ChargingThresholds } from "./charging.js";
 import type { GraphThresholds } from "./graph.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
 
@@ -42,6 +43,7 @@ export interface AnalysisConfig {
   readonly graph: Omit<GraphThresholds, "resolutionMs">;
   readonly silence: SilenceThresholds;
   readonly readRate: ReadRateThresholds;
+  readonly charging: ChargingThresholds;
 }
 
 /**
@@ -69,6 +71,10 @@ export interface AnalysisConfig {
  *   faltan varios seguidos hay que mirar el tiempo, y el 0,6 admite que un tramo se recorra algo
  *   más rápido de lo normal sin admitir que se recorra en la mitad, que ya es la firma de no
  *   haberlo recorrido.
+ * - **Carga online.** El doble de la mediana **de su propia calle** es lo que empieza a ser una
+ *   permanencia fuera de lo normal: relativo y no en minutos porque el tiempo de carga depende de
+ *   la calle y de cuánto haya que cargar (R-FLO-004), y ningún minutaje de planta se fija aquí.
+ *   Cuatro estancias es lo mínimo para que esa mediana no la decida un solo vehículo.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -85,6 +91,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     maxGapProvenByNeighbours: 1,
     minTimeRatio: 0.6,
   },
+  charging: { longStayRatio: 2, minStaysForMedian: 4 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

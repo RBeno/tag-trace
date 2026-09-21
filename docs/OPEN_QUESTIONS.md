@@ -1,8 +1,8 @@
 ---
 document_id: TT-OPEN-001
-version: 0.17.0
+version: 0.18.0
 status: active
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 ---
 
 # Preguntas abiertas
@@ -55,6 +55,8 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-122 | ¿Qué tags son **críticos** y de qué clase —parada precisa, cruce, semáforo, dejar/recoger carro, cambio de mapa importante, bifurcación—? Hay candidatos propuestos por firma para las cuatro clases que dejan alguna, con su evidencia y su soporte. Dos no dejan ninguna: un cambio de mapa es indistinguible de un tag cualquiera, y un cruce que nadie ha fallado y que recorre un solo circuito tampoco, porque existe para que todos pasen igual. | Los candidatos se entregan para confirmar o completar, nunca se dan por asignados (R-GRA-007). Sin declaración, la función es `unknown`, y un tag crítico no leído se cuenta aparte del ordinario (R-GRA-008) |
 | OQ-120 | **Parcial, y la parte que queda es la difícil.** El propietario aporta la composición de la memoria —circuito virtual, mantenimiento, sustitución de emergencia y **obsoletos nunca borrados**— y una **lista maestra** en CSV. Eso acota el universo de flota, pero la lista es la que cada vehículo *debería* llevar, no la que lleva: los AGV pueden estar desactualizados de forma distinta entre sí. Sigue abierto **qué lleva cada vehículo concreto y desde cuándo**. | La memoria individual es `expected`, nunca `observed` (R-OPP-012). La desviación se infiere del patrón bimodal y se declara como inferencia. Ninguna tasa de salud por vehículo hasta entonces |
 | OQ-123 | ¿Con qué fecha se extrajo cada lista —memoria maestra, circuito virtual, mantenimiento, sustitución de emergencia— y cada cuánto se renuevan? Una lista sin fecha no puede juzgar una ventana: no se sabe si describe el circuito de esa semana o el de hace medio año. | Las listas se almacenan con `valid_from`/`valid_to`. Una lista sin vigencia declarada no se usa para clasificar: el inventario sale `unknown` y dice por qué |
+| OQ-124 | Las calles de carga ya se pueden declarar y analizar, pero con la forma que el propietario dio para el escenario sintético: **cinco calles de tres tags y media hora de carga de media**. ¿Cuántas calles hay de verdad, de cuántos tags y con qué capacidad, y cuánto dura una carga en cada una? La media hora es una magnitud inventada para poder probar, y vive en el generador: el producto no la usa, mide la mediana de cada calle del propio dato. | Ninguna duración de carga se fija en el código. La permanencia larga se mide **relativa a la mediana de su propia calle** (R-FLO-004), y sin estancias suficientes no se señala ninguna |
+| OQ-125 | ¿Qué excepciones legítimas admite el orden de salida de una calle (R-CO-003)? Está medido que dos vehículos cargando a la vez con duraciones distintas invierten el orden de salida con toda normalidad, así que la inversión por sí sola no separa la rutina del fallo. | Las inversiones se enumeran **ordenadas por lo que esperó cada uno** y no se llaman avería. R-FLO-001 ya admite excepciones documentadas; cuáles son, lo dice planta |
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
 
 

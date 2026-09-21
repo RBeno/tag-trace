@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.14.0
+version: 0.15.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -84,6 +84,13 @@ regla exista: la matriz no es una lista de intenciones.
 | TC-075 / UX §4 destacados primero, conjunto a demanda | `src/presentation/main.ts` (`finding`), `src/presentation/charts.ts` (`lazyDetails`) | `tests/e2e/f2.spec.ts` |
 | TC-068 la banda de actividad no emite un rótulo por celda | `src/presentation/charts.ts` (`activityChart`) | `tests/e2e/vistas.spec.ts` · «la banda de actividad no emite un rótulo por celda» |
 | `TEST_STRATEGY.md` §7 / G3 falsos positivos y desconocidos medidos por categoría | `tests/support/circuito-auditoria.ts` (verdad plantada) | `tests/audit/auditoria.test.ts` · informe por clase, cero falsos positivos y deuda que no se pudre |
+| `CONFIG_SCHEMA.md` §3.4.2 la configuración de planta entra como CSV | `src/domain/tag-lists.ts`, `src/ingestion/catalog.ts`, `src/persistence/store.ts` (peldaño 3) | `tests/unit/catalog.test.ts`, `tests/unit/charging.test.ts` |
+| R-CO-001 / R-CO-002 cinco calles y su máquina de estados | `src/domain/circuit-config.ts`, `src/domain/charging.ts` | `tests/unit/charging.test.ts` |
+| R-CO-006 / TC-080–082 la parada en carga no es un silencio | `src/domain/dossier.ts` (`laneSignatures`, `cause`) | `tests/unit/dossier.test.ts` · «una parada entre la parada precisa y la salida…» |
+| R-CO-007 / TC-084–085 el que ya estaba dentro antes de la cobertura | `src/domain/charging.ts` (`staysOf`, `startedInside`) | `tests/unit/charging.test.ts` |
+| R-CO-003 / TC-086 la salida se relaciona con mayor antigüedad | `src/domain/charging.ts` (`seniorityBreaches`) | `tests/unit/charging.test.ts` |
+| R-CO-008 / TC-083 una calle sin servicio no acusa a sus tags | `src/domain/inventory.ts` (`calle-sin-servicio`) | `tests/unit/inventory.test.ts` |
+| R-FLO-006 / TC-089 el orden de convoy no prueba nada en zona vacía | `src/domain/read-matrix.ts` (`orderUsableByPosition`, `stretchAllows`) | `tests/unit/read-matrix.test.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` — y la

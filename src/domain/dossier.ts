@@ -10,6 +10,7 @@
  */
 
 import type { Cohort } from "./cohort.js";
+import type { CoLane } from "./circuit-config.js";
 import type { Lap } from "./laps.js";
 import type { Reading } from "./reading.js";
 import type { TruthState } from "./truth.js";
@@ -29,6 +30,20 @@ export interface InactivityPeriod {
    */
   readonly lastTagBefore: string;
   readonly firstTagAfter: string;
+  /**
+   * Qué explica el hueco.
+   *
+   * `carga-online` cuando la firma de R-CO-006 encaja: la última lectura es el tag de parada de una
+   * calle configurada y la vuelta es la salida de **esa misma** calle. Es la diferencia entre media
+   * hora que hay que explicar y media hora que pasa todos los días, y sin las calles cargadas no se
+   * puede saber — así que sin ellas la causa es `silencio`, que es la degradación que la propia
+   * regla exige: «no se sustituye por proximidad».
+   */
+  readonly cause: "silencio" | "carga-online";
+  /** `observed` para la duración del hueco; `inferred` para lo que se afirma que pasó dentro. */
+  readonly truth: TruthState;
+  /** La calle, cuando la causa es una carga. */
+  readonly laneId?: string;
 }
 
 export interface AgvDossier {
@@ -68,8 +83,17 @@ export function buildAgvDossier(
   laps: readonly Lap[],
   coverageEndUtcMs: number,
   minGapMs: number,
+  lanes: readonly CoLane[],
 ): AgvDossier {
-  return computeAgvDossier(agvId, groupByVehicle(readings), cohorts, laps, coverageEndUtcMs, minGapMs);
+  return computeAgvDossier(
+    agvId,
+    groupByVehicle(readings),
+    cohorts,
+    laps,
+    coverageEndUtcMs,
+    minGapMs,
+    laneSignatures(lanes),
+  );
 }
 
 /**
@@ -85,11 +109,26 @@ export function buildAllAgvDossiers(
   laps: readonly Lap[],
   coverageEndUtcMs: number,
   minGapMs: number,
+  lanes: readonly CoLane[],
 ): readonly AgvDossier[] {
   const grouped = groupByVehicle(readings);
+  const signatures = laneSignatures(lanes);
   return [...grouped.keys()]
     .sort()
-    .map((agvId) => computeAgvDossier(agvId, grouped, cohorts, laps, coverageEndUtcMs, minGapMs));
+    .map((agvId) =>
+      computeAgvDossier(agvId, grouped, cohorts, laps, coverageEndUtcMs, minGapMs, signatures),
+    );
+}
+
+/**
+ * La firma de R-CO-006, indexada para poder resolverla de un vistazo por cada hueco.
+ *
+ * La clave es el par (tag de parada, tag de salida) de **la misma** calle. Que tenga que ser la
+ * misma no es detalle: salir por la calle 3 después de haber parado en la 1 no es una carga, es
+ * algo que hay que mirar, y una clave por tag suelto lo habría dado por bueno.
+ */
+function laneSignatures(lanes: readonly CoLane[]): ReadonlyMap<string, string> {
+  return new Map(lanes.map((lane) => [`${lane.stopTagId}\u0000${lane.exitTagId}`, lane.laneId]));
 }
 
 function groupByVehicle(readings: readonly Reading[]): ReadonlyMap<string, readonly Reading[]> {
@@ -113,6 +152,7 @@ function computeAgvDossier(
   laps: readonly Lap[],
   coverageEndUtcMs: number,
   minGapMs: number,
+  laneSignature: ReadonlyMap<string, string>,
 ): AgvDossier {
   const own = grouped.get(agvId) ?? [];
 
@@ -129,12 +169,18 @@ function computeAgvDossier(
     const current = own[index] as Reading;
     const gap = current.time.utcMs - previous.time.utcMs;
     if (gap >= minGapMs) {
+      const laneId = laneSignature.get(`${previous.tagId}\u0000${current.tagId}`);
       inactivity.push({
         fromUtcMs: previous.time.utcMs,
         toUtcMs: current.time.utcMs,
         durationMs: gap,
         lastTagBefore: previous.tagId,
         firstTagAfter: current.tagId,
+        cause: laneId === undefined ? "silencio" : "carga-online",
+        // El hueco en sí siempre es un hecho: las dos lecturas están ahí. Lo que cambia es si se
+        // puede decir **qué pasó dentro**, y eso solo cuando la firma de la calle encaja.
+        truth: laneId === undefined ? "observed" : "inferred",
+        ...(laneId === undefined ? {} : { laneId }),
       });
     }
   }

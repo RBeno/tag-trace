@@ -46,6 +46,8 @@ function lists(partial: Partial<Record<keyof TagLists, readonly string[]>>): Tag
     memory: new Set(partial.memory ?? []),
     maintenance: new Set(partial.maintenance ?? []),
     emergency: new Set(partial.emergency ?? []),
+    charging: new Set(partial.charging ?? []),
+    unservedLaneTags: new Set(partial.unservedLaneTags ?? []),
   };
 }
 
@@ -250,5 +252,48 @@ describe("inventario contrastado", () => {
     expect(inventory.rows.every((row) => row.tagClass !== "ciego-parcial")).toBe(true);
     // 0200 y 0300 están en memoria y nadie los ha leído: candidatos a obsoleto, no averías.
     expect(classOf(inventory, "0200")).toBe("obsoleto-candidato");
+  });
+
+  it("un tag de una calle por la que no entró nadie no es un candidato a obsoleto", () => {
+    // La distinción que evita el falso positivo más destructivo: tres tags perfectamente sanos
+    // acusados de no estar ya en el suelo cuando lo único que pasó es que nadie fue a cargar allí.
+    const readings = laps("A", ["0100", "0200"], 12);
+    const calle = ["7001", "7002", "7003"];
+
+    const sinSaberlo = buildTagInventory(
+      readings,
+      lists({ virtual: ["0100", "0200"], memory: [...calle, "0100", "0200"] }),
+      THRESHOLDS,
+    );
+    expect(classOf(sinSaberlo, "7002")).toBe("obsoleto-candidato");
+
+    const sabiendolo = buildTagInventory(
+      readings,
+      lists({
+        virtual: ["0100", "0200"],
+        memory: [...calle, "0100", "0200"],
+        charging: calle,
+        unservedLaneTags: calle,
+      }),
+      THRESHOLDS,
+    );
+    expect(classOf(sabiendolo, "7002")).toBe("calle-sin-servicio");
+    const fila = sabiendolo.rows.find((row) => row.tagId === "7002");
+    // `unknown`, y la pregunta apunta a la calle, no al tag.
+    expect(fila?.truth).toBe("unknown");
+    expect(fila?.action).toBe("comprobar-si-la-calle-se-usa");
+  });
+
+  it("un tag de calle que sí se lee queda fuera de toda tasa, como mantenimiento", () => {
+    const readings = [...laps("A", ["0100", "0200"], 12), ...laps("A", ["7002"], 3)];
+    const inventory = buildTagInventory(
+      readings,
+      lists({ virtual: ["0100", "0200"], memory: ["0100", "0200"], charging: ["7002"] }),
+      THRESHOLDS,
+    );
+
+    // Sin la lista de carga habría salido `no-declarado-leido`, abriendo una tarea que no existe.
+    expect(classOf(inventory, "7002")).toBe("especial");
+    expect(inventory.rows.find((row) => row.tagId === "7002")?.action).toBe("ninguna");
   });
 });

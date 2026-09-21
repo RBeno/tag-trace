@@ -78,6 +78,22 @@ export type ReadPattern =
 /** Cómo se probó que el vehículo pasó por el punto. */
 export type PassEvidence = "vecinos" | "tiempo" | "orden";
 
+/**
+ * Dónde el orden de convoy **deja de ser evidencia** (R-FLO-006).
+ *
+ * Los dos conjuntos vienen de configuración de planta y los dos pueden estar vacíos, que es el
+ * caso mientras OQ-B04 no se cierre. Vacío significa «no se ha declarado», y sin declaración la
+ * regla no se puede aplicar: la vía de orden sigue valiendo en todo el anillo, como hasta ahora.
+ * Es una degradación declarada y no un descuido — pero conviene saber que en ese estado la tercera
+ * vía es más optimista de lo que la regla admitiría.
+ */
+export interface OrderEvidenceLimits {
+  /** Zona declarada de cada tag. En `vacio` la reordenación está admitida (R-FLO-002). */
+  readonly zoneOf: ReadonlyMap<string, string>;
+  /** Tags por los que se entra a una calle de carga: salida legítima del orden. */
+  readonly laneEntryTags: ReadonlySet<string>;
+}
+
 export interface PairReadRate {
   readonly agvId: string;
   /** Vueltas en las que se probó que el vehículo pasó por el punto, por cualquiera de las tres vías. */
@@ -148,6 +164,14 @@ export interface ReadMatrix {
   readonly supported: boolean;
   /** Segmentos del anillo con tiempo mediano observado, de los `ring.length` que hay. */
   readonly segmentsWithTime: number;
+  /**
+   * Pasadas que la vía de orden habría dado por buenas y que R-FLO-006 no deja usar.
+   *
+   * Se cuenta en vez de descartarse en silencio: es la medida de cuánto de la tercera vía se
+   * apoyaba en tramos donde el orden no prueba nada, y sin la cifra el cambio de criterio sería
+   * invisible para quien compare dos análisis.
+   */
+  readonly orderWithheld: number;
 }
 
 interface Step {
@@ -181,6 +205,7 @@ export function buildReadMatrix(
   ring: readonly string[],
   anchor: string,
   thresholds: ReadRateThresholds,
+  limits: OrderEvidenceLimits,
 ): ReadMatrix {
   const size = ring.length;
   const position = new Map<string, number>();
@@ -190,6 +215,8 @@ export function buildReadMatrix(
   const lapsByVehicle = traceLaps(readings, direction, coverage, anchor, position, anchorPosition, size);
   const segmentMedian = medianPerSegment(lapsByVehicle, size);
   const convoy = buildConvoy(readings, position);
+  const orderUsable = orderUsableByPosition(ring, limits);
+  let orderWithheld = 0;
 
   const pairs = new Map<string, Map<string, Cell>>();
   const vehicleLaps = new Map<string, number>();
@@ -238,6 +265,18 @@ export function buildReadMatrix(
 
         // Sin tiempo esperado —nadie lee esos segmentos seguidos— queda el orden: si salió del
         // tramo entre los mismos vehículos con los que entró, siguió en la línea (R-OPP-004).
+        //
+        // Pero solo donde el orden significa algo. R-FLO-006: el vecindario es firme en zona
+        // cargada, **débil en zona vacía** porque ahí la reordenación está admitida, y **no
+        // aplicable a una entrada en calle CO**, que es una salida legítima del orden. Donde es
+        // débil, la firma baja de confianza en lugar de aplicarse igual — así que aquí no se
+        // aplica, y el tramo se queda sin sostener, que es lo que de verdad se sabe.
+        if (!stretchAllows(orderUsable, bracket.before.rel, bracket.after.rel, anchorPosition, size)) {
+          orderWithheld += 1;
+          cell.unproven += 1;
+          continue;
+        }
+
         if (keptConvoy(convoy, agvId, bracket.before, bracket.after, observed)) {
           cell.passes += 1;
           cell.byOrder += 1;
@@ -315,6 +354,7 @@ export function buildReadMatrix(
     vehicles,
     supported: vehicles.some((vehicle) => vehicle.laps > 0),
     segmentsWithTime: segmentMedian.filter((value) => value !== null).length,
+    orderWithheld,
   };
 }
 
@@ -352,6 +392,46 @@ function expectedTime(
     total += segment;
   }
   return total;
+}
+
+/**
+ * Por cada posición del anillo, si el orden de convoy prueba algo ahí (R-FLO-006).
+ *
+ * Se calcula una vez y se consulta por posición, porque la pregunta aparece dentro del bucle de
+ * vueltas × tags y resolverla ahí con dos búsquedas por celda multiplicaría el coste sin añadir
+ * nada.
+ *
+ * Un tag sin zona declarada **no bloquea**: no se sabe si está en zona vacía, y suponerlo sería
+ * inventarse la configuración que falta. Con las listas cargadas, la duda desaparece.
+ */
+function orderUsableByPosition(
+  ring: readonly string[],
+  limits: OrderEvidenceLimits,
+): readonly boolean[] {
+  return ring.map((tagId) => {
+    if (limits.laneEntryTags.has(tagId)) return false;
+    return limits.zoneOf.get(tagId) !== "vacio";
+  });
+}
+
+/**
+ * ¿Permite el tramo encerrado usar la vía de orden?
+ *
+ * Se miran **los dos extremos y todo lo de en medio**: basta con que el vehículo haya podido
+ * reordenarse o entrar en una calle en cualquier punto del tramo para que salir por el mismo sitio
+ * del convoy deje de demostrar que lo recorrió.
+ */
+function stretchAllows(
+  orderUsable: readonly boolean[],
+  fromRel: number,
+  toRel: number,
+  anchorPosition: number,
+  size: number,
+): boolean {
+  for (let rel = fromRel; rel <= toRel; rel += 1) {
+    if (orderUsable[(anchorPosition + rel) % size] === false) return false;
+  }
+  return true;
 }
 
 /**

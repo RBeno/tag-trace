@@ -2,6 +2,99 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.8.0] - 2026-09-21
+
+Las calles de carga online, la zona de vacíos y la configuración de planta como CSV. El propietario
+no tiene datos de fabricación hasta mañana y añade el argumento que de verdad decide: **en el dato
+real es difícil encontrar los fallos que queremos detectar, y sin conocerlos no sabemos si la
+aplicación funciona**. Así que se sigue con el sintético, ahora con cinco calles de tres tags,
+media hora de carga, una calle por la que no pasa nadie, un AGV al que se le salta el turno y cinco
+que ya estaban cargando antes de que empezara la ventana.
+
+**Nada de esto es alcance nuevo: es deuda de F0 que por fin se puede ejercitar.** R-CO-001 decía
+desde el 3 de septiembre que «el piloto se validará además con un fixture sintético de **cinco
+calles**», y R-CO-006 estaba `accepted` sin implementar. Lo único que no cubría ninguna regla es el
+arranque en frío, y esa es nueva.
+
+### Corregido
+
+- **Media hora cargando salía como periodo de inactividad.** El umbral de silencio son cinco
+  minutos, así que toda carga normal aparecía como un hueco que explicar. El propio `dossier.ts`
+  ya decía en un comentario que separarlo «exige la configuración de calles que OQ-B04 todavía no
+  ha dado»; ahora la tiene. En el escenario de auditoría son **93 paradas** que pasan de silencio a
+  carga.
+- **Tres tags perfectamente sanos acusados de no estar ya en el suelo.** Los de una calle por la
+  que no entró nadie salían `obsoleto-candidato`, que afirma «está en la lista y probablemente no
+  en el suelo». Sin entradas no hubo oportunidad de leerlos: clase nueva `calle-sin-servicio`,
+  `unknown`, y la pregunta apunta a la calle (R-CO-008).
+- **`orden` y `nota` se parseaban y se tiraban** al guardar la lista. Ahora las listas conservan sus
+  metadatos por tag (peldaño 3 del almacén), que es lo que permite que una calle sea una secuencia
+  con papeles y no un conjunto de tres tags.
+
+### Añadido
+
+- **La configuración de planta entra como CSV** (`CONFIG_SCHEMA.md` §3.4.2), que es lo que el
+  propietario pidió: `lista;tag;orden;funcion;grupo;capacidad;nota`, con las dos primeras
+  obligatorias y el resto localizadas por nombre en cualquier posición. `co_lanes`, `empty_zone`,
+  `loaded_zone` y `critical_points` se expresan con ella. Lista nueva `zona`.
+- **`src/domain/circuit-config.ts`** — monta calles y zonas, y **declara lo que no puede montar** en
+  vez de completarlo. Una calle sin parada precisa, o con dos tags reclamando el mismo papel, no se
+  usa y su motivo se enseña junto al análisis. Adivinar el papel por la posición sería sustituir la
+  configuración por proximidad, que es lo que R-CO-006 prohíbe con esas palabras.
+- **`src/domain/charging.ts`** — la máquina de estados por calle de R-CO-002: estancias con su
+  mediana, permanencias largas **relativas a la mediana de su propia calle**, salidas fuera de
+  antigüedad ordenadas por lo que esperó cada uno, calles sin servicio y arranque en frío.
+- **R-CO-007, R-CO-008** (nuevas) y la aplicación de **R-FLO-006**, que llevaba `accepted` desde F0
+  sin consecuencia en el código: el orden de convoy ya no prueba el paso en zona vacía ni cruzando
+  una entrada de calle, y lo que retira **se cuenta** (`orderWithheld`) en vez de desaparecer.
+- Cinco clases más en el circuito de auditoría, y el informe pasa de 8 a 13.
+
+### El informe, que sigue siendo el entregable
+
+```
+240.975 lecturas, 40 vehículos. Anillo reconstruido: 146 tags de 150 declarados. Fuera del anillo: 15.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 8/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  NO DETECTA  rotura-subita — con instante de cambio: 0/2
+  NO DETECTA  degradacion-progresiva — con tendencia a la baja: 0/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 93 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 4 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+```
+
+**11 de 13 clases y cero falsos positivos.** Cuatro cosas que conviene decir y no adornar:
+
+- **Las dos clases de deuda siguen siendo las mismas** —rotura súbita y degradación progresiva— y
+  por la misma causa: una sola tasa sobre toda la ventana. Este incremento no las toca.
+- **`lectura-media` baja de 9/10 a 8/10.** No es una regresión del detector: las cargas consumen
+  números de la secuencia con semilla, así que el escenario es otra realización del mismo diseño.
+  La cifra se publica como salió, sin ajustar el umbral para recuperar el 9.
+- **El turno saltado señala a cinco vehículos y solo uno está plantado.** Los otros cuatro son
+  cargas simultáneas de duración distinta, que invierten el orden de salida con toda normalidad. La
+  lista se entrega ordenada por lo que esperó cada uno y el plantado sale el primero con 300 min
+  frente a la media hora de mediana; la auditoría exige que salga **el primero**, no solo que
+  aparezca. Qué excepciones son legítimas es OQ-125, y la responde planta.
+- **R-FLO-006 está implementado y este escenario no lo ejercita**: `pasadas retiradas de la vía de
+  orden: 0`, porque casi todos los segmentos tienen tiempo mediano y decide la vía del tiempo. Tiene
+  pruebas unitarias propias, pero una regla que no se ejercita no está validada por esta auditoría
+  aunque esté escrita, y el informe lo dice en lugar de callarlo.
+
+### Gobierno
+
+- `RULE_CATALOG.md` R-CO-007 y R-CO-008; `CONFIG_SCHEMA.md` §3.4.2; `TEST_STRATEGY.md` TC-080–090;
+  `UX_SPEC.md` §5.2.1; `OPEN_QUESTIONS.md` OQ-124 (capacidad y tiempo de carga reales) y OQ-125
+  (excepciones al orden de salida); `PHASE_GATES.md` G3 con las dos casillas de FIFO y calles CO
+  **a medias y sin marcar**: están modeladas, pero solo ejercitadas contra el sintético.
+- Los treinta minutos de carga son una magnitud del escenario y viven en el generador. En `src/` no
+  hay ningún minutaje: `longStayRatio` y `minStaysForMedian` van a `AnalysisConfig` como `draft` y
+  **sin valor por defecto**, igual que los cinco grupos que ya había.
+
 ## [3.7.0] - 2026-09-21
 
 Un banco de pruebas donde **todos los fallos conocidos están plantados a propósito**, para dejar de

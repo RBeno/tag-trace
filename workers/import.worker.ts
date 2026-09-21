@@ -32,7 +32,14 @@ import { buildTagInventory, describeAction } from "../src/domain/inventory.js";
 import { assignCohorts } from "../src/domain/cohort.js";
 import { buildTransitions } from "../src/domain/graph.js";
 import { findDominantCycle, segmentLaps, type Lap, type LapAnchor } from "../src/domain/laps.js";
-import { buildReadMatrix } from "../src/domain/read-matrix.js";
+import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-matrix.js";
+import { buildChargingReport } from "../src/domain/charging.js";
+import {
+  laneEntryTags,
+  readCoLanes,
+  readZones,
+  type ConfigEntry,
+} from "../src/domain/circuit-config.js";
 import { buildAllAgvDossiers, buildAllTagDossiers } from "../src/domain/dossier.js";
 import { compareAgainstVsystem } from "../src/domain/vsystem.js";
 import { buildReplayFrames } from "../src/domain/replay.js";
@@ -183,6 +190,27 @@ async function buildViews(
   const coverage = stored?.coverage ?? [];
   if (readings.length === 0) return undefined;
 
+  // --- Configuración de planta (OQ-B04, `CONFIG_SCHEMA.md` §3.4) -----------------------------
+  //
+  // Va **antes** que el análisis y no después, como estaba: las calles cambian lo que significa un
+  // hueco de media hora (R-CO-006) y las zonas cambian qué prueba el orden de convoy (R-FLO-006).
+  // Leerlas al final serviría para enseñarlas, no para usarlas.
+  const lists = stored?.lists ?? [];
+  const entriesOf = (name: string): readonly ConfigEntry[] =>
+    lists.find((entry) => entry.list === name)?.entries ?? [];
+  const laneConfig = readCoLanes(entriesOf("carga-online"));
+  const zoneConfig = readZones(entriesOf("zona"));
+  const orderLimits: OrderEvidenceLimits = {
+    zoneOf: zoneConfig.zoneOf,
+    laneEntryTags: laneEntryTags(laneConfig.lanes),
+  };
+  const charging = buildChargingReport(
+    readings,
+    laneConfig.lanes,
+    coverage,
+    PROVISIONAL_CONFIG.charging,
+  );
+
   // --- Grafo, cohortes y vueltas (F2) -------------------------------------------------------
   //
   // El agrupamiento va primero porque las vueltas se segmentan **por cohorte**: dos circuitos
@@ -244,6 +272,7 @@ async function buildViews(
         anchor.cycle,
         anchor.tagId,
         PROVISIONAL_CONFIG.readRate,
+        orderLimits,
       ),
     );
   }
@@ -259,6 +288,7 @@ async function buildViews(
     laps,
     coverageEnd,
     PROVISIONAL_CONFIG.silence.minGapMs,
+    laneConfig.lanes,
   );
   const vehicleIds = agvDossiers.map((dossier) => dossier.agvId);
   const tagDossiers = buildAllTagDossiers(readings, vehicleIds);
@@ -274,13 +304,55 @@ async function buildViews(
     agvDossiers,
     tagDossiers,
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
+    ...(laneConfig.lanes.length === 0 && laneConfig.problems.length === 0
+      ? {}
+      : {
+          charging: {
+            lanes: charging.lanes.map((lane) => ({
+              laneId: lane.laneId,
+              capacity: lane.capacity,
+              served: lane.served,
+              stays: lane.stays.length,
+              medianStayMs: lane.medianStayMs,
+              longStays: lane.longStays.map((stay) => ({
+                agvId: stay.agvId,
+                durationMs: stay.durationMs,
+              })),
+              outOfSeniority: lane.outOfSeniority.map((breach) => ({
+                waited: breach.waited,
+                overtakenBy: [...breach.overtakenBy],
+                waitedMs: breach.waitedMs,
+              })),
+            })),
+            startedInside: charging.startedInside.map((stay) => ({
+              agvId: stay.agvId,
+              laneId: stay.laneId,
+              leftUtcMs: stay.leftUtcMs,
+            })),
+            coverageStartUtcMs: charging.coverageStartUtcMs,
+            problems: [...laneConfig.problems, ...zoneConfig.problems],
+          },
+        }),
+    ...(zoneConfig.zoneOf.size === 0
+      ? {}
+      : {
+          zones: [...new Set(zoneConfig.zoneOf.values())].sort().map((zoneName) => ({
+            zone: zoneName,
+            tags: [...zoneConfig.zoneOf].filter(([, value]) => value === zoneName).length,
+          })),
+        }),
+    orderWithheld: matrices.reduce((total, matrix) => total + matrix.orderWithheld, 0),
   };
 
-  const lists = stored?.lists ?? [];
   if (lists.length === 0) return views;
 
   const byName = (name: string): ReadonlySet<string> =>
     new Set(lists.find((entry) => entry.list === name)?.tags ?? []);
+  const unservedLaneTags = new Set(
+    charging.lanes
+      .filter((lane) => !lane.served)
+      .flatMap((lane) => laneConfig.lanes.find((item) => item.laneId === lane.laneId)?.tags ?? []),
+  );
   const inventory = buildTagInventory(
     readings,
     {
@@ -288,6 +360,8 @@ async function buildViews(
       memory: byName("memoria"),
       maintenance: byName("mantenimiento"),
       emergency: byName("emergencia"),
+      charging: byName("carga-online"),
+      unservedLaneTags,
     },
     PROVISIONAL_CONFIG.blindness,
   );
@@ -485,6 +559,17 @@ async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<
     const incoming = [...result.lists.entries()].map(([list, entries]) => ({
       list,
       tags: [...new Set(entries.map((entry) => entry.tagId))],
+      // Los metadatos se guardan **sin deduplicar**: un tag repetido en la misma calle es una
+      // contradicción de la lista, y quien lee la configuración tiene que poder verla y decirla,
+      // no encontrársela ya resuelta a favor de la primera fila.
+      entries: entries.map((entry) => ({
+        tagId: entry.tagId,
+        order: entry.order,
+        funcion: entry.funcion,
+        grupo: entry.grupo,
+        capacidad: entry.capacidad,
+        note: entry.note,
+      })),
       extractedAt: message.extractedAt ?? null,
       loadedAt,
       fileName: file.name,

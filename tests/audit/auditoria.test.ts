@@ -25,6 +25,10 @@ import { assignCohorts } from "../../src/domain/cohort.js";
 import { findDominantCycle, segmentLaps, type Lap } from "../../src/domain/laps.js";
 import { buildReadMatrix, type ReadMatrix } from "../../src/domain/read-matrix.js";
 import { buildTagInventory } from "../../src/domain/inventory.js";
+import { buildAllAgvDossiers } from "../../src/domain/dossier.js";
+import { buildChargingReport, type ChargingReport } from "../../src/domain/charging.js";
+import { laneEntryTags, readCoLanes, readZones } from "../../src/domain/circuit-config.js";
+import { importCatalog } from "../../src/ingestion/catalog.js";
 import { PROVISIONAL_CONFIG } from "../../src/domain/config.js";
 
 /**
@@ -46,17 +50,38 @@ const DEUDA_CONOCIDA: ReadonlyMap<DefectClass, string> = new Map([
   ],
 ]);
 
+/**
+ * Plazo por prueba.
+ *
+ * Una auditoría no es una unitaria: genera un cuarto de millón de lecturas y las hace pasar por el
+ * encadenado entero, y dos veces cuando hay que contrastar con configuración y sin ella. El plazo
+ * por defecto de Vitest está pensado para comprobar una función, y aquí solo serviría para que la
+ * prueba fallara por lenta en vez de por falsa.
+ */
+const PLAZO = 120_000;
+
 interface Analysis {
   readonly matrix: ReadMatrix | undefined;
   readonly ring: readonly string[];
   readonly offRing: readonly string[];
   readonly inventory: ReturnType<typeof buildTagInventory>;
+  readonly charging: ChargingReport;
+  readonly dossiers: ReturnType<typeof buildAllAgvDossiers>;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
 }
 
-/** El mismo encadenado que corre el Worker, sobre el escenario generado. */
-function analyse(scenario: ReturnType<typeof buildAuditScenario>): Analysis {
+/**
+ * El mismo encadenado que corre el Worker, sobre el escenario generado.
+ *
+ * `conConfiguracion` decide si se le dan las listas de planta. Se puede ejecutar sin ellas a
+ * propósito: es la única forma de comprobar que declararlas no cambia el veredicto de un tag sano,
+ * que es lo que la clase `zona-vacia-declarada` vigila.
+ */
+function analyse(
+  scenario: ReturnType<typeof buildAuditScenario>,
+  conConfiguracion = true,
+): Analysis {
   const result = importReadings(
     scenario.readingsCsv,
     {
@@ -68,6 +93,13 @@ function analyse(scenario: ReturnType<typeof buildAuditScenario>): Analysis {
     },
     { onProgress: () => undefined, isCancelled: () => false },
   );
+
+  // La configuración se lee **por el mismo camino que el producto**: del CSV de listas, con el
+  // importador de catálogo. Construirla a mano aquí probaría el dominio y no el recorrido.
+  const catalog = importCatalog(scenario.listsCsv);
+  const entriesOf = (name: string) => (conConfiguracion ? (catalog.lists.get(name) ?? []) : []);
+  const laneConfig = readCoLanes(entriesOf("carga-online"));
+  const zoneConfig = readZones(entriesOf("zona"));
 
   const readings = result.readings;
   const direction = result.summary.direction;
@@ -83,7 +115,13 @@ function analyse(scenario: ReturnType<typeof buildAuditScenario>): Analysis {
 
   const laps: Lap[] =
     anchor === null ? [] : [...segmentLaps(cohortReadings, direction, [], anchor.tagId)];
-  void laps;
+
+  const charging = buildChargingReport(
+    readings,
+    laneConfig.lanes,
+    [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
+    PROVISIONAL_CONFIG.charging,
+  );
 
   const matrix =
     anchor === null
@@ -96,6 +134,7 @@ function analyse(scenario: ReturnType<typeof buildAuditScenario>): Analysis {
           anchor.cycle,
           anchor.tagId,
           PROVISIONAL_CONFIG.readRate,
+          { zoneOf: zoneConfig.zoneOf, laneEntryTags: laneEntryTags(laneConfig.lanes) },
         );
 
   const ring = anchor?.cycle ?? [];
@@ -105,18 +144,51 @@ function analyse(scenario: ReturnType<typeof buildAuditScenario>): Analysis {
   );
 
   const declared = new Set(scenario.declaredRing);
+  const laneTagsOf = (predicate: (laneId: string) => boolean): Set<string> =>
+    new Set(
+      laneConfig.lanes.filter((lane) => predicate(lane.laneId)).flatMap((lane) => [...lane.tags]),
+    );
+  const noServidas = new Set(
+    charging.lanes.filter((lane) => !lane.served).map((lane) => lane.laneId),
+  );
   const inventory = buildTagInventory(
     readings,
-    { virtual: declared, memory: declared, maintenance: new Set(), emergency: new Set() },
+    {
+      virtual: declared,
+      memory: declared,
+      maintenance: new Set(),
+      emergency: new Set(),
+      charging: laneTagsOf(() => true),
+      unservedLaneTags: laneTagsOf((laneId) => noServidas.has(laneId)),
+    },
     PROVISIONAL_CONFIG.blindness,
   );
 
-  return { matrix, ring, offRing, inventory, readings: readings.length };
+  const dossiers = buildAllAgvDossiers(
+    readings,
+    cohorts,
+    laps,
+    scenario.toUtcMs,
+    PROVISIONAL_CONFIG.silence.minGapMs,
+    laneConfig.lanes,
+  );
+
+  return { matrix, ring, offRing, inventory, charging, dossiers, readings: readings.length };
 }
 
 describe("auditoría del circuito con verdad conocida", () => {
   const scenario = buildAuditScenario();
-  const { matrix, ring, offRing, inventory, readings } = analyse(scenario);
+  const analysis = analyse(scenario);
+  const { matrix, ring, offRing, inventory, charging, dossiers, readings } = analysis;
+
+  /**
+   * El mismo análisis **sin** las listas de planta, para poder contrastar los dos.
+   *
+   * Se calcula una sola vez y solo si hace falta: generar y analizar el escenario son unos segundos,
+   * y las sondas se ejecutan una vez por prueba.
+   */
+  let sinConfigCache: Analysis | null = null;
+  const sinConfiguracion = (): Analysis => (sinConfigCache ??= analyse(scenario, false));
 
   /** Qué dice el producto de un tag, en la forma que la auditoría compara. */
   const rowOf = (tagId: string) => matrix?.tags.find((entry) => entry.tagId === tagId);
@@ -203,6 +275,91 @@ describe("auditoría del circuito con verdad conocida", () => {
       const fuera = tags.filter((tag) => offRing.includes(tag));
       return { ok: fuera.length === tags.length, detail: `fuera del anillo: ${fuera.length}/${tags.length}` };
     },
+    "carga-online-normal": () => {
+      // Dos cosas, y las dos tienen que darse: que las estancias se reconozcan con una mediana
+      // sensata, y —lo que de verdad importa— que esas medias horas **no** aparezcan como
+      // periodos de inactividad en el expediente de nadie.
+      const servidas = charging.lanes.filter((lane) => lane.served);
+      const conMediana = servidas.filter(
+        (lane) =>
+          lane.medianStayMs !== null &&
+          lane.medianStayMs > 15 * 60_000 &&
+          lane.medianStayMs < 50 * 60_000,
+      );
+      const huecos = dossiers.flatMap((dossier) => dossier.inactivity);
+      const comoSilencio = huecos.filter(
+        (period) => period.cause === "silencio" && period.durationMs > 15 * 60_000,
+      ).length;
+      const comoCarga = huecos.filter((period) => period.cause === "carga-online").length;
+      return {
+        ok: conMediana.length === servidas.length && servidas.length > 0 && comoSilencio === 0,
+        detail:
+          `${conMediana.length}/${servidas.length} calles con mediana en torno a la media hora; ` +
+          `${comoCarga} paradas leídas como carga y ${comoSilencio} como silencio`,
+      };
+    },
+    "calle-sin-servicio": () => {
+      const tags = scenario.defects.find((d) => d.kind === "calle-sin-servicio")?.tags ?? [];
+      const sinServicio = charging.lanes.filter((lane) => !lane.served).length;
+      const clases = tags.map(classOf);
+      return {
+        ok: sinServicio === 1 && clases.every((clase) => clase === "calle-sin-servicio"),
+        detail: `${sinServicio} calle sin entradas; clases: ${clases.join(", ")}`,
+      };
+    },
+    "salida-fuera-de-antiguedad": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "salida-fuera-de-antiguedad")
+        ?.vehicles ?? [])[0];
+      // Ordenadas por lo que esperó cada uno, sobre todas las calles. Lo que se exige no es que el
+      // plantado aparezca —aparecería también en una lista de cincuenta— sino que salga **el
+      // primero**: dos cargas simultáneas de duración distinta invierten el orden de salida con
+      // toda normalidad, así que lo que separa la espera anómala del ruido es su magnitud.
+      const todas = charging.lanes
+        .flatMap((lane) => lane.outOfSeniority)
+        .sort((a, b) => b.waitedMs - a.waitedMs);
+      const primera = todas[0];
+      return {
+        ok: esperado !== undefined && primera?.waited === esperado,
+        detail:
+          primera === undefined
+            ? "nadie señalado"
+            : `el primero por espera es ${primera.waited} (se esperaba ${esperado ?? "—"}), ` +
+              `${Math.round(primera.waitedMs / 60_000)} min; ${todas.length - 1} inversiones más, ` +
+              "que son cargas simultáneas de duración distinta y no un hallazgo",
+      };
+    },
+    "carga-anterior-a-la-ventana": () => {
+      const esperados = new Set(
+        scenario.defects.find((d) => d.kind === "carga-anterior-a-la-ventana")?.vehicles ?? [],
+      );
+      const inferidos = new Set(charging.startedInside.map((stay) => stay.agvId));
+      const aciertos = [...esperados].filter((agv) => inferidos.has(agv));
+      // Exacto en los dos sentidos: se exige encontrarlos **y** no inventarse ninguno más, porque
+      // afirmar que un vehículo estaba cargando cuando no lo estaba es el mismo error al revés.
+      return {
+        ok: aciertos.length === esperados.size && inferidos.size === esperados.size,
+        detail: `${aciertos.length}/${esperados.size} inferidos, ${inferidos.size} señalados en total`,
+      };
+    },
+    "zona-vacia-declarada": () => {
+      // La zona es contexto, no defecto: lo que se mide es que **declararla no mueva ningún
+      // veredicto de un tag sano**. Una configuración que cambia diagnósticos que no debería
+      // tocar es un defecto por sí misma, y solo se ve comparando las dos ejecuciones.
+      const sinConfig = sinConfiguracion();
+      const patron = (source: Analysis, tagId: string) =>
+        source.matrix?.tags.find((entry) => entry.tagId === tagId)?.pattern;
+      const movidos = scenario.cleanTags.filter(
+        (tag) => patron(sinConfig, tag) !== patron(analysis, tag),
+      );
+      const enZona = scenario.lanes.every((lane) => scenario.zoneOf.get(lane.stop) === "vacio");
+      return {
+        ok: movidos.length === 0 && enZona,
+        detail:
+          `${[...new Set(scenario.zoneOf.values())].length} zonas declaradas, calles dentro de ` +
+          `la vacía: ${enZona ? "sí" : "no"}; tags sanos con veredicto movido: ${movidos.length}; ` +
+          `pasadas retiradas de la vía de orden: ${matrix?.orderWithheld ?? 0}`,
+      };
+    },
   };
 
   it("publica el informe por clase", () => {
@@ -222,7 +379,7 @@ describe("auditoría del circuito con verdad conocida", () => {
         `\n=================\n`,
     );
     expect(ring.length).toBeGreaterThan(0);
-  });
+  }, PLAZO);
 
   it("el generador planta lo que dice que planta", () => {
     // Una auditoría cuyo escenario miente es peor que no tener auditoría: daría por bueno un
@@ -264,7 +421,7 @@ describe("auditoría del circuito con verdad conocida", () => {
       expect(proporcion, `${tag} debería leerse solo hasta la rotura`).toBeGreaterThan(0.3);
       expect(proporcion).toBeLessThan(0.75);
     }
-  });
+  }, PLAZO);
 
   it("no señala ningún tag sano: cero falsos positivos", () => {
     const falsos = scenario.cleanTags.filter((tag) => {
@@ -272,7 +429,7 @@ describe("auditoría del circuito con verdad conocida", () => {
       return pattern === "bimodal-candidato" || pattern === "uniforme-bajo";
     });
     expect(falsos, `falsos positivos: ${falsos.slice(0, 8).join(", ")}`).toHaveLength(0);
-  });
+  }, PLAZO);
 
   it("detecta las clases que ya sabe detectar, y sigue haciéndolo", () => {
     const fallos: string[] = [];
@@ -282,7 +439,7 @@ describe("auditoría del circuito con verdad conocida", () => {
       if (!resultado.ok) fallos.push(`${defect.kind}: ${resultado.detail}`);
     }
     expect(fallos, fallos.join(" | ")).toHaveLength(0);
-  });
+  }, PLAZO);
 
   it("la lista de deuda conocida no miente: si algo empieza a detectarse, hay que sacarlo", () => {
     const yaDetectadas: string[] = [];
@@ -294,5 +451,5 @@ describe("auditoría del circuito con verdad conocida", () => {
       yaDetectadas,
       `ya se detectan y siguen en DEUDA_CONOCIDA: ${yaDetectadas.join(", ")}`,
     ).toHaveLength(0);
-  });
+  }, PLAZO);
 });

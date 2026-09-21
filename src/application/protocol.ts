@@ -233,6 +233,46 @@ export interface CircuitViews {
   readonly vsystemContrast?: readonly VsystemComparisonRow[];
   /** Fotogramas del replay, en fracción temporal — nunca posición física (`PERFORMANCE_BUDGET.md` §6). */
   readonly replay: readonly SerializedReplayFrame[];
+  /**
+   * Calles de carga online. Solo cuando el circuito tiene la lista `carga-online` cargada.
+   *
+   * Viaja en forma compacta —recuentos y los casos notables, no las estancias una a una— porque lo
+   * que la vista necesita es a cuáles mirar; el detalle completo se reconstruye abriendo el
+   * expediente del vehículo, que ya lo tiene.
+   */
+  readonly charging?: {
+    readonly lanes: readonly {
+      readonly laneId: string;
+      readonly capacity: number | null;
+      readonly served: boolean;
+      readonly stays: number;
+      readonly medianStayMs: number | null;
+      readonly longStays: readonly { readonly agvId: string; readonly durationMs: number | null }[];
+      readonly outOfSeniority: readonly {
+        readonly waited: string;
+        readonly overtakenBy: readonly string[];
+        readonly waitedMs: number;
+      }[];
+    }[];
+    /** Los que ya estaban dentro antes de empezar la cobertura (R-CO-007). */
+    readonly startedInside: readonly {
+      readonly agvId: string;
+      readonly laneId: string;
+      readonly leftUtcMs: number | null;
+    }[];
+    readonly coverageStartUtcMs: number | null;
+    /** Calles y zonas declaradas que no se pudieron montar, con su motivo. */
+    readonly problems: readonly string[];
+  };
+  /** Zonas declaradas y cuántos tags tiene cada una. Solo con la lista `zona` cargada. */
+  readonly zones?: readonly { readonly zone: string; readonly tags: number }[];
+  /**
+   * Pasadas que R-FLO-006 retiró de la vía de orden, sumadas sobre los cohortes.
+   *
+   * Se publica para que el cambio de criterio sea visible: sin la cifra, un análisis repetido tras
+   * cargar las zonas daría menos pasadas sin que nada explicara por qué.
+   */
+  readonly orderWithheld: number;
 }
 
 /** `ReplayFrame` tal como cruza el `postMessage`: el mapa de vehículos, ya como pares. */

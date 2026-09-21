@@ -1,8 +1,8 @@
 ---
 document_id: TT-RULES-001
-version: 0.20.0
+version: 0.21.0
 status: baseline-candidate
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 ---
 
 # Catálogo de reglas industriales
@@ -123,6 +123,8 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-CO-004 | accepted | SOC puede quedar congelado/no fiable durante carga y se excluye del diagnóstico. |
 | R-CO-005 | accepted | Retrocesos o maniobras pueden producir doble lectura; deben evaluarse topológica y temporalmente. |
 | R-CO-006 | accepted | Un silencio cuya última lectura es el tag de parada de una calle CO configurada y cuya reanudación recorre en orden la secuencia declarada de esa calle se infiere como permanencia en carga online. Sin calles configuradas la firma no se reconoce y el silencio queda `unknown`; no se sustituye por proximidad. |
+| R-CO-007 | accepted | Un vehículo cuya **primera** lectura de toda la cobertura es el tag de salida de una calle CO estaba dentro antes de que la cobertura empezara: la permanencia se infiere y su entrada queda desconocida. Durante ese tramo la ocupación de esa calle es `sin datos cargados` y **nunca «vacía»** —es R-DAT-007 aplicado a una calle—, así que ni el vehículo cuenta como ausente ni la calle como libre. |
+| R-CO-008 | accepted | Una calle CO en la que no entró ningún vehículo en toda la cobertura no convierte sus tags en candidatos a obsoleto: sin entradas no hubo oportunidad de leerlos, y un cero sin oportunidad no es un cero (R-OPP-013). Lo que abre es una pregunta sobre la calle, no sobre el tag. |
 
 ## Producción y calendario
 

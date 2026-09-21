@@ -9,7 +9,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { buildReadMatrix, type ReadRateThresholds } from "../../src/domain/read-matrix.js";
+import {
+  buildReadMatrix,
+  type OrderEvidenceLimits,
+  type ReadRateThresholds,
+} from "../../src/domain/read-matrix.js";
 import type { Reading } from "../../src/domain/reading.js";
 
 const ZONE = "Europe/Madrid";
@@ -21,6 +25,14 @@ const THRESHOLDS: ReadRateThresholds = {
   maxGapProvenByNeighbours: 1,
   minTimeRatio: 0.6,
 };
+
+/**
+ * Sin zonas ni calles declaradas, que es el estado mientras OQ-B04 siga abierta.
+ *
+ * En ese estado R-FLO-006 no se puede aplicar —no se sabe qué tramo es zona vacía— y la vía de
+ * orden vale en todo el anillo. Las pruebas que sí ejercitan la regla declaran su propia zona.
+ */
+const SIN_ZONAS: OrderEvidenceLimits = { zoneOf: new Map(), laneEntryTags: new Set() };
 
 let row = 0;
 let clock = 0;
@@ -62,7 +74,7 @@ describe("matriz de lectura por pasada", () => {
       ...laps("A", RING, 4),
       ...laps("B", RING, 4, (_lap, tagId) => tagId === "0300"),
     ];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
 
     const tag = matrix.tags.find((entry) => entry.tagId === "0300");
     expect(tag?.pattern).toBe("bimodal-candidato");
@@ -77,7 +89,7 @@ describe("matriz de lectura por pasada", () => {
     // de en medio existe justamente para no llamar bimodal ni uniforme a lo que no lo es.
     const omite = (lap: number, tagId: string): boolean => tagId === "0300" && lap % 6 !== 0;
     const readings = [...laps("A", RING, 11, omite), ...laps("B", RING, 11, omite)];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
 
     const tag = matrix.tags.find((entry) => entry.tagId === "0300");
     expect(tag?.pattern).toBe("uniforme-bajo");
@@ -93,7 +105,7 @@ describe("matriz de lectura por pasada", () => {
       // `B` hace el anillo corto: nunca pasa por 0900 ni por su vecindad inmediata.
       ...laps("B", ["0100", "0200", "0300"], 4),
     ];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], conRama, "0100", THRESHOLDS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], conRama, "0100", THRESHOLDS, SIN_ZONAS);
 
     const rama = matrix.tags.find((entry) => entry.tagId === "0900");
     // `B` no aparece como lector fallido de 0900: sencillamente no pasó por ahí. Si contara, `B`
@@ -112,7 +124,7 @@ describe("matriz de lectura por pasada", () => {
       ...laps("B", RING, 5, (lap, tagId) => tagId === "0300" && lap % 2 === 0),
       ...laps("C", RING, 5, (lap, tagId) => tagId === "0300" && lap % 3 !== 0),
     ];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
 
     const tag = matrix.tags.find((entry) => entry.tagId === "0300");
     expect(tag?.pattern).toBe("gradiente");
@@ -121,7 +133,7 @@ describe("matriz de lectura por pasada", () => {
 
   it("pocas pasadas no son un cero: salen sin soporte y con la razón declarada", () => {
     const readings = [...laps("A", RING, 1), ...laps("B", RING, 1)];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
 
     for (const tag of matrix.tags) {
       expect(tag.pattern).toBe("sin-soporte");
@@ -138,6 +150,7 @@ describe("matriz de lectura por pasada", () => {
       RING,
       "0100",
       THRESHOLDS,
+      SIN_ZONAS,
     );
 
     const anchor = matrix.tags.find((entry) => entry.tagId === "0100");
@@ -149,7 +162,7 @@ describe("matriz de lectura por pasada", () => {
   it("sin vueltas cerradas no hay matriz que sostener, y se dice", () => {
     // Un vehículo que nunca vuelve a pasar por el ancla no cierra ninguna vuelta.
     const readings = [reading("A", "0100"), reading("A", "0200"), reading("A", "0300")];
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
 
     expect(matrix.supported).toBe(false);
     expect(matrix.vehicles[0]?.laps).toBe(0);
@@ -180,7 +193,7 @@ describe("matriz de lectura por pasada", () => {
     }
     paso("B", "0100", 10);
 
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS, SIN_ZONAS);
 
     const tag = matrix.tags.find((entry) => entry.tagId === "0400");
     const celda = tag?.byVehicle.find((cell) => cell.agvId === "B");
@@ -211,7 +224,7 @@ describe("matriz de lectura por pasada", () => {
     }
     paso("B", "0100", 10);
 
-    const matrix = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS);
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS, SIN_ZONAS);
 
     const tag = matrix.tags.find((entry) => entry.tagId === "0400");
     // `B` no aparece con pasadas, y el tramo queda registrado como no sostenido en vez de
@@ -234,11 +247,78 @@ describe("matriz de lectura por pasada", () => {
       { from: (segunda[0] as Reading).time.utcMs, to: clock },
     ];
 
-    const conHueco = buildReadMatrix(0, readings, "oldest-first", cobertura, RING, "0100", THRESHOLDS);
-    const sinHueco = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS);
+    const conHueco = buildReadMatrix(0, readings, "oldest-first", cobertura, RING, "0100", THRESHOLDS, SIN_ZONAS);
+    const sinHueco = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS);
 
     // La vuelta que va de un lado al otro del hueco se descarta: en medio no hubo circulación,
     // hubo ausencia de datos.
     expect((conHueco.vehicles[0]?.laps ?? 0)).toBeLessThan(sinHueco.vehicles[0]?.laps ?? 0);
   });
+
+  it("en zona vacía el orden de convoy deja de probar el paso (R-FLO-006)", () => {
+    // La regla es explícita: el vecindario es firme en zona cargada y **débil en zona vacía**,
+    // porque ahí la reordenación está admitida. Salir del tramo entre los mismos vehículos deja de
+    // demostrar que se recorrió, así que el tramo se queda sin sostener en vez de darse por bueno.
+    const readings = convoyDeDos();
+    const anillo = ["0100", "0200", "0300", "0400", "0500", "0600"];
+
+    const enCargado = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS, {
+      zoneOf: new Map(anillo.map((tagId) => [tagId, "cargado"])),
+      laneEntryTags: new Set(),
+    });
+    const enVacio = buildReadMatrix(0, readings, "oldest-first", [], anillo, "0100", THRESHOLDS, {
+      zoneOf: new Map(anillo.map((tagId) => [tagId, "vacio"])),
+      laneEntryTags: new Set(),
+    });
+
+    const porOrden = (matrix: typeof enCargado): number =>
+      matrix.tags.find((entry) => entry.tagId === "0400")?.byOrder ?? 0;
+
+    expect(porOrden(enCargado)).toBeGreaterThan(0);
+    expect(porOrden(enVacio)).toBe(0);
+    // Y no desaparece en silencio: se cuenta lo que la regla retiró.
+    expect(enVacio.orderWithheld).toBeGreaterThan(0);
+    expect(enCargado.orderWithheld).toBe(0);
+  });
+
+  it("una entrada de calle en el tramo también retira la vía de orden (R-FLO-006)", () => {
+    // Todo en zona cargada, pero por 0300 se entra a una calle: entrar es una salida legítima del
+    // orden, así que conservarlo ya no demuestra haber recorrido el tramo.
+    const anillo = ["0100", "0200", "0300", "0400", "0500", "0600"];
+    const matrix = buildReadMatrix(0, convoyDeDos(), "oldest-first", [], anillo, "0100", THRESHOLDS, {
+      zoneOf: new Map(anillo.map((tagId) => [tagId, "cargado"])),
+      laneEntryTags: new Set(["0300"]),
+    });
+
+    expect(matrix.tags.find((entry) => entry.tagId === "0400")?.byOrder ?? 0).toBe(0);
+    expect(matrix.orderWithheld).toBeGreaterThan(0);
+  });
 });
+
+/**
+ * Dos vehículos pegados que se saltan 0300, 0400 y 0500 en todas sus vueltas.
+ *
+ * Como **nadie** lee esos tres seguidos, ningún segmento de ese tramo tiene tiempo mediano y la
+ * decisión recae en la tercera vía, que es justo la que R-FLO-006 acota. `B` y `C` pasan por cada
+ * punto con dos segundos de diferencia, así que el convoy se conserva de un extremo al otro.
+ */
+function convoyDeDos(): readonly Reading[] {
+  const readings: Reading[] = [];
+  const at = (agvId: string, tagId: string, utcMs: number): void => {
+    clock = utcMs - 1000; // `reading` avanza el reloj un segundo antes de sellar.
+    readings.push(reading(agvId, tagId));
+  };
+
+  for (let lap = 0; lap <= 5; lap += 1) {
+    const base = lap * 60_000;
+    at("B", "0100", base);
+    at("C", "0100", base + 2_000);
+    at("B", "0200", base + 7_000);
+    at("C", "0200", base + 9_000);
+    at("B", "0600", base + 29_000);
+    at("C", "0600", base + 31_000);
+  }
+  at("B", "0100", 360_000);
+  at("C", "0100", 362_000);
+  return readings;
+}

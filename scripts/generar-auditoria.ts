@@ -29,13 +29,25 @@ writeFileSync(lecturas, escenario.readingsCsv, "utf8");
 writeFileSync(listas, escenario.listsCsv, "utf8");
 
 const filas = escenario.readingsCsv.split("\r\n").length - 1;
+const filasDeLista = escenario.listsCsv.split("\r\n").length - 1;
 console.log(`Lecturas: ${lecturas} (${filas.toLocaleString("es-ES")} filas)`);
-console.log(`Listas:   ${listas} (${escenario.declaredRing.length} tags declarados)`);
+console.log(
+  `Listas:   ${listas} (${filasDeLista} filas: circuito, carga-online y zona; ` +
+    `${escenario.declaredRing.length} tags declarados y ${escenario.lanes.length} calles)`,
+);
+console.log("");
+console.log("Las cinco calles, para poder buscarlas en la pantalla:");
+for (const calle of escenario.lanes) {
+  console.log(
+    `  ${calle.laneId}: entrada ${calle.entry} · parada precisa ${calle.stop} · salida ${calle.exit}`,
+  );
+}
 console.log("");
 console.log("Lo que hay plantado, para poder buscarlo en la pantalla:");
 for (const defecto of escenario.defects) {
   const quien = defecto.vehicles.length > 0 ? ` · AGV ${defecto.vehicles.join(", ")}` : "";
-  console.log(`  ${defecto.kind}: ${defecto.tags.join(", ")}${quien}`);
+  const que = defecto.tags.length > 0 ? defecto.tags.join(", ") : "—";
+  console.log(`  ${defecto.kind}: ${que}${quien}`);
   console.log(`      debe decir: ${defecto.expect}`);
   console.log(`      no puede decir: ${defecto.mustNotSay}`);
 }

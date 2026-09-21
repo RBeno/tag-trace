@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildAgvDossier, buildAllAgvDossiers, buildAllTagDossiers, buildTagDossier } from "../../src/domain/dossier.js";
+import { readCoLanes } from "../../src/domain/circuit-config.js";
 import type { Cohort } from "../../src/domain/cohort.js";
 import type { Lap } from "../../src/domain/laps.js";
 import type { Reading } from "../../src/domain/reading.js";
@@ -41,7 +42,7 @@ describe("expediente de AGV", () => {
       ...Array.from({ length: 20 }, (_, index) => reading(index * 1000, "B", "0100")),
       ...Array.from({ length: 30 }, (_, index) => reading(index * 1000, "C", "0100")),
     ];
-    const dossier = buildAgvDossier("A", readings, LOOKUP, [], 100_000, 10_000);
+    const dossier = buildAgvDossier("A", readings, LOOKUP, [], 100_000, 10_000, []);
 
     expect(dossier.readingCount).toBe(10);
     expect(dossier.cohortMedianReadings).toBe(25); // mediana de B(20) y C(30)
@@ -54,7 +55,7 @@ describe("expediente de AGV", () => {
       reading(5_000, "A", "0200"), // hueco de 5 s, por debajo del umbral
       reading(65_000, "A", "0300"), // hueco de 60 s, por encima
     ];
-    const dossier = buildAgvDossier("A", readings, LOOKUP, [], 65_000, 30_000);
+    const dossier = buildAgvDossier("A", readings, LOOKUP, [], 65_000, 30_000, []);
 
     expect(dossier.inactivity).toHaveLength(1);
     expect(dossier.inactivity[0]?.durationMs).toBe(60_000);
@@ -67,23 +68,63 @@ describe("expediente de AGV", () => {
     const quieto = [reading(0, "A", "0100"), reading(60_000, "A", "0100")];
     const avanzado = [reading(0, "B", "0100"), reading(60_000, "B", "0400")];
 
-    const mismoTag = buildAgvDossier("A", quieto, LOOKUP, [], 60_000, 30_000).inactivity[0];
+    const mismoTag = buildAgvDossier("A", quieto, LOOKUP, [], 60_000, 30_000, []).inactivity[0];
     expect(mismoTag?.lastTagBefore).toBe("0100");
     expect(mismoTag?.firstTagAfter).toBe("0100");
 
-    const masAdelante = buildAgvDossier("B", avanzado, LOOKUP, [], 60_000, 30_000).inactivity[0];
+    const masAdelante = buildAgvDossier("B", avanzado, LOOKUP, [], 60_000, 30_000, []).inactivity[0];
     expect(masAdelante?.lastTagBefore).toBe("0100");
     expect(masAdelante?.firstTagAfter).toBe("0400");
   });
 
   it("un silencio que llega hasta el final de la cobertura queda abierto, y se distingue del que ya cerró", () => {
     const cerrado = [reading(0, "A", "0100"), reading(65_000, "A", "0200"), reading(66_000, "A", "0300")];
-    const abierto = buildAgvDossier("A", cerrado.slice(0, 2), LOOKUP, [], 200_000, 30_000);
-    const cerradoDossier = buildAgvDossier("A", cerrado, LOOKUP, [], 66_000, 30_000);
+    const abierto = buildAgvDossier("A", cerrado.slice(0, 2), LOOKUP, [], 200_000, 30_000, []);
+    const cerradoDossier = buildAgvDossier("A", cerrado, LOOKUP, [], 66_000, 30_000, []);
 
     expect(abierto.openSilenceSinceUtcMs).toBe(65_000);
     // Con una lectura justo después, el mismo hueco ya no está abierto: el silencio terminó.
     expect(cerradoDossier.openSilenceSinceUtcMs).toBeNull();
+  });
+
+  it("una parada entre la parada precisa y la salida de la misma calle es carga, no silencio (R-CO-006)", () => {
+    // Es el falso positivo que más daño hace: media hora cargando es lo normal, y llamarlo
+    // inactividad convierte en hallazgo lo que pasa todos los días.
+    const { lanes } = readCoLanes([
+      { tagId: "7000", order: 1, funcion: "entrada", grupo: "calle-1", capacidad: null },
+      { tagId: "7001", order: 2, funcion: "parada-precisa", grupo: "calle-1", capacidad: null },
+      { tagId: "7002", order: 3, funcion: "salida", grupo: "calle-1", capacidad: null },
+    ]);
+    const cargando = [reading(0, "A", "7001"), reading(60_000, "A", "7002")];
+
+    const conCalles = buildAgvDossier("A", cargando, LOOKUP, [], 60_000, 30_000, lanes);
+    expect(conCalles.inactivity[0]?.cause).toBe("carga-online");
+    expect(conCalles.inactivity[0]?.laneId).toBe("calle-1");
+    expect(conCalles.inactivity[0]?.truth).toBe("inferred");
+
+    // **Sin** las calles cargadas la firma no se reconoce y el hueco sigue siendo un silencio: la
+    // regla dice literalmente que no se sustituye por proximidad.
+    const sinCalles = buildAgvDossier("A", cargando, LOOKUP, [], 60_000, 30_000, []);
+    expect(sinCalles.inactivity[0]?.cause).toBe("silencio");
+    expect(sinCalles.inactivity[0]?.truth).toBe("observed");
+    expect(sinCalles.inactivity[0]?.laneId).toBeUndefined();
+  });
+
+  it("parar en una calle y salir por otra no es una carga", () => {
+    // La firma exige la **misma** calle. Con una clave por tag suelto, esto habría pasado por una
+    // carga normal cuando es justo lo contrario: algo que hay que mirar.
+    const { lanes } = readCoLanes([
+      { tagId: "7000", order: 1, funcion: "entrada", grupo: "calle-1", capacidad: null },
+      { tagId: "7001", order: 2, funcion: "parada-precisa", grupo: "calle-1", capacidad: null },
+      { tagId: "7002", order: 3, funcion: "salida", grupo: "calle-1", capacidad: null },
+      { tagId: "7010", order: 1, funcion: "entrada", grupo: "calle-2", capacidad: null },
+      { tagId: "7011", order: 2, funcion: "parada-precisa", grupo: "calle-2", capacidad: null },
+      { tagId: "7012", order: 3, funcion: "salida", grupo: "calle-2", capacidad: null },
+    ]);
+    const cruzado = [reading(0, "A", "7001"), reading(60_000, "A", "7012")];
+    const dossier = buildAgvDossier("A", cruzado, LOOKUP, [], 60_000, 30_000, lanes);
+
+    expect(dossier.inactivity[0]?.cause).toBe("silencio");
   });
 
   it("las vueltas se cuentan por clase y solo las del vehículo consultado", () => {
@@ -92,7 +133,7 @@ describe("expediente de AGV", () => {
       { agvId: "A", completeness: "parcial", startUtcMs: 1, endUtcMs: 2, stops: 2, truth: "inferred" },
       { agvId: "B", completeness: "completa", startUtcMs: 0, endUtcMs: 1, stops: 4, truth: "inferred" },
     ];
-    const dossier = buildAgvDossier("A", [reading(0, "A", "0100")], LOOKUP, laps, 100, 10);
+    const dossier = buildAgvDossier("A", [reading(0, "A", "0100")], LOOKUP, laps, 100, 10, []);
 
     expect(dossier.laps).toEqual({ completas: 1, parciales: 1, desconocidas: 0 });
   });
@@ -120,8 +161,8 @@ describe("expedientes en lote", () => {
       ...Array.from({ length: 5 }, (_, index) => reading(index * 1000, "A", "0100")),
       ...Array.from({ length: 8 }, (_, index) => reading(index * 1000, "B", "0100")),
     ];
-    const uno = buildAgvDossier("A", readings, LOOKUP, [], 100_000, 10_000);
-    const lote = buildAllAgvDossiers(readings, LOOKUP, [], 100_000, 10_000);
+    const uno = buildAgvDossier("A", readings, LOOKUP, [], 100_000, 10_000, []);
+    const lote = buildAllAgvDossiers(readings, LOOKUP, [], 100_000, 10_000, []);
 
     expect(lote.find((d) => d.agvId === "A")).toEqual(uno);
     expect(lote).toHaveLength(2);

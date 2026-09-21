@@ -883,6 +883,7 @@ function renderViews(views: CircuitViews): void {
   viewsPanel.append(element("h3", undefined, "Composición del circuito"));
   viewsPanel.append(element("p", "muted", cohortLine));
   renderShapes(views);
+  renderCharging(views);
 
   if (views.vsystemContrast !== undefined) {
     viewsPanel.append(element("h3", undefined, "Contraste contra Vsystem"));
@@ -1105,6 +1106,116 @@ function renderHighlights(matrix: Matrix): void {
 }
 
 /**
+ * Las calles de carga online, con lo notable de entrada (R-CO-002, R-CO-003, R-CO-007).
+ *
+ * Mismo criterio que la matriz: primero a qué mirar —una calle por la que no pasó nadie, un
+ * vehículo al que se le saltó el turno, una permanencia muy por encima de su calle— y el detalle
+ * por calle plegado. Lo que **no** aparece es una lista de las cargas normales: son la mayoría, y
+ * enseñarlas es esconder lo otro.
+ */
+function renderCharging(views: CircuitViews): void {
+  const charging = views.charging;
+  if (charging === undefined) return;
+
+  viewsPanel.append(element("h3", undefined, "Calles de carga online"));
+
+  const zonas = views.zones ?? [];
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      `${charging.lanes.length} calles declaradas` +
+        (zonas.length === 0
+          ? ". Sin lista de zonas: el orden de convoy se sigue usando en todo el anillo, que es " +
+            "más optimista de lo que R-FLO-006 admite."
+          : `, y ${zonas.map((entry) => `${entry.tags} tags en zona ${entry.zone}`).join(" y ")}. ` +
+            `${views.orderWithheld} pasadas que el orden de convoy habría dado por buenas no se ` +
+            "usan: en zona vacía la reordenación está admitida (R-FLO-006)."),
+    ),
+  );
+
+  for (const problem of charging.problems) {
+    viewsPanel.append(finding("Configuración que no se pudo usar", "—", problem));
+  }
+
+  const sinServicio = charging.lanes.filter((lane) => !lane.served);
+  for (const lane of sinServicio) {
+    viewsPanel.append(
+      finding(
+        `Nadie entró en «${lane.laneId}»`,
+        "0 estancias",
+        "Sus tags no tuvieron ocasión de leerse, así que no son candidatos a obsoleto. La " +
+          "pregunta es si la calle sigue en servicio.",
+      ),
+    );
+  }
+
+  for (const lane of charging.lanes) {
+    // Solo las esperas más largas de cada calle. Dos vehículos cargando a la vez con duraciones
+    // distintas invierten el orden de salida con toda normalidad, así que enseñarlas todas sería
+    // enterrar la que importa entre las que no. El detalle plegado da el recuento completo.
+    for (const breach of lane.outOfSeniority.slice(0, 2)) {
+      viewsPanel.append(
+        finding(
+          `A ${breach.waited} se le saltó el turno en «${lane.laneId}»`,
+          duration(breach.waitedMs),
+          `Entró antes que ${breach.overtakenBy.join(", ")} y salió después, con la mediana de la ` +
+            `calle en ${duration(lane.medianStayMs)}. La salida se relaciona con mayor antigüedad ` +
+            "(R-CO-003); qué lo explica no lo dice el dato.",
+        ),
+      );
+    }
+    for (const stay of lane.longStays) {
+      viewsPanel.append(
+        finding(
+          `${stay.agvId} permaneció en «${lane.laneId}» mucho más que el resto`,
+          duration(stay.durationMs),
+          `La mediana de esa calle es ${duration(lane.medianStayMs)}.`,
+        ),
+      );
+    }
+  }
+
+  if (charging.startedInside.length > 0) {
+    const desde =
+      charging.coverageStartUtcMs === null
+        ? "el inicio de la cobertura"
+        : new Date(charging.coverageStartUtcMs).toISOString().slice(0, 16).replace("T", " ");
+    viewsPanel.append(
+      finding(
+        `${charging.startedInside.length} vehículos ya estaban cargando antes de empezar a mirar`,
+        charging.startedInside.map((stay) => stay.agvId).join(", "),
+        `Su primera lectura es la salida de una calle, así que desde ${desde} hasta que salieron ` +
+          "esas calles no estaban vacías: no había datos (R-CO-007).",
+      ),
+    );
+  }
+
+  viewsPanel.append(
+    lazyDetails(`Detalle de las ${charging.lanes.length} calles`, () =>
+      plainTable(
+        ["Calle", "Capacidad", "Estancias", "Mediana", "Turnos saltados"],
+        charging.lanes.map((lane) => [
+          lane.laneId,
+          lane.capacity === null ? "—" : String(lane.capacity),
+          String(lane.stays),
+          duration(lane.medianStayMs),
+          String(lane.outOfSeniority.length),
+        ]),
+      ),
+    ),
+  );
+}
+
+/** Una duración en la unidad que se lee de un vistazo. `null` es «no se sabe», nunca cero. */
+function duration(ms: number | null): string {
+  if (ms === null) return "—";
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 90) return `${minutes} min`;
+  return `${(minutes / 60).toFixed(1)} h`;
+}
+
+/**
  * Un hallazgo, como tarjeta y no como fila.
  *
  * `UX_SPEC.md` §4 ya lo pedía así —conclusión, objeto, evidencia— y la razón se ve al mirarlo en un
@@ -1224,25 +1335,34 @@ function renderDossier(): void {
     for (const [term, value] of rows) list.append(element("dt", undefined, term), element("dd", undefined, value));
     dossierResult.append(element("h3", undefined, `AGV ${agv.agvId}`), list);
     if (agv.inactivity.length > 0) {
+      const cargas = agv.inactivity.filter((period) => period.cause === "carga-online").length;
       dossierResult.append(
         element(
           "p",
           "muted",
-          `${agv.inactivity.length} periodos de inactividad. Cada uno con sus dos extremos: por ` +
-            "dónde se fue y por dónde volvió. Volver al mismo tag y volver más adelante son " +
-            "hechos distintos, y ninguno de los dos es por sí solo una avería (R-AGV-006).",
+          `${agv.inactivity.length} periodos de inactividad` +
+            (cargas === 0
+              ? ". "
+              : `, de los que ${cargas} son cargas en calle y no huecos que explicar (R-CO-006). `) +
+            "Cada uno con sus dos extremos: por dónde se fue y por dónde volvió. Volver al mismo " +
+            "tag y volver más adelante son hechos distintos, y ninguno de los dos es por sí solo " +
+            "una avería (R-AGV-006).",
         ),
       );
       dossierResult.append(
         plainTable(
-          ["Desde", "Hasta", "Duración", "Se fue por", "Volvió por", "Reaparición"],
+          ["Desde", "Hasta", "Duración", "Se fue por", "Volvió por", "Qué fue"],
           agv.inactivity.map((period) => [
             formatInstant(period.fromUtcMs),
             formatInstant(period.toUtcMs),
             `${Math.round(period.durationMs / 60_000)} min`,
             period.lastTagBefore,
             period.firstTagAfter,
-            period.lastTagBefore === period.firstTagAfter ? "en el mismo tag" : "más adelante",
+            period.cause === "carga-online"
+              ? `carga en «${period.laneId ?? "?"}» (inferido)`
+              : period.lastTagBefore === period.firstTagAfter
+                ? "silencio, reapareció en el mismo tag"
+                : "silencio, reapareció más adelante",
           ]),
         ),
       );
