@@ -34,6 +34,7 @@ import { buildTransitions } from "../src/domain/graph.js";
 import { findDominantCycle, segmentLaps, type Lap, type LapAnchor } from "../src/domain/laps.js";
 import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-matrix.js";
 import { buildChargingReport } from "../src/domain/charging.js";
+import { buildFifoReport, loadedZoneSpans } from "../src/domain/fifo.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -222,6 +223,7 @@ async function buildViews(
   const laps: Lap[] = [];
   const shapes: CircuitViews["shapes"][number][] = [];
   const matrices: CircuitViews["readMatrices"][number][] = [];
+  const fifoCohorts: NonNullable<CircuitViews["fifo"]>[number][] = [];
   /** El ancla de cada cohorte, guardada para no volver a buscar el mismo ciclo más abajo. */
   const anchors = new Map<number, LapAnchor>();
 
@@ -276,6 +278,14 @@ async function buildViews(
         PROVISIONAL_CONFIG.trend,
       ),
     );
+
+    // FIFO en zona cargada (R-FLO-001): los tramos son propiedad del anillo de este cohorte, así
+    // que se derivan aquí, no una sola vez fuera del bucle como las calles (que son de circuito).
+    if (zoneConfig.zoneOf.size > 0) {
+      const { spans, problems: spanProblems } = loadedZoneSpans(anchor.cycle, zoneConfig.zoneOf);
+      const fifoReport = buildFifoReport(cohort.id, cohortReadings, spans, PROVISIONAL_CONFIG.fifo);
+      fifoCohorts.push({ cohortId: cohort.id, spans: fifoReport.spans, problems: spanProblems });
+    }
   }
 
   const coverageEnd =
@@ -342,6 +352,7 @@ async function buildViews(
             tags: [...zoneConfig.zoneOf].filter(([, value]) => value === zoneName).length,
           })),
         }),
+    ...(fifoCohorts.length === 0 ? {} : { fifo: fifoCohorts }),
     orderWithheld: matrices.reduce((total, matrix) => total + matrix.orderWithheld, 0),
   };
 

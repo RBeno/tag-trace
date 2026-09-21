@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -51,7 +51,7 @@ flowchart TD
 | ALG-008 | Salud contextual | Lecturas/oportunidades, estabilidad y calidad | Salud + desglose + intervalo/confianza | O(t·a·c) sobre agregados | F3 |
 | ALG-009 | Divergencia colectiva | Comparación individual, cohorte, flota e histórico | Individual/grupal/colectiva + explicación | O(m) sobre métricas | F3 |
 | ALG-010 | Perfil temporal | Mediana, cuantiles, MAD y calendario | Esperado por tramo/contexto | O(n log n), optimizable | F3 |
-| ALG-011 | FIFO/flujo | Máquina de estados por zona y orden relativo | Roturas sustentadas, censuras y saturación | O(n) | F3 |
+| ALG-011 | FIFO/flujo | Tramos de zona cargada derivados del anillo, inversión de orden con margen dual (§8.1) | Adelantamientos candidatos, nunca averías confirmadas | O(n) | F3 |
 | ALG-012 | Carga online | Máquina de estados por cada calle configurada | Entradas, ocupación, permanencia, salidas y anomalías | O(n) | F3 |
 | ALG-013 | Puntos críticos | Llegadas frente a takt/calendario y causas aguas arriba | Ventanas de riesgo e impacto | O(n) | F3 |
 | ALG-014 | Consolidación | Reducción versionada y cálculo de delta | Nueva memoria compacta append-only | O(m), no O(histórico bruto) | F4 |
@@ -324,6 +324,38 @@ FIFO se evalúa como orden relativo dentro de límites versionados de zona carga
 `unknown → approaching → entering → occupied → leaving → clear`, con transiciones incompletas permitidas y señaladas.
 
 No se calcula salud de carga con SOC. Se analizan secuencias, ocupación, permanencia, rotación, ausencia de entrada/salida y relación con comunicación.
+
+## 8.1 FIFO en zona cargada, implementado (R-FLO-001)
+
+Los tramos no se configuran: se derivan. Cada tag ya declara su zona (`vacio`/`cargado`, lista
+`zona`); un tramo es una tira contigua máxima de tags cargados a lo largo del anillo, con su entrada
+y su salida en los dos extremos. El recorrido arranca desde cualquier posición no cargada, para que
+un tramo que cruza el índice 0 del array del anillo se camine entero sin partirse en dos. Un tramo de
+un solo tag se descarta y se declara: no distingue entrada de salida con una sola lectura.
+
+Dentro de cada tramo, las lecturas de cada vehículo en la entrada y la salida se emparejan en
+pasadas —la misma máquina de dos paradas que ya usa la carga online (§8), sin la parada intermedia—,
+honesta con lo que no encaja: una entrada sin salida antes de otra entrada queda `incompleta`, una
+salida sin entrada previa que es la primera lectura del vehículo en ese tramo queda `abierta al
+inicio`, y una pasada que no cierra antes de acabar la cobertura queda `abierta al final`. Solo las
+pasadas `completa` alimentan el detector.
+
+**Detección: la misma inversión de orden que R-CO-003, con una guarda que R-CO-003 no necesita.**
+Sobre pasadas ordenadas por instante de entrada, un vehículo B adelanta a A si entró después y salió
+antes. En una calle de carga, cualquier inversión así es señal fuerte porque hay una cola física real
+detrás. Un tramo de zona cargada es tránsito abierto: dos vehículos sanos muestran pequeñas
+diferencias de orden por el jitter normal de lectura, y un vehículo que vuelve de cargar —una de las
+excepciones que la propia R-FLO-001 nombra— reaparece con una fase nueva frente a sus antiguos
+vecinos, lo que puede producir una inversión grande y enteramente inocente. Por eso el adelantamiento
+exige un margen mínimo en las dos puntas —al entrar y al salir—, el mayor entre un piso absoluto y
+una fracción del tránsito mediano **del propio tramo** (R-FLO-004: cuánto tarda un tramo cargado es
+local, no una constante universal). Si el margen no se sostiene en ambos extremos, no hay
+adelantamiento que publicar: admitirlo fabricaría el mismo hallazgo con otro nombre.
+
+**Lo que esto no hace.** No cruza con la carga online para descartar automáticamente los
+adelantamientos causados por una parada de carga real, la misma limitación que R-CO-003 ya acepta
+hoy. No concluye causa: OQ-107 sigue sin el catálogo de excepciones legítimas (carga online,
+maniobra manual, excepción documentada), así que lo que se publica son candidatos.
 
 ## 9. Punto crítico y análisis temporal
 

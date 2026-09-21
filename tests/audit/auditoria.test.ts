@@ -27,6 +27,7 @@ import { buildReadMatrix, type ReadMatrix } from "../../src/domain/read-matrix.j
 import { buildTagInventory } from "../../src/domain/inventory.js";
 import { buildAllAgvDossiers } from "../../src/domain/dossier.js";
 import { buildChargingReport, type ChargingReport } from "../../src/domain/charging.js";
+import { buildFifoReport, loadedZoneSpans, type FifoReport } from "../../src/domain/fifo.js";
 import { laneEntryTags, readCoLanes, readZones } from "../../src/domain/circuit-config.js";
 import { importCatalog } from "../../src/ingestion/catalog.js";
 import { PROVISIONAL_CONFIG } from "../../src/domain/config.js";
@@ -69,6 +70,8 @@ interface Analysis {
   readonly offRing: readonly string[];
   readonly inventory: ReturnType<typeof buildTagInventory>;
   readonly charging: ChargingReport;
+  readonly coLanes: ReturnType<typeof readCoLanes>["lanes"];
+  readonly fifo: FifoReport | undefined;
   readonly dossiers: ReturnType<typeof buildAllAgvDossiers>;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
@@ -141,6 +144,16 @@ function analyse(
           PROVISIONAL_CONFIG.trend,
         );
 
+  const fifo =
+    anchor === null
+      ? undefined
+      : buildFifoReport(
+          main.id,
+          cohortReadings,
+          loadedZoneSpans(anchor.cycle, zoneConfig.zoneOf).spans,
+          PROVISIONAL_CONFIG.fifo,
+        );
+
   const ring = anchor?.cycle ?? [];
   const inRing = new Set(ring);
   const offRing = [...new Set(cohortReadings.map((entry) => entry.tagId))].filter(
@@ -177,13 +190,23 @@ function analyse(
     laneConfig.lanes,
   );
 
-  return { matrix, ring, offRing, inventory, charging, dossiers, readings: readings.length };
+  return {
+    matrix,
+    ring,
+    offRing,
+    inventory,
+    charging,
+    coLanes: laneConfig.lanes,
+    fifo,
+    dossiers,
+    readings: readings.length,
+  };
 }
 
 describe("auditoría del circuito con verdad conocida", () => {
   const scenario = buildAuditScenario();
   const analysis = analyse(scenario);
-  const { matrix, ring, offRing, inventory, charging, dossiers, readings } = analysis;
+  const { matrix, ring, offRing, inventory, charging, coLanes, fifo, dossiers, readings } = analysis;
 
   /**
    * El mismo análisis **sin** las listas de planta, para poder contrastar los dos.
@@ -295,6 +318,12 @@ describe("auditoría del circuito con verdad conocida", () => {
       // Dos cosas, y las dos tienen que darse: que las estancias se reconozcan con una mediana
       // sensata, y —lo que de verdad importa— que esas medias horas **no** aparezcan como
       // periodos de inactividad en el expediente de nadie.
+      //
+      // El filtro se acota a los huecos que **empiezan en la parada precisa de una calle servida**:
+      // esos son los únicos candidatos a ser una carga mal reconocida. Desde R-OPP-015 el escenario
+      // tiene otra clase (`adelantamiento-en-zona-cargada`) que planta un silencio real de más de
+      // quince minutos en mitad del anillo, sin relación con ninguna calle; contarlo aquí confundiría
+      // dos causas distintas de silencio, que es justo lo que esta sonda existe para no hacer.
       const servidas = charging.lanes.filter((lane) => lane.served);
       const conMediana = servidas.filter(
         (lane) =>
@@ -302,9 +331,13 @@ describe("auditoría del circuito con verdad conocida", () => {
           lane.medianStayMs > 15 * 60_000 &&
           lane.medianStayMs < 50 * 60_000,
       );
+      const servidasIds = new Set(servidas.map((lane) => lane.laneId));
+      const stopTags = new Set(
+        coLanes.filter((lane) => servidasIds.has(lane.laneId)).map((lane) => lane.stopTagId),
+      );
       const huecos = dossiers.flatMap((dossier) => dossier.inactivity);
       const comoSilencio = huecos.filter(
-        (period) => period.cause === "silencio" && period.durationMs > 15 * 60_000,
+        (period) => period.cause === "silencio" && stopTags.has(period.lastTagBefore),
       ).length;
       const comoCarga = huecos.filter((period) => period.cause === "carga-online").length;
       return {
@@ -399,6 +432,25 @@ describe("auditoría del circuito con verdad conocida", () => {
           `${esperado ?? "?"}: ${vehicle?.trend ?? "sin tendencia"} ` +
           `(${rates.map((r) => `${Math.round(r * 100)}%`).join(" → ")}); ` +
           `tags con tendencia o rotura por su culpa: ${tagsAcusados.length}`,
+      };
+    },
+    "adelantamiento-en-zona-cargada": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "adelantamiento-en-zona-cargada")
+        ?.vehicles ?? [])[0];
+      // Mismo criterio que `salida-fuera-de-antiguedad`: lo que se exige es que el plantado salga
+      // **el primero** por margen, no que sea el único — una parada de carga real en el mismo
+      // escenario puede producir inversiones menores y legítimas en otro punto del mismo tramo.
+      const todas = (fifo?.spans ?? [])
+        .flatMap((span) => span.overtakes)
+        .sort((a, b) => b.marginMs - a.marginMs);
+      const primera = todas[0];
+      return {
+        ok: esperado !== undefined && primera?.overtaken === esperado,
+        detail:
+          primera === undefined
+            ? "nadie señalado"
+            : `el primero por margen es ${primera.overtaken} (se esperaba ${esperado ?? "—"}), ` +
+              `${Math.round(primera.marginMs / 60_000)} min de margen; ${todas.length - 1} más`,
       };
     },
   };

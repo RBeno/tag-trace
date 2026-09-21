@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.7.0
+version: 0.8.0
 status: baseline-candidate
 last_updated: 2026-09-18
 ---
@@ -35,6 +35,9 @@ last_updated: 2026-09-18
 | Salud | Indicador explicable derivado de oportunidades válidas, lecturas, estabilidad, contexto e incertidumbre; nunca mera frecuencia absoluta. |
 | Hueco censurado | Intervalo sin evidencia suficiente para afirmar qué ocurrió. |
 | CO | Carga online. Forma parte del circuito físico, pero se modela dentro de la zona vacía y no se rige por FIFO cargado. |
+| Zona cargada | Tramo del anillo donde se espera FIFO —quien entra primero sale primero— salvo carga online, maniobra manual o excepción documentada (R-FLO-001). Se declara por tag, no se calcula. |
+| Zona vacía | Tramo del anillo donde puede haber reordenación sin que sea, por sí sola, una rotura de FIFO (R-FLO-002). Incluye las calles CO (R-FLO-003). |
+| Adelantamiento (zona cargada) | Un vehículo entra después de otro en un tramo de zona cargada y sale antes, por un margen que no explica el jitter normal de lectura. Es un candidato, nunca una avería confirmada: OQ-107 no tiene el catálogo de excepciones legítimas. |
 | Punto crítico | Punto cuya falta de alimentación/paso puede afectar directamente al proceso productivo, con grado configurable. |
 | Consolidación | Aceptación humana de un periodo revisado para producir una nueva versión compacta de memoria y sus divergencias. |
 | Incidencia | Expediente separado que conserva síntoma, intervalo, replay, evidencia, hipótesis, contramedidas y verificación. |

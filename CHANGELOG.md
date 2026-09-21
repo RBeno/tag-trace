@@ -2,6 +2,81 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.10.0] - 2026-09-21
+
+FIFO en zona cargada (R-FLO-001), pedido explícitamente por el propietario tras quedar ofrecido y
+sin pedir en `[3.6.0]`. La puerta G3 ya lo decía en sus propias palabras: la zona de cada tag se
+declara en CSV y el orden de convoy deja de probar el paso donde la reordenación está admitida
+(R-FLO-006), pero el FIFO cargado como tal no se modelaba todavía. Se reutiliza el mismo cálculo que
+ya resuelve `charging.ts` para R-CO-003 —quién entró antes pero salió después de otro—, aplicado a
+un tramo del anillo en vez de a una calle.
+
+### Añadido
+
+- **`src/domain/fifo.ts`** — `loadedZoneSpans()`: deriva tramos contiguos de zona cargada del
+  anillo (nunca configurados aparte), manejando el cruce del índice 0 del array sin partir un tramo
+  en dos. `buildFifoReport()`: máquina de dos paradas (entrada/salida, sin la parada intermedia de
+  una calle) sobre cada tramo, e inversión de orden con margen mínimo dual —absoluto y proporcional
+  al tránsito mediano del propio tramo, el que sea mayor— para no confundir el jitter normal de
+  lectura con un adelantamiento real.
+- `FifoThresholds` en `config.ts`, `draft` y sin valor por defecto en ninguna función.
+- `CircuitViews.fifo`, por cohorte: los tramos y quién adelantó a quién en cada uno.
+- Vista: bloque «FIFO en zona cargada» tras las calles de carga, con los cinco adelantamientos de
+  mayor margen de todo el circuito (recorte global, no por tramo: a diferencia de las calles, el
+  número de tramos no está acotado por diseño) y el detalle completo plegado.
+- Séptima clase plantada en el circuito de auditoría, `adelantamiento-en-zona-cargada`: un AGV libre
+  de cualquier otro papel que se demora 20 minutos, una sola vez, justo al entrar en el tramo
+  cargado — no se fabrica el adelantamiento, el resto de la flota lo adelanta con su propio reloj.
+
+### Un riesgo real, anticipado antes de escribir el detector
+
+Una calle de carga es una cola física real: cualquier inversión de orden es señal fuerte. Un tramo
+de zona cargada es tránsito abierto — dos vehículos sanos muestran pequeñas diferencias de orden por
+el jitter normal de lectura, y un vehículo que vuelve de cargar (una de las excepciones que la propia
+R-FLO-001 nombra) reaparece con una fase nueva frente a sus antiguos vecinos, lo que puede producir
+una inversión grande y enteramente inocente. Portar sin más el cálculo de `seniorityBreaches()`
+—cero margen, correcto para una cola física— habría arriesgado exactamente el mismo tipo de falso
+positivo que `minShareEachSide` corrigió en `[3.9.0]` para rotura y degradación. El margen dual se
+exige en las dos puntas del adelantamiento (entrada y salida), no solo en una: si la diferencia de
+entrada ya está dentro del ruido, «quién es el más antiguo» es tan incierto como la inversión de
+salida que supuestamente explica.
+
+### El informe, con las quince clases
+
+```
+238.879 lecturas, 40 vehículos. Anillo reconstruido: 146 tags de 150 declarados. Fuera del anillo: 15.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 9/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  DETECTA     rotura-subita — con el instante dentro de margen: 2/2
+  DETECTA     degradacion-progresiva — con tendencia sostenida: 2/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 94 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 2 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+  DETECTA     lector-agv-degradado — 7120: bajando (90% → 75% → 64% → 55%); tags con tendencia o rotura por su culpa: 0
+  DETECTA     adelantamiento-en-zona-cargada — el primero por margen es 7113 (se esperaba 7113), 4 min de margen; 2 más
+```
+
+**Quince de quince clases detectadas, cero falsos positivos, `DEUDA_CONOCIDA` vacía.** Añadir la
+nueva clase destapó una sonda existente demasiado amplia: `carga-online-normal` contaba **cualquier**
+silencio de más de quince minutos en todo el escenario como candidato a carga mal reconocida, y el
+propio silencio de veinte minutos que planta esta entrega —a mitad del anillo, sin relación con
+ninguna calle— lo hacía saltar sin ser un fallo de `charging.ts`. Corregida para mirar solo los
+huecos que empiezan en la parada precisa de una calle servida, que es lo único que la sonda dice
+comprobar en su propio comentario.
+
+### Gobierno
+
+- `PHASE_GATES.md` G3 (FIFO cargado modelado, sin marcar porque OQ-107 sigue sin el catálogo de
+  excepciones); `ALGORITHM_CATALOG.md` ALG-011 y §8.1; `TEST_STRATEGY.md` TC-097–101;
+  `TRACEABILITY_MATRIX.md`; `OPEN_QUESTIONS.md` OQ-107 pasa a Parcial; `GLOSSARY.md` (zona cargada,
+  zona vacía, adelantamiento); `fixtures/synthetic/auditoria/MANIFEST.md` (`auditoria/4`).
+
 ## [3.9.0] - 2026-09-21
 
 Rotura súbita y degradación progresiva (R-OPP-015): las dos únicas clases que la auditoría de

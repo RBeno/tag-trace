@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.16.0
+version: 0.17.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -146,6 +146,11 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-094 | Un solo vehículo que se salta un tramo periódicamente (omisión conservando convoy) | `sin-cambio` en la línea temporal del tag | Leer el salto periódico como una tendencia del tag |
 | TC-095 | Línea larga con una racha corta de mala suerte al final (pocas pasadas sin acierto entre muchas) | `sin-cambio`: la racha no representa una fracción real de la línea | Un corte que se apoye solo en el mínimo absoluto de pasadas por lado |
 | TC-096 | AGV cuyo lector falla cada vez más en varios tags a la vez, con el resto de la flota leyendo con normalidad | `changedAtUtcMs`/`trend` en la fila del **vehículo**; ningún tag sano se ve afectado | Que el hallazgo se traslade a los tags que ese AGV lee |
+| TC-097 | Tramos de zona cargada derivados del anillo, incluido uno que cruza el índice 0 del array | El tramo se camina entero, sin partirse en dos; un tramo de un solo tag se descarta y se declara | Un tramo cortado por el borde del array, o inventar zona para un tag sin declarar |
+| TC-098 | Vehículo que entra casi a la vez que otro pero se demora y sale mucho después, dentro de un tramo cargado | Se enumera a quién adelantó y con qué margen, como candidato (R-FLO-001) | Llamarlo avería: R-FLO-001 admite excepciones y OQ-107 no tiene el catálogo |
+| TC-099 | Inversión de orden dentro del margen de jitter normal de lectura (falso positivo) | Sin adelantamiento: el margen no se sostiene en las dos puntas | Un adelantamiento fabricado por ruido de reloj entre vehículos sanos |
+| TC-100 | Tramo con menos pasadas completas que el mínimo exigido | Sin evaluar: ni mediana ni adelantamientos, aunque exista una inversión fabricada en la muestra | Forzar una mediana que decide un solo vehículo |
+| TC-101 | Pasadas incompletas por un tramo (entrada repetida, salida sin entrada, pasada abierta al final) | Nunca cuentan ni para el tránsito mediano ni para un adelantamiento | Fabricar el extremo que falta en vez de declarar la pasada incompleta |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

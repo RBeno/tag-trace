@@ -16,6 +16,7 @@
 import type { AffinityThresholds } from "./affinity.js";
 import type { BlindnessThresholds } from "./inventory.js";
 import type { ChargingThresholds } from "./charging.js";
+import type { FifoThresholds } from "./fifo.js";
 import type { GraphThresholds } from "./graph.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
 import type { TrendThresholds } from "./read-rate-trend.js";
@@ -46,6 +47,7 @@ export interface AnalysisConfig {
   readonly readRate: ReadRateThresholds;
   readonly charging: ChargingThresholds;
   readonly trend: TrendThresholds;
+  readonly fifo: FifoThresholds;
 }
 
 /**
@@ -85,6 +87,13 @@ export interface AnalysisConfig {
  *   0,3 para degradación es más laxo porque ahí la señal es la forma sostenida en cuatro tramos, no
  *   un salto único. Los mismos umbrales sirven para AGV que para tags: la línea temporal es la misma
  *   idea, solo cambia qué se agrupa.
+ * - **FIFO en zona cargada (R-FLO-001).** Cuatro pasadas mínimas para el tránsito mediano de un
+ *   tramo, mismo razonamiento que las cuatro estancias de carga online: menos que eso y la mediana
+ *   la decide un solo vehículo. El margen de adelantamiento es doble a propósito — tres minutos en
+ *   absoluto, muy por encima del jitter normal de lectura, **o** el 15 % del tránsito mediano del
+ *   propio tramo, lo que sea mayor (R-FLO-004: cuánto tarda un tramo cargado es local, no una
+ *   constante universal). El 0,15 es deliberadamente el mismo número que `minShareEachSide`: las dos
+ *   son la misma idea, una fracción real de la magnitud medida y no solo un conteo absoluto.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -110,6 +119,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     trendSegments: 4,
     minGradientDrop: 0.3,
   },
+  fifo: { minPassesForSpan: 4, minOvertakeMarginMs: 3 * 60_000, minOvertakeMarginRatio: 0.15 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

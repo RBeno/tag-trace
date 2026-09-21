@@ -47,7 +47,9 @@ export type DefectClass =
   /** La zona de vacíos declarada: contexto, no defecto. Declararla no puede cambiar veredictos. */
   | "zona-vacia-declarada"
   /** Un AGV cuyo lector falla cada vez más en cualquier tag, no en uno concreto. */
-  | "lector-agv-degradado";
+  | "lector-agv-degradado"
+  /** Un AGV que se demora en la zona cargada y el resto lo adelanta (R-FLO-001). */
+  | "adelantamiento-en-zona-cargada";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -201,6 +203,12 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
    * de su propio lector se mezclaría con otra causa y dejaría de ser un caso limpio.
    */
   const lectorDegradado = vehicles[20] as string;
+  /**
+   * Se demora una sola vez al entrar en la zona cargada y el resto de la flota lo adelanta con su
+   * propio reloj (R-FLO-001). Libre de cualquier otro papel por la misma razón que `lectorDegradado`:
+   * si arrastrara otro defecto, el adelantamiento se mezclaría con otra causa.
+   */
+  const elAdelantado = vehicles[13] as string;
 
   // --- Zonas (R-FLO-003: la carga online va dentro de la zona vacía) -------------------------
   //
@@ -235,6 +243,9 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     // El salto de convoy dura varias vueltas seguidas y después se recupera, para que el vehículo
     // conserve su sitio entre los mismos AGV en vez de descolgarse.
     let saltandoTramo = false;
+    // Solo la primera pasada de `elAdelantado` por la zona cargada se demora: una vez basta para que
+    // el resto de la flota lo adelante, y repetirlo en cada vuelta dejaría de ser un caso limpio.
+    let primerPaseCargado = true;
 
     if (enFrio) {
       // Ya estaba cargando antes de que empezara la ventana, así que **no tiene ninguna lectura
@@ -270,6 +281,14 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       if (lee && vehicle === lectorDegradado) lee = random() < 1 - 0.7 * avance;
 
       if (lee) filas.push({ t: now, v: vehicle, tag });
+
+      // Justo tras entrar en el tramo cargado (posición 50 es la entrada; aquí, la siguiente), se
+      // demora 20 min: muy por encima de la desviación típica del tránsito por jitter de lectura
+      // (segundos), y de sobra para que otros vehículos, entrando después, lo adelanten sin ayuda.
+      if (position === 51 && vehicle === elAdelantado && primerPaseCargado) {
+        now += 20 * 60_000;
+        primerPaseCargado = false;
+      }
 
       now += (STEP_SECONDS + Math.floor(random() * 9)) * 1000;
       position = (position + 1) % RING_SIZE;
@@ -444,6 +463,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       atUtcMs: toRealUtc(from),
       expect: "una tendencia a la baja en la fila del propio AGV, no del tag",
       mustNotSay: "que los tags que lee ese AGV estén fallando",
+    },
+    {
+      kind: "adelantamiento-en-zona-cargada",
+      tags: [],
+      vehicles: [elAdelantado],
+      expect: "se enumera a quién adelantó y con qué margen, como candidato, en el tramo en que se le adelantó",
+      mustNotSay: "llamarlo avería: R-FLO-001 admite excepciones y OQ-107 no tiene el catálogo",
     },
   ];
 

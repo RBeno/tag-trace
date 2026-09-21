@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.19.0
+version: 0.20.0
 status: active
 last_updated: 2026-09-21
 ---
@@ -40,7 +40,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-104 | ¿La ventana de actualización automática de 30 min y el reenvío manual se comportan igual en todas las versiones? | R-AGV-003 sigue candidate |
 | OQ-105 | ¿Qué señal confirma WiFi ausente frente a lector silencioso? | Mantener hipótesis alternativas |
 | OQ-106 | ¿Cómo se identifica carga/vacío si el dato no existe directamente? | Estado inferido con confianza |
-| OQ-107 | ¿Cuáles son excepciones legítimas al FIFO cargado? | No confirmar rotura sin contexto |
+| OQ-107 | **Parcial.** La detección ya existe y solo publica candidatos (`src/domain/fifo.ts`, R-FLO-001): quién adelantó a quién dentro de un tramo de zona cargada, con su margen. Falta el catálogo de qué es carga online, maniobra manual o excepción documentada. | No confirmar rotura sin contexto; nada se promueve más allá de candidato |
 | OQ-108 | ¿Qué periodos/versiones exactos tienen los calendarios y takt conocidos? | Configuración obligatoria por vigencia |
 | OQ-109 | ¿Cómo se reconocen movimientos manuales y sentido contrario? | Señalar desconocido/excepción |
 | OQ-110 | ¿Qué diferencias conocidas existen entre memorias de AGV y cómo se obtienen sin descarga global? | Importación/revisión manual versionada |

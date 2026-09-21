@@ -884,6 +884,7 @@ function renderViews(views: CircuitViews): void {
   viewsPanel.append(element("p", "muted", cohortLine));
   renderShapes(views);
   renderCharging(views);
+  renderFifo(views);
 
   if (views.vsystemContrast !== undefined) {
     viewsPanel.append(element("h3", undefined, "Contraste contra Vsystem"));
@@ -1268,6 +1269,69 @@ function renderCharging(views: CircuitViews): void {
           String(lane.stays),
           duration(lane.medianStayMs),
           String(lane.outOfSeniority.length),
+        ]),
+      ),
+    ),
+  );
+}
+
+/**
+ * FIFO en zona cargada (R-FLO-001), como candidato y no como avería.
+ *
+ * El recorte es **global** y no por tramo, a diferencia de las calles de carga: el número de calles
+ * está acotado por diseño (R-CO-001), pero un anillo puede tener un número no acotado de tramos de
+ * zona cargada. Mostrar los cinco de mayor margen de todo el circuito evita que un tramo con muchos
+ * adelantamientos pequeños entierre el único que importa en otro tramo.
+ */
+function renderFifo(views: CircuitViews): void {
+  const fifo = views.fifo;
+  if (fifo === undefined) return;
+
+  const spans = fifo.flatMap((cohort) => cohort.spans);
+  const problems = fifo.flatMap((cohort) => cohort.problems);
+  if (spans.length === 0 && problems.length === 0) return;
+
+  viewsPanel.append(element("h3", undefined, "FIFO en zona cargada"));
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      `${spans.length} tramos de zona cargada, ${spans.filter((span) => span.evaluated).length} ` +
+        "con pasadas suficientes para evaluar. Un adelantamiento aquí es un candidato, no una " +
+        "avería: R-FLO-001 admite carga online, maniobra manual o excepción documentada, y el " +
+        "dato no dice cuál es (OQ-107).",
+    ),
+  );
+
+  for (const problem of problems) {
+    viewsPanel.append(finding("Tramo que no se pudo acotar", "—", problem));
+  }
+
+  const overtakesFlat = spans.flatMap((span) =>
+    span.overtakes.map((overtake) => ({ span, overtake })),
+  );
+  overtakesFlat.sort((a, b) => b.overtake.marginMs - a.overtake.marginMs);
+  for (const { span, overtake } of overtakesFlat.slice(0, 5)) {
+    viewsPanel.append(
+      finding(
+        `${overtake.overtaken} fue adelantado en el tramo cargado «${span.spanId}»`,
+        `por ${overtake.overtakenBy.join(", ")}, ${duration(overtake.marginMs)} de margen`,
+        `Entró antes y salió después, con un tránsito de ${duration(overtake.transitMs)}. La zona ` +
+          "cargada espera FIFO (R-FLO-001); qué lo explica no lo dice el dato (OQ-107).",
+      ),
+    );
+  }
+
+  viewsPanel.append(
+    lazyDetails(`Detalle de los ${spans.length} tramos`, () =>
+      plainTable(
+        ["Tramo", "Tags", "Pasadas", "Tránsito mediano", "Adelantamientos"],
+        spans.map((span) => [
+          span.spanId,
+          String(span.tagCount),
+          String(span.passes),
+          duration(span.medianTransitMs),
+          String(span.overtakes.length),
         ]),
       ),
     ),

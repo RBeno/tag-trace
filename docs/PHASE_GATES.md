@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.15.0
+version: 0.16.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -101,9 +101,13 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
 - [ ] Oportunidades y salud explicadas.
 - [ ] Diagnóstico individual/grupal/colectivo validado.
 - [ ] Calendario, pausas y takt versionados.
-- [ ] FIFO cargado y reordenación vacía diferenciados. **A medias**: la zona de cada tag ya se
-      declara en CSV y el orden de convoy deja de probar el paso donde la reordenación está
-      admitida (R-FLO-006), pero el FIFO cargado como tal no se modela todavía.
+- [ ] FIFO cargado y reordenación vacía diferenciados. **Modelado**: el FIFO cargado se detecta como
+      inversión de orden dentro de los tramos contiguos de zona cargada del anillo —derivados del
+      anillo y la lista `zona`, no configurados aparte—, con un margen mínimo dual (absoluto y
+      proporcional al tránsito mediano del propio tramo) para no confundir el jitter normal de
+      lectura con un adelantamiento real. **Sin marcar**: son candidatos, no averías confirmadas —
+      OQ-107 sigue sin el catálogo de excepciones legítimas (carga online, maniobra manual,
+      excepción documentada), así que no se puede cerrar la puerta.
 - [ ] Cinco calles CO modeladas sin SOC. **Modeladas** (R-CO-001/002/003/006/007/008: estancias,
       arranque en frío, salida fuera de antigüedad y calle sin servicio), y sin SOC, que R-CO-004
       excluye. **Sin marcar** porque solo se han ejercitado contra el circuito sintético de

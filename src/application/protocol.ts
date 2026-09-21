@@ -273,6 +273,30 @@ export interface CircuitViews {
    * cargar las zonas daría menos pasadas sin que nada explicara por qué.
    */
   readonly orderWithheld: number;
+  /**
+   * FIFO en zona cargada (R-FLO-001), por cohorte: los tramos derivados del anillo y quién adelantó
+   * a quién dentro de cada uno. Solo con la lista `zona` cargada. Nunca es una avería confirmada:
+   * OQ-107 no tiene el catálogo de excepciones legítimas, así que lo que sale son candidatos.
+   */
+  readonly fifo?: readonly {
+    readonly cohortId: number;
+    readonly spans: readonly {
+      readonly spanId: string;
+      readonly entryTagId: string;
+      readonly exitTagId: string;
+      readonly tagCount: number;
+      readonly passes: number;
+      readonly medianTransitMs: number | null;
+      readonly evaluated: boolean;
+      readonly overtakes: readonly {
+        readonly overtaken: string;
+        readonly overtakenBy: readonly string[];
+        readonly transitMs: number;
+        readonly marginMs: number;
+      }[];
+    }[];
+    readonly problems: readonly string[];
+  }[];
 }
 
 /** `ReplayFrame` tal como cruza el `postMessage`: el mapa de vehículos, ya como pares. */
