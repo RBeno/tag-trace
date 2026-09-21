@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
-last_updated: 2026-09-17
+last_updated: 2026-09-21
 ---
 
 # Configuración de circuito
@@ -85,6 +85,53 @@ delante apunta a semáforo, dos ramas que reconvergen apuntan a bifurcación—,
 asignar. Y dos clases no dejan firma ninguna: un `cambio_de_mapa` es indistinguible de un tag
 cualquiera, y un `cruce` que nadie ha fallado y que recorre un solo circuito tampoco se ve, porque
 un cruce existe justamente para que todos pasen igual. Sin declaración, esas dos quedan `unknown`.
+
+#### 3.4.2 Cómo entra esta configuración: las listas de tags
+
+Los bloques de §3.4 no se editan en ningún formulario: **entran como CSV**, por el mismo camino que
+la lista del circuito virtual y la de memoria (§3.8, DS-002/DS-005/DS-006/DS-008). No hay forma de
+descargarlos de planta, se escriben a mano, y por eso la estructura se enseña en la pantalla antes
+de pedir el fichero en lugar de esperar a que quien lo escribe la adivine.
+
+Dos columnas obligatorias y el resto opcionales, localizadas **por nombre en cualquier posición**:
+
+```text
+lista;tag;orden;funcion;grupo;capacidad;nota
+```
+
+| Columna | Qué lleva |
+|---|---|
+| `lista` | `circuito`, `memoria`, `mantenimiento`, `emergencia`, `carga-online`, `critico` o `zona` |
+| `tag` | El identificador, **tal cual**: `0040` no es `40` (R-DAT-001, INV-002) |
+| `orden` | Posición dentro de la lista. Sin ella vale el orden de las filas del fichero |
+| `funcion` | El papel del tag dentro de su lista |
+| `grupo` | La agrupación: la calle en `carga-online`, la zona en `zona` |
+| `capacidad` | Cuántos vehículos caben en esa agrupación (R-CO-001) |
+
+Y así se expresan los bloques de §3.4:
+
+| Bloque | Cómo se escribe |
+|---|---|
+| `co_lanes` | `lista=carga-online`, `grupo` = identificador de la calle, `orden` = 1…n y `funcion` ∈ `entrada`, `parada-precisa`, `salida` |
+| `loaded_zone` / `empty_zone` | `lista=zona`, `grupo` ∈ `cargado`, `vacio`, una fila por tag |
+| `critical_points` | `lista=critico`, `funcion` con una de las seis clases de §3.4.1 |
+
+```text
+carga-online;70011;1;entrada;calle-1;2
+carga-online;70012;2;parada-precisa;calle-1;2
+carga-online;70013;3;salida;calle-1;2
+zona;51944;;;vacio
+critico;102185;;bifurcacion
+```
+
+**Lo que no se puede montar se declara, no se completa.** Una calle sin `parada-precisa`, o con dos
+tags reclamando el mismo papel, **no se usa**, y su motivo aparece junto al análisis. Adivinar cuál
+de los tres tags es la parada por su posición sería sustituir la configuración por proximidad, que
+es lo que R-CO-006 prohíbe con esas palabras. La consecuencia es visible y conviene que lo sea: sin
+la calle montada, sus cargas vuelven a contarse como silencios.
+
+Un valor de `funcion` fuera de la taxonomía **no invalida la fila** —el tag sigue perteneciendo a su
+lista— pero sí impide montar la calle o el punto crítico que dependieran de él, y se dice.
 
 ### 3.5 Parámetros de análisis
 

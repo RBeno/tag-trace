@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.5.0
+version: 0.8.0
 status: baseline-candidate
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 ---
 
 # Especificación de experiencia de usuario
@@ -103,6 +103,30 @@ cuando. La vía de trabajo más frecuente no puede ser la que más cuesta alcanz
 `sin datos`, diciendo cuándo llega esa primera lectura (R-GRA-010). Un silencio afirma que una
 posición conocida deja de confirmarse; antes de la primera lectura no hay ninguna.
 
+## 4.2 Destacados primero, conjunto completo a demanda
+
+Un circuito real son ciento cincuenta tags por cincuenta vehículos: siete mil quinientas celdas.
+Enseñarlas de golpe no es informar, es esconder el hallazgo dentro de una cuadrícula. La vista se
+ordena al revés de como se calcula:
+
+1. **Cuántos vehículos y cuántos tags** forman el circuito, en una línea. El número de tags sale del
+   ciclo dominante, no de contar identificadores distintos.
+2. **Lo que hay que mirar**: los tags con patrón destacable y los vehículos que concentran tags sin
+   leer, cada uno como **tarjeta de hallazgo** (§4) y no como fila de tabla. La razón es medible: en
+   360 px una tabla de cinco columnas parte los encabezados letra a letra — cabe y es ilegible.
+3. **El conjunto completo**, plegado: el anillo en orden, los tags fuera del anillo y la matriz
+   entera. Se construye **solo al abrirlo**; dejarlo montado de entrada para tenerlo escondido paga
+   el coste sin enseñar nada.
+
+Dos cosas que la vista dice siempre, porque el número solo no las lleva escritas:
+
+- el porcentaje es **sobre las pasadas probadas** por ese punto, no sobre las vueltas (R-OPP-013);
+- **no es una tasa de salud**, y no lo será mientras no exista la oportunidad elegible de R-OPP-011.
+
+Una matriz es bidimensional por naturaleza, así que se desplaza **dentro de su caja**. Eso no
+contradice la regla de §5.1 —ningún gráfico exige desplazamiento para llegar a su contenido útil—
+porque el contenido útil ya está arriba, sin desplegar nada.
+
 ## 5. Grafo y plano
 
 - Alternar capas: Vsystem, observado del periodo, validado y divergencias.
@@ -153,6 +177,45 @@ nuevas, porque al construirlas quedó claro que faltaban:
 | **Perfil horario** | el régimen de actividad que da contexto a un silencio | un valle **no es una parada**: distinguirlo exige el calendario (OQ-108) |
 | **Actividad por vehículo** | quién lee, cuándo, y quién no aparece | una celda vacía **dentro** de cobertura es ausencia de lecturas, no avería |
 | **Inventario de tags** | qué declara cada lista frente a lo observado | ninguna clase es un diagnóstico; la última columna dice qué hay que valorar |
+
+### 5.2.1 Calles de carga online
+
+Mismo criterio que la matriz de lectura: **lo notable de entrada y el conjunto plegado**. Lo que
+aparece sin desplegar nada es una calle por la que no pasó nadie, la espera más larga de cada calle,
+una permanencia muy por encima de la mediana de la suya, los vehículos que ya estaban dentro cuando
+empezó la ventana, y cualquier calle declarada que no se haya podido montar. Lo que **no** aparece
+son las cargas normales: son casi todas, y enseñarlas es esconder lo otro.
+
+Tres límites que se escriben junto a las cifras, no en una nota al pie:
+
+- Una permanencia larga se mide **contra la mediana de su propia calle**, no contra un minutaje: el
+  tiempo de carga depende de la calle y de cuánto haya que cargar (R-FLO-004). Con pocas estancias
+  no hay mediana, y entonces no se señala ninguna.
+- Una espera fuera de antigüedad **no es una avería**. Dos vehículos cargando a la vez con
+  duraciones distintas invierten el orden de salida con toda normalidad, así que las esperas se
+  enumeran ordenadas por su magnitud y la conclusión la pone una persona (R-CO-003, R-FLO-001).
+- Una calle **sin servicio** no dice nada de sus tags: dice que no hubo ocasión de leerlos. La
+  pregunta que se enseña apunta a la calle (R-CO-008).
+
+Y una que se dice por omisión deliberada: mientras la calle no esté declarada, sus paradas siguen
+apareciendo como silencios. Es la degradación que R-CO-006 exige, y la vista lo advierte en lugar
+de aproximar la calle por proximidad.
+
+### 5.2.2 Rotura súbita y degradación progresiva (R-OPP-015)
+
+Junto a los destacados de la matriz de lectura, no en una sección aparte: son exactamente el tipo de
+caso que esos destacados ya priorizan. Dos hallazgos, por tag y por AGV:
+
+- **Rotura**: «se leía con normalidad y dejó de leerse» en un instante, con el antes y el después en
+  porcentaje. El instante es el punto medio entre la última pasada de antes y la primera de después
+  —no se puede precisar más—, y la vista lo dice así, no como si fuera exacto.
+- **Degradación**: la tasa de cuatro tramos temporales, de peor a mejor por la izquierda, mostrando
+  que la caída es sostenida y no una fluctuación aislada.
+
+Un hallazgo de AGV **no se traslada a sus tags**: si el resto de la flota sigue leyéndolos con
+normalidad, esos tags no aparecen aquí. Es la misma regla que ya rige los destacados de la matriz
+—el objeto que falla es el que se señala, no todo lo que toca—, aplicada a una dimensión nueva, el
+tiempo.
 
 **La cobertura es nueva y era la que faltaba.** Sin ella, R-DAT-007 vivía en una frase de una lista
 de datos y nadie la relacionaba con las cifras de al lado. Dibujada, el hueco entre dos

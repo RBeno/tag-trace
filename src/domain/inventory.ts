@@ -40,6 +40,22 @@ export interface TagLists {
   readonly maintenance: ReadonlySet<string>;
   /** Tags de sustitución de emergencia. */
   readonly emergency: ReadonlySet<string>;
+  /**
+   * Tags de las calles de carga online.
+   *
+   * Están fuera del recorrido productivo, como mantenimiento y emergencia, pero con una diferencia
+   * que decide una clase entera: **puede saberse si hubo oportunidad de leerlos**. Si nadie entró
+   * en la calle, el cero no es un cero.
+   */
+  readonly charging: ReadonlySet<string>;
+  /**
+   * Calles por las que no entró nadie en toda la cobertura, con los tags que las forman.
+   *
+   * Sin esto, los tres tags de una calle que simplemente no se usó saldrían `obsoleto-candidato`,
+   * afirmando que probablemente ya no están en el suelo. Es el falso positivo que más rápido
+   * destruye la confianza en la herramienta: tres tags sanos acusados por no haber tenido ocasión.
+   */
+  readonly unservedLaneTags: ReadonlySet<string>;
 }
 
 /**
@@ -78,7 +94,14 @@ export type TagClass =
   /** Se lee y el circuito virtual no lo declara: la lista del circuito está desactualizada. */
   | "no-declarado-leido"
   /** Mantenimiento o sustitución de emergencia: fuera del circuito y de toda tasa. */
-  | "especial";
+  | "especial"
+  /**
+   * Tag de una calle de carga por la que **no entró nadie** en toda la cobertura.
+   *
+   * No dice nada del tag: dice que no hubo ocasión de leerlo. Separarlo de `obsoleto-candidato` es
+   * la diferencia entre preguntar por la calle y acusar al tag (R-OPP-013).
+   */
+  | "calle-sin-servicio";
 
 /**
  * Qué tiene que **valorar una persona** en cada caso.
@@ -98,7 +121,9 @@ export type TagAction =
   /** Está declarado en el circuito y no en la lista de memoria: nadie puede leerlo. */
   | "anadir-a-la-memoria"
   /** Se lee y no está declarado: la lista del circuito va por detrás del suelo. */
-  | "declarar-en-vsystem";
+  | "declarar-en-vsystem"
+  /** Nadie entró en esa calle: antes de mirar el tag, hay que saber si la calle sigue en uso. */
+  | "comprobar-si-la-calle-se-usa";
 
 export interface TagInventoryRow {
   readonly tagId: string;
@@ -191,6 +216,7 @@ export function buildTagInventory(
     ...lists.memory,
     ...lists.maintenance,
     ...lists.emergency,
+    ...lists.charging,
     ...readersByTag.keys(),
   ]);
 
@@ -198,7 +224,8 @@ export function buildTagInventory(
   for (const tagId of [...universe].sort()) {
     const inVirtual = lists.virtual.has(tagId);
     const inMemory = lists.memory.has(tagId);
-    const isSpecial = lists.maintenance.has(tagId) || lists.emergency.has(tagId);
+    const isSpecial =
+      lists.maintenance.has(tagId) || lists.emergency.has(tagId) || lists.charging.has(tagId);
     const readers = readersByTag.get(tagId) ?? new Set<string>();
     const readingCount = readingsByTag.get(tagId) ?? 0;
 
@@ -213,6 +240,7 @@ export function buildTagInventory(
       isSpecial,
       readerCount: readers.size,
       blindCount: blindVehicles.length,
+      inUnservedLane: lists.unservedLaneTags.has(tagId),
     });
 
     rows.push({
@@ -243,6 +271,7 @@ interface ClassifyInput {
   readonly isSpecial: boolean;
   readonly readerCount: number;
   readonly blindCount: number;
+  readonly inUnservedLane: boolean;
 }
 
 /**
@@ -254,6 +283,12 @@ interface ClassifyInput {
  * es la lista, no el vehículo.
  */
 function classify(input: ClassifyInput): { tagClass: TagClass; truth: TruthState } {
+  // Antes que nada: si es de una calle por la que no pasó nadie, no hay nada que leer en su
+  // silencio. Va primero porque cualquier otra clase que se le asigne después sería una afirmación
+  // sobre un tag que nunca tuvo la ocasión de demostrar nada.
+  if (input.inUnservedLane && input.readerCount === 0) {
+    return { tagClass: "calle-sin-servicio", truth: "unknown" };
+  }
   if (input.isSpecial) return { tagClass: "especial", truth: "observed" };
 
   if (input.readerCount === 0) {
@@ -285,6 +320,8 @@ const ACTION_BY_CLASS: Readonly<Record<TagClass, TagAction>> = {
   // Mantenimiento y emergencia están fuera del recorrido productivo: su silencio no significa lo
   // mismo y no abre ninguna tarea.
   especial: "ninguna",
+  // Preguntar por la calle antes que por el tag: sin entradas, el tag no ha dicho nada de sí mismo.
+  "calle-sin-servicio": "comprobar-si-la-calle-se-usa",
 };
 
 /** La acción, en la frase que se le enseña a quien tiene que decidir. */
@@ -300,6 +337,8 @@ export function describeAction(action: TagAction): string {
       return "Añadirlo a la lista de memoria: está declarado y nadie puede leerlo";
     case "declarar-en-vsystem":
       return "Declararlo en Vsystem: existe y se lee, pero no está en la lista del circuito";
+    case "comprobar-si-la-calle-se-usa":
+      return "Ningún vehículo entró en esa calle: comprobar si sigue en servicio antes de mirar el tag";
   }
 }
 

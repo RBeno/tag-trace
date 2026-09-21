@@ -14,7 +14,7 @@ import type { Interval } from "../domain/coverage.js";
 import type { Reading } from "../domain/reading.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 2;
+export const STORE_VERSION = 3;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
@@ -37,9 +37,33 @@ export interface StoredSource {
  * las de hoy. Si el técnico aplica los cambios propuestos y vuelve a cargarlas, el análisis
  * siguiente las recoge ya actualizadas, y el anterior sigue explicándose con las suyas.
  */
+/**
+ * Lo que una fila de lista declara sobre su tag, más allá de pertenecer a ella.
+ *
+ * Existe porque una calle de carga **no es un conjunto de tags**: es una secuencia con papeles
+ * —entrada, parada precisa, salida— y una capacidad, y sin eso R-CO-006 no puede reconocer su firma.
+ * Lo mismo vale para la zona de cada tag (R-FLO-001/002) y para la clase de un punto crítico.
+ */
+export interface StoredTagEntry {
+  readonly tagId: string;
+  readonly order: number | null;
+  readonly funcion: string;
+  readonly grupo: string;
+  readonly capacidad: number | null;
+  readonly note: string;
+}
+
 export interface StoredTagList {
   readonly list: string;
+  /**
+   * Los tags de la lista, sin repetir y **en el orden en que el fichero los trae**.
+   *
+   * Se conserva como lista plana además de `entries` porque es lo que consumen el inventario y el
+   * contraste contra Vsystem, y porque un circuito guardado antes de la versión 3 solo tiene esto.
+   */
   readonly tags: readonly string[];
+  /** Los metadatos por tag. Ausente en circuitos guardados antes de la versión 3. */
+  readonly entries?: readonly StoredTagEntry[];
   /** Cuándo se extrajo de planta. Sin esto no se sabe qué periodo puede juzgar (OQ-123). */
   readonly extractedAt: number | null;
   readonly loadedAt: number;
@@ -79,6 +103,14 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
     // El peldaño existe igualmente, y no es burocracia: es lo que deja constancia de que la forma
     // cambió aquí. Sin él, la próxima persona que suba la versión no sabría en qué estado encuentra
     // una base vieja, que es exactamente cómo el prototipo se quedó sin ruta de migración.
+    apply: () => {},
+  },
+  {
+    to: 3,
+    // Las listas ganan metadatos por tag (`entries`): papel, grupo y capacidad. Tampoco hay nada
+    // que reescribir —el campo es opcional—, y la degradación es la correcta: una lista guardada
+    // en la versión 2 sigue leyéndose, no monta calles, y R-CO-006 dice justamente eso, que sin
+    // calles configuradas la firma no se reconoce. Volver a cargar el fichero la completa.
     apply: () => {},
   },
 ];

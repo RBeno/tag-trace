@@ -1,8 +1,8 @@
 ---
 document_id: TT-GATES-001
-version: 0.12.0
+version: 0.15.0
 status: baseline-candidate
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 ---
 
 # Puertas de fase
@@ -101,10 +101,19 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
 - [ ] Oportunidades y salud explicadas.
 - [ ] Diagnóstico individual/grupal/colectivo validado.
 - [ ] Calendario, pausas y takt versionados.
-- [ ] FIFO cargado y reordenación vacía diferenciados.
-- [ ] Cinco calles CO modeladas sin SOC.
+- [ ] FIFO cargado y reordenación vacía diferenciados. **A medias**: la zona de cada tag ya se
+      declara en CSV y el orden de convoy deja de probar el paso donde la reordenación está
+      admitida (R-FLO-006), pero el FIFO cargado como tal no se modela todavía.
+- [ ] Cinco calles CO modeladas sin SOC. **Modeladas** (R-CO-001/002/003/006/007/008: estancias,
+      arranque en frío, salida fuera de antigüedad y calle sin servicio), y sin SOC, que R-CO-004
+      excluye. **Sin marcar** porque solo se han ejercitado contra el circuito sintético de
+      auditoría: los valores de planta de OQ-B04 y OQ-124 siguen sin llegar.
 - [ ] Puntos críticos y retroceso preliminar útiles.
-- [ ] Falsos positivos y desconocidos medidos por categoría.
+- [ ] Falsos positivos y desconocidos medidos por categoría. El mecanismo existe desde el
+      2026-09-20 (`tests/audit/`, con un circuito sintético de verdad plantada y un informe por
+      clase de fallo). **Sigue sin marcarse**, no por falta de mecanismo sino por alcance: solo
+      cubre las clases de fallo ya identificadas en el sintético (14 de 14 detectadas al
+      2026-09-21, cero falsos positivos, `DEUDA_CONOCIDA` vacía), no todavía las de OQ-B04.
 
 ## G4 — Autorizar F5
 

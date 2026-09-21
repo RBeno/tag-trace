@@ -18,7 +18,15 @@ import {
   type ToWorker,
 } from "../application/protocol.js";
 import { EXPECTED_STRUCTURE, LIST_PURPOSE } from "../domain/tag-lists.js";
-import { activityChart, coverageChart, hourlyChart, inventoryChart, plainTable } from "./charts.js";
+import {
+  activityChart,
+  coverageChart,
+  hourlyChart,
+  inventoryChart,
+  lazyDetails,
+  plainTable,
+  scrollBox,
+} from "./charts.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
@@ -855,13 +863,27 @@ function renderViews(views: CircuitViews): void {
 
   // Cohortes (R-DAT-012): un solo grupo es lo esperado; más de uno avisa de que el fichero mezcla
   // circuitos, que es justo el error que la comparación por cohorte existe para impedir.
+  //
+  // El recuento de tags va junto al de vehículos porque responde la misma pregunta —de qué está
+  // hecho esto— y sale del ciclo dominante, no de contar identificadores distintos: un tag leído
+  // una vez desde una rama no forma parte del anillo.
+  const shapeOf = (cohortId: number): CircuitViews["shapes"][number] | undefined =>
+    views.shapes.find((shape) => shape.cohortId === cohortId);
+  const describe = (cohort: { readonly id: number; readonly vehicles: readonly string[] }): string => {
+    const shape = shapeOf(cohort.id);
+    return shape === undefined
+      ? `${cohort.vehicles.length} vehículos, sin anillo reconocible`
+      : `${cohort.vehicles.length} vehículos y ${shape.tags.length} tags en el anillo`;
+  };
   const cohortLine =
-    views.cohorts.length === 1
-      ? `1 circuito de ${views.cohorts[0]?.vehicles.length ?? 0} vehículos`
+    views.cohorts.length === 1 && views.cohorts[0] !== undefined
+      ? `1 circuito de ${describe(views.cohorts[0])}`
       : `${views.cohorts.length} circuitos detectados en el mismo fichero: ` +
-        views.cohorts.map((cohort) => `${cohort.vehicles.length} vehículos`).join(", ");
-  viewsPanel.append(element("h3", undefined, "Agrupamiento por circuito"));
+        views.cohorts.map(describe).join("; ");
+  viewsPanel.append(element("h3", undefined, "Composición del circuito"));
   viewsPanel.append(element("p", "muted", cohortLine));
+  renderShapes(views);
+  renderCharging(views);
 
   if (views.vsystemContrast !== undefined) {
     viewsPanel.append(element("h3", undefined, "Contraste contra Vsystem"));
@@ -888,6 +910,444 @@ function renderViews(views: CircuitViews): void {
       ),
     );
   }
+}
+
+type Matrix = CircuitViews["readMatrices"][number];
+type TagRow = Matrix["tags"][number];
+
+/** Cuántos casos se enseñan de entrada. Es un parámetro de pantalla, no una magnitud de planta. */
+const HIGHLIGHTS = 8;
+
+function percent(rate: number | null): string {
+  return rate === null ? "—" : `${Math.round(rate * 100)} %`;
+}
+
+/**
+ * El anillo, los casos destacados y la matriz completa.
+ *
+ * El orden importa tanto como el contenido: primero **a cuáles mirar**, y solo después el conjunto
+ * entero, plegado. Enseñar de golpe ciento cincuenta tags por cincuenta vehículos no es informar,
+ * es esconder el hallazgo dentro de una cuadrícula (`UX_SPEC.md` §5.1).
+ */
+function renderShapes(views: CircuitViews): void {
+  for (const shape of views.shapes) {
+    const matrix = views.readMatrices.find((entry) => entry.cohortId === shape.cohortId);
+
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        `Anillo de ${shape.tags.length} tags, cerrado por «${shape.anchorTagId}». El orden es ` +
+          "inferido del sucesor dominante, no una medida del trazado, y su arista más débil se " +
+          `sostiene en el ${Math.round(shape.weakestShare * 100)} % de las pasadas.`,
+      ),
+    );
+
+    // La lista ordenada, plegada: es la que se contrasta con el circuito virtual y con la memoria.
+    viewsPanel.append(
+      lazyDetails(`Ver los ${shape.tags.length} tags del anillo, en orden`, () =>
+        plainTable(
+          ["Posición", "Tag", "Leído por pasada", "Patrón"],
+          shape.tags.map((tagId, index) => {
+            const row = matrix?.tags.find((entry) => entry.tagId === tagId);
+            return [
+              String(index + 1),
+              tagId,
+              row?.isAnchor === true ? "— (ancla)" : percent(row?.rate ?? null),
+              row?.isAnchor === true ? "cierra la vuelta" : (row?.pattern ?? "sin datos"),
+            ];
+          }),
+        ),
+      ),
+    );
+
+    if (shape.offRingTags.length > 0) {
+      viewsPanel.append(
+        element(
+          "p",
+          "muted",
+          (shape.offRingTags.length === 1
+            ? "1 tag se lee y no está en el anillo. "
+            : `${shape.offRingTags.length} tags se leen y no están en el anillo. `) +
+            "O son ramas que solo algunos recorren, o son tags de la línea que se leen tan poco " +
+            "que el sucesor " +
+            "dominante los saltó — y ese segundo caso es de los más sospechosos. Separarlos exige " +
+            "la prueba de tiempos (OQ-118), que todavía no está implementada, así que aquí salen " +
+            "enumerados y sin clasificar.",
+        ),
+      );
+      viewsPanel.append(
+        lazyDetails(
+          shape.offRingTags.length === 1
+            ? "Ver el tag que queda fuera del anillo"
+            : `Ver los ${shape.offRingTags.length} tags fuera del anillo`,
+          () =>
+          plainTable(
+            ["Tag", "Vehículos que lo leen"],
+            shape.offRingTags.map((tag) => [tag.tagId, String(tag.readers)]),
+          ),
+        ),
+      );
+    }
+
+    if (matrix === undefined || !matrix.supported) {
+      viewsPanel.append(
+        element(
+          "p",
+          "muted",
+          "Sin vueltas cerradas no hay tasa de lectura que sostener: haría falta que los vehículos " +
+            "pasen más de una vez por el tag que cierra la vuelta.",
+        ),
+      );
+      continue;
+    }
+
+    // Cuánto puede apoyarse la prueba por tiempo: si pocos segmentos tienen mediana medida, un
+    // tramo largo sin leer no se puede contrastar y quedará sin sostener con más frecuencia.
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        `${matrix.segmentsWithTime} de los ${matrix.ring.length} segmentos del anillo tienen ` +
+          "tiempo mediano medido; solo esos permiten comprobar si un tramo sin lecturas se recorrió " +
+          "de verdad.",
+      ),
+    );
+    renderHighlights(matrix);
+    renderFullMatrix(matrix);
+  }
+}
+
+/** Lo que hay que mirar, visible de entrada: los tags y los vehículos que se salen de lo normal. */
+function renderHighlights(matrix: Matrix): void {
+  const notable = matrix.tags
+    .filter((tag) => tag.pattern === "bimodal-candidato" || tag.pattern === "uniforme-bajo")
+    .sort((a, b) => (a.rate ?? 1) - (b.rate ?? 1));
+  // Los vehículos se destacan por **en cuántos tags son ellos los que no leen**, no por una tasa
+  // global con un corte inventado aquí: un 99 % de acierto sobre ciento cincuenta tags puede ser
+  // exactamente el vehículo que falla los dos que importan.
+  const blindCount = new Map<string, number>();
+  for (const tag of matrix.tags) {
+    if (tag.pattern !== "bimodal-candidato") continue;
+    for (const agvId of tag.lowReaders) blindCount.set(agvId, (blindCount.get(agvId) ?? 0) + 1);
+  }
+  const quietVehicles = [...matrix.vehicles]
+    .filter((vehicle) => (blindCount.get(vehicle.agvId) ?? 0) > 0)
+    .sort(
+      (a, b) => (blindCount.get(b.agvId) ?? 0) - (blindCount.get(a.agvId) ?? 0),
+    )
+    .slice(0, HIGHLIGHTS);
+
+  viewsPanel.append(element("h3", undefined, "Lo que hay que mirar"));
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      "Porcentaje sobre las veces que el vehículo pasó por el punto. El paso se prueba encerrándolo " +
+        "entre dos lecturas suyas; si falta un tramo largo, decide el tiempo —¿tardó lo que ese " +
+        "tramo tarda?— y, cuando no hay tiempo con que comparar, el orden de los AGV que iban " +
+        "delante y detrás. Lo que ninguna de las tres sostiene no cuenta como pasada ni como fallo " +
+        "del tag. No es una tasa de salud: eso exige saber qué lleva cada vehículo en memoria y " +
+        "qué sigue instalado.",
+    ),
+  );
+
+  if (notable.length === 0) {
+    viewsPanel.append(
+      element("p", "muted", "Ningún tag con patrón destacable: todos los que se pasan se leen."),
+    );
+  } else {
+    for (const tag of notable.slice(0, HIGHLIGHTS)) {
+      viewsPanel.append(
+        finding(
+          `Tag ${tag.tagId} · posición ${tag.position + 1} de ${matrix.ring.length}`,
+          `${percent(tag.rate)} de las pasadas · ${tag.pattern}`,
+          explain(tag),
+        ),
+      );
+    }
+    if (notable.length > HIGHLIGHTS) {
+      viewsPanel.append(
+        element(
+          "p",
+          "muted",
+          `Y ${notable.length - HIGHLIGHTS} más con el mismo tipo de patrón, en la matriz completa.`,
+        ),
+      );
+    }
+  }
+
+  if (quietVehicles.length === 0) {
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        "Ningún vehículo concentra tags sin leer: lo que falte, falta para todos por igual.",
+      ),
+    );
+  } else {
+    for (const vehicle of quietVehicles) {
+      const blind = blindCount.get(vehicle.agvId) ?? 0;
+      viewsPanel.append(
+        finding(
+          `AGV ${vehicle.agvId} · ${vehicle.laps} vueltas`,
+          `${blind} ${blind === 1 ? "tag que no lee" : "tags que no lee"} y los demás sí · ` +
+            `${percent(vehicle.rate)} de lo que pasa`,
+          "Revisar lector, WiFi o memoria de este vehículo: el tag no es el problema, porque el " +
+            "resto de la flota lo lee." +
+            (vehicle.unproven > 0
+              ? ` Además recorrió ${vehicle.unproven} tramos en menos tiempo del que tardan: o los ` +
+                "atajó, o hay una rama que el anillo no recoge."
+              : ""),
+        ),
+      );
+    }
+  }
+
+  renderTrends(matrix);
+}
+
+/**
+ * Rotura súbita y degradación progresiva, sobre la misma matriz (R-OPP-015).
+ *
+ * Junto a los destacados de siempre y no en una sección aparte: es exactamente el tipo de caso que
+ * esa lista ya prioriza, y separarlo obligaría a mirar dos sitios para la misma pregunta.
+ */
+function renderTrends(matrix: Matrix): void {
+  const brokenTags = matrix.tags.filter((tag) => tag.changedAtUtcMs !== undefined);
+  const decliningTags = matrix.tags.filter((tag) => tag.trend === "bajando");
+  const brokenVehicles = matrix.vehicles.filter((vehicle) => vehicle.changedAtUtcMs !== undefined);
+  const decliningVehicles = matrix.vehicles.filter((vehicle) => vehicle.trend === "bajando");
+
+  if (
+    brokenTags.length === 0 &&
+    decliningTags.length === 0 &&
+    brokenVehicles.length === 0 &&
+    decliningVehicles.length === 0
+  ) {
+    return;
+  }
+
+  for (const tag of brokenTags) {
+    viewsPanel.append(
+      finding(
+        `Tag ${tag.tagId}: dejó de leerse en un instante concreto`,
+        `${percent(tag.rateBefore ?? null)} → ${percent(tag.rateAfter ?? null)} el ` +
+          formatInstant(tag.changedAtUtcMs as number),
+        "Un corte, no una fluctuación: se leía con normalidad y a partir de ahí casi nadie lo " +
+          "lee. Comprobar el tag en ese instante, no promediar toda la ventana (R-OPP-015).",
+      ),
+    );
+  }
+  for (const tag of decliningTags) {
+    viewsPanel.append(
+      finding(
+        `Tag ${tag.tagId}: baja de forma sostenida a lo largo de la ventana`,
+        (tag.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
+        "La caída es progresiva, no un promedio estable que la esconda: cuatro tramos temporales, " +
+          "cada uno peor que el anterior (R-OPP-015).",
+      ),
+    );
+  }
+  for (const vehicle of brokenVehicles) {
+    viewsPanel.append(
+      finding(
+        `AGV ${vehicle.agvId}: su lector dejó de responder en un instante concreto`,
+        `${percent(vehicle.rateBefore ?? null)} → ${percent(vehicle.rateAfter ?? null)} el ` +
+          formatInstant(vehicle.changedAtUtcMs as number),
+        "El corte es del vehículo, en todos los tags que recorre, no de uno solo: revisar su " +
+          "lector o su WiFi en ese instante (R-OPP-015).",
+      ),
+    );
+  }
+  for (const vehicle of decliningVehicles) {
+    viewsPanel.append(
+      finding(
+        `AGV ${vehicle.agvId}: su lector lee cada vez peor`,
+        (vehicle.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
+        "La caída es de este vehículo en conjunto, no de un tag concreto: sus compañeros siguen " +
+          "leyendo los mismos tags con normalidad (R-OPP-015).",
+      ),
+    );
+  }
+}
+
+/**
+ * Las calles de carga online, con lo notable de entrada (R-CO-002, R-CO-003, R-CO-007).
+ *
+ * Mismo criterio que la matriz: primero a qué mirar —una calle por la que no pasó nadie, un
+ * vehículo al que se le saltó el turno, una permanencia muy por encima de su calle— y el detalle
+ * por calle plegado. Lo que **no** aparece es una lista de las cargas normales: son la mayoría, y
+ * enseñarlas es esconder lo otro.
+ */
+function renderCharging(views: CircuitViews): void {
+  const charging = views.charging;
+  if (charging === undefined) return;
+
+  viewsPanel.append(element("h3", undefined, "Calles de carga online"));
+
+  const zonas = views.zones ?? [];
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      `${charging.lanes.length} calles declaradas` +
+        (zonas.length === 0
+          ? ". Sin lista de zonas: el orden de convoy se sigue usando en todo el anillo, que es " +
+            "más optimista de lo que R-FLO-006 admite."
+          : `, y ${zonas.map((entry) => `${entry.tags} tags en zona ${entry.zone}`).join(" y ")}. ` +
+            `${views.orderWithheld} pasadas que el orden de convoy habría dado por buenas no se ` +
+            "usan: en zona vacía la reordenación está admitida (R-FLO-006)."),
+    ),
+  );
+
+  for (const problem of charging.problems) {
+    viewsPanel.append(finding("Configuración que no se pudo usar", "—", problem));
+  }
+
+  const sinServicio = charging.lanes.filter((lane) => !lane.served);
+  for (const lane of sinServicio) {
+    viewsPanel.append(
+      finding(
+        `Nadie entró en «${lane.laneId}»`,
+        "0 estancias",
+        "Sus tags no tuvieron ocasión de leerse, así que no son candidatos a obsoleto. La " +
+          "pregunta es si la calle sigue en servicio.",
+      ),
+    );
+  }
+
+  for (const lane of charging.lanes) {
+    // Solo las esperas más largas de cada calle. Dos vehículos cargando a la vez con duraciones
+    // distintas invierten el orden de salida con toda normalidad, así que enseñarlas todas sería
+    // enterrar la que importa entre las que no. El detalle plegado da el recuento completo.
+    for (const breach of lane.outOfSeniority.slice(0, 2)) {
+      viewsPanel.append(
+        finding(
+          `A ${breach.waited} se le saltó el turno en «${lane.laneId}»`,
+          duration(breach.waitedMs),
+          `Entró antes que ${breach.overtakenBy.join(", ")} y salió después, con la mediana de la ` +
+            `calle en ${duration(lane.medianStayMs)}. La salida se relaciona con mayor antigüedad ` +
+            "(R-CO-003); qué lo explica no lo dice el dato.",
+        ),
+      );
+    }
+    for (const stay of lane.longStays) {
+      viewsPanel.append(
+        finding(
+          `${stay.agvId} permaneció en «${lane.laneId}» mucho más que el resto`,
+          duration(stay.durationMs),
+          `La mediana de esa calle es ${duration(lane.medianStayMs)}.`,
+        ),
+      );
+    }
+  }
+
+  if (charging.startedInside.length > 0) {
+    const desde =
+      charging.coverageStartUtcMs === null
+        ? "el inicio de la cobertura"
+        : new Date(charging.coverageStartUtcMs).toISOString().slice(0, 16).replace("T", " ");
+    viewsPanel.append(
+      finding(
+        `${charging.startedInside.length} vehículos ya estaban cargando antes de empezar a mirar`,
+        charging.startedInside.map((stay) => stay.agvId).join(", "),
+        `Su primera lectura es la salida de una calle, así que desde ${desde} hasta que salieron ` +
+          "esas calles no estaban vacías: no había datos (R-CO-007).",
+      ),
+    );
+  }
+
+  viewsPanel.append(
+    lazyDetails(`Detalle de las ${charging.lanes.length} calles`, () =>
+      plainTable(
+        ["Calle", "Capacidad", "Estancias", "Mediana", "Turnos saltados"],
+        charging.lanes.map((lane) => [
+          lane.laneId,
+          lane.capacity === null ? "—" : String(lane.capacity),
+          String(lane.stays),
+          duration(lane.medianStayMs),
+          String(lane.outOfSeniority.length),
+        ]),
+      ),
+    ),
+  );
+}
+
+/** Una duración en la unidad que se lee de un vistazo. `null` es «no se sabe», nunca cero. */
+function duration(ms: number | null): string {
+  if (ms === null) return "—";
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 90) return `${minutes} min`;
+  return `${(minutes / 60).toFixed(1)} h`;
+}
+
+/**
+ * Un hallazgo, como tarjeta y no como fila.
+ *
+ * `UX_SPEC.md` §4 ya lo pedía así —conclusión, objeto, evidencia— y la razón se ve al mirarlo en un
+ * móvil: una tabla de cinco columnas en 360 px parte los encabezados letra a letra. Cabe, y es
+ * ilegible.
+ */
+function finding(title: string, figure: string, evidence: string): HTMLElement {
+  const card = element("div", "finding");
+  card.append(
+    element("p", "finding-title", title),
+    element("p", "finding-figure", figure),
+    element("p", "muted", evidence),
+  );
+  return card;
+}
+
+/** La frase que acompaña a cada patrón. Enuncia la pregunta; no la responde (R-EVI-006). */
+function explain(tag: TagRow): string {
+  const base =
+    tag.pattern === "bimodal-candidato"
+      ? `${tag.lowReaders.length} vehículos casi nunca lo leen y ${tag.highReaders.length} casi ` +
+        `siempre (${tag.lowReaders.slice(0, 3).join(", ")}…): revisar esos vehículos, no el tag`
+      : "todos los que pasan lo leen poco: revisar el tag o su punto";
+  // Cómo se probó el paso importa tanto como el porcentaje: una tasa sostenida por tiempo es más
+  // débil que una sostenida por los vecinos, y el usuario tiene que poder verlo sin preguntar.
+  const vias: string[] = [];
+  if (tag.byTime > 0) vias.push(`${tag.byTime} probadas por tiempo`);
+  if (tag.byOrder > 0) vias.push(`${tag.byOrder} por orden de convoy`);
+  if (tag.unproven > 0) vias.push(`${tag.unproven} tramos que nada sostiene`);
+  return vias.length === 0 ? base : `${base}. De sus pasadas: ${vias.join(", ")}`;
+}
+
+/** La matriz entera, plegada y construida solo si alguien la abre. */
+function renderFullMatrix(matrix: Matrix): void {
+  const vehicles = matrix.vehicles.map((vehicle) => vehicle.agvId);
+  viewsPanel.append(
+    lazyDetails(
+      `Ver la matriz completa: ${matrix.tags.length} tags × ${vehicles.length} vehículos`,
+      () =>
+        scrollBox(
+          plainTable(
+            ["Tag", ...vehicles],
+            matrix.tags.map((tag) => {
+              const byVehicle = new Map(tag.byVehicle.map((cell) => [cell.agvId, cell]));
+              return [
+                tag.tagId,
+                ...vehicles.map((agvId) => {
+                  const cell = byVehicle.get(agvId);
+                  // Sin pasadas no es un cero: es que ese vehículo no pasó por ahí.
+                  return cell === undefined ? "·" : `${Math.round((cell.hits / cell.passes) * 100)}`;
+                }),
+              ];
+            }),
+          ),
+        ),
+    ),
+  );
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      "En la matriz, «·» es que ese vehículo no pasó por ese punto — distinto de un 0, que sí " +
+        "sería un hecho.",
+    ),
+  );
 }
 
 /**
@@ -942,25 +1402,34 @@ function renderDossier(): void {
     for (const [term, value] of rows) list.append(element("dt", undefined, term), element("dd", undefined, value));
     dossierResult.append(element("h3", undefined, `AGV ${agv.agvId}`), list);
     if (agv.inactivity.length > 0) {
+      const cargas = agv.inactivity.filter((period) => period.cause === "carga-online").length;
       dossierResult.append(
         element(
           "p",
           "muted",
-          `${agv.inactivity.length} periodos de inactividad. Cada uno con sus dos extremos: por ` +
-            "dónde se fue y por dónde volvió. Volver al mismo tag y volver más adelante son " +
-            "hechos distintos, y ninguno de los dos es por sí solo una avería (R-AGV-006).",
+          `${agv.inactivity.length} periodos de inactividad` +
+            (cargas === 0
+              ? ". "
+              : `, de los que ${cargas} son cargas en calle y no huecos que explicar (R-CO-006). `) +
+            "Cada uno con sus dos extremos: por dónde se fue y por dónde volvió. Volver al mismo " +
+            "tag y volver más adelante son hechos distintos, y ninguno de los dos es por sí solo " +
+            "una avería (R-AGV-006).",
         ),
       );
       dossierResult.append(
         plainTable(
-          ["Desde", "Hasta", "Duración", "Se fue por", "Volvió por", "Reaparición"],
+          ["Desde", "Hasta", "Duración", "Se fue por", "Volvió por", "Qué fue"],
           agv.inactivity.map((period) => [
             formatInstant(period.fromUtcMs),
             formatInstant(period.toUtcMs),
             `${Math.round(period.durationMs / 60_000)} min`,
             period.lastTagBefore,
             period.firstTagAfter,
-            period.lastTagBefore === period.firstTagAfter ? "en el mismo tag" : "más adelante",
+            period.cause === "carga-online"
+              ? `carga en «${period.laneId ?? "?"}» (inferido)`
+              : period.lastTagBefore === period.firstTagAfter
+                ? "silencio, reapareció en el mismo tag"
+                : "silencio, reapareció más adelante",
           ]),
         ),
       );

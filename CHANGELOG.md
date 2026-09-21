@@ -2,6 +2,318 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.9.0] - 2026-09-21
+
+Rotura súbita y degradación progresiva (R-OPP-015): las dos únicas clases que la auditoría de
+`[3.7.0]` dejaba como deuda, por la misma causa entonces diagnosticada — una sola tasa sobre toda la
+ventana no distingue un tag que se lee y deja de leerse de uno que siempre estuvo a la mitad. El
+propietario propuso el método: comparar en una segunda pasada, sobre los tags y los AGV con pasadas
+suficientes. Se implementa sin releer la fuente: la primera pasada es el mismo recorrido que ya
+construye la matriz de lectura, ampliado para retener el instante de cada pasada en vez de tirarlo;
+la segunda es un post-proceso barato sobre esas líneas ya construidas.
+
+### Añadido
+
+- **`src/domain/read-rate-trend.ts`** — `detectTrend()`: segmentación binaria de un único corte
+  (rotura), y solo si no la hay, caída monótona por tramos (degradación). En ese orden y sin
+  mezclarlas, mismo principio que R-OPP-014. Aplicado a tags **y** a AGV: un lector que se degrada
+  en varios tags a la vez se ve en su propia línea, sin que el hallazgo se traslade a los tags que
+  lee si el resto de la flota los sigue leyendo con normalidad.
+- `TagReadRow` y `VehicleReadRow` ganan `changedAtUtcMs`/`rateBefore`/`rateAfter` (rotura) y
+  `trend`/`segmentRates` (degradación), opcionales: presentes solo cuando la búsqueda encuentra algo.
+- `TrendThresholds` en `config.ts`, `draft` y sin valor por defecto en ninguna función.
+- Vista: hallazgos de rotura y tendencia junto a los destacados de la matriz, para tags y AGV.
+- Sexta clase plantada en el circuito de auditoría, `lector-agv-degradado`: un AGV libre de
+  cualquier otro papel cuyo lector falla cada vez más en cualquier tag, con la comprobación cruzada
+  de que su propio recuento cae entre la primera y la segunda mitad de la ventana.
+
+### Un riesgo real, encontrado construyendo el detector, y corregido
+
+Un corte único sin más guardas puede confundir una **racha corta de mala suerte al final de una
+línea larga** con una rotura: cinco pasadas sin acierto entre quinientas parecían, al principio, un
+corte más brusco que la propia tendencia que se estaba probando en el mismo escenario. `minSide`
+pasa a exigir **una proporción real de la línea, no solo un mínimo absoluto** (`minShareEachSide`).
+Con la corrección, la prueba que expuso el problema queda fijada como caso de regresión.
+
+### Un defecto real del generador de auditoría, no del detector
+
+Ejecutado contra el circuito completo, `rotura-subita` y `degradacion-progresiva` se detectaban con
+una separación perfecta (100 %→0 %) pero el instante publicado caía **dos horas antes** del
+plantado. La causa no estaba en `read-rate-trend.ts`: el generador etiqueta sus instantes como
+epoch UTC, pero los escribe como **dígitos** en el CSV, y la auditoría los importa con
+`zone: "Europe/Madrid"` — correcto, es lo que el `MANIFEST.md` declara y lo que un DS-001 real
+exige. El resultado es que esos dígitos se leen como hora local de Madrid y se convierten a UTC
+desplazándolos por el huso horario de verano (CEST, UTC+2). Ninguna prueba anterior lo notó porque
+todas comparaban proporciones o presencia de un campo, invariantes a un desplazamiento constante;
+la primera comparación de un instante absoluto contra otro lo destapó. Corregido en el generador:
+`fromUtcMs`, `toUtcMs` y los `atUtcMs` de los defectos pasan por la misma conversión de zona que
+aplicará el producto (`wallClockToUtc`, reutilizada de `src/domain/time.ts`), así que dejan de
+prometer «epoch UTC» y empiezan a serlo. Corrige de paso, en silencio hasta ahora, la ventana de
+cobertura que `analyse()` pasa a `buildChargingReport`.
+
+### El informe, con las catorce clases
+
+```
+238.782 lecturas, 40 vehículos. Anillo reconstruido: 146 tags de 150 declarados. Fuera del anillo: 15.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 9/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  DETECTA     rotura-subita — con el instante dentro de margen: 2/2
+  DETECTA     degradacion-progresiva — con tendencia sostenida: 2/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 94 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 1 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+  DETECTA     lector-agv-degradado — 7120: bajando (90% → 76% → 64% → 60%); tags con tendencia o rotura por su culpa: 0
+```
+
+**Catorce de catorce clases detectadas, cero falsos positivos, `DEUDA_CONOCIDA` vacía.** La tercera
+aserción de la auditoría (la deuda no se pudre en ninguna dirección) exigía sacar las dos clases en
+cuanto se detectaran, y así se hizo.
+
+### Gobierno
+
+- `RULE_CATALOG.md` R-OPP-015; `ALGORITHM_CATALOG.md` ALG-020 (§4.4); `TEST_STRATEGY.md` TC-091–096;
+  `TRACEABILITY_MATRIX.md`; `UX_SPEC.md` §5.2.2; `OPEN_QUESTIONS.md` OQ-126 (los umbrales de rotura y
+  degradación siguen sin fijar por planta); `PHASE_GATES.md` G3 con las catorce clases y cero deuda,
+  todavía sin marcar porque el sintético no cubre las clases que faltan de OQ-B04.
+
+## [3.8.0] - 2026-09-21
+
+Las calles de carga online, la zona de vacíos y la configuración de planta como CSV. El propietario
+no tiene datos de fabricación hasta mañana y añade el argumento que de verdad decide: **en el dato
+real es difícil encontrar los fallos que queremos detectar, y sin conocerlos no sabemos si la
+aplicación funciona**. Así que se sigue con el sintético, ahora con cinco calles de tres tags,
+media hora de carga, una calle por la que no pasa nadie, un AGV al que se le salta el turno y cinco
+que ya estaban cargando antes de que empezara la ventana.
+
+**Nada de esto es alcance nuevo: es deuda de F0 que por fin se puede ejercitar.** R-CO-001 decía
+desde el 3 de septiembre que «el piloto se validará además con un fixture sintético de **cinco
+calles**», y R-CO-006 estaba `accepted` sin implementar. Lo único que no cubría ninguna regla es el
+arranque en frío, y esa es nueva.
+
+### Corregido
+
+- **Media hora cargando salía como periodo de inactividad.** El umbral de silencio son cinco
+  minutos, así que toda carga normal aparecía como un hueco que explicar. El propio `dossier.ts`
+  ya decía en un comentario que separarlo «exige la configuración de calles que OQ-B04 todavía no
+  ha dado»; ahora la tiene. En el escenario de auditoría son **93 paradas** que pasan de silencio a
+  carga.
+- **Tres tags perfectamente sanos acusados de no estar ya en el suelo.** Los de una calle por la
+  que no entró nadie salían `obsoleto-candidato`, que afirma «está en la lista y probablemente no
+  en el suelo». Sin entradas no hubo oportunidad de leerlos: clase nueva `calle-sin-servicio`,
+  `unknown`, y la pregunta apunta a la calle (R-CO-008).
+- **`orden` y `nota` se parseaban y se tiraban** al guardar la lista. Ahora las listas conservan sus
+  metadatos por tag (peldaño 3 del almacén), que es lo que permite que una calle sea una secuencia
+  con papeles y no un conjunto de tres tags.
+
+### Añadido
+
+- **La configuración de planta entra como CSV** (`CONFIG_SCHEMA.md` §3.4.2), que es lo que el
+  propietario pidió: `lista;tag;orden;funcion;grupo;capacidad;nota`, con las dos primeras
+  obligatorias y el resto localizadas por nombre en cualquier posición. `co_lanes`, `empty_zone`,
+  `loaded_zone` y `critical_points` se expresan con ella. Lista nueva `zona`.
+- **`src/domain/circuit-config.ts`** — monta calles y zonas, y **declara lo que no puede montar** en
+  vez de completarlo. Una calle sin parada precisa, o con dos tags reclamando el mismo papel, no se
+  usa y su motivo se enseña junto al análisis. Adivinar el papel por la posición sería sustituir la
+  configuración por proximidad, que es lo que R-CO-006 prohíbe con esas palabras.
+- **`src/domain/charging.ts`** — la máquina de estados por calle de R-CO-002: estancias con su
+  mediana, permanencias largas **relativas a la mediana de su propia calle**, salidas fuera de
+  antigüedad ordenadas por lo que esperó cada uno, calles sin servicio y arranque en frío.
+- **R-CO-007, R-CO-008** (nuevas) y la aplicación de **R-FLO-006**, que llevaba `accepted` desde F0
+  sin consecuencia en el código: el orden de convoy ya no prueba el paso en zona vacía ni cruzando
+  una entrada de calle, y lo que retira **se cuenta** (`orderWithheld`) en vez de desaparecer.
+- Cinco clases más en el circuito de auditoría, y el informe pasa de 8 a 13.
+
+### El informe, que sigue siendo el entregable
+
+```
+240.975 lecturas, 40 vehículos. Anillo reconstruido: 146 tags de 150 declarados. Fuera del anillo: 15.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 8/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  NO DETECTA  rotura-subita — con instante de cambio: 0/2
+  NO DETECTA  degradacion-progresiva — con tendencia a la baja: 0/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 93 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 4 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+```
+
+**11 de 13 clases y cero falsos positivos.** Cuatro cosas que conviene decir y no adornar:
+
+- **Las dos clases de deuda siguen siendo las mismas** —rotura súbita y degradación progresiva— y
+  por la misma causa: una sola tasa sobre toda la ventana. Este incremento no las toca.
+- **`lectura-media` baja de 9/10 a 8/10.** No es una regresión del detector: las cargas consumen
+  números de la secuencia con semilla, así que el escenario es otra realización del mismo diseño.
+  La cifra se publica como salió, sin ajustar el umbral para recuperar el 9.
+- **El turno saltado señala a cinco vehículos y solo uno está plantado.** Los otros cuatro son
+  cargas simultáneas de duración distinta, que invierten el orden de salida con toda normalidad. La
+  lista se entrega ordenada por lo que esperó cada uno y el plantado sale el primero con 300 min
+  frente a la media hora de mediana; la auditoría exige que salga **el primero**, no solo que
+  aparezca. Qué excepciones son legítimas es OQ-125, y la responde planta.
+- **R-FLO-006 está implementado y este escenario no lo ejercita**: `pasadas retiradas de la vía de
+  orden: 0`, porque casi todos los segmentos tienen tiempo mediano y decide la vía del tiempo. Tiene
+  pruebas unitarias propias, pero una regla que no se ejercita no está validada por esta auditoría
+  aunque esté escrita, y el informe lo dice en lugar de callarlo.
+
+### Gobierno
+
+- `RULE_CATALOG.md` R-CO-007 y R-CO-008; `CONFIG_SCHEMA.md` §3.4.2; `TEST_STRATEGY.md` TC-080–090;
+  `UX_SPEC.md` §5.2.1; `OPEN_QUESTIONS.md` OQ-124 (capacidad y tiempo de carga reales) y OQ-125
+  (excepciones al orden de salida); `PHASE_GATES.md` G3 con las dos casillas de FIFO y calles CO
+  **a medias y sin marcar**: están modeladas, pero solo ejercitadas contra el sintético.
+- Los treinta minutos de carga son una magnitud del escenario y viven en el generador. En `src/` no
+  hay ningún minutaje: `longStayRatio` y `minStaysForMedian` van a `AnalysisConfig` como `draft` y
+  **sin valor por defecto**, igual que los cinco grupos que ya había.
+
+## [3.7.0] - 2026-09-21
+
+Un banco de pruebas donde **todos los fallos conocidos están plantados a propósito**, para dejar de
+opinar sobre qué detecta el producto y empezar a contarlo. La frase del propietario fija el método:
+«como ya sabes dónde está el fallo y qué lo delata, podemos optimizar la aplicación». Medir primero,
+arreglar después, y que lo que se arregle lo decida una cifra.
+
+### Añadido
+
+- **`tests/support/circuito-auditoria.ts`** — generador con semilla: 150 tags declarados, 40
+  vehículos, 30 h, ~252.000 lecturas, con ocho clases de fallo plantadas en posiciones fijas del
+  anillo para que cualquiera pueda comprobarlas a mano. Devuelve, junto a los dos CSV, la **verdad
+  plantada**: por cada defecto, sus tags y vehículos, qué debe decir el producto y —igual de
+  importante— **qué no puede decir**; más la lista de tags limpios, que es contra la que se cuentan
+  los falsos positivos.
+- **`tests/audit/auditoria.test.ts`** — ejecuta el mismo encadenado que el Worker (importación →
+  transiciones → cohortes → ciclo dominante → vueltas → matriz de lectura → inventario) y publica un
+  informe por clase. `tests/audit/` es capa propia en `vitest.config.ts`: no comprueba una función,
+  mide cuánto de lo que puede ir mal llega a decirse.
+- **`scripts/generar-auditoria.ts`** — `npx vite-node scripts/generar-auditoria.ts` deja las dos CSV
+  en `local/` e imprime lo plantado con tags y AGV concretos, para cargarlo en el móvil y buscar en
+  la pantalla lo que el informe dice.
+- **`fixtures/synthetic/auditoria/MANIFEST.md`** con el escenario, los resultados esperados y los
+  **prohibidos**. Los datos no se versionan: se generan con semilla, igual que la fuente de cien mil
+  filas de `tests/e2e/rendimiento.spec.ts`.
+
+### El informe, que es el entregable
+
+```
+251.675 lecturas, 40 vehículos. Anillo reconstruido: 146 tags de 150 declarados. Fuera del anillo: 3.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 9/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  NO DETECTA  rotura-subita — con instante de cambio: 0/2 (se busca `changedAtUtcMs` en la fila del tag)
+  NO DETECTA  degradacion-progresiva — con tendencia a la baja: 0/2 (se busca `trend` en la fila del tag)
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+```
+
+Seis clases de ocho detectadas, **cero falsos positivos** sobre los tags sanos, y dos clases que no
+se detectan — que son el primer hallazgo de la auditoría, no un defecto suyo:
+
+- **Rotura súbita y degradación progresiva se escapan por la misma causa**: el producto calcula
+  **una sola tasa sobre toda la ventana**. Un tag que se leía al 100 % y desaparece de golpe, y otro
+  que va del 90 % al 40 %, salen los dos como un porcentaje medio indistinguible de un `gradiente`.
+  Separarlos exige mirar la tasa **a lo largo del tiempo**, que no está implementado. Queda medido y
+  enumerado; construirlo es el incremento siguiente.
+- El 10.º tag de lectura media no se señala porque su tasa plantada roza el umbral de `lowRate`. No
+  se toca el umbral para que la cifra quede bonita: se registra el 9/10.
+
+Las clases no detectadas viven en una lista explícita, y la prueba falla **también** si una empieza
+a detectarse sin sacarla de ella. Una lista de deuda que no se actualiza sola acaba mintiendo igual
+que un `TODO` viejo.
+
+### Gobierno
+
+- `docs/TEST_STRATEGY.md`: la auditoría como capa propia (§7) y en la tabla de capas.
+- `docs/PHASE_GATES.md` G3: el mecanismo de «falsos positivos y desconocidos medidos por categoría»
+  ya existe. **La casilla sigue sin marcar**: la marcarán las cifras, no el mecanismo.
+
+### Corregido
+
+- Una línea en blanco partía en dos la tabla de casos de oro de `TEST_STRATEGY.md` entre TC-075 y
+  TC-076, así que los cuatro últimos casos no se renderizaban como tabla.
+
+## [3.6.0] - 2026-09-20
+
+### Corregido
+
+- **La pasada se perdía justo cuando el problema era peor.** Exigir los dos vecinos inmediatos
+  funciona si falta un solo tag; si un vehículo pierde **varios seguidos**, también falta el vecino,
+  el punto deja de estar encerrado y la evidencia desaparece — precisamente en el caso más grave.
+  Ahora el punto se encierra entre las lecturas que sí hubo, falten los tags que falten.
+
+### Añadido
+
+- **Prueba de paso en tres vías** (R-OPP-014, nueva), en este orden y sin mezclarlas:
+  1. **Vecinos**, cuando solo falta el tag en cuestión.
+  2. **Tiempo**, cuando falta un tramo: ¿tardó lo que ese tramo tarda? Las medianas por segmento se
+     miden del propio dato, donde los dos extremos se leyeron seguidos.
+  3. **Orden de convoy**, y solo cuando no hay tiempo con que comparar: salir del tramo entre los
+     mismos AGV con los que se entró demuestra permanencia en la línea (R-OPP-004).
+  Lo que ninguna sostiene **no cuenta como pasada ni como fallo del tag**: queda registrado como
+  tramo no sostenido, candidato a atajo o a rama.
+- La vista dice **cómo** se probó cada pasada, porque una tasa sostenida por tiempo es más débil que
+  una sostenida por vecinos, y cuántos segmentos del anillo tienen tiempo medido.
+
+### Dos defectos propios, encontrados construyendo esto
+
+- El vecino de convoy podía ser **el propio vehículo** en otra vuelta, con lo que cualquiera era
+  vecino de sí mismo y el orden «se conservaba» siempre.
+- Y podía ser uno que pasó **horas antes**: sin ventana temporal, «el de delante» no significa nada.
+  La ventana es el propio tiempo que tardó el tramo, así que se escala sola sin otro umbral.
+- Además, el orden ya no se usa para **contradecir** un tiempo que ya decidió: si el tiempo dice que
+  no recorrió el tramo, buscar otra vía que diga que sí es lavar una contradicción, no resolverla.
+
+## [3.5.0] - 2026-09-20
+
+Probado el producto publicado en el Galaxy S23 FE: corre con fluidez. A partir de ahí, lo que el
+propietario pidió — pasar de «qué se leyó» a «a qué hay que mirar, y de quién es el problema».
+
+### Añadido
+
+- **Composición del circuito: cuántos tags lo forman y en qué orden.** No hizo falta calcular nada
+  nuevo: `findDominantCycle` devolvía el anillo entero desde F2 y el Worker se quedaba solo con el
+  tag de ancla, tirando el resto. Ahora el recuento sale junto al de vehículos —«1 circuito de 54
+  vehículos y 147 tags en el anillo»— y la lista ordenada se despliega. Es la misma lista que se
+  contrasta con el circuito virtual y con la de memoria cuando están cargadas.
+- **`src/domain/read-matrix.ts`: matriz de lectura tag × AGV** (R-OPP-013, nueva). Para cada par,
+  qué porcentaje de las veces que ese vehículo **pasó por el punto** leyó el tag. El patrón que
+  resulta —`bimodal-candidato`, `uniforme-bajo`, `gradiente`, `sin-soporte`— es lo que distingue
+  «son unos vehículos» de «es el tag», que era justamente la pregunta.
+- **Destacados primero, conjunto completo a demanda** (`UX_SPEC.md` §4.2, nueva): los hallazgos
+  como tarjetas, y el anillo, los tags fuera de él y la matriz entera plegados y construidos
+  **solo al abrirlos**.
+- **R-GRA-011**: lo que el ciclo dominante deja fuera se enumera, no desaparece.
+
+### Decisiones que el dato obligó a tomar
+
+- **El denominador es la pasada probada, no la vuelta.** R-OPP-010 daba por bueno normalizar por
+  vueltas; construyéndolo se vio que no basta: un vehículo que no recorre una rama saldría fallando
+  todos sus tags, que es el falso positivo que TC-028 prohíbe. Y exigir **un** vecino tampoco vale
+  —el anillo cierra, así que el tag de ancla es vecino del último y lo lee todo el mundo—. Hacen
+  falta **los dos vecinos en la misma vuelta**. Lo destapó una prueba escrita antes que la
+  corrección.
+- **Un tag que se lee muy poco puede caer fuera del anillo precisamente por leerse poco**: el
+  sucesor dominante lo salta. Comprobado con un circuito sintético realista, donde el tag omitido el
+  85 % de las veces desaparecía del análisis por ser el más sospechoso. Ahora se enumera aparte, sin
+  clasificar: separar una rama legítima de un tag de la línea mal leído exige la prueba de tiempos
+  de OQ-118, que sigue sin implementarse.
+- **Ni esto ni nada de lo anterior es una tasa de salud**, y la vista lo dice donde está el número.
+  La salud exige oportunidad elegible —en memoria y existente, R-OPP-011—, y eso necesita OQ-B04.
+
+### Corregido
+
+- La tabla de hallazgos partía los encabezados letra a letra en 360 px. Los hallazgos pasan a
+  tarjeta, que es lo que `UX_SPEC.md` §4 pedía desde F0.
+
 ## [3.4.1] - 2026-09-20
 
 ### Corregido

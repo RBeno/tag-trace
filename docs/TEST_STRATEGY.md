@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.11.0
+version: 0.16.0
 status: baseline-candidate
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 ---
 
 # Estrategia de pruebas y evaluación
@@ -19,6 +19,7 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | Unitarias | Reglas y funciones puras | Cada cambio |
 | Propiedades | Invariantes para entradas generadas | Cada cambio relevante |
 | Casos de oro | Resultado industrial esperado y diagnósticos prohibidos | Cada cambio |
+| Auditoría | Cuánto de lo que puede ir mal llega a decirse, sobre un circuito con la verdad plantada | Cada cambio del diagnóstico |
 | Integración | Importación→análisis→persistencia→reapertura | Cada cambio del flujo |
 | Migración | Compatibilidad y round-trip de `.agvproj` | Cambio de esquema/release |
 | E2E | Flujo real de usuario en navegadores y móvil emulado | Solicitud/release según coste |
@@ -117,6 +118,34 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-066 | Replay en un instante exacto de lectura, con otra lectura después | `en-tag`, `observed` | `en-tránsito` con fracción 0 |
 | TC-067 | Un periodo de inactividad en el expediente | Sus **dos extremos**: por dónde se fue y por dónde volvió (`UX_SPEC.md` §4.1) | Mostrar solo la duración, que no distingue una parada en su sitio de un tramo recorrido sin leer |
 | TC-068 | Banda de actividad de un circuito con decenas de vehículos | La información de cada celda se lee al puntero, sin un nodo de rótulo por celda | Volver a un `<title>` por celda: 10.368 nodos y casi un segundo de hilo principal bloqueado |
+| TC-069 | Tag de una rama que un vehículo nunca recorre, con matriz de lectura | Ese vehículo **no aparece** como lector fallido: no tiene pasadas por ahí | Un 0 % que convierta la rama en un tag averiado para media flota (R-OPP-008, R-OPP-013) |
+| TC-070 | Tag que unos vehículos leen casi siempre y otros casi nunca | `bimodal-candidato`, `inferred`, con los dos grupos enumerados | Declararlo avería del tag cuando la mitad de la flota lo lee sin problema |
+| TC-071 | Tag que todos los que pasan leen poco | `uniforme-bajo`, apuntando al tag o a su punto | Atribuirlo a un vehículo concreto |
+| TC-072 | Tag con reparto continuo entre vehículos, sin dos grupos | `gradiente` y `unknown`, con la razón declarada (OQ-118) | Forzarlo a bimodal estrechando la franja intermedia |
+| TC-073 | Par (vehículo, tag) con muy pocas pasadas | `sin-soporte`, `unknown` | Un porcentaje calculado sobre una o dos pasadas |
+| TC-074 | Tag leído que el ciclo dominante deja fuera del anillo | Enumerado aparte, con cuántos vehículos lo leen y sin clasificar | Que desaparezca del análisis justo por leerse poco (R-GRA-011) |
+| TC-075 | Matriz completa de un circuito grande en pantalla de móvil | Los casos destacados visibles sin desplegar nada; la matriz se construye **solo al abrirla** | Miles de celdas construidas de entrada para dejarlas escondidas |
+| TC-076 | Vehículo que pierde **varios tags seguidos** y tarda lo que el tramo tarda | Pasada contada, probada **por tiempo**, con el tag sin leer | Perder la pasada por no tener vecino inmediato leído — que es cuando el problema es peor |
+| TC-077 | Vehículo que recorre un tramo encerrado en mucho menos tiempo del que tarda | Ni pasada ni fallo del tag: tramo no sostenido, candidato a atajo o rama | Contarlo como pasada, o como tag no leído por ese vehículo |
+| TC-078 | Tramo sin tiempo mediano medido, con el vehículo saliendo entre los mismos AGV | Pasada probada **por orden de convoy** (R-OPP-004) | Usar el orden para contradecir un tiempo que ya decidió |
+| TC-079 | Convoy en el que el «vecino» es el propio vehículo en otra vuelta, o pasó horas antes | No cuenta como vecino: el orden no se da por conservado | Que cualquiera sea vecino de sí mismo y el orden se conserve siempre |
+| TC-080 | Parada entre la parada precisa y la salida de la **misma** calle CO configurada | `carga-online`, `inferred`, con la calle nombrada (R-CO-006) | Contar esa media hora como periodo de inactividad |
+| TC-081 | La misma parada **sin** las calles cargadas | Sigue siendo `silencio`: la firma no se reconoce | Aproximarla por proximidad a una calle cualquiera |
+| TC-082 | Parada en una calle y salida por **otra** | No es una carga: es algo que hay que mirar | Darla por carga normal con una clave por tag suelto |
+| TC-083 | Calle CO en la que no entró ningún vehículo en toda la cobertura | La calle se enumera sin servicio; sus tags, `calle-sin-servicio` y `unknown` (R-CO-008) | `obsoleto-candidato` sobre tres tags que nadie tuvo ocasión de leer |
+| TC-084 | Vehículo cuya primera lectura de la cobertura es el tag de salida de una calle | Estaba dentro antes de empezar: `inferred`, entrada desconocida (R-CO-007) | Contarlo como ausente, o declarar la calle vacía en ese tramo |
+| TC-085 | El mismo vehículo, pero con lecturas de anillo **antes** de esa salida | No es arranque en frío: entró y no se le vio entrar | Inferir una permanencia previa que el dato no sostiene |
+| TC-086 | Vehículo que entró antes y salió después que otros de su calle | Se enumera la espera, **ordenada por su magnitud** (R-CO-003) | Llamarlo avería: R-FLO-001 admite excepciones documentadas |
+| TC-087 | Calle con dos o tres estancias nada más | Sin mediana no se señala ninguna permanencia larga | Llamar «larga» a la mayor de dos |
+| TC-088 | Calle declarada sin `parada-precisa`, o con dos tags con el mismo papel | No se monta, y el motivo se enseña junto al análisis | Elegir uno de los dos, o deducir el papel por la posición |
+| TC-089 | Tramo encerrado que cae en zona vacía, o que cruza una entrada de calle | La vía de orden **no se usa**; el tramo queda sin sostener y se cuenta (R-FLO-006) | Dar el paso por bueno donde la reordenación está admitida |
+| TC-090 | El mismo circuito analizado con y sin las listas de zona y calles | Ningún tag sano cambia de veredicto | Que declarar el contexto mueva un diagnóstico que no le corresponde |
+| TC-091 | Tag que toda la flota lee con normalidad y deja de leerse de golpe a mitad de la ventana | `changedAtUtcMs` con el instante del corte, `rateBefore`/`rateAfter` (R-OPP-015) | Una tasa media que mezcle el antes y el después como si fuera un régimen |
+| TC-092 | Tag que baja de forma sostenida en cuatro tramos temporales | `trend: "bajando"` con `segmentRates` monótonas | Una tasa media estable que esconda que va a peor, o llamarlo tendencia con una sola bajada aislada |
+| TC-093 | Tag `bimodal-candidato` con las dos poblaciones de vehículos entrelazadas en el tiempo | `sin-cambio`: ni corte ni tendencia | Confundir la mezcla de dos poblaciones con una rotura |
+| TC-094 | Un solo vehículo que se salta un tramo periódicamente (omisión conservando convoy) | `sin-cambio` en la línea temporal del tag | Leer el salto periódico como una tendencia del tag |
+| TC-095 | Línea larga con una racha corta de mala suerte al final (pocas pasadas sin acierto entre muchas) | `sin-cambio`: la racha no representa una fracción real de la línea | Un corte que se apoye solo en el mínimo absoluto de pasadas por lado |
+| TC-096 | AGV cuyo lector falla cada vez más en varios tags a la vez, con el resto de la flota leyendo con normalidad | `changedAtUtcMs`/`trend` en la fila del **vehículo**; ningún tag sano se ve afectado | Que el hallazgo se traslade a los tags que ese AGV lee |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
@@ -154,11 +183,38 @@ Con casos revisados por el propietario se medirán por categoría:
 
 La exactitud global no basta si oculta errores graves. Se priorizará reducir afirmaciones falsas y mantener trazabilidad.
 
-## 7. Navegadores y móvil
+## 7. Auditoría con verdad plantada
+
+`tests/audit/` es una capa propia y no una carpeta más de unitarias. Una prueba unitaria comprueba
+que una función hace lo que dice; la auditoría responde otra pregunta, que es la del §6 y hasta
+ahora no tenía instrumento: **de todo lo que puede ir mal en un circuito real, ¿qué llega a
+decirse, qué se escapa y cuántas veces se señala algo sano?**
+
+El método es el que hace que la respuesta sea una cifra y no una impresión: un circuito sintético
+donde **cada clase de fallo está plantada a propósito**, con sus tags y vehículos conocidos de
+antemano. El generador (`tests/support/circuito-auditoria.ts`) devuelve, junto a los CSV, la verdad
+plantada —clase, implicados, **qué debe decir el producto** y **qué no puede decir**— y la lista de
+tags limpios, que es contra la que se cuentan los falsos positivos.
+
+La salida útil es un **informe por clase**, no un punto verde. Tres aserciones lo sostienen:
+
+1. **Cero falsos positivos sobre los tags sanos.** Señalar un tag que está bien es peor que no
+   señalar uno que está mal: es lo que hace que nadie vuelva a mirar la herramienta.
+2. **Regresión**: lo que hoy se detecta tiene que seguir detectándose.
+3. **La deuda no se pudre en ninguna dirección.** Las clases que hoy no se detectan van en una
+   lista explícita; la prueba falla también si una **empieza** a detectarse sin que se saque de la
+   lista. Una lista de deuda que no se actualiza sola acaba mintiendo igual que un `TODO` viejo.
+
+El escenario, sus resultados esperados y los prohibidos están en
+`fixtures/synthetic/auditoria/MANIFEST.md`. Los datos **no se versionan: se generan con semilla**,
+igual que la fuente de cien mil filas de `tests/e2e/rendimiento.spec.ts`. Para mirarlos a mano,
+`npx vite-node scripts/generar-auditoria.ts` los deja en `local/`.
+
+## 8. Navegadores y móvil
 
 Las pruebas E2E cubrirán al menos Chromium y WebKit, escritorio y perfiles móviles. En cada puerta relevante se usará además un móvil Android físico y un PC de referencia para carga de archivos, cancelación, persistencia, actualización PWA y replay.
 
-## 8. Aceptación humana
+## 9. Aceptación humana
 
 El propietario valida comportamiento, no implementación interna. Para aprobar una fase recibe:
 

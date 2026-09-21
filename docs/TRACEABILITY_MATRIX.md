@@ -1,8 +1,8 @@
 ---
 document_id: TT-TRACE-001
-version: 0.11.0
+version: 0.16.0
 status: baseline-candidate
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 ---
 
 # Matriz de trazabilidad
@@ -76,12 +76,30 @@ regla exista: la matriz no es una lista de intenciones.
 | `PERFORMANCE_BUDGET.md` §6 replay básico determinista, posición como fracción temporal | `src/domain/replay.ts` | `tests/unit/replay.test.ts` |
 | R-GRA-010 / TC-065 antes de la primera lectura es `sin datos`, no silencio | `src/domain/replay.ts` (`stateAt`) | «antes de su primera lectura, el vehículo no tiene posición inventada **ni silencio**», `tests/e2e/f2.spec.ts` |
 | TC-067 / UX §4.1 los dos extremos de cada silencio | `src/domain/dossier.ts` (`InactivityPeriod`) | «cada silencio conserva sus dos extremos…» |
+| R-OPP-013 / TC-069–073 tasa de lectura por pasada probada | `src/domain/read-matrix.ts` | `tests/unit/read-matrix.test.ts` |
+| TC-069 una rama no recorrida no es un fallo del vehículo | `src/domain/read-matrix.ts` (regla de los dos vecinos) | «una rama que un vehículo no recorre no cuenta como fallo suyo» |
+| R-OPP-014 / TC-076–079 paso probado por vecinos, tiempo u orden de convoy | `src/domain/read-matrix.ts` (`enclose`, `expectedTime`, `keptConvoy`) | `tests/unit/read-matrix.test.ts` |
+| R-GRA-011 / TC-074 lo que queda fuera del anillo se enumera | `workers/import.worker.ts` (`offRingTags`), `src/presentation/main.ts` | `tests/e2e/f2.spec.ts` |
+| Composición del circuito: número y orden de tags | `src/domain/laps.ts` (`findDominantCycle`), `workers/import.worker.ts` (`shapes`) | «el número y el orden de los tags salen junto al número de vehículos» |
+| TC-075 / UX §4 destacados primero, conjunto a demanda | `src/presentation/main.ts` (`finding`), `src/presentation/charts.ts` (`lazyDetails`) | `tests/e2e/f2.spec.ts` |
 | TC-068 la banda de actividad no emite un rótulo por celda | `src/presentation/charts.ts` (`activityChart`) | `tests/e2e/vistas.spec.ts` · «la banda de actividad no emite un rótulo por celda» |
+| `TEST_STRATEGY.md` §7 / G3 falsos positivos y desconocidos medidos por categoría | `tests/support/circuito-auditoria.ts` (verdad plantada) | `tests/audit/auditoria.test.ts` · informe por clase, cero falsos positivos y deuda que no se pudre |
+| `CONFIG_SCHEMA.md` §3.4.2 la configuración de planta entra como CSV | `src/domain/tag-lists.ts`, `src/ingestion/catalog.ts`, `src/persistence/store.ts` (peldaño 3) | `tests/unit/catalog.test.ts`, `tests/unit/charging.test.ts` |
+| R-CO-001 / R-CO-002 cinco calles y su máquina de estados | `src/domain/circuit-config.ts`, `src/domain/charging.ts` | `tests/unit/charging.test.ts` |
+| R-CO-006 / TC-080–082 la parada en carga no es un silencio | `src/domain/dossier.ts` (`laneSignatures`, `cause`) | `tests/unit/dossier.test.ts` · «una parada entre la parada precisa y la salida…» |
+| R-CO-007 / TC-084–085 el que ya estaba dentro antes de la cobertura | `src/domain/charging.ts` (`staysOf`, `startedInside`) | `tests/unit/charging.test.ts` |
+| R-CO-003 / TC-086 la salida se relaciona con mayor antigüedad | `src/domain/charging.ts` (`seniorityBreaches`) | `tests/unit/charging.test.ts` |
+| R-CO-008 / TC-083 una calle sin servicio no acusa a sus tags | `src/domain/inventory.ts` (`calle-sin-servicio`) | `tests/unit/inventory.test.ts` |
+| R-FLO-006 / TC-089 el orden de convoy no prueba nada en zona vacía | `src/domain/read-matrix.ts` (`orderUsableByPosition`, `stretchAllows`) | `tests/unit/read-matrix.test.ts` |
+| R-OPP-015 / ALG-020 / TC-091–096 rotura súbita y degradación progresiva, por tag y por AGV | `src/domain/read-rate-trend.ts` | `tests/unit/read-rate-trend.test.ts`, `tests/unit/read-matrix.test.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` — y la
 comparación entre dos periodos distantes, que es la única que separa un obsoleto de un tag
-averiado.
+averiado. La **tasa a lo largo del tiempo**, que hasta el 2026-09-21 era la tercera ausencia de esta
+lista, ya tiene fila: la auditoría la midió, no la dio por hecha, y las dos clases que dependían de
+ella —rotura súbita y degradación progresiva— salieron de `DEUDA_CONOCIDA` en
+`tests/audit/auditoria.test.ts` el mismo día que se detectaron.
 
 **La advertencia anterior queda cerrada, no borrada.** Hasta esta entrega, `inventory.ts` y
 `graph.ts` estaban probados y no eran alcanzables desde la interfaz. Ya lo son: el agrupamiento por
