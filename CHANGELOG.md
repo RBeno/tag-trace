@@ -2,6 +2,48 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.14.0] - 2026-09-22
+
+Refinamiento directo de la comparación entre dos periodos distantes de `[3.13.0]`, pedido por el
+propietario: correlacionar un tag que desaparece con uno que aparece en su mismo hueco de secuencia
+(sustitución candidata, R-DAT-017 nueva), y señalar por vehículo un tag nuevo ya adoptado por la
+flota que ese vehículo concreto nunca ha registrado (R-AGV-013 ampliada).
+
+### Añadido
+
+- **`src/domain/drift.ts`** — sustitución candidata: la firma de vecino se mide directamente sobre la
+  secuencia cronológica de lecturas de cada vehículo, nunca sobre el anillo reconstruido (el módulo
+  sigue sin depender de `laps.ts`/`cohort.ts`). Un tag `desaparecido` y uno `nuevo` se correlacionan
+  solo si comparten vecino dominante en el mismo lado —mismo predecesor o mismo sucesor— **y** la
+  correlación es unívoca en los dos sentidos: cada desaparecido con exactamente un candidato
+  compatible, y viceversa. Con 0 o 2+ coincidencias en cualquiera de los dos lados, no se empareja:
+  quedan como dos hallazgos sueltos en vez de una pareja forzada (R-EVI-004).
+- **Adopción de tag nuevo** — `VehicleDrift` gana `notAdoptedTags`: un tag nuevo (o el lado nuevo de
+  una sustitución candidata) ya leído por al menos `minAdoptionShare` de los testigos tardíos señala,
+  en cada testigo tardío que no lo ha leído ni una vez, un candidato a memoria no actualizada. Sin
+  necesidad de topología: un tag de una rama que solo recorre parte de la flota nunca alcanza la
+  cuota entre todos los testigos, así que el mecanismo no dispara sobre quien simplemente no pasa por
+  ahí, en vez de fabricar un falso positivo.
+- `DriftThresholds.minAdoptionShare` en `config.ts`, `draft` y sin valor por defecto:
+  deliberadamente el mismo número que `ReadRateThresholds.highRate` (0,8) — la misma idea de «lo lee
+  casi todo el mundo», aplicada aquí a cuántos vehículos adoptan un tag en vez de a cuántas veces se
+  lee.
+- Vista: la fila «Tag → nuevo tag» en el detalle de deriva, y el bloque de vehículos combina
+  `droppedTags` y `notAdoptedTags` en un solo hallazgo por vehículo.
+- Dos clases nuevas en el circuito de auditoría (`auditoria/8`): `sustitucion-candidata` (un tag del
+  anillo que deja de leerse justo cuando otro, fuera de anillo, ocupa su mismo hueco de secuencia) y
+  `memoria-no-actualizada` (un vehículo, sin ningún otro papel, que nunca lee ese tag nuevo mientras
+  el resto de la flota ya lo detecta).
+
+### Riesgo real encontrado durante el diseño
+
+Un vecino compartido entre la firma temprana de un desaparecido y la firma tardía de un nuevo no
+puede a su vez ser otro tag que desaparece o aparece: para coincidir en los dos lados tiene que tener
+lecturas en los dos periodos, lo que ya lo excluye de esas dos listas por construcción del propio
+dato. La primera versión del diseño llevaba una comprobación explícita de estabilidad del vecino que,
+razonada con cuidado, resultó ser inalcanzable — se retiró en vez de dejarla como validación de un
+caso que no puede ocurrir.
+
 ## [3.13.0] - 2026-09-22
 
 Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013), la pieza «histórico» de ALG-009 y

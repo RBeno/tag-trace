@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.20.0
+version: 0.21.0
 status: baseline-candidate
 last_updated: 2026-09-22
 ---
@@ -167,6 +167,13 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-115 | Tag declarado y sin ninguna lectura en los dos periodos | `obsoleto-consolidado`; el mismo tag sin declarar no aparece | Consolidar un tag del que no se sabe ni que existe |
 | TC-116 | Vehículo que deja de leer un conjunto de tags que sí leía, mientras el resto de la flota los sigue leyendo | Deriva de ese vehículo (R-AGV-013), nunca del tag | Acusar al tag cuando el resto de la flota lo sigue leyendo con normalidad |
 | TC-117 | Vehículo con pocas lecturas de un tag probabilístico en el periodo temprano, que por azar no lo lee en el tardío | No cuenta como deriva: por debajo de `minReadingsPerVehicle`, el patrón no está sostenido | Confundir la variabilidad de una tasa ya conocida con una deriva de memoria |
+| TC-118 | Un tag que desaparece y otro que ocupa su mismo hueco de secuencia, con vecino dominante compartido en un lado | `sustitucion-candidata`, con `nuevoTagId`, `sharedNeighbor` y `neighborSide` correctos; el nuevo no aparece también como `nuevo` suelto | Presentarlos como dos hallazgos sueltos sin relación |
+| TC-119 | Dos tags `desaparecido` que comparten vecino con un mismo tag `nuevo` | Ninguno se empareja: quedan como `desaparecido`/`nuevo` sueltos (R-EVI-004) | Forzar una pareja cuando la correlación es ambigua en cualquiera de los dos sentidos |
+| TC-120 | Una cadena de tres tags consecutivos sustituidos a la vez | Los dos extremos se emparejan por el vecino estable que cada uno conserva; el tramo central, sin vecino compartido en ningún lado, no se empareja | Emparejar el tramo central por transitividad, o dejar de emparejar los extremos |
+| TC-121 | Tag `desaparecido`/`nuevo` con lecturas por debajo de `minReadingsPerVehicle` aunque compartan vecino | No se intenta el emparejamiento | Emparejar sobre un patrón sin soporte suficiente |
+| TC-122 | Tag nuevo leído por al menos `minAdoptionShare` de los testigos tardíos, y un testigo tardío que no lo ha leído nunca | Ese vehículo aparece con el tag en `notAdoptedTags` | Señalar a un vehículo que no es testigo tardío, o cuando la adopción no alcanza el umbral |
+| TC-123 | Tag nuevo leído por menos de `minAdoptionShare` de los testigos tardíos | Ningún vehículo se señala por ese tag | Fabricar un candidato de memoria no actualizada sin adopción mayoritaria real |
+| TC-124 | Un vehículo con `droppedTags` y `notAdoptedTags` a la vez | Aparece una sola vez en `vehicleDrifts`, con las dos listas pobladas | Duplicar la entrada del vehículo, una por cada tipo de deriva |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

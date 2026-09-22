@@ -1286,36 +1286,52 @@ function renderCharging(views: CircuitViews): void {
 }
 
 /**
- * Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013).
+ * Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013, R-DAT-017).
  *
  * Solo aparece cuando hay al menos dos periodos de cobertura separados lo bastante para tratarlos
  * como distantes (`DriftThresholds.minGapMs`): con una sola fuente cargada no hay con qué comparar,
  * y no mostrar nada es más honesto que un aviso permanente. El recorte es global —top 5 de cada
  * lista, con el detalle completo plegado—, misma razón que FIFO y los puntos críticos: el número de
  * tags o vehículos no está acotado.
+ *
+ * Dos hallazgos correlacionados, más allá de los tres binarios de la Parte 33: `sustitucion-candidata`
+ * empareja un tag que desaparece con uno que ocupa su mismo hueco en la secuencia (R-DAT-017), y
+ * `notAdoptedTags` señala, por vehículo, un tag nuevo ya adoptado por la flota que ese vehículo
+ * concreto nunca ha leído.
  */
 function renderDrift(views: CircuitViews): void {
   const drift = views.drift;
   if (drift === undefined) return;
 
+  type TagDriftEntry = NonNullable<CircuitViews["drift"]>["tagDrifts"][number];
+
   const kindLabel: Readonly<Record<string, string>> = {
     desaparecido: "cambió: se leía en el periodo temprano y ya no se lee",
     nuevo: "tag nuevo: sin lecturas en el periodo temprano",
     "obsoleto-consolidado": "obsoleto consolidado: sin lecturas en los dos periodos",
+    "sustitucion-candidata": "sustitución candidata: mismo hueco de la secuencia, tag distinto",
   };
-  const detailOf = (entry: NonNullable<CircuitViews["drift"]>["tagDrifts"][number]): string =>
+  const detailOf = (entry: TagDriftEntry): string =>
     entry.kind === "desaparecido"
       ? `${entry.readingsBefore} lecturas antes, 0 ahora`
       : entry.kind === "nuevo"
         ? `0 lecturas antes, ${entry.readingsAfter} ahora`
-        : "0 lecturas en los dos periodos";
-  const evidenceOf = (entry: NonNullable<CircuitViews["drift"]>["tagDrifts"][number]): string =>
+        : entry.kind === "sustitucion-candidata"
+          ? `${entry.readingsBefore} lecturas de «${entry.tagId}» antes, ${entry.readingsAfter} de ` +
+            `«${entry.nuevoTagId}» ahora, mismo ${entry.neighborSide} (${entry.sharedNeighbor})`
+          : "0 lecturas en los dos periodos";
+  const evidenceOf = (entry: TagDriftEntry): string =>
     entry.kind === "desaparecido"
       ? "Cambió: murió, se sustituyó o se retiró; el dato no dice cuál (R-DAT-016)."
       : entry.kind === "nuevo"
         ? "Sustitución o instalación; el dato no distingue cuál."
-        : "Candidato a obsoleto reforzado por dos periodos distantes, nunca confirmado sin ir a " +
-          "mirarlo (R-EVI-006).";
+        : entry.kind === "sustitucion-candidata"
+          ? "Comparte vecino y coincide en el tiempo con el tag que desapareció (R-DAT-017); no " +
+            "confirma que sea físicamente el mismo punto, solo la correlación (R-EVI-004, R-EVI-006)."
+          : "Candidato a obsoleto reforzado por dos periodos distantes, nunca confirmado sin ir a " +
+            "mirarlo (R-EVI-006).";
+  const tagCellOf = (entry: TagDriftEntry): string =>
+    entry.kind === "sustitucion-candidata" ? `${entry.tagId} → ${entry.nuevoTagId}` : entry.tagId;
 
   viewsPanel.append(element("h3", undefined, "Comparación entre dos periodos"));
   viewsPanel.append(
@@ -1339,7 +1355,7 @@ function renderDrift(views: CircuitViews): void {
         plainTable(
           ["Tag", "Clase", "Antes", "Ahora"],
           sortedTags.map((entry) => [
-            entry.tagId,
+            tagCellOf(entry),
             entry.kind,
             String(entry.readingsBefore),
             String(entry.readingsAfter),
@@ -1350,15 +1366,30 @@ function renderDrift(views: CircuitViews): void {
   }
 
   const sortedVehicles = [...drift.vehicleDrifts].sort(
-    (a, b) => b.droppedTags.length - a.droppedTags.length,
+    (a, b) => b.droppedTags.length + b.notAdoptedTags.length - (a.droppedTags.length + a.notAdoptedTags.length),
   );
   for (const entry of sortedVehicles.slice(0, 5)) {
+    const parts: string[] = [];
+    if (entry.droppedTags.length > 0) parts.push(`dejó de leer ${entry.droppedTags.length} tags que sí leía antes`);
+    if (entry.notAdoptedTags.length > 0) {
+      parts.push(`no registra ${entry.notAdoptedTags.length} tag(s) nuevo(s) que ya lee la mayoría de la flota`);
+    }
+    const detail = [
+      entry.droppedTags.length > 0
+        ? `Dejados: ${entry.droppedTags.slice(0, 5).join(", ")}${entry.droppedTags.length > 5 ? "…" : ""}`
+        : null,
+      entry.notAdoptedTags.length > 0
+        ? `No adoptados: ${entry.notAdoptedTags.slice(0, 5).join(", ")}${entry.notAdoptedTags.length > 5 ? "…" : ""}`
+        : null,
+    ]
+      .filter((line): line is string => line !== null)
+      .join(" — ");
     viewsPanel.append(
       finding(
-        `${entry.agvId}: dejó de leer ${entry.droppedTags.length} tags que sí leía antes`,
-        entry.droppedTags.slice(0, 5).join(", ") + (entry.droppedTags.length > 5 ? "…" : ""),
-        "El resto de la flota los sigue leyendo: memoria actualizada o degradada de este vehículo " +
-          "(R-AGV-013). El dato no elige cuál.",
+        `${entry.agvId}: ${parts.join(", y ")}`,
+        detail,
+        "El resto de la flota lee esos tags con normalidad: memoria actualizada o degradada de " +
+          "este vehículo (R-AGV-013). El dato no elige cuál.",
       ),
     );
   }
@@ -1366,8 +1397,12 @@ function renderDrift(views: CircuitViews): void {
     viewsPanel.append(
       lazyDetails(`Detalle de los ${sortedVehicles.length} vehículos con deriva`, () =>
         plainTable(
-          ["AGV", "Tags dejados de leer"],
-          sortedVehicles.map((entry) => [entry.agvId, entry.droppedTags.join(", ")]),
+          ["AGV", "Tags dejados de leer", "Tags nuevos no adoptados"],
+          sortedVehicles.map((entry) => [
+            entry.agvId,
+            entry.droppedTags.join(", "),
+            entry.notAdoptedTags.join(", "),
+          ]),
         ),
       ),
     );

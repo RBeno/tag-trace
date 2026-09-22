@@ -113,7 +113,9 @@ export interface AnalysisConfig {
  *   ventana. `minGapMs` es una magnitud claramente del escenario sintético (media hora, para que un
  *   fixture de 30 h la pueda ejercitar sin un segundo fichero): en planta, «distante» son días o
  *   semanas —el hueco real de 38 días de PC2 que motivó esta pieza—, y ese valor no se fija aquí ni
- *   se supone.
+ *   se supone. `minAdoptionShare` (sustitución candidata y adopción de tag nuevo, R-DAT-017) es
+ *   deliberadamente el mismo número que `readRate.highRate`: la misma idea de «lo lee casi todo el
+ *   mundo», aplicada aquí a cuántos vehículos adoptan un tag en vez de a cuántas veces se lee.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -143,7 +145,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   criticalPoints: {
     bifurcacion: { minBranchShare: 0.3, minBranchSupport: 5, minBranchShareEachHalf: 0.15 },
   },
-  drift: { minGapMs: 30 * 60_000, minReadingsPerVehicle: 10 },
+  drift: { minGapMs: 30 * 60_000, minReadingsPerVehicle: 10, minAdoptionShare: 0.8 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

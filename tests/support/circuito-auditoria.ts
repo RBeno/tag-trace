@@ -57,7 +57,11 @@ export type DefectClass =
   /** Un vehículo deja de leer un conjunto de tags a mitad de ventana; el resto los sigue leyendo. */
   | "memoria-actualizada-a-mitad-de-ventana"
   /** Un tag fuera de anillo no tiene ninguna lectura antes de la mitad y sí después. */
-  | "tag-nuevo-a-mitad-de-ventana";
+  | "tag-nuevo-a-mitad-de-ventana"
+  /** Un tag desaparece y otro ocupa su mismo hueco en la secuencia, a partir del corte. */
+  | "sustitucion-candidata"
+  /** La mayoría de la flota ya lee el tag nuevo y un vehículo concreto no lo registra nunca. */
+  | "memoria-no-actualizada";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -235,6 +239,20 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const tagsDejados = ring.slice(140, 145) as string[];
   /** Fuera de anillo: no tiene ninguna lectura antes de la mitad de la ventana y sí después (R-DAT-016). */
   const tagNuevo = "98001";
+  /**
+   * Sustitución candidata (R-DAT-017): a partir del corte, `sustitucionOriginal` deja de leerse por
+   * completo —igual mecanismo que `rotos`— y `sustitucionNueva` ocupa su mismo hueco en la secuencia
+   * —igual mecanismo que `tagNuevo`—, con el mismo predecesor y el mismo sucesor a cada lado. Es la
+   * firma posicional que R-DAT-017 correlaciona, construida sin ambigüedad a propósito.
+   */
+  const sustitucionPosicion = 146;
+  const sustitucionOriginal = ring[sustitucionPosicion] as string;
+  const sustitucionNueva = "99001";
+  /**
+   * Libre de cualquier otro papel: no se ha actualizado con el resto de la flota, así que no lee
+   * `sustitucionNueva` ni una sola vez, aunque la gran mayoría ya la detecta (R-AGV-013 ampliada).
+   */
+  const memoriaNoActualizada = vehicles[30] as string;
 
   // --- Zonas (R-FLO-003: la carga online va dentro de la zona vacía) -------------------------
   //
@@ -315,7 +333,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       else if (tasaMedia.has(tag)) lee = random() < (tasaMedia.get(tag) as number);
       else if (vehicle === memoriaActualizada && tagsDejados.includes(tag) && now >= periodSplit) {
         lee = false;
-      }
+      } else if (tag === sustitucionOriginal && now >= periodSplit) lee = false;
 
       // Se aplica **después** de las reglas del tag, nunca en su lugar: el lector degradado sigue
       // sin leer lo que nadie lee, y encima cada vez menos de lo que sí se lee, en cualquier tag.
@@ -354,6 +372,17 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       if (position === 135 && now >= periodSplit) {
         now += STEP_SECONDS * 1000;
         filas.push({ t: now, v: vehicle, tag: tagNuevo });
+      }
+
+      // Sustitución candidata (R-DAT-017): tras el corte, justo donde `sustitucionOriginal` dejó de
+      // leerse (arriba), aparece `sustitucionNueva` en el mismo hueco de la secuencia -mismo
+      // predecesor y mismo sucesor-, salvo para `memoriaNoActualizada`, que no se ha actualizado y
+      // no la lee nunca (memoria no actualizada, R-AGV-013 ampliada). Sin `random()` adicional, por
+      // la misma razón que la inyección de `tagNuevo`: un sorteo extra aquí desplazaría el estado
+      // compartido de todos los vehículos procesados después (Partes 30, 31 y 33).
+      if (position === sustitucionPosicion && now >= periodSplit && vehicle !== memoriaNoActualizada) {
+        now += STEP_SECONDS * 1000;
+        filas.push({ t: now, v: vehicle, tag: sustitucionNueva });
       }
 
       now += (STEP_SECONDS + Math.floor(random() * 9)) * 1000;
@@ -452,6 +481,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     ...degradados,
     bifurcacionTag,
     ...tagsDejados,
+    sustitucionOriginal,
   ]);
 
   const defects: PlantedDefect[] = [
@@ -600,6 +630,28 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         "deriva de ese vehículo: dejó de leer un conjunto de tags que sí leía antes, mientras el " +
         "resto de la flota los sigue leyendo (R-AGV-013)",
       mustNotSay: "que esos tags estén averiados, o acusar a otro vehículo",
+    },
+    {
+      kind: "sustitucion-candidata",
+      tags: [sustitucionOriginal, sustitucionNueva],
+      vehicles: [],
+      atUtcMs: toRealUtc(periodSplit),
+      expect:
+        "candidato a sustitución: el tag que desaparece y el que ocupa su mismo hueco en la " +
+        "secuencia, correlacionados por vecino compartido y por tiempo (R-DAT-017)",
+      mustNotSay:
+        "tratarlos como dos hallazgos sueltos sin relación, ni afirmar que es físicamente el " +
+        "mismo punto sin más evidencia (R-EVI-004)",
+    },
+    {
+      kind: "memoria-no-actualizada",
+      tags: [sustitucionNueva],
+      vehicles: [memoriaNoActualizada],
+      atUtcMs: toRealUtc(periodSplit),
+      expect:
+        "el vehículo señalado como candidato a memoria no actualizada: no registra el tag nuevo " +
+        "mientras la mayoría de la flota ya lo hace (R-AGV-013)",
+      mustNotSay: "que el tag nuevo esté averiado, ni que sea culpa de otro vehículo",
     },
   ];
 

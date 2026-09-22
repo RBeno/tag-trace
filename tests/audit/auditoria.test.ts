@@ -601,6 +601,42 @@ describe("auditoría del circuito con verdad conocida", () => {
             : `${hallado.droppedTags.length} tags dejados: ${hallado.droppedTags.join(", ")}`,
       };
     },
+    "sustitucion-candidata": () => {
+      const defect = scenario.defects.find((d) => d.kind === "sustitucion-candidata");
+      const [esperadoViejo, esperadoNuevo] = defect?.tags ?? [];
+      const hallado = drift.tagDrifts.find(
+        (entry) => entry.kind === "sustitucion-candidata" && entry.tagId === esperadoViejo,
+      );
+      const coincide =
+        hallado !== undefined &&
+        hallado.kind === "sustitucion-candidata" &&
+        hallado.nuevoTagId === esperadoNuevo;
+      return {
+        ok: drift.evaluated && coincide,
+        detail: !drift.evaluated
+          ? `no evaluado: ${drift.reason ?? "sin razón"}`
+          : hallado === undefined
+            ? "sin sustitución candidata para el par plantado"
+            : hallado.kind === "sustitucion-candidata"
+              ? `${hallado.tagId} → ${hallado.nuevoTagId}, mismo ${hallado.neighborSide} (${hallado.sharedNeighbor})`
+              : `salió como ${hallado.kind}, no emparejado`,
+      };
+    },
+    "memoria-no-actualizada": () => {
+      const defect = scenario.defects.find((d) => d.kind === "memoria-no-actualizada");
+      const esperadoVehiculo = defect?.vehicles[0];
+      const esperadoTag = defect?.tags[0];
+      const hallado = drift.vehicleDrifts.find((entry) => entry.agvId === esperadoVehiculo);
+      const coincide = esperadoTag !== undefined && (hallado?.notAdoptedTags.includes(esperadoTag) ?? false);
+      return {
+        ok: drift.evaluated && coincide,
+        detail: !drift.evaluated
+          ? `no evaluado: ${drift.reason ?? "sin razón"}`
+          : hallado === undefined
+            ? "vehículo plantado sin adopción señalada"
+            : `no adoptados: ${hallado.notAdoptedTags.join(", ") || "ninguno"}`,
+      };
+    },
   };
 
   it("publica el informe por clase", () => {
@@ -712,11 +748,24 @@ describe("auditoría del circuito con verdad conocida", () => {
 
     const esperado = (scenario.defects.find((d) => d.kind === "memoria-actualizada-a-mitad-de-ventana")
       ?.vehicles ?? [])[0];
-    const vehiculosConDerivaEspuria = drift.vehicleDrifts.filter((entry) => entry.agvId !== esperado);
+    const esperadoAdopcion = (scenario.defects.find((d) => d.kind === "memoria-no-actualizada")
+      ?.vehicles ?? [])[0];
+    const vehiculosConDerivaEspuria = drift.vehicleDrifts.filter(
+      (entry) =>
+        (entry.droppedTags.length > 0 && entry.agvId !== esperado) ||
+        (entry.notAdoptedTags.length > 0 && entry.agvId !== esperadoAdopcion),
+    );
     expect(
       vehiculosConDerivaEspuria.map((entry) => entry.agvId),
       `vehículos con deriva sin plantar: ${vehiculosConDerivaEspuria.map((entry) => entry.agvId).join(", ")}`,
     ).toHaveLength(0);
+
+    // La sustitución candidata no puede emparejar de más: el tag nuevo instalado a mitad de ventana
+    // (98001, sin ningún desaparecido en su misma posición) tiene que seguir siendo `nuevo` suelto.
+    const tagNuevoInstalado = (scenario.defects.find((d) => d.kind === "tag-nuevo-a-mitad-de-ventana")
+      ?.tags ?? [])[0];
+    const halladoTagNuevo = drift.tagDrifts.find((entry) => entry.tagId === tagNuevoInstalado);
+    expect(halladoTagNuevo?.kind, "98001 no debería emparejarse con ningún desaparecido").toBe("nuevo");
   }, PLAZO);
 
   it("detecta las clases que ya sabe detectar, y sigue haciéndolo", () => {

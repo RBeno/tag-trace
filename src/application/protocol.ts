@@ -337,11 +337,19 @@ export interface CircuitViews {
     readonly latePeriod: { readonly from: number; readonly to: number };
     readonly tagDrifts: readonly {
       readonly tagId: string;
-      readonly kind: "desaparecido" | "nuevo" | "obsoleto-consolidado";
+      readonly kind: "desaparecido" | "nuevo" | "obsoleto-consolidado" | "sustitucion-candidata";
       readonly readingsBefore: number;
       readonly readingsAfter: number;
+      /** Presentes solo cuando `kind === "sustitucion-candidata"` (R-DAT-017). */
+      readonly nuevoTagId?: string;
+      readonly sharedNeighbor?: string;
+      readonly neighborSide?: "predecesor" | "sucesor";
     }[];
-    readonly vehicleDrifts: readonly { readonly agvId: string; readonly droppedTags: readonly string[] }[];
+    readonly vehicleDrifts: readonly {
+      readonly agvId: string;
+      readonly droppedTags: readonly string[];
+      readonly notAdoptedTags: readonly string[];
+    }[];
   };
 }
 

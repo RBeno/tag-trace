@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.14.0
+version: 0.15.0
 status: baseline-candidate
 last_updated: 2026-09-22
 ---
@@ -49,7 +49,7 @@ flowchart TD
 | ALG-006 | Consenso topológico | Soporte entre AGV/vueltas y estadística robusta | Grafo físico inferido con alternativas | O(e·a) acotado | F2 |
 | ALG-007 | Oportunidades | Contexto predecesor/sucesor, ruta y huecos | Oportunidades elegibles, censuradas o desconocidas | O(n)–O(n log n) | F3 |
 | ALG-008 | Salud contextual | Lecturas/oportunidades, estabilidad y calidad | Salud + desglose + intervalo/confianza | O(t·a·c) sobre agregados | F3 |
-| ALG-009 | Divergencia colectiva | Comparación individual, cohorte, flota e histórico (histórico, §6.1) | Individual/grupal/colectiva + explicación | O(m) sobre métricas | F3 |
+| ALG-009 | Divergencia colectiva | Comparación individual, cohorte, flota e histórico (histórico, §6.1–6.2) | Individual/grupal/colectiva + explicación | O(m) sobre métricas | F3 |
 | ALG-010 | Perfil temporal | Mediana, cuantiles, MAD y calendario | Esperado por tramo/contexto | O(n log n), optimizable | F3 |
 | ALG-011 | FIFO/flujo | Tramos de zona cargada derivados del anillo, inversión de orden con margen dual (§8.1) | Adelantamientos candidatos, nunca averías confirmadas | O(n) | F3 |
 | ALG-012 | Carga online | Máquina de estados por cada calle configurada | Entradas, ocupación, permanencia, salidas y anomalías | O(n) | F3 |
@@ -340,6 +340,45 @@ debajo, un puñado de lecturas no sostiene ningún patrón que la ausencia despu
 con tiempos si el tramo que rodea a un tag obsoleto se recorre en directo—, que es geométrico y no
 temporal. No compara periodos intermedios cuando hay más de dos. No reclasifica el inventario de una
 sola ventana (`inventory.ts`): es una vista complementaria que se cruza por `tagId`.
+
+## 6.2 Sustitución candidata y adopción de tag nuevo, implementado (R-DAT-017, R-AGV-013 ampliada)
+
+Refina las dos comparaciones binarias `desaparecido`/`nuevo` de §6.1 en dos direcciones, sin apoyarse
+en el anillo ni en el ciclo dominante en ningún momento (`drift.ts` no depende de `laps.ts`/
+`cohort.ts` a propósito, decisión de la Parte 33 que se mantiene aquí).
+
+**Firma de vecino por secuencia cronológica.** Para cada tag y cada periodo, se recorre la secuencia
+de lecturas de cada vehículo ordenada por tiempo y se cuenta, para cada tag, qué tag lo precede y qué
+tag lo sucede con más frecuencia (`buildNeighborTally`). El vecino con más cuenta es el dominante; un
+empate exacto en el máximo no produce dominante (`dominant`) — sin firma no hay pareja posible, en vez
+de adivinar cuál de los empatados es el vecino real.
+
+**Emparejamiento bipartito unívoco.** Un tag `desaparecido` D y un tag `nuevo` N se correlacionan
+como sustitución candidata solo si comparten vecino dominante en el mismo lado —mismo predecesor o
+mismo sucesor, sucesor probado primero, desempate determinista si coinciden los dos— **y** la
+correlación es unívoca en los dos sentidos: D coincide con exactamente un N compatible, y ese N
+coincide con exactamente ese D. Con 0 o 2+ coincidencias en cualquiera de los dos lados, no se
+empareja: los dos quedan como hallazgos sueltos (R-EVI-004). El vecino compartido nunca puede ser él
+mismo un tag que desaparece o aparece, y esto no exige ninguna comprobación aparte: para que el mismo
+vecino aparezca en la firma temprana de D y en la firma tardía de N tiene que tener lecturas en los
+dos periodos, lo que ya lo excluye de ser `desaparecido` o `nuevo` por construcción — una garantía del
+propio dato, no una validación añadida por si acaso. Solo se intenta emparejar con soporte de sobra a
+cada lado (`minReadingsPerVehicle`, el mismo umbral de §6.1).
+
+**Adopción de tag nuevo, sin topología.** Un tag `nuevo` —o el lado nuevo de una sustitución
+candidata— ya leído por al menos `minAdoptionShare` de los testigos tardíos (mismo valor que
+`ReadRateThresholds.highRate`, misma idea de «lo lee casi todo el mundo» aplicada a cuántos vehículos
+en vez de a cuántas veces) señala, en cada testigo tardío que no lo ha leído ni una vez, un candidato
+a memoria no actualizada. No hace falta saber si el vehículo pasa físicamente por ese punto: un tag de
+una rama que solo recorre parte de la flota nunca alcanza la cuota de adopción entre **todos** los
+testigos tardíos, así que el mecanismo simplemente no dispara sobre quien no pasa por ahí, en vez de
+fabricar un falso positivo (mismo espíritu que R-OPP-008/TC-028 exige en la matriz de lectura, aquí
+sin necesitar el anillo para conseguirlo).
+
+**Lo que esto no hace.** No confirma ninguna sustitución física: es correlación de posición y tiempo
+sobre el dato, nunca una conclusión de que sea el mismo punto (R-EVI-006). No cruza con el tercer
+descarte geométrico de R-DAT-016 (§6.1). No fija ningún valor de planta: `minAdoptionShare` es la
+reutilización declarada de un umbral ya `draft`.
 
 ## 7. Segmentación de vueltas y huecos
 

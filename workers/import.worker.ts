@@ -492,12 +492,16 @@ async function buildViews(
             tagDrifts: drift.tagDrifts.map((entry) => ({
               tagId: entry.tagId,
               kind: entry.kind,
-              readingsBefore: entry.kind === "desaparecido" ? entry.readingsBefore : 0,
-              readingsAfter: entry.kind === "nuevo" ? entry.readingsAfter : 0,
+              readingsBefore: entry.kind === "desaparecido" || entry.kind === "sustitucion-candidata" ? entry.readingsBefore : 0,
+              readingsAfter: entry.kind === "nuevo" || entry.kind === "sustitucion-candidata" ? entry.readingsAfter : 0,
+              ...(entry.kind === "sustitucion-candidata"
+                ? { nuevoTagId: entry.nuevoTagId, sharedNeighbor: entry.sharedNeighbor, neighborSide: entry.neighborSide }
+                : {}),
             })),
             vehicleDrifts: drift.vehicleDrifts.map((entry) => ({
               agvId: entry.agvId,
               droppedTags: entry.droppedTags,
+              notAdoptedTags: entry.notAdoptedTags,
             })),
           },
         }),
