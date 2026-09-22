@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.7.0
+version: 0.8.0
 status: baseline-candidate
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 ---
 
 # Configuración de circuito
@@ -54,7 +54,7 @@ nunca con una media que mezcle producción y parada.
 | `empty_zone` | Límites de la zona vacía, donde se admite reordenación (R-FLO-002). |
 | `co_lanes` | Una entrada por calle de carga online: identificador, tag de parada, secuencia de tags, capacidad (R-CO-001). |
 | `critical_points` | Los **tags críticos**: tag, clase de función, grado 1–3 y redundancias (DS-005, R-GRA-007). Ver §3.4.1. |
-| `lap_anchors` | Anclas que permiten cortar vueltas; admite varias y una confianza mínima (OQ-102). |
+| `lap_anchors` | El tag, o varios en orden de prioridad, que corta una vuelta (R-GRA-009). Ver §3.4.2. |
 | `excluded_contexts` | Mantenimiento, asistencia y pastor, fuera del recorrido productivo (R-GRA-004). |
 
 #### 3.4.1 Tags críticos y sus clases de función
@@ -106,7 +106,38 @@ indistinguible de una bifurcación normal sin una comprobación de reconvergenci
 existe. `parada-precisa` y `semáforo` necesitan una firma de tiempo de permanencia que tampoco existe
 todavía. Las tres quedan diseñadas y sin construir, no silenciadas (OQ-122).
 
-#### 3.4.2 Cómo entra esta configuración: las listas de tags
+#### 3.4.2 Anclas de vuelta declaradas
+
+Sin ancla declarada, la única disponible es la que el propio grafo revela: el ciclo dominante que
+`findDominantCycle` sigue desde el sucesor mayoritario de cada tag (ALG-004). Esa ancla es siempre
+`inferred`, aunque los datos sean perfectos, porque no hay ninguna declaración de planta que la
+respalde — es una propiedad estadística del tráfico, no un punto de referencia conocido.
+
+```text
+lap_anchors : lista de { tag, order, valid_from, valid_to }
+```
+
+`order` fija la prioridad cuando se declara más de una: se prueba la primera contra el ciclo ya
+reconstruido, y si no aparece en él se prueba la siguiente. Ninguna declarada, o ninguna presente en
+el ciclo, deja el mecanismo tal como estaba — con el ancla inferida y su verdad `inferred` — en vez
+de inventar un corte que el dato no sostiene.
+
+**Lo que una ancla declarada cambia, y lo que no.** La topología —qué tags forman el anillo y en qué
+orden— la sigue dando el tráfico observado; declarar un ancla no la recalcula, solo **rota** el mismo
+ciclo para que empiece en el tag declarado (R-GRA-009). Y el estado de verdad que gana depende de la
+vuelta, no solo del ancla: una vuelta `completa` —cerrada entre dos pasos por el ancla, sin cruzar un
+hueco de cobertura— pasa a `observed`, porque sus dos extremos son el mismo punto de referencia
+conocido. Una vuelta `parcial` **nunca** lo es, declarada o no la ancla: por definición uno de sus
+dos extremos es un corte de los datos —el borde de la cobertura, o el principio/final de lo que se
+importó—, no el ancla, y declararla `observed` ahí sería inventar certeza que el dato no sostiene.
+
+**Estado de implementación.** `valid_from`/`valid_to` y una «confianza mínima» son aspiracionales:
+ni la lista `ancla` (`src/domain/tag-lists.ts`) ni `readLapAnchors` (`src/domain/circuit-config.ts`)
+los llevan todavía, y qué significaría exactamente una confianza mínima sobre un ancla declarada no
+está definido — no hay valores de planta que lo motiven. Lo que la lista transporta hoy es `tag` y,
+opcionalmente, `orden`.
+
+#### 3.4.3 Cómo entra esta configuración: las listas de tags
 
 Los bloques de §3.4 no se editan en ningún formulario: **entran como CSV**, por el mismo camino que
 la lista del circuito virtual y la de memoria (§3.8, DS-002/DS-005/DS-006/DS-008). No hay forma de
@@ -121,7 +152,7 @@ lista;tag;orden;funcion;grupo;capacidad;nota
 
 | Columna | Qué lleva |
 |---|---|
-| `lista` | `circuito`, `memoria`, `mantenimiento`, `emergencia`, `carga-online`, `critico` o `zona` |
+| `lista` | `circuito`, `memoria`, `mantenimiento`, `emergencia`, `carga-online`, `critico`, `zona` o `ancla` |
 | `tag` | El identificador, **tal cual**: `0040` no es `40` (R-DAT-001, INV-002) |
 | `orden` | Posición dentro de la lista. Sin ella vale el orden de las filas del fichero |
 | `funcion` | El papel del tag dentro de su lista |
@@ -135,6 +166,7 @@ Y así se expresan los bloques de §3.4:
 | `co_lanes` | `lista=carga-online`, `grupo` = identificador de la calle, `orden` = 1…n y `funcion` ∈ `entrada`, `parada-precisa`, `salida` |
 | `loaded_zone` / `empty_zone` | `lista=zona`, `grupo` ∈ `cargado`, `vacio`, una fila por tag |
 | `critical_points` | `lista=critico`, `funcion` con una de las siete clases de §3.4.1 |
+| `lap_anchors` | `lista=ancla`, `orden` = prioridad cuando se declara más de una (§3.4.2) |
 
 ```text
 carga-online;70011;1;entrada;calle-1;2
@@ -142,6 +174,7 @@ carga-online;70012;2;parada-precisa;calle-1;2
 carga-online;70013;3;salida;calle-1;2
 zona;51944;;;vacio
 critico;102185;;bifurcacion
+ancla;51944;1
 ```
 
 **Lo que no se puede montar se declara, no se completa.** Una calle sin `parada-precisa`, o con dos

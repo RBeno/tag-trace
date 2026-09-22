@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.12.0
+version: 0.13.0
 status: baseline-candidate
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 ---
 
 # Catálogo de algoritmos
@@ -44,7 +44,7 @@ flowchart TD
 | ALG-001 | Ingesta | Parseo incremental, asignación de columnas y cuarentena | Observaciones normalizadas + informe de calidad | O(n), memoria acotada por lote | F1 |
 | ALG-002 | Unión de fuentes | Alineación del tramo contiguo común entre cortes de la misma pila | Vista analítica sin doble cómputo, conservando pasos repetidos legítimos | O(n) esperado | F1 |
 | ALG-003 | Afinidad de circuito | Circuito declarado cuando existe; si no, tags, transiciones, AGV y contradicciones | compatible/parcial/ajeno/desconocido | O(n+e) | F1 |
-| ALG-004 | Segmentación | Cortes por AGV, tiempo, contexto y anclas | Sesiones y vueltas con confianza | O(n log n) por ordenación; O(n) posterior | F2 |
+| ALG-004 | Segmentación | Ciclo dominante del cohorte, ancla declarada resuelta por rotación (§7.1) | Vueltas `completa`/`parcial`/`desconocida`, con `truth` dependiente de la ancla y de la completitud | O(n log n) por ordenación; O(n) posterior | F2 |
 | ALG-005 | Grafo observado | Conteo de transiciones por AGV/vuelta | Multigrafo trazable | O(n) | F2 |
 | ALG-006 | Consenso topológico | Soporte entre AGV/vueltas y estadística robusta | Grafo físico inferido con alternativas | O(e·a) acotado | F2 |
 | ALG-007 | Oportunidades | Contexto predecesor/sucesor, ruta y huecos | Oportunidades elegibles, censuradas o desconocidas | O(n)–O(n log n) | F3 |
@@ -309,6 +309,33 @@ Cada diagnóstico conserva explicaciones alternativas y acciones de comprobació
 ## 7. Segmentación de vueltas y huecos
 
 Las vueltas se detectarán con anclas configurables, repetición de secuencias, dirección y límites temporales. Si el corte es incierto se conserva `partial-lap` o `unknown`; no se fuerza una vuelta completa.
+
+## 7.1 Ancla de vuelta: ciclo dominante o declarada, implementado (R-GRA-009)
+
+La topología —qué tags forman el anillo y en qué orden— la da siempre el tráfico observado:
+`findDominantCycle` sigue el sucesor mayoritario de cada tag hasta que uno se repite, y ese primer
+repetido es el ancla. Sin ninguna ancla declarada, esa es la única disponible, y una vuelta cortada
+por ella **nunca es `observed`**, aunque los datos sean perfectos: es una propiedad estadística del
+tráfico, no un punto de referencia conocido.
+
+Una ancla declarada (`CONFIG_SCHEMA.md` §3.4.2, lista `ancla`) no recalcula esa topología: solo
+**rota** el mismo ciclo para que empiece en el tag declarado. `resolveDeclaredAnchor` prueba cada
+ancla de la lista, en orden de prioridad, contra el ciclo ya reconstruido, y se queda con la primera
+que aparece. Ninguna presente deja el mecanismo tal como estaba, con su problema declarado en vez de
+inventar un corte que el dato no sostiene.
+
+**El `truth` de una vuelta depende de dos cosas, no de una.** Una vuelta `completa` con ancla
+declarada y resuelta sí pasa a `observed`: sus dos extremos son el mismo punto de referencia conocido.
+Una vuelta `parcial` **nunca** lo es, declarada o no la ancla: por definición uno de sus dos extremos
+es un corte de los datos —el borde de la cobertura o el principio/final de lo importado—, no el
+ancla, y declararla `observed` ahí inventaría una certeza que el dato no sostiene. Una vuelta
+`desconocida` (el vehículo nunca pasa por el ancla) se queda `unknown` en cualquier caso: no pasar
+nunca por el punto de referencia no se resuelve declarándolo con más fuerza.
+
+**Lo que esto no hace.** No implementa ninguna «confianza mínima» sobre el ancla: la propia
+`CONFIG_SCHEMA.md` no definía qué significaría, y no hay valores de planta que la motiven. Tampoco
+recalcula el ciclo a partir del ancla declarada — si esta no aparece en el ciclo reconstruido, el
+problema se declara y se sigue con el ancla inferida.
 
 Para un hueco:
 

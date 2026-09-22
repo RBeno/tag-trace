@@ -31,7 +31,13 @@ import { activityBand, hourlyProfile } from "../src/domain/activity.js";
 import { buildTagInventory, describeAction } from "../src/domain/inventory.js";
 import { assignCohorts } from "../src/domain/cohort.js";
 import { buildTransitions } from "../src/domain/graph.js";
-import { findDominantCycle, segmentLaps, type Lap, type LapAnchor } from "../src/domain/laps.js";
+import {
+  findDominantCycle,
+  resolveDeclaredAnchor,
+  segmentLaps,
+  type Lap,
+  type LapAnchor,
+} from "../src/domain/laps.js";
 import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-matrix.js";
 import { buildChargingReport } from "../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans } from "../src/domain/fifo.js";
@@ -40,6 +46,7 @@ import {
   laneEntryTags,
   readCoLanes,
   readCriticalPoints,
+  readLapAnchors,
   readZones,
   type ConfigEntry,
 } from "../src/domain/circuit-config.js";
@@ -51,6 +58,7 @@ import type { CircuitViews } from "../src/application/protocol.js";
 import { isAvailable, loadCircuit, saveCircuit } from "../src/persistence/store.js";
 import type { Reading } from "../src/domain/reading.js";
 import type { SourceDirection } from "../src/domain/order.js";
+import type { TruthState } from "../src/domain/truth.js";
 import type { AccumulationReport } from "../src/application/protocol.js";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
@@ -203,6 +211,7 @@ async function buildViews(
     lists.find((entry) => entry.list === name)?.entries ?? [];
   const laneConfig = readCoLanes(entriesOf("carga-online"));
   const zoneConfig = readZones(entriesOf("zona"));
+  const lapAnchorsConfig = readLapAnchors(entriesOf("ancla"));
   const orderLimits: OrderEvidenceLimits = {
     zoneOf: zoneConfig.zoneOf,
     laneEntryTags: laneEntryTags(laneConfig.lanes),
@@ -227,17 +236,38 @@ async function buildViews(
   const matrices: CircuitViews["readMatrices"][number][] = [];
   const fifoCohorts: NonNullable<CircuitViews["fifo"]>[number][] = [];
   const criticalPointCohorts: CircuitViews["criticalPoints"][number][] = [];
-  /** El ancla de cada cohorte, guardada para no volver a buscar el mismo ciclo más abajo. */
+  /** El ancla efectiva de cada cohorte (declarada si se resolvió, si no la inferida). */
   const anchors = new Map<number, LapAnchor>();
+  const lapAnchorProblems: string[] = [];
 
   for (const cohort of cohortAssignment.cohorts) {
     const vehicleSet = new Set(cohort.vehicles);
     const cohortTransitions = transitions.filter((entry) => vehicleSet.has(entry.agvId));
     const anchor = findDominantCycle(cohortTransitions);
     if (anchor === null) continue; // Sin ciclo dominante limpio: ese cohorte no tiene vueltas segmentadas.
-    anchors.set(cohort.id, anchor);
+
+    // Ancla declarada (R-GRA-009): la topología la sigue dando el tráfico observado, y una ancla
+    // declarada solo rota dónde se corta ese mismo ciclo. Sin ninguna declarada, o si ninguna de
+    // las declaradas aparece en el ciclo reconstruido, se sigue con la inferida — sin fingir un
+    // corte que el dato no sostiene.
+    let effective: LapAnchor = anchor;
+    let anchorTruth: TruthState = "inferred";
+    if (lapAnchorsConfig.anchors.length > 0) {
+      const resolved = resolveDeclaredAnchor(anchor, lapAnchorsConfig.anchors);
+      if (resolved === null) {
+        lapAnchorProblems.push(
+          `Cohorte ${cohort.id}: ninguna de las anclas declaradas aparece en el ciclo ` +
+            `reconstruido; se sigue usando el ancla inferida «${anchor.tagId}».`,
+        );
+      } else {
+        effective = { tagId: resolved.tagId, cycle: resolved.cycle, weakestShare: anchor.weakestShare };
+        anchorTruth = "observed";
+      }
+    }
+    anchors.set(cohort.id, effective);
+
     const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
-    laps.push(...segmentLaps(cohortReadings, direction, coverage, anchor.tagId));
+    laps.push(...segmentLaps(cohortReadings, direction, coverage, effective.tagId, anchorTruth));
 
     // El ciclo dominante **es** la composición del circuito: cuántos tags lo forman y en qué orden.
     // Estaba calculado desde F2 y se descartaba entero salvo el tag de ancla.
@@ -246,7 +276,7 @@ async function buildViews(
     // dominante lo salta **desaparecería del análisis justo por ser el más sospechoso**. Se cuentan
     // aparte, con sus lectores, sin decidir si son ramas o tags de la línea mal leídos — eso lo
     // separa la prueba de tiempos de OQ-118, que todavía no está implementada.
-    const inRing = new Set(anchor.cycle);
+    const inRing = new Set(effective.cycle);
     const offRing = new Map<string, Set<string>>();
     for (const entry of cohortReadings) {
       if (inRing.has(entry.tagId)) continue;
@@ -261,9 +291,10 @@ async function buildViews(
     shapes.push({
       cohortId: cohort.id,
       vehicles: cohort.vehicles.length,
-      tags: anchor.cycle,
-      anchorTagId: anchor.tagId,
-      weakestShare: anchor.weakestShare,
+      tags: effective.cycle,
+      anchorTagId: effective.tagId,
+      anchorTruth,
+      weakestShare: effective.weakestShare,
       offRingTags: [...offRing.entries()]
         .map(([tagId, readers]) => ({ tagId, readers: readers.size }))
         .sort((a, b) => b.readers - a.readers),
@@ -274,8 +305,8 @@ async function buildViews(
         cohortReadings,
         direction,
         coverage,
-        anchor.cycle,
-        anchor.tagId,
+        effective.cycle,
+        effective.tagId,
         PROVISIONAL_CONFIG.readRate,
         orderLimits,
         PROVISIONAL_CONFIG.trend,
@@ -285,7 +316,7 @@ async function buildViews(
     // FIFO en zona cargada (R-FLO-001): los tramos son propiedad del anillo de este cohorte, así
     // que se derivan aquí, no una sola vez fuera del bucle como las calles (que son de circuito).
     if (zoneConfig.zoneOf.size > 0) {
-      const { spans, problems: spanProblems } = loadedZoneSpans(anchor.cycle, zoneConfig.zoneOf);
+      const { spans, problems: spanProblems } = loadedZoneSpans(effective.cycle, zoneConfig.zoneOf);
       const fifoReport = buildFifoReport(cohort.id, cohortReadings, spans, PROVISIONAL_CONFIG.fifo);
       fifoCohorts.push({ cohortId: cohort.id, spans: fifoReport.spans, problems: spanProblems });
     }
@@ -365,6 +396,9 @@ async function buildViews(
     ...(fifoCohorts.length === 0 ? {} : { fifo: fifoCohorts }),
     orderWithheld: matrices.reduce((total, matrix) => total + matrix.orderWithheld, 0),
     criticalPoints: criticalPointCohorts,
+    ...(lapAnchorsConfig.problems.length === 0 && lapAnchorProblems.length === 0
+      ? {}
+      : { lapAnchorProblems: [...lapAnchorsConfig.problems, ...lapAnchorProblems] }),
   };
 
   if (lists.length === 0) return views;

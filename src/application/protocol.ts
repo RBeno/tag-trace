@@ -213,6 +213,11 @@ export interface CircuitViews {
     readonly vehicles: number;
     readonly tags: readonly string[];
     readonly anchorTagId: string;
+    /**
+     * `"observed"` cuando el ancla es una de las declaradas en la lista `ancla` (R-GRA-009) y
+     * apareció en el ciclo reconstruido; `"inferred"` cuando es el ciclo dominante sin más.
+     */
+    readonly anchorTruth: "observed" | "inferred";
     readonly weakestShare: number;
     /**
      * Tags leídos por el cohorte que **no** están en el anillo.
@@ -316,6 +321,12 @@ export interface CircuitViews {
   }[];
   /** Por qué una fila de la lista `critico` no se pudo usar. Solo con la lista `critico` cargada. */
   readonly criticalPointsProblems?: readonly string[];
+  /**
+   * Por qué un ancla declarada no se pudo usar (R-GRA-009): repetida en la lista `ancla`, o
+   * ninguna de las declaradas apareció en el ciclo reconstruido de algún cohorte. Global, no por
+   * cohorte: la lista `ancla` es de circuito completo.
+   */
+  readonly lapAnchorProblems?: readonly string[];
 }
 
 /** `ReplayFrame` tal como cruza el `postMessage`: el mapa de vehículos, ya como pares. */

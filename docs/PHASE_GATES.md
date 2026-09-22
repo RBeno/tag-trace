@@ -1,8 +1,8 @@
 ---
 document_id: TT-GATES-001
-version: 0.16.0
+version: 0.17.0
 status: baseline-candidate
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 ---
 
 # Puertas de fase
@@ -72,9 +72,11 @@ una casilla que no se ha demostrado no se marca, y ninguna IA cierra una puerta 
 - [ ] Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta configurados
       y versionados (OQ-B04). **Sigue abierta**: SE2/4 es ahora el circuito priorizado, con dos
       hechos operativos aportados (punto de carga, descansos) pero sin tags exactos todavía.
-- [x] Vueltas completas, parciales y desconocidas representadas. **Con matiz**: el ancla es
-      inferida (ciclo dominante del cohorte, R-GRA-009), no declarada — nunca `observed` hasta que
-      exista `lap_anchors`.
+- [x] Vueltas completas, parciales y desconocidas representadas. El mecanismo de ancla declarada
+      (`lap_anchors`, R-GRA-009) ya existe: una vuelta `completa` sale `observed` cuando hay una
+      ancla declarada y resuelta contra el ciclo, `inferred` cuando no la hay; una `parcial` sigue
+      `inferred` siempre, porque uno de sus extremos es un corte de los datos. **Con matiz**: sin
+      valores de planta (OQ-B04 sigue abierta), lo que hay hoy es el mecanismo, no anclas reales.
 - [x] Grafos por AGV/vuelta y consenso con soporte.
 - [x] Vsystem y físico permanecen separados. Contraste por alineación de secuencia implementado
       (`src/domain/vsystem.ts`); probado con una sustitución real detectada por posición.

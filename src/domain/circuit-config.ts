@@ -220,6 +220,43 @@ export function readCriticalPoints(entries: readonly ConfigEntry[]): CriticalPoi
   return { funcionOf, problems };
 }
 
+export interface LapAnchorsConfig {
+  /** En orden de prioridad: se prueba la primera contra el ciclo de cada cohorte, luego la siguiente. */
+  readonly anchors: readonly string[];
+  readonly problems: readonly string[];
+}
+
+/**
+ * Lee las anclas de vuelta declaradas de la lista `ancla` (R-GRA-009).
+ *
+ * Ordena por `orden` cuando existe, por orden de aparición si no — mismo criterio que ya sigue la
+ * lista `circuito`. Un tag repetido es una contradicción de la lista, no un dato: se conserva la
+ * primera aparición y se declara el problema, igual que `readZones`.
+ */
+export function readLapAnchors(entries: readonly ConfigEntry[]): LapAnchorsConfig {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  // Con `orden` cuando lo hay, y con el orden del fichero cuando no: la misma degradación honesta
+  // que ya sigue `readCoLanes` (el `sort` de JS es estable, así que el empate a 0 conserva la
+  // posición original).
+  const ordered = [...entries].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  const anchors: string[] = [];
+  for (const entry of ordered) {
+    if (seen.has(entry.tagId)) {
+      problems.push(
+        `El tag ${entry.tagId} aparece dos veces en la lista de anclas. Se conserva la primera ` +
+          "aparición: un tag repetido es una contradicción de la lista, no un dato.",
+      );
+      continue;
+    }
+    seen.add(entry.tagId);
+    anchors.push(entry.tagId);
+  }
+
+  return { anchors, problems };
+}
+
 /**
  * Los tags por los que se entra a una calle.
  *

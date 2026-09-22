@@ -1,8 +1,8 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
-last_updated: 2026-09-18
+last_updated: 2026-09-22
 ---
 
 # Glosario controlado
@@ -25,6 +25,7 @@ last_updated: 2026-09-18
 | Lectura | Evento observado procedente de una fuente: instante, AGV, tag y procedencia. |
 | Oportunidad | Paso contextualmente sustentado en el que un tag podría haber sido leído. No equivale a inventar una lectura. |
 | Vuelta | Recorrido segmentado de un AGV a través de una secuencia/ciclo del circuito, con confianza explícita. |
+| Ancla | Tag por el que se corta una vuelta. Sin ninguna declarada, es el ciclo dominante que el propio grafo revela y la vuelta nunca es `observed`. Declarada y presente en el ciclo reconstruido (`lap_anchors`, R-GRA-009), solo rota dónde se corta ese mismo ciclo —nunca qué tags lo forman— y una vuelta `completa` cortada por ella sí puede ser `observed`; una `parcial` no, porque uno de sus extremos es siempre un corte de los datos. |
 | Tramo | Relación topológica entre dos nodos/tags o puntos funcionales consecutivos. |
 | Grafo teórico | Topología procedente de plano, inventario o configuración. |
 | Grafo observado | Transiciones contenidas directamente en las lecturas normalizadas. |

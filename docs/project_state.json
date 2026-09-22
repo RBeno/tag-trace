@@ -1,12 +1,12 @@
 {
   "project": "TAG TRACE",
   "repository": "RBeno/tag-trace",
-  "documentationVersion": "1.4.0",
+  "documentationVersion": "1.5.0",
   "currentPhase": "F3",
   "phaseName": "Diagnóstico explicable",
   "status": "in_progress",
   "baseline": "approved",
-  "lastUpdated": "2026-09-21",
+  "lastUpdated": "2026-09-22",
   "implementationStarted": true,
   "legacyRepository": "RBeno/tag-trace-agv",
   "nextTransition": {

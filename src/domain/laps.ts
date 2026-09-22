@@ -7,9 +7,13 @@
  * tres exportaciones reales en `local/tags-criticos.py` (anillo de 149 tags en SE2/4, dominancia
  * mediana 1,000).
  *
- * Por eso una vuelta aquí **nunca es `observed`**: el ancla es inferida, no declarada, y se dice
- * así en cada resultado. Cuando exista `lap_anchors` en `CONFIG_SCHEMA.md`, esto se sustituye por
- * el ancla real y las vueltas pueden pasar a `observed`.
+ * Por eso una vuelta aquí **nunca es `observed`** cuando el ancla es inferida: se dice así en cada
+ * resultado. Con `lap_anchors` (`CONFIG_SCHEMA.md` §3.4.2, R-GRA-009) declarada y presente en el
+ * ciclo reconstruido, `resolveDeclaredAnchor` la resuelve como una rotación del mismo ciclo —la
+ * topología la sigue dando el tráfico observado, no la lista— y una vuelta `completa` cortada por
+ * ese ancla sí puede ser `observed`: los dos extremos son el mismo punto de referencia conocido.
+ * Una vuelta `parcial` nunca lo es, declarada o no la ancla: por definición uno de sus dos extremos
+ * es un corte de los datos, no el ancla.
  */
 
 import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
@@ -115,6 +119,38 @@ export function findDominantCycle(
   return null;
 }
 
+export interface ResolvedAnchor {
+  readonly tagId: string;
+  /** El mismo ciclo, rotado para empezar en `tagId`. Ni los tags ni su orden relativo cambian. */
+  readonly cycle: readonly string[];
+}
+
+/**
+ * Prueba cada ancla declarada, en orden de prioridad, contra el ciclo ya reconstruido.
+ *
+ * La topología —qué tags forman el anillo y en qué orden— la sigue dando el tráfico observado
+ * (`findDominantCycle`): una lista de anclas no la decide. Lo que una ancla declarada cambia es
+ * **dónde se corta** ese mismo ciclo, así que se resuelve como una rotación, nunca como un
+ * recálculo. La primera ancla de la lista que aparezca en el ciclo gana.
+ *
+ * `null` si ninguna de las declaradas está en el ciclo — no se inventa un corte donde el dato no lo
+ * sostiene: se declara el problema y se sigue con el ancla inferida.
+ */
+export function resolveDeclaredAnchor(
+  inferred: LapAnchor,
+  declaredAnchors: readonly string[],
+): ResolvedAnchor | null {
+  for (const candidate of declaredAnchors) {
+    const index = inferred.cycle.indexOf(candidate);
+    if (index === -1) continue;
+    return {
+      tagId: candidate,
+      cycle: [...inferred.cycle.slice(index), ...inferred.cycle.slice(0, index)],
+    };
+  }
+  return null;
+}
+
 /**
  * Segmenta la secuencia de cada vehículo en vueltas, cortando en cada paso por el ancla.
  *
@@ -122,12 +158,17 @@ export function findDominantCycle(
  * `parcial` cuando el corte de los datos —no del circuito— la deja abierta por un lado (el primer
  * tramo antes del primer paso por el ancla, o el último después del último); `desconocida` cuando
  * el vehículo nunca pasa por el ancla y no hay forma de segmentar nada de lo suyo.
+ *
+ * `anchorTruth` no tiene valor por defecto a propósito: quien llama decide explícitamente si el
+ * ancla que está pasando es `"observed"` (declarada y resuelta) o `"inferred"` (ciclo dominante),
+ * y esa decisión solo se aplica a las vueltas que terminan `completa` — ver `buildLap`.
  */
 export function segmentLaps(
   readings: readonly Reading[],
   direction: SourceDirection,
   coverage: readonly Interval[],
   anchor: string,
+  anchorTruth: TruthState,
 ): readonly Lap[] {
   const ordered = sortReadings([...readings], direction);
   const gaps = uncoveredGaps(mergeIntervals(coverage));
@@ -166,20 +207,20 @@ export function segmentLaps(
     const firstAnchor = anchorIndices[0] as number;
     if (firstAnchor > 0) {
       laps.push(
-        buildLap(agvId, entries.slice(0, firstAnchor + 1), "parcial", gaps),
+        buildLap(agvId, entries.slice(0, firstAnchor + 1), "parcial", gaps, anchorTruth),
       );
     }
 
     for (let index = 0; index < anchorIndices.length - 1; index += 1) {
       const from = anchorIndices[index] as number;
       const to = anchorIndices[index + 1] as number;
-      laps.push(buildLap(agvId, entries.slice(from, to + 1), "completa", gaps));
+      laps.push(buildLap(agvId, entries.slice(from, to + 1), "completa", gaps, anchorTruth));
     }
 
     // Tramo después del último paso por el ancla: parcial, la cobertura corta ahí, no el circuito.
     const lastAnchor = anchorIndices[anchorIndices.length - 1] as number;
     if (lastAnchor < entries.length - 1) {
-      laps.push(buildLap(agvId, entries.slice(lastAnchor), "parcial", gaps));
+      laps.push(buildLap(agvId, entries.slice(lastAnchor), "parcial", gaps, anchorTruth));
     }
   }
 
@@ -191,20 +232,23 @@ function buildLap(
   segment: readonly Reading[],
   completeness: LapCompleteness,
   gaps: readonly Interval[],
+  anchorTruth: TruthState,
 ): Lap {
   const start = (segment[0] as Reading).time.utcMs;
   const end = (segment[segment.length - 1] as Reading).time.utcMs;
   // Una vuelta que cruza un hueco de cobertura no es una vuelta: lo que hay en medio es ausencia
   // de datos, no circulación (R-DAT-007). Degrada a `parcial` en vez de fingir continuidad.
   const crossesGap = gaps.some((gap) => start <= gap.from && end >= gap.to);
+  const finalCompleteness = crossesGap ? "parcial" : completeness;
   return {
     agvId,
-    completeness: crossesGap ? "parcial" : completeness,
+    completeness: finalCompleteness,
     startUtcMs: start,
     endUtcMs: end,
     stops: segment.length,
-    // El ancla es inferida (ciclo dominante, no declarada): nunca observed, aunque la vuelta sea
-    // completa en sus datos.
-    truth: "inferred",
+    // Solo una vuelta `completa` puede heredar la verdad del ancla: una `parcial` tiene, por
+    // definición, un extremo que es un corte de los datos y no el ancla — declararla `observed`
+    // ahí sería inventar certeza que el dato no sostiene.
+    truth: finalCompleteness === "completa" ? anchorTruth : "inferred",
   };
 }

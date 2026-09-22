@@ -935,13 +935,17 @@ function renderShapes(views: CircuitViews): void {
   for (const shape of views.shapes) {
     const matrix = views.readMatrices.find((entry) => entry.cohortId === shape.cohortId);
 
+    const anchorPhrase =
+      shape.anchorTruth === "observed"
+        ? `cerrado por «${shape.anchorTagId}», ancla declarada (R-GRA-009)`
+        : `cerrado por «${shape.anchorTagId}», ancla inferida del sucesor dominante y no una ` +
+          "medida del trazado";
     viewsPanel.append(
       element(
         "p",
         "muted",
-        `Anillo de ${shape.tags.length} tags, cerrado por «${shape.anchorTagId}». El orden es ` +
-          "inferido del sucesor dominante, no una medida del trazado, y su arista más débil se " +
-          `sostiene en el ${Math.round(shape.weakestShare * 100)} % de las pasadas.`,
+        `Anillo de ${shape.tags.length} tags, ${anchorPhrase}. Su arista más débil se sostiene en ` +
+          `el ${Math.round(shape.weakestShare * 100)} % de las pasadas.`,
       ),
     );
 
@@ -1017,6 +1021,10 @@ function renderShapes(views: CircuitViews): void {
     );
     renderHighlights(matrix);
     renderFullMatrix(matrix);
+  }
+
+  for (const problem of views.lapAnchorProblems ?? []) {
+    viewsPanel.append(finding("Ancla de vuelta declarada que no se pudo usar", "—", problem));
   }
 }
 
@@ -1493,6 +1501,9 @@ function renderDossier(): void {
   }
 
   if (agv !== undefined) {
+    const shape = state.views?.shapes.find((entry) => entry.cohortId === agv.cohortId);
+    const anchorLabel =
+      shape?.anchorTruth === "observed" ? "Vueltas (ancla declarada)" : "Vueltas (ancla inferida)";
     const rows: readonly (readonly [string, string])[] = [
       ["Cohorte", agv.cohortId === null ? "sin cohorte reconocible" : `${agv.cohortSize} vehículos`],
       [
@@ -1501,7 +1512,7 @@ function renderDossier(): void {
           agv.cohortMedianReadings.toLocaleString("es-ES"),
       ],
       [
-        "Vueltas (ancla inferida)",
+        anchorLabel,
         `${agv.laps.completas} completas, ${agv.laps.parciales} parciales, ${agv.laps.desconocidas} desconocidas`,
       ],
       [

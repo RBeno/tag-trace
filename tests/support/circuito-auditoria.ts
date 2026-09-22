@@ -51,7 +51,9 @@ export type DefectClass =
   /** Un AGV que se demora en la zona cargada y el resto lo adelanta (R-FLO-001). */
   | "adelantamiento-en-zona-cargada"
   /** Un tag reparte sus salidas entre dos sucesores con cuota comparable (R-GRA-007). */
-  | "bifurcacion-real";
+  | "bifurcacion-real"
+  /** El ancla de vuelta declarada: contexto, no defecto. Declararla no cambia qué tags forman el anillo. */
+  | "ancla-declarada";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -388,6 +390,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       ),
     )
     .concat([...zoneOf].map(([tag, zona]) => `zona;${tag};;;${zona};`))
+    .concat([`ancla;${ring[0] as string};1`])
     .join("\r\n");
 
   const plantados = new Set([
@@ -520,6 +523,15 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       vehicles: [],
       expect: "candidato a bifurcación en el tag, con las dos ramas y su cuota",
       mustNotSay: "que sea una avería, ni asignar la función sin más evidencia (R-GRA-007)",
+    },
+    {
+      kind: "ancla-declarada",
+      tags: [ring[0] as string],
+      vehicles: [],
+      expect:
+        "las vueltas completas del cohorte principal salen observed; el ancla efectiva es la " +
+        "declarada y el anillo mostrado empieza ahí (R-GRA-009)",
+      mustNotSay: "que declarar el ancla cambie qué tags forman el anillo, más allá de rotar el punto de inicio",
     },
   ];
 

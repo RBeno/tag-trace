@@ -2,6 +2,101 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.12.0] - 2026-09-22
+
+Anclas de vuelta declaradas (R-GRA-009, `lap_anchors`), pedido explícitamente por el propietario
+tras quedar ofrecido y sin pedir en `[3.6.0]` («anclas de vuelta declaradas»), tercero y último de
+los tres «programables ya» — FIFO (`[3.10.0]`) y candidatos a punto crítico (`[3.11.0]`) ya están
+fusionados. `src/domain/laps.ts` lo anunciaba desde que se escribió: «Cuando exista `lap_anchors`...
+esto se sustituye por el ancla real». Ya existe.
+
+Sin ancla declarada, la única disponible sigue siendo el ciclo dominante que el propio grafo revela,
+y una vuelta cortada por ella sigue siendo siempre `inferred`. Con una declarada y presente en el
+ciclo ya reconstruido, el mecanismo **rota** ese mismo ciclo —nunca recalcula qué tags lo forman— y
+una vuelta `completa` cortada por ella pasa a `observed`. Una vuelta `parcial` no, declarada o no la
+ancla: por definición uno de sus dos extremos es un corte de los datos, no el ancla, y declararla
+`observed` ahí inventaría una certeza que el dato no sostiene.
+
+### Añadido
+
+- Lista `ancla` en `src/domain/tag-lists.ts` (`KNOWN_LISTS`, `LIST_PURPOSE`): el tag, o varios en
+  orden de prioridad, que el propietario declara como corte de vuelta.
+- `src/domain/circuit-config.ts` gana `readLapAnchors()`, calcado de `readZones`.
+- **`src/domain/laps.ts`**: `resolveDeclaredAnchor()` prueba cada ancla declarada, en orden, contra
+  el ciclo ya reconstruido y se queda con la primera que aparece, rotándolo sin alterar el orden
+  relativo; `null` si ninguna aparece, sin inventar un corte que el dato no sostenga.
+  `segmentLaps()`/`buildLap()` ganan un parámetro `anchorTruth: TruthState` sin valor por defecto: el
+  `truth` final depende de completitud **y** origen del ancla, nunca de uno solo.
+- `workers/import.worker.ts`: por cohorte, se resuelve el ancla declarada contra el ciclo inferido y
+  se construye un ancla «efectiva» que sustituye a la inferida en todo lo que la usa —vueltas,
+  composición del circuito, matriz de lectura, tramos de FIFO y contraste contra Vsystem—, sin
+  duplicar el cálculo del ciclo dominante.
+- `CircuitViews.shapes[].anchorTruth` (`"observed" | "inferred"`) y `CircuitViews.lapAnchorProblems`;
+  la vista dice «ancla declarada» o «ancla inferida» según corresponda, en el resumen del circuito y
+  en el expediente de AGV.
+- Decimoséptima clase plantada en el circuito de auditoría, `ancla-declarada`: el primer tag del
+  anillo declarado como ancla, contexto y no defecto — declararla no puede cambiar qué tags forman
+  el anillo, solo desde dónde se cuentan las vueltas.
+
+### Un riesgo real de invariancia, encontrado antes de auditar
+
+`compareAgainstVsystem` alinea la lista declarada contra el anillo observado con subsecuencia común
+más larga (LCS), que es lineal y sensible a **dónde se corta** un anillo que en realidad es cíclico.
+Antes de esta entrega el corte ya era arbitrario —el punto donde `findDominantCycle` cierra el
+ciclo—, pero ahora puede ser además el tag que el propietario declaró, en cualquier posición de la
+lista Vsystem. Un corte que cae en mitad de un tramo idéntico lo partía en dos coincidencias más
+cortas en vez de reconocerlo como una sola. Corregido rotando el anillo observado, **dentro** de
+`compareAgainstVsystem`, hasta el primer tag de la lista declarada que aparece en él, antes de
+calcular la LCS — así el contraste no depende de por dónde entró el ancla, se declare o se infiera.
+
+### Un segundo riesgo, encontrado auditando: el ancla contamina una comparación que no la mira
+
+La sonda `zona-vacia-declarada` compara dos ejecuciones del mismo escenario —con y sin las listas de
+planta— para comprobar que **declarar la zona** no mueve el veredicto de ningún tag sano. Añadir la
+lista `ancla` a esa comparación (apagada en la ejecución «sin configuración», como el resto) cambió
+qué tag cierra cada vuelta entre las dos ejecuciones, y eso desplazó el patrón de dieciséis tags
+sanos — no por la zona, sino por dónde `traceLaps` corta la segmentación en cada caso. La ancla
+decide un mecanismo distinto (R-GRA-009) del que esa sonda existe para vigilar (R-FLO-002/006), así
+que contaminaba la comparación con una segunda variable en vez de aislar la primera. Corregido
+manteniendo la lista `ancla` cargada en **las dos** ejecuciones: la comparación vuelve a aislar solo
+lo que declara vigilar.
+
+### El informe, con las diecisiete clases
+
+```
+238.680 lecturas, 40 vehículos. Anillo reconstruido: 147 tags de 150 declarados. Fuera del anillo: 15.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 10/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  DETECTA     rotura-subita — con el instante dentro de margen: 2/2
+  DETECTA     degradacion-progresiva — con tendencia sostenida: 2/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 98 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 3 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+  DETECTA     lector-agv-degradado — 7120: bajando (89% → 79% → 66% → 48%); tags con tendencia o rotura por su culpa: 0
+  DETECTA     adelantamiento-en-zona-cargada — el primero por margen es 7113 (se esperaba 7113), 4 min de margen; 1 más
+  DETECTA     bifurcacion-real — 2 ramas: 60363 57%, 96001 42%
+  DETECTA     ancla-declarada — ancla efectiva: 60000 (observed); 1653 vueltas completas, 1653 con truth observed
+```
+
+**Diecisiete de diecisiete clases detectadas, cero falsos positivos, `DEUDA_CONOCIDA` vacía.**
+
+### Gobierno
+
+- `docs/CONFIG_SCHEMA.md` gana la subsección §3.4.2 «Anclas de vuelta declaradas» (antes una fila de
+  una línea sin gramática de campos), renumerando la de las listas de tags a §3.4.3;
+  `docs/ALGORITHM_CATALOG.md` gana §7.1 y corrige la fila de ALG-004; `docs/TEST_STRATEGY.md` corrige
+  TC-061 («sin ninguna declarada», no «siempre») y añade TC-108–111; `docs/TRACEABILITY_MATRIX.md`
+  gana fila para R-GRA-009 y corrige la referencia de sección desplazada; `docs/PHASE_GATES.md` G2
+  describe la condición real en vez de «nunca observed»; `docs/GLOSSARY.md` (Ancla);
+  `docs/OPEN_QUESTIONS.md` anota que el mecanismo de OQ-102/OQ-B04 ya existe, sin cerrarlas;
+  `fixtures/synthetic/auditoria/MANIFEST.md` (`auditoria/6`).
+
 ## [3.11.0] - 2026-09-22
 
 Candidatos a punto crítico (R-GRA-007), pedido explícitamente por el propietario tras quedar

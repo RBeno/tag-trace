@@ -16,6 +16,7 @@ export const KNOWN_LISTS = [
   "carga-online",
   "critico",
   "zona",
+  "ancla",
 ] as const;
 
 export type KnownList = (typeof KNOWN_LISTS)[number];
@@ -33,6 +34,9 @@ export const LIST_PURPOSE: Readonly<Record<KnownList, string>> = {
     "paradas precisas, cruces, semáforos, dejar/recoger carro, cambios de mapa y bifurcaciones, " +
     "con la clase en `funcion`",
   zona: "a qué zona pertenece cada tag: `grupo` = cargado o vacio (R-FLO-001, R-FLO-002)",
+  ancla:
+    "el tag, o varios en orden de prioridad con `orden`, que el propietario declara como corte de " +
+    "vuelta (R-GRA-009)",
 };
 
 /**
@@ -73,5 +77,6 @@ export const EXPECTED_STRUCTURE = {
     "carga-online;70013;3;salida;calle-1;2",
     "zona;51944;;;vacio",
     "critico;102185;;bifurcacion",
+    "ancla;51944;1",
   ] as const,
 } as const;

@@ -64,4 +64,32 @@ describe("contraste contra Vsystem", () => {
     expect(fila?.verdict).toBe("no-declarado");
     expect(fila?.evidence).toContain("sí se lee");
   });
+
+  it("es invariante a por dónde se corte el anillo observado (R-GRA-009)", () => {
+    // El anillo es cíclico: el ancla puede ser inferida (ciclo dominante) o declarada en un tag
+    // distinto del primero de la lista Vsystem, así que `observedRing` puede llegar cortado por
+    // cualquier punto. El contraste no debe depender de eso: cortar en mitad de un tramo idéntico
+    // no puede partir una coincidencia larga en dos más cortas.
+    const declarado = ["0100", "0200", "0300", "0400", "0500", "0600"];
+    // Mismo anillo, pero cortado empezando por "0400" en vez de por "0100".
+    const rotado = ["0400", "0500", "0600", "0100", "0200", "0300"];
+    const leidos = new Set(declarado);
+
+    const sinRotar = compareAgainstVsystem(declarado, declarado, leidos);
+    const conRotacion = compareAgainstVsystem(declarado, rotado, leidos);
+
+    const coincidencias = (rows: readonly { readonly verdict: string }[]): number =>
+      rows.filter((row) => row.verdict === "coincide").length;
+
+    expect(coincidencias(conRotacion)).toBe(coincidencias(sinRotar));
+    expect(coincidencias(conRotacion)).toBe(declarado.length);
+  });
+
+  it("sin ningún tag en común, se deja el anillo como está en vez de fallar", () => {
+    const declarado = ["0100", "0200"];
+    const observado = ["0900", "0910"];
+    const rows = compareAgainstVsystem(declarado, observado, new Set([...declarado, ...observado]));
+
+    expect(rows.every((row) => row.verdict !== "coincide")).toBe(true);
+  });
 });

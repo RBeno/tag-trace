@@ -1,8 +1,8 @@
 ---
 document_id: TT-OPEN-001
-version: 0.21.0
+version: 0.22.0
 status: active
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 ---
 
 # Preguntas abiertas
@@ -27,7 +27,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 
 | ID | Pregunta | Puerta |
 |---|---|---|
-| OQ-B04 | Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta. **Parcial (2026-09-20)**: SE2/4 pasa a ser el circuito priorizado mientras se recoge más volumen de PC2, con dos hechos operativos cualitativos aportados (servicio inmediato en el punto de carga; descansos de duración larga y a cierta distancia), pero **sin tags exactos todavía** para `critical_points`. | G2: son insumos del grafo y el diagnóstico, no de la importación. |
+| OQ-B04 | Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta. **Parcial (2026-09-20)**: SE2/4 pasa a ser el circuito priorizado mientras se recoge más volumen de PC2, con dos hechos operativos cualitativos aportados (servicio inmediato en el punto de carga; descansos de duración larga y a cierta distancia), pero **sin tags exactos todavía** para `critical_points` ni para `lap_anchors` (mecanismo construido el 2026-09-22, ver OQ-102). | G2: son insumos del grafo y el diagnóstico, no de la importación. |
 | OQ-B05 | Qué datos reales se usan para aceptar cada fase y quién valida. **Parcial (2026-09-20)**: el propietario acepta validar en persona F1–F5 con los datos reales ya aportados (PC2, ALF, SE2/4), ejecutados en local en su propio dispositivo. **Sigue sin especificar** el criterio de rechazo — qué resultado haría que una fase no se aceptara —, y no se inventa uno. | G1 para la parte de F1; el resto con cada puerta. |
 
 ## Necesarias durante F1–F3
@@ -35,7 +35,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | ID | Pregunta | Tratamiento mientras esté abierta |
 |---|---|---|
 | OQ-101 | ¿Qué modelos de lector/AGV existen y cuáles suprimen tag repetido? | Regla R-OPP-002 sigue candidate |
-| OQ-102 | ¿Qué evento o secuencia identifica con fiabilidad una vuelta? | Conservar vueltas parciales/desconocidas |
+| OQ-102 | ¿Qué evento o secuencia identifica con fiabilidad una vuelta? **El mecanismo para cuando se responda ya existe** (`lap_anchors`, R-GRA-009, 2026-09-22): una ancla declarada rota el ciclo ya reconstruido y una vuelta completa cortada por ella sale `observed`. Sigue faltando el tag real. | Conservar vueltas parciales/desconocidas; sin ancla declarada, el ancla es el ciclo dominante e `inferred` |
 | OQ-103 | ¿Cómo distinguir mantenimiento/asistencia/pastor en los CSV? | Catálogo parcial y exclusión explícita |
 | OQ-104 | ¿La ventana de actualización automática de 30 min y el reenvío manual se comportan igual en todas las versiones? | R-AGV-003 sigue candidate |
 | OQ-105 | ¿Qué señal confirma WiFi ausente frente a lector silencioso? | Mantener hipótesis alternativas |

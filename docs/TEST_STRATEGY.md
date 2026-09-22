@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.18.0
+version: 0.19.0
 status: baseline-candidate
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 ---
 
 # Estrategia de pruebas y evaluación
@@ -110,7 +110,7 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-058 | Las cuatro vistas con dos ventanas separadas | Cada una con su tabla equivalente; la cobertura en dos tramos y el hueco con trama | Que un hueco de datos se dibuje igual que un silencio (R-DAT-007) |
 | TC-059 | Dos vehículos que comparten todas sus aristas, en el mismo fichero | Un solo cohorte de dos | Separarlos porque no coinciden exactamente a la vez |
 | TC-060 | Fichero con tres circuitos mezclados bajo un mismo nombre | Tres cohortes, sin pista previa | Que el tercer vehículo, sin transición compartida, se cuele en un grupo ajeno |
-| TC-061 | Ancla de vuelta hallada como ciclo dominante de un cohorte | Vueltas segmentadas, siempre `inferred` aunque los datos sean perfectos | Que una vuelta completa salga `observed` |
+| TC-061 | Ancla de vuelta hallada como ciclo dominante de un cohorte, sin ninguna declarada | Vueltas segmentadas, `inferred` aunque los datos sean perfectos | Que una vuelta completa salga `observed` sin una ancla declarada que la sostenga |
 | TC-062 | Una vuelta que cruzaría un hueco de cobertura | Se degrada a parcial | Fingir un recorrido que no se observó |
 | TC-063 | Expediente de un AGV, recuento contra su cohorte | Mediana de los compañeros, no de la flota | Comparar contra vehículos de otro circuito |
 | TC-064 | Un tag declarado sin lecturas, con el anillo observado ocupando su hueco | `sustituido-candidato`, con el tag observado como evidencia | Confundirlo con un tag que sí se lee en otra posición del anillo |
@@ -157,11 +157,21 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-105 | Tag justo antes de una rotura súbita aguas abajo, cuyo reparto agregado parece parejo | Sin candidato: ninguna rama se sostiene en las dos mitades de la ventana | Confundir un cambio de régimen temporal con una bifurcación real |
 | TC-106 | Punto crítico declarado (lista `critico`), en memoria y nunca leído | `critico-sin-lectura`, con su función nombrada, nunca `obsoleto-candidato` (R-GRA-008) | Tratarlo como un obsoleto más, o como avería |
 | TC-107 | El mismo punto crítico, pero fuera de la memoria maestra | `declarado-sin-memoria`, sin matiz — R-OPP-009 ya explica el silencio | Aplicar el matiz de R-GRA-008 cuando la memoria ya lo explica todo |
+| TC-108 | Ancla declarada que aparece en el ciclo ya reconstruido | `resolveDeclaredAnchor` la resuelve como rotación del mismo ciclo, sin alterar el orden relativo | Recalcular la topología en vez de rotar el corte |
+| TC-109 | Ancla declarada que no aparece en el ciclo reconstruido | `null`, con el problema declarado; se sigue con el ancla inferida | Inventar un corte que el dato no sostiene |
+| TC-110 | Vuelta `completa` cortada por un ancla declarada y resuelta | `truth: "observed"` | Que siga `inferred` teniendo un ancla declarada que la sostiene |
+| TC-111 | Vuelta `parcial` o que cruza un hueco de cobertura, con ancla declarada | `truth: "inferred"` en cualquier caso | Que la declaración del ancla convierta en `observed` un extremo que es un corte de los datos |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda
 anotado porque el caso interesante no es el defecto, sino que **una prueba en verde lo sostenía**.
+
+**TC-061 cambió de enunciado, no de rigor.** Hasta la Parte 32 pedía «siempre `inferred`», que era
+correcto mientras `lap_anchors` no existía. Con el ancla declarada implementada (R-GRA-009), ese
+enunciado dejaría de ser una prueba de comportamiento y pasaría a ser una prueba de que la función
+nueva no hace nada: se corrigió a «sin ninguna declarada», y los TC-108–111 cubren el caso que TC-061
+ya no puede cubrir por sí solo.
 
 Los casos enlazados están desarrollados en `docs/golden/` con la estructura de §5. Son los seis que
 no dependen de información de planta, y constituyen los criterios de aceptación de F1a. El resto se

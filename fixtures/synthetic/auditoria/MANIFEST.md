@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/5`
+- Dataset ID/version: `auditoria/6`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -36,7 +36,8 @@ imprime dónde está plantado cada fallo, con sus tags y vehículos.
 Además, **cinco calles de carga online** de tres tags cada una —entrada, parada precisa y salida—,
 que es lo que R-CO-001 fija para el fixture sintético, y una **zona de vacíos** que engloba las
 cinco calles más un tercio contiguo del anillo (R-FLO-003). La carga dura una media hora de media;
-esa magnitud es del escenario, no de planta, y por eso vive en el generador y no en `src/`.
+esa magnitud es del escenario, no de planta, y por eso vive en el generador y no en `src/`. Y un
+**ancla de vuelta declarada** en la lista `ancla` (R-GRA-009): el primer tag del anillo.
 
 | Clase plantada | Dónde | Qué debe decir el producto | Qué **no** puede decir |
 |---|---|---|---|
@@ -56,6 +57,7 @@ esa magnitud es del escenario, no de planta, y por eso vive en el generador y no
 | `lector-agv-degradado` | 1 AGV, sin otro papel | tendencia a la baja en la fila del **vehículo** (R-OPP-015) | que los tags que lee ese AGV salgan con tendencia o rotura |
 | `adelantamiento-en-zona-cargada` | 1 AGV, sin otro papel | se enumera a quién adelantó y con qué margen, como candidato (R-FLO-001) | llamarlo avería: R-FLO-001 admite excepciones y OQ-107 no tiene el catálogo |
 | `bifurcacion-real` | 1 tag del anillo, 1 tag fuera de anillo | candidato a bifurcación con las dos ramas y su cuota (R-GRA-007) | asignar la función, o llamarlo avería |
+| `ancla-declarada` | 1 tag del anillo, declarado en la lista `ancla` | vueltas completas `observed`; el ancla efectiva es la declarada (R-GRA-009) | que declararla cambie qué tags forman el anillo, más allá de rotar el punto de inicio |
 
 ## Resultados prohibidos
 

@@ -22,7 +22,7 @@ import { buildAuditScenario, toRealUtc, type DefectClass } from "../support/circ
 import { importReadings } from "../../src/ingestion/importer.js";
 import { buildTransitions } from "../../src/domain/graph.js";
 import { assignCohorts } from "../../src/domain/cohort.js";
-import { findDominantCycle, segmentLaps, type Lap } from "../../src/domain/laps.js";
+import { findDominantCycle, resolveDeclaredAnchor, segmentLaps, type Lap } from "../../src/domain/laps.js";
 import { buildReadMatrix, type ReadMatrix } from "../../src/domain/read-matrix.js";
 import { buildTagInventory } from "../../src/domain/inventory.js";
 import { buildAllAgvDossiers } from "../../src/domain/dossier.js";
@@ -36,6 +36,7 @@ import {
   laneEntryTags,
   readCoLanes,
   readCriticalPoints,
+  readLapAnchors,
   readZones,
 } from "../../src/domain/circuit-config.js";
 import { importCatalog } from "../../src/ingestion/catalog.js";
@@ -83,6 +84,10 @@ interface Analysis {
   readonly fifo: FifoReport | undefined;
   readonly criticalPoints: readonly CriticalPointCandidate[];
   readonly dossiers: ReturnType<typeof buildAllAgvDossiers>;
+  /** El ancla efectiva del cohorte principal, y las vueltas segmentadas con esa verdad (R-GRA-009). */
+  readonly laps: readonly Lap[];
+  readonly anchorTagId: string | undefined;
+  readonly anchorTruth: "observed" | "inferred" | undefined;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
 }
@@ -93,6 +98,12 @@ interface Analysis {
  * `conConfiguracion` decide si se le dan las listas de planta. Se puede ejecutar sin ellas a
  * propósito: es la única forma de comprobar que declararlas no cambia el veredicto de un tag sano,
  * que es lo que la clase `zona-vacia-declarada` vigila.
+ *
+ * La lista `ancla` queda **fuera** de ese apagado: decide qué tag cierra la vuelta, y cambiarlo
+ * desplaza dónde `traceLaps` corta cada vehículo — un efecto real (R-GRA-009) pero ajeno a lo que
+ * esta comparación aísla. Alternar el ancla a la vez que la zona contaminaría la comparación con un
+ * segundo efecto que no es el que la clase declara vigilar, así que el ancla se mantiene igual en
+ * las dos ejecuciones y solo la zona (y el resto de listas) se apaga.
  */
 function analyse(
   scenario: ReturnType<typeof buildAuditScenario>,
@@ -113,10 +124,12 @@ function analyse(
   // La configuración se lee **por el mismo camino que el producto**: del CSV de listas, con el
   // importador de catálogo. Construirla a mano aquí probaría el dominio y no el recorrido.
   const catalog = importCatalog(scenario.listsCsv);
-  const entriesOf = (name: string) => (conConfiguracion ? (catalog.lists.get(name) ?? []) : []);
+  const entriesOf = (name: string) =>
+    conConfiguracion || name === "ancla" ? (catalog.lists.get(name) ?? []) : [];
   const laneConfig = readCoLanes(entriesOf("carga-online"));
   const zoneConfig = readZones(entriesOf("zona"));
   const criticalPointsConfig = readCriticalPoints(entriesOf("critico"));
+  const lapAnchorsConfig = readLapAnchors(entriesOf("ancla"));
 
   const readings = result.readings;
   const direction = result.summary.direction;
@@ -127,11 +140,26 @@ function analyse(
 
   const vehicleSet = new Set(main.vehicles);
   const cohortTransitions = transitions.filter((entry) => vehicleSet.has(entry.agvId));
-  const anchor = findDominantCycle(cohortTransitions);
+  const inferredAnchor = findDominantCycle(cohortTransitions);
+
+  // Mismo encadenado que el Worker (Parte 32, R-GRA-009): el ancla declarada solo rota dónde se
+  // corta el ciclo ya reconstruido, y solo si aparece en él.
+  let anchor = inferredAnchor;
+  let anchorTruth: "observed" | "inferred" | undefined = inferredAnchor === null ? undefined : "inferred";
+  if (inferredAnchor !== null && lapAnchorsConfig.anchors.length > 0) {
+    const resolved = resolveDeclaredAnchor(inferredAnchor, lapAnchorsConfig.anchors);
+    if (resolved !== null) {
+      anchor = { tagId: resolved.tagId, cycle: resolved.cycle, weakestShare: inferredAnchor.weakestShare };
+      anchorTruth = "observed";
+    }
+  }
+
   const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
 
   const laps: Lap[] =
-    anchor === null ? [] : [...segmentLaps(cohortReadings, direction, [], anchor.tagId)];
+    anchor === null
+      ? []
+      : [...segmentLaps(cohortReadings, direction, [], anchor.tagId, anchorTruth ?? "inferred")];
 
   const charging = buildChargingReport(
     readings,
@@ -217,6 +245,9 @@ function analyse(
     fifo,
     criticalPoints,
     dossiers,
+    laps,
+    anchorTagId: anchor?.tagId,
+    anchorTruth,
     readings: readings.length,
   };
 }
@@ -224,8 +255,21 @@ function analyse(
 describe("auditoría del circuito con verdad conocida", () => {
   const scenario = buildAuditScenario();
   const analysis = analyse(scenario);
-  const { matrix, ring, offRing, inventory, charging, coLanes, fifo, criticalPoints, dossiers, readings } =
-    analysis;
+  const {
+    matrix,
+    ring,
+    offRing,
+    inventory,
+    charging,
+    coLanes,
+    fifo,
+    criticalPoints,
+    dossiers,
+    laps,
+    anchorTagId,
+    anchorTruth,
+    readings,
+  } = analysis;
 
   /**
    * El mismo análisis **sin** las listas de planta, para poder contrastar los dos.
@@ -489,6 +533,21 @@ describe("auditoría del circuito con verdad conocida", () => {
             : `${candidato.branches.length} ramas: ${candidato.branches
                 .map((branch) => `${branch.tagId} ${Math.round(branch.share * 100)}%`)
                 .join(", ")}`,
+      };
+    },
+    "ancla-declarada": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "ancla-declarada")?.tags ?? [])[0];
+      const completas = laps.filter((lap) => lap.completeness === "completa");
+      return {
+        ok:
+          anchorTagId === esperado &&
+          anchorTruth === "observed" &&
+          completas.length > 0 &&
+          completas.every((lap) => lap.truth === "observed"),
+        detail:
+          `ancla efectiva: ${anchorTagId ?? "—"} (${anchorTruth ?? "sin ancla"}); ` +
+          `${completas.length} vueltas completas, ` +
+          `${completas.filter((lap) => lap.truth === "observed").length} con truth observed`,
       };
     },
   };
