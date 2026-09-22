@@ -29,7 +29,10 @@ import { buildAllAgvDossiers } from "../../src/domain/dossier.js";
 import { buildChargingReport, type ChargingReport } from "../../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans, type FifoReport } from "../../src/domain/fifo.js";
 import {
+  classifyCrossings,
   findBifurcationCandidates,
+  findPrecisePauseCandidates,
+  findTrafficLightCandidates,
   type CriticalPointCandidate,
 } from "../../src/domain/critical-points.js";
 import { compareDistantPeriods, type DriftComparison } from "../../src/domain/drift.js";
@@ -196,10 +199,12 @@ function analyse(
           PROVISIONAL_CONFIG.fifo,
         );
 
-  const criticalPoints = findBifurcationCandidates(
-    cohortTransitions,
-    PROVISIONAL_CONFIG.criticalPoints.bifurcacion,
-  );
+  const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
+  const criticalPoints = [
+    ...classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce),
+    ...findPrecisePauseCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa),
+    ...findTrafficLightCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo),
+  ];
 
   const ring = anchor?.cycle ?? [];
   const inRing = new Set(ring);
@@ -541,19 +546,63 @@ describe("auditoría del circuito con verdad conocida", () => {
       const plantado = scenario.defects.find((d) => d.kind === "bifurcacion-real");
       const [tagBifurcado, ramaEsperada] = plantado?.tags ?? [];
       const candidato = criticalPoints.find((entry) => entry.tagId === tagBifurcado);
-      const ramas = candidato?.branches.map((branch) => branch.tagId) ?? [];
+      const ramas =
+        candidato?.kind === "bifurcacion" || candidato?.kind === "cruce"
+          ? (candidato.branches ?? []).map((branch) => branch.tagId)
+          : [];
       return {
         ok:
           candidato !== undefined &&
-          candidato.branches.length >= 2 &&
+          candidato.kind === "bifurcacion" && // nunca `cruce`: es la regresión que Part 35 previene
+          ramas.length >= 2 &&
           ramaEsperada !== undefined &&
           ramas.includes(ramaEsperada),
         detail:
           candidato === undefined
             ? "sin candidato para el tag plantado"
-            : `${candidato.branches.length} ramas: ${candidato.branches
-                .map((branch) => `${branch.tagId} ${Math.round(branch.share * 100)}%`)
-                .join(", ")}`,
+            : `${candidato.kind}, ${ramas.length} ramas: ${ramas.join(", ")}`,
+      };
+    },
+    "cruce-real": () => {
+      const plantado = scenario.defects.find((d) => d.kind === "cruce-real");
+      const tagCruce = plantado?.tags[0];
+      const candidato = criticalPoints.find((entry) => entry.tagId === tagCruce);
+      return {
+        ok: candidato?.kind === "cruce" && candidato.reconvergesAt !== undefined,
+        detail:
+          candidato === undefined
+            ? "sin candidato para el tag plantado"
+            : candidato.kind === "cruce"
+              ? `reconverge en «${candidato.reconvergesAt}» a ${candidato.hops} salto(s)`
+              : `salió como ${candidato.kind}, no cruce`,
+      };
+    },
+    "parada-precisa-real": () => {
+      const plantado = scenario.defects.find((d) => d.kind === "parada-precisa-real");
+      const tag = plantado?.tags[0];
+      const candidato = criticalPoints.find((entry) => entry.tagId === tag);
+      return {
+        ok: candidato?.kind === "parada-precisa",
+        detail:
+          candidato === undefined
+            ? "sin candidato para el tag plantado"
+            : candidato.kind === "parada-precisa"
+              ? `media ${Math.round((candidato.meanDurationMs ?? 0) / 1000)} s, cv ${(candidato.coefficientOfVariation ?? 0).toFixed(2)}`
+              : `salió como ${candidato.kind}, no parada precisa`,
+      };
+    },
+    "semaforo-real": () => {
+      const plantado = scenario.defects.find((d) => d.kind === "semaforo-real");
+      const tag = plantado?.tags[0];
+      const candidato = criticalPoints.find((entry) => entry.tagId === tag);
+      return {
+        ok: candidato?.kind === "semaforo",
+        detail:
+          candidato === undefined
+            ? "sin candidato para el tag plantado"
+            : candidato.kind === "semaforo"
+              ? `${Math.round((candidato.lowClusterMeanMs ?? 0) / 1000)} s / ${Math.round((candidato.highClusterMeanMs ?? 0) / 1000)} s`
+              : `salió como ${candidato.kind}, no semáforo`,
       };
     },
     "ancla-declarada": () => {

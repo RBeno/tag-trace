@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/8`
+- Dataset ID/version: `auditoria/9`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -61,7 +61,10 @@ fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual q
 | `zona-vacia-declarada` | 1/3 del anillo + calles | la zona se enumera y las calles caen dentro | que declararla mueva el veredicto de un tag sano |
 | `lector-agv-degradado` | 1 AGV, sin otro papel | tendencia a la baja en la fila del **vehículo** (R-OPP-015) | que los tags que lee ese AGV salgan con tendencia o rotura |
 | `adelantamiento-en-zona-cargada` | 1 AGV, sin otro papel | se enumera a quién adelantó y con qué margen, como candidato (R-FLO-001) | llamarlo avería: R-FLO-001 admite excepciones y OQ-107 no tiene el catálogo |
-| `bifurcacion-real` | 1 tag del anillo, 1 tag fuera de anillo | candidato a bifurcación con las dos ramas y su cuota (R-GRA-007) | asignar la función, o llamarlo avería |
+| `bifurcacion-real` | 1 tag del anillo, cadena de 6 tags fuera de anillo | candidato a `bifurcacion` con las dos ramas y su cuota, nunca reclasificado a `cruce` (las ramas no reconvergen dentro del margen) (R-GRA-007) | asignar la función, o llamarlo avería |
+| `cruce-real` | 1 tag del anillo, 1 tag fuera de anillo, que reconverge un salto después | candidato a `cruce`: dos ramas que se abren y se cierran enseguida, con el punto y el número de saltos de reconvergencia (R-GRA-007) | dejarlo como bifurcación sin comprobar reconvergencia, o llamarlo avería |
+| `parada-precisa-real` | 1 tag del anillo, todos los vehículos | candidato a `parada-precisa`: duración media alta con coeficiente de variación bajo (R-GRA-007) | llamarlo avería o carga |
+| `semaforo-real` | 1 tag del anillo, todos los vehículos | candidato a `semaforo`: duración bimodal con dos grupos compactos (R-GRA-007) | confundirlo con una tendencia de rotura o degradación (R-OPP-015): es alternancia estable, no cambio sostenido |
 | `ancla-declarada` | 1 tag del anillo, declarado en la lista `ancla` | vueltas completas `observed`; el ancla efectiva es la declarada (R-GRA-009) | que declararla cambie qué tags forman el anillo, más allá de rotar el punto de inicio |
 | `tag-nuevo-a-mitad-de-ventana` | 1 tag fuera de anillo | sin lecturas en el periodo temprano, con lecturas en el tardío: `nuevo` (R-DAT-016) | que sea obsoleto, o que existiera desde el principio de la ventana |
 | `memoria-actualizada-a-mitad-de-ventana` | 5 tags contiguos, 1 AGV | ese vehículo dejó de leerlos a mitad de ventana; el resto de la flota los sigue leyendo (R-AGV-013) | que esos tags estén averiados, o acusar a otro vehículo |

@@ -2,6 +2,87 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.15.0] - 2026-09-22
+
+Parada precisa, semáforo y cruce por reconvergencia (R-GRA-007), completando las cuatro de las siete
+clases de punto crítico con firma alcanzable hoy (bifurcación ya estaba desde `[3.11.0]`). El
+propietario fijó qué significa «cruce» en este proyecto, entre dos fenómenos que compartían nombre:
+una bifurcación cuyas ramas **reconvergen en pocos saltos dentro del mismo cohorte** (esta entrega),
+distinta del cruce **entre circuitos** protegido por un par de tags (R-AGV-009/011, sigue bloqueado
+por OQ-121, sin tocar).
+
+### Añadido
+
+- **`src/domain/critical-points.ts`** — `CriticalPointCandidate` pasa de una forma plana a una unión
+  discriminada por `kind` (`bifurcacion` | `cruce` | `parada-precisa` | `semaforo`), cada variante con
+  solo los campos que le corresponden. `findBifurcationCandidates` no cambia de lógica, solo de forma
+  de salida. Tres piezas nuevas:
+  - `classifyCrossings()` — reclasifica un candidato a bifurcación a `cruce` cuando el sucesor
+    dominante de dos de sus ramas visita el mismo tag dentro de `maxHopsToReconverge` saltos. Con 2
+    ramas es el caso único que se resuelve; con 3 o más basta que un par reconverja.
+  - `findPrecisePauseCandidates()` — duración media alta y coeficiente de variación bajo, sobre las
+    transiciones agrupadas por tag y **excluyendo `sameInstant`** (R-DAT-013: un empate del mismo
+    instante no mide ninguna duración).
+  - `findTrafficLightCandidates()` — mayor salto proporcional entre dos duraciones consecutivas que
+    deje grupos compactos por separado a los dos lados (guarda dual, mismo principio que `fifo.ts` y
+    `read-rate-trend.ts`): un hueco sin compacidad a los lados es ruido con un pico, no dos regímenes.
+- `CriticalPointThresholds` gana `cruce` (`maxHopsToReconverge`), `paradaPrecisa` (`minDurationMs`,
+  `maxCv`, `minSamples`) y `semaforo` (`minGapRatio`, `maxWithinClusterCv`, `minClusterSamples`,
+  `minSamples`), todos `draft` y sin valor por defecto.
+- Wiring completo: `import.worker.ts` compone las cuatro funciones sobre las transiciones del
+  cohorte; `protocol.ts` transporta `kind` y los campos propios de cada variante; `main.ts` renderiza
+  las cuatro clases con su propia redacción, citando R-GRA-007 en todas.
+- Cuatro clases nuevas en el circuito de auditoría (`auditoria/9`): `bifurcacion-real` (reubicada,
+  ver más abajo), `cruce-real`, `parada-precisa-real`, `semaforo-real`, cada una con su sonda en
+  `tests/audit/auditoria.test.ts` y su lote de pruebas unitarias en `tests/unit/critical-points.test.ts`.
+
+### Corregido — el escenario ya tenía un cruce y no lo sabía
+
+El único candidato a bifurcación que existía en el circuito de auditoría desde la Parte 31
+(`ring[120]`/`96001`) **ya reconvergía**: el código nunca tocaba `position` al desviar, así que el
+siguiente tag leído era siempre el mismo, tomara o no el desvío. Con la definición de cruce que
+acaba de fijarse, eso **es** un cruce, no una bifurcación sin resolver. No se tocó el resultado
+esperado de ninguna prueba para que pasara: se relabró el mecanismo (`bifurcacion-real` →
+`cruce-real`) y se plantó una bifurcación genuina y nueva (`ring[30]`, cadena de seis tags fuera de
+anillo sin reconvergencia posible dentro del margen) para no perder cobertura de esa clase.
+
+### Corregido — una cuarta variante de la fragilidad de RNG compartido, y su resolución
+
+Añadir espera fija a tres posiciones del generador (parada precisa, semáforo, la cadena de
+bifurcación) sin devolver ese tiempo habría cambiado cuántas vueltas completa cada vehículo en las
+mismas 30 h, desplazando cuántas llamadas a `random()` consume antes de ceder el turno al siguiente
+vehículo — la misma fragilidad de cascada de las Partes 30, 31 y 33, esta vez por reloj de más y no
+por sorteos de más. Resuelto con un acumulador de deuda por vehículo: cada espera añadida se anota
+como deuda, y el avance normal del paso la descuenta (hasta el 50 % del avance nominal, nunca el
+100 %, para no fabricar un empate de instante que R-DAT-013 prohíbe tratar como orden) hasta
+devolverla del todo. Con las tres posiciones bien espaciadas entre sí (30, 70 y 105 de 150), la
+deuda siempre llega a cero mucho antes de la siguiente.
+
+Un segundo defecto, más sutil, apareció al auditar el propio mecanismo: el vehículo del defecto
+`lector-agv-degradado` (Parte 28, lectura cada vez menos fiable en cualquier tag) podía fallar
+precisamente la lectura de parada precisa o semáforo, o la del tag siguiente. Como la espera
+inyectada no dependía de si la lectura se registró, un fallo ahí fusionaba el tránsito de dos o más
+tramos en una única transición de duración intermedia — un candidato a semáforo espurio en un tag
+limpio adyacente, y una fragmentación del propio salto bimodal que impedía detectar el semáforo real.
+Corregido excluyendo los dos puntos críticos de tiempo **y su siguiente inmediato** del efecto de ese
+vehículo — el sorteo se sigue haciendo siempre, en el mismo orden, solo se descarta el resultado en
+esas cuatro posiciones, para no repetir la fragilidad de cascada por otra vía—. Esa exclusión, al
+diluir ligeramente la caída medida en el vehículo degradado, dejó su propia tendencia justo por
+debajo del umbral de degradación; se ajustó la magnitud sintética de su curva de fallo (0,7 → 0,74,
+un número del generador, nunca de planta) para devolver margen sin acercarse al riesgo opuesto —un
+suelo de lectura tan bajo que algún tag aislado, con pocas pasadas en la mitad tardía, acumulara cero
+lecturas de ese vehículo por puro azar, lo que `drift.ts` habría contado como una deriva de memoria
+que nadie plantó—.
+
+### Documentación
+
+`docs/RULE_CATALOG.md` (R-GRA-007: «cruce» distingue explícitamente el interno del protegido entre
+circuitos; nota de estado de implementación), `docs/ALGORITHM_CATALOG.md` (§8.2 ampliada con los tres
+métodos nuevos), `docs/TEST_STRATEGY.md` (TC-125–136, y la nota sobre el cambio de mecanismo de
+`bifurcacion-real`), `docs/TRACEABILITY_MATRIX.md` (fila de R-GRA-007 ampliada),
+`docs/OPEN_QUESTIONS.md` (OQ-122: cuatro de siete clases resueltas, no las siete),
+`fixtures/synthetic/auditoria/MANIFEST.md` (`auditoria/9`).
+
 ## [3.14.0] - 2026-09-22
 
 Refinamiento directo de la comparación entre dos periodos distantes de `[3.13.0]`, pedido por el

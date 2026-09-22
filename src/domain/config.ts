@@ -107,6 +107,16 @@ export interface AnalysisConfig {
  *   real y no solo un conteo— descarta el caso encontrado en la propia auditoría: un tag justo antes
  *   de una rotura súbita aguas abajo parece bifurcado porque casi todas sus salidas van al sucesor de
  *   siempre antes de la rotura y al que lo sustituye después, sin que exista ningún reparto estable.
+ *   **Cruce, parada precisa y semáforo, ampliación (R-GRA-007).** Tres saltos para dar por
+ *   reconvergidas dos ramas separa con margen el cruce del escenario sintético (reconverge en 1
+ *   salto) de la bifurcación sin reconvergencia que también planta (cadena de 6, muy por encima).
+ *   Para parada precisa, el jitter normal del propio generador ya produce un coeficiente de
+ *   variación en torno a 0,16 solo por el paso aleatorio; 0,1 queda claramente por debajo, y una
+ *   parada añadida de magnitud fija lo baja hasta ~0,04. Semáforo reproduce la misma separación para
+ *   dos regímenes: 0,25 de compacidad por grupo y un salto de 3x entre ellos. `minClusterSamples`
+ *   reutiliza la razón de `minStaysForMedian`/`minPassesForSpan` (cuatro es lo mínimo para que un
+ *   grupo no lo decida un solo vehículo); `minSamples` de semáforo reutiliza literalmente el valor y
+ *   la razón de `TrendThresholds.minPassesForTrend` (por debajo, un corte encontrado es casualidad).
  * - **Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013).** `minReadingsPerVehicle`
  *   reutiliza literalmente el valor ya elegido para `blindness`: es el mismo concepto —un vehículo
  *   con pocas lecturas no informa de nada— aplicado ahora dentro de cada periodo en vez de en toda la
@@ -144,6 +154,9 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   fifo: { minPassesForSpan: 4, minOvertakeMarginMs: 3 * 60_000, minOvertakeMarginRatio: 0.15 },
   criticalPoints: {
     bifurcacion: { minBranchShare: 0.3, minBranchSupport: 5, minBranchShareEachHalf: 0.15 },
+    cruce: { maxHopsToReconverge: 3 },
+    paradaPrecisa: { minDurationMs: 30_000, maxCv: 0.1, minSamples: 4 },
+    semaforo: { minGapRatio: 3, maxWithinClusterCv: 0.25, minClusterSamples: 4, minSamples: 20 },
   },
   drift: { minGapMs: 30 * 60_000, minReadingsPerVehicle: 10, minAdoptionShare: 0.8 },
 };

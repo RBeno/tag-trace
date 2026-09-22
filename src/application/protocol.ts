@@ -307,16 +307,29 @@ export interface CircuitViews {
    * las transiciones que ya hacen falta para `shapes`/`readMatrices`.
    *
    * Firma estadística, nunca función asignada: la función de un tag crítico es dato de planta
-   * declarado, no se deduce del fichero. Esta entrega solo propone la firma de bifurcación.
+   * declarado, no se deduce del fichero. Cuatro clases con firma: bifurcación, cruce (una
+   * bifurcación cuyas ramas reconvergen), parada precisa y semáforo.
    */
   readonly criticalPoints: readonly {
     readonly cohortId: number;
     readonly candidates: readonly {
       readonly tagId: string;
-      readonly suggestedFunction: string;
-      readonly support: number;
+      readonly kind: "bifurcacion" | "cruce" | "parada-precisa" | "semaforo";
       readonly evidence: string;
-      readonly branches: readonly { readonly tagId: string; readonly support: number; readonly share: number }[];
+      /** Presentes en `bifurcacion` y `cruce`. */
+      readonly support?: number;
+      readonly branches?: readonly { readonly tagId: string; readonly support: number; readonly share: number }[];
+      /** Presentes solo en `cruce`. */
+      readonly reconvergesAt?: string;
+      readonly hops?: number;
+      /** Presentes en `parada-precisa` y `semaforo`. */
+      readonly samples?: number;
+      /** Presente solo en `parada-precisa`. */
+      readonly meanDurationMs?: number;
+      readonly coefficientOfVariation?: number;
+      /** Presentes solo en `semaforo`. */
+      readonly lowClusterMeanMs?: number;
+      readonly highClusterMeanMs?: number;
     }[];
   }[];
   /** Por qué una fila de la lista `critico` no se pudo usar. Solo con la lista `critico` cargada. */

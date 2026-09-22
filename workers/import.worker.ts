@@ -41,7 +41,12 @@ import {
 import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-matrix.js";
 import { buildChargingReport } from "../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans } from "../src/domain/fifo.js";
-import { findBifurcationCandidates } from "../src/domain/critical-points.js";
+import {
+  classifyCrossings,
+  findBifurcationCandidates,
+  findPrecisePauseCandidates,
+  findTrafficLightCandidates,
+} from "../src/domain/critical-points.js";
 import { compareDistantPeriods } from "../src/domain/drift.js";
 import {
   laneEntryTags,
@@ -324,9 +329,13 @@ async function buildViews(
 
     // Candidatos a punto crítico (R-GRA-007): sobre las transiciones del cohorte entero, no solo el
     // anillo — restringir a `anchor.cycle` escondería justo la rama fuera de él que la firma busca.
+    const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
+    const conCruces = classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce);
+    const paradas = findPrecisePauseCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa);
+    const semaforos = findTrafficLightCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo);
     criticalPointCohorts.push({
       cohortId: cohort.id,
-      candidates: findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion),
+      candidates: [...conCruces, ...paradas, ...semaforos],
     });
   }
 

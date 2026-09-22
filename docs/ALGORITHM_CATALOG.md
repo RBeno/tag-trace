@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.15.0
+version: 0.16.0
 status: baseline-candidate
 last_updated: 2026-09-22
 ---
@@ -61,7 +61,7 @@ flowchart TD
 | ALG-018 | Expediente por objeto | Agregación por AGV o por tag y contraste con su cohorte | Recuentos, tags leídos y no leídos, contraparte que sí leyó, y evidencia navegable | O(n) sobre agregados | F2 reducido, F3 completo |
 | ALG-019 | Inactividad e instante de cambio | Detección de silencios por objeto y del punto donde el comportamiento cambia | Periodos de inactividad clasificados e instante de cambio con alternativas | O(n) por objeto | F2 reducido, F3 completo |
 | ALG-020 | Rotura y degradación de tasa de lectura | Segmentación binaria de un corte, después caída monótona por tramos | Instante de rotura o tendencia sostenida, por tag y por AGV | O(n) sobre la línea de pasadas | F3 |
-| ALG-021 | Candidatos a punto crítico | Reparto de sucesores con cuota comparable, sostenida en el tiempo (bifurcación) | Candidatos por clase con evidencia y soporte, nunca asignación | O(n) | F3 |
+| ALG-021 | Candidatos a punto crítico | Reparto de sucesores sostenido (bifurcación/cruce), coeficiente de variación (parada precisa), mayor salto proporcional (semáforo) | Candidatos por clase con evidencia y soporte, nunca asignación | O(n) | F3 |
 
 ## 4. Oportunidades y salud
 
@@ -465,11 +465,17 @@ Distinto de §9: esto no compara llegadas contra takt ni calendario —ALG-013 s
 OQ-108—, es la mitad de R-GRA-007 que no necesita ninguno de los dos: proponer **candidatos** a tag
 crítico por la firma que deja cada clase en el dato, nunca asignar la función.
 
-De las siete clases de `CONFIG_SCHEMA.md` §3.4.1, dos no dejan firma (`cambio-de-mapa`, y un `cruce`
-que nadie ha fallado en un solo circuito), y esta entrega construye solo la de **bifurcación**: un
-tag cuyas salidas se reparten entre dos o más sucesores con cuota comparable, ninguno dominante. Es
-el mismo recuento de sucesores por tag que `findDominantCycle` ya reduce para encontrar el sucesor
-mayoritario — la diferencia es que aquí interesan los que **no** llegan a dominar.
+De las siete clases de `CONFIG_SCHEMA.md` §3.4.1, tres no dejan firma con lo disponible hoy
+(`cambio-de-mapa`; `dejar-carro`/`recoger-carro`, indistinguibles entre sí porque ninguna lectura
+registra la dirección de la interacción con el carro; y el **cruce entre circuitos** protegido por un
+par de tags, R-AGV-009/011, bloqueado por OQ-121). Esta entrega construye las cuatro restantes:
+**bifurcación**, **cruce interno** (reconvergencia dentro del mismo cohorte — un fenómeno distinto
+del anterior, ver más abajo), **parada precisa** y **semáforo**.
+
+**Bifurcación.** Un tag cuyas salidas se reparten entre dos o más sucesores con cuota comparable,
+ninguno dominante. Es el mismo recuento de sucesores por tag que `findDominantCycle` ya reduce para
+encontrar el sucesor mayoritario — la diferencia es que aquí interesan los que **no** llegan a
+dominar.
 
 **Guarda dual de cuota y soporte**, mismo principio que `GraphThresholds` y que el margen de FIFO:
 cada rama exige una cuota mínima (una excepción rara del 5 % no es reparto) **y** un soporte mínimo
@@ -483,13 +489,39 @@ comparables sin que exista ningún reparto real. La guarda exige que cada rama s
 recuento y no por tiempo, en las dos mitades de las pasadas del tag: una bifurcación real persiste en
 las dos; un cambio de régimen desaparece en una.
 
-**Lo que esto no hace.** No construye `parada-precisa`, `semáforo` ni `cruce`: las dos primeras
-necesitan una firma de tiempo de permanencia que no existe todavía, y `cruce` resultó ser un problema
-distinto —`assignCohorts` fusiona dos vehículos en un cohorte en cuanto comparten una sola
-transición, así que un cruce real entre circuitos no sobrevive como dos cohortes unidos por una
-arista rara: se fusiona, y la bifurcación resultante queda indistinguible de una normal sin una
-comprobación de reconvergencia que esta entrega no construye—. Tampoco comprueba que las ramas de una
-bifurcación candidata se reencuentren más adelante. OQ-122 queda Parcial, no cerrada.
+**Cruce interno, como reclasificación de una bifurcación ya encontrada, no un detector aparte.**
+Definición fijada por el propietario: un cruce es una bifurcación cuyas ramas **reconvergen en pocos
+saltos, dentro del mismo cohorte** — dos caminos que se abren y se cierran enseguida, no una
+bifurcación que dure. Distinto del cruce **entre circuitos** protegido por un par de tags (arriba):
+ese es un fenómeno de frontera entre dos circuitos declarados; este es interno a uno solo.
+
+Para cada candidato a bifurcación, se construye un mapa de sucesor dominante por tag sobre las
+transiciones del cohorte (sin guardas de cuota: aquí solo hace falta «por dónde sigue normalmente»,
+no si es fiable como sucesor único) y se camina cada rama hasta `maxHopsToReconverge` pasos. Si dos
+ramas visitan el mismo tag dentro de ese margen, el candidato se reclasifica de `bifurcacion` a
+`cruce`, con el punto de reconvergencia y el número de saltos como evidencia. Con 2 ramas es el caso
+único que se resuelve; con 3 o más se prueba cada par y basta que uno reconverja para reclasificar —
+límite conocido y anotado, no silenciado: no se ha probado explícitamente con 4 o más ramas
+simultáneas en un mismo tag.
+
+**Parada precisa.** Sobre las duraciones de transición agrupadas por tag de origen —**excluyendo
+`sameInstant`, R-DAT-013**: un par en el mismo instante no mide ninguna duración, y contarlo como
+tránsito de 0 ms falsearía justo la varianza que se mide—, un tag es candidato si la media de sus
+duraciones supera un piso mínimo **y** su coeficiente de variación (desviación entre media) queda por
+debajo de un techo: parada consistente, no tráfico variable.
+
+**Semáforo.** Sobre las mismas duraciones, se ordenan y se busca el mayor **salto proporcional**
+entre dos consecutivas (`sorted[i+1] / sorted[i]`) que deje al menos un mínimo de muestras a cada
+lado. El candidato exige que ese salto máximo alcance un umbral **y** que cada uno de los dos grupos,
+por separado, tenga un coeficiente de variación por debajo de su propio techo — la misma disciplina
+de guarda doble que ya usan `fifo.ts` y `read-rate-trend.ts`: un hueco encontrado sin grupos
+compactos a los lados es ruido con un pico, no dos regímenes reales.
+
+**Lo que esto no hace.** No construye `cambio-de-mapa`, `dejar-carro`/`recoger-carro` ni el cruce
+entre circuitos protegido por par de tags: las tres siguen sin firma disponible o bloqueadas por
+dato de planta (OQ-121). Tampoco comprueba reconvergencia entre más de un par de ramas a la vez con
+4 o más ramas simultáneas. OQ-122 queda Parcial: responde a cuatro de las siete clases, no a las
+siete.
 
 ## 9. Punto crítico y análisis temporal
 

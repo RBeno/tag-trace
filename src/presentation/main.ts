@@ -1412,22 +1412,38 @@ function renderDrift(views: CircuitViews): void {
 /**
  * Candidatos a punto crítico (R-GRA-007), como firma estadística y no como función asignada.
  *
- * Solo bifurcación en esta entrega: parada-precisa, semáforo y cruce quedan diseñadas y sin
- * construir (no hay firma de tiempo de permanencia todavía, y cruce exige una comprobación de
- * reconvergencia que esta entrega no hace). El recorte es global, igual razón que FIFO: el número
- * de tags no está acotado.
+ * Cuatro clases con firma: bifurcación (reparto sostenido sin dominante), cruce (una bifurcación
+ * cuyas ramas reconvergen en pocos saltos — un cruce físico, no un reparto que dure), parada precisa
+ * (duración larga y de poca varianza) y semáforo (duración bimodal). El recorte es global, igual
+ * razón que FIFO: el número de tags no está acotado.
  */
 function renderCriticalPoints(views: CircuitViews): void {
   const problems = views.criticalPointsProblems ?? [];
   const candidates = views.criticalPoints.flatMap((cohort) => cohort.candidates);
   if (candidates.length === 0 && problems.length === 0) return;
 
+  type Candidate = NonNullable<CircuitViews["criticalPoints"]>[number]["candidates"][number];
+
+  const kindLabel: Readonly<Record<Candidate["kind"], string>> = {
+    bifurcacion: "candidato a bifurcación",
+    cruce: "candidato a cruce",
+    "parada-precisa": "candidato a parada precisa",
+    semaforo: "candidato a semáforo",
+  };
+  const weightOf = (candidate: Candidate): number => candidate.samples ?? candidate.support ?? 0;
+  const detailOf = (candidate: Candidate): string =>
+    candidate.kind === "bifurcacion" || candidate.kind === "cruce"
+      ? `${candidate.support ?? 0} pasadas`
+      : `${candidate.samples ?? 0} pasadas`;
+  const branchesOf = (candidate: Candidate): string =>
+    (candidate.branches ?? []).map((branch) => `${branch.tagId} (${Math.round(branch.share * 100)} %)`).join(", ");
+
   viewsPanel.append(element("h3", undefined, "Candidatos a punto crítico"));
   viewsPanel.append(
     element(
       "p",
       "muted",
-      `${candidates.length} candidatos a bifurcación. Firma estadística, nunca función asignada ` +
+      `${candidates.length} candidatos. Firma estadística, nunca función asignada ` +
         "(R-GRA-007): la función de un tag crítico es dato de planta declarado, no se deduce del " +
         "fichero. Se proponen para confirmar o descartar, no como avería.",
     ),
@@ -1437,26 +1453,24 @@ function renderCriticalPoints(views: CircuitViews): void {
     viewsPanel.append(finding("Punto crítico declarado que no se pudo usar", "—", problem));
   }
 
-  const sorted = [...candidates].sort((a, b) => b.support - a.support);
+  const sorted = [...candidates].sort((a, b) => weightOf(b) - weightOf(a));
   for (const candidate of sorted.slice(0, 5)) {
-    viewsPanel.append(
-      finding(
-        `${candidate.tagId}: candidato a bifurcación`,
-        `${candidate.support} pasadas`,
-        candidate.evidence,
-      ),
-    );
+    viewsPanel.append(finding(`${candidate.tagId}: ${kindLabel[candidate.kind]}`, detailOf(candidate), candidate.evidence));
   }
 
   viewsPanel.append(
     lazyDetails(`Detalle de los ${candidates.length} candidatos`, () =>
       plainTable(
-        ["Tag", "Función candidata", "Pasadas", "Ramas"],
+        ["Tag", "Función candidata", "Pasadas", "Detalle"],
         sorted.map((candidate) => [
           candidate.tagId,
-          candidate.suggestedFunction,
-          String(candidate.support),
-          candidate.branches.map((branch) => `${branch.tagId} (${Math.round(branch.share * 100)} %)`).join(", "),
+          candidate.kind,
+          String(weightOf(candidate)),
+          candidate.kind === "bifurcacion" || candidate.kind === "cruce"
+            ? branchesOf(candidate)
+            : candidate.kind === "parada-precisa"
+              ? `${Math.round((candidate.meanDurationMs ?? 0) / 1000)} s, cv ${(candidate.coefficientOfVariation ?? 0).toFixed(2)}`
+              : `${Math.round((candidate.lowClusterMeanMs ?? 0) / 1000)} s / ${Math.round((candidate.highClusterMeanMs ?? 0) / 1000)} s`,
         ]),
       ),
     ),

@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.21.0
+version: 0.22.0
 status: baseline-candidate
 last_updated: 2026-09-22
 ---
@@ -174,6 +174,18 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-122 | Tag nuevo leído por al menos `minAdoptionShare` de los testigos tardíos, y un testigo tardío que no lo ha leído nunca | Ese vehículo aparece con el tag en `notAdoptedTags` | Señalar a un vehículo que no es testigo tardío, o cuando la adopción no alcanza el umbral |
 | TC-123 | Tag nuevo leído por menos de `minAdoptionShare` de los testigos tardíos | Ningún vehículo se señala por ese tag | Fabricar un candidato de memoria no actualizada sin adopción mayoritaria real |
 | TC-124 | Un vehículo con `droppedTags` y `notAdoptedTags` a la vez | Aparece una sola vez en `vehicleDrifts`, con las dos listas pobladas | Duplicar la entrada del vehículo, una por cada tipo de deriva |
+| TC-125 | Dos ramas de un candidato a bifurcación cuyos sucesores dominantes reconvergen dentro de `maxHopsToReconverge` | Se reclasifica a `cruce`, con `reconvergesAt`/`hops` como evidencia | Dejarlo como bifurcación sin comprobar reconvergencia, o inventar un punto de encuentro |
+| TC-126 | Dos ramas cuyos sucesores dominantes no reconvergen dentro del margen | Se queda como `bifurcacion` | Reclasificar a `cruce` una rama que en realidad no vuelve a encontrarse |
+| TC-127 | Un candidato con tres ramas, donde solo un par de ellas reconverge | Se reclasifica a `cruce` igualmente: basta un par | Exigir que reconverjan todas las ramas a la vez |
+| TC-128 | Tag con duración media larga y coeficiente de variación bajo | Candidato a `parada-precisa`, con media y CV como evidencia | Confundir un tránsito lento pero variable con una parada consistente |
+| TC-129 | Tag con duración media larga pero CV alto | Sin candidato: tráfico variable, no parada | Aceptar la media sola sin mirar la varianza |
+| TC-130 | Tag con duración corta y CV bajo | Sin candidato: es tránsito normal, no parada | Confundir cualquier duración de poca varianza con una parada |
+| TC-131 | Tag con patrón de parada precisa pero pocas muestras | Sin candidato | Confirmar el patrón sin soporte suficiente |
+| TC-132 | Duraciones con dos grupos claramente separados y compactos por separado | Candidato a `semaforo`, con la media de cada grupo | Tratar un salto bimodal limpio como ruido |
+| TC-133 | Duraciones sin salto real (un solo grupo compacto) | Sin candidato | Fabricar dos grupos donde solo hay uno |
+| TC-134 | Salto grande entre dos duraciones pero con uno de los dos lados disperso | Sin candidato (guarda de compacidad) | Confirmar bimodalidad con un lado que en realidad es ruido con un pico |
+| TC-135 | Patrón bimodal con pocas muestras totales | Sin candidato | Confirmar semáforo sin pasadas de sobra |
+| TC-136 | Transiciones `sameInstant: true` en el cálculo de parada precisa o semáforo | Nunca cuentan como duración (R-DAT-013) | Contar un empate del mismo instante como tránsito de 0 ms |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
@@ -185,6 +197,16 @@ correcto mientras `lap_anchors` no existía. Con el ancla declarada implementada
 enunciado dejaría de ser una prueba de comportamiento y pasaría a ser una prueba de que la función
 nueva no hace nada: se corrigió a «sin ninguna declarada», y los TC-108–111 cubren el caso que TC-061
 ya no puede cubrir por sí solo.
+
+**El mecanismo plantado como `bifurcacion-real` cambió, el resultado esperado no.** Hasta la Parte 35
+el único candidato a bifurcación del circuito de auditoría (`ring[120]`/`96001`) reconvergía en el
+siguiente tag sin que nadie lo hubiera diseñado así — el código nunca tocaba `position` al desviar.
+Con la definición de cruce fijada por el propietario (bifurcación cuyas ramas reconvergen en pocos
+saltos dentro del mismo cohorte), ese mecanismo **es** un cruce, no una bifurcación sin resolver: se
+relabró como el ejemplo de `cruce-real` y se plantó una bifurcación genuina y nueva (cadena de seis
+tags fuera de anillo, sin reconvergencia posible dentro del margen) para no perder cobertura de esa
+clase. No se tocó ningún resultado esperado para que una prueba pasara: cambió el mecanismo plantado,
+con su razón documentada aquí y en `CHANGELOG.md`.
 
 Los casos enlazados están desarrollados en `docs/golden/` con la estructura de §5. Son los seis que
 no dependen de información de planta, y constituyen los criterios de aceptación de F1a. El resto se
