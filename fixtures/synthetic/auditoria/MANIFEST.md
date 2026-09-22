@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/6`
+- Dataset ID/version: `auditoria/7`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -39,6 +39,11 @@ cinco calles más un tercio contiguo del anillo (R-FLO-003). La carga dura una m
 esa magnitud es del escenario, no de planta, y por eso vive en el generador y no en `src/`. Y un
 **ancla de vuelta declarada** en la lista `ancla` (R-GRA-009): el primer tag del anillo.
 
+El generador declara además un **corte** a mitad de ventana (coincidente con el instante de la
+rotura súbita) para poder comparar un periodo temprano contra uno tardío sin necesitar una segunda
+fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual que ya hace con la de
+`carga-online` (R-DAT-016).
+
 | Clase plantada | Dónde | Qué debe decir el producto | Qué **no** puede decir |
 |---|---|---|---|
 | `declarado-sin-lecturas` | 3 tags | `obsoleto-candidato`, `unknown` | avería del tag, ni omitirlo |
@@ -58,6 +63,8 @@ esa magnitud es del escenario, no de planta, y por eso vive en el generador y no
 | `adelantamiento-en-zona-cargada` | 1 AGV, sin otro papel | se enumera a quién adelantó y con qué margen, como candidato (R-FLO-001) | llamarlo avería: R-FLO-001 admite excepciones y OQ-107 no tiene el catálogo |
 | `bifurcacion-real` | 1 tag del anillo, 1 tag fuera de anillo | candidato a bifurcación con las dos ramas y su cuota (R-GRA-007) | asignar la función, o llamarlo avería |
 | `ancla-declarada` | 1 tag del anillo, declarado en la lista `ancla` | vueltas completas `observed`; el ancla efectiva es la declarada (R-GRA-009) | que declararla cambie qué tags forman el anillo, más allá de rotar el punto de inicio |
+| `tag-nuevo-a-mitad-de-ventana` | 1 tag fuera de anillo | sin lecturas en el periodo temprano, con lecturas en el tardío: `nuevo` (R-DAT-016) | que sea obsoleto, o que existiera desde el principio de la ventana |
+| `memoria-actualizada-a-mitad-de-ventana` | 5 tags contiguos, 1 AGV | ese vehículo dejó de leerlos a mitad de ventana; el resto de la flota los sigue leyendo (R-AGV-013) | que esos tags estén averiados, o acusar a otro vehículo |
 
 ## Resultados prohibidos
 

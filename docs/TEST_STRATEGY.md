@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.19.0
+version: 0.20.0
 status: baseline-candidate
 last_updated: 2026-09-22
 ---
@@ -161,6 +161,12 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-109 | Ancla declarada que no aparece en el ciclo reconstruido | `null`, con el problema declarado; se sigue con el ancla inferida | Inventar un corte que el dato no sostiene |
 | TC-110 | Vuelta `completa` cortada por un ancla declarada y resuelta | `truth: "observed"` | Que siga `inferred` teniendo un ancla declarada que la sostiene |
 | TC-111 | Vuelta `parcial` o que cruza un hueco de cobertura, con ancla declarada | `truth: "inferred"` en cualquier caso | Que la declaración del ancla convierta en `observed` un extremo que es un corte de los datos |
+| TC-112 | Cobertura con un solo periodo, o con un hueco menor que `minGapMs` | La comparación no se evalúa (`evaluated: false`), con la razón declarada | Inventar una comparación sin dos muestras realmente distantes |
+| TC-113 | Tag leído en el periodo temprano y sin ninguna lectura en el tardío | `desaparecido`, con las lecturas del periodo temprano como evidencia | Confundirlo con `obsoleto-candidato`: aquí sí hubo lectura antes |
+| TC-114 | Tag sin lecturas en el temprano y con lecturas en el tardío | `nuevo` | Darlo por existente desde el principio de la ventana |
+| TC-115 | Tag declarado y sin ninguna lectura en los dos periodos | `obsoleto-consolidado`; el mismo tag sin declarar no aparece | Consolidar un tag del que no se sabe ni que existe |
+| TC-116 | Vehículo que deja de leer un conjunto de tags que sí leía, mientras el resto de la flota los sigue leyendo | Deriva de ese vehículo (R-AGV-013), nunca del tag | Acusar al tag cuando el resto de la flota lo sigue leyendo con normalidad |
+| TC-117 | Vehículo con pocas lecturas de un tag probabilístico en el periodo temprano, que por azar no lo lee en el tardío | No cuenta como deriva: por debajo de `minReadingsPerVehicle`, el patrón no está sostenido | Confundir la variabilidad de una tasa ya conocida con una deriva de memoria |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

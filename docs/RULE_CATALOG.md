@@ -1,8 +1,8 @@
 ---
 document_id: TT-RULES-001
-version: 0.22.0
+version: 0.23.0
 status: baseline-candidate
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 ---
 
 # Catálogo de reglas industriales
@@ -94,6 +94,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-AGV-012 | accepted | **Una transición que ningún vecino de circuito hace no demuestra una salida: demuestra que se dejó de leer.** Un vehículo que recorre su línea sin registrar una serie de tags reaparece dando un salto que nadie más da, sin haberse movido. Una salida solo se sostiene si (a) el tag de reanudación **no se alcanza** siguiendo la línea desde donde desapareció, o (b) alcanzándose, el tiempo **excede el que tarda el cohorte por ese mismo tramo medido de extremo a extremo**. La comparación es contra ese recorrido medido, nunca contra la suma de tiempos de cada arista: donde la carga se hace en ruta, un tramo con parada de trabajo tiene una dispersión tal que cualquier umbral sobre la suma dispara solo. Releer el mismo tag no es ir a ninguna parte. Lo que no supera la prueba es un **tramo recorrido sin leer**, que es un hallazgo de lectura y se cuenta como tal. |
 | R-AGV-011 | accepted | El modo de fallo de una salida se discrimina con los tags de protección del cruce: si aparecen en las lecturas y el vehículo salió igual, la lectura funcionó y la orden no se ejecutó; si no aparecen, falló la lectura. Ambas ramas son `inferred` y se presentan con su evidencia, nunca como causa única. La rama «no aparecen» exige además descartar R-AGV-012: un vehículo que venía sin leer nada no informa sobre la protección, solo sobre su lectura. |
 | R-AGV-010 | accepted | Donde la carga se hace en el propio recorrido, una parada larga es el modo normal de operar y no un hallazgo. Lo que informa es si las paradas de un vehículo se salen de las de sus vecinos de circuito —en duración, en número o en dónde ocurren—, nunca que existan. |
+| R-AGV-013 | accepted | **Comparación de un vehículo consigo mismo a lo largo del tiempo (R-AGV-001 aplicada a dos periodos distantes).** Un vehículo que leía un conjunto de tags en un periodo y deja de leer ese mismo conjunto por completo en un periodo posterior, mientras el resto de la flota los sigue leyendo con normalidad, es candidato a memoria actualizada o a lector degradado de ese vehículo — nunca a avería de los tags, que siguen vivos para todos los demás. Un tag que además murió para toda la flota no cuenta aquí: ya es un cambio de circuito (R-DAT-016), y repetirlo por cada vehículo que lo leía sería la misma causa contada varias veces. |
 
 ## Comunicación
 

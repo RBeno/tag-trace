@@ -42,6 +42,7 @@ import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-ma
 import { buildChargingReport } from "../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans } from "../src/domain/fifo.js";
 import { findBifurcationCandidates } from "../src/domain/critical-points.js";
+import { compareDistantPeriods } from "../src/domain/drift.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -411,6 +412,14 @@ async function buildViews(
       .flatMap((lane) => laneConfig.lanes.find((item) => item.laneId === lane.laneId)?.tags ?? []),
   );
   const criticalPointsConfig = readCriticalPoints(entriesOf("critico"));
+  const knownTags = new Set([
+    ...byName("circuito"),
+    ...byName("memoria"),
+    ...byName("mantenimiento"),
+    ...byName("emergencia"),
+    ...byName("carga-online"),
+    ...criticalPointsConfig.funcionOf.keys(),
+  ]);
   const inventory = buildTagInventory(
     readings,
     {
@@ -424,6 +433,10 @@ async function buildViews(
     },
     PROVISIONAL_CONFIG.blindness,
   );
+
+  // Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013): usa la cobertura que ya existe
+  // -la unión de todas las fuentes aceptadas-, nunca un segundo fichero pedido aparte.
+  const drift = compareDistantPeriods(readings, coverage, knownTags, PROVISIONAL_CONFIG.drift);
 
   const counts = new Map<string, number>();
   const truthOf = new Map<string, string>();
@@ -470,6 +483,24 @@ async function buildViews(
     ...(criticalPointsConfig.problems.length === 0
       ? {}
       : { criticalPointsProblems: criticalPointsConfig.problems }),
+    ...(!drift.evaluated || drift.earlyPeriod === null || drift.latePeriod === null
+      ? {}
+      : {
+          drift: {
+            earlyPeriod: drift.earlyPeriod,
+            latePeriod: drift.latePeriod,
+            tagDrifts: drift.tagDrifts.map((entry) => ({
+              tagId: entry.tagId,
+              kind: entry.kind,
+              readingsBefore: entry.kind === "desaparecido" ? entry.readingsBefore : 0,
+              readingsAfter: entry.kind === "nuevo" ? entry.readingsAfter : 0,
+            })),
+            vehicleDrifts: drift.vehicleDrifts.map((entry) => ({
+              agvId: entry.agvId,
+              droppedTags: entry.droppedTags,
+            })),
+          },
+        }),
   };
 }
 

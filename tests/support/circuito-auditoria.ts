@@ -53,7 +53,11 @@ export type DefectClass =
   /** Un tag reparte sus salidas entre dos sucesores con cuota comparable (R-GRA-007). */
   | "bifurcacion-real"
   /** El ancla de vuelta declarada: contexto, no defecto. Declararla no cambia qué tags forman el anillo. */
-  | "ancla-declarada";
+  | "ancla-declarada"
+  /** Un vehículo deja de leer un conjunto de tags a mitad de ventana; el resto los sigue leyendo. */
+  | "memoria-actualizada-a-mitad-de-ventana"
+  /** Un tag fuera de anillo no tiene ninguna lectura antes de la mitad y sí después. */
+  | "tag-nuevo-a-mitad-de-ventana";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -90,6 +94,12 @@ export interface AuditScenario {
   }[];
   /** Zona declarada de cada tag: `vacio` o `cargado`. */
   readonly zoneOf: ReadonlyMap<string, string>;
+  /**
+   * Corte entre el periodo temprano y el tardío, para la comparación entre dos periodos distantes
+   * (R-DAT-016, Parte 33). No delimita una fuente real: la auditoría construye a mano la cobertura de
+   * dos tramos a partir de este instante, igual que ya hace con la de `charging`.
+   */
+  readonly periodSplitUtcMs: number;
 }
 
 const RING_SIZE = 150;
@@ -216,6 +226,15 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
    * si arrastrara otro defecto, el adelantamiento se mezclaría con otra causa.
    */
   const elAdelantado = vehicles[13] as string;
+  /**
+   * Libre de cualquier otro papel: deja de leer un tramo de tags que sí leía, a partir de la mitad de
+   * la ventana, mientras el resto de la flota los sigue leyendo con normalidad (R-AGV-013).
+   */
+  const memoriaActualizada = vehicles[25] as string;
+  /** El tramo de cinco tags contiguos que `memoriaActualizada` deja de leer a partir de la mitad. */
+  const tagsDejados = ring.slice(140, 145) as string[];
+  /** Fuera de anillo: no tiene ninguna lectura antes de la mitad de la ventana y sí después (R-DAT-016). */
+  const tagNuevo = "98001";
 
   // --- Zonas (R-FLO-003: la carga online va dentro de la zona vacía) -------------------------
   //
@@ -237,6 +256,18 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const from = Date.UTC(2026, 8, 14, 5, 0, 0);
   const to = from + HOURS * 3_600_000;
   const rotura = from + Math.floor((to - from) * 0.55);
+  /**
+   * Corte entre el periodo temprano y el tardío para la comparación entre dos periodos distantes
+   * (R-DAT-016). No es una segunda fuente real: la auditoría construye la cobertura de dos tramos a
+   * mano a partir de este mismo instante (Parte 33), igual que ya hace con la cobertura de `charging`.
+   *
+   * Coincide **a propósito** con `rotura`: si el corte cayera antes, la ventana tardía arrancaría
+   * todavía dentro del tramo en que los tags rotos se siguen leyendo con normalidad, y no saldrían
+   * `desaparecido` sino con lecturas en los dos periodos. Con el mismo instante, el margen de la
+   * comparación (`driftBuffer` en la auditoría) queda centrado justo en la rotura y la deja entera
+   * dentro del hueco entre periodos, a un lado o al otro.
+   */
+  const periodSplit = rotura;
 
   const filas: Array<{ t: number; v: string; tag: string }> = [];
 
@@ -282,6 +313,9 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       else if (degradados.includes(tag)) lee = random() < 0.9 - 0.5 * avance;
       else if (tasaAlta.has(tag)) lee = random() < (tasaAlta.get(tag) as number);
       else if (tasaMedia.has(tag)) lee = random() < (tasaMedia.get(tag) as number);
+      else if (vehicle === memoriaActualizada && tagsDejados.includes(tag) && now >= periodSplit) {
+        lee = false;
+      }
 
       // Se aplica **después** de las reglas del tag, nunca en su lugar: el lector degradado sigue
       // sin leer lo que nadie lee, y encima cada vez menos de lo que sí se lee, en cualquier tag.
@@ -305,6 +339,21 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       if (position === 120 && random() < 0.42) {
         now += (STEP_SECONDS + Math.floor(random() * 9)) * 1000;
         filas.push({ t: now, v: vehicle, tag: bifurcacionRama });
+      }
+
+      // Tag nuevo a mitad de ventana (R-DAT-016): a partir del corte, cualquier vehículo que pase
+      // por esta posición también lee el tag nuevo justo después — sin depender de un vehículo
+      // concreto, como una instalación o sustitución real y no un defecto de uno solo.
+      //
+      // Sin jitter aleatorio a propósito: a diferencia de la bifurcación (que ya consumía random()
+      // desde la Parte 31), esta inyección se dispara para los 40 vehículos en toda la mitad tardía
+      // de la ventana. Un `random()` extra ahí desplaza el estado compartido de todos los vehículos
+      // que se procesan después — la misma fragilidad de cascada ya diagnosticada en las Partes 30 y
+      // 31 —, y llegó a borrar la tendencia de `lectorAgvDegradado` (vehículo 20) al correrlo. El paso
+      // sigue siendo determinista y de igual duración que el resto.
+      if (position === 135 && now >= periodSplit) {
+        now += STEP_SECONDS * 1000;
+        filas.push({ t: now, v: vehicle, tag: tagNuevo });
       }
 
       now += (STEP_SECONDS + Math.floor(random() * 9)) * 1000;
@@ -402,6 +451,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     ...rotos,
     ...degradados,
     bifurcacionTag,
+    ...tagsDejados,
   ]);
 
   const defects: PlantedDefect[] = [
@@ -533,6 +583,24 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         "declarada y el anillo mostrado empieza ahí (R-GRA-009)",
       mustNotSay: "que declarar el ancla cambie qué tags forman el anillo, más allá de rotar el punto de inicio",
     },
+    {
+      kind: "tag-nuevo-a-mitad-de-ventana",
+      tags: [tagNuevo],
+      vehicles: [],
+      atUtcMs: toRealUtc(periodSplit),
+      expect: "tag nuevo: sin lecturas en el periodo temprano, con lecturas en el tardío (R-DAT-016)",
+      mustNotSay: "que sea un tag obsoleto, o que existiera desde el principio de la ventana",
+    },
+    {
+      kind: "memoria-actualizada-a-mitad-de-ventana",
+      tags: tagsDejados,
+      vehicles: [memoriaActualizada],
+      atUtcMs: toRealUtc(periodSplit),
+      expect:
+        "deriva de ese vehículo: dejó de leer un conjunto de tags que sí leía antes, mientras el " +
+        "resto de la flota los sigue leyendo (R-AGV-013)",
+      mustNotSay: "que esos tags estén averiados, o acusar a otro vehículo",
+    },
   ];
 
   return {
@@ -546,5 +614,6 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     toUtcMs: toRealUtc(to),
     lanes,
     zoneOf,
+    periodSplitUtcMs: toRealUtc(periodSplit),
   };
 }

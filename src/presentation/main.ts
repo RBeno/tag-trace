@@ -860,6 +860,7 @@ function renderViews(views: CircuitViews): void {
       })),
     ),
   );
+  renderDrift(views);
 
   // Cohortes (R-DAT-012): un solo grupo es lo esperado; más de uno avisa de que el fichero mezcla
   // circuitos, que es justo el error que la comparación por cohorte existe para impedir.
@@ -1282,6 +1283,95 @@ function renderCharging(views: CircuitViews): void {
       ),
     ),
   );
+}
+
+/**
+ * Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013).
+ *
+ * Solo aparece cuando hay al menos dos periodos de cobertura separados lo bastante para tratarlos
+ * como distantes (`DriftThresholds.minGapMs`): con una sola fuente cargada no hay con qué comparar,
+ * y no mostrar nada es más honesto que un aviso permanente. El recorte es global —top 5 de cada
+ * lista, con el detalle completo plegado—, misma razón que FIFO y los puntos críticos: el número de
+ * tags o vehículos no está acotado.
+ */
+function renderDrift(views: CircuitViews): void {
+  const drift = views.drift;
+  if (drift === undefined) return;
+
+  const kindLabel: Readonly<Record<string, string>> = {
+    desaparecido: "cambió: se leía en el periodo temprano y ya no se lee",
+    nuevo: "tag nuevo: sin lecturas en el periodo temprano",
+    "obsoleto-consolidado": "obsoleto consolidado: sin lecturas en los dos periodos",
+  };
+  const detailOf = (entry: NonNullable<CircuitViews["drift"]>["tagDrifts"][number]): string =>
+    entry.kind === "desaparecido"
+      ? `${entry.readingsBefore} lecturas antes, 0 ahora`
+      : entry.kind === "nuevo"
+        ? `0 lecturas antes, ${entry.readingsAfter} ahora`
+        : "0 lecturas en los dos periodos";
+  const evidenceOf = (entry: NonNullable<CircuitViews["drift"]>["tagDrifts"][number]): string =>
+    entry.kind === "desaparecido"
+      ? "Cambió: murió, se sustituyó o se retiró; el dato no dice cuál (R-DAT-016)."
+      : entry.kind === "nuevo"
+        ? "Sustitución o instalación; el dato no distingue cuál."
+        : "Candidato a obsoleto reforzado por dos periodos distantes, nunca confirmado sin ir a " +
+          "mirarlo (R-EVI-006).";
+
+  viewsPanel.append(element("h3", undefined, "Comparación entre dos periodos"));
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      `Periodo temprano: ${formatInstant(drift.earlyPeriod.from)} – ${formatInstant(drift.earlyPeriod.to)}. ` +
+        `Periodo tardío: ${formatInstant(drift.latePeriod.from)} – ${formatInstant(drift.latePeriod.to)}. ` +
+        "Con una sola ventana, obsoleto y averiado dan el mismo dato; lo que los separa es el tiempo " +
+        "(R-DAT-016). El dato dice qué cambió, nunca por qué.",
+    ),
+  );
+
+  const sortedTags = [...drift.tagDrifts].sort((a, b) => a.tagId.localeCompare(b.tagId));
+  for (const entry of sortedTags.slice(0, 5)) {
+    viewsPanel.append(finding(`${entry.tagId}: ${kindLabel[entry.kind]}`, detailOf(entry), evidenceOf(entry)));
+  }
+  if (sortedTags.length > 0) {
+    viewsPanel.append(
+      lazyDetails(`Detalle de los ${sortedTags.length} tags con deriva`, () =>
+        plainTable(
+          ["Tag", "Clase", "Antes", "Ahora"],
+          sortedTags.map((entry) => [
+            entry.tagId,
+            entry.kind,
+            String(entry.readingsBefore),
+            String(entry.readingsAfter),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  const sortedVehicles = [...drift.vehicleDrifts].sort(
+    (a, b) => b.droppedTags.length - a.droppedTags.length,
+  );
+  for (const entry of sortedVehicles.slice(0, 5)) {
+    viewsPanel.append(
+      finding(
+        `${entry.agvId}: dejó de leer ${entry.droppedTags.length} tags que sí leía antes`,
+        entry.droppedTags.slice(0, 5).join(", ") + (entry.droppedTags.length > 5 ? "…" : ""),
+        "El resto de la flota los sigue leyendo: memoria actualizada o degradada de este vehículo " +
+          "(R-AGV-013). El dato no elige cuál.",
+      ),
+    );
+  }
+  if (sortedVehicles.length > 0) {
+    viewsPanel.append(
+      lazyDetails(`Detalle de los ${sortedVehicles.length} vehículos con deriva`, () =>
+        plainTable(
+          ["AGV", "Tags dejados de leer"],
+          sortedVehicles.map((entry) => [entry.agvId, entry.droppedTags.join(", ")]),
+        ),
+      ),
+    );
+  }
 }
 
 /**

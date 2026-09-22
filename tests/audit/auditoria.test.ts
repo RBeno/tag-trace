@@ -32,6 +32,7 @@ import {
   findBifurcationCandidates,
   type CriticalPointCandidate,
 } from "../../src/domain/critical-points.js";
+import { compareDistantPeriods, type DriftComparison } from "../../src/domain/drift.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -88,6 +89,8 @@ interface Analysis {
   readonly laps: readonly Lap[];
   readonly anchorTagId: string | undefined;
   readonly anchorTruth: "observed" | "inferred" | undefined;
+  /** Comparación entre el primer y el último periodo, construidos a mano a partir del escenario. */
+  readonly drift: DriftComparison;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
 }
@@ -235,6 +238,22 @@ function analyse(
     laneConfig.lanes,
   );
 
+  // Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013): la cobertura de dos tramos se
+  // construye a mano a partir del corte del propio escenario, con un margen a cada lado muy por
+  // encima de `minGapMs` — mismo patrón ya usado para la cobertura de `charging` más arriba, y no una
+  // segunda fuente real.
+  const driftBuffer = 60 * 60_000;
+  const driftCoverage = [
+    { from: scenario.fromUtcMs, to: scenario.periodSplitUtcMs - driftBuffer },
+    { from: scenario.periodSplitUtcMs + driftBuffer, to: scenario.toUtcMs },
+  ];
+  const knownTags = new Set([
+    ...declared,
+    ...laneTagsOf(() => true),
+    ...criticalPointsConfig.funcionOf.keys(),
+  ]);
+  const drift = compareDistantPeriods(readings, driftCoverage, knownTags, PROVISIONAL_CONFIG.drift);
+
   return {
     matrix,
     ring,
@@ -248,6 +267,7 @@ function analyse(
     laps,
     anchorTagId: anchor?.tagId,
     anchorTruth,
+    drift,
     readings: readings.length,
   };
 }
@@ -268,6 +288,7 @@ describe("auditoría del circuito con verdad conocida", () => {
     laps,
     anchorTagId,
     anchorTruth,
+    drift,
     readings,
   } = analysis;
 
@@ -550,6 +571,36 @@ describe("auditoría del circuito con verdad conocida", () => {
           `${completas.filter((lap) => lap.truth === "observed").length} con truth observed`,
       };
     },
+    "tag-nuevo-a-mitad-de-ventana": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "tag-nuevo-a-mitad-de-ventana")
+        ?.tags ?? [])[0];
+      const hallado = drift.tagDrifts.find((entry) => entry.tagId === esperado);
+      return {
+        ok: drift.evaluated && hallado?.kind === "nuevo",
+        detail: !drift.evaluated
+          ? `no evaluado: ${drift.reason ?? "sin razón"}`
+          : hallado === undefined
+            ? "sin hallazgo para el tag plantado"
+            : `${hallado.kind}` +
+              (hallado.kind === "nuevo" ? `, ${hallado.readingsAfter} lecturas en el periodo tardío` : ""),
+      };
+    },
+    "memoria-actualizada-a-mitad-de-ventana": () => {
+      const defect = scenario.defects.find((d) => d.kind === "memoria-actualizada-a-mitad-de-ventana");
+      const esperado = defect?.vehicles[0];
+      const esperados = new Set(defect?.tags ?? []);
+      const hallado = drift.vehicleDrifts.find((entry) => entry.agvId === esperado);
+      const dropped = new Set(hallado?.droppedTags ?? []);
+      const coincide = esperados.size > 0 && [...esperados].every((tag) => dropped.has(tag));
+      return {
+        ok: drift.evaluated && hallado !== undefined && coincide,
+        detail: !drift.evaluated
+          ? `no evaluado: ${drift.reason ?? "sin razón"}`
+          : hallado === undefined
+            ? "vehículo plantado sin deriva señalada"
+            : `${hallado.droppedTags.length} tags dejados: ${hallado.droppedTags.join(", ")}`,
+      };
+    },
   };
 
   it("publica el informe por clase", () => {
@@ -648,6 +699,24 @@ describe("auditoría del circuito con verdad conocida", () => {
       candidatosSobreSanos,
       `candidatos espurios: ${candidatosSobreSanos.slice(0, 8).join(", ")}`,
     ).toHaveLength(0);
+
+    // Ningún tag sano debe aparecer con deriva entre los dos periodos, y ningún vehículo salvo el
+    // plantado debe aparecer con tags dejados de leer.
+    const derivaSobreSanos = scenario.cleanTags.filter((tag) =>
+      drift.tagDrifts.some((entry) => entry.tagId === tag),
+    );
+    expect(
+      derivaSobreSanos,
+      `deriva espuria sobre tags sanos: ${derivaSobreSanos.slice(0, 8).join(", ")}`,
+    ).toHaveLength(0);
+
+    const esperado = (scenario.defects.find((d) => d.kind === "memoria-actualizada-a-mitad-de-ventana")
+      ?.vehicles ?? [])[0];
+    const vehiculosConDerivaEspuria = drift.vehicleDrifts.filter((entry) => entry.agvId !== esperado);
+    expect(
+      vehiculosConDerivaEspuria.map((entry) => entry.agvId),
+      `vehículos con deriva sin plantar: ${vehiculosConDerivaEspuria.map((entry) => entry.agvId).join(", ")}`,
+    ).toHaveLength(0);
   }, PLAZO);
 
   it("detecta las clases que ya sabe detectar, y sigue haciéndolo", () => {
@@ -658,6 +727,25 @@ describe("auditoría del circuito con verdad conocida", () => {
       if (!resultado.ok) fallos.push(`${defect.kind}: ${resultado.detail}`);
     }
     expect(fallos, fallos.join(" | ")).toHaveLength(0);
+  }, PLAZO);
+
+  it("la deriva entre dos periodos coincide con otras clases ya plantadas, sin sonda propia", () => {
+    // Los tags de rotura súbita mueren circuito-wide antes de la mitad de la ventana: tienen que
+    // aparecer como `desaparecido` sin que nadie los haya plantado a propósito para esta clase.
+    const rotos = scenario.defects.find((d) => d.kind === "rotura-subita")?.tags ?? [];
+    const desaparecidos = new Set(
+      drift.tagDrifts.filter((entry) => entry.kind === "desaparecido").map((entry) => entry.tagId),
+    );
+    for (const tag of rotos) expect(desaparecidos.has(tag), `${tag} debería salir desaparecido`).toBe(true);
+
+    // Los tags nunca leídos por nadie tienen que consolidarse con la segunda ventana.
+    const nuncaLeidos = scenario.defects.find((d) => d.kind === "declarado-sin-lecturas")?.tags ?? [];
+    const consolidados = new Set(
+      drift.tagDrifts.filter((entry) => entry.kind === "obsoleto-consolidado").map((entry) => entry.tagId),
+    );
+    for (const tag of nuncaLeidos) {
+      expect(consolidados.has(tag), `${tag} debería salir obsoleto-consolidado`).toBe(true);
+    }
   }, PLAZO);
 
   it("la lista de deuda conocida no miente: si algo empieza a detectarse, hay que sacarlo", () => {

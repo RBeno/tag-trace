@@ -327,6 +327,22 @@ export interface CircuitViews {
    * cohorte: la lista `ancla` es de circuito completo.
    */
   readonly lapAnchorProblems?: readonly string[];
+  /**
+   * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando
+   * el circuito tiene listas de planta cargadas **y** al menos dos periodos distantes: con una sola
+   * fuente cargada no hay con qué comparar, y no mostrar nada es más honesto que un aviso permanente.
+   */
+  readonly drift?: {
+    readonly earlyPeriod: { readonly from: number; readonly to: number };
+    readonly latePeriod: { readonly from: number; readonly to: number };
+    readonly tagDrifts: readonly {
+      readonly tagId: string;
+      readonly kind: "desaparecido" | "nuevo" | "obsoleto-consolidado";
+      readonly readingsBefore: number;
+      readonly readingsAfter: number;
+    }[];
+    readonly vehicleDrifts: readonly { readonly agvId: string; readonly droppedTags: readonly string[] }[];
+  };
 }
 
 /** `ReplayFrame` tal como cruza el `postMessage`: el mapa de vehículos, ya como pares. */

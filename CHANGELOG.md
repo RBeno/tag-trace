@@ -2,6 +2,102 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.13.0] - 2026-09-22
+
+Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013), la pieza «histórico» de ALG-009 y
+la única ausencia de código que `docs/TRACEABILITY_MATRIX.md` seguía señalando explícitamente desde
+la Parte 21. No es F4 —`docs/ROADMAP.md` la lista dentro de F3, «comparación individual, cohorte,
+colectiva **e histórica**»—, así que no requería `CONTINÚA FASE 4`. R-DAT-016 ya escribía el
+mecanismo exacto desde que se aceptó: «leído antes y no ahora es un cambio; no leído en ninguna
+ventana es obsoleto consolidado». Faltaba construirlo.
+
+No hace falta pedir un segundo fichero: `coverage` ya es la unión de los intervalos de todas las
+fuentes aceptadas, así que dos exportaciones separadas en el tiempo ya producen, hoy mismo, dos o
+más intervalos disjuntos — es justo lo que `tests/e2e/acumulacion.spec.ts` («dos ventanas disjuntas
+dejan el hueco al descubierto») ya prueba desde antes.
+
+### Añadido
+
+- **`src/domain/drift.ts`** — `compareDistantPeriods()`: compara el primer y el último periodo de
+  cobertura (nunca los intermedios), con un hueco mínimo (`minGapMs`) para no tratar como distantes
+  dos fuentes casi contiguas. Cuatro hallazgos, los tres primeros puramente binarios —presencia o
+  ausencia, sin ningún umbral de magnitud—: `desaparecido` (se leía y ya no, circuito completo),
+  `nuevo` (sin lecturas antes, con lecturas ahora), `obsoleto-consolidado` (sin lecturas en los dos
+  periodos, y solo si el tag está declarado en alguna lista — si no, no hay cómo saber que existe), y
+  la deriva de un vehículo concreto (R-AGV-013 nueva) que deja de leer un conjunto que sí leía
+  mientras el resto de la flota lo sigue leyendo con normalidad.
+- `DriftThresholds` en `config.ts`, `draft` y sin valor por defecto en ninguna función.
+  `minReadingsPerVehicle` reutiliza literalmente el valor ya elegido para `blindness` (mismo
+  concepto); `minGapMs` es una magnitud del escenario sintético, declarada como tal.
+- `CircuitViews.drift`, presente solo cuando hay listas de planta cargadas y al menos dos periodos
+  distantes: sin eso, no hay nada que mostrar y no mostrar nada es más honesto que un aviso
+  permanente.
+- Vista: bloque «Comparación entre dos periodos» tras el inventario, con la redacción obligada a
+  citar R-DAT-016 y a no elegir causa (R-EVI-006): el dato dice qué cambió, nunca por qué.
+- Dos clases nuevas en el circuito de auditoría (`auditoria/7`): `tag-nuevo-a-mitad-de-ventana` (un
+  tag fuera de anillo que solo empieza a leerse pasado el corte) y
+  `memoria-actualizada-a-mitad-de-ventana` (un vehículo, sin ningún otro papel, que deja de leer un
+  tramo de cinco tags contiguos pasado el corte, mientras el resto de la flota los sigue leyendo).
+
+### Dos riesgos reales, encontrados auditando el propio detector
+
+1. **Guarda de soporte.** Un tag con tasa de lectura probabilística (una `lectura-media` ya conocida
+   por otro motivo) puede, por puro azar, no producir ninguna lectura de un vehículo concreto en el
+   periodo tardío aunque ese vehículo lo hubiera leído antes: no es una deriva, es la misma
+   variabilidad que ya explica esa tasa. Corregido exigiendo que el vehículo haya leído el tag, en el
+   periodo temprano, al menos `minReadingsPerVehicle` veces antes de contar su ausencia como deriva —
+   mismo umbral y misma razón que ya usa la ceguera de una sola ventana.
+2. **El corte de la comparación coincidía casi, pero no del todo, con la rotura súbita ya plantada.**
+   Con el corte a mitad exacta de la ventana y la rotura al 55 %, el periodo tardío arrancaba todavía
+   dentro del tramo en que los tags rotos se seguían leyendo con normalidad, así que no salían
+   `desaparecido` sino con lecturas en los dos periodos — y, como el tag no se daba por muerto
+   circuito completo, la ausencia se atribuía de más a cada vehículo que lo había leído. Corregido
+   haciendo coincidir el corte con el instante de la rotura, para que el margen de la comparación
+   quede centrado exactamente ahí.
+
+Un tercer efecto, ya conocido de las Partes 30 y 31: la inyección del tag nuevo consumía un
+`random()` extra por vehículo en toda la mitad tardía de la ventana, desplazando el estado
+compartido del generador para los vehículos procesados después y borrando la tendencia ya plantada
+de `lector-agv-degradado`. Corregido quitando el jitter aleatorio de esa inyección — el paso sigue
+siendo determinista y de igual duración, sin consumir ningún sorteo.
+
+### El informe, con las diecinueve clases
+
+```
+239.129 lecturas, 40 vehículos. Anillo reconstruido: 147 tags de 150 declarados. Fuera del anillo: 16.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 10/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  DETECTA     rotura-subita — con el instante dentro de margen: 2/2
+  DETECTA     degradacion-progresiva — con tendencia sostenida: 2/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 96 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 2 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+  DETECTA     lector-agv-degradado — 7120: bajando (90% → 78% → 62% → 51%); tags con tendencia o rotura por su culpa: 0
+  DETECTA     adelantamiento-en-zona-cargada — el primero por margen es 7113 (se esperaba 7113), 4 min de margen; 2 más
+  DETECTA     bifurcacion-real — 2 ramas: 60363 58%, 96001 42%
+  DETECTA     ancla-declarada — ancla efectiva: 60000 (observed); 1656 vueltas completas, 1656 con truth observed
+  DETECTA     tag-nuevo-a-mitad-de-ventana — nuevo, 713 lecturas en el periodo tardío
+  DETECTA     memoria-actualizada-a-mitad-de-ventana — 5 tags dejados: 60420, 60423, 60426, 60429, 60432
+```
+
+**Diecinueve de diecinueve clases detectadas, cero falsos positivos, `DEUDA_CONOCIDA` vacía.**
+
+### Gobierno
+
+- `docs/RULE_CATALOG.md` (R-AGV-013 nueva); `docs/ALGORITHM_CATALOG.md` (§6.1 nueva, puntero desde
+  ALG-009); `docs/TEST_STRATEGY.md` (TC-112–117); `docs/TRACEABILITY_MATRIX.md` (fila nueva, y se
+  quita la comparación entre dos periodos distantes de la lista de lo que seguía sin implementar);
+  `docs/PHASE_GATES.md` (G3, nota sobre el componente histórico de ALG-009, sin marcar el criterio
+  completo); `docs/GLOSSARY.md` (Deriva); `docs/OPEN_QUESTIONS.md` (OQ-117: el mecanismo ya existe,
+  sigue faltando una segunda exportación real de SE2/4); `fixtures/synthetic/auditoria/MANIFEST.md`
+  (`auditoria/7`).
+
 ## [3.12.0] - 2026-09-22
 
 Anclas de vuelta declaradas (R-GRA-009, `lap_anchors`), pedido explícitamente por el propietario

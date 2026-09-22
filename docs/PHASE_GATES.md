@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.17.0
+version: 0.18.0
 status: baseline-candidate
 last_updated: 2026-09-22
 ---
@@ -101,7 +101,10 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
 ## G3 — Autorizar F4
 
 - [ ] Oportunidades y salud explicadas.
-- [ ] Diagnóstico individual/grupal/colectivo validado.
+- [ ] Diagnóstico individual/grupal/colectivo validado. **Con matiz**: el componente histórico de
+      ALG-009 —comparación entre el primer y el último periodo de cobertura, R-DAT-016, R-AGV-013—
+      ya está implementado y probado (`src/domain/drift.ts`). El individual/grupal/colectivo contra
+      lo esperado sigue pendiente de oportunidad elegible (OQ-B04, OQ-120) y calendario (OQ-108).
 - [ ] Calendario, pausas y takt versionados.
 - [ ] FIFO cargado y reordenación vacía diferenciados. **Modelado**: el FIFO cargado se detecta como
       inversión de orden dentro de los tramos contiguos de zona cargada del anillo —derivados del

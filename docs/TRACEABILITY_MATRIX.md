@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.19.0
+version: 0.20.0
 status: baseline-candidate
 last_updated: 2026-09-22
 ---
@@ -95,13 +95,17 @@ regla exista: la matriz no es una lista de intenciones.
 | R-FLO-001 / ALG-011 / TC-097–101 FIFO en zona cargada, adelantamiento candidato | `src/domain/fifo.ts` | `tests/unit/fifo.test.ts` |
 | R-GRA-007 / ALG-021 / TC-102–105 candidatos a punto crítico (bifurcación); R-GRA-008 / TC-106–107 omisión crítica diferenciada | `src/domain/critical-points.ts`, `src/domain/inventory.ts`, `src/domain/circuit-config.ts` | `tests/unit/critical-points.test.ts`, `tests/unit/inventory.test.ts`, `tests/unit/charging.test.ts` |
 | R-GRA-009 / `CONFIG_SCHEMA.md` §3.4.2 / TC-108–111 anclas de vuelta declaradas, `truth` condicional a completitud | `src/domain/laps.ts` (`resolveDeclaredAnchor`, `buildLap`), `src/domain/circuit-config.ts` (`readLapAnchors`), `workers/import.worker.ts` | `tests/unit/laps.test.ts`, `tests/unit/vsystem.test.ts` (invariancia a la rotación), `tests/audit/auditoria.test.ts` |
+| R-DAT-016 / R-AGV-013 / ALG-009 §6.1 / TC-112–117 comparación entre dos periodos distantes | `src/domain/drift.ts` (`compareDistantPeriods`) | `tests/unit/drift.test.ts`, `tests/audit/auditoria.test.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
-planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` — y la
-comparación entre dos periodos distantes, que es la única que separa un obsoleto de un tag
-averiado. La **tasa a lo largo del tiempo**, que hasta el 2026-09-21 era la tercera ausencia de esta
-lista, ya tiene fila: la auditoría la midió, no la dio por hecha, y las dos clases que dependían de
-ella —rotura súbita y degradación progresiva— salieron de `DEUDA_CONOCIDA` en
+planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` —, y el tercer
+descarte de R-DAT-016 (comprobar con tiempos si el tramo que rodea a un tag obsoleto se recorre en
+directo), que es geométrico y distinto de la comparación entre dos periodos que ya tiene fila arriba.
+La **comparación entre dos periodos distantes**, que hasta el 2026-09-22 era la ausencia señalada en
+este párrafo, ya tiene fila: separa un tag obsoleto de uno averiado con dos muestras, no con una
+hipótesis (R-DAT-016). La **tasa a lo largo del tiempo**, que hasta el 2026-09-21 era la tercera
+ausencia de esta lista, ya tiene fila: la auditoría la midió, no la dio por hecha, y las dos clases
+que dependían de ella —rotura súbita y degradación progresiva— salieron de `DEUDA_CONOCIDA` en
 `tests/audit/auditoria.test.ts` el mismo día que se detectaron.
 
 **La advertencia anterior queda cerrada, no borrada.** Hasta esta entrega, `inventory.ts` y

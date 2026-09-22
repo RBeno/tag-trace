@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.13.0
+version: 0.14.0
 status: baseline-candidate
 last_updated: 2026-09-22
 ---
@@ -49,7 +49,7 @@ flowchart TD
 | ALG-006 | Consenso topológico | Soporte entre AGV/vueltas y estadística robusta | Grafo físico inferido con alternativas | O(e·a) acotado | F2 |
 | ALG-007 | Oportunidades | Contexto predecesor/sucesor, ruta y huecos | Oportunidades elegibles, censuradas o desconocidas | O(n)–O(n log n) | F3 |
 | ALG-008 | Salud contextual | Lecturas/oportunidades, estabilidad y calidad | Salud + desglose + intervalo/confianza | O(t·a·c) sobre agregados | F3 |
-| ALG-009 | Divergencia colectiva | Comparación individual, cohorte, flota e histórico | Individual/grupal/colectiva + explicación | O(m) sobre métricas | F3 |
+| ALG-009 | Divergencia colectiva | Comparación individual, cohorte, flota e histórico (histórico, §6.1) | Individual/grupal/colectiva + explicación | O(m) sobre métricas | F3 |
 | ALG-010 | Perfil temporal | Mediana, cuantiles, MAD y calendario | Esperado por tramo/contexto | O(n log n), optimizable | F3 |
 | ALG-011 | FIFO/flujo | Tramos de zona cargada derivados del anillo, inversión de orden con margen dual (§8.1) | Adelantamientos candidatos, nunca averías confirmadas | O(n) | F3 |
 | ALG-012 | Carga online | Máquina de estados por cada calle configurada | Entradas, ocupación, permanencia, salidas y anomalías | O(n) | F3 |
@@ -305,6 +305,41 @@ El consenso conserva tanto la ruta dominante como alternativas con soporte. Una 
 | Todos cambian de secuencia sostenidamente | Evolución física/configurada | Que Vsystem sea necesariamente incorrecto |
 
 Cada diagnóstico conserva explicaciones alternativas y acciones de comprobación.
+
+## 6.1 Comparación entre dos periodos distantes, implementado (R-DAT-016, R-AGV-013)
+
+Es la pieza «histórico» de ALG-009: con una sola ventana, un tag sin lecturas es indistinguible entre
+obsoleto y averiado, y un vehículo que no lee un tag es indistinguible entre «nunca lo llevó en
+memoria» y «lo perdió». Lo que separa las dos explicaciones es el tiempo (R-DAT-016).
+
+**No hace falta pedir un segundo fichero.** `coverage` ya es la unión de los intervalos de todas las
+fuentes aceptadas (`mergeIntervals`); dos exportaciones separadas en el tiempo producen, sin nada
+más, dos o más intervalos disjuntos. `compareDistantPeriods` (`src/domain/drift.ts`) usa el primero y
+el último —nunca periodos intermedios— y exige un hueco mínimo entre ambos (`minGapMs`) para no
+tratar como «distantes» dos fuentes casi contiguas.
+
+Cuatro comparaciones, todas binarias —presencia o ausencia, sin ningún umbral de magnitud— salvo la
+guarda de soporte:
+
+| Comparación | Resultado |
+|---|---|
+| Leído en el periodo temprano, nada en el tardío | `desaparecido`: cambió — murió, se sustituyó o se retiró; el dato no dice cuál |
+| Nada en el temprano, leído en el tardío | `nuevo`: sustitución o instalación |
+| Nada en los dos periodos, y el tag está declarado en alguna lista | `obsoleto-consolidado`: más soporte que una sola ventana, nunca `confirmed` sin ir a mirarlo |
+| Un vehículo leía un tag y deja de leerlo, mientras el resto de la flota lo sigue leyendo | Deriva de ese vehículo (R-AGV-013): memoria actualizada o lector degradado, nunca avería del tag |
+
+**Guarda de soporte, encontrada auditando el propio detector.** Un tag con tasa de lectura
+probabilística (una tasa media o una degradación ya conocidas por otro motivo) puede, por puro azar,
+no producir ninguna lectura de un vehículo concreto en el periodo tardío aunque ese vehículo lo
+hubiera leído antes: no es una deriva, es la misma variabilidad que ya explica esa tasa. La deriva de
+vehículo solo cuenta un tag si ese vehículo lo leyó, en el periodo temprano, al menos
+`minReadingsPerVehicle` veces — el mismo umbral y la misma razón que ya usa `BlindnessThresholds`: por
+debajo, un puñado de lecturas no sostiene ningún patrón que la ausencia después pueda contradecir.
+
+**Lo que esto no hace.** No implementa el tercer descarte que R-DAT-016 también anuncia —comprobar
+con tiempos si el tramo que rodea a un tag obsoleto se recorre en directo—, que es geométrico y no
+temporal. No compara periodos intermedios cuando hay más de dos. No reclasifica el inventario de una
+sola ventana (`inventory.ts`): es una vista complementaria que se cruza por `tagId`.
 
 ## 7. Segmentación de vueltas y huecos
 

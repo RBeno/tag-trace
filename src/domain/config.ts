@@ -17,6 +17,7 @@ import type { AffinityThresholds } from "./affinity.js";
 import type { BlindnessThresholds } from "./inventory.js";
 import type { ChargingThresholds } from "./charging.js";
 import type { CriticalPointThresholds } from "./critical-points.js";
+import type { DriftThresholds } from "./drift.js";
 import type { FifoThresholds } from "./fifo.js";
 import type { GraphThresholds } from "./graph.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
@@ -50,6 +51,7 @@ export interface AnalysisConfig {
   readonly trend: TrendThresholds;
   readonly fifo: FifoThresholds;
   readonly criticalPoints: CriticalPointThresholds;
+  readonly drift: DriftThresholds;
 }
 
 /**
@@ -105,6 +107,13 @@ export interface AnalysisConfig {
  *   real y no solo un conteo— descarta el caso encontrado en la propia auditoría: un tag justo antes
  *   de una rotura súbita aguas abajo parece bifurcado porque casi todas sus salidas van al sucesor de
  *   siempre antes de la rotura y al que lo sustituye después, sin que exista ningún reparto estable.
+ * - **Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013).** `minReadingsPerVehicle`
+ *   reutiliza literalmente el valor ya elegido para `blindness`: es el mismo concepto —un vehículo
+ *   con pocas lecturas no informa de nada— aplicado ahora dentro de cada periodo en vez de en toda la
+ *   ventana. `minGapMs` es una magnitud claramente del escenario sintético (media hora, para que un
+ *   fixture de 30 h la pueda ejercitar sin un segundo fichero): en planta, «distante» son días o
+ *   semanas —el hueco real de 38 días de PC2 que motivó esta pieza—, y ese valor no se fija aquí ni
+ *   se supone.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -134,6 +143,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   criticalPoints: {
     bifurcacion: { minBranchShare: 0.3, minBranchSupport: 5, minBranchShareEachHalf: 0.15 },
   },
+  drift: { minGapMs: 30 * 60_000, minReadingsPerVehicle: 10 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */
