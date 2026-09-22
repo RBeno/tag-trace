@@ -35,9 +35,11 @@ import { findDominantCycle, segmentLaps, type Lap, type LapAnchor } from "../src
 import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-matrix.js";
 import { buildChargingReport } from "../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans } from "../src/domain/fifo.js";
+import { findBifurcationCandidates } from "../src/domain/critical-points.js";
 import {
   laneEntryTags,
   readCoLanes,
+  readCriticalPoints,
   readZones,
   type ConfigEntry,
 } from "../src/domain/circuit-config.js";
@@ -224,6 +226,7 @@ async function buildViews(
   const shapes: CircuitViews["shapes"][number][] = [];
   const matrices: CircuitViews["readMatrices"][number][] = [];
   const fifoCohorts: NonNullable<CircuitViews["fifo"]>[number][] = [];
+  const criticalPointCohorts: CircuitViews["criticalPoints"][number][] = [];
   /** El ancla de cada cohorte, guardada para no volver a buscar el mismo ciclo más abajo. */
   const anchors = new Map<number, LapAnchor>();
 
@@ -286,6 +289,13 @@ async function buildViews(
       const fifoReport = buildFifoReport(cohort.id, cohortReadings, spans, PROVISIONAL_CONFIG.fifo);
       fifoCohorts.push({ cohortId: cohort.id, spans: fifoReport.spans, problems: spanProblems });
     }
+
+    // Candidatos a punto crítico (R-GRA-007): sobre las transiciones del cohorte entero, no solo el
+    // anillo — restringir a `anchor.cycle` escondería justo la rama fuera de él que la firma busca.
+    criticalPointCohorts.push({
+      cohortId: cohort.id,
+      candidates: findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion),
+    });
   }
 
   const coverageEnd =
@@ -354,6 +364,7 @@ async function buildViews(
         }),
     ...(fifoCohorts.length === 0 ? {} : { fifo: fifoCohorts }),
     orderWithheld: matrices.reduce((total, matrix) => total + matrix.orderWithheld, 0),
+    criticalPoints: criticalPointCohorts,
   };
 
   if (lists.length === 0) return views;
@@ -365,6 +376,7 @@ async function buildViews(
       .filter((lane) => !lane.served)
       .flatMap((lane) => laneConfig.lanes.find((item) => item.laneId === lane.laneId)?.tags ?? []),
   );
+  const criticalPointsConfig = readCriticalPoints(entriesOf("critico"));
   const inventory = buildTagInventory(
     readings,
     {
@@ -374,6 +386,7 @@ async function buildViews(
       emergency: byName("emergencia"),
       charging: byName("carga-online"),
       unservedLaneTags,
+      critical: criticalPointsConfig.funcionOf,
     },
     PROVISIONAL_CONFIG.blindness,
   );
@@ -420,6 +433,9 @@ async function buildViews(
       listsLoaded: lists.map((entry) => entry.list),
     },
     ...(vsystemContrast === undefined ? {} : { vsystemContrast }),
+    ...(criticalPointsConfig.problems.length === 0
+      ? {}
+      : { criticalPointsProblems: criticalPointsConfig.problems }),
   };
 }
 

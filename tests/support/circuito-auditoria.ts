@@ -49,7 +49,9 @@ export type DefectClass =
   /** Un AGV cuyo lector falla cada vez más en cualquier tag, no en uno concreto. */
   | "lector-agv-degradado"
   /** Un AGV que se demora en la zona cargada y el resto lo adelanta (R-FLO-001). */
-  | "adelantamiento-en-zona-cargada";
+  | "adelantamiento-en-zona-cargada"
+  /** Un tag reparte sus salidas entre dos sucesores con cuota comparable (R-GRA-007). */
+  | "bifurcacion-real";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -171,6 +173,9 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const tramoConvoy = ring.slice(90, 95) as string[]; // varios seguidos, conservando convoy
   const rotos = [ring[100], ring[101]] as string[];
   const degradados = [ring[110], ring[111]] as string[];
+  const bifurcacionTag = ring[120] as string;
+  /** Fuera del anillo declarado, numeración distinta de `mantenimiento` para distinguirla a simple vista. */
+  const bifurcacionRama = "96001";
   const mantenimiento = ["90001", "90002"]; // fuera del anillo declarado
 
   const ciegos = vehicles.filter((_, index) => index % 8 === 0); // se saltan `porMemoria`
@@ -290,6 +295,16 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         primerPaseCargado = false;
       }
 
+      // Bifurcación real: al 42 % de las pasadas por esta posición, el vehículo se desvía por un
+      // tag fuera de anillo antes de reincorporarse. No es un defecto de un vehículo concreto —
+      // cualquiera puede tomar cualquiera de las dos ramas—, así que no depende de `vehicle`. El
+      // 42 % y no el 50 %: con semilla fija, un reparto exacto podría voltear cuál de los dos tags
+      // queda en el ciclo dominante de `findDominantCycle`, que usa `>` estricto.
+      if (position === 120 && random() < 0.42) {
+        now += (STEP_SECONDS + Math.floor(random() * 9)) * 1000;
+        filas.push({ t: now, v: vehicle, tag: bifurcacionRama });
+      }
+
       now += (STEP_SECONDS + Math.floor(random() * 9)) * 1000;
       position = (position + 1) % RING_SIZE;
 
@@ -316,12 +331,39 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   }
 
   // Mantenimiento: lecturas sueltas, de pocos vehículos y fuera del anillo.
+  //
+  // Aisladas de verdad: si el instante al azar cae dentro de una estancia de carga del mismo
+  // vehículo, se vuelve a sortear. Sin esto, una lectura de mantenimiento puede interponerse entre
+  // la parada precisa y la salida de una calle por pura coincidencia, y la estancia deja de
+  // reconocerse como carga — no porque el detector falle, sino porque el escenario mezcló sin
+  // querer dos clases plantadas que se declaran independientes.
+  const laneTagsAll = new Set(lanes.flatMap((lane) => [lane.entry, lane.stop, lane.exit]));
+  const chargingWindowsByVehicle = new Map<string, Array<readonly [number, number]>>();
+  for (const vehicle of vehicles) {
+    const hits = filas
+      .filter((fila) => fila.v === vehicle && laneTagsAll.has(fila.tag))
+      .sort((a, b) => a.t - b.t);
+    const windows: Array<readonly [number, number]> = [];
+    let openAt: number | null = null;
+    for (const hit of hits) {
+      if (lanes.some((lane) => lane.entry === hit.tag)) {
+        openAt = hit.t;
+      } else if (lanes.some((lane) => lane.exit === hit.tag) && openAt !== null) {
+        windows.push([openAt, hit.t]);
+        openAt = null;
+      }
+    }
+    chargingWindowsByVehicle.set(vehicle, windows);
+  }
+
   for (let index = 0; index < 14; index += 1) {
-    filas.push({
-      t: from + Math.floor(random() * (to - from)),
-      v: vehicles[index % 4] as string,
-      tag: mantenimiento[index % mantenimiento.length] as string,
-    });
+    const vehicle = vehicles[index % 4] as string;
+    const windows = chargingWindowsByVehicle.get(vehicle) ?? [];
+    let t: number;
+    do {
+      t = from + Math.floor(random() * (to - from));
+    } while (windows.some(([start, end]) => t >= start && t <= end));
+    filas.push({ t, v: vehicle, tag: mantenimiento[index % mantenimiento.length] as string });
   }
 
   filas.sort((a, b) => b.t - a.t); // Pila: lo más reciente primero, como la fuente real.
@@ -356,6 +398,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     ...tramoConvoy,
     ...rotos,
     ...degradados,
+    bifurcacionTag,
   ]);
 
   const defects: PlantedDefect[] = [
@@ -470,6 +513,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       vehicles: [elAdelantado],
       expect: "se enumera a quién adelantó y con qué margen, como candidato, en el tramo en que se le adelantó",
       mustNotSay: "llamarlo avería: R-FLO-001 admite excepciones y OQ-107 no tiene el catálogo",
+    },
+    {
+      kind: "bifurcacion-real",
+      tags: [bifurcacionTag, bifurcacionRama],
+      vehicles: [],
+      expect: "candidato a bifurcación en el tag, con las dos ramas y su cuota",
+      mustNotSay: "que sea una avería, ni asignar la función sin más evidencia (R-GRA-007)",
     },
   ];
 

@@ -16,6 +16,7 @@
 import type { AffinityThresholds } from "./affinity.js";
 import type { BlindnessThresholds } from "./inventory.js";
 import type { ChargingThresholds } from "./charging.js";
+import type { CriticalPointThresholds } from "./critical-points.js";
 import type { FifoThresholds } from "./fifo.js";
 import type { GraphThresholds } from "./graph.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
@@ -48,6 +49,7 @@ export interface AnalysisConfig {
   readonly charging: ChargingThresholds;
   readonly trend: TrendThresholds;
   readonly fifo: FifoThresholds;
+  readonly criticalPoints: CriticalPointThresholds;
 }
 
 /**
@@ -94,6 +96,15 @@ export interface AnalysisConfig {
  *   propio tramo, lo que sea mayor (R-FLO-004: cuánto tarda un tramo cargado es local, no una
  *   constante universal). El 0,15 es deliberadamente el mismo número que `minShareEachSide`: las dos
  *   son la misma idea, una fracción real de la magnitud medida y no solo un conteo absoluto.
+ * - **Candidatos a punto crítico (R-GRA-007).** Una cuota del 30 % por rama descarta un sucesor
+ *   dominante con una excepción rara (95/5 no es reparto); cinco pasadas mínimas por rama, uno más
+ *   que las cuatro estancias de carga online, descarta un 50/50 sostenido por un puñado de pasadas.
+ *   Las dos guardas se exigen a la vez, mismo principio dual que el margen de FIFO y que
+ *   `GraphThresholds.minShareForObserved`/`minSupportForObserved`. El 15 % en cada mitad de la
+ *   ventana —mismo número que `minShareEachSide`/`minOvertakeMarginRatio`, la misma idea de fracción
+ *   real y no solo un conteo— descarta el caso encontrado en la propia auditoría: un tag justo antes
+ *   de una rotura súbita aguas abajo parece bifurcado porque casi todas sus salidas van al sucesor de
+ *   siempre antes de la rotura y al que lo sustituye después, sin que exista ningún reparto estable.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -120,6 +131,9 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     minGradientDrop: 0.3,
   },
   fifo: { minPassesForSpan: 4, minOvertakeMarginMs: 3 * 60_000, minOvertakeMarginRatio: 0.15 },
+  criticalPoints: {
+    bifurcacion: { minBranchShare: 0.3, minBranchSupport: 5, minBranchShareEachHalf: 0.15 },
+  },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

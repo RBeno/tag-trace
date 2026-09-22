@@ -28,7 +28,16 @@ import { buildTagInventory } from "../../src/domain/inventory.js";
 import { buildAllAgvDossiers } from "../../src/domain/dossier.js";
 import { buildChargingReport, type ChargingReport } from "../../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans, type FifoReport } from "../../src/domain/fifo.js";
-import { laneEntryTags, readCoLanes, readZones } from "../../src/domain/circuit-config.js";
+import {
+  findBifurcationCandidates,
+  type CriticalPointCandidate,
+} from "../../src/domain/critical-points.js";
+import {
+  laneEntryTags,
+  readCoLanes,
+  readCriticalPoints,
+  readZones,
+} from "../../src/domain/circuit-config.js";
 import { importCatalog } from "../../src/ingestion/catalog.js";
 import { PROVISIONAL_CONFIG } from "../../src/domain/config.js";
 
@@ -72,6 +81,7 @@ interface Analysis {
   readonly charging: ChargingReport;
   readonly coLanes: ReturnType<typeof readCoLanes>["lanes"];
   readonly fifo: FifoReport | undefined;
+  readonly criticalPoints: readonly CriticalPointCandidate[];
   readonly dossiers: ReturnType<typeof buildAllAgvDossiers>;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
@@ -106,6 +116,7 @@ function analyse(
   const entriesOf = (name: string) => (conConfiguracion ? (catalog.lists.get(name) ?? []) : []);
   const laneConfig = readCoLanes(entriesOf("carga-online"));
   const zoneConfig = readZones(entriesOf("zona"));
+  const criticalPointsConfig = readCriticalPoints(entriesOf("critico"));
 
   const readings = result.readings;
   const direction = result.summary.direction;
@@ -154,6 +165,11 @@ function analyse(
           PROVISIONAL_CONFIG.fifo,
         );
 
+  const criticalPoints = findBifurcationCandidates(
+    cohortTransitions,
+    PROVISIONAL_CONFIG.criticalPoints.bifurcacion,
+  );
+
   const ring = anchor?.cycle ?? [];
   const inRing = new Set(ring);
   const offRing = [...new Set(cohortReadings.map((entry) => entry.tagId))].filter(
@@ -177,6 +193,7 @@ function analyse(
       emergency: new Set(),
       charging: laneTagsOf(() => true),
       unservedLaneTags: laneTagsOf((laneId) => noServidas.has(laneId)),
+      critical: criticalPointsConfig.funcionOf,
     },
     PROVISIONAL_CONFIG.blindness,
   );
@@ -198,6 +215,7 @@ function analyse(
     charging,
     coLanes: laneConfig.lanes,
     fifo,
+    criticalPoints,
     dossiers,
     readings: readings.length,
   };
@@ -206,7 +224,8 @@ function analyse(
 describe("auditoría del circuito con verdad conocida", () => {
   const scenario = buildAuditScenario();
   const analysis = analyse(scenario);
-  const { matrix, ring, offRing, inventory, charging, coLanes, fifo, dossiers, readings } = analysis;
+  const { matrix, ring, offRing, inventory, charging, coLanes, fifo, criticalPoints, dossiers, readings } =
+    analysis;
 
   /**
    * El mismo análisis **sin** las listas de planta, para poder contrastar los dos.
@@ -453,6 +472,25 @@ describe("auditoría del circuito con verdad conocida", () => {
               `${Math.round(primera.marginMs / 60_000)} min de margen; ${todas.length - 1} más`,
       };
     },
+    "bifurcacion-real": () => {
+      const plantado = scenario.defects.find((d) => d.kind === "bifurcacion-real");
+      const [tagBifurcado, ramaEsperada] = plantado?.tags ?? [];
+      const candidato = criticalPoints.find((entry) => entry.tagId === tagBifurcado);
+      const ramas = candidato?.branches.map((branch) => branch.tagId) ?? [];
+      return {
+        ok:
+          candidato !== undefined &&
+          candidato.branches.length >= 2 &&
+          ramaEsperada !== undefined &&
+          ramas.includes(ramaEsperada),
+        detail:
+          candidato === undefined
+            ? "sin candidato para el tag plantado"
+            : `${candidato.branches.length} ramas: ${candidato.branches
+                .map((branch) => `${branch.tagId} ${Math.round(branch.share * 100)}%`)
+                .join(", ")}`,
+      };
+    },
   };
 
   it("publica el informe por clase", () => {
@@ -542,6 +580,15 @@ describe("auditoría del circuito con verdad conocida", () => {
       return pattern === "bimodal-candidato" || pattern === "uniforme-bajo";
     });
     expect(falsos, `falsos positivos: ${falsos.slice(0, 8).join(", ")}`).toHaveLength(0);
+
+    // Ningún tag sano debe salir como candidato a punto crítico tampoco.
+    const candidatosSobreSanos = scenario.cleanTags.filter((tag) =>
+      criticalPoints.some((candidate) => candidate.tagId === tag),
+    );
+    expect(
+      candidatosSobreSanos,
+      `candidatos espurios: ${candidatosSobreSanos.slice(0, 8).join(", ")}`,
+    ).toHaveLength(0);
   }, PLAZO);
 
   it("detecta las clases que ya sabe detectar, y sigue haciéndolo", () => {

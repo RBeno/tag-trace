@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.11.0
+version: 0.12.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -61,6 +61,7 @@ flowchart TD
 | ALG-018 | Expediente por objeto | Agregación por AGV o por tag y contraste con su cohorte | Recuentos, tags leídos y no leídos, contraparte que sí leyó, y evidencia navegable | O(n) sobre agregados | F2 reducido, F3 completo |
 | ALG-019 | Inactividad e instante de cambio | Detección de silencios por objeto y del punto donde el comportamiento cambia | Periodos de inactividad clasificados e instante de cambio con alternativas | O(n) por objeto | F2 reducido, F3 completo |
 | ALG-020 | Rotura y degradación de tasa de lectura | Segmentación binaria de un corte, después caída monótona por tramos | Instante de rotura o tendencia sostenida, por tag y por AGV | O(n) sobre la línea de pasadas | F3 |
+| ALG-021 | Candidatos a punto crítico | Reparto de sucesores con cuota comparable, sostenida en el tiempo (bifurcación) | Candidatos por clase con evidencia y soporte, nunca asignación | O(n) | F3 |
 
 ## 4. Oportunidades y salud
 
@@ -356,6 +357,38 @@ adelantamiento que publicar: admitirlo fabricaría el mismo hallazgo con otro no
 adelantamientos causados por una parada de carga real, la misma limitación que R-CO-003 ya acepta
 hoy. No concluye causa: OQ-107 sigue sin el catálogo de excepciones legítimas (carga online,
 maniobra manual, excepción documentada), así que lo que se publica son candidatos.
+
+## 8.2 Candidatos a punto crítico (R-GRA-007)
+
+Distinto de §9: esto no compara llegadas contra takt ni calendario —ALG-013 sigue bloqueado por
+OQ-108—, es la mitad de R-GRA-007 que no necesita ninguno de los dos: proponer **candidatos** a tag
+crítico por la firma que deja cada clase en el dato, nunca asignar la función.
+
+De las siete clases de `CONFIG_SCHEMA.md` §3.4.1, dos no dejan firma (`cambio-de-mapa`, y un `cruce`
+que nadie ha fallado en un solo circuito), y esta entrega construye solo la de **bifurcación**: un
+tag cuyas salidas se reparten entre dos o más sucesores con cuota comparable, ninguno dominante. Es
+el mismo recuento de sucesores por tag que `findDominantCycle` ya reduce para encontrar el sucesor
+mayoritario — la diferencia es que aquí interesan los que **no** llegan a dominar.
+
+**Guarda dual de cuota y soporte**, mismo principio que `GraphThresholds` y que el margen de FIFO:
+cada rama exige una cuota mínima (una excepción rara del 5 % no es reparto) **y** un soporte mínimo
+(un 50/50 sobre dos pasadas no es consenso).
+
+**Guarda de persistencia temporal, encontrada auditando el propio detector.** Con solo la guarda de
+cuota y soporte, un tag justo antes de una rotura súbita aguas abajo sale como bifurcación falsa: casi
+todas sus salidas van al sucesor de siempre antes de la rotura y al que lo sustituye —saltando el
+tramo roto— después, y esas dos cuotas agregadas sobre toda la ventana pueden ser perfectamente
+comparables sin que exista ningún reparto real. La guarda exige que cada rama se sostenga, por
+recuento y no por tiempo, en las dos mitades de las pasadas del tag: una bifurcación real persiste en
+las dos; un cambio de régimen desaparece en una.
+
+**Lo que esto no hace.** No construye `parada-precisa`, `semáforo` ni `cruce`: las dos primeras
+necesitan una firma de tiempo de permanencia que no existe todavía, y `cruce` resultó ser un problema
+distinto —`assignCohorts` fusiona dos vehículos en un cohorte en cuanto comparten una sola
+transición, así que un cruce real entre circuitos no sobrevive como dos cohortes unidos por una
+arista rara: se fusiona, y la bifurcación resultante queda indistinguible de una normal sin una
+comprobación de reconvergencia que esta entrega no construye—. Tampoco comprueba que las ramas de una
+bifurcación candidata se reencuentren más adelante. OQ-122 queda Parcial, no cerrada.
 
 ## 9. Punto crítico y análisis temporal
 

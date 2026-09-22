@@ -883,6 +883,7 @@ function renderViews(views: CircuitViews): void {
   viewsPanel.append(element("h3", undefined, "Composición del circuito"));
   viewsPanel.append(element("p", "muted", cohortLine));
   renderShapes(views);
+  renderCriticalPoints(views);
   renderCharging(views);
   renderFifo(views);
 
@@ -1269,6 +1270,60 @@ function renderCharging(views: CircuitViews): void {
           String(lane.stays),
           duration(lane.medianStayMs),
           String(lane.outOfSeniority.length),
+        ]),
+      ),
+    ),
+  );
+}
+
+/**
+ * Candidatos a punto crítico (R-GRA-007), como firma estadística y no como función asignada.
+ *
+ * Solo bifurcación en esta entrega: parada-precisa, semáforo y cruce quedan diseñadas y sin
+ * construir (no hay firma de tiempo de permanencia todavía, y cruce exige una comprobación de
+ * reconvergencia que esta entrega no hace). El recorte es global, igual razón que FIFO: el número
+ * de tags no está acotado.
+ */
+function renderCriticalPoints(views: CircuitViews): void {
+  const problems = views.criticalPointsProblems ?? [];
+  const candidates = views.criticalPoints.flatMap((cohort) => cohort.candidates);
+  if (candidates.length === 0 && problems.length === 0) return;
+
+  viewsPanel.append(element("h3", undefined, "Candidatos a punto crítico"));
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      `${candidates.length} candidatos a bifurcación. Firma estadística, nunca función asignada ` +
+        "(R-GRA-007): la función de un tag crítico es dato de planta declarado, no se deduce del " +
+        "fichero. Se proponen para confirmar o descartar, no como avería.",
+    ),
+  );
+
+  for (const problem of problems) {
+    viewsPanel.append(finding("Punto crítico declarado que no se pudo usar", "—", problem));
+  }
+
+  const sorted = [...candidates].sort((a, b) => b.support - a.support);
+  for (const candidate of sorted.slice(0, 5)) {
+    viewsPanel.append(
+      finding(
+        `${candidate.tagId}: candidato a bifurcación`,
+        `${candidate.support} pasadas`,
+        candidate.evidence,
+      ),
+    );
+  }
+
+  viewsPanel.append(
+    lazyDetails(`Detalle de los ${candidates.length} candidatos`, () =>
+      plainTable(
+        ["Tag", "Función candidata", "Pasadas", "Ramas"],
+        sorted.map((candidate) => [
+          candidate.tagId,
+          candidate.suggestedFunction,
+          String(candidate.support),
+          candidate.branches.map((branch) => `${branch.tagId} (${Math.round(branch.share * 100)} %)`).join(", "),
         ]),
       ),
     ),

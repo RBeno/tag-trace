@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
 last_updated: 2026-09-18
 ---
@@ -39,6 +39,8 @@ last_updated: 2026-09-18
 | Zona vacía | Tramo del anillo donde puede haber reordenación sin que sea, por sí sola, una rotura de FIFO (R-FLO-002). Incluye las calles CO (R-FLO-003). |
 | Adelantamiento (zona cargada) | Un vehículo entra después de otro en un tramo de zona cargada y sale antes, por un margen que no explica el jitter normal de lectura. Es un candidato, nunca una avería confirmada: OQ-107 no tiene el catálogo de excepciones legítimas. |
 | Punto crítico | Punto cuya falta de alimentación/paso puede afectar directamente al proceso productivo, con grado configurable. |
+| Punto crítico candidato | Tag propuesto para una de las siete clases de punto crítico por la firma que deja en el dato, nunca por asignación (R-GRA-007): la función es dato de planta declarado. |
+| Bifurcación candidata | Un tag cuyas salidas se reparten entre dos o más sucesores con cuota comparable, sostenida en el tiempo — ninguno domina. Es la única clase de punto crítico candidato construida hasta ahora. |
 | Consolidación | Aceptación humana de un periodo revisado para producir una nueva versión compacta de memoria y sus divergencias. |
 | Incidencia | Expediente separado que conserva síntoma, intervalo, replay, evidencia, hipótesis, contramedidas y verificación. |
 | Contramedida | Acción propuesta o realizada para reducir una causa, registrada con responsable, estado y verificación. |

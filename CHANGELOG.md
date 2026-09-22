@@ -2,6 +2,89 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.11.0] - 2026-09-22
+
+Candidatos a punto crítico (R-GRA-007), pedido explícitamente por el propietario tras quedar
+ofrecido y sin pedir en `[3.6.0]` («puntos críticos candidatos»). De las siete clases que
+`CONFIG_SCHEMA.md` §3.4.1 declara, esta entrega construye solo la firma de **bifurcación**:
+`parada-precisa` y `semáforo` necesitan una firma de tiempo de permanencia que no existe todavía, y
+`cruce` resultó ser un problema distinto —`assignCohorts` fusiona dos vehículos en un cohorte en
+cuanto comparten una sola transición, así que un cruce real entre circuitos no sobrevive como dos
+cohortes unidos por una arista rara: se fusiona, y la bifurcación resultante queda indistinguible de
+una normal sin una comprobación de reconvergencia que esta entrega no construye—. Las tres quedan
+diseñadas y documentadas, no silenciadas (OQ-122 pasa a Parcial, no a resuelta).
+
+También R-GRA-008: un punto crítico declarado (lista `critico`), en memoria y nunca leído, deja de
+salir como `obsoleto-candidato` — pierde una función, no solo una lectura.
+
+### Añadido
+
+- **`src/domain/critical-points.ts`** — `findBifurcationCandidates()`: recuento de sucesores por
+  tag (el mismo que `findDominantCycle` ya reduce para encontrar el sucesor mayoritario), con guarda
+  dual de cuota y soporte para descartar un sucesor dominante con una excepción rara o un reparto
+  parejo sostenido por un puñado de pasadas.
+- `src/domain/circuit-config.ts` gana `readCriticalPoints()`, calcado de `readZones`.
+- `src/domain/inventory.ts`: `TagLists.critical`, nuevo `TagClass` `critico-sin-lectura` (R-GRA-008),
+  subordinado a la memoria — sin ella, sigue siendo `declarado-sin-memoria` sin matiz, porque
+  R-OPP-009 ya explica el silencio del todo.
+- `CriticalPointThresholds` en `config.ts`, `draft` y sin valor por defecto en ninguna función.
+- Vista: bloque «Candidatos a punto crítico» tras la composición del circuito, con la redacción
+  obligada a citar R-GRA-007 — firma estadística, nunca función asignada.
+- Decimosexta clase plantada en el circuito de auditoría, `bifurcacion-real`: un tag del anillo
+  reparte sus salidas 58/42 hacia un tag fuera de anillo, sin depender de ningún vehículo concreto
+  —cualquiera puede tomar cualquiera de las dos ramas—.
+
+### Un riesgo real, encontrado auditando el propio detector
+
+La guarda de cuota y soporte no basta: un tag justo antes de una rotura súbita aguas abajo (la
+propia clase `rotura-subita` de este mismo escenario) sale como bifurcación falsa, porque casi todas
+sus salidas van al sucesor de siempre antes de la rotura y al que la sustituye después, y esas dos
+cuotas agregadas sobre toda la ventana son perfectamente comparables sin que exista ningún reparto
+real. Corregido con una tercera guarda: cada rama debe sostenerse, por recuento y no por tiempo, en
+las **dos mitades** de las pasadas del tag — una bifurcación real persiste en las dos, un cambio de
+régimen desaparece en una. La prueba que expuso el problema queda fijada como caso de regresión.
+
+Un segundo efecto, más pequeño: plantar la bifurcación en todos los vehículos (no en uno solo, como
+`adelantamiento-en-zona-cargada`) reordena el generador aleatorio compartido lo bastante como para
+que una lectura de mantenimiento —hasta ahora repartida sin ninguna exclusión— cayera, por pura
+coincidencia, dentro de la estancia de carga de un vehículo, y esa carga dejara de reconocerse como
+tal. Las lecturas de mantenimiento pasan a evitar las estancias de carga de su propio vehículo, que
+es lo que su propia clase (`mantenimiento-aislado`, aislada de verdad) ya prometía.
+
+### El informe, con las dieciséis clases
+
+```
+238.680 lecturas, 40 vehículos. Anillo reconstruido: 147 tags de 150 declarados. Fuera del anillo: 15.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 10/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  DETECTA     rotura-subita — con el instante dentro de margen: 2/2
+  DETECTA     degradacion-progresiva — con tendencia sostenida: 2/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 98 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 3 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+  DETECTA     lector-agv-degradado — 7120: bajando (90% → 79% → 68% → 50%); tags con tendencia o rotura por su culpa: 0
+  DETECTA     adelantamiento-en-zona-cargada — el primero por margen es 7113 (se esperaba 7113), 4 min de margen; 1 más
+  DETECTA     bifurcacion-real — 2 ramas: 60363 57%, 96001 42%
+```
+
+**Dieciséis de dieciséis clases detectadas, cero falsos positivos, `DEUDA_CONOCIDA` vacía.**
+
+### Gobierno
+
+- `docs/CONFIG_SCHEMA.md` corrige la taxonomía de `critico` a las siete clases ya implementadas
+  (`dejar-carro`/`recoger-carro` separadas) y declara aspiracionales los campos que ni `ConfigEntry`
+  ni `CatalogEntry` llevan todavía (`grade`, `redundancy`, `protection_pair`, `expected_tag`,
+  `target_circuit`); `docs/ALGORITHM_CATALOG.md` ALG-021 y §8.2, distinguiéndolo explícitamente de
+  ALG-013/§9 (bloqueado por OQ-108); `docs/TEST_STRATEGY.md` TC-102–107; `docs/TRACEABILITY_MATRIX.md`;
+  `docs/OPEN_QUESTIONS.md` OQ-122 pasa a Parcial; `docs/GLOSSARY.md` (punto crítico candidato,
+  bifurcación candidata); `fixtures/synthetic/auditoria/MANIFEST.md` (`auditoria/5`).
+
 ## [3.10.0] - 2026-09-21
 
 FIFO en zona cargada (R-FLO-001), pedido explícitamente por el propietario tras quedar ofrecido y

@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.17.0
+version: 0.18.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -151,6 +151,12 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-099 | Inversión de orden dentro del margen de jitter normal de lectura (falso positivo) | Sin adelantamiento: el margen no se sostiene en las dos puntas | Un adelantamiento fabricado por ruido de reloj entre vehículos sanos |
 | TC-100 | Tramo con menos pasadas completas que el mínimo exigido | Sin evaluar: ni mediana ni adelantamientos, aunque exista una inversión fabricada en la muestra | Forzar una mediana que decide un solo vehículo |
 | TC-101 | Pasadas incompletas por un tramo (entrada repetida, salida sin entrada, pasada abierta al final) | Nunca cuentan ni para el tránsito mediano ni para un adelantamiento | Fabricar el extremo que falta en vez de declarar la pasada incompleta |
+| TC-102 | Tag con un sucesor dominante (95 %) y una excepción rara con soporte suficiente | Sin candidato: la cuota no llega al mínimo aunque el soporte sí | Marcar cualquier excepción por poco frecuente que sea |
+| TC-103 | Tag con reparto parejo (50/50) sostenido por un puñado de pasadas | Sin candidato: el soporte no llega al mínimo aunque la cuota sí | Confirmar un reparto que no tiene detrás pasadas de sobra |
+| TC-104 | Tag con reparto real y estable en dos o tres ramas, sostenido en el tiempo | Candidato a bifurcación con sus ramas ordenadas por cuota, nunca función asignada (R-GRA-007) | Asignar la función en vez de proponerla |
+| TC-105 | Tag justo antes de una rotura súbita aguas abajo, cuyo reparto agregado parece parejo | Sin candidato: ninguna rama se sostiene en las dos mitades de la ventana | Confundir un cambio de régimen temporal con una bifurcación real |
+| TC-106 | Punto crítico declarado (lista `critico`), en memoria y nunca leído | `critico-sin-lectura`, con su función nombrada, nunca `obsoleto-candidato` (R-GRA-008) | Tratarlo como un obsoleto más, o como avería |
+| TC-107 | El mismo punto crítico, pero fuera de la memoria maestra | `declarado-sin-memoria`, sin matiz — R-OPP-009 ya explica el silencio | Aplicar el matiz de R-GRA-008 cuando la memoria ya lo explica todo |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

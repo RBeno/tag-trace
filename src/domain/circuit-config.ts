@@ -175,6 +175,51 @@ export function readZones(entries: readonly ConfigEntry[]): ZoneConfig {
   return { zoneOf, problems };
 }
 
+export interface CriticalPointsConfig {
+  /** Función crítica declarada de cada tag, tal como la trae la lista `critico`. */
+  readonly funcionOf: ReadonlyMap<string, string>;
+  readonly problems: readonly string[];
+}
+
+/**
+ * Lee la función crítica de cada tag de la lista `critico`.
+ *
+ * Calcada de `readZones`: una fila por tag, sin agrupar por papel como sí hace una calle. La función
+ * es dato de planta declarado y nunca se deduce (R-GRA-007), así que un valor fuera de la taxonomía
+ * se conserva con su advertencia en vez de descartarse o adivinarse.
+ */
+export function readCriticalPoints(entries: readonly ConfigEntry[]): CriticalPointsConfig {
+  const funcionOf = new Map<string, string>();
+  const problems: string[] = [];
+  const known = LIST_FUNCTIONS.critico as readonly string[];
+
+  for (const entry of entries) {
+    if (entry.funcion === "") {
+      problems.push(
+        `El tag ${entry.tagId} está en la lista de puntos críticos y no dice su función (columna «funcion»).`,
+      );
+      continue;
+    }
+    if (!known.includes(entry.funcion)) {
+      problems.push(
+        `El tag ${entry.tagId} declara la función «${entry.funcion}», que no es ninguna de ` +
+          `${known.join(", ")}. Se conserva, pero no se reconoce.`,
+      );
+    }
+    const previous = funcionOf.get(entry.tagId);
+    if (previous !== undefined && previous !== entry.funcion) {
+      problems.push(
+        `El tag ${entry.tagId} declara dos funciones, «${previous}» y «${entry.funcion}». Se queda ` +
+          "con la primera: dos funciones para el mismo tag es una contradicción de la lista, no un dato.",
+      );
+      continue;
+    }
+    funcionOf.set(entry.tagId, entry.funcion);
+  }
+
+  return { funcionOf, problems };
+}
+
 /**
  * Los tags por los que se entra a una calle.
  *

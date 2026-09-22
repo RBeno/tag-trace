@@ -297,6 +297,25 @@ export interface CircuitViews {
     }[];
     readonly problems: readonly string[];
   }[];
+  /**
+   * Candidatos a punto crítico (R-GRA-007), por cohorte. No necesita ninguna lista cargada: solo
+   * las transiciones que ya hacen falta para `shapes`/`readMatrices`.
+   *
+   * Firma estadística, nunca función asignada: la función de un tag crítico es dato de planta
+   * declarado, no se deduce del fichero. Esta entrega solo propone la firma de bifurcación.
+   */
+  readonly criticalPoints: readonly {
+    readonly cohortId: number;
+    readonly candidates: readonly {
+      readonly tagId: string;
+      readonly suggestedFunction: string;
+      readonly support: number;
+      readonly evidence: string;
+      readonly branches: readonly { readonly tagId: string; readonly support: number; readonly share: number }[];
+    }[];
+  }[];
+  /** Por qué una fila de la lista `critico` no se pudo usar. Solo con la lista `critico` cargada. */
+  readonly criticalPointsProblems?: readonly string[];
 }
 
 /** `ReplayFrame` tal como cruza el `postMessage`: el mapa de vehículos, ya como pares. */

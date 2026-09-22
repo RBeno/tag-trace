@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.6.0
+version: 0.7.0
 status: baseline-candidate
 last_updated: 2026-09-21
 ---
@@ -64,11 +64,15 @@ Las clases son cerradas y las declara el propietario:
 
 ```text
 critical_points : lista de { tag, function, grade, redundancy, valid_from, valid_to }
-function        : parada_precisa | cruce | semaforo | dejar_recoger_carro
-                | cambio_de_mapa | bifurcacion
+function        : parada-precisa | cruce | semaforo | dejar-carro | recoger-carro
+                | cambio-de-mapa | bifurcacion
 ```
 
-`cruce` **no es un bloque aparte**: es una de las seis clases. Un tag de esa clase lleva además los
+Siete clases, no seis: dejar y recoger carro son acciones físicamente distintas y se declaran por
+separado — es lo que ya implementa `src/domain/tag-lists.ts` (`LIST_FUNCTIONS.critico`), y esta
+sección se corrige para contarlo, no al revés.
+
+`cruce` **no es un bloque aparte**: es una de las siete clases. Un tag de esa clase lleva además los
 campos que su función exige, y que ninguna otra necesita:
 
 ```text
@@ -79,12 +83,28 @@ El par de protección existe para **detener** a un vehículo que se desvía, as�
 decir *qué* falló cuando alguien se sale, y no solo *dónde* (R-AGV-009, R-AGV-011). `expected_tag`
 es el tag que toca si el giro se ejecuta.
 
+**Estado de implementación.** `grade`, `redundancy`, `valid_from`, `valid_to` y el bloque entero de
+`cruce` (`protection_pair`, `expected_tag`, `target_circuit`) son aspiracionales: ni `ConfigEntry`
+(`src/domain/circuit-config.ts`) ni `CatalogEntry` (`src/ingestion/catalog.ts`) los llevan todavía.
+Lo único que la lista `critico` transporta hoy es `tag` y `funcion` — suficiente para R-GRA-008 (la
+omisión de un tag crítico declarado se cuenta aparte) y para contrastar candidatos contra lo
+declarado, no para el resto de §3.4.1.
+
 **La función no se deduce del fichero.** El dato deja una firma por clase que sirve para proponer
 candidatos —una espera regular apunta a temporizada, una variable explicada por el vehículo de
 delante apunta a semáforo, dos ramas que reconvergen apuntan a bifurcación—, pero proponer no es
-asignar. Y dos clases no dejan firma ninguna: un `cambio_de_mapa` es indistinguible de un tag
+asignar. Y dos clases no dejan firma ninguna: un `cambio-de-mapa` es indistinguible de un tag
 cualquiera, y un `cruce` que nadie ha fallado y que recorre un solo circuito tampoco se ve, porque
 un cruce existe justamente para que todos pasen igual. Sin declaración, esas dos quedan `unknown`.
+
+Implementado hoy (`src/domain/critical-points.ts`, `findBifurcationCandidates`): solo la firma de
+**bifurcación**, como reparto de sucesores con cuota comparable sostenida en el tiempo. `cruce`
+resultó ser un problema más difícil de lo que parecía: `assignCohorts` fusiona dos vehículos en un
+cohorte en cuanto comparten una sola transición, así que un cruce real entre circuitos no sobrevive
+como dos cohortes unidos por una arista rara — se fusiona, y la bifurcación resultante queda
+indistinguible de una bifurcación normal sin una comprobación de reconvergencia que todavía no
+existe. `parada-precisa` y `semáforo` necesitan una firma de tiempo de permanencia que tampoco existe
+todavía. Las tres quedan diseñadas y sin construir, no silenciadas (OQ-122).
 
 #### 3.4.2 Cómo entra esta configuración: las listas de tags
 
@@ -114,7 +134,7 @@ Y así se expresan los bloques de §3.4:
 |---|---|
 | `co_lanes` | `lista=carga-online`, `grupo` = identificador de la calle, `orden` = 1…n y `funcion` ∈ `entrada`, `parada-precisa`, `salida` |
 | `loaded_zone` / `empty_zone` | `lista=zona`, `grupo` ∈ `cargado`, `vacio`, una fila por tag |
-| `critical_points` | `lista=critico`, `funcion` con una de las seis clases de §3.4.1 |
+| `critical_points` | `lista=critico`, `funcion` con una de las siete clases de §3.4.1 |
 
 ```text
 carga-online;70011;1;entrada;calle-1;2

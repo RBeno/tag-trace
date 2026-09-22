@@ -14,6 +14,7 @@ import {
   laneEntryTags,
   laneTags,
   readCoLanes,
+  readCriticalPoints,
   readZones,
   type ConfigEntry,
 } from "../../src/domain/circuit-config.js";
@@ -98,6 +99,27 @@ describe("configuración de calles (R-CO-001)", () => {
     expect(zoneOf.get("10")).toBe("vacio");
     expect(zoneOf.get("11")).toBe("cargado");
     expect(problems.join(" ")).toContain("dos zonas");
+  });
+
+  it("los puntos críticos se leen por función, y una función fuera de la taxonomía se conserva con aviso (R-GRA-007)", () => {
+    const { funcionOf, problems } = readCriticalPoints([
+      entry("102185", "bifurcacion", ""),
+      entry("103358", "parada-precisa", ""),
+      entry("999999", "girar-a-la-izquierda", ""),
+    ]);
+    expect(funcionOf.get("102185")).toBe("bifurcacion");
+    expect(funcionOf.get("103358")).toBe("parada-precisa");
+    expect(funcionOf.get("999999")).toBe("girar-a-la-izquierda");
+    expect(problems.join(" ")).toContain("999999");
+  });
+
+  it("un punto crítico con dos funciones contradictorias se queda con la primera", () => {
+    const { funcionOf, problems } = readCriticalPoints([
+      entry("102185", "bifurcacion", ""),
+      entry("102185", "cruce", ""),
+    ]);
+    expect(funcionOf.get("102185")).toBe("bifurcacion");
+    expect(problems.join(" ")).toContain("dos funciones");
   });
 });
 

@@ -56,6 +56,13 @@ export interface TagLists {
    * destruye la confianza en la herramienta: tres tags sanos acusados por no haber tenido ocasión.
    */
   readonly unservedLaneTags: ReadonlySet<string>;
+  /**
+   * Función crítica declarada de cada tag (R-GRA-007), cuando la lista `critico` está cargada.
+   *
+   * Es dato de planta declarado, nunca deducido: decide una clase aparte para su omisión
+   * (`critico-sin-lectura`, R-GRA-008), pero no participa en ninguna otra regla de este módulo.
+   */
+  readonly critical: ReadonlyMap<string, string>;
 }
 
 /**
@@ -101,7 +108,16 @@ export type TagClass =
    * No dice nada del tag: dice que no hubo ocasión de leerlo. Separarlo de `obsoleto-candidato` es
    * la diferencia entre preguntar por la calle y acusar al tag (R-OPP-013).
    */
-  | "calle-sin-servicio";
+  | "calle-sin-servicio"
+  /**
+   * Declarado crítico (R-GRA-007), en memoria y **nadie lo ha leído jamás**.
+   *
+   * No es un `obsoleto-candidato` más: la omisión pierde la función que sostenía —la parada no se
+   * ejecuta, el giro no se ordena, la protección no detiene—, así que es candidata a hallazgo por sí
+   * sola (R-GRA-008). Sigue sin ser avería: sin memoria, el tag cae en `declarado-sin-memoria` sin
+   * matiz, porque R-OPP-009 ya explica el silencio del todo.
+   */
+  | "critico-sin-lectura";
 
 /**
  * Qué tiene que **valorar una persona** en cada caso.
@@ -123,7 +139,9 @@ export type TagAction =
   /** Se lee y no está declarado: la lista del circuito va por detrás del suelo. */
   | "declarar-en-vsystem"
   /** Nadie entró en esa calle: antes de mirar el tag, hay que saber si la calle sigue en uso. */
-  | "comprobar-si-la-calle-se-usa";
+  | "comprobar-si-la-calle-se-usa"
+  /** Se perdió una función crítica, no solo una lectura: valorar con la urgencia de esa función. */
+  | "valorar-funcion-critica-perdida";
 
 export interface TagInventoryRow {
   readonly tagId: string;
@@ -146,6 +164,8 @@ export interface TagInventoryRow {
    * porcentaje: el expediente tiene que poder abrirse por el vehículo concreto.
    */
   readonly blindVehicles: readonly string[];
+  /** Función crítica declarada (R-GRA-007), o `null` si el tag no está en la lista `critico`. */
+  readonly criticalFunction: string | null;
 }
 
 export interface TagInventory {
@@ -217,6 +237,7 @@ export function buildTagInventory(
     ...lists.maintenance,
     ...lists.emergency,
     ...lists.charging,
+    ...lists.critical.keys(),
     ...readersByTag.keys(),
   ]);
 
@@ -234,6 +255,7 @@ export function buildTagInventory(
         ? witnesses.filter((agvId) => !readers.has(agvId))
         : [];
 
+    const criticalFunction = lists.critical.get(tagId) ?? null;
     const { tagClass, truth } = classify({
       inVirtual,
       inMemory,
@@ -241,6 +263,7 @@ export function buildTagInventory(
       readerCount: readers.size,
       blindCount: blindVehicles.length,
       inUnservedLane: lists.unservedLaneTags.has(tagId),
+      isCritical: criticalFunction !== null,
     });
 
     rows.push({
@@ -254,6 +277,7 @@ export function buildTagInventory(
       readerCount: readers.size,
       readingCount,
       blindVehicles,
+      criticalFunction,
     });
   }
 
@@ -272,6 +296,7 @@ interface ClassifyInput {
   readonly readerCount: number;
   readonly blindCount: number;
   readonly inUnservedLane: boolean;
+  readonly isCritical: boolean;
 }
 
 /**
@@ -295,7 +320,13 @@ function classify(input: ClassifyInput): { tagClass: TagClass; truth: TruthState
     // En memoria y nadie lo ha leído nunca. Obsoleto o averiado: el dato es idéntico y no se elige
     // (R-DAT-016). Prevalece sobre `declarado-sin-memoria` porque estar en la memoria es lo que
     // hace que la ausencia total signifique algo.
-    if (input.inMemory) return { tagClass: "obsoleto-candidato", truth: "unknown" };
+    if (input.inMemory) {
+      // Declarado crítico además: la omisión pierde una función, no solo una lectura (R-GRA-008).
+      // Sigue subordinado a la memoria: si no estuviera en memoria, R-OPP-009 ya explicaría el
+      // silencio del todo y no haría falta el matiz — por eso esta rama vive dentro de `inMemory`.
+      if (input.isCritical) return { tagClass: "critico-sin-lectura", truth: "unknown" };
+      return { tagClass: "obsoleto-candidato", truth: "unknown" };
+    }
     // Declarado, fuera de la memoria maestra y sin una sola lectura: nadie puede leerlo aunque
     // exista. Es un punto ciego de configuración, no una avería.
     return { tagClass: "declarado-sin-memoria", truth: "observed" };
@@ -322,6 +353,8 @@ const ACTION_BY_CLASS: Readonly<Record<TagClass, TagAction>> = {
   especial: "ninguna",
   // Preguntar por la calle antes que por el tag: sin entradas, el tag no ha dicho nada de sí mismo.
   "calle-sin-servicio": "comprobar-si-la-calle-se-usa",
+  // No es un obsoleto más: se perdió una función (R-GRA-008), y la urgencia la marca esa función.
+  "critico-sin-lectura": "valorar-funcion-critica-perdida",
 };
 
 /** La acción, en la frase que se le enseña a quien tiene que decidir. */
@@ -339,6 +372,8 @@ export function describeAction(action: TagAction): string {
       return "Declararlo en Vsystem: existe y se lee, pero no está en la lista del circuito";
     case "comprobar-si-la-calle-se-usa":
       return "Ningún vehículo entró en esa calle: comprobar si sigue en servicio antes de mirar el tag";
+    case "valorar-funcion-critica-perdida":
+      return "Es un punto crítico declarado y nadie lo ha leído nunca: se perdió su función, no solo una lectura";
   }
 }
 
