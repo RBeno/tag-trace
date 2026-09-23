@@ -1,7 +1,7 @@
 {
   "project": "TAG TRACE",
   "repository": "RBeno/tag-trace",
-  "documentationVersion": "1.9.0",
+  "documentationVersion": "1.10.0",
   "currentPhase": "F3",
   "phaseName": "Diagnóstico explicable",
   "status": "in_progress",

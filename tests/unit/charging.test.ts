@@ -18,7 +18,7 @@ import {
   readZones,
   type ConfigEntry,
 } from "../../src/domain/circuit-config.js";
-import { buildChargingReport, type ChargingThresholds } from "../../src/domain/charging.js";
+import { buildChargingReport, findLaneJunctions, type ChargingThresholds } from "../../src/domain/charging.js";
 import type { Reading } from "../../src/domain/reading.js";
 
 const THRESHOLDS: ChargingThresholds = { longStayRatio: 2, minStaysForMedian: 4 };
@@ -271,5 +271,27 @@ describe("máquina de estados de la calle (R-CO-002)", () => {
     const calle1 = report.lanes.find((item) => item.laneId === "calle-1");
     expect(calle1?.medianStayMs).toBeNull();
     expect(calle1?.longStays).toEqual([]);
+  });
+});
+
+describe("de qué tag del anillo cuelga cada calle (findLaneJunctions)", () => {
+  const { lanes } = readCoLanes([...lane("calle-1", 700), ...lane("calle-2", 710)]);
+  const ring = ["A", "B", "C"];
+
+  it("es el predecesor del anillo más frecuente de su tag de entrada", () => {
+    const transitions = [
+      { from: "A", to: "700" },
+      { from: "A", to: "700" },
+      { from: "B", to: "700" },
+      // Muchas desde fuera del anillo no cuentan: la calle se dibuja colgada del anillo.
+      ...Array.from({ length: 5 }, () => ({ from: "X", to: "700" })),
+    ];
+    expect(findLaneJunctions(lanes, transitions, ring)).toEqual([{ laneId: "calle-1", tagId: "A" }]);
+  });
+
+  it("una calle en la que nadie entró desde el anillo no tiene punto de enganche inventado", () => {
+    expect(findLaneJunctions(lanes, [{ from: "A", to: "700" }], ring).map((junction) => junction.laneId)).toEqual([
+      "calle-1",
+    ]);
   });
 });

@@ -13,6 +13,7 @@ import {
   buildReadMatrix,
   type OrderEvidenceLimits,
   type ReadRateThresholds,
+  TREND_SERIES_BINS,
 } from "../../src/domain/read-matrix.js";
 import type { TrendThresholds } from "../../src/domain/read-rate-trend.js";
 import type { Reading } from "../../src/domain/reading.js";
@@ -399,6 +400,10 @@ describe("rotura y degradación, extremo a extremo (R-OPP-015)", () => {
     expect(tag?.changedAtUtcMs).toBeLessThan(280_000);
     // Y no se confunde con una tendencia: es un corte, no una caída en varios tramos.
     expect(tag?.trend).toBeUndefined();
+    // La serie para dibujar el escalón viaja con la rotura, en tramos de tiempo iguales.
+    expect(tag?.trendSeries?.rates).toHaveLength(TREND_SERIES_BINS);
+    // Y no viaja en un tag sin cambio: no hay forma que enseñar.
+    expect(matrix.tags.find((entry) => entry.tagId === "0200")?.trendSeries).toBeUndefined();
   });
 
   it("un tag que toda la flota lee cada vez menos sale con una tendencia a la baja", () => {
@@ -420,6 +425,7 @@ describe("rotura y degradación, extremo a extremo (R-OPP-015)", () => {
       expect(rates[index]).toBeLessThanOrEqual(rates[index - 1] as number);
     }
     expect(tag?.changedAtUtcMs).toBeUndefined();
+    expect(tag?.trendSeries?.rates).toHaveLength(TREND_SERIES_BINS);
   });
 
   it("un AGV cuyo lector se degrada en varios tags sale marcado él, y sus tags siguen sanos", () => {

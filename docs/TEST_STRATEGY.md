@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.23.0
+version: 0.24.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -190,6 +190,13 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-138 | Entradas simuladas de `critico` y de `circuito` con función, concatenadas | `readCriticalPoints` produce el mismo `funcionOf` que si vinieran de una sola lista — el merge de fuentes vive en el llamador | Distinguir de qué lista viene cada entrada dentro de `readCriticalPoints` |
 | TC-139 | Expediente de tag (`buildTagDossier`/`buildAllTagDossiers`) para un tag con función declarada | `criticalFunction` trae el valor; sin declarar, `null` | Omitir el campo, o no propagarlo desde `funcionOf` |
 | TC-140 | Un tag declarado con función por la columna del circuito virtual, otro por la lista `critico`, en el mismo escenario de auditoría | Los dos aparecen en el expediente con su función; ningún tag sano trae una función sin plantar | Mezclar las dos vías de forma que una contamine tags que no la declararon |
+| TC-141 | Línea de pasadas repartida en tramos de tiempo para dibujar (`binTimeline`) | Tramos iguales; un tramo sin pasadas sale `null`; con una sola pasada o todas en el mismo instante, ninguna serie | Pintar un tramo vacío como 0 %, o inventar una forma sin datos |
+| TC-142 | Fila de la matriz con rotura o degradación, y fila sin cambio | La primera lleva `trendSeries`; la segunda no | Enviar series de filas sin nada que enseñar |
+| TC-143 | Tramo cargado con un adelantamiento (`SpanReport.focus`) | La ventana lleva al adelantado y a todos los que lo adelantaron, en orden de entrada; sin adelantamientos, vacía | Dibujar un adelantamiento sin sus protagonistas |
+| TC-144 | Un adelantado con decenas de vehículos por delante | La ventana nunca pasa de `FIFO_FOCUS_MAX` | Mandar a la interfaz todas las pasadas del tramo |
+| TC-145 | Punto de enganche de una calle (`findLaneJunctions`) | El predecesor del anillo más frecuente de su entrada; una calle sin entradas desde el anillo no tiene punto | Inventar de dónde cuelga una calle |
+| TC-146 | Duraciones por tag para dibujar (`transitionDurationsByTag`) | Los pares del mismo instante no entran (R-DAT-013) | Dibujar un empate del mismo instante como un tránsito de 0 s |
+| TC-147 | Circuito de auditoría cargado en dos exportaciones, con listas, en el navegador | Las diez vistas de la Parte 38 se dibujan, llevan su tabla, ninguna emite un `<title>` por marca, la matriz es un `canvas` y la página no desborda | Volver a un nodo con rótulo por marca, o esconder una vista sin tabla equivalente |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

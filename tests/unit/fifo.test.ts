@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  FIFO_FOCUS_MAX,
   buildFifoReport,
   loadedZoneSpans,
   type FifoThresholds,
@@ -203,5 +204,35 @@ describe("adelantamiento en un tramo (buildFifoReport, R-FLO-001)", () => {
   it("sin tramos no hay nada que evaluar", () => {
     const report = buildFifoReport(1, [], [], THRESHOLDS);
     expect(report.spans).toEqual([]);
+  });
+});
+
+describe("ventana que se dibuja alrededor del adelantamiento (SpanReport.focus)", () => {
+  const SPAN: LoadedSpan = { spanId: "cargado-1", tags: ["100", "101", "102"], entryTagId: "100", exitTagId: "102" };
+  const THRESHOLDS: FifoThresholds = { minPassesForSpan: 3, minOvertakeMarginMs: 1 * MINUTE, minOvertakeMarginRatio: 0.1 };
+  const pass = (agvId: string, enterMin: number, exitMin: number): readonly Reading[] => [
+    read(agvId, SPAN.entryTagId, enterMin * MINUTE),
+    read(agvId, SPAN.exitTagId, exitMin * MINUTE),
+  ];
+
+  it("lleva al adelantado y a todos los que lo adelantaron, en orden de entrada", () => {
+    const readings = [...pass("A", 0, 30), ...pass("D", 1, 50), ...pass("B", 10, 35), ...pass("C", 20, 40)];
+    const span = buildFifoReport(1, readings, [SPAN], THRESHOLDS).spans[0];
+    expect(span?.focus.map((entry) => entry.agvId)).toEqual(["A", "D", "B", "C"]);
+  });
+
+  it("sin adelantamientos queda vacía", () => {
+    const readings = [...pass("A", 0, 30), ...pass("B", 10, 40), ...pass("C", 20, 50)];
+    expect(buildFifoReport(1, readings, [SPAN], THRESHOLDS).spans[0]?.focus).toEqual([]);
+  });
+
+  it("nunca pasa del tope, aunque el adelantado tenga decenas de vehículos por delante", () => {
+    const readings = [
+      ...pass("S", 0, 1000),
+      ...Array.from({ length: 40 }, (_, index) => pass(`V${index}`, 10 + index * 2, 40 + index * 2)).flat(),
+    ];
+    const span = buildFifoReport(1, readings, [SPAN], THRESHOLDS).spans[0];
+    expect(span?.focus.length).toBe(FIFO_FOCUS_MAX);
+    expect(span?.focus[0]?.agvId).toBe("S");
   });
 });

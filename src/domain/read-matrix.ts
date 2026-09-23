@@ -28,7 +28,13 @@
 
 import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
 import { sortReadings, type SourceDirection } from "./order.js";
-import { detectTrend, type PassRecord, type TrendThresholds } from "./read-rate-trend.js";
+import {
+  binTimeline,
+  detectTrend,
+  type PassRecord,
+  type TimelineSeries,
+  type TrendThresholds,
+} from "./read-rate-trend.js";
 import type { Reading } from "./reading.js";
 import type { TruthState } from "./truth.js";
 
@@ -153,6 +159,11 @@ export interface TagReadRow {
   /** Presente solo si la tendencia es sostenida a la baja (R-OPP-015). */
   readonly trend?: "bajando";
   readonly segmentRates?: readonly number[];
+  /**
+   * La misma línea de pasadas en tramos de tiempo iguales, para dibujar la forma del cambio.
+   * Presente solo junto a una rotura o una degradación: sin cambio que enseñar no viaja.
+   */
+  readonly trendSeries?: TimelineSeries;
 }
 
 export interface VehicleReadRow {
@@ -173,7 +184,16 @@ export interface VehicleReadRow {
   readonly rateAfter?: number;
   readonly trend?: "bajando";
   readonly segmentRates?: readonly number[];
+  readonly trendSeries?: TimelineSeries;
 }
+
+/**
+ * En cuántos tramos de tiempo se reparte la línea de pasadas de una fila con tendencia.
+ *
+ * Es una resolución de pantalla, como `ACTIVITY_BINS` en el Worker, no una magnitud de planta: no
+ * decide ninguna rotura ni ninguna degradación, solo con cuánto detalle se dibujan.
+ */
+export const TREND_SERIES_BINS = 24;
 
 export interface ReadMatrix {
   readonly cohortId: number;
@@ -640,20 +660,21 @@ function pushRecord(lines: Map<string, PassRecord[]>, key: string, record: PassR
 function trendFields(
   timeline: readonly PassRecord[] | undefined,
   thresholds: TrendThresholds,
-): Pick<TagReadRow, "changedAtUtcMs" | "rateBefore" | "rateAfter" | "trend" | "segmentRates"> {
+): Pick<TagReadRow, "changedAtUtcMs" | "rateBefore" | "rateAfter" | "trend" | "segmentRates" | "trendSeries"> {
   if (timeline === undefined) return {};
   const result = detectTrend(timeline, thresholds);
+  if (result.kind === "sin-cambio") return {};
+  const series = binTimeline(timeline, TREND_SERIES_BINS);
+  const seriesField = series === null ? {} : { trendSeries: series };
   if (result.kind === "rotura-candidata") {
     return {
       changedAtUtcMs: result.changedAtUtcMs,
       rateBefore: result.rateBefore,
       rateAfter: result.rateAfter,
+      ...seriesField,
     };
   }
-  if (result.kind === "degradacion-candidata") {
-    return { trend: "bajando", segmentRates: result.segmentRates };
-  }
-  return {};
+  return { trend: "bajando", segmentRates: result.segmentRates, ...seriesField };
 }
 
 function classify(

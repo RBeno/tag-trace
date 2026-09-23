@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
-last_updated: 2026-09-21
+last_updated: 2026-09-23
 ---
 
 # Especificación de experiencia de usuario
@@ -235,6 +235,36 @@ Dos decisiones de dibujo que conviene no deshacer:
 su `viewBox`. Un lienzo mucho más ancho que el hueco donde se pinta encoge las etiquetas hasta que
 se pisan, y ni los tipos ni las pruebas lo detectan. El lienzo se mantiene cerca del ancho real de
 pintado.
+
+## 5.3 Vistas de diagnóstico (Parte 38)
+
+Diez vistas llevadas a la aplicación desde la galería de propuestas (Parte 37), elegidas por el
+propietario. Ninguna calcula nada nuevo: dibujan lo que la matriz, las calles, el FIFO, los puntos
+críticos y la deriva ya calculaban y hasta ahora solo se leía en tarjetas y tablas. Cada una va
+**encima** de las tarjetas de su sección, que se quedan como vía accesible.
+
+| Vista | Qué responde | Su límite, escrito al lado |
+|---|---|---|
+| **Anillo radial** | dónde se concentra la omisión, qué zona es cuál, dónde están los puntos críticos y de dónde cuelgan las calles | el ángulo es orden en el anillo, no distancia; relleno = declarado, hueco = candidato por firma |
+| **Mapa de omisión tag × AGV** | si lo que falta es del tag (fila) o del vehículo (columna) | pinta lo que falta, no lo que se lee; «no pasó» lleva trama y no es 0 % (R-OPP-013) |
+| **Rotura y degradación en el tiempo** | la forma del cambio: escalón o rampa, y cuándo | mismo eje en todos los paneles; un tramo sin pasadas corta la línea, no la lleva a cero |
+| **Permanencia en los candidatos de tiempo** | parada precisa (estrecha y desplazada) y semáforo (dos grupos) frente a la referencia del cohorte | proporción de pasadas con el mismo eje; sin pares del mismo instante (R-DAT-013); firma, nunca función (R-GRA-007) |
+| **Salidas de los tags con reparto** | cruce (las ramas vuelven a juntarse) o bifurcación (no) | el grosor es la cuota, con su soporte; el margen de saltos es configuración |
+| **Ocupación de las calles de carga** | quién estuvo en cada calle y cuándo, la calle sin servicio, quién esperó de más | solo es barra lo que se sabe: una estancia sin entrada o sin salida es una marca en su extremo conocido; fuera de cobertura, trama (R-CO-007, R-DAT-007) |
+| **Entrada y salida del tramo cargado** | un adelantamiento como una línea que cruza a las demás | candidato, no avería: OQ-107 sigue sin catálogo de excepciones (R-FLO-001) |
+| **Deriva entre los dos periodos** | qué tag desapareció, apareció o se sustituyó, en lecturas | correlación de posición y tiempo, nunca confirmación física (R-DAT-017, R-EVI-004) |
+| **Inventario** | cuánto hay que valorar frente a lo que no, y qué acción pide cada clase | sin color de severidad: «a valorar» es una pregunta, no un problema (§5.2) |
+| **Expediente de un AGV en el tiempo** | cuándo lee, cuándo carga, cuándo calla y qué periodo está cargado | la carga es inferida; el silencio, causa desconocida; lo que cae fuera de la cobertura no se dibuja como silencio |
+
+Tres reglas nuevas, las tres aprendidas al mirar el render con el circuito de auditoría:
+
+- **Se dibujan al ancho real** de su contenedor y se redibujan al cambiar, en lugar de escalar un
+  lienzo fijo. Con un lienzo de 640 unidades en 360 px, un rótulo de 10 se lee a 5,6 px.
+- **Una sola lectura al puntero por gráfico**, en una región viva, y nunca un `<title>` por marca. La
+  matriz, que es la que más celdas tiene, es un único `canvas`.
+- **Un extremo que no se ve no se inventa.** Una estancia cuya salida no consta no es una barra hasta
+  el final de la ventana; es una marca en la entrada. Un silencio que cruza un hueco de cobertura se
+  dibuja solo en la parte cubierta.
 
 ## 6. Consolidación
 

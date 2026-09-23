@@ -20,6 +20,7 @@ import {
   findBifurcationCandidates,
   findPrecisePauseCandidates,
   findTrafficLightCandidates,
+  transitionDurationsByTag,
   type BifurcationThresholds,
   type CriticalPointCandidate,
   type CruceThresholds,
@@ -318,5 +319,17 @@ describe("semáforo (findTrafficLightCandidates)", () => {
       "semaforo",
     );
     expect(candidate.samples).toBe(20); // los 8 en el mismo instante no cuentan
+  });
+});
+
+describe("duraciones por tag para dibujar (transitionDurationsByTag)", () => {
+  it("descarta los pares del mismo instante: no miden ninguna duración (R-DAT-013)", () => {
+    const byTag = transitionDurationsByTag([
+      { from: "A", fromTime: 0, toTime: 5_000, sameInstant: false },
+      { from: "A", fromTime: 10_000, toTime: 10_000, sameInstant: true },
+      { from: "B", fromTime: 0, toTime: 3_000, sameInstant: false },
+    ]);
+    expect(byTag.get("A")).toEqual([5_000]);
+    expect(byTag.get("B")).toEqual([3_000]);
   });
 });

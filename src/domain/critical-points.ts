@@ -304,8 +304,13 @@ export function classifyCrossings(
   });
 }
 
-/** Duraciones salientes por tag, descartando pares en el mismo instante (R-DAT-013: no miden nada). */
-function durationsByTag(
+/**
+ * Duraciones salientes por tag, descartando pares en el mismo instante (R-DAT-013: no miden nada).
+ *
+ * Exportada para que la vista dibuje la distribución que las firmas de parada precisa y semáforo ya
+ * resumen en una media y un coeficiente: es la misma evidencia, sin resumir.
+ */
+export function transitionDurationsByTag(
   transitions: readonly {
     readonly from: string;
     readonly fromTime: number;
@@ -350,7 +355,7 @@ export function findPrecisePauseCandidates(
   thresholds: PrecisePauseThresholds,
 ): readonly CriticalPointCandidate[] {
   const candidates: PrecisePauseCandidate[] = [];
-  for (const [tagId, durations] of durationsByTag(transitions)) {
+  for (const [tagId, durations] of transitionDurationsByTag(transitions)) {
     if (durations.length < thresholds.minSamples) continue;
     const average = mean(durations);
     if (average < thresholds.minDurationMs) continue;
@@ -407,7 +412,7 @@ export function findTrafficLightCandidates(
   thresholds: TrafficLightThresholds,
 ): readonly CriticalPointCandidate[] {
   const candidates: TrafficLightCandidate[] = [];
-  for (const [tagId, durations] of durationsByTag(transitions)) {
+  for (const [tagId, durations] of transitionDurationsByTag(transitions)) {
     if (durations.length < thresholds.minSamples) continue;
     const sorted = [...durations].sort((a, b) => a - b);
     const split = biggestGapSplit(sorted, thresholds.minClusterSamples);

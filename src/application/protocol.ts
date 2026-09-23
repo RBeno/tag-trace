@@ -227,6 +227,13 @@ export interface CircuitViews {
      * sospechoso, y callarlo lo haría invisible por ser sospechoso.
      */
     readonly offRingTags: readonly { readonly tagId: string; readonly readers: number }[];
+    /** Zona declarada de cada tag del anillo, en el mismo orden que `tags`. Solo con la lista `zona`. */
+    readonly zones?: readonly (string | null)[];
+    /**
+     * De qué tag del anillo cuelga cada calle de carga, observado en el dato (la lista no lo dice).
+     * Solo con la lista `carga-online`; una calle sin entradas desde el anillo no aparece.
+     */
+    readonly laneJunctions?: readonly { readonly laneId: string; readonly tagId: string; readonly served: boolean }[];
   }[];
   /** Tasa de lectura por tag y vehículo, normalizada por pasada (R-OPP-010). Nunca es salud. */
   readonly readMatrices: readonly ReadMatrix[];
@@ -241,9 +248,9 @@ export interface CircuitViews {
   /**
    * Calles de carga online. Solo cuando el circuito tiene la lista `carga-online` cargada.
    *
-   * Viaja en forma compacta —recuentos y los casos notables, no las estancias una a una— porque lo
-   * que la vista necesita es a cuáles mirar; el detalle completo se reconstruye abriendo el
-   * expediente del vehículo, que ya lo tiene.
+   * Lleva los recuentos y los casos notables y, desde la Parte 38, también las estancias una a una
+   * (`stayList`): son las que dibujan los carriles de ocupación. Cuatro campos por estancia y unas
+   * pocas por vehículo y día — cientos de números, no las lecturas otra vez (WP-001).
    */
   readonly charging?: {
     readonly lanes: readonly {
@@ -251,6 +258,14 @@ export interface CircuitViews {
       readonly capacity: number | null;
       readonly served: boolean;
       readonly stays: number;
+      readonly stayList: readonly {
+        readonly agvId: string;
+        /** `null` si entró antes de la cobertura: no se sabe cuándo (R-CO-007). */
+        readonly enteredUtcMs: number | null;
+        /** `null` si seguía dentro al terminar la cobertura. */
+        readonly leftUtcMs: number | null;
+        readonly state: "completa" | "abierta-al-inicio" | "abierta-al-final" | "incompleta";
+      }[];
       readonly medianStayMs: number | null;
       readonly longStays: readonly { readonly agvId: string; readonly durationMs: number | null }[];
       readonly outOfSeniority: readonly {
@@ -299,6 +314,12 @@ export interface CircuitViews {
         readonly transitMs: number;
         readonly marginMs: number;
       }[];
+      /** Pasadas completas alrededor del adelantamiento con más vehículos por delante, en orden de entrada. */
+      readonly focus: readonly {
+        readonly agvId: string;
+        readonly enteredUtcMs: number;
+        readonly leftUtcMs: number;
+      }[];
     }[];
     readonly problems: readonly string[];
   }[];
@@ -330,7 +351,16 @@ export interface CircuitViews {
       /** Presentes solo en `semaforo`. */
       readonly lowClusterMeanMs?: number;
       readonly highClusterMeanMs?: number;
+      /** Presente en `parada-precisa` y `semaforo`: las duraciones que la firma resume, para dibujarlas. */
+      readonly durationsMs?: readonly number[];
     }[];
+    /**
+     * Referencia para esas distribuciones: duraciones de todas las transiciones del cohorte, sin
+     * pares del mismo instante (R-DAT-013), en muestra de paso fijo si pasan del tope.
+     */
+    readonly referenceDurationsMs: readonly number[];
+    /** De cuántas duraciones sale la muestra de referencia. */
+    readonly referenceTotal: number;
   }[];
   /** Por qué una fila de la lista `critico` no se pudo usar. Solo con la lista `critico` cargada. */
   readonly criticalPointsProblems?: readonly string[];

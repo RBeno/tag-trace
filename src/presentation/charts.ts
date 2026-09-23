@@ -34,9 +34,9 @@ const NS = "http://www.w3.org/2000/svg";
 const WIDTH = 640;
 
 /** Trama diagonal para «sin datos cargados». Se define una vez por SVG que la use. */
-const HATCH_ID = "tt-hatch";
+export const HATCH_ID = "tt-hatch";
 
-function svg<K extends keyof SVGElementTagNameMap>(
+export function svg<K extends keyof SVGElementTagNameMap>(
   tag: K,
   attributes: Readonly<Record<string, string | number>> = {},
 ): SVGElementTagNameMap[K] {
@@ -46,7 +46,7 @@ function svg<K extends keyof SVGElementTagNameMap>(
 }
 
 /** Un valor importado nunca se interpreta como marcado (TH-007). */
-function text(
+export function text(
   x: number,
   y: number,
   content: string,
@@ -72,7 +72,7 @@ function withTooltip<T extends SVGElement>(node: T, label: string): T {
   return node;
 }
 
-function hatchPattern(): SVGDefsElement {
+export function hatchPattern(): SVGDefsElement {
   const defs = svg("defs");
   const pattern = svg("pattern", {
     id: HATCH_ID,
@@ -87,7 +87,7 @@ function hatchPattern(): SVGDefsElement {
   return defs;
 }
 
-function figure(title: string, caption: string): HTMLElement {
+export function figure(title: string, caption: string): HTMLElement {
   const wrapper = document.createElement("figure");
   wrapper.className = "chart";
   const heading = document.createElement("h3");
@@ -131,7 +131,7 @@ export function plainTable(headers: readonly string[], rows: readonly (readonly 
  * La tabla equivalente de un gráfico, plegada por defecto: es la vía accesible y el respaldo
  * cuando el color falla, no la vista principal.
  */
-function table(headers: readonly string[], rows: readonly (readonly string[])[]): HTMLElement {
+export function table(headers: readonly string[], rows: readonly (readonly string[])[]): HTMLElement {
   const details = document.createElement("details");
   const summary = document.createElement("summary");
   summary.textContent = "Ver los mismos datos en tabla";
@@ -169,7 +169,7 @@ export function scrollBox(node: HTMLElement): HTMLElement {
   return box;
 }
 
-function legendList(items: readonly (readonly [string, string])[]): HTMLElement {
+export function legendList(items: readonly (readonly [string, string])[]): HTMLElement {
   const list = document.createElement("ul");
   list.className = "legend";
   for (const [fill, label] of items) {
@@ -547,35 +547,66 @@ export function inventoryChart(bars: readonly InventoryBar[]): HTMLElement {
     return wrapper;
   }
 
-  const width = WIDTH;
-  const rowHeight = 24;
-  const labelWidth = 150;
-  const height = bars.length * rowHeight + 8;
+  // Primero la proporción que pide atención frente a la que no (Parte 38, propuesta 10); después
+  // cada clase con su acción en la misma línea, que es lo que antes solo estaba en la tabla.
+  const groupOf = (label: string): "ok" | "ctx" | "val" =>
+    label === "activo" ? "ok" : label === "especial" ? "ctx" : "val";
+  const groups: readonly (readonly ["ok" | "ctx" | "val", string, string])[] = [
+    ["ok", "nada que valorar", "var(--viz-neutral)"],
+    // Azul de serie y no naranja: ninguna clase del inventario lleva color de severidad (UX §5.2).
+    ["val", "a valorar", "var(--viz-series)"],
+    ["ctx", "fuera de toda tasa", "repeating-linear-gradient(135deg, var(--viz-empty) 0 2px, var(--panel) 2px 5px)"],
+  ];
+  const total = Math.max(1, bars.reduce((sum, bar) => sum + bar.count, 0));
+  const strip = document.createElement("div");
+  strip.className = "inv-strip";
+  strip.setAttribute("role", "img");
+  const stripLabels = document.createElement("ul");
+  stripLabels.className = "legend";
+  const summary: string[] = [];
+  for (const [group, label, fill] of groups) {
+    const count = bars.filter((bar) => groupOf(bar.label) === group).reduce((sum, bar) => sum + bar.count, 0);
+    if (count === 0) continue;
+    const part = document.createElement("div");
+    part.style.flex = `${count} 1 0`;
+    part.style.background = fill;
+    strip.append(part);
+    const item = document.createElement("li");
+    const swatch = document.createElement("span");
+    swatch.className = "swatch";
+    swatch.style.background = fill;
+    const caption = document.createElement("span");
+    caption.textContent = `${label}: ${count} (${Math.round((count / total) * 100)} %)`;
+    item.append(swatch, caption);
+    stripLabels.append(item);
+    summary.push(`${label} ${count}`);
+  }
+  strip.setAttribute("aria-label", `Inventario: ${summary.join(", ")}`);
+
+  const rows = document.createElement("div");
+  rows.className = "inv-rows";
   const max = Math.max(1, ...bars.map((bar) => bar.count));
+  for (const bar of [...bars].sort((a, b) => b.count - a.count)) {
+    const name = document.createElement("span");
+    name.className = "inv-name";
+    name.textContent = bar.label;
+    const track = document.createElement("span");
+    track.className = "inv-track";
+    const fill = document.createElement("span");
+    fill.className = "inv-bar";
+    fill.style.width = `${(bar.count / max) * 100}%`;
+    fill.style.background = groupOf(bar.label) === "val" ? "var(--viz-series)" : "var(--viz-neutral)";
+    track.append(fill);
+    const count = document.createElement("span");
+    count.className = "inv-count";
+    count.textContent = String(bar.count);
+    const action = document.createElement("span");
+    action.className = "inv-action muted";
+    action.textContent = `${bar.action} · ${bar.truth}`;
+    rows.append(name, track, count, action);
+  }
 
-  const canvas = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img" });
-  bars.forEach((bar, index) => {
-    const y = index * rowHeight + 4;
-    const barWidth = Math.max(bar.count === 0 ? 0 : 3, (bar.count / max) * (width - labelWidth - 44));
-    canvas.append(text(0, y + 13, bar.label, "axis"));
-    canvas.append(
-      withTooltip(
-        svg("rect", {
-          x: labelWidth,
-          y,
-          width: barWidth,
-          height: rowHeight - 8,
-          rx: 4,
-          fill: "var(--viz-series)",
-        }),
-        `${bar.label}: ${bar.count} tag(s) · ${bar.truth} · ${bar.action}`,
-      ),
-    );
-    // Rótulo directo con la cifra: el gráfico da la proporción, el número da el dato exacto.
-    canvas.append(text(labelWidth + barWidth + 6, y + 13, String(bar.count), "value"));
-  });
-
-  wrapper.append(canvas);
+  wrapper.append(strip, stripLabels, rows);
   wrapper.append(
     table(
       ["Clase", "Tags", "Estado de verdad", "Qué valorar"],

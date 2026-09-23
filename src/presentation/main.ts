@@ -27,6 +27,24 @@ import {
   plainTable,
   scrollBox,
 } from "./charts.js";
+import {
+  agvTimelineChart,
+  driftChart,
+  dwellChart,
+  fifoSlopeChart,
+  forkChart,
+  laneOccupancyChart,
+  readMatrixHeatmap,
+  ringChart,
+  trendMultiplesChart,
+  type DwellRow,
+  type ForkData,
+  type Formats,
+  type RingData,
+  type RingMark,
+  type TrendPanel,
+} from "./diagnostic-charts.js";
+import { PROVISIONAL_CONFIG } from "../domain/config.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
@@ -92,6 +110,18 @@ function formatInstant(utcMs: number): string {
     timeStyle: "medium",
   }).format(new Date(utcMs));
 }
+
+/** El instante corto de un eje: día de la semana y hora, en la zona del circuito. */
+function formatTick(utcMs: number): string {
+  return new Intl.DateTimeFormat("es-ES", {
+    timeZone: ZONE,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(utcMs));
+}
+
+const FORMATS: Formats = { instant: formatInstant, tick: formatTick };
 
 // --- Regiones de la página -------------------------------------------------
 
@@ -925,6 +955,121 @@ function percent(rate: number | null): string {
   return rate === null ? "—" : `${Math.round(rate * 100)} %`;
 }
 
+/** Cuántos paneles de tendencia, horquillas y filas de permanencia se dibujan. Parámetros de pantalla. */
+const TREND_PANELS = 9;
+const FORK_DIAGRAMS = 4;
+const DWELL_ROWS = 5;
+/** Marcas numeradas alrededor del anillo, como mucho: con más, los números se pisan. */
+const RING_MARKS = 20;
+
+const CANDIDATE_LABEL: Readonly<Record<string, string>> = {
+  bifurcacion: "bifurcación",
+  cruce: "cruce",
+  "parada-precisa": "parada precisa",
+  semaforo: "semáforo",
+};
+
+/**
+ * Lo que el anillo radial necesita de un cohorte: su forma, la omisión de cada tag según la matriz,
+ * y las marcas — primero los tags con función declarada (dato de planta), después los candidatos por
+ * firma, en orden del anillo.
+ */
+function ringDataOf(shape: CircuitViews["shapes"][number], matrix: Matrix | undefined, views: CircuitViews): RingData {
+  const rowOf = new Map((matrix?.tags ?? []).map((row) => [row.tagId, row]));
+  const declared = new Map(
+    views.tagDossiers
+      .filter((dossier) => dossier.criticalFunction !== null)
+      .map((dossier) => [dossier.tagId, dossier.criticalFunction as string]),
+  );
+  const candidates = views.criticalPoints.find((cohort) => cohort.cohortId === shape.cohortId)?.candidates ?? [];
+  const declaredMarks: RingMark[] = [];
+  const candidateMarks: RingMark[] = [];
+  for (const tagId of shape.tags) {
+    const fn = declared.get(tagId);
+    if (fn !== undefined) {
+      declaredMarks.push({ tagId, label: fn, declared: true });
+      continue;
+    }
+    const candidate = candidates.find((entry) => entry.tagId === tagId);
+    if (candidate !== undefined) candidateMarks.push({ tagId, label: CANDIDATE_LABEL[candidate.kind] ?? candidate.kind, declared: false });
+  }
+  const order = new Map(shape.tags.map((tagId, index) => [tagId, index]));
+  const marks = [...declaredMarks, ...candidateMarks]
+    .slice(0, RING_MARKS)
+    .sort((a, b) => (order.get(a.tagId) ?? 0) - (order.get(b.tagId) ?? 0));
+  return {
+    tags: shape.tags.map((tagId, index) => {
+      const row = rowOf.get(tagId);
+      return {
+        tagId,
+        omission: row === undefined || row.rate === null ? null : 1 - row.rate,
+        passes: row?.passes ?? 0,
+        pattern: row?.pattern ?? "sin datos",
+        zone: shape.zones?.[index] ?? null,
+        isAnchor: tagId === shape.anchorTagId,
+      };
+    }),
+    anchorTagId: shape.anchorTagId,
+    anchorDeclared: shape.anchorTruth === "observed",
+    marks,
+    junctions: shape.laneJunctions ?? [],
+  };
+}
+
+/** Tags que la matriz ya destaca: los mismos que «Lo que hay que mirar», más los que cambian. */
+function flaggedTagsOf(matrix: Matrix): ReadonlySet<string> {
+  return new Set(
+    matrix.tags
+      .filter(
+        (tag) =>
+          tag.pattern === "bimodal-candidato" ||
+          tag.pattern === "uniforme-bajo" ||
+          tag.changedAtUtcMs !== undefined ||
+          tag.trend === "bajando",
+      )
+      .map((tag) => tag.tagId),
+  );
+}
+
+/** Vehículos que la matriz ya destaca: los que no leen un tag bimodal, o cuyo lector cambia. */
+function flaggedVehiclesOf(matrix: Matrix): ReadonlySet<string> {
+  const flagged = new Set<string>();
+  for (const tag of matrix.tags) if (tag.pattern === "bimodal-candidato") for (const agvId of tag.lowReaders) flagged.add(agvId);
+  for (const vehicle of matrix.vehicles) if (vehicle.changedAtUtcMs !== undefined || vehicle.trend === "bajando") flagged.add(vehicle.agvId);
+  return flagged;
+}
+
+/** Un panel de tendencia con su caída, para ordenar los más marcados primero. */
+function trendPanel(
+  who: "Tag" | "AGV",
+  id: string,
+  row: {
+    readonly changedAtUtcMs?: number;
+    readonly rateBefore?: number;
+    readonly rateAfter?: number;
+    readonly segmentRates?: readonly number[];
+    readonly trendSeries?: TrendPanel["series"];
+  },
+): { readonly panel: TrendPanel; readonly drop: number } | null {
+  if (row.trendSeries === undefined) return null;
+  const rates = row.segmentRates ?? [];
+  const drop =
+    row.changedAtUtcMs !== undefined
+      ? (row.rateBefore ?? 0) - (row.rateAfter ?? 0)
+      : (rates[0] ?? 0) - (rates[rates.length - 1] ?? 0);
+  return {
+    drop,
+    panel: {
+      who,
+      id,
+      kind: row.changedAtUtcMs !== undefined ? "rotura" : "degradación",
+      series: row.trendSeries,
+      ...(row.changedAtUtcMs === undefined ? {} : { changedAtUtcMs: row.changedAtUtcMs }),
+      ...(row.segmentRates === undefined ? {} : { segmentRates: row.segmentRates }),
+    },
+  };
+}
+
 /**
  * El anillo, los casos destacados y la matriz completa.
  *
@@ -949,17 +1094,19 @@ function renderShapes(views: CircuitViews): void {
           `el ${Math.round(shape.weakestShare * 100)} % de las pasadas.`,
       ),
     );
+    viewsPanel.append(ringChart(ringDataOf(shape, matrix, views)));
 
     // La lista ordenada, plegada: es la que se contrasta con el circuito virtual y con la memoria.
     viewsPanel.append(
       lazyDetails(`Ver los ${shape.tags.length} tags del anillo, en orden`, () =>
         plainTable(
-          ["Posición", "Tag", "Leído por pasada", "Patrón"],
+          ["Posición", "Tag", ...(shape.zones === undefined ? [] : ["Zona"]), "Leído por pasada", "Patrón"],
           shape.tags.map((tagId, index) => {
             const row = matrix?.tags.find((entry) => entry.tagId === tagId);
             return [
               String(index + 1),
               tagId,
+              ...(shape.zones === undefined ? [] : [shape.zones[index] ?? "—"]),
               row?.isAnchor === true ? "— (ancla)" : percent(row?.rate ?? null),
               row?.isAnchor === true ? "cierra la vuelta" : (row?.pattern ?? "sin datos"),
             ];
@@ -1021,6 +1168,7 @@ function renderShapes(views: CircuitViews): void {
       ),
     );
     renderHighlights(matrix);
+    viewsPanel.append(readMatrixHeatmap(matrix, flaggedTagsOf(matrix), flaggedVehiclesOf(matrix)));
     renderFullMatrix(matrix);
   }
 
@@ -1139,6 +1287,22 @@ function renderTrends(matrix: Matrix): void {
     return;
   }
 
+  // La forma del cambio, antes que las tarjetas: escalón o rampa, con el mismo eje para todos.
+  const panels = [
+    ...[...brokenTags, ...decliningTags].map((row) => trendPanel("Tag", row.tagId, row)),
+    ...[...brokenVehicles, ...decliningVehicles].map((row) => trendPanel("AGV", row.agvId, row)),
+  ]
+    .filter((panel): panel is { readonly panel: TrendPanel; readonly drop: number } => panel !== null)
+    .sort((a, b) => b.drop - a.drop);
+  if (panels.length > 0) {
+    viewsPanel.append(trendMultiplesChart(panels.slice(0, TREND_PANELS).map((entry) => entry.panel), FORMATS));
+    if (panels.length > TREND_PANELS) {
+      viewsPanel.append(
+        element("p", "muted", `Se dibujan los ${TREND_PANELS} cambios más marcados de ${panels.length}; todos están en las tarjetas.`),
+      );
+    }
+  }
+
   for (const tag of brokenTags) {
     viewsPanel.append(
       finding(
@@ -1215,6 +1379,8 @@ function renderCharging(views: CircuitViews): void {
   for (const problem of charging.problems) {
     viewsPanel.append(finding("Configuración que no se pudo usar", "—", problem));
   }
+
+  if (charging.lanes.length > 0) viewsPanel.append(laneOccupancyChart(charging.lanes, state.coverage, FORMATS));
 
   const sinServicio = charging.lanes.filter((lane) => !lane.served);
   for (const lane of sinServicio) {
@@ -1344,6 +1510,7 @@ function renderDrift(views: CircuitViews): void {
         "(R-DAT-016). El dato dice qué cambió, nunca por qué.",
     ),
   );
+  if (drift.tagDrifts.length > 0) viewsPanel.append(driftChart(drift));
 
   const sortedTags = [...drift.tagDrifts].sort((a, b) => a.tagId.localeCompare(b.tagId));
   for (const entry of sortedTags.slice(0, 5)) {
@@ -1454,6 +1621,52 @@ function renderCriticalPoints(views: CircuitViews): void {
   }
 
   const sorted = [...candidates].sort((a, b) => weightOf(b) - weightOf(a));
+
+  // Las firmas dibujadas antes que las tarjetas: la horquilla de los repartos y la distribución de
+  // tiempos de las paradas y los semáforos.
+  const forks: ForkData[] = sorted
+    .filter((candidate) => (candidate.kind === "bifurcacion" || candidate.kind === "cruce") && candidate.branches !== undefined)
+    .slice(0, FORK_DIAGRAMS)
+    .map((candidate) => ({
+      tagId: candidate.tagId,
+      kind: candidate.kind === "cruce" ? "cruce" : "bifurcacion",
+      support: candidate.support ?? 0,
+      branches: candidate.branches ?? [],
+      ...(candidate.reconvergesAt === undefined ? {} : { reconvergesAt: candidate.reconvergesAt }),
+      ...(candidate.hops === undefined ? {} : { hops: candidate.hops }),
+    }));
+  if (forks.length > 0) {
+    viewsPanel.append(forkChart(forks, PROVISIONAL_CONFIG.criticalPoints.cruce.maxHopsToReconverge));
+  }
+  for (const cohort of views.criticalPoints) {
+    const timed = cohort.candidates
+      .filter((candidate) => (candidate.kind === "parada-precisa" || candidate.kind === "semaforo") && (candidate.durationsMs?.length ?? 0) > 0)
+      .sort((a, b) => (b.samples ?? 0) - (a.samples ?? 0))
+      .slice(0, DWELL_ROWS);
+    if (timed.length === 0) continue;
+    const reference = [...cohort.referenceDurationsMs].sort((a, b) => a - b);
+    const rows: DwellRow[] = [
+      {
+        title: "Referencia",
+        detail: `todas las transiciones del cohorte · muestra de ${reference.length.toLocaleString("es-ES")} de ${cohort.referenceTotal.toLocaleString("es-ES")}`,
+        note: `mediana ${Math.round((reference[Math.floor(reference.length / 2)] ?? 0) / 1000)} s`,
+        durationsMs: reference,
+        isReference: true,
+      },
+      ...timed.map((candidate) => ({
+        title: candidate.tagId,
+        detail: kindLabel[candidate.kind],
+        note:
+          candidate.kind === "parada-precisa"
+            ? `media ${Math.round((candidate.meanDurationMs ?? 0) / 1000)} s · CV ${(candidate.coefficientOfVariation ?? 0).toFixed(2)}`
+            : `dos grupos: ${Math.round((candidate.lowClusterMeanMs ?? 0) / 1000)} s y ${Math.round((candidate.highClusterMeanMs ?? 0) / 1000)} s`,
+        durationsMs: candidate.durationsMs ?? [],
+        isReference: false,
+      })),
+    ];
+    viewsPanel.append(dwellChart(rows));
+  }
+
   for (const candidate of sorted.slice(0, 5)) {
     viewsPanel.append(finding(`${candidate.tagId}: ${kindLabel[candidate.kind]}`, detailOf(candidate), candidate.evidence));
   }
@@ -1508,6 +1721,16 @@ function renderFifo(views: CircuitViews): void {
   for (const problem of problems) {
     viewsPanel.append(finding("Tramo que no se pudo acotar", "—", problem));
   }
+
+  // El adelantamiento con más vehículos por delante, dibujado: una línea que cruza a las demás.
+  const focused = spans
+    .filter((span) => span.focus.length > 0 && span.overtakes.length > 0)
+    .map((span) => ({
+      span,
+      top: span.overtakes.reduce((best, overtake) => (overtake.overtakenBy.length > best.overtakenBy.length ? overtake : best)),
+    }))
+    .sort((a, b) => b.top.overtakenBy.length - a.top.overtakenBy.length)[0];
+  if (focused !== undefined) viewsPanel.append(fifoSlopeChart(focused.span, focused.top.overtaken, FORMATS));
 
   const overtakesFlat = spans.flatMap((span) =>
     span.overtakes.map((overtake) => ({ span, overtake })),
@@ -1670,6 +1893,24 @@ function renderDossier(): void {
     const list = element("dl", "facts");
     for (const [term, value] of rows) list.append(element("dt", undefined, term), element("dd", undefined, value));
     dossierResult.append(element("h3", undefined, `AGV ${agv.agvId}`), list);
+    const activity = state.views?.activity;
+    const activityRow = activity?.rows.find((row) => row.agvId === agv.agvId);
+    if (activity !== undefined && activityRow !== undefined) {
+      dossierResult.append(
+        agvTimelineChart(
+          {
+            agvId: agv.agvId,
+            bins: activityRow.bins,
+            binStarts: activity.binStarts,
+            binWidthMs: activity.binWidthMs,
+            uncoveredBins: activity.uncoveredBins,
+            inactivity: agv.inactivity,
+            coverage: state.coverage,
+          },
+          FORMATS,
+        ),
+      );
+    }
     if (agv.inactivity.length > 0) {
       const cargas = agv.inactivity.filter((period) => period.cause === "carga-online").length;
       dossierResult.append(

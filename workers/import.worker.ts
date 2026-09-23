@@ -39,13 +39,14 @@ import {
   type LapAnchor,
 } from "../src/domain/laps.js";
 import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-matrix.js";
-import { buildChargingReport } from "../src/domain/charging.js";
+import { buildChargingReport, findLaneJunctions } from "../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans } from "../src/domain/fifo.js";
 import {
   classifyCrossings,
   findBifurcationCandidates,
   findPrecisePauseCandidates,
   findTrafficLightCandidates,
+  transitionDurationsByTag,
 } from "../src/domain/critical-points.js";
 import { compareDistantPeriods } from "../src/domain/drift.js";
 import {
@@ -180,6 +181,20 @@ const ACTIVITY_BINS = 96;
 const REPLAY_FRAMES = 200;
 
 /**
+ * Duraciones que viajan, como mucho, por distribución de permanencias dibujada. Parámetro técnico,
+ * igual que `ACTIVITY_BINS`: por encima se toma una muestra de paso fijo, determinista, y la vista
+ * dice de cuántas sale.
+ */
+const DURATION_SAMPLE_MAX = 1000;
+
+/** Una muestra de paso fijo: determinista, sin azar, y declarada por quien la enseña. */
+function strideSample(values: readonly number[], max: number): number[] {
+  if (values.length <= max) return [...values];
+  const step = values.length / max;
+  return Array.from({ length: max }, (_, index) => values[Math.floor(index * step)] as number);
+}
+
+/**
  * Los agregados que alimentan las vistas.
  *
  * Se calculan **aquí** y no en la interfaz: recorrer doscientas mil lecturas para contarlas por
@@ -302,6 +317,9 @@ async function buildViews(
       readers.add(entry.agvId);
     }
 
+    // Para dibujar el anillo: la zona de cada tag (solo con la lista `zona`) y el tag del anillo
+    // del que cuelga cada calle (solo con la lista `carga-online`). Proyecciones de lo ya leído.
+    const servedLanes = new Set(charging.lanes.filter((lane) => lane.served).map((lane) => lane.laneId));
     shapes.push({
       cohortId: cohort.id,
       vehicles: cohort.vehicles.length,
@@ -312,6 +330,16 @@ async function buildViews(
       offRingTags: [...offRing.entries()]
         .map(([tagId, readers]) => ({ tagId, readers: readers.size }))
         .sort((a, b) => b.readers - a.readers),
+      ...(zoneConfig.zoneOf.size === 0
+        ? {}
+        : { zones: effective.cycle.map((tagId) => zoneConfig.zoneOf.get(tagId) ?? null) }),
+      ...(laneConfig.lanes.length === 0
+        ? {}
+        : {
+            laneJunctions: findLaneJunctions(laneConfig.lanes, cohortTransitions, effective.cycle).map(
+              (junction) => ({ ...junction, served: servedLanes.has(junction.laneId) }),
+            ),
+          }),
     });
     matrices.push(
       buildReadMatrix(
@@ -341,9 +369,21 @@ async function buildViews(
     const conCruces = classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce);
     const paradas = findPrecisePauseCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa);
     const semaforos = findTrafficLightCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo);
+    // Para dibujar la distribución que la firma resume: las duraciones de cada candidato de tiempo y
+    // una muestra de referencia con todas las del cohorte (sin pares del mismo instante, R-DAT-013).
+    const durations = transitionDurationsByTag(cohortTransitions);
+    const allDurations = [...durations.values()].flat();
     criticalPointCohorts.push({
       cohortId: cohort.id,
-      candidates: [...conCruces, ...paradas, ...semaforos],
+      candidates: [
+        ...conCruces,
+        ...[...paradas, ...semaforos].map((candidate) => ({
+          ...candidate,
+          durationsMs: strideSample(durations.get(candidate.tagId) ?? [], DURATION_SAMPLE_MAX),
+        })),
+      ],
+      referenceDurationsMs: strideSample(allDurations, DURATION_SAMPLE_MAX),
+      referenceTotal: allDurations.length,
     });
   }
 
@@ -383,6 +423,12 @@ async function buildViews(
               capacity: lane.capacity,
               served: lane.served,
               stays: lane.stays.length,
+              stayList: lane.stays.map((stay) => ({
+                agvId: stay.agvId,
+                enteredUtcMs: stay.enteredUtcMs,
+                leftUtcMs: stay.leftUtcMs,
+                state: stay.state,
+              })),
               medianStayMs: lane.medianStayMs,
               longStays: lane.longStays.map((stay) => ({
                 agvId: stay.agvId,

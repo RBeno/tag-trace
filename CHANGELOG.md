@@ -2,6 +2,49 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.17.0] - 2026-09-23
+
+Diez vistas de diagnóstico en la aplicación (Parte 38), las propuestas 2 a 11 de la galería que el
+propietario eligió. Nada cambia en el cálculo: los hallazgos que hasta ahora se leían en tarjetas y
+tablas se ven. Cada vista va encima de las tarjetas de su sección, que se quedan como vía accesible,
+y lleva su tabla equivalente (`UX_SPEC.md` §5.3).
+
+### Añadido
+
+- `src/presentation/diagnostic-charts.ts`: anillo radial, mapa de omisión tag × AGV (un único
+  `canvas`), pequeños múltiplos de rotura y degradación, histograma de permanencias, horquilla de
+  cruce o bifurcación, carriles de ocupación por calle, entrada frente a salida del tramo cargado,
+  deriva entre dos periodos y expediente de un AGV en el tiempo. Dibujados al ancho real del
+  contenedor y con una sola lectura al puntero por gráfico, nunca un `<title>` por marca.
+- `inventoryChart` rehecho en su sitio: franja al 100 % (nada que valorar / a valorar / fuera de
+  toda tasa) y cada clase con su acción en la misma línea. Mismo título y misma tabla.
+- Datos compactos nuevos en `CircuitViews`, todos proyecciones de lo ya calculado:
+  `binTimeline` y `trendSeries` (solo en filas con tendencia), `SpanReport.focus` (tope
+  `FIFO_FOCUS_MAX`), `stayList` por calle, `durationsMs` en los candidatos de tiempo con una muestra
+  de referencia por cohorte, y `zones` y `laneJunctions` (`findLaneJunctions`) en la forma del anillo.
+- Tokens `--viz-accent` (validado frente a `--viz-series` para daltonismo en los dos modos),
+  `--viz-accent-wash` y `--viz-neutral`.
+- TC-141–147; `tests/e2e/vistas-diagnostico.spec.ts` carga el circuito de auditoría en dos
+  exportaciones con un hueco entre medias, para que también aparezca la deriva.
+
+### Corregido antes de publicarse, al mirar el render
+
+- **Una estancia sin salida vista se dibujaba como barra hasta el final de la ventana**, afirmando
+  horas de carga que nadie observó. Ahora solo es barra lo que se sabe: una estancia completa, o un
+  arranque en frío (R-CO-007). Si falta un extremo por otra razón, es una marca en el extremo conocido.
+- **El anillo repetía la tabla del anillo**, y la prueba existente que la busca encontraba la copia
+  vacía. El anillo no lleva tabla propia: la suya es la lista ordenada de debajo, que gana la columna
+  de zona.
+- **El inventario pintaba «a valorar» en naranja**, contra la regla de §5.2: ninguna clase lleva color
+  de severidad. Va en el azul de serie.
+
+### Conocido, sin corregir aquí
+
+- **El expediente de un AGV cuenta como inactividad un hueco de cobertura** entre dos exportaciones
+  (`buildAllAgvDossiers` no recibe la cobertura). Es contrario a R-DAT-007. La vista nueva lo recorta
+  y dibuja solo la parte cubierta, pero la tabla del expediente sigue listándolo. La corrección es de
+  dominio y queda para un cambio propio.
+
 ## [3.16.0] - 2026-09-23
 
 Dos clases nuevas de tag crítico (R-GRA-007) — **vinculación** y **desvinculación**: sincronizar la

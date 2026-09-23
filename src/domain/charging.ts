@@ -348,3 +348,43 @@ export function buildChargingReport(
 
   return { lanes: report, startedInside, coverageStartUtcMs };
 }
+
+/** De qué tag del anillo cuelga una calle: el que precede con más frecuencia a su tag de entrada. */
+export interface LaneJunction {
+  readonly laneId: string;
+  readonly tagId: string;
+}
+
+/**
+ * El punto del anillo del que sale cada calle, para poder dibujarla colgada de él.
+ *
+ * Es el predecesor **observado** más frecuente del tag de entrada, restringido al anillo: la calle
+ * se declara (R-CO-001), pero dónde se engancha al circuito no viene en la lista, así que se mira en
+ * el dato. Una calle en la que nadie entró desde el anillo no tiene punto de enganche y no se
+ * inventa uno: no aparece.
+ */
+export function findLaneJunctions(
+  lanes: readonly CoLane[],
+  transitions: readonly { readonly from: string; readonly to: string }[],
+  ring: readonly string[],
+): readonly LaneJunction[] {
+  const inRing = new Set(ring);
+  const junctions: LaneJunction[] = [];
+  for (const lane of lanes) {
+    const counts = new Map<string, number>();
+    for (const entry of transitions) {
+      if (entry.to !== lane.entryTagId || !inRing.has(entry.from)) continue;
+      counts.set(entry.from, (counts.get(entry.from) ?? 0) + 1);
+    }
+    let best: string | null = null;
+    let bestCount = 0;
+    for (const [tagId, count] of counts) {
+      if (count > bestCount || (count === bestCount && best !== null && tagId < best)) {
+        best = tagId;
+        bestCount = count;
+      }
+    }
+    if (best !== null) junctions.push({ laneId: lane.laneId, tagId: best });
+  }
+  return junctions;
+}

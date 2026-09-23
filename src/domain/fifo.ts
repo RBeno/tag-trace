@@ -170,6 +170,20 @@ export interface FifoOvertake {
   readonly marginMs: number;
 }
 
+/** Una pasada completa por un tramo: entró por su primer tag y salió por el último. */
+export interface FifoPass {
+  readonly agvId: string;
+  readonly enteredUtcMs: number;
+  readonly leftUtcMs: number;
+}
+
+/**
+ * Cuántas pasadas, como mucho, lleva la ventana que se dibuja alrededor de un adelantamiento.
+ * Parámetro de pantalla, no magnitud de planta: no decide ningún adelantamiento, solo cuántos
+ * vecinos se enseñan a su alrededor.
+ */
+export const FIFO_FOCUS_MAX = 30;
+
 export interface SpanReport {
   readonly spanId: string;
   readonly entryTagId: string;
@@ -179,6 +193,12 @@ export interface SpanReport {
   readonly medianTransitMs: number | null;
   readonly evaluated: boolean;
   readonly overtakes: readonly FifoOvertake[];
+  /**
+   * Pasadas completas, en orden de entrada, alrededor del adelantamiento con más vehículos por
+   * delante: desde un poco antes del adelantado hasta el último que lo adelantó. Es lo que la vista
+   * dibuja como orden de entrada frente a orden de salida. Vacía si no hay adelantamientos.
+   */
+  readonly focus: readonly FifoPass[];
 }
 
 export interface FifoReport {
@@ -227,6 +247,34 @@ function findOvertakes(
   return overtakes.sort((a, b) => b.marginMs - a.marginMs);
 }
 
+/**
+ * La ventana de pasadas que enseña un adelantamiento: el adelantado, los que lo adelantaron y unos
+ * pocos vecinos a cada lado para que se vea que los demás sí conservaron el orden.
+ */
+function focusWindow(completed: readonly FifoPass[], overtakes: readonly FifoOvertake[]): readonly FifoPass[] {
+  const top = overtakes.reduce<FifoOvertake | undefined>(
+    (best, overtake) => (best === undefined || overtake.overtakenBy.length > best.overtakenBy.length ? overtake : best),
+    undefined,
+  );
+  if (top === undefined) return [];
+  const sorted = [...completed].sort((a, b) => a.enteredUtcMs - b.enteredUtcMs);
+  const start = sorted.findIndex(
+    (pass) => pass.agvId === top.overtaken && pass.leftUtcMs - pass.enteredUtcMs === top.transitMs,
+  );
+  if (start === -1) return [];
+  const slow = sorted[start] as FifoPass;
+  const overtakers = new Set(top.overtakenBy);
+  let end = start;
+  for (let index = start + 1; index < sorted.length; index += 1) {
+    const pass = sorted[index] as FifoPass;
+    if (pass.enteredUtcMs >= slow.leftUtcMs) break;
+    if (overtakers.has(pass.agvId) && pass.leftUtcMs < slow.leftUtcMs) end = index;
+  }
+  const from = Math.max(0, start - 3);
+  const to = Math.min(sorted.length - 1, end + 2, from + FIFO_FOCUS_MAX - 1);
+  return sorted.slice(from, to + 1);
+}
+
 /** Construye el informe de FIFO de un cohorte, un tramo a la vez. */
 export function buildFifoReport(
   cohortId: number,
@@ -273,6 +321,7 @@ export function buildFifoReport(
       completed.length >= thresholds.minPassesForSpan
         ? median(completed.map((pass) => pass.leftUtcMs - pass.enteredUtcMs))
         : null;
+    const overtakes = medianTransitMs === null ? [] : findOvertakes(completed, medianTransitMs, thresholds);
     return {
       spanId: span.spanId,
       entryTagId: span.entryTagId,
@@ -281,7 +330,8 @@ export function buildFifoReport(
       passes: completed.length,
       medianTransitMs,
       evaluated: medianTransitMs !== null,
-      overtakes: medianTransitMs === null ? [] : findOvertakes(completed, medianTransitMs, thresholds),
+      overtakes,
+      focus: focusWindow(completed, overtakes),
     };
   });
 
