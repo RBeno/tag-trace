@@ -2,6 +2,33 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.19.0] - 2026-09-23
+
+Revisión en campo de los hallazgos, para las pruebas en planta: ir al punto conflictivo, marcar lo
+que se vio, dejar el resto para otro día y seguir donde se dejó (R-EVI-007, `UX_SPEC.md` §4.3). Solo
+la revisión: la consolidación es F4 y espera a `CONTINÚA FASE 4`.
+
+### Añadido
+
+- Cada tarjeta de hallazgo lleva **○ Pendiente · ✓ Confirmado · ✕ Descartado · » Pospuesto** y una
+  nota opcional. Se guarda sola en cada pulsación y sobrevive a recargar y a volver a importar: la
+  marca va con el tipo y el sujeto del hallazgo, no con su texto.
+- Una barra fija con el progreso y **Siguiente pendiente**; debajo, el recuento por estado, filtros y
+  **Exportar revisión (CSV)**, con los pendientes incluidos.
+- Si la cifra de un hallazgo cambió desde que se marcó, la tarjeta lo avisa. Las marcas de hallazgos
+  que ya no aparecen no se borran: se cuentan aparte y van en el CSV.
+- `src/domain/review.ts`, `src/presentation/review-ui.ts`; almacén en versión 5 con una tabla
+  `reviews` propia, separada del circuito para que una importación nunca pise una marca; sección
+  opcional `revision` en el `.agvproj`. TC-159–160.
+- Decisión del propietario para F4: al consolidar solo bloquea lo pendiente; lo pospuesto pasa al
+  periodo siguiente (`MEMORY_CONSOLIDATION.md` §6).
+
+### Corregido antes de publicarse, al mirar el render
+
+- En el móvil, el panel de revisión fijo tapaba casi media pantalla. Solo queda fija una barra
+  compacta con el progreso y «Siguiente pendiente»; filtros y exportación van debajo.
+- El icono de «Pospuesto» (⏸) apenas se leía en el móvil; pasa a «»».
+
 ## [3.18.3] - 2026-09-23
 
 ### Corregido

@@ -2,7 +2,7 @@
 document_id: TT-GATES-001
 version: 0.18.0
 status: baseline-candidate
-last_updated: 2026-09-22
+last_updated: 2026-09-23
 ---
 
 # Puertas de fase
@@ -123,6 +123,9 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
       clase de fallo). **Sigue sin marcarse**, no por falta de mecanismo sino por alcance: solo
       cubre las clases de fallo ya identificadas en el sintético (14 de 14 detectadas al
       2026-09-21, cero falsos positivos, `DEUDA_CONOCIDA` vacía), no todavía las de OQ-B04.
+      Con datos de planta, la medida sale de la **revisión en campo** (`UX_SPEC.md` §4.3): cada
+      hallazgo confirmado o descartado en el punto es un acierto o un falso positivo de su clase, y
+      el CSV exportado da el recuento.
 
 ## G4 — Autorizar F5
 

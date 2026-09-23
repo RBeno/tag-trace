@@ -166,3 +166,46 @@ table.data th { color: var(--muted); font-weight: 600; }
   .facts dd { margin-bottom: 8px; }
   table.readings th:nth-child(5), table.readings td:nth-child(5) { display: none; }
 }
+
+/* --- Revisión en campo (UX_SPEC §4.3) ---------------------------------------------------------
+   Se usa de pie, con el móvil en una mano: botones de 40 px, por encima de los 24 px de WCAG 2.2.
+   El estado de cada tarjeta se ve por tres canales a la vez —borde, texto del botón pulsado e
+   icono—, nunca solo por color. Lo confirmado lleva el acento (hay que actuar); lo descartado se
+   apaga; lo pospuesto va en trazo discontinuo, porque sigue abierto. */
+.review { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+.review .seg, .review-panel .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.review .seg button, .review-panel .seg button { min-height: 40px; padding: 6px 12px; font-size: 0.9rem; }
+.review .seg button[aria-pressed="true"] { font-weight: 600; box-shadow: inset 0 0 0 1px currentColor; }
+.review .seg button[data-state="confirmado"][aria-pressed="true"] { background: var(--viz-accent-wash); border-color: var(--viz-accent); }
+.review .seg button[data-state="descartado"][aria-pressed="true"] { background: var(--panel); border-color: var(--viz-neutral); color: var(--muted); }
+.review .seg button[data-state="pospuesto"][aria-pressed="true"] { border-style: dashed; border-color: var(--warn); }
+.review .seg button[data-state="pendiente"][aria-pressed="true"] { background: var(--panel); }
+.review-note { font: inherit; width: 100%; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.review-changed { color: var(--warn); font-size: 0.85rem; margin: 0; }
+.finding.reviewable { border-left-width: 4px; }
+.finding[data-review="confirmado"] { border-left-color: var(--viz-accent); }
+.finding[data-review="descartado"] { border-left-color: var(--viz-neutral); }
+.finding[data-review="descartado"] .finding-title { color: var(--muted); }
+.finding[data-review="pospuesto"] { border-left-style: dashed; border-left-color: var(--warn); }
+
+.review-bar { position: sticky; top: 0; z-index: 3; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 8px 12px; margin: 0 0 8px; }
+.review-bar-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.review-bar-row button { min-height: 40px; flex: none; }
+.review-panel { margin: 0 0 16px; }
+.review-heading { font-weight: 600; margin: 0; }
+.review-counts { margin: 4px 0 8px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.review-progress { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--viz-grid); margin: 6px 0 0; }
+.review-progress span[data-state="confirmado"] { background: var(--viz-accent); }
+.review-progress span[data-state="descartado"] { background: var(--viz-neutral); }
+.review-progress span[data-state="pospuesto"] { background: repeating-linear-gradient(135deg, var(--warn) 0 3px, transparent 3px 6px); }
+.review-progress span[data-state="pendiente"] { background: transparent; }
+.review-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.review-actions button { min-height: 40px; }
+
+/* Filtro: solo esconde tarjetas revisables de otro estado; gráficos y tablas se quedan. */
+[data-review-filter="pendiente"] .finding.reviewable:not([data-review="pendiente"]),
+[data-review-filter="confirmado"] .finding.reviewable:not([data-review="confirmado"]),
+[data-review-filter="descartado"] .finding.reviewable:not([data-review="descartado"]),
+[data-review-filter="pospuesto"] .finding.reviewable:not([data-review="pospuesto"]) { display: none; }

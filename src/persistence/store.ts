@@ -13,12 +13,25 @@
 import type { Interval } from "../domain/coverage.js";
 import type { FleetPeriod } from "../domain/fleet.js";
 import type { Reading } from "../domain/reading.js";
+import type { ReviewEntry } from "../domain/review.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 4;
+export const STORE_VERSION = 5;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
+/**
+ * La revisión en campo, en su propia tabla y no dentro del circuito. No es orden: el Worker
+ * reescribe el circuito entero en cada importación, y una marca guardada desde la interfaz mientras
+ * tanto se perdería. Aquí solo escribe la interfaz, y cada marca es su propia transacción.
+ */
+const REVIEWS = "reviews";
+
+/** Las marcas de revisión de un circuito, por clave de hallazgo (`src/domain/review.ts`). */
+export interface StoredReviews {
+  readonly circuitId: string;
+  readonly entries: Readonly<Record<string, ReviewEntry>>;
+}
 
 export interface StoredSource {
   readonly sourceId: string;
@@ -135,6 +148,13 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
     // la vista dice cuando no hay historial.
     apply: () => {},
   },
+  {
+    to: 5,
+    // La revisión en campo, en una tabla nueva y vacía: nada que reescribir en los circuitos.
+    apply: (db) => {
+      db.createObjectStore(REVIEWS, { keyPath: "circuitId" });
+    },
+  },
 ];
 
 if (MIGRATIONS[MIGRATIONS.length - 1]?.to !== STORE_VERSION) {
@@ -216,10 +236,51 @@ export async function deleteCircuit(circuitId: string): Promise<void> {
   const db = await open();
   try {
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(CIRCUITS, "readwrite");
+      // El circuito y su revisión se van juntos: una marca sin su circuito no significa nada.
+      const tx = db.transaction([CIRCUITS, REVIEWS], "readwrite");
       tx.objectStore(CIRCUITS).delete(circuitId);
+      tx.objectStore(REVIEWS).delete(circuitId);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error ?? new Error("No se pudo borrar el circuito."));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** Las marcas de revisión de un circuito; vacías si nunca se ha marcado nada. */
+export async function loadReviews(circuitId: string): Promise<ReadonlyMap<string, ReviewEntry>> {
+  const db = await open();
+  try {
+    const tx = db.transaction(REVIEWS, "readonly");
+    const store = tx.objectStore(REVIEWS);
+    const stored = await run(store, store.get(circuitId) as IDBRequest<StoredReviews | undefined>);
+    return new Map(Object.entries(stored?.entries ?? {}));
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Guarda o borra una marca, leyendo y escribiendo en la **misma** transacción: dos pulsaciones
+ * seguidas no se pisan. `null` la borra, que es volver a «pendiente».
+ */
+export async function saveReview(circuitId: string, key: string, entry: ReviewEntry | null): Promise<void> {
+  const db = await open();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(REVIEWS, "readwrite");
+      const store = tx.objectStore(REVIEWS);
+      const request = store.get(circuitId) as IDBRequest<StoredReviews | undefined>;
+      request.onsuccess = () => {
+        const entries = { ...(request.result?.entries ?? {}) };
+        if (entry === null) delete entries[key];
+        else entries[key] = entry;
+        store.put({ circuitId, entries } satisfies StoredReviews);
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("No se pudo guardar la revisión."));
+      tx.onabort = () => reject(tx.error ?? new Error("La escritura de la revisión se abortó."));
     });
   } finally {
     db.close();

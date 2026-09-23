@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -126,6 +126,33 @@ Dos cosas que la vista dice siempre, porque el número solo no las lleva escrita
 Una matriz es bidimensional por naturaleza, así que se desplaza **dentro de su caja**. Eso no
 contradice la regla de §5.1 —ningún gráfico exige desplazamiento para llegar a su contenido útil—
 porque el contenido útil ya está arriba, sin desplegar nada.
+
+## 4.3 Revisión en campo
+
+Para ir a los puntos conflictivos con el móvil y dejar constancia de lo que se vio. Cada tarjeta de
+hallazgo lleva cuatro botones: **○ Pendiente · ✓ Confirmado · ✕ Descartado · » Pospuesto**, y una
+nota opcional. Los avisos de configuración no los llevan, porque no se comprueban en campo.
+
+- **Se guarda sola** en el dispositivo en cada pulsación, y sigue ahí al recargar la página o al
+  cargar otra extracción: la marca va con el tipo y el sujeto del hallazgo, no con su texto
+  (R-EVI-007).
+- **El estado se ve por tres canales**: borde de la tarjeta (acento si está confirmado, gris si está
+  descartado, discontinuo si está pospuesto), el botón pulsado con su texto, y el icono. Nunca solo
+  por color. Botones de 40 px, por encima de los 24 px de WCAG 2.2, porque se usa de pie.
+- **Una barra fija arriba** dice cuánto va revisado («Revisión: 12 de 40 revisados») con su barra de
+  progreso, y lleva el botón **Siguiente pendiente**. Es compacta a propósito: en el móvil, todo lo
+  demás fijo taparía media pantalla.
+- **Debajo, sin quedarse fijo**: el recuento por estado, los filtros (todos, pendientes,
+  confirmados, descartados, pospuestos; solo esconden tarjetas, nunca gráficos) y **Exportar
+  revisión (CSV)**, con los pendientes incluidos, que son la lista de lo que falta.
+- **Si la cifra de un hallazgo cambió desde que se marcó**, la tarjeta lo dice con la cifra de
+  entonces: una confirmación sobre datos distintos no es la misma confirmación.
+- **Una marca cuyo hallazgo ya no aparece** no se borra: se cuenta aparte y va en el CSV.
+- La revisión viaja en el `.agvproj` exportado.
+
+Lo que no hace: consolidar. Revisar es el paso «Revisión de hallazgos» del flujo de
+`MEMORY_CONSOLIDATION.md` §6; escribir esa revisión como versión nueva de la memoria del circuito es
+F4.
 
 ## 5. Grafo y plano
 

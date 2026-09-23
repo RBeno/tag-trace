@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.26.0
+version: 0.27.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -99,6 +99,7 @@ regla exista: la matriz no es una lista de intenciones.
 | `UX_SPEC.md` §5.3 / TC-141–147 vistas de diagnóstico (Parte 38): anillo, mapa de omisión, tendencias, permanencias, horquilla, calles, FIFO, deriva, inventario y expediente en el tiempo | `src/presentation/diagnostic-charts.ts`, `src/presentation/charts.ts` (`inventoryChart`), `src/domain/read-rate-trend.ts` (`binTimeline`), `src/domain/read-matrix.ts` (`trendSeries`), `src/domain/fifo.ts` (`focus`), `src/domain/charging.ts` (`findLaneJunctions`), `src/domain/critical-points.ts` (`transitionDurationsByTag`), `workers/import.worker.ts` | `tests/unit/read-rate-trend.test.ts`, `tests/unit/read-matrix.test.ts`, `tests/unit/fifo.test.ts`, `tests/unit/charging.test.ts`, `tests/unit/critical-points.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 | DS-012 / R-AGV-014 / R-AGV-015 / TC-148–157 flota del circuito y vehículos que no cargan (Parte 39): historial de flota incremental, vida de cada AGV en tramos, recuento «N de M» | `src/domain/fleet.ts`, `src/ingestion/fleet-history.ts`, `src/domain/charging.ts` (`neverCharged`), `src/persistence/store.ts` (`fleet`, versión 4), `workers/import.worker.ts` (`runFleet`, `accumulate`), `src/presentation/diagnostic-charts.ts` (`fleetCountChart`, `fleetLifelineChart`) | `tests/unit/fleet.test.ts`, `tests/unit/fleet-history.test.ts`, `tests/unit/charging.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 | R-DAT-007 / TC-158 el expediente de un AGV no cuenta un hueco de cobertura como inactividad | `src/domain/dossier.ts` (`coverage` por tramos), `workers/import.worker.ts` | `tests/unit/dossier.test.ts` |
+| R-EVI-007 / TC-159–160 revisión en campo de los hallazgos | `src/domain/review.ts`, `src/persistence/store.ts` (tabla `reviews`, versión 5), `src/presentation/review-ui.ts`, `src/presentation/main.ts` (`finding`, `.agvproj`) | `tests/unit/review.test.ts`, `tests/e2e/revision.spec.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` —, y el tercer

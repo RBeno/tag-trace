@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.12.0
+version: 0.13.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -423,6 +423,12 @@ formaliza en F1a y se completa en F4. Como mínimo contendrá:
 - registro append-only de consolidaciones y migraciones.
 
 No incluirá el bruto completo por defecto. Un expediente puede conservar un recorte normalizado mínimo cuando sea necesario para reproducir una incidencia.
+
+La **revisión en campo** (R-EVI-007) viaja en una sección opcional `revision`: una entrada por
+hallazgo marcado, con su clave, estado, nota, instante y lo que decía la tarjeta al marcarlo. Sin
+marcas la sección no se escribe, así que un proyecto sin revisión queda igual que antes. En el
+dispositivo vive en su propia tabla (almacén versión 5), separada del circuito para que una
+importación nunca pise una marca; borrar el circuito la borra con él.
 
 ### 9.1 El dispositivo acumula, el fichero viaja
 

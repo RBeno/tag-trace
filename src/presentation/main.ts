@@ -51,7 +51,8 @@ import { PROVISIONAL_CONFIG } from "../domain/config.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
-import { isAvailable, loadCircuit } from "../persistence/store.js";
+import { isAvailable, loadCircuit, loadReviews } from "../persistence/store.js";
+import { createReviewSession, type ReviewSession } from "./review-ui.js";
 
 /** Zona horaria del piloto. Es configuración: vivirá en el circuito cuando exista (F1b). */
 const ZONE = "Europe/Madrid";
@@ -77,6 +78,8 @@ interface State {
   views: CircuitViews | null;
   /** El último historial de flota elegido, para repetir la carga con el circuito que elija el usuario. */
   fleetFile: File | null;
+  /** El circuito cuyas vistas se están enseñando, si la fuente se acumuló en uno. Sin él no se revisa. */
+  circuitId: string | null;
 }
 
 const state: State = {
@@ -92,6 +95,7 @@ const state: State = {
   coverage: [],
   views: null,
   fleetFile: null,
+  circuitId: null,
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -610,6 +614,7 @@ function handleMessage(message: FromWorker): void {
         showMessage("warn", "Advertencias", message.warnings);
       }
       renderSummary(message.summary);
+      state.circuitId = message.accumulation?.accumulated === true ? message.accumulation.circuitId : null;
       if (message.accumulation !== undefined) {
         state.coverage = message.accumulation.coverage;
         renderAccumulation(message.accumulation);
@@ -996,6 +1001,14 @@ function renderViews(views: CircuitViews): void {
   viewsPanel.replaceChildren();
   viewsPanel.hidden = false;
   viewsPanel.append(element("h2", undefined, "Vistas"));
+  // La revisión en campo solo existe sobre un circuito: sin él, una marca no tendría dónde guardarse.
+  reviewSession =
+    state.circuitId === null
+      ? null
+      : createReviewSession(state.circuitId, viewsPanel, formatInstant, (reason) =>
+          showMessage("error", "Revisión sin guardar", [reason]),
+        );
+  if (reviewSession !== null) viewsPanel.append(reviewSession.bar, reviewSession.panel);
 
   if (state.coverage.length > 0) viewsPanel.append(coverageChart(state.coverage, formatInstant));
   viewsPanel.append(hourlyChart({ counts: views.hourly.counts, days: views.hourly.days }));
@@ -1074,7 +1087,11 @@ function renderViews(views: CircuitViews): void {
       ),
     );
   }
+  reviewSession?.refresh();
 }
+
+/** La revisión en campo de las vistas que se están enseñando (`review-ui.ts`). */
+let reviewSession: ReviewSession | null = null;
 
 /**
  * La flota del circuito a lo largo del tiempo (DS-012, R-AGV-014, R-AGV-015): el recuento N de M y
@@ -1109,6 +1126,7 @@ function renderFleet(views: CircuitViews): void {
           neverRead.join(", "),
           "Asignado según el historial y sin una sola lectura: parado, fuera de servicio, en otro " +
             "circuito o con el historial desactualizado. El dato no elige (R-AGV-014).",
+          ["flota-sin-lecturas", "circuito"],
         ),
       );
     }
@@ -1124,6 +1142,7 @@ function renderFleet(views: CircuitViews): void {
           unassigned.join(", "),
           "No suman a los que están en funcionamiento. O el historial no recoge un cambio, o el " +
             "vehículo vino de otro circuito: un candidato a revisar, nunca una avería (R-AGV-015).",
+          ["flota-sin-asignar", "circuito"],
         ),
       );
     }
@@ -1408,6 +1427,7 @@ function renderHighlights(matrix: Matrix): void {
           `Tag ${tag.tagId} · posición ${tag.position + 1} de ${matrix.ring.length}`,
           `${percent(tag.rate)} de las pasadas · ${tag.pattern}`,
           explain(tag),
+          ["tag-lectura", tag.tagId],
         ),
       );
     }
@@ -1444,6 +1464,7 @@ function renderHighlights(matrix: Matrix): void {
               ? ` Además recorrió ${vehicle.unproven} tramos en menos tiempo del que tardan: o los ` +
                 "atajó, o hay una rama que el anillo no recoge."
               : ""),
+          ["agv-lectura", vehicle.agvId],
         ),
       );
     }
@@ -1497,6 +1518,7 @@ function renderTrends(matrix: Matrix): void {
           formatInstant(tag.changedAtUtcMs as number),
         "Un corte, no una fluctuación: se leía con normalidad y a partir de ahí casi nadie lo " +
           "lee. Comprobar el tag en ese instante, no promediar toda la ventana (R-OPP-015).",
+        ["tag-rotura", tag.tagId],
       ),
     );
   }
@@ -1507,6 +1529,7 @@ function renderTrends(matrix: Matrix): void {
         (tag.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
         "La caída es progresiva, no un promedio estable que la esconda: cuatro tramos temporales, " +
           "cada uno peor que el anterior (R-OPP-015).",
+        ["tag-degradacion", tag.tagId],
       ),
     );
   }
@@ -1518,6 +1541,7 @@ function renderTrends(matrix: Matrix): void {
           formatInstant(vehicle.changedAtUtcMs as number),
         "El corte es del vehículo, en todos los tags que recorre, no de uno solo: revisar su " +
           "lector o su WiFi en ese instante (R-OPP-015).",
+        ["agv-rotura", vehicle.agvId],
       ),
     );
   }
@@ -1528,6 +1552,7 @@ function renderTrends(matrix: Matrix): void {
         (vehicle.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
         "La caída es de este vehículo en conjunto, no de un tag concreto: sus compañeros siguen " +
           "leyendo los mismos tags con normalidad (R-OPP-015).",
+        ["agv-degradacion", vehicle.agvId],
       ),
     );
   }
@@ -1576,6 +1601,7 @@ function renderCharging(views: CircuitViews): void {
         "0 estancias",
         "Sus tags no tuvieron ocasión de leerse, así que no son candidatos a obsoleto. La " +
           "pregunta es si la calle sigue en servicio.",
+        ["calle-sin-servicio", lane.laneId],
       ),
     );
   }
@@ -1592,6 +1618,7 @@ function renderCharging(views: CircuitViews): void {
           `Entró antes que ${breach.overtakenBy.join(", ")} y salió después, con la mediana de la ` +
             `calle en ${duration(lane.medianStayMs)}. La salida se relaciona con mayor antigüedad ` +
             "(R-CO-003); qué lo explica no lo dice el dato.",
+          ["calle-espera", lane.laneId, breach.waited],
         ),
       );
     }
@@ -1601,6 +1628,7 @@ function renderCharging(views: CircuitViews): void {
           `${stay.agvId} permaneció en «${lane.laneId}» mucho más que el resto`,
           duration(stay.durationMs),
           `La mediana de esa calle es ${duration(lane.medianStayMs)}.`,
+          ["calle-permanencia", lane.laneId, stay.agvId],
         ),
       );
     }
@@ -1617,6 +1645,7 @@ function renderCharging(views: CircuitViews): void {
         charging.startedInside.map((stay) => stay.agvId).join(", "),
         `Su primera lectura es la salida de una calle, así que desde ${desde} hasta que salieron ` +
           "esas calles no estaban vacías: no había datos (R-CO-007).",
+        ["arranque-en-frio", "circuito"],
       ),
     );
   }
@@ -1632,6 +1661,7 @@ function renderCharging(views: CircuitViews): void {
         "Solo quiere decir que no se les vio entrar en ninguna de las calles declaradas: pueden cargar " +
           "en una que la lista no recoge, o haber estado poco tiempo en la ventana (mira su primera y " +
           "última lectura). Sin SOC fiable no se juzga su batería (R-CO-004).",
+        ["sin-carga", "circuito"],
       ),
     );
     viewsPanel.append(
@@ -1729,7 +1759,13 @@ function renderDrift(views: CircuitViews): void {
 
   const sortedTags = [...drift.tagDrifts].sort((a, b) => a.tagId.localeCompare(b.tagId));
   for (const entry of sortedTags.slice(0, 5)) {
-    viewsPanel.append(finding(`${entry.tagId}: ${kindLabel[entry.kind]}`, detailOf(entry), evidenceOf(entry)));
+    viewsPanel.append(
+      finding(`${entry.tagId}: ${kindLabel[entry.kind]}`, detailOf(entry), evidenceOf(entry), [
+        "deriva",
+        entry.kind,
+        entry.tagId,
+      ]),
+    );
   }
   if (sortedTags.length > 0) {
     viewsPanel.append(
@@ -1772,6 +1808,7 @@ function renderDrift(views: CircuitViews): void {
         detail,
         "El resto de la flota lee esos tags con normalidad: memoria actualizada o degradada de " +
           "este vehículo (R-AGV-013). El dato no elige cuál.",
+        ["deriva-agv", entry.agvId],
       ),
     );
   }
@@ -1883,7 +1920,13 @@ function renderCriticalPoints(views: CircuitViews): void {
   }
 
   for (const candidate of sorted.slice(0, 5)) {
-    viewsPanel.append(finding(`${candidate.tagId}: ${kindLabel[candidate.kind]}`, detailOf(candidate), candidate.evidence));
+    viewsPanel.append(
+      finding(`${candidate.tagId}: ${kindLabel[candidate.kind]}`, detailOf(candidate), candidate.evidence, [
+        "punto-critico",
+        candidate.kind,
+        candidate.tagId,
+      ]),
+    );
   }
 
   viewsPanel.append(
@@ -1958,6 +2001,7 @@ function renderFifo(views: CircuitViews): void {
         `por ${overtake.overtakenBy.join(", ")}, ${duration(overtake.marginMs)} de margen`,
         `Entró antes y salió después, con un tránsito de ${duration(overtake.transitMs)}. La zona ` +
           "cargada espera FIFO (R-FLO-001); qué lo explica no lo dice el dato (OQ-107).",
+        ["fifo", span.spanId, overtake.overtaken],
       ),
     );
   }
@@ -1993,13 +2037,18 @@ function duration(ms: number | null): string {
  * móvil: una tabla de cinco columnas en 360 px parte los encabezados letra a letra. Cabe, y es
  * ilegible.
  */
-function finding(title: string, figure: string, evidence: string): HTMLElement {
+/**
+ * Una tarjeta de hallazgo. Con `review` —su tipo y su sujeto— lleva además los botones de revisión
+ * en campo. Sin él es un aviso de configuración, que no se va a comprobar delante de ningún tag.
+ */
+function finding(title: string, figure: string, evidence: string, review?: readonly string[]): HTMLElement {
   const card = element("div", "finding");
   card.append(
     element("p", "finding-title", title),
     element("p", "finding-figure", figure),
     element("p", "muted", evidence),
   );
+  if (review !== undefined) reviewSession?.attach(card, review, title, figure);
   return card;
 }
 
@@ -2272,12 +2321,16 @@ exportButton.addEventListener("click", () => {
     // Sin el bruto, por ADR-0012: el dispositivo acumula las lecturas y el fichero lleva el
     // proyecto. Meter doscientas mil lecturas en cada exportación haría el fichero inmanejable
     // sin añadir nada que el dispositivo de destino no pueda volver a importar.
+    // La revisión en campo viaja con el proyecto: es trabajo humano, lo único que no se puede
+    // volver a calcular importando otra vez las fuentes. Sin marcas, el fichero queda como antes.
+    const reviews = [...(await loadReviews(circuitId)).values()];
     const bytes = await writeProject(
       circuitId,
       {
         circuito: { id: circuit.circuitId, nombre: circuit.name, zona: circuit.zone },
         fuentes: circuit.sources,
         cobertura: circuit.coverage,
+        ...(reviews.length === 0 ? {} : { revision: reviews }),
       },
       Date.now(),
     );
@@ -2287,6 +2340,7 @@ exportButton.addEventListener("click", () => {
     // que corresponde a la acción anterior.
     showMessage("info", "Proyecto exportado", [
       `${circuit.sources.length} fuentes y su cobertura. Las lecturas se quedan en este dispositivo.`,
+      ...(reviews.length === 0 ? [] : [`Incluye ${reviews.length} hallazgos revisados en campo.`]),
     ]);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
     const link = element("a");
@@ -2309,11 +2363,21 @@ projectInput.addEventListener("change", () => {
       const cobertura = project.sections["cobertura"] as
         | readonly { from: number; to: number }[]
         | undefined;
+      const revision = project.sections["revision"] as readonly { state?: string }[] | undefined;
       showMessage("info", `Proyecto «${circuito?.nombre ?? project.manifest.circuit_id}»`, [
         `${fuentes?.length ?? 0} fuentes declaradas, exportado el ${formatInstant(project.manifest.exported_at)}.`,
         cobertura === undefined || cobertura.length === 0
           ? "Sin cobertura declarada."
           : `Cobertura: ${cobertura.map((span) => formatSpan(span.from, span.to)).join("  ·  ")}`,
+        ...(revision === undefined || revision.length === 0
+          ? []
+          : [
+              `Revisión en campo: ${revision.length} hallazgos marcados (` +
+                ["confirmado", "descartado", "pospuesto"]
+                  .map((state) => `${revision.filter((entry) => entry.state === state).length} ${state}s`)
+                  .join(", ") +
+                ").",
+            ]),
         "Integridad verificada: manifiesto y todas sus secciones coinciden con sus hashes.",
       ]);
     } catch (error) {

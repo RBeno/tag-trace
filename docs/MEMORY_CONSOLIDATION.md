@@ -1,8 +1,8 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.2.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-23
 ---
 
 # Memoria longitudinal y consolidación
@@ -80,6 +80,12 @@ Antes de habilitar el botón deben cumplirse:
 - lista de cambios visible;
 - versión anterior disponible;
 - posibilidad de cancelar antes de confirmar.
+
+**Revisión de hallazgos (paso C), ya disponible en F3** (`UX_SPEC.md` §4.3, R-EVI-007). Cada
+hallazgo queda pendiente, confirmado, descartado o pospuesto, con su nota. Decisión del propietario
+(2026-09-23) para cuando exista el botón de consolidar: **solo bloquea lo que sigue pendiente**. Lo
+pospuesto se puede consolidar con su motivo y vuelve a aparecer como pendiente en el análisis del
+periodo siguiente.
 
 ## 7. Inmutabilidad y correcciones
 

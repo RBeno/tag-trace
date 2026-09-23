@@ -1,6 +1,6 @@
 ---
 document_id: TT-RULES-001
-version: 0.28.0
+version: 0.29.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -19,6 +19,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-EVI-004 | accepted | `unknown` es preferible a una clasificación no sustentada. |
 | R-EVI-005 | accepted | Una inferencia confirmada conserva su origen inferido y añade la confirmación humana. |
 | R-EVI-006 | accepted | **El programa enuncia la pregunta; la decisión es de una persona.** Hay hallazgos que el dato no resuelve: si un tag sin lecturas hay que sustituirlo o retirarlo del inventario teórico depende de si sigue instalado, y eso se comprueba yendo a mirarlo. La aplicación no elige, pero **tampoco se calla**: indica en cada caso qué hay que valorar, y esa indicación queda registrada junto al hallazgo y con el estado del circuito, de modo que no haya que reconstruirla cada vez que alguien abra el análisis. |
+| R-EVI-007 | accepted | **La revisión en campo es una decisión humana registrada aparte del análisis.** Marcar un hallazgo como confirmado, descartado o pospuesto no cambia ninguna cifra, patrón ni estado de verdad del análisis: añade una confirmación humana que se enseña como tal y conservando su origen (R-EVI-005). La marca se asocia al tipo y al sujeto del hallazgo (tag, AGV, calle, tramo), no a su texto, así que sobrevive a volver a cargar y a reanalizar. Si los datos del hallazgo cambiaron desde que se marcó, se avisa. Una marca cuyo hallazgo ya no aparece no se borra. Consolidar esa revisión en la memoria del circuito es F4. |
 
 ## Identidad y fuentes
 

@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.15.0
+version: 0.16.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -49,6 +49,7 @@ last_updated: 2026-09-23
 | Vinculación / desvinculación | Dos clases de tag crítico sin firma estadística: el AGV sincroniza (o deja de sincronizar) su velocidad con la línea de producción al leerlas. Declaración pura, como cambio de mapa — se muestran en el expediente del tag, nunca se proponen. |
 | Zona compartida | Parte del recorrido que usan varios circuitos: un cruce, un semáforo o un tramo físico común. Los tags de cruce y semáforo pueden estar en varios circuitos; en un tramo común, cada circuito mantiene casi siempre sus propios tags, así que el tramo se declara y no se deduce de cruzar listas. Lo que se comprueba en ella es la ocupación de sus espacios frente a su capacidad, con las lecturas de todos los circuitos que la comparten y en la franja que cubren todos (R-GRA-012, R-GRA-013). Alcance de F7. |
 | Espacio (de un tag) | Lo que va de un tag al siguiente del recorrido. Un AGV no está en el tag: el tag es el último que leyó, y el AGV ocupa el espacio que sigue. Cuántos caben depende de la longitud física del espacio —uno si el siguiente tag está a centímetros, varios si está a metros—, y es dato de planta (R-GRA-012). |
+| Revisión en campo | Decisión humana sobre un hallazgo tras ir a comprobarlo: confirmado (el fallo existe), descartado (no existe) o pospuesto (queda para otra ocasión); sin marcar, pendiente. Se guarda aparte del análisis y no lo modifica; es el paso previo a la consolidación (R-EVI-007). |
 | Consolidación | Aceptación humana de un periodo revisado para producir una nueva versión compacta de memoria y sus divergencias. |
 | Incidencia | Expediente separado que conserva síntoma, intervalo, replay, evidencia, hipótesis, contramedidas y verificación. |
 | Contramedida | Acción propuesta o realizada para reducir una causa, registrada con responsable, estado y verificación. |

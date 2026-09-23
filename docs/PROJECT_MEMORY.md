@@ -184,3 +184,11 @@ con lo existente está anotado en `ROADMAP.md` F7. OQ-127 sigue abierta y OQ-128
 
 **Corregido el mismo día**: la primera redacción de R-GRA-012 decía que cada tag es un espacio que
 ocupa un AGV, y que el tramo compartido salía de cruzar las listas. Las dos cosas eran falsas.
+
+## Revisión en campo antes de consolidar (2026-09-23)
+
+Para las pruebas en planta, el propietario pide poder dejar trabajo a medias, volver a cargar y
+seguir. Decisiones: cuatro estados por hallazgo (pendiente, confirmado, descartado, pospuesto),
+botones solo en las tarjetas de hallazgo, guardado automático en el dispositivo y exportación a CSV
+(R-EVI-007, `UX_SPEC.md` §4.3). **Solo la revisión**, que es F3: la consolidación es F4 y espera a
+`CONTINÚA FASE 4`. Cuando llegue, lo pospuesto no bloquea: pasa al periodo siguiente con su motivo.
