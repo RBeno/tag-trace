@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/9`
+- Dataset ID/version: `auditoria/10`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -70,6 +70,8 @@ fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual q
 | `memoria-actualizada-a-mitad-de-ventana` | 5 tags contiguos, 1 AGV | ese vehículo dejó de leerlos a mitad de ventana; el resto de la flota los sigue leyendo (R-AGV-013) | que esos tags estén averiados, o acusar a otro vehículo |
 | `sustitucion-candidata` | 2 tags (1 del anillo, 1 fuera) | candidato a sustitución: el que desaparece y el que ocupa su mismo hueco de secuencia, correlacionados por vecino y tiempo (R-DAT-017) | tratarlos como dos hallazgos sueltos, o afirmar que es el mismo punto físico sin más evidencia |
 | `memoria-no-actualizada` | 1 tag fuera de anillo, 1 AGV | el vehículo señalado como candidato a memoria no actualizada: no registra el tag nuevo mientras la mayoría de la flota ya lo hace (R-AGV-013) | que el tag nuevo esté averiado, o acusar a otro vehículo |
+| `vinculacion-declarada` | 1 tag del anillo, declarado por la columna `funcion` del circuito virtual | el expediente del tag muestra la función crítica «vinculacion» (R-GRA-007) | que sea un hallazgo estadístico, ni que el producto la haya propuesto |
+| `desvinculacion-declarada` | 1 tag del anillo, declarado por la lista `critico` | el expediente del tag muestra la función crítica «desvinculacion» (R-GRA-007) | que sea un hallazgo estadístico, ni que el producto la haya propuesto |
 
 ## Resultados prohibidos
 

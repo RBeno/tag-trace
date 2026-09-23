@@ -1,8 +1,8 @@
 ---
 document_id: TT-TRACE-001
-version: 0.22.0
+version: 0.23.0
 status: baseline-candidate
-last_updated: 2026-09-22
+last_updated: 2026-09-23
 ---
 
 # Matriz de trazabilidad
@@ -93,7 +93,7 @@ regla exista: la matriz no es una lista de intenciones.
 | R-FLO-006 / TC-089 el orden de convoy no prueba nada en zona vacía | `src/domain/read-matrix.ts` (`orderUsableByPosition`, `stretchAllows`) | `tests/unit/read-matrix.test.ts` |
 | R-OPP-015 / ALG-020 / TC-091–096 rotura súbita y degradación progresiva, por tag y por AGV | `src/domain/read-rate-trend.ts` | `tests/unit/read-rate-trend.test.ts`, `tests/unit/read-matrix.test.ts` |
 | R-FLO-001 / ALG-011 / TC-097–101 FIFO en zona cargada, adelantamiento candidato | `src/domain/fifo.ts` | `tests/unit/fifo.test.ts` |
-| R-GRA-007 / ALG-021 / TC-102–105 candidatos a bifurcación; TC-125–136 cruce interno, parada precisa y semáforo (Parte 35); R-GRA-008 / TC-106–107 omisión crítica diferenciada | `src/domain/critical-points.ts`, `src/domain/inventory.ts`, `src/domain/circuit-config.ts` | `tests/unit/critical-points.test.ts`, `tests/unit/inventory.test.ts`, `tests/unit/charging.test.ts` |
+| R-GRA-007 / ALG-021 / TC-102–105 candidatos a bifurcación; TC-125–136 cruce interno, parada precisa y semáforo (Parte 35); TC-137–140 vinculación/desvinculación y declaración dual por `critico`/`circuito` (Parte 36); R-GRA-008 / TC-106–107 omisión crítica diferenciada | `src/domain/critical-points.ts`, `src/domain/inventory.ts`, `src/domain/circuit-config.ts`, `src/domain/dossier.ts`, `src/domain/tag-lists.ts` | `tests/unit/critical-points.test.ts`, `tests/unit/inventory.test.ts`, `tests/unit/charging.test.ts`, `tests/unit/dossier.test.ts` |
 | R-GRA-009 / `CONFIG_SCHEMA.md` §3.4.2 / TC-108–111 anclas de vuelta declaradas, `truth` condicional a completitud | `src/domain/laps.ts` (`resolveDeclaredAnchor`, `buildLap`), `src/domain/circuit-config.ts` (`readLapAnchors`), `workers/import.worker.ts` | `tests/unit/laps.test.ts`, `tests/unit/vsystem.test.ts` (invariancia a la rotación), `tests/audit/auditoria.test.ts` |
 | R-DAT-016 / R-AGV-013 / R-DAT-017 / ALG-009 §6.1–6.2 / TC-112–124 comparación entre dos periodos distantes, sustitución candidata y adopción de tag nuevo | `src/domain/drift.ts` (`compareDistantPeriods`) | `tests/unit/drift.test.ts`, `tests/audit/auditoria.test.ts` |
 

@@ -67,7 +67,11 @@ export type DefectClass =
   /** Una espera larga y de poca varianza tras un tag: parada precisa. */
   | "parada-precisa-real"
   /** Una espera bimodal tras un tag: unas veces corta, otras larga. */
-  | "semaforo-real";
+  | "semaforo-real"
+  /** Función crítica declarada por la columna `funcion` del circuito virtual: contexto, no defecto. */
+  | "vinculacion-declarada"
+  /** Función crítica declarada por la lista `critico`, la vía de siempre: contexto, no defecto. */
+  | "desvinculacion-declarada";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -235,6 +239,16 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
    */
   const paradaPrecisaSiguienteTag = ring[71] as string;
   const semaforoSiguienteTag = ring[106] as string;
+  /**
+   * Vinculación y desvinculación (R-GRA-007, Parte 36): declaración pura, sin firma en el dato — el
+   * mismo caso que `cambio-de-mapa`. Ninguno de los dos tags necesita ningún mecanismo nuevo en el
+   * generador de lecturas: se leen con normalidad, y lo único que cambia es la declaración en
+   * `listsCsv`, por las dos vías que ahora conviven. `vinculacionTag` se declara por la columna
+   * `funcion` del propio circuito virtual (`circuito`); `desvinculacionTag`, por la lista `critico`
+   * de siempre — para que el escenario ejercite las dos fuentes a la vez, no solo una.
+   */
+  const vinculacionTag = ring[15] as string;
+  const desvinculacionTag = ring[65] as string;
   const mantenimiento = ["90001", "90002"]; // fuera del anillo declarado
 
   const ciegos = vehicles.filter((_, index) => index % 8 === 0); // se saltan `porMemoria`
@@ -625,7 +639,14 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   // Las listas llevan ya las columnas de configuración: sin `funcion` y `grupo` una calle es un
   // conjunto de tres tags sin orden ni papeles, y R-CO-006 no se puede evaluar sobre eso.
   const listsCsv = ["lista;tag;orden;funcion;grupo;capacidad"]
-    .concat(ring.map((tag, index) => `circuito;${tag};${index + 1};;;`))
+    .concat(
+      ring.map((tag, index) =>
+        // Vinculación (Parte 36) se declara aquí, en la propia columna `funcion` del circuito
+        // virtual — la vía alternativa a la lista `critico`, para ejercitar las dos fuentes.
+        `circuito;${tag};${index + 1};${tag === vinculacionTag ? "vinculacion" : ""};;`,
+      ),
+    )
+    .concat([`critico;${desvinculacionTag};;desvinculacion`])
     .concat(
       lanes.flatMap((lane) =>
         (
@@ -846,6 +867,20 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         "el vehículo señalado como candidato a memoria no actualizada: no registra el tag nuevo " +
         "mientras la mayoría de la flota ya lo hace (R-AGV-013)",
       mustNotSay: "que el tag nuevo esté averiado, ni que sea culpa de otro vehículo",
+    },
+    {
+      kind: "vinculacion-declarada",
+      tags: [vinculacionTag],
+      vehicles: [],
+      expect: "el expediente del tag muestra la función crítica «vinculacion» (R-GRA-007)",
+      mustNotSay: "que sea un hallazgo estadístico, ni que el producto la haya propuesto",
+    },
+    {
+      kind: "desvinculacion-declarada",
+      tags: [desvinculacionTag],
+      vehicles: [],
+      expect: "el expediente del tag muestra la función crítica «desvinculacion» (R-GRA-007)",
+      mustNotSay: "que sea un hallazgo estadístico, ni que el producto la haya propuesto",
     },
   ];
 

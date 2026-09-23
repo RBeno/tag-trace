@@ -25,7 +25,7 @@ import { assignCohorts } from "../../src/domain/cohort.js";
 import { findDominantCycle, resolveDeclaredAnchor, segmentLaps, type Lap } from "../../src/domain/laps.js";
 import { buildReadMatrix, type ReadMatrix } from "../../src/domain/read-matrix.js";
 import { buildTagInventory } from "../../src/domain/inventory.js";
-import { buildAllAgvDossiers } from "../../src/domain/dossier.js";
+import { buildAllAgvDossiers, buildAllTagDossiers } from "../../src/domain/dossier.js";
 import { buildChargingReport, type ChargingReport } from "../../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans, type FifoReport } from "../../src/domain/fifo.js";
 import {
@@ -88,6 +88,8 @@ interface Analysis {
   readonly fifo: FifoReport | undefined;
   readonly criticalPoints: readonly CriticalPointCandidate[];
   readonly dossiers: ReturnType<typeof buildAllAgvDossiers>;
+  /** Expedientes de tag (Parte 36): trae la función crítica declarada, venga de la fuente que venga. */
+  readonly tagDossiers: ReturnType<typeof buildAllTagDossiers>;
   /** El ancla efectiva del cohorte principal, y las vueltas segmentadas con esa verdad (R-GRA-009). */
   readonly laps: readonly Lap[];
   readonly anchorTagId: string | undefined;
@@ -134,7 +136,12 @@ function analyse(
     conConfiguracion || name === "ancla" ? (catalog.lists.get(name) ?? []) : [];
   const laneConfig = readCoLanes(entriesOf("carga-online"));
   const zoneConfig = readZones(entriesOf("zona"));
-  const criticalPointsConfig = readCriticalPoints(entriesOf("critico"));
+  // La función de un tag crítico se declara en «critico», o alternativamente en la columna `funcion`
+  // del circuito virtual (Parte 36) — mismo merge que hace el Worker, `critico` primero.
+  const criticalPointsConfig = readCriticalPoints([
+    ...entriesOf("critico"),
+    ...entriesOf("circuito").filter((entry) => entry.funcion !== ""),
+  ]);
   const lapAnchorsConfig = readLapAnchors(entriesOf("ancla"));
 
   const readings = result.readings;
@@ -242,6 +249,11 @@ function analyse(
     PROVISIONAL_CONFIG.silence.minGapMs,
     laneConfig.lanes,
   );
+  const tagDossiers = buildAllTagDossiers(
+    readings,
+    dossiers.map((entry) => entry.agvId),
+    criticalPointsConfig.funcionOf,
+  );
 
   // Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013): la cobertura de dos tramos se
   // construye a mano a partir del corte del propio escenario, con un margen a cada lado muy por
@@ -269,6 +281,7 @@ function analyse(
     fifo,
     criticalPoints,
     dossiers,
+    tagDossiers,
     laps,
     anchorTagId: anchor?.tagId,
     anchorTruth,
@@ -290,6 +303,7 @@ describe("auditoría del circuito con verdad conocida", () => {
     fifo,
     criticalPoints,
     dossiers,
+    tagDossiers,
     laps,
     anchorTagId,
     anchorTruth,
@@ -686,6 +700,22 @@ describe("auditoría del circuito con verdad conocida", () => {
             : `no adoptados: ${hallado.notAdoptedTags.join(", ") || "ninguno"}`,
       };
     },
+    "vinculacion-declarada": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "vinculacion-declarada")?.tags ?? [])[0];
+      const hallado = tagDossiers.find((entry) => entry.tagId === esperado);
+      return {
+        ok: hallado?.criticalFunction === "vinculacion",
+        detail: `función declarada: ${hallado?.criticalFunction ?? "ninguna"}`,
+      };
+    },
+    "desvinculacion-declarada": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "desvinculacion-declarada")?.tags ?? [])[0];
+      const hallado = tagDossiers.find((entry) => entry.tagId === esperado);
+      return {
+        ok: hallado?.criticalFunction === "desvinculacion",
+        detail: `función declarada: ${hallado?.criticalFunction ?? "ninguna"}`,
+      };
+    },
   };
 
   it("publica el informe por clase", () => {
@@ -783,6 +813,22 @@ describe("auditoría del circuito con verdad conocida", () => {
     expect(
       candidatosSobreSanos,
       `candidatos espurios: ${candidatosSobreSanos.slice(0, 8).join(", ")}`,
+    ).toHaveLength(0);
+
+    // Ningún tag sano debe traer una función crítica declarada que nadie plantó (Parte 36): las dos
+    // vías —«critico» y la columna del circuito virtual— solo declaran los dos tags plantados.
+    const funcionesEsperadas = new Set(
+      scenario.defects
+        .filter((d) => d.kind === "vinculacion-declarada" || d.kind === "desvinculacion-declarada")
+        .flatMap((d) => d.tags),
+    );
+    const funcionesEspurias = scenario.cleanTags.filter((tag) => {
+      if (funcionesEsperadas.has(tag)) return false;
+      return tagDossiers.find((entry) => entry.tagId === tag)?.criticalFunction != null;
+    });
+    expect(
+      funcionesEspurias,
+      `funciones críticas sin plantar: ${funcionesEspurias.slice(0, 8).join(", ")}`,
     ).toHaveLength(0);
 
     // Ningún tag sano debe aparecer con deriva entre los dos periodos, y ningún vehículo salvo el

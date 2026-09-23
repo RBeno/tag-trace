@@ -1709,6 +1709,20 @@ function renderDossier(): void {
     dossierResult.append(
       element("h3", undefined, `Tag ${tag.tagId}`),
       element("p", "muted", `${tag.totalReadings.toLocaleString("es-ES")} lecturas en total.`),
+    );
+    if (tag.criticalFunction !== null) {
+      dossierResult.append(
+        element(
+          "p",
+          undefined,
+          `Punto crítico declarado: ${tag.criticalFunction} (R-GRA-007). La función es dato de ` +
+            "planta, nunca deducida; si ha dejado de serlo, se corrige editando y volviendo a " +
+            "cargar el fichero que la declaró — «critico» o «circuito» —, nunca en la interfaz " +
+            "(R-EVI-006).",
+        ),
+      );
+    }
+    dossierResult.append(
       plainTable(
         ["AGV", "Última lectura"],
         tag.readers.map((reader) => [

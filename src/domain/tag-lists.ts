@@ -31,8 +31,9 @@ export const LIST_PURPOSE: Readonly<Record<KnownList, string>> = {
     "los tags de las calles de carga, en su orden, con `grupo` = calle y `funcion` = entrada, " +
     "parada-precisa o salida",
   critico:
-    "paradas precisas, cruces, semáforos, dejar/recoger carro, cambios de mapa y bifurcaciones, " +
-    "con la clase en `funcion`",
+    "paradas precisas, cruces, semáforos, dejar/recoger carro, cambios de mapa, bifurcaciones, " +
+    "vinculación/desvinculación con la línea de producción, con la clase en `funcion`. También se " +
+    "acepta declarada en la segunda columna del circuito virtual (`circuito`), como vía alternativa",
   zona: "a qué zona pertenece cada tag: `grupo` = cargado o vacio (R-FLO-001, R-FLO-002)",
   ancla:
     "el tag, o varios en orden de prioridad con `orden`, que el propietario declara como corte de " +
@@ -57,6 +58,8 @@ export const LIST_FUNCTIONS = {
     "recoger-carro",
     "cambio-de-mapa",
     "bifurcacion",
+    "vinculacion",
+    "desvinculacion",
   ] as const,
   zona: ["cargado", "vacio"] as const,
 } as const;
@@ -69,7 +72,7 @@ export const EXPECTED_STRUCTURE = {
   example: [
     "lista;tag;orden;funcion;grupo;capacidad",
     "circuito;51944;1",
-    "circuito;102185;2",
+    "circuito;103358;2;vinculacion",
     "memoria;51944",
     "mantenimiento;57544",
     "carga-online;70011;1;entrada;calle-1;2",

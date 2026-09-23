@@ -2,6 +2,52 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.16.0] - 2026-09-23
+
+Dos clases nuevas de tag crítico (R-GRA-007) — **vinculación** y **desvinculación**: sincronizar la
+velocidad del AGV con la línea de producción, o dejar de hacerlo. Declaración pura, sin firma
+estadística, el mismo caso que `cambio-de-mapa`. Y una segunda vía para declarar la función de
+cualquier tag crítico: la columna `funcion` del propio circuito virtual (`circuito`), que convive con
+la lista `critico` de siempre — quien ya carga ese fichero con esa columna no necesita mantener dos.
+
+### Añadido
+
+- `src/domain/tag-lists.ts` — `LIST_FUNCTIONS.critico` gana `vinculacion` y `desvinculacion`, nueve
+  clases en vez de siete. `EXPECTED_STRUCTURE.example` enseña la vía nueva junto a la ya existente.
+- **Las dos vías conviven sin tocar `readCriticalPoints()`**: ya recibía entradas genéricas, sin
+  ninguna referencia a qué lista las trae. El cambio es de wiring, no de arquitectura — en los puntos
+  de llamada (`workers/import.worker.ts`, `tests/audit/auditoria.test.ts`), la función crítica se lee
+  de `[...entriesOf("critico"), ...entriesOf("circuito").filter(e => e.funcion !== "")]`, con
+  `critico` primero para que gane en caso de contradicción (reutilizando la guardia de contradicción
+  ya existente, R-EVI-004).
+- `src/domain/dossier.ts` — `TagDossier` gana `criticalFunction: string | null`.
+  `buildTagDossier`/`buildAllTagDossiers` ganan un parámetro `funcionOf` sin valor por defecto
+  (`AI_DEVELOPMENT_GOVERNANCE.md` §4). Cierra un hueco encontrado al diseñar: la función crítica ya
+  se calculaba (R-GRA-008, Parte 31) pero no llegaba a ninguna parte de la interfaz.
+- Expediente de tag (`renderDossier`, `src/presentation/main.ts`): si el tag tiene función crítica
+  declarada, se muestra citando R-GRA-007, con la vía de corrección —editar y recargar el fichero que
+  la declaró, nunca un botón en la interfaz (R-EVI-006)— en el mismo texto.
+- Dos clases nuevas en el circuito de auditoría (`auditoria/10`): `vinculacion-declarada` (declarada
+  por la columna del circuito virtual) y `desvinculacion-declarada` (por la lista `critico`), para
+  ejercitar las dos fuentes a la vez.
+
+### Documentación
+
+`docs/CONFIG_SCHEMA.md` §3.4.1 (nueve clases; las dos vías de declaración; corregido de paso el
+estado de implementación, desactualizado desde la Parte 35) y §3.4.3 (fila nueva en la tabla de
+formato); `docs/RULE_CATALOG.md` (R-GRA-007 ampliada); `docs/GLOSSARY.md` (nueve clases; entrada
+nueva para vinculación/desvinculación; corregida la entrada de bifurcación candidata, que decía
+«única clase construida» siendo ya falso desde la Parte 35); `docs/TEST_STRATEGY.md` (TC-137–140);
+`docs/TRACEABILITY_MATRIX.md` (fila de R-GRA-007 ampliada); `fixtures/synthetic/auditoria/MANIFEST.md`
+(`auditoria/10`).
+
+### Lo que esta entrega no hace
+
+No construye ningún detector estadístico para vinculación/desvinculación. No implementa el censo de
+tags de mantenimiento ni el listado de intervenciones propuesto en la misma conversación —el
+propietario pidió tratarlo aparte, con un requisito de actualización incremental sobre un circuito
+que se trata como «vivo»—, que queda pendiente de su propio plan.
+
 ## [3.15.0] - 2026-09-22
 
 Parada precisa, semáforo y cruce por reconvergencia (R-GRA-007), completando las cuatro de las siete

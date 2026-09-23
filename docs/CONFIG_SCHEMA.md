@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
-last_updated: 2026-09-22
+last_updated: 2026-09-23
 ---
 
 # Configuración de circuito
@@ -65,15 +65,19 @@ Las clases son cerradas y las declara el propietario:
 ```text
 critical_points : lista de { tag, function, grade, redundancy, valid_from, valid_to }
 function        : parada-precisa | cruce | semaforo | dejar-carro | recoger-carro
-                | cambio-de-mapa | bifurcacion
+                | cambio-de-mapa | bifurcacion | vinculacion | desvinculacion
 ```
 
-Siete clases, no seis: dejar y recoger carro son acciones físicamente distintas y se declaran por
-separado — es lo que ya implementa `src/domain/tag-lists.ts` (`LIST_FUNCTIONS.critico`), y esta
-sección se corrige para contarlo, no al revés.
+Nueve clases, no siete: dejar y recoger carro son acciones físicamente distintas y se declaran por
+separado, y lo mismo vinculación y desvinculación — sincronizar la velocidad del vehículo con la
+línea de producción, o dejar de hacerlo para ir en paralelo, son dos acciones distintas y no una
+función con dos estados. Es lo que ya implementa `src/domain/tag-lists.ts` (`LIST_FUNCTIONS.critico`),
+y esta sección se corrige para contarlo, no al revés.
 
-`cruce` **no es un bloque aparte**: es una de las siete clases. Un tag de esa clase lleva además los
-campos que su función exige, y que ninguna otra necesita:
+`cruce` **no es un bloque aparte**: es una de las nueve clases, y cubre dos fenómenos distintos —el
+cruce interno (dos ramas que reconvergen en pocos saltos dentro del mismo cohorte, con firma propia,
+ver más abajo) y el cruce **entre circuitos**, protegido por un par de tags. Un tag de esta segunda
+clase lleva además los campos que su función exige, y que ninguna otra necesita:
 
 ```text
 cruce : { protection_pair: [tag, tag], expected_tag, target_circuit }
@@ -84,27 +88,35 @@ decir *qué* falló cuando alguien se sale, y no solo *dónde* (R-AGV-009, R-AGV
 es el tag que toca si el giro se ejecuta.
 
 **Estado de implementación.** `grade`, `redundancy`, `valid_from`, `valid_to` y el bloque entero de
-`cruce` (`protection_pair`, `expected_tag`, `target_circuit`) son aspiracionales: ni `ConfigEntry`
-(`src/domain/circuit-config.ts`) ni `CatalogEntry` (`src/ingestion/catalog.ts`) los llevan todavía.
-Lo único que la lista `critico` transporta hoy es `tag` y `funcion` — suficiente para R-GRA-008 (la
-omisión de un tag crítico declarado se cuenta aparte) y para contrastar candidatos contra lo
-declarado, no para el resto de §3.4.1.
+`cruce` entre circuitos (`protection_pair`, `expected_tag`, `target_circuit`) son aspiracionales: ni
+`ConfigEntry` (`src/domain/circuit-config.ts`) ni `CatalogEntry` (`src/ingestion/catalog.ts`) los
+llevan todavía. Lo que la lista `critico` transporta hoy es `tag` y `funcion` — suficiente para
+R-GRA-008 (la omisión de un tag crítico declarado se cuenta aparte) y para contrastar candidatos
+contra lo declarado, no para el resto de §3.4.1.
+
+**La función se declara por dos vías que conviven.** La lista `critico` es la vía dedicada; la
+columna `funcion` del circuito virtual (`circuito`, §3.8) es una vía alternativa para quien ya carga
+ese fichero con esa columna y no quiere mantener dos ficheros. Las dos producen la misma
+configuración interna (`readCriticalPoints`, `src/domain/circuit-config.ts`, no distingue de qué
+lista viene cada entrada); si el mismo tag declara funciones distintas en las dos, gana la de
+`critico` y la contradicción se declara, nunca se elige en silencio (R-EVI-004). Ver §3.4.3 para el
+formato exacto.
 
 **La función no se deduce del fichero.** El dato deja una firma por clase que sirve para proponer
 candidatos —una espera regular apunta a temporizada, una variable explicada por el vehículo de
-delante apunta a semáforo, dos ramas que reconvergen apuntan a bifurcación—, pero proponer no es
-asignar. Y dos clases no dejan firma ninguna: un `cambio-de-mapa` es indistinguible de un tag
-cualquiera, y un `cruce` que nadie ha fallado y que recorre un solo circuito tampoco se ve, porque
-un cruce existe justamente para que todos pasen igual. Sin declaración, esas dos quedan `unknown`.
+delante apunta a semáforo, dos ramas que reconvergen apuntan a cruce interno—, pero proponer no es
+asignar. Y tres clases no dejan firma ninguna con lo disponible hoy: un `cambio-de-mapa` es
+indistinguible de un tag cualquiera; `vinculacion`/`desvinculacion` tampoco —un cambio de
+sincronización de velocidad no deja huella distinguible en `Fecha;AGV;Tag`, ni de tiempo ni de
+topología—; y un `cruce` **entre circuitos** que nadie ha fallado tampoco se ve, porque existe
+justamente para que todos pasen igual. Sin declaración, esas tres quedan `unknown`.
 
-Implementado hoy (`src/domain/critical-points.ts`, `findBifurcationCandidates`): solo la firma de
-**bifurcación**, como reparto de sucesores con cuota comparable sostenida en el tiempo. `cruce`
-resultó ser un problema más difícil de lo que parecía: `assignCohorts` fusiona dos vehículos en un
-cohorte en cuanto comparten una sola transición, así que un cruce real entre circuitos no sobrevive
-como dos cohortes unidos por una arista rara — se fusiona, y la bifurcación resultante queda
-indistinguible de una bifurcación normal sin una comprobación de reconvergencia que todavía no
-existe. `parada-precisa` y `semáforo` necesitan una firma de tiempo de permanencia que tampoco existe
-todavía. Las tres quedan diseñadas y sin construir, no silenciadas (OQ-122).
+**Implementado hoy** (`src/domain/critical-points.ts`): candidatos con firma real para
+**bifurcación**, **cruce interno**, **parada precisa** y **semáforo** — reparto de sucesores
+sostenido en el tiempo, reconvergencia de dos ramas dentro de un margen de saltos, duración de poca
+varianza y duración bimodal, respectivamente (R-GRA-007, Parte 35). `cambio-de-mapa`,
+`vinculacion`/`desvinculacion` y el cruce entre circuitos son declaración pura, sin detector
+estadístico: se leen del fichero, nunca se proponen (OQ-122, Parcial).
 
 #### 3.4.2 Anclas de vuelta declaradas
 
@@ -165,7 +177,7 @@ Y así se expresan los bloques de §3.4:
 |---|---|
 | `co_lanes` | `lista=carga-online`, `grupo` = identificador de la calle, `orden` = 1…n y `funcion` ∈ `entrada`, `parada-precisa`, `salida` |
 | `loaded_zone` / `empty_zone` | `lista=zona`, `grupo` ∈ `cargado`, `vacio`, una fila por tag |
-| `critical_points` | `lista=critico`, `funcion` con una de las siete clases de §3.4.1 |
+| `critical_points` | `lista=critico`, `funcion` con una de las nueve clases de §3.4.1. **Alternativa**: `lista=circuito` con la misma `funcion` en la fila del tag — las dos vías conviven, `critico` gana en caso de contradicción |
 | `lap_anchors` | `lista=ancla`, `orden` = prioridad cuando se declara más de una (§3.4.2) |
 
 ```text
@@ -174,6 +186,7 @@ carga-online;70012;2;parada-precisa;calle-1;2
 carga-online;70013;3;salida;calle-1;2
 zona;51944;;;vacio
 critico;102185;;bifurcacion
+circuito;103358;12;vinculacion
 ancla;51944;1
 ```
 

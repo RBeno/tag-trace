@@ -121,6 +121,35 @@ describe("configuración de calles (R-CO-001)", () => {
     expect(funcionOf.get("102185")).toBe("bifurcacion");
     expect(problems.join(" ")).toContain("dos funciones");
   });
+
+  it("las nueve funciones de la taxonomía se aceptan sin aviso (Parte 36: vinculación/desvinculación)", () => {
+    const { funcionOf, problems } = readCriticalPoints([
+      entry("1", "parada-precisa", ""),
+      entry("2", "cruce", ""),
+      entry("3", "semaforo", ""),
+      entry("4", "dejar-carro", ""),
+      entry("5", "recoger-carro", ""),
+      entry("6", "cambio-de-mapa", ""),
+      entry("7", "bifurcacion", ""),
+      entry("8", "vinculacion", ""),
+      entry("9", "desvinculacion", ""),
+    ]);
+    expect(funcionOf.get("8")).toBe("vinculacion");
+    expect(funcionOf.get("9")).toBe("desvinculacion");
+    expect(problems).toHaveLength(0);
+  });
+
+  it("la función crítica se lee igual venga de «critico» o del circuito virtual — es el llamador quien combina las fuentes, no esta función", () => {
+    // `readCriticalPoints` no distingue de qué lista vienen las entradas: el merge de fuentes
+    // (Parte 36) vive en el punto de llamada (`import.worker.ts`/`auditoria.test.ts`), concatenando
+    // las entradas de «critico» con las de «circuito» que sí declaran función. Aquí basta confirmar
+    // que dos arrays concatenados, simulando cada fuente, se comportan como una sola lista.
+    const desdeCritico = [entry("102185", "vinculacion", "")];
+    const desdeCircuito = [entry("103358", "desvinculacion", "")];
+    const { funcionOf } = readCriticalPoints([...desdeCritico, ...desdeCircuito]);
+    expect(funcionOf.get("102185")).toBe("vinculacion");
+    expect(funcionOf.get("103358")).toBe("desvinculacion");
+  });
 });
 
 describe("máquina de estados de la calle (R-CO-002)", () => {

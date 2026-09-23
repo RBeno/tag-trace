@@ -218,6 +218,14 @@ async function buildViews(
   const laneConfig = readCoLanes(entriesOf("carga-online"));
   const zoneConfig = readZones(entriesOf("zona"));
   const lapAnchorsConfig = readLapAnchors(entriesOf("ancla"));
+  // La función de un tag crítico se declara en la lista `critico`, o alternativamente en la columna
+  // `funcion` del circuito virtual (`circuito`) — las dos conviven (Parte 36). `critico` va primero
+  // para que gane en caso de contradicción; el filtro sobre `circuito` es imprescindible, porque sin
+  // él cada tag ordinario del circuito (sin función) dispararía el aviso «no dice su función».
+  const criticalPointsConfig = readCriticalPoints([
+    ...entriesOf("critico"),
+    ...entriesOf("circuito").filter((entry) => entry.funcion !== ""),
+  ]);
   const orderLimits: OrderEvidenceLimits = {
     zoneOf: zoneConfig.zoneOf,
     laneEntryTags: laneEntryTags(laneConfig.lanes),
@@ -353,7 +361,7 @@ async function buildViews(
     laneConfig.lanes,
   );
   const vehicleIds = agvDossiers.map((dossier) => dossier.agvId);
-  const tagDossiers = buildAllTagDossiers(readings, vehicleIds);
+  const tagDossiers = buildAllTagDossiers(readings, vehicleIds, criticalPointsConfig.funcionOf);
 
   const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, PROVISIONAL_CONFIG.silence.minGapMs);
 
@@ -420,7 +428,6 @@ async function buildViews(
       .filter((lane) => !lane.served)
       .flatMap((lane) => laneConfig.lanes.find((item) => item.laneId === lane.laneId)?.tags ?? []),
   );
-  const criticalPointsConfig = readCriticalPoints(entriesOf("critico"));
   const knownTags = new Set([
     ...byName("circuito"),
     ...byName("memoria"),

@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.22.0
+version: 0.23.0
 status: baseline-candidate
-last_updated: 2026-09-22
+last_updated: 2026-09-23
 ---
 
 # Estrategia de pruebas y evaluación
@@ -186,6 +186,10 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-134 | Salto grande entre dos duraciones pero con uno de los dos lados disperso | Sin candidato (guarda de compacidad) | Confirmar bimodalidad con un lado que en realidad es ruido con un pico |
 | TC-135 | Patrón bimodal con pocas muestras totales | Sin candidato | Confirmar semáforo sin pasadas de sobra |
 | TC-136 | Transiciones `sameInstant: true` en el cálculo de parada precisa o semáforo | Nunca cuentan como duración (R-DAT-013) | Contar un empate del mismo instante como tránsito de 0 ms |
+| TC-137 | Las nueve funciones de la taxonomía de `critico` (Parte 36) | Se aceptan sin aviso, `vinculacion`/`desvinculacion` incluidas | Rechazar o avisar sobre una función de la taxonomía |
+| TC-138 | Entradas simuladas de `critico` y de `circuito` con función, concatenadas | `readCriticalPoints` produce el mismo `funcionOf` que si vinieran de una sola lista — el merge de fuentes vive en el llamador | Distinguir de qué lista viene cada entrada dentro de `readCriticalPoints` |
+| TC-139 | Expediente de tag (`buildTagDossier`/`buildAllTagDossiers`) para un tag con función declarada | `criticalFunction` trae el valor; sin declarar, `null` | Omitir el campo, o no propagarlo desde `funcionOf` |
+| TC-140 | Un tag declarado con función por la columna del circuito virtual, otro por la lista `critico`, en el mismo escenario de auditoría | Los dos aparecen en el expediente con su función; ningún tag sano trae una función sin plantar | Mezclar las dos vías de forma que una contamine tags que no la declararon |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

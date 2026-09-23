@@ -146,12 +146,21 @@ describe("expediente de tag", () => {
       reading(5000, "A", "0500"),
       reading(2000, "B", "0500"),
     ];
-    const dossier = buildTagDossier("0500", readings, ["A", "B", "C"]);
+    const dossier = buildTagDossier("0500", readings, ["A", "B", "C"], new Map());
 
     expect(dossier.totalReadings).toBe(3);
     expect(dossier.readers.find((r) => r.agvId === "A")?.lastReadUtcMs).toBe(5000);
     expect(dossier.readers.find((r) => r.agvId === "B")?.lastReadUtcMs).toBe(2000);
     expect(dossier.readers.find((r) => r.agvId === "C")?.lastReadUtcMs).toBeNull();
+    expect(dossier.criticalFunction).toBeNull();
+  });
+
+  it("lleva la función crítica declarada (R-GRA-007), sin importar de qué lista venga", () => {
+    const readings = [reading(1000, "A", "0500")];
+    const funcionOf = new Map([["0500", "vinculacion"]]);
+    const dossier = buildTagDossier("0500", readings, ["A"], funcionOf);
+
+    expect(dossier.criticalFunction).toBe("vinculacion");
   });
 });
 
@@ -170,10 +179,12 @@ describe("expedientes en lote", () => {
 
   it("buildAllTagDossiers da el mismo resultado que llamar uno a uno", () => {
     const readings = [reading(1000, "A", "0500"), reading(2000, "B", "0500"), reading(3000, "A", "0600")];
-    const uno = buildTagDossier("0500", readings, ["A", "B"]);
-    const lote = buildAllTagDossiers(readings, ["A", "B"]);
+    const funcionOf = new Map([["0600", "cruce"]]);
+    const uno = buildTagDossier("0500", readings, ["A", "B"], funcionOf);
+    const lote = buildAllTagDossiers(readings, ["A", "B"], funcionOf);
 
     expect(lote.find((d) => d.tagId === "0500")).toEqual(uno);
     expect(lote.map((d) => d.tagId)).toEqual(["0500", "0600"]);
+    expect(lote.find((d) => d.tagId === "0600")?.criticalFunction).toBe("cruce");
   });
 });

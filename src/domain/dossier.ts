@@ -232,6 +232,9 @@ export interface TagDossier {
   readonly tagId: string;
   readonly readers: readonly TagReaderStatus[];
   readonly totalReadings: number;
+  /** Función crítica declarada (R-GRA-007), o `null` si el tag no está en la lista `critico` ni en
+   *  la columna `funcion` del circuito virtual. Dato de planta, nunca deducido. */
+  readonly criticalFunction: string | null;
 }
 
 /**
@@ -246,6 +249,7 @@ export function buildTagDossier(
   tagId: string,
   readings: readonly Reading[],
   vehicles: readonly string[],
+  funcionOf: ReadonlyMap<string, string>,
 ): TagDossier {
   const lastByVehicle = new Map<string, number>();
   let total = 0;
@@ -256,13 +260,19 @@ export function buildTagDossier(
     if (current === undefined || entry.time.utcMs > current) lastByVehicle.set(entry.agvId, entry.time.utcMs);
   }
 
-  return { tagId, readers: readerStatuses(lastByVehicle, vehicles), totalReadings: total };
+  return {
+    tagId,
+    readers: readerStatuses(lastByVehicle, vehicles),
+    totalReadings: total,
+    criticalFunction: funcionOf.get(tagId) ?? null,
+  };
 }
 
 /** El expediente de todos los tags, en una sola pasada sobre las lecturas. */
 export function buildAllTagDossiers(
   readings: readonly Reading[],
   vehicles: readonly string[],
+  funcionOf: ReadonlyMap<string, string>,
 ): readonly TagDossier[] {
   const lastByTagAndVehicle = new Map<string, Map<string, number>>();
   const totalByTag = new Map<string, number>();
@@ -281,6 +291,7 @@ export function buildAllTagDossiers(
     tagId,
     readers: readerStatuses(lastByTagAndVehicle.get(tagId) ?? new Map(), vehicles),
     totalReadings: totalByTag.get(tagId) ?? 0,
+    criticalFunction: funcionOf.get(tagId) ?? null,
   }));
 }
 
