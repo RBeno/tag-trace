@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
-last_updated: 2026-09-20
+last_updated: 2026-09-23
 ---
 
 # Memoria compacta del proyecto
@@ -166,3 +166,13 @@ porque el segundo no era del workflow:
    real de la visibilidad es el 2026-09-20, no el 2026-09-03.
 
 Con el repositorio ya público, el tercer intento (`workflow_dispatch`) desplegó sin tocar nada más.
+
+## Zonas compartidas entre circuitos, reservadas para F7 (2026-09-23)
+
+El propietario deja abierta, **sin construirla ahora**, la posibilidad de analizar circuitos que
+comparten un cruce o un tramo. Hechos de planta aportados: los circuitos salen del mismo servidor,
+que gestiona los cruces y por tanto da un reloj común (R-DAT-018); algunos circuitos no comparten
+ningún tag y otros comparten decenas de metros; y en Vsystem cada tag es un espacio que ocupan AGV de
+cualquier circuito (R-GRA-012). Decisión de diseño: los circuitos siguen aislados y la zona será una
+vista aparte (R-GRA-013). Lo que habrá que adaptar para que no choque con lo existente está anotado
+en `ROADMAP.md` F7; OQ-127 y OQ-128 quedan abiertas.

@@ -1,8 +1,8 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
-last_updated: 2026-09-16
+last_updated: 2026-09-23
 ---
 
 # Etapas, entregables y resultados
@@ -210,6 +210,17 @@ Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria port
 ## F7 — Escalado controlado
 
 - Validar varios circuitos sin compartir memoria accidentalmente.
+- **Zonas compartidas entre circuitos** (cruces y tramos comunes, R-GRA-012, R-GRA-013). Cada
+  circuito sigue aislado; la zona es una vista aparte que lee de cada circuito solo sus pasadas por
+  los tags compartidos, en la intersección de coberturas, con un reloj común (R-DAT-018). Para que no
+  choque con lo que ya existe, al abrirla hay que:
+  - descontar los tags compartidos en la afinidad de una fuente (`src/domain/affinity.ts` supone hoy
+    que un tag es de un solo circuito);
+  - descontar las transiciones por tags compartidos en el agrupamiento por aristas exclusivas
+    (`src/domain/cohort.ts`): una sola transición común basta hoy para fundir dos circuitos en un
+    cohorte;
+  - no contar como «leyendo sin asignar» (R-AGV-015) al AGV de otro circuito que pasa por la zona
+    compartida, si la exportación lo trae (OQ-127).
 - Plantillas configurables de circuito y comparación agregada sin exponer datos.
 - Evaluar modelos supervisados solo con etiquetas y métricas suficientes.
 - Ejecutar candidato frente a algoritmo estable antes de promoverlo.

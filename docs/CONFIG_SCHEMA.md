@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -93,6 +93,12 @@ es el tag que toca si el giro se ejecuta.
 llevan todavía. Lo que la lista `critico` transporta hoy es `tag` y `funcion` — suficiente para
 R-GRA-008 (la omisión de un tag crítico declarado se cuenta aparte) y para contrastar candidatos
 contra lo declarado, no para el resto de §3.4.1.
+
+**Zonas compartidas entre circuitos (F7).** No hace falta un bloque nuevo para saber qué tags son
+comunes: salen de la intersección de las listas `circuito` de los circuitos implicados, y el lado
+lleno o vacío, de la lista `zona` de cada uno (R-GRA-012, R-GRA-013). Lo único que habrá que declarar
+aparte es lo que el dato no da: los pares de protección de cada cruce (OQ-121) y la capacidad de un
+espacio si no es uno (OQ-128).
 
 **La función se declara por dos vías que conviven.** La lista `critico` es la vía dedicada; la
 columna `funcion` del circuito virtual (`circuito`, §3.8) es una vía alternativa para quien ya carga

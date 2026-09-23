@@ -2,6 +2,26 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.18.1] - 2026-09-23
+
+Solo documentación: se deja preparada, sin construirla, la posibilidad de analizar circuitos que
+comparten un cruce o un tramo (F7), para que cuando llegue no choque con lo que ya existe.
+
+### Añadido
+
+- **R-DAT-018**: los circuitos del mismo servidor de Vsystem comparten reloj, porque es el servidor
+  el que gestiona los cruces.
+- **R-GRA-012**: un tag no es exclusivo de un circuito; en Vsystem es un espacio que ocupan AGV de
+  cualquier circuito.
+- **R-GRA-013** (`candidate`, F7): en una zona compartida se comprueba la ocupación de los espacios,
+  en la intersección de coberturas, con cada circuito todavía aislado. Los tags compartidos salen de
+  la intersección de las listas `circuito`, sin configuración nueva.
+- `ROADMAP.md` F7 enumera lo que hoy supone tags exclusivos y habrá que adaptar: la afinidad de una
+  fuente (`affinity.ts`), el agrupamiento por aristas exclusivas (`cohort.ts`) y el «leyendo sin
+  asignar» de la flota.
+- OQ-127 (si la exportación de un circuito trae las lecturas de AGV ajenos en los tags compartidos) y
+  OQ-128 (capacidad de un espacio y unicidad del identificador de tag en la planta).
+
 ## [3.18.0] - 2026-09-23
 
 La flota del circuito a lo largo del tiempo, y los vehículos que no entran a cargar (Parte 39). Hasta

@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.14.0
+version: 0.15.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -47,6 +47,7 @@ last_updated: 2026-09-23
 | Bifurcación candidata | Un tag cuyas salidas se reparten entre dos o más sucesores con cuota comparable, sostenida en el tiempo — ninguno domina. |
 | Cruce candidato (interno) | Una bifurcación candidata cuyas ramas reconvergen en pocos saltos dentro del mismo cohorte: dos caminos que se abren y se cierran enseguida, no una bifurcación que dure. Distinto del cruce entre circuitos protegido por un par de tags (OQ-121), que no deja firma. |
 | Vinculación / desvinculación | Dos clases de tag crítico sin firma estadística: el AGV sincroniza (o deja de sincronizar) su velocidad con la línea de producción al leerlas. Declaración pura, como cambio de mapa — se muestran en el expediente del tag, nunca se proponen. |
+| Zona compartida | Tramo de recorrido —desde un solo cruce hasta decenas de metros— cuyos tags pertenecen a varios circuitos a la vez. En Vsystem cada tag es un espacio que ocupa un AGV, así que lo que se comprueba en la zona es la ocupación de esos espacios con las lecturas de todos los circuitos que la comparten, en la franja que cubren todos (R-GRA-012, R-GRA-013). Alcance de F7. |
 | Consolidación | Aceptación humana de un periodo revisado para producir una nueva versión compacta de memoria y sus divergencias. |
 | Incidencia | Expediente separado que conserva síntoma, intervalo, replay, evidencia, hipótesis, contramedidas y verificación. |
 | Contramedida | Acción propuesta o realizada para reducir una causa, registrada con responsable, estado y verificación. |
