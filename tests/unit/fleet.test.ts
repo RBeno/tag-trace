@@ -131,7 +131,8 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
           { from: 40 * MINUTE, to: 60 * MINUTE },
         ],
         history: [all("A")],
-        // El expediente todavía cuenta este hueco como inactividad (anotado en `[3.17.0]`).
+        // El expediente ya no produce un silencio que cruce un hueco (`[3.18.3]`); se prueba igual,
+        // por si otra fuente de inactividad lo hiciera.
         inactivity: new Map([["A", [{ fromUtcMs: 18 * MINUTE, toUtcMs: 42 * MINUTE, cause: "silencio" as const }]]]),
       }),
     );

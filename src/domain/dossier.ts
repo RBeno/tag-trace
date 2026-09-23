@@ -11,6 +11,7 @@
 
 import type { Cohort } from "./cohort.js";
 import type { CoLane } from "./circuit-config.js";
+import { mergeIntervals, type Interval } from "./coverage.js";
 import type { Lap } from "./laps.js";
 import type { Reading } from "./reading.js";
 import type { TruthState } from "./truth.js";
@@ -71,6 +72,11 @@ export interface AgvDossier {
  * defecto**: es el intervalo normal de lectura, configuración de planta (R-OPP-006), y quien llame
  * tiene que haberlo decidido.
  *
+ * `coverage` son los tramos con datos cargados. Un hueco entre dos lecturas que cruza un tramo sin
+ * datos —el que queda entre dos exportaciones— **no es inactividad**: lo que pasó dentro no se sabe
+ * (R-DAT-007). Sus bordes tampoco se listan, igual que no se lista el rato anterior a la primera
+ * lectura (R-GRA-010); la vista de flota los enseña con su umbral.
+ *
  * Agrupa `readings` por vehículo en cada llamada: correcto para una consulta aislada (como en las
  * pruebas), pero quien construya el expediente de **todos** los vehículos de un circuito debe usar
  * `buildAllAgvDossiers`, que agrupa una sola vez en vez de una vez por vehículo y por cada par de
@@ -81,7 +87,7 @@ export function buildAgvDossier(
   readings: readonly Reading[],
   cohorts: CohortLookup,
   laps: readonly Lap[],
-  coverageEndUtcMs: number,
+  coverage: readonly Interval[],
   minGapMs: number,
   lanes: readonly CoLane[],
 ): AgvDossier {
@@ -90,7 +96,7 @@ export function buildAgvDossier(
     groupByVehicle(readings),
     cohorts,
     laps,
-    coverageEndUtcMs,
+    mergeIntervals(coverage),
     minGapMs,
     laneSignatures(lanes),
   );
@@ -107,17 +113,16 @@ export function buildAllAgvDossiers(
   readings: readonly Reading[],
   cohorts: CohortLookup,
   laps: readonly Lap[],
-  coverageEndUtcMs: number,
+  coverage: readonly Interval[],
   minGapMs: number,
   lanes: readonly CoLane[],
 ): readonly AgvDossier[] {
   const grouped = groupByVehicle(readings);
   const signatures = laneSignatures(lanes);
+  const spans = mergeIntervals(coverage);
   return [...grouped.keys()]
     .sort()
-    .map((agvId) =>
-      computeAgvDossier(agvId, grouped, cohorts, laps, coverageEndUtcMs, minGapMs, signatures),
-    );
+    .map((agvId) => computeAgvDossier(agvId, grouped, cohorts, laps, spans, minGapMs, signatures));
 }
 
 /**
@@ -150,11 +155,17 @@ function computeAgvDossier(
   grouped: ReadonlyMap<string, readonly Reading[]>,
   cohorts: CohortLookup,
   laps: readonly Lap[],
-  coverageEndUtcMs: number,
+  spans: readonly Interval[],
   minGapMs: number,
   laneSignature: ReadonlyMap<string, string>,
 ): AgvDossier {
   const own = grouped.get(agvId) ?? [];
+  // Sin cobertura declarada no hay huecos que conocer: todo el intervalo de las lecturas cuenta.
+  const insideOneSpan = (from: number, to: number): boolean =>
+    spans.length === 0 || spans.some((span) => span.from <= from && to <= span.to);
+  const lastOwn = own[own.length - 1];
+  const coverageEndUtcMs =
+    spans.length > 0 ? (spans[spans.length - 1] as Interval).to : (lastOwn?.time.utcMs ?? 0);
 
   const cohortId = cohorts.cohortOf.get(agvId) ?? null;
   const cohort = cohortId === null ? null : cohorts.cohorts[cohortId];
@@ -168,7 +179,7 @@ function computeAgvDossier(
     const previous = own[index - 1] as Reading;
     const current = own[index] as Reading;
     const gap = current.time.utcMs - previous.time.utcMs;
-    if (gap >= minGapMs) {
+    if (gap >= minGapMs && insideOneSpan(previous.time.utcMs, current.time.utcMs)) {
       const laneId = laneSignature.get(`${previous.tagId}\u0000${current.tagId}`);
       inactivity.push({
         fromUtcMs: previous.time.utcMs,

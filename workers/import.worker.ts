@@ -391,16 +391,18 @@ async function buildViews(
     });
   }
 
-  const coverageEnd =
+  // Un hueco entre dos exportaciones no es inactividad de nadie (R-DAT-007): el expediente recibe
+  // los tramos de cobertura, no solo su final.
+  const dossierCoverage =
     coverage.length > 0
-      ? Math.max(...coverage.map((span) => span.to))
-      : (readings[readings.length - 1] as Reading).time.utcMs;
+      ? coverage
+      : [{ from: (readings[0] as Reading).time.utcMs, to: (readings[readings.length - 1] as Reading).time.utcMs }];
 
   const agvDossiers = buildAllAgvDossiers(
     readings,
     cohortAssignment,
     laps,
-    coverageEnd,
+    dossierCoverage,
     PROVISIONAL_CONFIG.silence.minGapMs,
     laneConfig.lanes,
   );

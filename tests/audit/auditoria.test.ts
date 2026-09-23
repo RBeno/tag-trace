@@ -245,7 +245,7 @@ function analyse(
     readings,
     cohorts,
     laps,
-    scenario.toUtcMs,
+    [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
     PROVISIONAL_CONFIG.silence.minGapMs,
     laneConfig.lanes,
   );

@@ -2,6 +2,18 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.18.3] - 2026-09-23
+
+### Corregido
+
+- **El expediente de un AGV contaba como inactividad el hueco entre dos exportaciones** (anotado como
+  «Conocido» en `[3.17.0]`). `buildAgvDossier` y `buildAllAgvDossiers` reciben ahora los tramos de
+  cobertura en lugar de solo su final. Un hueco entre dos lecturas que cruza un tramo sin datos ya no
+  es un silencio, porque lo que pasó dentro no se sabe (R-DAT-007). Sus bordes tampoco se listan,
+  igual que el rato antes de la primera lectura (R-GRA-010); la vista de flota los enseña con su
+  umbral. Importa desde ya: con varias extracciones cargadas, cada AGV tenía un silencio falso en
+  cada hueco. TC-158.
+
 ## [3.18.2] - 2026-09-23
 
 Solo documentación. Corrige dos afirmaciones de `[3.18.1]` con los hechos de planta que aportó el

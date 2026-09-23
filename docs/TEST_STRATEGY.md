@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.25.0
+version: 0.26.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -207,6 +207,7 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-155 | Vehículo que lee sin estar asignado, y baja a mitad de ventana | Se cuenta aparte y nunca en N; la baja baja M desde ese instante y el AGV pasa a fuera. Sin historial, M son los vistos | Sumar a N a quien no está asignado, o seguir contando a un AGV dado de baja |
 | TC-156 | Historial de flota con dos circuitos cargado en el navegador sobre el circuito de auditoría | La interfaz pregunta el circuito; el recuento «N de M» y la vida de cada AGV se dibujan con su tabla, sin `<title>` por marca; el asignado que no lee y el que lee tras su baja salen como hallazgos; el historial sobrevive a la importación siguiente | Repartir un fichero de varios circuitos adivinando, o perder el historial al acumular otra fuente |
 | TC-157 | AGV que empieza a leer poco después del inicio de la cobertura, otro que tarda más que el umbral de silencio, y un silencio que cruza un hueco de cobertura | El primero cuenta como leyendo desde el borde; el segundo, ausente hasta su primera lectura; el hueco no deja trozos de silencio a sus lados | Que el peor momento de la ventana sea siempre su borde, o que un hueco entre exportaciones reste vehículos en funcionamiento |
+| TC-158 | Expediente de un AGV con dos exportaciones cargadas y un hueco sin datos entre medias | El hueco no aparece como inactividad; un silencio con sus dos lecturas dentro de un mismo tramo sí; el silencio abierto se mide contra el final del último tramo | Listar como silencio del AGV el rato entre dos exportaciones (R-DAT-007) |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
