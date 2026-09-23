@@ -94,11 +94,15 @@ llevan todavía. Lo que la lista `critico` transporta hoy es `tag` y `funcion` �
 R-GRA-008 (la omisión de un tag crítico declarado se cuenta aparte) y para contrastar candidatos
 contra lo declarado, no para el resto de §3.4.1.
 
-**Zonas compartidas entre circuitos (F7).** No hace falta un bloque nuevo para saber qué tags son
-comunes: salen de la intersección de las listas `circuito` de los circuitos implicados, y el lado
-lleno o vacío, de la lista `zona` de cada uno (R-GRA-012, R-GRA-013). Lo único que habrá que declarar
-aparte es lo que el dato no da: los pares de protección de cada cruce (OQ-121) y la capacidad de un
-espacio si no es uno (OQ-128).
+**Zonas compartidas entre circuitos (F7).** Los tags de cruce y semáforo compartidos no necesitan
+un bloque nuevo: salen de la intersección de las listas `circuito` de los circuitos implicados
+(R-GRA-012). Lo que sí habrá que declarar, porque el dato no lo da:
+
+- **un tramo físico común**, cuyos tags son independientes en cada circuito: su tag de entrada y de
+  salida en cada circuito, y su lado lleno o vacío;
+- **la capacidad de cada espacio** —cuántos AGV caben entre un tag y el siguiente—, que depende de la
+  distancia física (OQ-128);
+- los pares de protección de cada cruce (OQ-121).
 
 **La función se declara por dos vías que conviven.** La lista `critico` es la vía dedicada; la
 columna `funcion` del circuito virtual (`circuito`, §3.8) es una vía alternativa para quien ya carga

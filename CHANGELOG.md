@@ -2,6 +2,24 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.18.2] - 2026-09-23
+
+Solo documentación. Corrige dos afirmaciones de `[3.18.1]` con los hechos de planta que aportó el
+propietario.
+
+### Corregido
+
+- **R-GRA-012 decía que cada tag es un espacio que ocupa un AGV.** No es así: el tag es el último que
+  leyó el AGV, y el AGV ocupa el espacio hasta el siguiente tag. En ese espacio caben uno o varios
+  según su longitud física, que es dato de planta. R-GRA-013 compara ahora la ocupación con esa
+  capacidad, en vez de exigir un AGV por tag.
+- **El tramo compartido no sale de cruzar las listas `circuito`.** Solo se comparten los tags de
+  cruces y semáforos; en un tramo físico común cada circuito mantiene sus propios tags, así que el
+  tramo hay que declararlo (`CONFIG_SCHEMA.md` §3.4.1, `ROADMAP.md` F7).
+- OQ-128 pasa a parcial: el número de un tag es único en toda la planta (Vsystem no permite
+  repetirlo). Sigue abierto de dónde sale la capacidad de cada espacio.
+- Glosario: «Espacio (de un tag)», y «Zona compartida» reescrita.
+
 ## [3.18.1] - 2026-09-23
 
 Solo documentación: se deja preparada, sin construirla, la posibilidad de analizar circuitos que

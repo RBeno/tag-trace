@@ -2,7 +2,7 @@
 document_id: TT-OPEN-001
 version: 0.25.0
 status: active
-last_updated: 2026-09-22
+last_updated: 2026-09-23
 ---
 
 # Preguntas abiertas
@@ -59,7 +59,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-125 | ¿Qué excepciones legítimas admite el orden de salida de una calle (R-CO-003)? Está medido que dos vehículos cargando a la vez con duraciones distintas invierten el orden de salida con toda normalidad, así que la inversión por sí sola no separa la rutina del fallo. | Las inversiones se enumeran **ordenadas por lo que esperó cada uno** y no se llaman avería. R-FLO-001 ya admite excepciones documentadas; cuáles son, lo dice planta |
 | OQ-126 | ¿Qué caída mínima cuenta como rotura o como degradación en un tag o un AGV reales (R-OPP-015)? Los umbrales del sintético —0,5 de caída para rotura, 0,3 para degradación, cuatro tramos— están calibrados contra el ejemplo de manual (100 %→0 %, 90 %→40 %), no contra planta. | Ningún umbral se fija en el código: `TrendThresholds` es `draft` en `PROVISIONAL_CONFIG.trend` y sin valor por defecto en la función. Mientras tanto, el criterio exige además que el corte represente una fracción real de la línea (`minShareEachSide`), no solo un recuento mínimo |
 | OQ-127 | En un tramo compartido entre circuitos, ¿la exportación del circuito A trae también las lecturas de los AGV del circuito B sobre los tags compartidos, o solo las de sus propios AGV? Si las trae, la misma lectura llega en dos exportaciones y la unión tiene que contarla una vez; si no, la ocupación de la zona sale de juntar las de todos. | Diseño de la zona compartida (F7, R-GRA-013) |
-| OQ-128 | ¿Cuántos AGV caben en un mismo espacio (tag) de Vsystem, y es igual en toda la planta? ¿El identificador de un tag es único en toda la planta, de modo que el mismo número en dos circuitos es el mismo tag físico? | Invariante de ocupación de R-GRA-013 |
+| OQ-128 | **Parcial.** Cerrado: el número de un tag es único en toda la planta, Vsystem no permite repetirlo, así que el mismo número en dos circuitos es el mismo tag físico. Y un AGV no está en el tag, sino en el espacio hasta el siguiente, cuya capacidad depende de la distancia física: uno si están a centímetros, varios si están a metros. Abierto: de dónde se obtiene esa capacidad espacio a espacio (plano, distancias en Vsystem o declaración manual). | Invariante de ocupación de R-GRA-013 |
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
 
 
