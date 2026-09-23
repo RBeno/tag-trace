@@ -27,11 +27,14 @@ import {
   plainTable,
   scrollBox,
 } from "./charts.js";
+import { FLEET_STRUCTURE } from "../domain/fleet.js";
 import {
   agvTimelineChart,
   driftChart,
   dwellChart,
   fifoSlopeChart,
+  fleetCountChart,
+  fleetLifelineChart,
   forkChart,
   laneOccupancyChart,
   readMatrixHeatmap,
@@ -72,6 +75,8 @@ interface State {
   coverage: readonly { readonly from: number; readonly to: number }[];
   /** Últimas vistas recibidas: el expediente y el replay se consultan sobre ellas, ya calculadas. */
   views: CircuitViews | null;
+  /** El último historial de flota elegido, para repetir la carga con el circuito que elija el usuario. */
+  fleetFile: File | null;
 }
 
 const state: State = {
@@ -86,6 +91,7 @@ const state: State = {
   file: null,
   coverage: [],
   views: null,
+  fleetFile: null,
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -196,6 +202,19 @@ const listsLabel = element("label", undefined, "Listas de tags del circuito");
 listsLabel.htmlFor = "lists-file";
 const listsNote = element("p", "muted", "");
 
+/**
+ * El historial de flota (DS-012): qué AGV está asignado al circuito y desde cuándo. Va junto a las
+ * listas porque también es una declaración de planta escrita a mano, y se enseña su forma antes de
+ * pedirlo por la misma razón.
+ */
+const fleetInput = element("input");
+fleetInput.type = "file";
+fleetInput.accept = ".csv,.txt,text/csv,text/plain";
+fleetInput.id = "fleet-file";
+const fleetLabel = element("label", undefined, "Historial de flota del circuito");
+fleetLabel.htmlFor = "fleet-file";
+const fleetNote = element("p", "muted", "");
+
 {
   listsPanel.append(element("h2", undefined, "Listas declaradas"), listsLabel, listsInput);
   const structure = element("details");
@@ -228,6 +247,24 @@ const listsNote = element("p", "muted", "");
     ),
   );
   listsPanel.append(structure, listsNote);
+
+  const fleetStructure = element("details");
+  fleetStructure.append(element("summary", undefined, "Qué forma tiene que tener el historial"));
+  fleetStructure.append(
+    element(
+      "p",
+      "muted",
+      `Una fila por AGV y periodo. Cabecera «${FLEET_STRUCTURE.header.join(";")}»; ` +
+        `«${FLEET_STRUCTURE.optional.join("», «")}» son opcionales. Fechas día/mes/año, con hora ` +
+        "opcional; «hasta» vacío es que sigue asignado. Cada carga se suma a lo guardado: para " +
+        "registrar un cambio basta subir esa fila, y una fila con el mismo AGV y la misma fecha de " +
+        "alta sustituye a la anterior.",
+    ),
+  );
+  const fleetExample = element("pre", "mono raw", FLEET_STRUCTURE.example.join("\n"));
+  fleetExample.style.overflowX = "auto";
+  fleetStructure.append(fleetExample);
+  listsPanel.append(fleetLabel, fleetInput, fleetStructure, fleetNote);
 }
 
 const viewsPanel = element("section", "panel");
@@ -610,6 +647,54 @@ function handleMessage(message: FromWorker): void {
       return;
     }
 
+    case "fleet-choose-circuit": {
+      setBusy(false);
+      disposeWorker();
+      showMessage("warn", "El historial trae varios circuitos", [
+        "Elige cuál corresponde a este circuito. Se recordará para las próximas cargas.",
+      ]);
+      const chooser = element("div", "chooser");
+      const select = element("select");
+      select.id = "fleet-circuit";
+      for (const option of message.options) {
+        const entry = element("option", undefined, `${option.name} (${option.rows} filas)`);
+        entry.value = option.name;
+        select.append(entry);
+      }
+      const label = element("label", undefined, "Circuito del historial ");
+      label.htmlFor = "fleet-circuit";
+      const load = element("button", undefined, "Cargar las filas de este circuito");
+      load.type = "button";
+      const file = state.fleetFile;
+      load.addEventListener("click", () => {
+        if (file !== null) startFleet(file, message.circuitId, select.value);
+      });
+      chooser.append(label, select, load);
+      messagePanel.append(chooser);
+      return;
+    }
+
+    case "fleet-loaded": {
+      fleetNote.textContent =
+        `Circuito «${message.circuitId}»${message.circuitName === null ? "" : ` (historial «${message.circuitName}»)`} — ` +
+        `${message.periods.toLocaleString("es-ES")} periodos guardados.`;
+      const lines = [
+        `${message.accepted.toLocaleString("es-ES")} filas aceptadas: ${message.added} periodos nuevos y ` +
+          `${message.replaced} que sustituyen a uno guardado con el mismo AGV y la misma fecha de alta.`,
+        ...message.rejected.map((entry) => `${entry.rows} fila(s) no cargadas: ${entry.reason}.`),
+        ...message.warnings,
+        "Vuelve a importar una fuente de lecturas de este circuito para ver la flota a lo largo del tiempo.",
+      ];
+      showMessage(
+        message.warnings.length > 0 || message.rejected.length > 0 ? "warn" : "info",
+        "Historial de flota cargado",
+        lines,
+      );
+      setBusy(false);
+      disposeWorker();
+      return;
+    }
+
     case "lists-loaded": {
       const detail = message.lists
         .map((entry) => `${entry.list}: ${entry.tags.toLocaleString("es-ES")} tags`)
@@ -687,6 +772,38 @@ function startImport(file: File, fieldOrder?: FieldOrder): void {
 }
 
 /** Arranca la carga de listas. Mismo Worker y mismo protocolo: el parseo no vive aquí. */
+function startFleet(file: File, circuitId: string, circuitName?: string): void {
+  disposeWorker();
+  clearMessages();
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    showMessage("error", "El proceso auxiliar se detuvo", [
+      "El historial no llegó a cargarse y el circuito no se ha modificado.",
+    ]);
+    setBusy(false);
+    disposeWorker();
+  };
+  setBusy(true);
+  progressNote.textContent = "Leyendo el historial de flota";
+  progressBar.value = 0;
+  state.fleetFile = file;
+  const load: ToWorker = {
+    type: "fleet",
+    protocolVersion: PROTOCOL_VERSION,
+    jobId,
+    file,
+    circuitId,
+    ...(circuitName === undefined ? {} : { circuitName }),
+  };
+  worker.postMessage(load);
+}
+
 function startLists(file: File, circuitId: string): void {
   disposeWorker();
   clearMessages();
@@ -731,7 +848,7 @@ function startLists(file: File, circuitId: string): void {
  * la carga se rechaza sola. Es exactamente el defecto que introdujo el primer intento de arreglo
  * de esto, y lo destapó la prueba de navegador en la misma ejecución.
  */
-for (const input of [fileInput, projectInput, listsInput]) {
+for (const input of [fileInput, projectInput, listsInput, fleetInput]) {
   input.addEventListener("click", () => {
     input.value = "";
   });
@@ -748,6 +865,19 @@ listsInput.addEventListener("change", () => {
     return;
   }
   startLists(file, circuitId);
+});
+
+fleetInput.addEventListener("change", () => {
+  const file = fleetInput.files?.[0];
+  if (file === undefined) return;
+  const circuitId = circuitInput.value.trim();
+  if (circuitId === "") {
+    showMessage("warn", "Falta el circuito", [
+      "El historial pertenece a un circuito concreto: escribe cuál antes de cargarlo.",
+    ]);
+    return;
+  }
+  startFleet(file, circuitId);
 });
 
 fileInput.addEventListener("change", () => {
@@ -880,6 +1010,7 @@ function renderViews(views: CircuitViews): void {
       formatInstant,
     ),
   );
+  renderFleet(views);
   viewsPanel.append(
     inventoryChart(
       (views.inventory?.counts ?? []).map((entry) => ({
@@ -943,6 +1074,61 @@ function renderViews(views: CircuitViews): void {
       ),
     );
   }
+}
+
+/**
+ * La flota del circuito a lo largo del tiempo (DS-012, R-AGV-014, R-AGV-015): el recuento N de M y
+ * la vida de cada AGV. Sin historial, M son los vehículos que aparecen en las lecturas, y se dice.
+ */
+function renderFleet(views: CircuitViews): void {
+  const fleet = views.fleet;
+  if (fleet.vehicles.length === 0) return;
+  viewsPanel.append(element("h3", undefined, "Flota del circuito"));
+  const assigned = fleet.vehicles.filter((vehicle) => vehicle.assignedEver);
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      fleet.historyLoaded
+        ? `Historial de flota cargado${fleet.circuitName === null ? "" : ` («${fleet.circuitName}»)`}: ` +
+            `${assigned.length} AGV asignados en algún momento de la ventana.`
+        : "Sin historial de flota: la flota son los vehículos que aparecen en las lecturas, así que un " +
+            "AGV asignado que no lee nada no se ve. Carga el historial en «Listas declaradas» para contarlo.",
+    ),
+  );
+  viewsPanel.append(fleetCountChart(fleet, state.coverage, FORMATS));
+
+  if (fleet.historyLoaded) {
+    const neverRead = assigned.filter((vehicle) => vehicle.readings === 0).map((vehicle) => vehicle.agvId);
+    if (neverRead.length > 0) {
+      viewsPanel.append(
+        finding(
+          neverRead.length === 1
+            ? "1 AGV asignado no leyó nada en toda la ventana"
+            : `${neverRead.length} AGV asignados no leyeron nada en toda la ventana`,
+          neverRead.join(", "),
+          "Asignado según el historial y sin una sola lectura: parado, fuera de servicio, en otro " +
+            "circuito o con el historial desactualizado. El dato no elige (R-AGV-014).",
+        ),
+      );
+    }
+    const unassigned = fleet.vehicles
+      .filter((vehicle) => vehicle.segments.some((segment) => segment.state === "leyendo-sin-asignar"))
+      .map((vehicle) => vehicle.agvId);
+    if (unassigned.length > 0) {
+      viewsPanel.append(
+        finding(
+          unassigned.length === 1
+            ? "1 AGV lee en el circuito sin estar asignado"
+            : `${unassigned.length} AGV leen en el circuito sin estar asignados`,
+          unassigned.join(", "),
+          "No suman a los que están en funcionamiento. O el historial no recoge un cambio, o el " +
+            "vehículo vino de otro circuito: un candidato a revisar, nunca una avería (R-AGV-015).",
+        ),
+      );
+    }
+  }
+  viewsPanel.append(fleetLifelineChart(fleet, FORMATS));
 }
 
 type Matrix = CircuitViews["readMatrices"][number];
@@ -1431,6 +1617,35 @@ function renderCharging(views: CircuitViews): void {
         charging.startedInside.map((stay) => stay.agvId).join(", "),
         `Su primera lectura es la salida de una calle, así que desde ${desde} hasta que salieron ` +
           "esas calles no estaban vacías: no había datos (R-CO-007).",
+      ),
+    );
+  }
+
+  if (charging.neverCharged.length > 0) {
+    const ids = charging.neverCharged.map((entry) => entry.agvId);
+    viewsPanel.append(
+      finding(
+        charging.neverCharged.length === 1
+          ? "1 vehículo no entró en ninguna calle en toda la ventana"
+          : `${charging.neverCharged.length} vehículos no entraron en ninguna calle en toda la ventana`,
+        ids.length > 12 ? `${ids.slice(0, 12).join(", ")}…` : ids.join(", "),
+        "Solo quiere decir que no se les vio entrar en ninguna de las calles declaradas: pueden cargar " +
+          "en una que la lista no recoge, o haber estado poco tiempo en la ventana (mira su primera y " +
+          "última lectura). Sin SOC fiable no se juzga su batería (R-CO-004).",
+      ),
+    );
+    viewsPanel.append(
+      lazyDetails(`Ver los ${charging.neverCharged.length} vehículos que no entraron a cargar`, () =>
+        plainTable(
+          ["AGV", "Primera lectura", "Última lectura", "Presente", "Lecturas"],
+          charging.neverCharged.map((entry) => [
+            entry.agvId,
+            formatInstant(entry.firstUtcMs),
+            formatInstant(entry.lastUtcMs),
+            duration(entry.lastUtcMs - entry.firstUtcMs),
+            entry.readings.toLocaleString("es-ES"),
+          ]),
+        ),
       ),
     );
   }

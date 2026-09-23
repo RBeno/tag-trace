@@ -73,6 +73,15 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
       .setInputFiles({ name: "listas.csv", mimeType: "text/csv", buffer: Buffer.from(scenario.listsCsv, "utf8") });
     await expect(page.getByText("Listas cargadas")).toBeVisible({ timeout: 30_000 });
 
+    // El historial de flota trae dos circuitos: el programa pregunta cuál es este, no lo adivina.
+    await page
+      .locator("#fleet-file")
+      .setInputFiles({ name: "flota.csv", mimeType: "text/csv", buffer: Buffer.from(scenario.fleetCsv, "utf8") });
+    await expect(page.getByText("El historial trae varios circuitos")).toBeVisible({ timeout: 30_000 });
+    await page.locator("#fleet-circuit").selectOption(scenario.fleetCircuit);
+    await page.getByRole("button", { name: "Cargar las filas de este circuito" }).click();
+    await expect(page.getByText("Historial de flota cargado")).toBeVisible({ timeout: 30_000 });
+
     // Las vistas que dependen de las listas y de los dos periodos aparecen en la importación que
     // llega cuando ya están las dos cosas.
     await page.locator("#source-file").setInputFiles([]);
@@ -115,6 +124,18 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(page.getByText(/Ver la matriz completa/).first()).toBeVisible();
     await heatmap.getByRole("button", { name: "Peor omisión primero" }).click();
     await expect(heatmap.getByRole("button", { name: "Peor omisión primero" })).toHaveAttribute("aria-pressed", "true");
+
+    // La flota: el recuento N de M, la vida de cada AGV en un único lienzo, el asignado que no lee
+    // nunca y el que sigue leyendo después de su baja.
+    await expect(page.getByRole("heading", { name: "Flota del circuito" })).toBeVisible();
+    const count = figureOf("Flota en funcionamiento");
+    await expect(count.getByText(/Menos en funcionamiento: \d+ de \d+/)).toBeVisible();
+    await expect(count.getByText("Ver los mismos datos en tabla")).toBeVisible();
+    expect(await count.locator("svg title").count()).toBe(0);
+    const lifeline = figureOf("Vida de cada AGV en el circuito");
+    await expect(lifeline.locator("canvas")).toBeVisible();
+    await expect(page.locator(".finding", { hasText: "asignado no leyó nada" })).toContainText(scenario.fleetNeverRead);
+    await expect(page.locator(".finding", { hasText: "sin estar asignado" })).toContainText(scenario.fleetLeavesMidway);
 
     // El expediente de un vehículo, en un solo eje de tiempo.
     await page.locator("#dossier-search").fill("7112");

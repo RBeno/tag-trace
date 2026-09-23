@@ -295,3 +295,26 @@ describe("de qué tag del anillo cuelga cada calle (findLaneJunctions)", () => {
     ]);
   });
 });
+
+describe("vehículos que no entraron en ninguna calle (neverCharged)", () => {
+  const { lanes } = readCoLanes([...lane("calle-1", 700)]);
+
+  it("sale quien no tiene ninguna estancia; no salen ni una estancia completa ni un arranque en frío", () => {
+    const readings = [
+      // A entra, para y sale: tiene estancia.
+      read("A", "1", 0),
+      read("A", "700", 1 * MINUTE),
+      read("A", "701", 2 * MINUTE),
+      read("A", "702", 30 * MINUTE),
+      // B circula y no entra nunca.
+      read("B", "1", 0),
+      read("B", "2", 5 * MINUTE),
+      // C ya estaba dentro al empezar (R-CO-007): su estancia es abierta al inicio, pero es estancia.
+      read("C", "702", 0),
+      read("C", "1", 1 * MINUTE),
+    ];
+    const report = buildChargingReport(readings, lanes, [{ from: 0, to: 60 * MINUTE }], THRESHOLDS);
+    expect(report.neverCharged.map((entry) => entry.agvId)).toEqual(["B"]);
+    expect(report.neverCharged[0]).toMatchObject({ firstUtcMs: 0, lastUtcMs: 5 * MINUTE, readings: 2 });
+  });
+});

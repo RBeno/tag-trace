@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -201,6 +201,11 @@ Y una que se dice por omisión deliberada: mientras la calle no esté declarada,
 apareciendo como silencios. Es la degradación que R-CO-006 exige, y la vista lo advierte en lugar
 de aproximar la calle por proximidad.
 
+Y los vehículos que **no entraron en ninguna calle** en toda la ventana, con su primera y última
+lectura y el tiempo que estuvieron presentes. Se enseñan de entrada, con lo que no significa escrito
+al lado: pueden cargar en una calle no declarada o haber estado poco tiempo en la ventana, y sin SOC
+no se juzga su batería (R-CO-004). Un arranque en frío sí cuenta como entrada (R-CO-007).
+
 ### 5.2.2 Rotura súbita y degradación progresiva (R-OPP-015)
 
 Junto a los destacados de la matriz de lectura, no en una sección aparte: son exactamente el tipo de
@@ -265,6 +270,34 @@ Tres reglas nuevas, las tres aprendidas al mirar el render con el circuito de au
 - **Un extremo que no se ve no se inventa.** Una estancia cuya salida no consta no es una barra hasta
   el final de la ventana; es una marca en la entrada. Un silencio que cruza un hueco de cobertura se
   dibuja solo en la parte cubierta.
+
+## 5.4 Flota del circuito (Parte 39)
+
+Cuántos vehículos de los asignados están en funcionamiento en cada momento, y la vida entera de cada
+uno en tramos continuos. Va justo después de la banda de actividad, que solo enseña a los que leen:
+un asignado que no lee nada solo aparece aquí.
+
+| Vista | Qué responde | Su límite, escrito al lado |
+|---|---|---|
+| **Flota en funcionamiento** | «de 12:05 a 13:10, 38 de 40», y el peor momento de la ventana | escalonada: cambia solo donde cambia un tramo; fuera de la cobertura no se cuenta (trama); sin historial, M son los vistos (R-AGV-014) |
+| **Vida de cada AGV en el circuito** | cuándo leía, cargaba, callaba, faltaba o no estaba asignado cada vehículo | una fila por AGV en un único `canvas`; leer sin estar asignado es media barra, distinta también por la forma (R-AGV-015) |
+
+Siete estados, cada uno con su color y su leyenda, y ninguno con color de severidad salvo los dos que
+piden mirar:
+
+- **leyendo** y **carga** (inferida) cuentan como en funcionamiento;
+- **falta de lecturas**: silencio sin calle que lo explique, causa desconocida (R-AGV-006), en
+  contorno naranja;
+- **ausente**: asignado y sin lecturas, antes de la primera, después de la última o en toda la
+  ventana, en naranja sólido — el «otro color» que pidió el propietario. En los bordes solo cuenta
+  si pasa del umbral de silencio: unos minutos antes de la primera lectura son el ritmo normal;
+- **fuera del circuito**: no asignado según el historial, casi del color del fondo;
+- **leyendo sin asignar**: se cuenta aparte, nunca en N;
+- **sin datos**: fuera de la cobertura, con trama (R-DAT-007).
+
+Dos hallazgos se enseñan de entrada, sin causa: los asignados que no leyeron nada en toda la ventana
+y los que leen sin estar asignados. La tabla equivalente del recuento son sus intervalos; la de la
+vida de cada AGV, el porcentaje de su tiempo en cada estado.
 
 ## 6. Consolidación
 

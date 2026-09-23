@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.24.0
+version: 0.25.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -197,6 +197,16 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-145 | Punto de enganche de una calle (`findLaneJunctions`) | El predecesor del anillo más frecuente de su entrada; una calle sin entradas desde el anillo no tiene punto | Inventar de dónde cuelga una calle |
 | TC-146 | Duraciones por tag para dibujar (`transitionDurationsByTag`) | Los pares del mismo instante no entran (R-DAT-013) | Dibujar un empate del mismo instante como un tránsito de 0 s |
 | TC-147 | Circuito de auditoría cargado en dos exportaciones, con listas, en el navegador | Las diez vistas de la Parte 38 se dibujan, llevan su tabla, ninguna emite un `<title>` por marca, la matriz es un `canvas` y la página no desborda | Volver a un nodo con rótulo por marca, o esconder una vista sin tabla equivalente |
+| TC-148 | Vehículo con lecturas y ninguna estancia en ninguna calle (`neverCharged`) | Sale en la lista con su primera y última lectura; uno con estancia completa o con arranque en frío no sale | Juzgar su batería o afirmar por qué no carga (R-CO-004) |
+| TC-149 | Historial de flota con columnas en otro orden, fechas con y sin hora (`importFleetHistory`) | Columnas por nombre; una fecha sin hora es a las 00:00; `hasta` vacío es periodo abierto | Leer las fechas como mes/día, o exigir el orden de las columnas |
+| TC-150 | Filas sin AGV, con fecha inválida, con `hasta` no posterior a `desde` o cortas | Cada una contada con su motivo; las demás se cargan. Dos periodos que se pisan se avisan, no se rechazan | Rechazar el fichero entero por una fila, o elegir en silencio cuál de dos periodos manda |
+| TC-151 | Segunda carga del historial con una fila de la misma clave (`mergeFleetPeriods`) | La fila con el mismo AGV y la misma alta sustituye a la guardada; las demás se conservan | Sustituir el historial entero como una lista |
+| TC-152 | Asignado sin ninguna lectura (`buildFleetTimeline`) | Ausente en toda la ventana: cuenta en M y no en N | Hacerlo invisible porque no aparece en las lecturas |
+| TC-153 | Tres asignados, uno en silencio sin calle | «2 de 3» exactamente en ese intervalo; la carga inferida y el arranque en frío sí cuentan como en funcionamiento | Contar un silencio como funcionamiento, o una carga como ausencia |
+| TC-154 | Hueco de cobertura entre dos exportaciones | Sin datos, sin recuento en ese intervalo | Llamarlo silencio o ausencia (R-DAT-007) |
+| TC-155 | Vehículo que lee sin estar asignado, y baja a mitad de ventana | Se cuenta aparte y nunca en N; la baja baja M desde ese instante y el AGV pasa a fuera. Sin historial, M son los vistos | Sumar a N a quien no está asignado, o seguir contando a un AGV dado de baja |
+| TC-156 | Historial de flota con dos circuitos cargado en el navegador sobre el circuito de auditoría | La interfaz pregunta el circuito; el recuento «N de M» y la vida de cada AGV se dibujan con su tabla, sin `<title>` por marca; el asignado que no lee y el que lee tras su baja salen como hallazgos; el historial sobrevive a la importación siguiente | Repartir un fichero de varios circuitos adivinando, o perder el historial al acumular otra fuente |
+| TC-157 | AGV que empieza a leer poco después del inicio de la cobertura, otro que tarda más que el umbral de silencio, y un silencio que cruza un hueco de cobertura | El primero cuenta como leyendo desde el borde; el segundo, ausente hasta su primera lectura; el hueco no deja trozos de silencio a sus lados | Que el peor momento de la ventana sea siempre su borde, o que un hueco entre exportaciones reste vehículos en funcionamiento |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

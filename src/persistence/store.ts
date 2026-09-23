@@ -11,10 +11,11 @@
  */
 
 import type { Interval } from "../domain/coverage.js";
+import type { FleetPeriod } from "../domain/fleet.js";
 import type { Reading } from "../domain/reading.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 3;
+export const STORE_VERSION = 4;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
@@ -79,7 +80,21 @@ export interface StoredCircuit {
   readonly readings: readonly Reading[];
   /** Listas de planta vigentes. Ausente en circuitos guardados antes de la versión 2. */
   readonly lists?: readonly StoredTagList[];
+  /** Historial de flota (DS-012). Ausente hasta que se carga, y en circuitos anteriores a la versión 4. */
+  readonly fleet?: StoredFleet;
   readonly updatedAt: number;
+}
+
+/**
+ * El historial de flota del circuito, **acumulado**: cada carga se fusiona por (AGV, `desde`) con lo
+ * guardado, a diferencia de las listas, que se sustituyen enteras.
+ */
+export interface StoredFleet {
+  /** El valor de la columna `circuito` que corresponde a este circuito, si el fichero trae varios. */
+  readonly circuitName: string | null;
+  readonly periods: readonly FleetPeriod[];
+  readonly loadedAt: number;
+  readonly fileNames: readonly string[];
 }
 
 /**
@@ -111,6 +126,13 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
     // que reescribir —el campo es opcional—, y la degradación es la correcta: una lista guardada
     // en la versión 2 sigue leyéndose, no monta calles, y R-CO-006 dice justamente eso, que sin
     // calles configuradas la firma no se reconoce. Volver a cargar el fichero la completa.
+    apply: () => {},
+  },
+  {
+    to: 4,
+    // El historial de flota entra en el circuito (DS-012). Campo opcional: un circuito anterior se
+    // abre sin historial y su flota son los vehículos que aparecen en las lecturas, que es lo que
+    // la vista dice cuando no hay historial.
     apply: () => {},
   },
 ];

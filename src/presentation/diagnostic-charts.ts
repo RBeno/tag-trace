@@ -19,7 +19,7 @@
  */
 
 import type { CircuitViews } from "../application/protocol.js";
-import { HATCH_ID, figure, hatchPattern, legendList, svg, table, text } from "./charts.js";
+import { HATCH_ID, figure, hatchPattern, lazyDetails, legendList, plainTable, svg, table, text } from "./charts.js";
 
 export interface Formats {
   /** Instante completo, para las lecturas al puntero y las tablas. */
@@ -1600,6 +1600,310 @@ export function agvTimelineChart(data: AgvTimelineData, formats: Formats): HTMLE
       ["var(--viz-accent)", "silencio, causa desconocida"],
       [HATCH_SWATCH, "sin datos cargados"],
     ]),
+  );
+  return wrapper;
+}
+
+// --- Flota del circuito (Parte 39) ------------------------------------------
+
+type FleetView = CircuitViews["fleet"];
+type FleetStateName = FleetView["vehicles"][number]["segments"][number]["state"];
+
+/** Nombre de cada estado tal como se lee en la vista. */
+const FLEET_STATE_LABEL: Readonly<Record<FleetStateName, string>> = {
+  leyendo: "leyendo",
+  carga: "en carga (inferido)",
+  silencio: "falta de lecturas: causa desconocida",
+  ausente: "ausente: asignado y sin lecturas",
+  fuera: "fuera del circuito: no asignado",
+  "leyendo-sin-asignar": "lee sin estar asignado",
+  "sin-datos": "sin datos cargados",
+};
+
+/**
+ * Cuántos de los asignados están en funcionamiento en cada momento — «38 de 40» —, como dos series
+ * escalonadas: la flota asignada detrás y los que leen o cargan delante (R-AGV-014). Los que leen sin
+ * estar asignados van aparte, en naranja, y nunca suman a N (R-AGV-015).
+ */
+export function fleetCountChart(
+  fleet: FleetView,
+  coverage: readonly { readonly from: number; readonly to: number }[],
+  formats: Formats,
+): HTMLElement {
+  const wrapper = figure(
+    "Flota en funcionamiento",
+    "En funcionamiento: asignados que leen o están en una calle de carga (inferido). Un AGV en " +
+      "silencio o ausente no cuenta. Fuera de la cobertura no se cuenta nada (R-DAT-007).",
+  );
+  const counts = fleet.counts;
+  const area = host();
+  const line = readout("Pasa el puntero por la gráfica para leer el recuento de ese momento.");
+  if (counts.length === 0) {
+    wrapper.append(Object.assign(document.createElement("p"), { className: "muted", textContent: "Sin tramos cubiertos que contar." }));
+    return wrapper;
+  }
+
+  // El peor momento, que es lo que se busca al mirar esto: la menor proporción en funcionamiento.
+  const withFleet = counts.filter((entry) => entry.assigned > 0);
+  const worst =
+    withFleet.length === 0
+      ? null
+      : withFleet.reduce((best, entry) =>
+          entry.inService / entry.assigned < best.inService / best.assigned ? entry : best,
+        );
+  const summary = document.createElement("p");
+  summary.className = "muted";
+  summary.textContent =
+    worst === null
+      ? "Ningún AGV asignado dentro de la cobertura."
+      : `Menos en funcionamiento: ${worst.inService} de ${worst.assigned}, de ` +
+        `${formats.instant(worst.fromUtcMs)} a ${formats.instant(worst.toUtcMs)}.`;
+  const maxAssigned = Math.max(1, ...counts.map((entry) => Math.max(entry.assigned, entry.inService + entry.unassignedActive)));
+  const describe = (entry: (typeof counts)[number]): string =>
+    `de ${formats.instant(entry.fromUtcMs)} a ${formats.instant(entry.toUtcMs)} · ${entry.inService} de ` +
+    `${entry.assigned} en funcionamiento` +
+    (entry.unassignedActive > 0 ? ` (+${entry.unassignedActive} leyendo sin estar asignados)` : "");
+
+  responsive(area, (width) => {
+    area.replaceChildren();
+    const left = 34;
+    const right = 8;
+    const top = 8;
+    const plotHeight = 150;
+    const height = top + plotHeight + 26;
+    const innerWidth = width - left - right;
+    const x = (utcMs: number): number => left + ((utcMs - fleet.fromUtcMs) / Math.max(1, fleet.toUtcMs - fleet.fromUtcMs)) * innerWidth;
+    const y = (value: number): number => top + plotHeight - (value / maxAssigned) * plotHeight;
+    const canvas = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Flota en funcionamiento a lo largo del tiempo" });
+    canvas.append(hatchPattern());
+    const tickStep = niceStep(maxAssigned / 4);
+    for (let value = 0; value <= maxAssigned; value += tickStep) {
+      canvas.append(svg("line", { x1: left, x2: left + innerWidth, y1: y(value), y2: y(value), stroke: value === 0 ? "var(--line)" : "var(--viz-grid)" }));
+      canvas.append(text(left - 5, y(value) + 3.5, String(value), "axis", { "text-anchor": "end" }));
+    }
+    // Huecos de cobertura: sin datos, con trama.
+    const spans = [...coverage].sort((a, b) => a.from - b.from);
+    let cursor = fleet.fromUtcMs;
+    for (const span of spans) {
+      if (span.from > cursor) canvas.append(svg("rect", { x: x(cursor), y: top, width: x(span.from) - x(cursor), height: plotHeight, fill: HATCH_FILL }));
+      cursor = Math.max(cursor, span.to);
+    }
+    timeAxis(canvas, x, fleet.fromUtcMs, fleet.toUtcMs, top, top + plotHeight, height - 6, width, formats.tick);
+
+    const step = (pick: (entry: (typeof counts)[number]) => number): string[] => {
+      const paths: string[] = [];
+      let current = "";
+      let previousEnd: number | null = null;
+      for (const entry of counts) {
+        const value = y(pick(entry));
+        if (previousEnd === null || entry.fromUtcMs !== previousEnd) {
+          if (current !== "") paths.push(current);
+          current = `M${x(entry.fromUtcMs).toFixed(1)} ${value.toFixed(1)}`;
+        } else {
+          current += `V${value.toFixed(1)}`;
+        }
+        current += `H${x(entry.toUtcMs).toFixed(1)}`;
+        previousEnd = entry.toUtcMs;
+      }
+      if (current !== "") paths.push(current);
+      return paths;
+    };
+    for (const d of step((entry) => entry.assigned)) {
+      canvas.append(svg("path", { d, fill: "none", stroke: "var(--viz-neutral)", "stroke-width": 2 }));
+    }
+    for (const d of step((entry) => entry.inService)) {
+      canvas.append(svg("path", { d, fill: "none", stroke: "var(--viz-series)", "stroke-width": 2 }));
+    }
+    if (counts.some((entry) => entry.unassignedActive > 0)) {
+      for (const d of step((entry) => entry.unassignedActive)) {
+        canvas.append(svg("path", { d, fill: "none", stroke: "var(--viz-accent)", "stroke-width": 1.5 }));
+      }
+    }
+    const cross = svg("line", { y1: top, y2: top + plotHeight, stroke: "var(--ink)", visibility: "hidden" });
+    canvas.append(cross);
+    canvas.addEventListener("pointermove", (event) => {
+      const box = canvas.getBoundingClientRect();
+      const at = fleet.fromUtcMs + ((event.clientX - box.left - left) / innerWidth) * (fleet.toUtcMs - fleet.fromUtcMs);
+      const entry = counts.find((candidate) => at >= candidate.fromUtcMs && at < candidate.toUtcMs);
+      if (entry === undefined) {
+        cross.setAttribute("visibility", "hidden");
+        line.show(at >= fleet.fromUtcMs && at <= fleet.toUtcMs ? `${formats.instant(at)} — sin datos cargados: no se cuenta` : null);
+        return;
+      }
+      cross.setAttribute("x1", String(x(at)));
+      cross.setAttribute("x2", String(x(at)));
+      cross.setAttribute("visibility", "visible");
+      line.show(describe(entry));
+    });
+    canvas.addEventListener("pointerleave", () => {
+      cross.setAttribute("visibility", "hidden");
+      line.show(null);
+    });
+    area.append(canvas);
+  });
+
+  wrapper.append(summary, area, line.node);
+  wrapper.append(
+    legendList([
+      ["var(--viz-series)", "en funcionamiento (N)"],
+      ["var(--viz-neutral)", "asignados (M)"],
+      ["var(--viz-accent)", "leyendo sin estar asignados"],
+      [HATCH_SWATCH, "sin datos cargados"],
+    ]),
+  );
+  wrapper.append(
+    lazyDetails("Ver los mismos datos en tabla", () =>
+      plainTable(
+        ["Desde", "Hasta", "En funcionamiento", "Asignados", "Leyendo sin asignar"],
+        counts.map((entry) => [
+          formats.instant(entry.fromUtcMs),
+          formats.instant(entry.toUtcMs),
+          String(entry.inService),
+          String(entry.assigned),
+          String(entry.unassignedActive),
+        ]),
+      ),
+    ),
+  );
+  return wrapper;
+}
+
+/**
+ * La vida de cada AGV en tramos continuos, una fila por vehículo: los asignados primero y después
+ * los que leen sin estarlo. Un único `canvas`: un circuito real son decenas de vehículos con decenas
+ * de tramos cada uno, y un nodo por tramo es la lección de la banda de actividad.
+ */
+export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElement {
+  const wrapper = figure(
+    "Vida de cada AGV en el circuito",
+    "Una fila por AGV y sus tramos continuos a lo largo de la ventana. La ausencia —asignado y sin " +
+      "lecturas— va en naranja; la falta de lecturas entre dos lecturas, en contorno naranja. Quien " +
+      "lee sin estar asignado va a media altura.",
+  );
+  const area = host();
+  const line = readout("Pasa el puntero por una fila para leer el tramo.");
+  const vehicles = fleet.vehicles;
+
+  responsive(area, (width) => {
+    area.replaceChildren();
+    const left = 56;
+    const right = 6;
+    const rowHeight = 11;
+    const gap = 3;
+    const top = 4;
+    const plotHeight = vehicles.length * (rowHeight + gap);
+    const height = top + plotHeight + 22;
+    const innerWidth = width - left - right;
+    const x = (utcMs: number): number => left + ((utcMs - fleet.fromUtcMs) / Math.max(1, fleet.toUtcMs - fleet.fromUtcMs)) * innerWidth;
+    const ratio = window.devicePixelRatio || 1;
+    const node = document.createElement("canvas");
+    node.width = Math.round(width * ratio);
+    node.height = Math.round(height * ratio);
+    node.style.width = `${width}px`;
+    node.style.height = `${height}px`;
+    node.setAttribute("role", "img");
+    node.setAttribute("aria-label", `Vida de ${vehicles.length} AGV en el circuito`);
+    area.append(node);
+    const context = node.getContext("2d");
+    if (context === null) return;
+    context.scale(ratio, ratio);
+    const style = getComputedStyle(document.documentElement);
+    const color = (name: string): string => style.getPropertyValue(name).trim();
+    const hatch = canvasHatch(context);
+    const fills: Readonly<Record<FleetStateName, string | CanvasPattern>> = {
+      leyendo: color("--viz-series"),
+      carga: color("--viz-5"),
+      silencio: color("--viz-accent-wash"),
+      ausente: color("--viz-accent"),
+      fuera: color("--viz-grid"),
+      "leyendo-sin-asignar": color("--viz-series"),
+      "sin-datos": hatch,
+    };
+    context.font = "10px ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
+    vehicles.forEach((vehicle, row) => {
+      const y = top + row * (rowHeight + gap);
+      context.fillStyle = color("--muted");
+      context.textAlign = "right";
+      context.fillText(vehicle.agvId, left - 6, y + rowHeight - 2);
+      for (const segment of vehicle.segments) {
+        const x0 = x(segment.fromUtcMs);
+        const w = Math.max(0.8, x(segment.toUtcMs) - x0);
+        context.fillStyle = fills[segment.state];
+        if (segment.state === "leyendo-sin-asignar") {
+          context.fillRect(x0, y + rowHeight / 4, w, rowHeight / 2);
+        } else {
+          context.fillRect(x0, y, w, rowHeight);
+        }
+        if (segment.state === "silencio") {
+          context.strokeStyle = color("--viz-accent");
+          context.lineWidth = 1;
+          context.strokeRect(x0 + 0.5, y + 0.5, Math.max(0, w - 1), rowHeight - 1);
+        }
+      }
+    });
+    context.fillStyle = color("--muted");
+    context.font = "10px system-ui, -apple-system, 'Segoe UI', sans-serif";
+    for (const tick of timeTicks(fleet.fromUtcMs, fleet.toUtcMs, Math.max(3, Math.floor(width / 90)))) {
+      const px = x(tick);
+      context.textAlign = px < 40 ? "left" : px > width - 40 ? "right" : "center";
+      context.fillText(formats.tick(tick), px, top + plotHeight + 14);
+    }
+
+    node.addEventListener("pointermove", (event) => {
+      const box = node.getBoundingClientRect();
+      const row = Math.floor((event.clientY - box.top - top) / (rowHeight + gap));
+      const vehicle = vehicles[row];
+      const at = fleet.fromUtcMs + ((event.clientX - box.left - left) / innerWidth) * (fleet.toUtcMs - fleet.fromUtcMs);
+      const segment = vehicle?.segments.find((candidate) => at >= candidate.fromUtcMs && at < candidate.toUtcMs);
+      if (vehicle === undefined || segment === undefined) {
+        line.show(null);
+        return;
+      }
+      line.show(
+        `${vehicle.agvId} — ${FLEET_STATE_LABEL[segment.state]}, de ${formats.instant(segment.fromUtcMs)} a ` +
+          `${formats.instant(segment.toUtcMs)} (${minutes(segment.toUtcMs - segment.fromUtcMs)})`,
+      );
+    });
+    node.addEventListener("pointerleave", () => line.show(null));
+  });
+
+  const share = (vehicle: FleetView["vehicles"][number], state: FleetStateName): number => {
+    const total = vehicle.segments
+      .filter((segment) => segment.state !== "sin-datos" && segment.state !== "fuera" && segment.state !== "leyendo-sin-asignar")
+      .reduce((sum, segment) => sum + (segment.toUtcMs - segment.fromUtcMs), 0);
+    const part = vehicle.segments
+      .filter((segment) => segment.state === state)
+      .reduce((sum, segment) => sum + (segment.toUtcMs - segment.fromUtcMs), 0);
+    return total === 0 ? 0 : part / total;
+  };
+  wrapper.append(area, line.node);
+  wrapper.append(
+    legendList([
+      ["var(--viz-series)", FLEET_STATE_LABEL.leyendo],
+      ["var(--viz-5)", FLEET_STATE_LABEL.carga],
+      ["var(--viz-accent-wash)", FLEET_STATE_LABEL.silencio],
+      ["var(--viz-accent)", FLEET_STATE_LABEL.ausente],
+      ["var(--viz-grid)", FLEET_STATE_LABEL.fuera],
+      ["linear-gradient(transparent 30%, var(--viz-series) 30% 70%, transparent 70%)", FLEET_STATE_LABEL["leyendo-sin-asignar"]],
+      [HATCH_SWATCH, FLEET_STATE_LABEL["sin-datos"]],
+    ]),
+  );
+  wrapper.append(
+    lazyDetails("Ver los mismos datos en tabla", () =>
+      plainTable(
+        ["AGV", "Asignado", "Lecturas", "Leyendo", "En carga", "Falta de lecturas", "Ausente", "Lee sin asignar"],
+        vehicles.map((vehicle) => [
+          vehicle.agvId,
+          vehicle.assignedEver ? "sí" : "no",
+          vehicle.readings.toLocaleString("es-ES"),
+          percent(share(vehicle, "leyendo")),
+          percent(share(vehicle, "carga")),
+          percent(share(vehicle, "silencio")),
+          percent(share(vehicle, "ausente")),
+          vehicle.segments.some((segment) => segment.state === "leyendo-sin-asignar") ? "sí" : "no",
+        ]),
+      ),
+    ),
   );
   return wrapper;
 }

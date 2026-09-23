@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.24.0
+version: 0.25.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -97,6 +97,7 @@ regla exista: la matriz no es una lista de intenciones.
 | R-GRA-009 / `CONFIG_SCHEMA.md` §3.4.2 / TC-108–111 anclas de vuelta declaradas, `truth` condicional a completitud | `src/domain/laps.ts` (`resolveDeclaredAnchor`, `buildLap`), `src/domain/circuit-config.ts` (`readLapAnchors`), `workers/import.worker.ts` | `tests/unit/laps.test.ts`, `tests/unit/vsystem.test.ts` (invariancia a la rotación), `tests/audit/auditoria.test.ts` |
 | R-DAT-016 / R-AGV-013 / R-DAT-017 / ALG-009 §6.1–6.2 / TC-112–124 comparación entre dos periodos distantes, sustitución candidata y adopción de tag nuevo | `src/domain/drift.ts` (`compareDistantPeriods`) | `tests/unit/drift.test.ts`, `tests/audit/auditoria.test.ts` |
 | `UX_SPEC.md` §5.3 / TC-141–147 vistas de diagnóstico (Parte 38): anillo, mapa de omisión, tendencias, permanencias, horquilla, calles, FIFO, deriva, inventario y expediente en el tiempo | `src/presentation/diagnostic-charts.ts`, `src/presentation/charts.ts` (`inventoryChart`), `src/domain/read-rate-trend.ts` (`binTimeline`), `src/domain/read-matrix.ts` (`trendSeries`), `src/domain/fifo.ts` (`focus`), `src/domain/charging.ts` (`findLaneJunctions`), `src/domain/critical-points.ts` (`transitionDurationsByTag`), `workers/import.worker.ts` | `tests/unit/read-rate-trend.test.ts`, `tests/unit/read-matrix.test.ts`, `tests/unit/fifo.test.ts`, `tests/unit/charging.test.ts`, `tests/unit/critical-points.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
+| DS-012 / R-AGV-014 / R-AGV-015 / TC-148–157 flota del circuito y vehículos que no cargan (Parte 39): historial de flota incremental, vida de cada AGV en tramos, recuento «N de M» | `src/domain/fleet.ts`, `src/ingestion/fleet-history.ts`, `src/domain/charging.ts` (`neverCharged`), `src/persistence/store.ts` (`fleet`, versión 4), `workers/import.worker.ts` (`runFleet`, `accumulate`), `src/presentation/diagnostic-charts.ts` (`fleetCountChart`, `fleetLifelineChart`) | `tests/unit/fleet.test.ts`, `tests/unit/fleet-history.test.ts`, `tests/unit/charging.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` —, y el tercer

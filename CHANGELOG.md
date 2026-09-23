@@ -2,6 +2,62 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.18.0] - 2026-09-23
+
+La flota del circuito a lo largo del tiempo, y los vehículos que no entran a cargar (Parte 39). Hasta
+ahora un AGV asignado que no leía nada era invisible: la banda de actividad solo enseña a los que
+aparecen en las lecturas. Con un historial de flota cargado, la aplicación cuenta cuántos de los
+asignados están en funcionamiento en cada momento («38 de 40 de 12:05 a 13:10») y enseña la vida
+entera de cada uno en tramos continuos.
+
+### Añadido
+
+- **DS-012, historial de flota** (`src/ingestion/fleet-history.ts`): `circuito;agv;desde;hasta;nota`,
+  una fila por AGV y periodo `[desde, hasta)`, fechas día/mes con hora opcional, columnas por nombre y
+  rechazo por fila con su motivo. **Se fusiona** con lo guardado por (AGV, `desde`) en lugar de
+  sustituirse como las listas: un alta o una baja se registran subiendo solo su fila. Si el fichero
+  trae varios circuitos, la interfaz pregunta cuál es este y recuerda la respuesta.
+- `src/domain/fleet.ts`: `buildFleetTimeline` da, por AGV asignado alguna vez o visto en las
+  lecturas, sus tramos continuos en siete estados —leyendo, carga, falta de lecturas, ausente, fuera
+  del circuito, leyendo sin asignar y sin datos— y el recuento escalonado «N de M». Reutiliza las
+  inactividades y su causa del expediente y los arranques en frío de las calles; no recalcula nada.
+  Todo se recorta a la cobertura, así que un hueco entre exportaciones es sin datos, nunca silencio.
+- **R-AGV-014** (en funcionamiento = lee o está en carga inferida; M = flota asignada según el
+  historial; sin historial, los vistos, dicho en la vista) y **R-AGV-015** (leer sin estar asignado
+  es candidato, nunca avería, y no suma a N).
+- Vistas «Flota en funcionamiento» (serie escalonada con el peor momento de la ventana) y «Vida de
+  cada AGV en el circuito» (un único `canvas`, una fila por AGV; la ausencia en naranja sólido), con
+  su tabla equivalente y los dos hallazgos de entrada: asignados que no leyeron nada y vehículos que
+  leen sin estar asignados (`UX_SPEC.md` §5.4).
+- **Vehículos que no entraron en ninguna calle** (`ChargingReport.neverCharged`): tarjeta en la
+  sección de carga con su primera y última lectura. Lo que no significa va escrito al lado: calle no
+  declarada, poco tiempo en la ventana, y sin SOC no se juzga la batería (R-CO-004).
+- Almacén en versión 4 (`StoredCircuit.fleet`, peldaño vacío en `MIGRATIONS`); mensajes `fleet`,
+  `fleet-loaded` y `fleet-choose-circuit` (`WORKER_PROTOCOL.md`, que además recoge ahora `lists` y
+  `lists-loaded`, que ya existían sin documentar).
+- TC-148–157; el escenario de auditoría genera `fleetCsv` con dos circuitos, un asignado que no lee
+  nunca y otro dado de baja a mitad de ventana que sigue leyendo. No cambia ninguna lectura, así que
+  el informe de la auditoría no se mueve.
+
+### Corregido antes de publicarse
+
+- **Importar otra fuente borraba el historial de flota.** `accumulate()` reescribía el circuito
+  guardado sin el campo nuevo. Lo encontró la prueba de navegador: el historial se cargaba, se
+  importaba la segunda exportación y los hallazgos de flota salían como si no hubiera historial.
+  Ahora se conserva, igual que las listas.
+- **El peor momento de la ventana era siempre su borde.** Antes de su primera lectura, cada AGV
+  contaba como ausente aunque fueran unos segundos, así que el mínimo «N de M» caía en el primer
+  instante de la cobertura. Ahora los bordes se juzgan con el mismo umbral de silencio que decide si
+  un hueco entre dos lecturas es inactividad: más corto, es el ritmo normal de lectura. Y cada tramo
+  de cobertura se trata por separado, así que un silencio que cruza un hueco entre exportaciones ya
+  no deja trozos de silencio a sus lados. Lo encontró la mirada al render, no una prueba.
+
+### Conocido, sin corregir aquí
+
+- Un periodo del historial no se puede borrar subiendo filas; solo sustituir o cerrar.
+- Sigue pendiente el defecto de dominio del expediente anotado en `[3.17.0]` (inactividad a través de
+  un hueco de cobertura). La vista de flota lo evita por su cuenta recortando a la cobertura.
+
 ## [3.17.0] - 2026-09-23
 
 Diez vistas de diagnóstico en la aplicación (Parte 38), las propuestas 2 a 11 de la galería que el

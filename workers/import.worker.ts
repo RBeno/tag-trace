@@ -49,6 +49,8 @@ import {
   transitionDurationsByTag,
 } from "../src/domain/critical-points.js";
 import { compareDistantPeriods } from "../src/domain/drift.js";
+import { buildFleetTimeline, mergeFleetPeriods } from "../src/domain/fleet.js";
+import { FLEET_STRUCTURE, FleetFailure, importFleetHistory } from "../src/ingestion/fleet-history.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -155,6 +157,8 @@ async function accumulate(
     // borraba en silencio las listas de planta del circuito —el objeto se reescribe entero— y el
     // inventario desaparecía sin que nada lo dijera. Lo destapó la prueba de navegador.
     ...(existing?.lists === undefined ? {} : { lists: existing.lists }),
+    // Y el historial de flota, por la misma razón: lo destapó la prueba de navegador de la Parte 39.
+    ...(existing?.fleet === undefined ? {} : { fleet: existing.fleet }),
     updatedAt: Date.now(),
   });
 
@@ -405,6 +409,21 @@ async function buildViews(
 
   const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, PROVISIONAL_CONFIG.silence.minGapMs);
 
+  // La flota a lo largo del tiempo (DS-012, R-AGV-014): reutiliza las inactividades del expediente
+  // y los arranques en frío de las calles, y recorta todo a la cobertura (R-DAT-007).
+  const fleet = buildFleetTimeline({
+    readings,
+    coverage,
+    history: stored?.fleet?.periods ?? null,
+    inactivity: new Map(agvDossiers.map((dossier) => [dossier.agvId, dossier.inactivity])),
+    coldStarts: new Map(
+      charging.startedInside
+        .filter((stay) => stay.leftUtcMs !== null)
+        .map((stay) => [stay.agvId, stay.leftUtcMs as number]),
+    ),
+    minGapMs: PROVISIONAL_CONFIG.silence.minGapMs,
+  });
+
   const views: CircuitViews = {
     hourly: hourlyProfile(readings, zone),
     activity: activityBand(readings, coverage, ACTIVITY_BINS),
@@ -414,6 +433,7 @@ async function buildViews(
     agvDossiers,
     tagDossiers,
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
+    fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null },
     ...(laneConfig.lanes.length === 0 && laneConfig.problems.length === 0
       ? {}
       : {
@@ -446,6 +466,7 @@ async function buildViews(
               leftUtcMs: stay.leftUtcMs,
             })),
             coverageStartUtcMs: charging.coverageStartUtcMs,
+            neverCharged: charging.neverCharged,
             problems: [...laneConfig.problems, ...zoneConfig.problems],
           },
         }),
@@ -769,6 +790,98 @@ async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<
   }
 }
 
+const FLEET_REJECTION_LABEL: Readonly<Record<string, string>> = {
+  SIN_AGV: "sin AGV",
+  FECHA_INVALIDA: "fecha no válida (día/mes/año)",
+  HASTA_ANTES_DE_DESDE: "«hasta» no posterior a «desde»",
+  CAMPOS_INSUFICIENTES: "faltan columnas en la fila",
+};
+
+/**
+ * Carga el historial de flota de un circuito (DS-012) y lo **fusiona** con el guardado por (AGV,
+ * `desde`): para registrar un cambio basta subir esa fila. Si el fichero trae varios circuitos y
+ * ninguno está elegido, pregunta cuál es este en lugar de elegirlo por proximidad del nombre.
+ */
+async function runFleet(message: Extract<ToWorker, { type: "fleet" }>): Promise<void> {
+  const { jobId, file, circuitId } = message;
+  const fail = (cause: string, recovery: string): void =>
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  if (!isAvailable()) {
+    fail("Este navegador no permite guardar datos de sitio.", "Sin almacén local no hay dónde guardar el historial.");
+    return;
+  }
+  try {
+    const existing = await loadCircuit(circuitId);
+    if (existing === undefined) {
+      fail(
+        `El circuito «${circuitId}» todavía no existe.`,
+        "Importa al menos una fuente de lecturas en ese circuito y vuelve a intentarlo.",
+      );
+      return;
+    }
+    const { text } = decodeSource(await file.arrayBuffer());
+    const result = importFleetHistory(text, existing.zone);
+
+    let circuitName: string | null = null;
+    if (result.circuits.length > 1) {
+      const wanted = message.circuitName ?? existing.fleet?.circuitName ?? undefined;
+      if (wanted === undefined || !result.circuits.some((entry) => entry.name === wanted)) {
+        emit({ type: "fleet-choose-circuit", circuitId, options: result.circuits }, jobId);
+        return;
+      }
+      circuitName = wanted;
+    } else if (result.circuits.length === 1) {
+      circuitName = result.circuits[0]?.name ?? null;
+    }
+    const incoming = result.rows
+      .filter((row) => circuitName === null || row.circuit === circuitName || row.circuit === "")
+      .map((row) => ({ agvId: row.agvId, fromUtcMs: row.fromUtcMs, toUtcMs: row.toUtcMs, note: row.note }));
+    const merged = mergeFleetPeriods(existing.fleet?.periods ?? [], incoming);
+    const loadedAt = Date.now();
+    await saveCircuit({
+      ...existing,
+      fleet: {
+        circuitName,
+        periods: merged.periods,
+        loadedAt,
+        fileNames: [...(existing.fleet?.fileNames ?? []), file.name],
+      },
+      updatedAt: loadedAt,
+    });
+
+    const rejectedBy = new Map<string, number>();
+    for (const row of result.rejected) {
+      const label = FLEET_REJECTION_LABEL[row.reason] ?? row.reason;
+      rejectedBy.set(label, (rejectedBy.get(label) ?? 0) + 1);
+    }
+    emit(
+      {
+        type: "fleet-loaded",
+        circuitId,
+        circuitName,
+        accepted: incoming.length,
+        rejected: [...rejectedBy.entries()].map(([reason, rows]) => ({ reason, rows })),
+        added: merged.added,
+        replaced: merged.replaced,
+        periods: merged.periods.length,
+        warnings: result.warnings,
+      },
+      jobId,
+    );
+  } catch (error) {
+    const failure = error instanceof FleetFailure ? error : null;
+    emit(
+      {
+        type: "error",
+        code: "SCHEMA_UNRECOGNISED",
+        cause: failure?.reason ?? "No se pudo leer el historial de flota.",
+        recovery: failure?.recovery ?? `Se espera una cabecera «${FLEET_STRUCTURE.header.join(";")}».`,
+      },
+      jobId,
+    );
+  }
+}
+
 scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   const message = event.data;
   if (message.protocolVersion !== PROTOCOL_VERSION) return;
@@ -777,6 +890,13 @@ scope.onmessage = (event: MessageEvent<ToWorker>): void => {
     currentJobId = message.jobId;
     seq = 0;
     void runLists(message);
+    return;
+  }
+
+  if (message.type === "fleet") {
+    currentJobId = message.jobId;
+    seq = 0;
+    void runFleet(message);
     return;
   }
 

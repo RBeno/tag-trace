@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -269,6 +269,22 @@ no porque exista.
 R-OPP-011 impide: contiene tags obsoletos que ya no están instalados, y contarlos como oportunidad
 fabrica averías. El universo elegible es la lista de memoria **menos** lo que no existe, y lo que no
 existe se determina con dos ventanas, no con configuración.
+
+### 3.9 Flota asignada al circuito
+
+Qué vehículos pertenecen al circuito y en qué periodo. Es el denominador M del recuento «N de M en
+funcionamiento» (R-AGV-014); sin él, M son los vehículos vistos en las lecturas y la vista lo declara.
+
+```text
+fleet_history:
+  - { agv, valid_from, valid_to?, note? }   # periodo [valid_from, valid_to); valid_to vacío = vigente
+```
+
+Se transporta en CSV como DS-012 (`DATA_CONTRACTS.md` §3.6): `circuito;agv;desde;hasta;nota`, con
+`desde` → `valid_from` y `hasta` → `valid_to`. A diferencia de las listas de §3.8, **se fusiona** por
+(AGV, `valid_from`) en lugar de sustituirse entero, para que un alta o una baja se registren subiendo
+solo su fila. El valor elegido de la columna `circuito`, cuando el fichero trae varios, se guarda con
+el circuito y se reutiliza en las cargas siguientes.
 
 ## 4. Vigencia y versionado
 

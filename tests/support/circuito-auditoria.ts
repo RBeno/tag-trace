@@ -114,6 +114,16 @@ export interface AuditScenario {
    * dos tramos a partir de este instante, igual que ya hace con la de `charging`.
    */
   readonly periodSplitUtcMs: number;
+  /**
+   * Historial de flota (DS-012, Parte 39), en el formato que el importador declara. No cambia
+   * ninguna lectura, así que la auditoría no cambia de resultado: los 40 vehículos asignados desde
+   * antes de la ventana, uno asignado que no lee nunca (`fleetNeverRead`), uno que se da de baja a
+   * mitad y sigue leyendo (`fleetLeavesMidway`), y una fila de otro circuito para el selector.
+   */
+  readonly fleetCsv: string;
+  readonly fleetCircuit: string;
+  readonly fleetNeverRead: string;
+  readonly fleetLeavesMidway: string;
 }
 
 const RING_SIZE = 150;
@@ -884,9 +894,25 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     },
   ];
 
+  const fleetCircuit = "SE-AUDITORIA";
+  const fleetNeverRead = "7199";
+  const fleetLeavesMidway = vehicles[10] as string;
+  const fleetCsv = ["circuito;agv;desde;hasta;nota"]
+    .concat(
+      vehicles.map(
+        (vehicle) => `${fleetCircuit};${vehicle};01/09/2026;${vehicle === fleetLeavesMidway ? stamp(periodSplit) : ""};`,
+      ),
+    )
+    .concat([`${fleetCircuit};${fleetNeverRead};01/09/2026;;asignado y sin lecturas`, "OTRO-CIRCUITO;7201;01/09/2026;;"])
+    .join("\r\n");
+
   return {
     readingsCsv,
     listsCsv,
+    fleetCsv,
+    fleetCircuit,
+    fleetNeverRead,
+    fleetLeavesMidway,
     defects,
     cleanTags: ring.filter((tag) => !plantados.has(tag)),
     declaredRing: ring,

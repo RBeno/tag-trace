@@ -1,8 +1,8 @@
 ---
 document_id: TT-WORKER-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-23
 ---
 
 # Protocolo entre la interfaz y los Workers
@@ -69,6 +69,8 @@ type             : start | accepted | progress | partial | complete | error | ca
 |---|---|---|
 | `start` | referencias a fuentes, configuración vigente, versiones de reglas/algoritmos, semilla | Las fuentes viajan como `File`/`ArrayBuffer` transferido, no como texto ya leído. |
 | `cancel` | motivo | El Worker debe atenderla en el siguiente punto de control. |
+| `lists` | fichero de listas de tags, circuito | Sustituye las listas del circuito por las del fichero. |
+| `fleet` | fichero de historial de flota (DS-012), circuito, valor de `circuito` elegido si ya lo hay | Se **fusiona** con lo guardado por (AGV, `desde`); no sustituye. |
 
 ### Del Worker a la interfaz
 
@@ -80,6 +82,9 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `complete` | resultado, métricas, hash semántico, advertencias | Único mensaje que autoriza a persistir. |
 | `error` | código, causa, esquema detectado, filas de ejemplo, acción sugerida | Ver §6. |
 | `cancelled` | etapa alcanzada, recursos liberados | El estado anterior permanece intacto. |
+| `lists-loaded` | listas aceptadas, rechazos por motivo, avisos | Las vistas se recalculan en la siguiente importación. |
+| `fleet-loaded` | valor de circuito usado, filas aceptadas, rechazos por motivo, añadidas, sustituidas, periodos guardados, avisos | Como `lists-loaded`, no dispara análisis por sí mismo. |
+| `fleet-choose-circuit` | valores de la columna `circuito` con su número de filas | El fichero trae varios circuitos: la interfaz pregunta cuál es este y reenvía `fleet` con la respuesta. Nada se guarda hasta entonces. |
 
 ## 5. Cancelación
 

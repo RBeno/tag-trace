@@ -14,6 +14,7 @@
  */
 
 import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
+import type { FleetTimeline } from "../domain/fleet.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
 import type { ReadMatrix } from "../domain/read-matrix.js";
@@ -118,7 +119,39 @@ export interface ListsLoadedMessage extends Envelope {
   readonly unknownLists: readonly string[];
 }
 
-export type ToWorker = StartMessage | CancelMessage | LoadListsMessage;
+/** Cargar el historial de flota de un circuito (DS-012). */
+export interface LoadFleetMessage {
+  readonly type: "fleet";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly file: File;
+  readonly circuitId: string;
+  /** El valor de la columna `circuito` elegido, cuando el fichero trae varios. */
+  readonly circuitName?: string;
+}
+
+export interface FleetLoadedMessage extends Envelope {
+  readonly type: "fleet-loaded";
+  readonly circuitId: string;
+  readonly circuitName: string | null;
+  readonly accepted: number;
+  readonly rejected: readonly { readonly reason: string; readonly rows: number }[];
+  /** Periodos nuevos y periodos que sustituyeron a uno guardado con el mismo AGV y la misma fecha de alta. */
+  readonly added: number;
+  readonly replaced: number;
+  /** Periodos que quedan guardados tras la fusión. */
+  readonly periods: number;
+  readonly warnings: readonly string[];
+}
+
+/** El fichero trae varios circuitos y ninguno está elegido todavía: hay que preguntar cuál es este. */
+export interface FleetChooseCircuitMessage extends Envelope {
+  readonly type: "fleet-choose-circuit";
+  readonly circuitId: string;
+  readonly options: readonly { readonly name: string; readonly rows: number }[];
+}
+
+export type ToWorker = StartMessage | CancelMessage | LoadListsMessage | LoadFleetMessage;
 
 interface Envelope {
   readonly protocolVersion: number;
@@ -281,6 +314,13 @@ export interface CircuitViews {
       readonly leftUtcMs: number | null;
     }[];
     readonly coverageStartUtcMs: number | null;
+    /** Vehículos sin ninguna estancia en ninguna calle declarada: nada se dice de su batería (R-CO-004). */
+    readonly neverCharged: readonly {
+      readonly agvId: string;
+      readonly firstUtcMs: number;
+      readonly lastUtcMs: number;
+      readonly readings: number;
+    }[];
     /** Calles y zonas declaradas que no se pudieron montar, con su motivo. */
     readonly problems: readonly string[];
   };
@@ -371,6 +411,12 @@ export interface CircuitViews {
    */
   readonly lapAnchorProblems?: readonly string[];
   /**
+   * La flota del circuito a lo largo del tiempo (DS-012, R-AGV-014): la vida de cada AGV en tramos
+   * continuos y el recuento N de M. Sin historial cargado, M son los vehículos que aparecen en las
+   * lecturas, y `historyLoaded` lo dice.
+   */
+  readonly fleet: FleetTimeline & { readonly circuitName: string | null };
+  /**
    * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando
    * el circuito tiene listas de planta cargadas **y** al menos dos periodos distantes: con una sola
    * fuente cargada no hay con qué comparar, y no mostrar nada es más honesto que un aviso permanente.
@@ -435,7 +481,9 @@ export type FromWorker =
   | CompleteMessage
   | ErrorMessage
   | CancelledMessage
-  | ListsLoadedMessage;
+  | ListsLoadedMessage
+  | FleetLoadedMessage
+  | FleetChooseCircuitMessage;
 
 /**
  * `Omit` sobre una unión colapsa a las claves comunes y pierde el discriminante. Distribuyendo

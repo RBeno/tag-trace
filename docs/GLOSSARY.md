@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.13.0
+version: 0.14.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -19,6 +19,8 @@ last_updated: 2026-09-23
 | Cobertura | Unión de los intervalos temporales de las fuentes aceptadas de un circuito. Delimita sobre qué se puede concluir algo. |
 | Sin datos cargados | Estado de un intervalo que queda fuera de la cobertura. Distinto de `unknown`: en `unknown` hubo evidencia y no basta para decidir; aquí nunca hubo evidencia. No es una parada ni un silencio. |
 | Muestra | Periodo acotado que se importa y analiza. El producto trabaja por muestras, no sobre un histórico continuo; dos muestras solo se comparan si su contexto de calendario es equivalente. |
+| Flota asignada | Vehículos que el historial de flota (DS-012) asigna al circuito en un instante dado: los que tienen un periodo `[desde, hasta)` que lo contiene. Es la M del recuento «N de M». Sin historial cargado no se conoce, y se sustituye por los vehículos vistos en las lecturas diciéndolo (R-AGV-014). |
+| En funcionamiento | Un vehículo asignado que, en un instante dentro de la cobertura, lee o está en carga inferida (R-CO-006, R-CO-007). Es la N del recuento. Un silencio sin carga que lo explique no cuenta, y leer sin estar asignado se cuenta aparte, nunca en N (R-AGV-014, R-AGV-015). |
 | Periodo de inactividad | Intervalo dentro de la cobertura en el que un objeto no produce lecturas. Como un AGV detenido no emite, la inactividad no se distingue del fallo de comunicación por la ausencia en sí, sino por el contexto colectivo, el punto de la última lectura y el calendario. |
 | Instante de cambio | Última lectura antes de un silencio o de un cambio sostenido de comportamiento. Es `inferred`: marca el último momento con evidencia, no el instante real en que el objeto dejó de funcionar. |
 | Expediente de objeto | Vista que reúne todo lo conocido sobre un AGV o un tag concreto, con su contraste de cohorte, su inactividad y su evidencia navegable. No confundir con el expediente de incidencia. |
