@@ -52,6 +52,7 @@ import {
 } from "../src/domain/critical-points.js";
 import { compareDistantPeriods } from "../src/domain/drift.js";
 import { buildFleetTimeline, mergeFleetPeriods } from "../src/domain/fleet.js";
+import { classifySilence, usualSegmentTimes, type UsualTimes } from "../src/domain/silence-kind.js";
 import { FLEET_STRUCTURE, FleetFailure, importFleetHistory } from "../src/ingestion/fleet-history.js";
 import {
   laneEntryTags,
@@ -282,6 +283,8 @@ async function buildViews(
   /** El ancla efectiva de cada cohorte (declarada si se resolvió, si no la inferida). */
   const anchors = new Map<number, LapAnchor>();
   const lapAnchorProblems: string[] = [];
+  /** Lo que suele tardar cada tramo del anillo, por turno, para el cohorte de cada AGV (R-AGV-017). */
+  const usualByVehicle = new Map<string, UsualTimes>();
 
   for (const cohort of cohortAssignment.cohorts) {
     const vehicleSet = new Set(cohort.vehicles);
@@ -308,6 +311,14 @@ async function buildViews(
       }
     }
     anchors.set(cohort.id, effective);
+
+    const usual = usualSegmentTimes(
+      cohortTransitions,
+      effective.cycle,
+      zone,
+      PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
+    );
+    for (const agvId of cohort.vehicles) usualByVehicle.set(agvId, usual);
 
     const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
     laps.push(...segmentLaps(cohortReadings, direction, coverage, effective.tagId, anchorTruth));
@@ -426,18 +437,38 @@ async function buildViews(
   const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, PROVISIONAL_CONFIG.silence.minGapMs);
 
   // La flota a lo largo del tiempo (DS-012, R-AGV-014): reutiliza las inactividades del expediente
-  // y los arranques en frío de las calles, y recorta todo a la cobertura (R-DAT-007).
+  // y los arranques en frío de las calles, y recorta todo a la cobertura (R-DAT-007). Cada hueco sin
+  // carga lleva cómo reapareció el AGV (R-AGV-017): el expediente no cambia, esto solo alimenta la
+  // vida de cada AGV.
+  const maintenance = new Set(entriesOf("mantenimiento").map((entry) => entry.tagId));
   const fleet = buildFleetTimeline({
     readings,
     coverage,
     history: stored?.fleet?.periods ?? null,
-    inactivity: new Map(agvDossiers.map((dossier) => [dossier.agvId, dossier.inactivity])),
+    inactivity: new Map(
+      agvDossiers.map((dossier) => [
+        dossier.agvId,
+        dossier.inactivity.map((gap) =>
+          gap.cause === "carga-online"
+            ? gap
+            : {
+                ...gap,
+                ...classifySilence(
+                  gap,
+                  { usual: usualByVehicle.get(dossier.agvId) ?? null, maintenance },
+                  PROVISIONAL_CONFIG.silenceKind,
+                ),
+              },
+        ),
+      ]),
+    ),
     coldStarts: new Map(
       charging.startedInside
         .filter((stay) => stay.leftUtcMs !== null)
         .map((stay) => [stay.agvId, stay.leftUtcMs as number]),
     ),
     minGapMs: PROVISIONAL_CONFIG.silence.minGapMs,
+    longAbsenceMs: PROVISIONAL_CONFIG.silenceKind.longAbsenceMs,
   });
 
   const views: CircuitViews = {

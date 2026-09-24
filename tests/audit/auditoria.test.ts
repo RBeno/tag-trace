@@ -38,6 +38,7 @@ import {
 import { compareDistantPeriods, type DriftComparison } from "../../src/domain/drift.js";
 import { detectTagChanges, type TagChangeReport } from "../../src/domain/tag-changes.js";
 import { describeVehicleReading, type VehicleReadingReport } from "../../src/domain/vehicle-reading.js";
+import { classifySilence, usualSegmentTimes, type SilenceClass } from "../../src/domain/silence-kind.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -102,6 +103,8 @@ interface Analysis {
   readonly tagChanges: TagChangeReport;
   /** Lectura de cada AGV sobre los tags que el resto lee bien (R-AGV-016). */
   readonly vehicleReading: VehicleReadingReport;
+  /** Cómo reapareció cada AGV tras cada hueco sin carga (R-AGV-017), por vehículo. */
+  readonly silences: ReadonlyMap<string, readonly (SilenceClass & { readonly fromUtcMs: number; readonly toUtcMs: number })[]>;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
 }
@@ -274,6 +277,29 @@ function analyse(
     PROVISIONAL_CONFIG.silence.minGapMs,
     laneConfig.lanes,
   );
+  // Mismo encadenado que el Worker para la vida de cada AGV (R-AGV-017): lo habitual por tramo y
+  // turno del cohorte principal, y la lista de mantenimiento tal como llega en el CSV.
+  const usual =
+    anchor === null
+      ? null
+      : usualSegmentTimes(cohortTransitions, anchor.cycle, "Europe/Madrid", PROVISIONAL_CONFIG.silenceKind.shiftStartHours);
+  const maintenanceTags = new Set(entriesOf("mantenimiento").map((entry) => entry.tagId));
+  const silences = new Map(
+    dossiers.map((dossier) => [
+      dossier.agvId,
+      dossier.inactivity
+        .filter((gap) => gap.cause === "silencio")
+        .map((gap) => ({
+          fromUtcMs: gap.fromUtcMs,
+          toUtcMs: gap.toUtcMs,
+          ...classifySilence(
+            gap,
+            { usual: vehicleSet.has(dossier.agvId) ? usual : null, maintenance: maintenanceTags },
+            PROVISIONAL_CONFIG.silenceKind,
+          ),
+        })),
+    ]),
+  );
   const tagDossiers = buildAllTagDossiers(
     readings,
     dossiers.map((entry) => entry.agvId),
@@ -307,6 +333,7 @@ function analyse(
     criticalPoints,
     dossiers,
     tagDossiers,
+    silences,
     laps,
     anchorTagId: anchor?.tagId,
     anchorTruth,
@@ -331,6 +358,7 @@ describe("auditoría del circuito con verdad conocida", () => {
     criticalPoints,
     dossiers,
     tagDossiers,
+    silences,
     laps,
     anchorTagId,
     anchorTruth,
@@ -973,6 +1001,24 @@ describe("auditoría del circuito con verdad conocida", () => {
         .map((entry) => `${entry.agvId} (nunca ${entry.never.length}, desde ${entry.stopped.length}, poco ${entry.weak.map((w) => `${w.tagId} ${w.hits}/${w.passes}`).join(" ")})`)
         .join("; ")}`,
     ).toHaveLength(0);
+  }, PLAZO);
+
+  it("la vida de cada AGV: el adelantado sale parado en su sitio, con el tag siguiente (R-AGV-017)", () => {
+    // `adelantamiento-en-zona-cargada` planta 20 min de espera justo después de un tag y el AGV sigue
+    // por el siguiente: la firma exacta de «parado». Es la misma verdad que la sonda de FIFO, leída
+    // desde la vida del vehículo.
+    const adelantado = scenario.defects.find((d) => d.kind === "adelantamiento-en-zona-cargada")?.vehicles[0] ?? "";
+    const suyos = silences.get(adelantado) ?? [];
+    const parada = suyos.find((entry) => entry.kind === "parada" && entry.toUtcMs - entry.fromUtcMs >= 20 * 60_000);
+    expect(parada, `huecos de ${adelantado}: ${suyos.map((entry) => entry.kind).join(", ")}`).toBeDefined();
+    expect(parada?.detail.firstTagAfter).toBe(parada?.detail.nextTagId);
+    expect(parada?.detail.usualMs).not.toBeNull();
+
+    const reparto = new Map<string, number>();
+    for (const list of silences.values()) {
+      for (const entry of list) reparto.set(entry.kind, (reparto.get(entry.kind) ?? 0) + 1);
+    }
+    console.log(`\n=== HUECOS POR CLASE === ${[...reparto].map(([kind, n]) => `${kind}: ${n}`).join(" · ")}\n`);
   }, PLAZO);
 
   it("detecta las clases que ya sabe detectar, y sigue haciéndolo", () => {

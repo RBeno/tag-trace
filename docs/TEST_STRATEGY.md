@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.29.0
+version: 0.30.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -220,6 +220,10 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-168 | Lectura por AGV: nunca, desde una hora, poco; en muchos y en pocos tags | Cifras por tag; «poco» solo si la diferencia con el resto no es casualidad; un tag que lee mal casi toda la flota no cuenta contra nadie | Un 76 % frente a un 85 % de la flota tomado por diferencia |
 | TC-169 | Auditoría con una sola exportación | Cambio 60438 → 99001, dos que dejan de leerse, uno que empieza, el AGV que no lee el nuevo; ciegos en «nunca», memoria actualizada en «desde una hora», lector degradado en «muchos», lectura desigual en «pocos»; nada fuera de lo plantado | Diferencias en AGV o tags sanos |
 | TC-170 | Navegador con una sola exportación y las listas | Sección «Cambios de tag» con la pareja y el AGV que no lee el nuevo; tarjetas de AGV con cifras y sin causa | Volver a necesitar dos exportaciones para ver un cambio de tag |
+| TC-171 | Lo habitual de cada tramo (`usualSegmentTimes`) | Mediana por turno en hora local (04:30 UTC son las 06:30 en Madrid), sin pares del mismo instante ni pasos que saltan un tag; sin muestras del turno, la de toda la ventana | Juzgar un tramo por el reloj UTC, o por un par sin duración |
+| TC-172 | Clase de cada hueco (`classifySilence`) | Siguiente dentro de 3× lo habitual → no es hueco; más tarde → parado aunque dure horas; un tag → un tag; dos → varios; una hora y en otro punto → desconexión; fuera del anillo → sin clasificar; mantenimiento manda | Llamar habitual a un tag saltado; nombrar una causa |
+| TC-173 | Vida de cada AGV con clases (`buildFleetTimeline`) | La clase y sus hechos llegan al tramo; un hueco habitual se dibuja leyendo y suma a N; un borde de una hora o más sin leer es desconexión y uno más corto un ausente sin clase | Contar como fuera de servicio el ritmo normal de un tramo |
+| TC-174 | Auditoría y navegador con el circuito de auditoría | El AGV que espera 20 min tras un tag y sigue por el siguiente sale parado, con el tag siguiente y lo habitual; ningún otro hueco en todo el escenario; la leyenda nombra las clases y su tabla da el porcentaje parado | Un hueco espurio en un AGV sano |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

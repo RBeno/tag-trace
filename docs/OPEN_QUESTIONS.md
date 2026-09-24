@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.26.0
+version: 0.27.0
 status: active
 last_updated: 2026-09-24
 ---
@@ -60,7 +60,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-126 | ¿Qué caída mínima cuenta como rotura o como degradación en un tag o un AGV reales (R-OPP-015)? Los umbrales del sintético —0,5 de caída para rotura, 0,3 para degradación, cuatro tramos— están calibrados contra el ejemplo de manual (100 %→0 %, 90 %→40 %), no contra planta. | Ningún umbral se fija en el código: `TrendThresholds` es `draft` en `PROVISIONAL_CONFIG.trend` y sin valor por defecto en la función. Mientras tanto, el criterio exige además que el corte represente una fracción real de la línea (`minShareEachSide`), no solo un recuento mínimo |
 | OQ-127 | En un tramo compartido entre circuitos, ¿la exportación del circuito A trae también las lecturas de los AGV del circuito B sobre los tags compartidos, o solo las de sus propios AGV? Si las trae, la misma lectura llega en dos exportaciones y la unión tiene que contarla una vez; si no, la ocupación de la zona sale de juntar las de todos. | Diseño de la zona compartida (F7, R-GRA-013) |
 | OQ-128 | **Parcial.** Cerrado: el número de un tag es único en toda la planta, Vsystem no permite repetirlo, así que el mismo número en dos circuitos es el mismo tag físico. Y un AGV no está en el tag, sino en el espacio hasta el siguiente, cuya capacidad depende de la distancia física: uno si están a centímetros, varios si están a metros. Abierto: de dónde se obtiene esa capacidad espacio a espacio (plano, distancias en Vsystem o declaración manual). | Invariante de ocupación de R-GRA-013 |
-| OQ-129 | **Abierta.** Los umbrales de los cambios de tag y de la lectura por AGV son provisionales: diez pasadas por el sitio y un 0,1 % de azar para hablar de un cambio, una hora de solape máximo entre el tag viejo y el nuevo, ocho pasadas para decir «nunca», y el 10 % de sus tags (mínimo cinco) para «muchos». Calibrarlos con los datos de planta del viernes 2026-09-25 y la verificación en campo del lunes. | `PROVISIONAL_CONFIG.tagChanges` y `vehicleReading` |
+| OQ-129 | **Abierta.** Los umbrales de los cambios de tag y de la lectura por AGV son provisionales: diez pasadas por el sitio y un 0,1 % de azar para hablar de un cambio, una hora de solape máximo entre el tag viejo y el nuevo, ocho pasadas para decir «nunca», y el 10 % de sus tags (mínimo cinco) para «muchos». Lo mismo para cómo reaparece un AGV: tres veces lo habitual de un tramo para dejar de ser su ritmo, una hora para «desconexión», y turnos de 8 h (06–14, 14–22, 22–06) que el propietario fijó a falta de las horas reales de relevo (OQ-108). Calibrarlos con los datos de planta del viernes 2026-09-25 y la verificación en campo del lunes. | `PROVISIONAL_CONFIG.tagChanges`, `vehicleReading` y `silenceKind` |
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
 
 

@@ -19,7 +19,7 @@
  */
 
 import type { CircuitViews } from "../application/protocol.js";
-import { HATCH_ID, figure, hatchPattern, lazyDetails, legendList, plainTable, svg, table, text } from "./charts.js";
+import { HATCH_ID, figure, hatchPattern, lazyDetails, legendList, plainTable, scrollBox, svg, table, text } from "./charts.js";
 import { patternLabel, zoneLabel } from "./labels.js";
 import { inspect } from "./pointer.js";
 
@@ -1671,8 +1671,8 @@ type FleetStateName = FleetView["vehicles"][number]["segments"][number]["state"]
 const FLEET_STATE_LABEL: Readonly<Record<FleetStateName, string>> = {
   leyendo: "leyendo",
   carga: "en carga (inferido)",
-  silencio: "falta de lecturas: causa desconocida",
-  ausente: "ausente: asignado y sin lecturas",
+  silencio: "falta de lecturas sin clasificar",
+  ausente: "asignado y sin leer, menos de una hora",
   fuera: "fuera del circuito: no asignado",
   "leyendo-sin-asignar": "lee sin estar asignado",
   "sin-datos": "sin datos cargados",
@@ -1829,16 +1829,125 @@ export function fleetCountChart(
   return wrapper;
 }
 
+type FleetSegmentView = FleetView["vehicles"][number]["segments"][number];
+type GapKindName = NonNullable<FleetSegmentView["kind"]>;
+
+/**
+ * Cómo reapareció el AGV tras cada hueco (R-AGV-017), con su color. Los colores los pidió el
+ * propietario y están validados para daltonismo en los dos temas (`styles.css`); mantenimiento lleva
+ * además trama, porque frente al naranja cae en la franja en que el color solo no basta.
+ */
+const GAP_KIND: Readonly<Record<GapKindName, { readonly token: string; readonly label: string }>> = {
+  parada: { token: "--viz-parada", label: "parado: vuelve por el tag siguiente" },
+  "salta-uno": { token: "--viz-salta-uno", label: "vuelve un tag más allá" },
+  "salta-varios": { token: "--viz-accent", label: "vuelve dos o más tags más allá" },
+  desconexion: { token: "--viz-desconexion", label: "una hora o más sin leer, o vuelve en otro punto" },
+  mantenimiento: { token: "--viz-mantenimiento", label: "por un tag de mantenimiento" },
+  "sin-clasificar": { token: "--viz-empty", label: "falta de lecturas fuera del anillo inferido" },
+};
+
+/** Un contorno sin relleno, como se dibuja un hueco sin clasificar. */
+const OUTLINE_SWATCH = [
+  "linear-gradient(var(--viz-empty) 0 0) top / 100% 1px no-repeat",
+  "linear-gradient(var(--viz-empty) 0 0) bottom / 100% 1px no-repeat",
+  "linear-gradient(var(--viz-empty) 0 0) left / 1px 100% no-repeat",
+  "linear-gradient(var(--viz-empty) 0 0) right / 1px 100% no-repeat",
+  "var(--panel)",
+].join(", ");
+
+const MAINTENANCE_SWATCH = "repeating-linear-gradient(135deg, var(--viz-mantenimiento) 0 3px, var(--panel) 3px 4.5px)";
+
+/** Una duración corta en segundos y una larga en minutos u horas: «40 s», «43 min», «2,5 h». */
+function duration(ms: number): string {
+  return ms < 90_000 ? seconds(ms) : minutes(ms);
+}
+
+/** Relleno a rayas para el canvas: el color de base con líneas finas del fondo. */
+function canvasStripes(context: CanvasRenderingContext2D, base: string, gap: string): CanvasPattern | string {
+  const tile = document.createElement("canvas");
+  tile.width = 5;
+  tile.height = 5;
+  const pen = tile.getContext("2d");
+  if (pen === null) return base;
+  pen.fillStyle = base;
+  pen.fillRect(0, 0, 5, 5);
+  pen.strokeStyle = gap;
+  pen.lineWidth = 1.2;
+  pen.beginPath();
+  pen.moveTo(0, 0);
+  pen.lineTo(5, 5);
+  pen.moveTo(-1, 4);
+  pen.lineTo(1, 6);
+  pen.moveTo(4, -1);
+  pen.lineTo(6, 1);
+  pen.stroke();
+  return context.createPattern(tile, "repeat") ?? base;
+}
+
+/** Lo que dice un tramo al tocarlo: la clase y los hechos que la sostienen, sin causa (R-EVI-006). */
+function describeLifeSegment(agvId: string, segment: FleetSegmentView, formats: Formats): string {
+  const when =
+    `de ${formats.instant(segment.fromUtcMs)} a ${formats.instant(segment.toUtcMs)} ` +
+    `(${duration(segment.toUtcMs - segment.fromUtcMs)}`;
+  const detail = segment.detail;
+  const usual =
+    detail?.usualMs === null || detail?.usualMs === undefined
+      ? ""
+      : `; lo habitual en ese tramo${detail.shift === null ? "" : `, turno ${detail.shift}`}: ${duration(detail.usualMs)}`;
+  const route =
+    detail?.lastTagBefore === null || detail?.lastTagBefore === undefined || detail.firstTagAfter === null
+      ? ""
+      : `se fue por ${detail.lastTagBefore} y volvió por ${detail.firstTagAfter}`;
+  switch (segment.kind) {
+    case "parada": {
+      const back =
+        detail?.firstTagAfter === detail?.lastTagBefore
+          ? `volvió por el mismo tag, ${detail?.firstTagAfter ?? ""}`
+          : `volvió por ${detail?.firstTagAfter ?? ""}, el siguiente a ${detail?.lastTagBefore ?? ""}`;
+      return `${agvId} — parado: ${back}; ${when}${usual})`;
+    }
+    case "salta-uno":
+      return `${agvId} — vuelve un tag más allá: ${route}, sin leer ${detail?.nextTagId ?? "el de en medio"}; ${when}${usual})`;
+    case "salta-varios":
+      return `${agvId} — vuelve ${detail?.skipped ?? "varios"} tags más allá: ${route}; ${when}${usual})`;
+    case "mantenimiento":
+      return `${agvId} — por un tag de mantenimiento: ${route}; ${when})`;
+    case "sin-clasificar":
+      return `${agvId} — falta de lecturas: ${route}, fuera del anillo inferido; ${when})`;
+    case "desconexion": {
+      if (detail?.edge === "todo") return `${agvId} — una hora o más sin leer: ninguna lectura en estos datos; ${when})`;
+      if (detail?.edge === "inicio") {
+        return `${agvId} — una hora o más sin leer al principio: su primera lectura, en ${detail.firstTagAfter ?? "?"}; ${when})`;
+      }
+      if (detail?.edge === "fin") {
+        return `${agvId} — una hora o más sin leer al final: su última lectura, en ${detail.lastTagBefore ?? "?"}; ${when})`;
+      }
+      const where =
+        detail?.skipped === null || detail?.skipped === undefined
+          ? ", fuera del anillo inferido"
+          : `, ${detail.skipped} tags más allá`;
+      return `${agvId} — una hora o más sin leer: ${route}${where}; ${when})`;
+    }
+    default:
+      return `${agvId} — ${FLEET_STATE_LABEL[segment.state]}, ${when})`;
+  }
+}
+
 /**
  * La vida de cada AGV en tramos continuos, una fila por vehículo: los asignados primero y después
  * los que leen sin estarlo. Un único `canvas`: un circuito real son decenas de vehículos con decenas
  * de tramos cada uno, y un nodo por tramo es la lección de la banda de actividad.
+ *
+ * Cada hueco sin carga se colorea por cómo reapareció el AGV (R-AGV-017): parado en su sitio, un tag
+ * o varios más allá, una hora o más fuera, o por un tag de mantenimiento. Un hueco que ese tramo tiene
+ * a menudo en ese turno se dibuja leyendo: no es un hueco.
  */
 export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElement {
   const wrapper = figure(
     "Vida de cada AGV en el circuito",
-    "Qué hacía cada AGV en cada momento. Naranja: asignado y sin leer; contorno naranja: un " +
-      "silencio entre lecturas; media altura: lee sin estar asignado.",
+    "Qué hacía cada AGV en cada momento, y cómo volvió tras cada hueco sin lecturas. Toca un tramo " +
+      "para leer por dónde se fue, por dónde volvió y lo que suele tardar ese tramo en ese turno. " +
+      "Media altura: lee sin estar asignado.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por una fila para leer el tramo.");
@@ -1872,13 +1981,20 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
     const hatch = canvasHatch(context);
     const fills: Readonly<Record<FleetStateName, string | CanvasPattern>> = {
       leyendo: color("--viz-series"),
-      carga: color("--viz-5"),
-      silencio: color("--viz-accent-wash"),
-      ausente: color("--viz-accent"),
+      carga: color("--viz-carga"),
+      silencio: color("--panel"),
+      ausente: color("--viz-ausente"),
       fuera: color("--viz-grid"),
       "leyendo-sin-asignar": color("--viz-series"),
       "sin-datos": hatch,
     };
+    const kindFill = (kind: GapKindName): string | CanvasPattern =>
+      kind === "mantenimiento"
+        ? canvasStripes(context, color(GAP_KIND.mantenimiento.token), color("--panel"))
+        : kind === "sin-clasificar"
+          ? color("--panel")
+          : color(GAP_KIND[kind].token);
+    const kindFills = new Map<GapKindName, string | CanvasPattern>();
     context.font = "10px ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
     vehicles.forEach((vehicle, row) => {
       const y = top + row * (rowHeight + gap);
@@ -1888,14 +2004,21 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
       for (const segment of vehicle.segments) {
         const x0 = x(segment.fromUtcMs);
         const w = Math.max(0.8, x(segment.toUtcMs) - x0);
-        context.fillStyle = fills[segment.state];
+        let fill = fills[segment.state];
+        if (segment.kind !== undefined) {
+          const known = kindFills.get(segment.kind);
+          fill = known ?? kindFill(segment.kind);
+          if (known === undefined) kindFills.set(segment.kind, fill);
+        }
+        context.fillStyle = fill;
         if (segment.state === "leyendo-sin-asignar") {
           context.fillRect(x0, y + rowHeight / 4, w, rowHeight / 2);
         } else {
           context.fillRect(x0, y, w, rowHeight);
         }
-        if (segment.state === "silencio") {
-          context.strokeStyle = color("--viz-accent");
+        // Un hueco sin clasificar, o sin la configuración para clasificarlo, es solo un contorno.
+        if (segment.state === "silencio" && (segment.kind === undefined || segment.kind === "sin-clasificar")) {
+          context.strokeStyle = color("--viz-empty");
           context.lineWidth = 1;
           context.strokeRect(x0 + 0.5, y + 0.5, Math.max(0, w - 1), rowHeight - 1);
         }
@@ -1925,50 +2048,75 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
           line.show(null);
           return;
         }
-        line.show(
-          `${vehicle.agvId} — ${FLEET_STATE_LABEL[segment.state]}, de ${formats.instant(segment.fromUtcMs)} a ` +
-            `${formats.instant(segment.toUtcMs)} (${minutes(segment.toUtcMs - segment.fromUtcMs)})`,
-        );
+        line.show(describeLifeSegment(vehicle.agvId, segment, formats));
       },
     );
   });
 
-  const share = (vehicle: FleetView["vehicles"][number], state: FleetStateName): number => {
-    const total = vehicle.segments
-      .filter((segment) => segment.state !== "sin-datos" && segment.state !== "fuera" && segment.state !== "leyendo-sin-asignar")
-      .reduce((sum, segment) => sum + (segment.toUtcMs - segment.fromUtcMs), 0);
-    const part = vehicle.segments
-      .filter((segment) => segment.state === state)
-      .reduce((sum, segment) => sum + (segment.toUtcMs - segment.fromUtcMs), 0);
+  /** Parte del tiempo asignado y cubierto de un vehículo que cumple `match`. */
+  const share = (vehicle: FleetView["vehicles"][number], match: (segment: FleetSegmentView) => boolean): number => {
+    const counted = vehicle.segments.filter(
+      (segment) => segment.state !== "sin-datos" && segment.state !== "fuera" && segment.state !== "leyendo-sin-asignar",
+    );
+    const total = counted.reduce((sum, segment) => sum + (segment.toUtcMs - segment.fromUtcMs), 0);
+    const part = counted.filter(match).reduce((sum, segment) => sum + (segment.toUtcMs - segment.fromUtcMs), 0);
     return total === 0 ? 0 : part / total;
   };
+  const kinds = Object.keys(GAP_KIND) as GapKindName[];
   wrapper.append(area, line.node);
   wrapper.append(
     legendList([
       ["var(--viz-series)", FLEET_STATE_LABEL.leyendo],
-      ["var(--viz-5)", FLEET_STATE_LABEL.carga],
-      ["var(--viz-accent-wash)", FLEET_STATE_LABEL.silencio],
-      ["var(--viz-accent)", FLEET_STATE_LABEL.ausente],
+      ["var(--viz-carga)", FLEET_STATE_LABEL.carga],
+      ...kinds.map((kind): readonly [string, string] => [
+        kind === "mantenimiento"
+          ? MAINTENANCE_SWATCH
+          : kind === "sin-clasificar"
+            ? OUTLINE_SWATCH
+            : `var(${GAP_KIND[kind].token})`,
+        GAP_KIND[kind].label,
+      ]),
+      ["var(--viz-ausente)", "asignado y sin leer, menos de una hora"],
       ["var(--viz-grid)", FLEET_STATE_LABEL.fuera],
       ["linear-gradient(transparent 30%, var(--viz-series) 30% 70%, transparent 70%)", FLEET_STATE_LABEL["leyendo-sin-asignar"]],
       [HATCH_SWATCH, FLEET_STATE_LABEL["sin-datos"]],
     ]),
   );
   wrapper.append(
+    // Trece columnas: se desplazan dentro de su caja en vez de romper la página en el móvil.
     lazyDetails("Ver los mismos datos en tabla", () =>
-      plainTable(
-        ["AGV", "Asignado", "Lecturas", "Leyendo", "En carga", "Falta de lecturas", "Ausente", "Lee sin asignar"],
+      scrollBox(plainTable(
+        [
+          "AGV",
+          "Asignado",
+          "Lecturas",
+          "Leyendo",
+          "En carga",
+          "Parado",
+          "Un tag más allá",
+          "Varios tags más allá",
+          "Una hora o más",
+          "Mantenimiento",
+          "Sin clasificar",
+          "Sin leer, menos de una hora",
+          "Lee sin asignar",
+        ],
         vehicles.map((vehicle) => [
           vehicle.agvId,
           vehicle.assignedEver ? "sí" : "no",
           vehicle.readings.toLocaleString("es-ES"),
-          percent(share(vehicle, "leyendo")),
-          percent(share(vehicle, "carga")),
-          percent(share(vehicle, "silencio")),
-          percent(share(vehicle, "ausente")),
+          percent(share(vehicle, (segment) => segment.state === "leyendo")),
+          percent(share(vehicle, (segment) => segment.state === "carga")),
+          ...(["parada", "salta-uno", "salta-varios", "desconexion", "mantenimiento"] as const).map((kind) =>
+            percent(share(vehicle, (segment) => segment.kind === kind)),
+          ),
+          percent(
+            share(vehicle, (segment) => segment.state === "silencio" && (segment.kind === undefined || segment.kind === "sin-clasificar")),
+          ),
+          percent(share(vehicle, (segment) => segment.state === "ausente" && segment.kind === undefined)),
           vehicle.segments.some((segment) => segment.state === "leyendo-sin-asignar") ? "sí" : "no",
         ]),
-      ),
+      )),
     ),
   );
   return wrapper;
