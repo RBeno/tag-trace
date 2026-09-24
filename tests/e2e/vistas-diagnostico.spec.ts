@@ -86,7 +86,7 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     // llega cuando ya están las dos cosas.
     await page.locator("#source-file").setInputFiles([]);
     await page.locator("#source-file").setInputFiles({ name: "tardio.csv", mimeType: "text/csv", buffer: late });
-    await expect(page.getByRole("heading", { name: "Deriva entre los dos periodos" })).toBeVisible({ timeout: 180_000 });
+    await expect(page.getByRole("heading", { name: "Cambios entre los dos periodos" })).toBeVisible({ timeout: 180_000 });
 
     const figureOf = (title: string | RegExp) =>
       page.locator("figure.chart", { has: page.getByRole("heading", { name: title }) }).first();
@@ -99,8 +99,8 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
 
     const withTable = [
       "Rotura y degradación, en el tiempo",
-      "Permanencia en los candidatos de tiempo",
-      "Salidas de los tags con reparto",
+      "Tiempo de parada en los posibles puntos críticos",
+      "Tags donde el recorrido se divide",
       "Ocupación de las calles de carga",
       /^Entrada y salida del tramo cargado/,
       "Inventario de tags",
@@ -113,9 +113,9 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     }
 
     // La deriva lleva su detalle en la tabla plegada de debajo, como antes.
-    const drift = figureOf("Deriva entre los dos periodos");
+    const drift = figureOf("Cambios entre los dos periodos");
     expect(await drift.locator("svg title").count()).toBe(0);
-    await expect(page.getByText(/Detalle de los \d+ tags con deriva/)).toBeVisible();
+    await expect(page.getByText(/Detalle de los \d+ tags con cambios/)).toBeVisible();
 
     // La matriz es un único lienzo, nunca una celda por nodo; su tabla es la matriz completa plegada.
     const heatmap = figureOf("Mapa de omisión tag × AGV");

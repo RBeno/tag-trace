@@ -199,7 +199,7 @@ function staysOf(
         evidence:
           open.stoppedUtcMs === null
             ? `entró y salió de «${hit.lane.laneId}» sin leer la parada precisa`
-            : `entrada, parada precisa y salida de «${hit.lane.laneId}» en orden (R-CO-006)`,
+            : `entrada, parada precisa y salida de «${hit.lane.laneId}» en orden`,
       });
       open = null;
       continue;
@@ -217,8 +217,7 @@ function staysOf(
       truth: index === 0 ? "inferred" : "unknown",
       evidence:
         index === 0
-          ? `su primera lectura es la salida de «${hit.lane.laneId}»: ya estaba dentro antes de ` +
-            "la cobertura (R-CO-007)"
+          ? `su primera lectura es la salida de «${hit.lane.laneId}»: ya estaba dentro al empezar los datos`
           : `salió de «${hit.lane.laneId}» sin que conste su entrada`,
     };
     stays.push(stay);

@@ -31,13 +31,12 @@ export const LIST_PURPOSE: Readonly<Record<KnownList, string>> = {
     "los tags de las calles de carga, en su orden, con `grupo` = calle y `funcion` = entrada, " +
     "parada-precisa o salida",
   critico:
-    "paradas precisas, cruces, semáforos, dejar/recoger carro, cambios de mapa, bifurcaciones, " +
-    "vinculación/desvinculación con la línea de producción, con la clase en `funcion`. También se " +
-    "acepta declarada en la segunda columna del circuito virtual (`circuito`), como vía alternativa",
-  zona: "a qué zona pertenece cada tag: `grupo` = cargado o vacio (R-FLO-001, R-FLO-002)",
+    "puntos críticos, con su clase en `funcion`: parada precisa, cruce, semáforo, dejar/recoger " +
+    "carro, cambio de mapa, bifurcación, vinculación o desvinculación. También vale la columna " +
+    "`funcion` de la lista `circuito`",
+  zona: "a qué zona pertenece cada tag: `grupo` = cargado o vacio",
   ancla:
-    "el tag, o varios en orden de prioridad con `orden`, que el propietario declara como corte de " +
-    "vuelta (R-GRA-009)",
+    "el tag donde se corta cada vuelta (o varios, por prioridad en `orden`)",
 };
 
 /**

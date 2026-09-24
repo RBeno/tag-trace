@@ -18,6 +18,7 @@
  * Este módulo no calcula nada: recibe agregados que el Worker ya produjo (WP-001).
  */
 
+import { tagClassLabel, truthLabel } from "./labels.js";
 import { inspect } from "./pointer.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -228,12 +229,12 @@ export function coverageChart(
 ): HTMLElement {
   const wrapper = figure(
     "Cobertura cargada",
-    "Lo que se puede analizar. Fuera de los tramos llenos no hay silencio: no hay datos.",
+    "Periodos con datos. Fuera de ellos no hay datos, no silencio.",
   );
   if (coverage.length === 0) {
     const empty = document.createElement("p");
     empty.className = "muted";
-    empty.textContent = "Todavía no hay ningún tramo completo.";
+    empty.textContent = "Todavía no hay ningún periodo completo.";
     wrapper.append(empty);
     return wrapper;
   }
@@ -248,7 +249,7 @@ export function coverageChart(
   const canvas = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img" });
   canvas.append(hatchPattern());
   const label = svg("title");
-  label.textContent = `Cobertura entre ${format(from)} y ${format(to)}, en ${coverage.length} tramo(s).`;
+  label.textContent = `Cobertura entre ${format(from)} y ${format(to)}, en ${coverage.length} ${coverage.length === 1 ? "tramo" : "tramos"}.`;
   canvas.append(label);
 
   // El fondo entero es «sin datos cargados»; encima se pintan los tramos que sí lo están. Así el
@@ -256,7 +257,7 @@ export function coverageChart(
   canvas.append(
     withTooltip(
       svg("rect", { x: 0, y: 8, width, height: 26, fill: `url(#${HATCH_ID})`, rx: 4 }),
-      "Sin datos cargados: no se analiza, y nunca es una parada ni un silencio.",
+      "Sin datos cargados: no es una parada ni un silencio.",
     ),
   );
 
@@ -314,8 +315,7 @@ export interface HourlyData {
 export function hourlyChart(data: HourlyData): HTMLElement {
   const wrapper = figure(
     "Perfil horario",
-    `Lecturas por hora del día, sumando los ${data.days} día(s) cargados. Un valle no es una parada: ` +
-      "distinguirlo exige el calendario.",
+    `Lecturas por hora del día, sumando ${data.days} ${data.days === 1 ? "día" : "días"}. Un valle no es necesariamente una parada.`,
   );
 
   const width = WIDTH;
@@ -395,8 +395,7 @@ export interface ActivityData {
 export function activityChart(data: ActivityData, format: (utcMs: number) => string): HTMLElement {
   const wrapper = figure(
     "Actividad por vehículo",
-    "Una fila por AGV. Más oscuro, más lecturas en ese tramo. Una celda con trama es falta de datos, " +
-      "no silencio del vehículo.",
+    "Una fila por AGV; más oscuro, más lecturas. Con trama: sin datos cargados.",
   );
   if (data.rows.length === 0) {
     const empty = document.createElement("p");
@@ -505,9 +504,9 @@ export function activityChart(data: ActivityData, format: (utcMs: number) => str
       const instant = format(data.binStarts[bin] ?? 0);
       const count = row.bins[bin] ?? 0;
       readout.textContent = uncovered.has(bin)
-        ? `${row.agvId} · ${instant} — sin datos cargados: no se analiza, y no es un silencio`
+        ? `${row.agvId} · ${instant} — sin datos cargados`
         : count === 0
-          ? `${row.agvId} · ${instant} — sin lecturas, con datos cargados`
+          ? `${row.agvId} · ${instant} — sin lecturas`
           : `${row.agvId} · ${instant} — ${count.toLocaleString("es-ES")} lecturas`;
     },
   );
@@ -563,13 +562,13 @@ export interface InventoryBar {
 export function inventoryChart(bars: readonly InventoryBar[]): HTMLElement {
   const wrapper = figure(
     "Inventario de tags",
-    "Cruce de lo declarado, lo que la memoria permite leer y lo observado. Ninguna clase es un " +
-      "diagnóstico: la última columna dice qué hay que valorar.",
+    "Lo declarado, lo que los AGV llevan en memoria y lo que se lee, cruzado. Cada clase dice " +
+      "qué hay que comprobar.",
   );
   if (bars.length === 0) {
     const empty = document.createElement("p");
     empty.className = "muted";
-    empty.textContent = "Carga las listas de tags para contrastar el inventario.";
+    empty.textContent = "Carga las listas de tags para ver el inventario.";
     wrapper.append(empty);
     return wrapper;
   }
@@ -616,7 +615,7 @@ export function inventoryChart(bars: readonly InventoryBar[]): HTMLElement {
   for (const bar of [...bars].sort((a, b) => b.count - a.count)) {
     const name = document.createElement("span");
     name.className = "inv-name";
-    name.textContent = bar.label;
+    name.textContent = tagClassLabel(bar.label);
     const track = document.createElement("span");
     track.className = "inv-track";
     const fill = document.createElement("span");
@@ -629,15 +628,15 @@ export function inventoryChart(bars: readonly InventoryBar[]): HTMLElement {
     count.textContent = String(bar.count);
     const action = document.createElement("span");
     action.className = "inv-action muted";
-    action.textContent = `${bar.action} · ${bar.truth}`;
+    action.textContent = bar.action;
     rows.append(name, track, count, action);
   }
 
   wrapper.append(strip, stripLabels, rows);
   wrapper.append(
     table(
-      ["Clase", "Tags", "Estado de verdad", "Qué valorar"],
-      bars.map((bar) => [bar.label, String(bar.count), bar.truth, bar.action]),
+      ["Clase", "Tags", "Certeza", "Qué comprobar"],
+      bars.map((bar) => [tagClassLabel(bar.label), String(bar.count), truthLabel(bar.truth), bar.action]),
     ),
   );
   return wrapper;

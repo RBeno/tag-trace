@@ -2,6 +2,37 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.21.0] - 2026-09-24
+
+Interfaz con lenguaje de producto terminado (`UX_SPEC.md` §4.4). No se quita ninguna función, ninguna
+vista ni ningún dato: cambia cómo se dice.
+
+### Cambiado
+
+- **Ningún texto visible cita reglas, preguntas abiertas ni fases.** Se retiran las referencias
+  `R-…` y `OQ-…` de tarjetas, pies de gráfico, lecturas al puntero y evidencias del dominio (carga,
+  FIFO, listas, puntos críticos, Vsystem, afinidad). Siguen en la documentación y en el código.
+- **Los identificadores internos se enseñan en castellano llano**, desde un solo sitio
+  (`src/presentation/labels.ts`): estados de verdad (`observado`, `inferido`, `sin determinar`…),
+  patrones de lectura («se lee bien», «unos AGV sí y otros no», «todos lo leen poco»…), clases del
+  inventario («posible obsoleto», «unos AGV no lo leen»…), veredictos del contraste («posible
+  sustitución», «sin lecturas»…), zonas («cargada», «vacía») y funciones críticas («vinculación»,
+  «parada precisa»…). Lo que se guarda, se exporta y se prueba sigue usando el identificador estable.
+- **Títulos más directos**: «Tiempo de parada en los posibles puntos críticos», «Tags donde el
+  recorrido se divide», «Cambios entre los dos periodos», «Análisis», «Circuito», «Copia del
+  circuito», «Exportar circuito (.agvproj)», «Revisados N de M»; los candidatos a punto crítico se
+  titulan «posible cruce», «posible semáforo»…
+- **Resumen de la fuente en dos niveles**: a la vista, fichero, periodo, lecturas aceptadas, filas
+  que no son lecturas y filas con errores; plegados en «Detalles de lectura del fichero», el hash,
+  separador, columnas, formato de fecha, zona, codificación, orden, lecturas simultáneas y tiempo de
+  proceso.
+- Pies de gráfico, lecturas y evidencias más cortos. Se conservan las frases que evitan una
+  conclusión falsa («No es una tasa de salud», «fuera de ella no hay datos, no silencio», «posible…»).
+- Singular y plural reales en lugar de «tag(s)», «fila(s)», «día(s)»; miles con separador en las
+  pasadas de los puntos críticos; «a 0 tag(s)» pasa a «enseguida» o «tras N tags».
+- Las pruebas de navegador que fijaban textos visibles se actualizan a los nuevos; ninguna
+  comprobación de resultado cambia.
+
 ## [3.20.0] - 2026-09-24
 
 Tableta y portátil, con dedo, ratón o panel táctil (`UX_SPEC.md` §7). Antes, casi todos los gráficos

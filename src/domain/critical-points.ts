@@ -194,8 +194,8 @@ export function findBifurcationCandidates(
       support: total,
       branches,
       evidence:
-        `Reparte sus salidas entre ${branches.length} sucesores con cuota comparable: ` +
-        `${branches.map(formatShare).join(" y ")}. Ninguno domina.`,
+        `Tras este tag, los AGV siguen por ${branches.length} caminos en proporción parecida: ` +
+        `${branches.map(formatShare).join(" y ")}.`,
     });
   }
 
@@ -298,8 +298,8 @@ export function classifyCrossings(
       reconvergesAt: reconvergence.tag,
       hops: reconvergence.hops,
       evidence:
-        `${candidate.evidence} Las ramas vuelven a coincidir en «${reconvergence.tag}» ` +
-        `en ${reconvergence.hops} salto(s): un cruce, no un reparto que dure.`,
+        `${candidate.evidence} Los caminos vuelven a juntarse en «${reconvergence.tag}» ` +
+        `${reconvergence.hops === 0 ? "enseguida" : `tras ${reconvergence.hops} ${reconvergence.hops === 1 ? "tag" : "tags"}`}: parece un cruce.`,
     };
   });
 }
@@ -369,8 +369,8 @@ export function findPrecisePauseCandidates(
       meanDurationMs: average,
       coefficientOfVariation: cv,
       evidence:
-        `Duración media de ${Math.round(average / 1000)} s con coeficiente de variación ` +
-        `${cv.toFixed(2)} sobre ${durations.length} pasadas: parada consistente, no tráfico variable.`,
+        `Paran unos ${Math.round(average / 1000)} s casi siempre igual (${durations.length} pasadas): ` +
+        "parece una parada precisa.",
     });
   }
   return candidates.sort((a, b) => b.samples - a.samples);
@@ -431,9 +431,8 @@ export function findTrafficLightCandidates(
       lowClusterMeanMs: lowMean,
       highClusterMeanMs: highMean,
       evidence:
-        `Duración bimodal sobre ${durations.length} pasadas: ${Math.round(lowMean / 1000)} s ` +
-        `en ${split.low.length} de ellas, ${Math.round(highMean / 1000)} s en las otras ` +
-        `${split.high.length} — un salto de ${split.gapRatio.toFixed(1)}x entre los dos grupos.`,
+        `Unas veces pasan en ${Math.round(lowMean / 1000)} s (${split.low.length}) y otras esperan ` +
+        `${Math.round(highMean / 1000)} s (${split.high.length}): parece un semáforo.`,
     });
   }
   return candidates.sort((a, b) => b.samples - a.samples);

@@ -216,8 +216,8 @@ export function createReviewSession(
     const done = summary.total - summary.pendiente;
     heading.textContent =
       summary.total === 0
-        ? "Revisión en campo: no hay hallazgos que revisar en este análisis."
-        : `Revisión: ${done} de ${summary.total} revisados`;
+        ? "Revisión: no hay hallazgos que revisar."
+        : `Revisados ${done} de ${summary.total}`;
     counts.textContent = REVIEW_STATES.filter((state) => state !== "pendiente")
       .map((state) => counted(summary[state], state))
       .concat(counted(summary.pendiente, "pendiente"))

@@ -49,7 +49,7 @@ test.describe("grafo, cohortes y vueltas", () => {
     await expect(page.getByRole("heading", { name: "AGV 0007" })).toBeVisible();
     // 0007 recorre el anillo tres veces: dos vueltas completas y una parcial (el corte es de los
     // datos, no del circuito).
-    await expect(page.getByText("2 completas, 1 parciales, 0 desconocidas")).toBeVisible();
+    await expect(page.getByText("2 completas, 1 parciales, 0 sin determinar")).toBeVisible();
     // La mediana de la cohorte es la de 0042 (8 lecturas), nunca la de una flota que no existe.
     await expect(page.getByText(/mediana del resto: 8/)).toBeVisible();
   });
@@ -121,9 +121,9 @@ test.describe("contraste contra Vsystem", () => {
     await expect(fila).toHaveCount(1);
     await expect(fila.getByRole("cell", { name: "0999", exact: true })).toBeVisible();
     await expect(fila.getByRole("cell", { name: "0400", exact: true })).toBeVisible();
-    await expect(fila.getByRole("cell", { name: "sustituido-candidato", exact: true })).toBeVisible();
+    await expect(fila.getByRole("cell", { name: "posible sustitución", exact: true })).toBeVisible();
     // Es una hipótesis, nunca un hecho asignado.
-    await expect(fila.getByRole("cell", { name: "inferred", exact: true })).toBeVisible();
+    await expect(fila.getByRole("cell", { name: "inferido", exact: true })).toBeVisible();
   });
 });
 

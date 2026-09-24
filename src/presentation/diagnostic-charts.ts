@@ -20,6 +20,7 @@
 
 import type { CircuitViews } from "../application/protocol.js";
 import { HATCH_ID, figure, hatchPattern, lazyDetails, legendList, plainTable, svg, table, text } from "./charts.js";
+import { patternLabel, zoneLabel } from "./labels.js";
 import { inspect } from "./pointer.js";
 
 export interface Formats {
@@ -196,9 +197,8 @@ function isEmptyZone(zone: string): boolean {
 export function ringChart(data: RingData): HTMLElement {
   const wrapper = figure(
     "Anillo del circuito",
-    `Omisión por pasada de cada uno de los ${data.tags.length} tags, empezando arriba en el ancla y ` +
-      "siguiendo el sentido de marcha. El ángulo es orden en el anillo, no distancia: el dato no " +
-      "tiene geometría. Lo normal queda en gris; solo se colorea lo que falta.",
+    `Los ${data.tags.length} tags en el orden de marcha, empezando arriba. Es un orden, no un plano. ` +
+      "En gris lo normal; en color, lo que se deja de leer.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por el anillo para leer un tag.");
@@ -330,17 +330,17 @@ export function ringChart(data: RingData): HTMLElement {
           const where = `Tag ${tag.tagId} · posición ${Number(index) + 1} de ${count}` + (tag.zone === null ? "" : ` · zona ${tag.zone}`);
           line.show(
             tag.isAnchor
-              ? `${where} — ancla de la vuelta: su tasa es 1 por construcción y no es evidencia de nada`
+              ? `${where} — corte de vuelta (siempre se lee: no cuenta)`
               : tag.omission === null
-                ? `${where} — nadie pasó por este punto: sin pasadas no hay tasa`
-                : `${where} — ${percent(tag.omission)} de omisión en ${tag.passes} pasadas · ${tag.pattern}`,
+                ? `${where} — ningún AGV pasó por aquí`
+                : `${where} — sin leer en el ${percent(tag.omission)} de ${tag.passes} pasadas · ${patternLabel(tag.pattern)}`,
           );
         } else if (markTag !== null) {
           const mark = markByTag.get(markTag);
           if (mark !== undefined) {
             line.show(
               `${mark.number} · Tag ${mark.tagId} — ${mark.label}, ` +
-                (mark.declared ? "declarado en lista (dato de planta)" : "candidato por firma, para confirmar o descartar (R-GRA-007)"),
+                (mark.declared ? "declarado en la lista de críticos" : "posible, para confirmar en planta"),
             );
           }
         } else if (laneId !== null) {
@@ -365,7 +365,7 @@ export function ringChart(data: RingData): HTMLElement {
   );
   if (hasZones) {
     wrapper.append(
-      legendList(zoneNames.map((zone) => [isEmptyZone(zone) ? HATCH_SWATCH : "var(--viz-neutral)", `banda exterior: zona ${zone}`] as const)),
+      legendList(zoneNames.map((zone) => [isEmptyZone(zone) ? HATCH_SWATCH : "var(--viz-neutral)", `banda exterior: zona ${zoneLabel(zone)}`] as const)),
     );
   }
   if (marks.length > 0) {
@@ -380,7 +380,7 @@ export function ringChart(data: RingData): HTMLElement {
       id.className = "mono";
       id.textContent = mark.tagId;
       const label = document.createElement("span");
-      label.textContent = `${mark.label} · ${mark.declared ? "declarado" : "candidato"}`;
+      label.textContent = mark.declared ? `${mark.label} · declarado` : `posible ${mark.label}`;
       item.append(badge, id, label);
       list.append(item);
     }
@@ -466,9 +466,8 @@ export function readMatrixHeatmap(
 ): HTMLElement {
   const wrapper = figure(
     "Mapa de omisión tag × AGV",
-    "Omisión por pasada de cada tag (filas) para cada vehículo (columnas). Margen superior: omisión " +
-      "de cada AGV en todo lo que pasa; margen derecho: de cada tag en toda la flota. En naranja, lo " +
-      "que la matriz ya destaca. La trama es que ese vehículo no pasó por ese punto, que no es un 0 %.",
+    "Lo que no se lee, por tag (filas) y AGV (columnas). Arriba, el total de cada AGV; a la derecha, " +
+      "el de cada tag. En naranja, lo destacado. Con trama: ese AGV no pasó por ahí.",
   );
   const toolbar = document.createElement("div");
   toolbar.className = "seg";
@@ -605,9 +604,9 @@ export function readMatrixHeatmap(
         line.show(
           `Tag ${tag.tagId} × AGV ${agvId} — ` +
             (cell === undefined || cell.passes === 0
-              ? "no pasó por este punto: no es un 0 %"
+              ? "no pasó por este punto"
               : tag.isAnchor
-                ? "ancla: su tasa es 1 por construcción"
+                ? "corte de vuelta: no cuenta"
                 : `${percent(1 - cell.hits / cell.passes)} de omisión, ${cell.passes - cell.hits} de ${cell.passes} pasadas sin leer`) +
             (tag.rate === null ? "" : ` · el tag en la flota: ${percent(1 - tag.rate)}`),
         );
@@ -633,7 +632,7 @@ export function readMatrixHeatmap(
       ["var(--viz-2)", "intermedia"],
       ["var(--viz-5)", "omisión total"],
       [HATCH_SWATCH, "no pasó por ese punto"],
-      ["var(--viz-accent)", "destacado por la matriz"],
+      ["var(--viz-accent)", "destacado"],
     ]),
   );
   return wrapper;
@@ -657,8 +656,7 @@ export interface TrendPanel {
 export function trendMultiplesChart(panels: readonly TrendPanel[], formats: Formats): HTMLElement {
   const wrapper = figure(
     "Rotura y degradación, en el tiempo",
-    "Tasa de lectura por pasada a lo largo de la ventana. Todos los paneles comparten eje vertical " +
-      "(0–100 %) y horizontal. Un tramo sin pasadas se deja en blanco: no es un 0 %.",
+    "Lectura por pasada a lo largo del tiempo, con la misma escala en todos. En blanco: sin pasadas.",
   );
   const area = host();
   area.classList.add("multiples");
@@ -816,10 +814,9 @@ const NICE_SECONDS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
  */
 export function dwellChart(rows: readonly DwellRow[]): HTMLElement {
   const wrapper = figure(
-    "Permanencia en los candidatos de tiempo",
-    "Tiempo desde la lectura del tag hasta la siguiente, en proporción de sus pasadas. Mismo eje y " +
-      "misma escala en todas las filas; los pares en el mismo instante no entran (R-DAT-013). Es la " +
-      "firma, nunca la función asignada (R-GRA-007).",
+    "Tiempo de parada en los posibles puntos críticos",
+    "Cuánto tardan los AGV en seguir tras leer cada tag, frente al resto del circuito. Una parada " +
+      "precisa se ve estrecha; un semáforo, en dos grupos.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por una columna para leer su recuento.");
@@ -917,7 +914,7 @@ export function dwellChart(rows: readonly DwellRow[]): HTMLElement {
   if (beyondNotes.length > 0) {
     const note = document.createElement("p");
     note.className = "muted";
-    note.textContent = `Fuera del eje, sin dibujar: ${beyondNotes.join(" · ")}.`;
+    note.textContent = `Fuera de escala: ${beyondNotes.join(" · ")}.`;
     wrapper.append(note);
   }
   wrapper.append(
@@ -946,9 +943,9 @@ export interface ForkData {
  */
 export function forkChart(forks: readonly ForkData[], maxHops: number): HTMLElement {
   const wrapper = figure(
-    "Salidas de los tags con reparto",
-    "El grosor de cada rama es su cuota de pasadas. La mayoritaria va recta; las demás, por arriba. " +
-      "Candidatos por firma, nunca función asignada (R-GRA-007).",
+    "Tags donde el recorrido se divide",
+    "El grosor de cada rama es la parte de las pasadas que la sigue. Si las ramas vuelven a juntarse, " +
+      "es un posible cruce; si no, una bifurcación.",
   );
   const area = host();
   area.classList.add("forks");
@@ -969,7 +966,7 @@ export function forkChart(forks: readonly ForkData[], maxHops: number): HTMLElem
       id.textContent = fork.tagId;
       const kind = document.createElement("span");
       kind.className = "chip";
-      kind.textContent = fork.kind === "cruce" ? "candidato a cruce" : "candidato a bifurcación";
+      kind.textContent = fork.kind === "cruce" ? "posible cruce" : "posible bifurcación";
       heading.append(id, kind);
 
       const height = 150;
@@ -1044,13 +1041,13 @@ export function forkChart(forks: readonly ForkData[], maxHops: number): HTMLElem
 
       const verdict = document.createElement("p");
       verdict.className = "muted";
-      const extra = fork.branches.length > shown.length ? ` Hay ${fork.branches.length - shown.length} rama(s) más, en la tabla.` : "";
+      const extra = fork.branches.length > shown.length ? ` Hay ${fork.branches.length - shown.length} ${fork.branches.length - shown.length === 1 ? "rama" : "ramas"} más, en la tabla.` : "";
       verdict.textContent =
         (fork.kind === "cruce"
           ? fork.hops === 0
-            ? `La rama minoritaria vuelve a «${fork.reconvergesAt ?? "?"}», el mismo tag al que va directa la mayoritaria, dentro del margen de ${maxHops} saltos: firma de cruce.`
-            : `Las ramas vuelven a coincidir en «${fork.reconvergesAt ?? "?"}» a los ${fork.hops ?? "?"} salto(s), dentro del margen de ${maxHops}: firma de cruce.`
-          : `Las ramas no vuelven a coincidir en ${maxHops} saltos: firma de bifurcación.`) + extra;
+            ? `La rama menor vuelve a «${fork.reconvergesAt ?? "?"}», adonde va directa la mayor: posible cruce.`
+            : `Las ramas vuelven a juntarse en «${fork.reconvergesAt ?? "?"}» tras ${fork.hops ?? "?"} ${fork.hops === 1 ? "tag" : "tags"}: posible cruce.`
+          : `Las ramas no vuelven a juntarse en ${maxHops} tags: posible bifurcación.`) + extra;
       card.append(heading, canvas, verdict);
       area.append(card);
     }
@@ -1086,9 +1083,8 @@ export function laneOccupancyChart(
 ): HTMLElement {
   const wrapper = figure(
     "Ocupación de las calles de carga",
-    "Una barra por estancia, de la lectura de entrada a la de salida. Naranja: esperó mientras otros " +
-      "que entraron después salían antes; azul, esos otros. Un triángulo marca el extremo que no se " +
-      "ve; si falta la entrada o la salida, solo se dibuja el extremo conocido, nunca una duración.",
+    "Una barra por estancia, de la entrada a la salida. Naranja: esperó más que otros que entraron " +
+      "después (en azul). Si falta la entrada o la salida, solo se marca el extremo conocido.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por una estancia para leerla.");
@@ -1286,9 +1282,8 @@ type FifoSpan = NonNullable<CircuitViews["fifo"]>[number]["spans"][number];
 export function fifoSlopeChart(span: FifoSpan, overtaken: string, formats: Formats): HTMLElement {
   const wrapper = figure(
     `Entrada y salida del tramo cargado «${span.spanId}»`,
-    `${span.focus.length} pasadas consecutivas, de ${span.entryTagId} a ${span.exitTagId}. Izquierda: ` +
-      "orden de entrada; derecha: orden de salida. Candidato, no avería: R-FLO-001 admite " +
-      "excepciones y el dato no dice cuál (OQ-107).",
+    `${span.focus.length} pasadas seguidas, de ${span.entryTagId} a ${span.exitTagId}. A la izquierda ` +
+      "el orden de entrada y a la derecha el de salida: una línea que cruza a otras es un adelantamiento.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por una línea para leer su pasada.");
@@ -1384,10 +1379,9 @@ const DRIFT_ROWS = 16;
  */
 export function driftChart(drift: DriftView): HTMLElement {
   const wrapper = figure(
-    "Deriva entre los dos periodos",
-    "Lecturas de cada tag en el periodo temprano (hueco) y en el tardío (relleno). La barra naranja " +
-      "une las dos filas de una sustitución candidata: mismo hueco de la secuencia, a la vez " +
-      "(R-DAT-017). Correlación, nunca confirmación física (R-EVI-004).",
+    "Cambios entre los dos periodos",
+    "Lecturas de cada tag en el primer periodo (hueco) y en el segundo (relleno). La barra naranja " +
+      "une un tag que desaparece con el que aparece en su sitio: posible sustitución.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por una fila para leer sus recuentos.");
@@ -1398,10 +1392,17 @@ export function driftChart(drift: DriftView): HTMLElement {
     if (rows.length >= DRIFT_ROWS) break;
     if (entry.kind === "sustitucion-candidata") {
       const pair = rows.length;
-      rows.push({ tagId: entry.tagId, kind: "sustitución: sale", early: entry.readingsBefore, late: 0, pair });
-      rows.push({ tagId: entry.nuevoTagId ?? "?", kind: "sustitución: entra", early: 0, late: entry.readingsAfter, pair });
+      rows.push({ tagId: entry.tagId, kind: "sustituido", early: entry.readingsBefore, late: 0, pair });
+      rows.push({ tagId: entry.nuevoTagId ?? "?", kind: "lo sustituye", early: 0, late: entry.readingsAfter, pair });
     } else {
-      const kind = entry.kind === "obsoleto-consolidado" ? "obsoleto consolidado" : entry.kind;
+      const kind =
+        entry.kind === "obsoleto-consolidado"
+          ? "sin lecturas"
+          : entry.kind === "desaparecido"
+            ? "dejó de leerse"
+            : entry.kind === "nuevo"
+              ? "nuevo"
+              : entry.kind;
       rows.push({ tagId: entry.tagId, kind, early: entry.readingsBefore, late: entry.readingsAfter, pair: null });
     }
   }
@@ -1461,7 +1462,7 @@ export function driftChart(drift: DriftView): HTMLElement {
         }
         const key = (point.target as SVGElement).getAttribute("data-k");
         const row = key === null ? undefined : rows[Number(key)];
-        line.show(row === undefined ? null : `${row.tagId} · ${row.kind} — ${row.early} lecturas en el periodo temprano, ${row.late} en el tardío`);
+        line.show(row === undefined ? null : `${row.tagId} · ${row.kind} — ${row.early} lecturas en el primer periodo, ${row.late} en el segundo`);
       },
       { snap: "[data-k]" },
     );
@@ -1471,9 +1472,9 @@ export function driftChart(drift: DriftView): HTMLElement {
   wrapper.append(area, line.node);
   wrapper.append(
     legendList([
-      ["radial-gradient(circle, var(--panel) 40%, var(--ink) 42%, var(--ink) 62%, transparent 64%)", "periodo temprano (hueco)"],
-      ["var(--viz-series)", "periodo tardío (relleno)"],
-      ["var(--viz-accent)", "sustitución candidata"],
+      ["radial-gradient(circle, var(--panel) 40%, var(--ink) 42%, var(--ink) 62%, transparent 64%)", "primer periodo (hueco)"],
+      ["var(--viz-series)", "segundo periodo (relleno)"],
+      ["var(--viz-accent)", "posible sustitución"],
     ]),
   );
   if (drift.tagDrifts.length > rows.length) {
@@ -1527,8 +1528,7 @@ export interface AgvTimelineData {
 export function agvTimelineChart(data: AgvTimelineData, formats: Formats): HTMLElement {
   const wrapper = figure(
     `Expediente de ${data.agvId} en el tiempo`,
-    "Lecturas por tramo, estado y cobertura en el mismo eje. La carga en calle es inferida (R-CO-006); " +
-      "un silencio tiene causa desconocida (R-AGV-006); fuera de la cobertura no hay datos (R-DAT-007).",
+    "Lecturas, cargas y silencios en el mismo eje de tiempo. Un silencio no dice su causa.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por un tramo para leerlo.");
@@ -1642,7 +1642,7 @@ export function agvTimelineChart(data: AgvTimelineData, formats: Formats): HTMLE
             : "Silencio, causa desconocida") +
             ` — ${formats.instant(period.fromUtcMs)} → ${formats.instant(period.toUtcMs)}, ${minutes(period.toUtcMs - period.fromUtcMs)}; ` +
             `se fue tras ${period.lastTagBefore} y volvió en ${period.firstTagAfter}` +
-            (clipped ? `; solo ${minutes(covered)} caen dentro de la cobertura, el resto no tiene datos` : ""),
+            (clipped ? `; ${minutes(covered)} con datos, el resto sin datos cargados` : ""),
         );
       },
       { snap: "[data-k]" },
@@ -1690,8 +1690,7 @@ export function fleetCountChart(
 ): HTMLElement {
   const wrapper = figure(
     "Flota en funcionamiento",
-    "En funcionamiento: asignados que leen o están en una calle de carga (inferido). Un AGV en " +
-      "silencio o ausente no cuenta. Fuera de la cobertura no se cuenta nada (R-DAT-007).",
+    "AGV asignados que leen o están cargando, sobre el total asignado. Donde no hay datos no se cuenta.",
   );
   const counts = fleet.counts;
   const area = host();
@@ -1792,7 +1791,7 @@ export function fleetCountChart(
         const entry = counts.find((candidate) => at >= candidate.fromUtcMs && at < candidate.toUtcMs);
         if (entry === undefined) {
           cross.setAttribute("visibility", "hidden");
-          line.show(at >= fleet.fromUtcMs && at <= fleet.toUtcMs ? `${formats.instant(at)} — sin datos cargados: no se cuenta` : null);
+          line.show(at >= fleet.fromUtcMs && at <= fleet.toUtcMs ? `${formats.instant(at)} — sin datos cargados` : null);
           return;
         }
         cross.setAttribute("x1", String(x(at)));
@@ -1838,9 +1837,8 @@ export function fleetCountChart(
 export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElement {
   const wrapper = figure(
     "Vida de cada AGV en el circuito",
-    "Una fila por AGV y sus tramos continuos a lo largo de la ventana. La ausencia —asignado y sin " +
-      "lecturas— va en naranja; la falta de lecturas entre dos lecturas, en contorno naranja. Quien " +
-      "lee sin estar asignado va a media altura.",
+    "Qué hacía cada AGV en cada momento. Naranja: asignado y sin leer; contorno naranja: un " +
+      "silencio entre lecturas; media altura: lee sin estar asignado.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por una fila para leer el tramo.");

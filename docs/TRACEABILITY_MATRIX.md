@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.28.0
+version: 0.29.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -101,6 +101,7 @@ regla exista: la matriz no es una lista de intenciones.
 | R-DAT-007 / TC-158 el expediente de un AGV no cuenta un hueco de cobertura como inactividad | `src/domain/dossier.ts` (`coverage` por tramos), `workers/import.worker.ts` | `tests/unit/dossier.test.ts` |
 | R-EVI-007 / TC-159–160 revisión en campo de los hallazgos | `src/domain/review.ts`, `src/persistence/store.ts` (tabla `reviews`, versión 5), `src/presentation/review-ui.ts`, `src/presentation/main.ts` (`finding`, `.agvproj`) | `tests/unit/review.test.ts`, `tests/e2e/revision.spec.ts` |
 | `UX_SPEC.md` §7 / TC-161–162 lectura de gráficos con dedo, ratón o panel táctil; tamaños de tableta y portátil | `src/presentation/pointer.ts`, `src/presentation/diagnostic-charts.ts`, `src/presentation/charts.ts`, `src/presentation/styles.css` | `tests/unit/pointer.test.ts`, `tests/e2e/tactil.spec.ts` |
+| `UX_SPEC.md` §4.4 lenguaje de la interfaz: sin referencias internas, identificadores traducidos a castellano llano | `src/presentation/labels.ts`, `src/presentation/main.ts`, `src/presentation/charts.ts`, `src/presentation/diagnostic-charts.ts` | `tests/e2e/f2.spec.ts`, `tests/e2e/vistas.spec.ts`, `tests/e2e/vistas-diagnostico.spec.ts` (fijan los textos visibles) |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` —, y el tercer

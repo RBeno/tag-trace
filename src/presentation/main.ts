@@ -53,6 +53,7 @@ import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
 import { isAvailable, loadCircuit, loadReviews } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
+import { criticalFunctionLabel, patternLabel, truthLabel, verdictLabel, zoneLabel } from "./labels.js";
 
 /** Zona horaria del piloto. Es configuración: vivirá en el circuito cuando exista (F1b). */
 const ZONE = "Europe/Madrid";
@@ -140,7 +141,7 @@ const title = element("h1", undefined, "TAG TRACE");
 const subtitle = element(
   "p",
   "muted",
-  "Diagnóstico local de circuitos AGV · análisis y evidencia, nunca control",
+  "Diagnóstico de circuitos AGV · los datos no salen de este dispositivo",
 );
 header.append(title, subtitle);
 
@@ -158,23 +159,23 @@ fileLabel.htmlFor = "source-file";
 const circuitInput = element("input");
 circuitInput.type = "text";
 circuitInput.id = "circuit-name";
-circuitInput.placeholder = "por ejemplo, PC2";
-const circuitLabel = element("label", undefined, "Acumular en el circuito");
+circuitInput.placeholder = "nombre del circuito";
+const circuitLabel = element("label", undefined, "Circuito");
 circuitLabel.htmlFor = "circuit-name";
-const exportButton = element("button", undefined, "Exportar .agvproj");
+const exportButton = element("button", undefined, "Exportar circuito (.agvproj)");
 exportButton.type = "button";
 const projectInput = element("input");
 projectInput.type = "file";
 projectInput.accept = ".agvproj";
 projectInput.id = "project-file";
-const projectLabel = element("label", undefined, "Abrir un .agvproj");
+const projectLabel = element("label", undefined, "Abrir un circuito exportado (.agvproj)");
 projectLabel.htmlFor = "project-file";
 const cancelButton = element("button", "danger", "Cancelar");
 cancelButton.type = "button";
 cancelButton.hidden = true;
 picker.append(fileLabel, fileInput, circuitLabel, circuitInput, cancelButton);
 const projectPanel = element("section", "panel");
-projectPanel.append(element("h2", undefined, "Proyecto"), exportButton, projectLabel, projectInput);
+projectPanel.append(element("h2", undefined, "Copia del circuito"), exportButton, projectLabel, projectInput);
 
 const progressPanel = element("section", "panel");
 progressPanel.hidden = true;
@@ -202,7 +203,7 @@ const listsInput = element("input");
 listsInput.type = "file";
 listsInput.accept = ".csv,.txt,text/csv,text/plain";
 listsInput.id = "lists-file";
-const listsLabel = element("label", undefined, "Listas de tags del circuito");
+const listsLabel = element("label", undefined, "Listas de tags");
 listsLabel.htmlFor = "lists-file";
 const listsNote = element("p", "muted", "");
 
@@ -215,20 +216,20 @@ const fleetInput = element("input");
 fleetInput.type = "file";
 fleetInput.accept = ".csv,.txt,text/csv,text/plain";
 fleetInput.id = "fleet-file";
-const fleetLabel = element("label", undefined, "Historial de flota del circuito");
+const fleetLabel = element("label", undefined, "Historial de flota");
 fleetLabel.htmlFor = "fleet-file";
 const fleetNote = element("p", "muted", "");
 
 {
-  listsPanel.append(element("h2", undefined, "Listas declaradas"), listsLabel, listsInput);
+  listsPanel.append(element("h2", undefined, "Listas del circuito"), listsLabel, listsInput);
   const structure = element("details");
   structure.append(element("summary", undefined, "Qué forma tiene que tener el fichero"));
   structure.append(
     element(
       "p",
       "muted",
-      `Una fila por tag. Cabecera «${EXPECTED_STRUCTURE.header.join(";")}»; ` +
-        `«${EXPECTED_STRUCTURE.optional.join("» y «")}» son opcionales. El separador se detecta.`,
+      `Una fila por tag, con cabecera. Obligatorias: «${EXPECTED_STRUCTURE.header.join("», «")}»; ` +
+        `opcionales: «${EXPECTED_STRUCTURE.optional.join("», «")}».`,
     ),
   );
   const example = element("pre", "mono raw", EXPECTED_STRUCTURE.example.join("\n"));
@@ -246,8 +247,7 @@ const fleetNote = element("p", "muted", "");
     element(
       "p",
       "muted",
-      "Una lista con un nombre que no esté en esa tabla no se rechaza: se conserva con su nombre y " +
-        "se avisa, porque una categoría nueva es información y no un defecto.",
+      "Una lista con otro nombre se conserva y se avisa.",
     ),
   );
   listsPanel.append(structure, listsNote);
@@ -258,11 +258,9 @@ const fleetNote = element("p", "muted", "");
     element(
       "p",
       "muted",
-      `Una fila por AGV y periodo. Cabecera «${FLEET_STRUCTURE.header.join(";")}»; ` +
-        `«${FLEET_STRUCTURE.optional.join("», «")}» son opcionales. Fechas día/mes/año, con hora ` +
-        "opcional; «hasta» vacío es que sigue asignado. Cada carga se suma a lo guardado: para " +
-        "registrar un cambio basta subir esa fila, y una fila con el mismo AGV y la misma fecha de " +
-        "alta sustituye a la anterior.",
+      `Una fila por AGV y periodo, con cabecera «${FLEET_STRUCTURE.header.join(";")}». Fechas ` +
+        "día/mes/año, hora opcional; «hasta» vacío = sigue asignado. Cada carga se suma a la " +
+        "anterior: basta subir las filas que cambian.",
     ),
   );
   const fleetExample = element("pre", "mono raw", FLEET_STRUCTURE.example.join("\n"));
@@ -283,9 +281,9 @@ dossierPanel.hidden = true;
 const dossierInput = element("input");
 dossierInput.type = "search";
 dossierInput.id = "dossier-search";
-dossierInput.placeholder = "identificador de AGV o de tag";
+dossierInput.placeholder = "número de AGV o de tag";
 dossierInput.inputMode = "numeric";
-const dossierLabel = element("label", undefined, "Expediente");
+const dossierLabel = element("label", undefined, "Buscar");
 dossierLabel.htmlFor = "dossier-search";
 const dossierResult = element("div");
 dossierInput.addEventListener("input", () => renderDossier());
@@ -301,7 +299,7 @@ replaySlider.type = "range";
 replaySlider.id = "replay-slider";
 replaySlider.min = "0";
 replaySlider.value = "0";
-const replayLabel = element("label", undefined, "Instante del replay");
+const replayLabel = element("label", undefined, "Instante");
 replayLabel.htmlFor = "replay-slider";
 const replayTime = element("p", "muted", "");
 const replayTable = element("div");
@@ -343,7 +341,7 @@ app.append(
 );
 
 {
-  dossierPanel.append(element("h2", undefined, "Expediente de AGV o tag"), dossierLabel, dossierInput, dossierResult);
+  dossierPanel.append(element("h2", undefined, "Expediente de un AGV o tag"), dossierLabel, dossierInput, dossierResult);
   replayPanel.append(
     element("h2", undefined, "Replay"),
     replayLabel,
@@ -352,7 +350,7 @@ app.append(
     element(
       "p",
       "muted",
-      "La posición es fracción temporal del tramo, nunca posición física: no hay plano, solo orden.",
+      "La posición dentro de un tramo se estima por el tiempo; no es una posición física.",
     ),
     replayTable,
   );
@@ -394,7 +392,7 @@ function offerFieldOrder(file: File): void {
     option.value = value;
     select.append(option);
   }
-  const label = element("label", undefined, "Orden de los campos de fecha ");
+  const label = element("label", undefined, "Formato de fecha ");
   label.htmlFor = "field-order";
   const retry = element("button", undefined, "Importar con este orden");
   retry.type = "button";
@@ -419,25 +417,37 @@ function renderSummary(summary: SourceSummary): void {
    * leerlo como un defecto de la fuente, y no lo es — es el límite de lo que la fuente afirma.
    */
   const describeSameInstant = (facts: SourceSummary): string => {
-    if (facts.vehiclePairs === 0) return "sin pares que comparar";
-    if (facts.sameInstantPairs === 0) return "ninguno: el reloj ordena toda la secuencia";
+    if (facts.vehiclePairs === 0) return "—";
+    if (facts.sameInstantPairs === 0) return "ninguna";
     const share = ((facts.sameInstantPairs / facts.vehiclePairs) * 100).toFixed(1);
     return (
       `${facts.sameInstantPairs.toLocaleString("es-ES")} de ` +
-      `${facts.vehiclePairs.toLocaleString("es-ES")} (${share} %) — su orden lo da la posición en ` +
-      "el fichero, no el reloj"
+      `${facts.vehiclePairs.toLocaleString("es-ES")} (${share} %), ordenadas por su posición en el fichero`
     );
   };
 
   const directionName =
     summary.direction === "newest-first"
-      ? "pila: lo más reciente primero"
+      ? "lo más reciente primero"
       : summary.direction === "oldest-first"
-        ? "cronológico ascendente"
+        ? "lo más antiguo primero"
         : "indeterminado";
 
-  const rows: readonly (readonly [string, string])[] = [
+  // Lo que interesa de un vistazo, arriba; el detalle técnico de la lectura del fichero, plegado.
+  const main: readonly (readonly [string, string])[] = [
     ["Fichero", summary.fileName],
+    [
+      "Periodo",
+      `${formatInstant(summary.observedFrom)} → ${formatInstant(summary.observedTo)} ` +
+        `(${(((summary.observedTo - summary.observedFrom) / 3_600_000) || 0).toFixed(1)} h)`,
+    ],
+    ["Lecturas aceptadas", `${summary.acceptedRows.toLocaleString("es-ES")} de ${summary.totalRows.toLocaleString("es-ES")} filas`],
+    // Se separan a propósito: una fila sin tag no es una fila rota, y mezclarlas haría parecer
+    // averiada una fuente que solo trae eventos además de lecturas.
+    ["Filas que no son lecturas", summary.rowsWithoutTag.toLocaleString("es-ES")],
+    ["Filas con errores", summary.quarantinedRows.toLocaleString("es-ES")],
+  ];
+  const rows: readonly (readonly [string, string])[] = [
     ["Hash", `${summary.sourceHash.slice(0, 16)}…`],
     ["Separador", `${delimiterName} (confianza ${(summary.delimiterConfidence * 100).toFixed(0)} %)`],
     ["Columnas", summary.header.join(" · ")],
@@ -448,32 +458,26 @@ function renderSummary(summary: SourceSummary): void {
     ["Zona horaria", summary.zone],
     ["Codificación", summary.encoding],
     [
-      "Observado",
-      `${formatInstant(summary.observedFrom)} → ${formatInstant(summary.observedTo)} ` +
-        `(${(((summary.observedTo - summary.observedFrom) / 3_600_000) || 0).toFixed(1)} h)`,
-    ],
-    [
-      "Sentido de la fuente",
+      "Orden del fichero",
       `${directionName} (coherencia ${(summary.monotonicity.confidence * 100).toFixed(1)} %)`,
     ],
     // El reloj no ordena dentro de un instante: ahí manda la posición en el fichero, que es
     // `inferred` (R-DAT-013). Se cuenta **por vehículo**, que es donde amenaza a la topología;
     // dos AGV distintos leyendo a la vez es lo normal y no dice nada.
-    ["Mismo instante, mismo vehículo", describeSameInstant(summary)],
-    ["Filas de datos", summary.totalRows.toLocaleString("es-ES")],
-    ["Aceptadas", summary.acceptedRows.toLocaleString("es-ES")],
-    // Se separan a propósito: una fila sin tag no es una fila rota, y mezclarlas haría parecer
-    // averiada una fuente que solo trae eventos además de lecturas.
-    ["Sin tag (no son lecturas)", summary.rowsWithoutTag.toLocaleString("es-ES")],
-    ["En cuarentena", summary.quarantinedRows.toLocaleString("es-ES")],
+    ["Lecturas simultáneas del mismo AGV", describeSameInstant(summary)],
     ["Tiempo de proceso", `${summary.elapsedMs.toLocaleString("es-ES")} ms`],
   ];
 
-  const list = element("dl", "facts");
-  for (const [term, value] of rows) {
-    list.append(element("dt", undefined, term), element("dd", undefined, value));
-  }
-  summaryPanel.append(list);
+  const facts = (entries: readonly (readonly [string, string])[]): HTMLElement => {
+    const list = element("dl", "facts");
+    for (const [term, value] of entries) {
+      list.append(element("dt", undefined, term), element("dd", undefined, value));
+    }
+    return list;
+  };
+  const technical = element("details");
+  technical.append(element("summary", undefined, "Detalles de lectura del fichero"), facts(rows));
+  summaryPanel.append(facts(main), technical);
 }
 
 /**
@@ -509,14 +513,14 @@ function renderCount(): void {
     state.visible.length === state.readings.length
       ? `${total} lecturas`
       : state.visible.length === 0
-        ? `Ninguna de las ${total} lecturas coincide. El identificador se compara entero: los ceros iniciales cuentan.`
+        ? `Ninguna de las ${total} lecturas coincide (se compara el número entero, con sus ceros).`
         : `${shown} de ${total} lecturas`;
 }
 
 function renderTableSkeleton(): void {
   tablePanel.replaceChildren();
   tablePanel.hidden = false;
-  tablePanel.append(element("h2", undefined, "Lecturas normalizadas"));
+  tablePanel.append(element("h2", undefined, "Lecturas"));
 
   const filters = element("div", "filters");
   const agvLabel = element("label", undefined, "AGV");
@@ -590,7 +594,7 @@ function handleMessage(message: FromWorker): void {
 
   switch (message.type) {
     case "accepted":
-      progressNote.textContent = "Trabajo aceptado por el proceso auxiliar";
+      progressNote.textContent = "Empezando";
       return;
 
     case "progress":
@@ -656,7 +660,7 @@ function handleMessage(message: FromWorker): void {
       setBusy(false);
       disposeWorker();
       showMessage("warn", "El historial trae varios circuitos", [
-        "Elige cuál corresponde a este circuito. Se recordará para las próximas cargas.",
+        "Elige cuál es este circuito. Se recordará para las próximas cargas.",
       ]);
       const chooser = element("div", "chooser");
       const select = element("select");
@@ -666,7 +670,7 @@ function handleMessage(message: FromWorker): void {
         entry.value = option.name;
         select.append(entry);
       }
-      const label = element("label", undefined, "Circuito del historial ");
+      const label = element("label", undefined, "Circuito ");
       label.htmlFor = "fleet-circuit";
       const load = element("button", undefined, "Cargar las filas de este circuito");
       load.type = "button";
@@ -684,11 +688,11 @@ function handleMessage(message: FromWorker): void {
         `Circuito «${message.circuitId}»${message.circuitName === null ? "" : ` (historial «${message.circuitName}»)`} — ` +
         `${message.periods.toLocaleString("es-ES")} periodos guardados.`;
       const lines = [
-        `${message.accepted.toLocaleString("es-ES")} filas aceptadas: ${message.added} periodos nuevos y ` +
-          `${message.replaced} que sustituyen a uno guardado con el mismo AGV y la misma fecha de alta.`,
-        ...message.rejected.map((entry) => `${entry.rows} fila(s) no cargadas: ${entry.reason}.`),
+        `${message.accepted.toLocaleString("es-ES")} filas: ${message.added} periodos nuevos y ` +
+          `${message.replaced} actualizados.`,
+        ...message.rejected.map((entry) => `${entry.rows} ${entry.rows === 1 ? "fila no cargada" : "filas no cargadas"}: ${entry.reason}.`),
         ...message.warnings,
-        "Vuelve a importar una fuente de lecturas de este circuito para ver la flota a lo largo del tiempo.",
+        "Se verá al volver a importar las lecturas del circuito.",
       ];
       showMessage(
         message.warnings.length > 0 || message.rejected.length > 0 ? "warn" : "info",
@@ -702,18 +706,18 @@ function handleMessage(message: FromWorker): void {
 
     case "lists-loaded": {
       const detail = message.lists
-        .map((entry) => `${entry.list}: ${entry.tags.toLocaleString("es-ES")} tags`)
+        .map((entry) => `${entry.list}: ${entry.tags.toLocaleString("es-ES")} ${entry.tags === 1 ? "tag" : "tags"}`)
         .join(" · ");
       listsNote.textContent = `Circuito «${message.circuitId}» — ${detail}`;
       const lines = [
-        `${message.accepted.toLocaleString("es-ES")} filas aceptadas en ${message.lists.length} lista(s).`,
+        `${message.accepted.toLocaleString("es-ES")} filas en ${message.lists.length} ${message.lists.length === 1 ? "lista" : "listas"}.`,
         ...message.warnings,
       ];
       if (message.rejected > 0) {
-        lines.push(`${message.rejected} fila(s) sin lista o sin tag, que no se han cargado.`);
+        lines.push(`${message.rejected} ${message.rejected === 1 ? "fila sin lista o sin tag no se ha cargado" : "filas sin lista o sin tag no se han cargado"}.`);
       }
       lines.push(
-        "Vuelve a importar una fuente de lecturas de este circuito para ver el inventario contrastado.",
+        "Se aplicarán al volver a importar las lecturas del circuito.",
       );
       showMessage(message.warnings.length > 0 ? "warn" : "info", "Listas cargadas", lines);
       setBusy(false);
@@ -723,7 +727,7 @@ function handleMessage(message: FromWorker): void {
 
     case "cancelled":
       showMessage("info", "Importación cancelada", [
-        `Se detuvo en la etapa «${message.stage}». Las fuentes y el estado anterior quedan intactos.`,
+        "No se ha cambiado nada.",
       ]);
       setBusy(false);
       disposeWorker();
@@ -925,18 +929,18 @@ function renderAccumulation(report: {
 }): void {
   summaryPanel.append(element("h2", undefined, `Circuito «${report.circuitId}»`));
   const rows: readonly (readonly [string, string])[] = [
-    ["Fuentes acumuladas", String(report.sources)],
+    ["Ficheros cargados", String(report.sources)],
     ["Lecturas del circuito", report.totalReadings.toLocaleString("es-ES")],
     [
       "Cobertura",
       report.coverage.length === 0
-        ? "sin ningún tramo completo todavía"
+        ? "todavía ninguna"
         : report.coverage.map((span) => formatSpan(span.from, span.to)).join("  ·  "),
     ],
     [
-      "Solape con lo ya cargado",
+      "Repetido con lo ya cargado",
       report.shared === 0
-        ? "ninguno: esta fuente no repite nada"
+        ? "nada"
         : `${report.shared.toLocaleString("es-ES")} eventos ya estaban y se cuentan una vez`,
     ],
   ];
@@ -951,8 +955,7 @@ function renderAccumulation(report: {
       element(
         "p",
         "muted",
-        "Entre esos tramos no hay datos cargados. Ese hueco no es un silencio del circuito y no " +
-          "puede diagnosticarse: simplemente no se exportó ese periodo.",
+        "Entre esos tramos no hay datos cargados: no es un silencio del circuito, es tiempo sin exportar.",
       ),
     );
   }
@@ -962,8 +965,7 @@ function renderAccumulation(report: {
         "p",
         "muted",
         `${report.disagreements} eventos del tramo común los trae solo una de las dos ` +
-          "exportaciones. Se conservan los dos lados: la fuente no entregó lo mismo dos veces, y " +
-          "eso es información sobre la fuente, no algo que se resuelva eligiendo.",
+          "exportaciones. Se conservan los dos.",
       ),
     );
   }
@@ -982,17 +984,16 @@ function renderAffinity(report: AccumulationReport): void {
     showMessage("error", "No se ha acumulado: parece de otro circuito", [
       affinity.reason,
       `Coinciden ${affinity.sharedTags} de los ${affinity.sourceTags} tags de la fuente.`,
-      "Las lecturas se muestran abajo para que puedas comprobarlo —analizar no es consolidar—, " +
-        "pero el circuito no se ha tocado. Si de verdad es de este circuito, cárgalo en el suyo o " +
-        "revisa el nombre que has escrito.",
+      "Las lecturas se muestran abajo para comprobarlo, pero el circuito no se ha tocado. Revisa el " +
+        "nombre del circuito o cárgalo en el suyo.",
     ]);
     return;
   }
   if (affinity.verdict === "partially-compatible") {
-    summaryPanel.append(element("p", "muted", `Afinidad: ${affinity.reason}`));
+    summaryPanel.append(element("p", "muted", affinity.reason));
   }
   if (affinity.verdict === "unknown") {
-    summaryPanel.append(element("p", "muted", `Afinidad: ${affinity.reason}`));
+    summaryPanel.append(element("p", "muted", affinity.reason));
   }
 }
 
@@ -1000,7 +1001,7 @@ function renderAffinity(report: AccumulationReport): void {
 function renderViews(views: CircuitViews): void {
   viewsPanel.replaceChildren();
   viewsPanel.hidden = false;
-  viewsPanel.append(element("h2", undefined, "Vistas"));
+  viewsPanel.append(element("h2", undefined, "Análisis"));
   // La revisión en campo solo existe sobre un circuito: sin él, una marca no tendría dónde guardarse.
   reviewSession =
     state.circuitId === null
@@ -1068,8 +1069,8 @@ function renderViews(views: CircuitViews): void {
       element(
         "p",
         "muted",
-        "Alineación por secuencia entre lo declarado y el anillo observado del cohorte mayor. " +
-          "Ninguna fila es un hecho asignado: «sustituido-candidato» es una hipótesis con su evidencia.",
+        "Lo declarado en Vsystem frente al anillo observado. Solo se listan las diferencias; una " +
+          "«posible sustitución» es una hipótesis que hay que comprobar.",
       ),
     );
     viewsPanel.append(
@@ -1080,8 +1081,8 @@ function renderViews(views: CircuitViews): void {
           .map((row) => [
             row.declaredTag ?? "—",
             row.observedTag ?? "—",
-            row.verdict,
-            row.truth,
+            verdictLabel(row.verdict),
+            truthLabel(row.truth),
             row.evidence,
           ]),
       ),
@@ -1107,10 +1108,9 @@ function renderFleet(views: CircuitViews): void {
       "p",
       "muted",
       fleet.historyLoaded
-        ? `Historial de flota cargado${fleet.circuitName === null ? "" : ` («${fleet.circuitName}»)`}: ` +
-            `${assigned.length} AGV asignados en algún momento de la ventana.`
-        : "Sin historial de flota: la flota son los vehículos que aparecen en las lecturas, así que un " +
-            "AGV asignado que no lee nada no se ve. Carga el historial en «Listas declaradas» para contarlo.",
+        ? `${assigned.length} AGV asignados según el historial de flota.`
+        : "Sin historial de flota se cuentan solo los AGV que aparecen en las lecturas. Cárgalo en " +
+            "«Listas del circuito» para ver también los asignados que no leen.",
     ),
   );
   viewsPanel.append(fleetCountChart(fleet, state.coverage, FORMATS));
@@ -1124,8 +1124,8 @@ function renderFleet(views: CircuitViews): void {
             ? "1 AGV asignado no leyó nada en toda la ventana"
             : `${neverRead.length} AGV asignados no leyeron nada en toda la ventana`,
           neverRead.join(", "),
-          "Asignado según el historial y sin una sola lectura: parado, fuera de servicio, en otro " +
-            "circuito o con el historial desactualizado. El dato no elige (R-AGV-014).",
+          "Asignados y sin ninguna lectura: parados, fuera de servicio, en otro circuito o con el " +
+            "historial desactualizado.",
           ["flota-sin-lecturas", "circuito"],
         ),
       );
@@ -1140,8 +1140,8 @@ function renderFleet(views: CircuitViews): void {
             ? "1 AGV lee en el circuito sin estar asignado"
             : `${unassigned.length} AGV leen en el circuito sin estar asignados`,
           unassigned.join(", "),
-          "No suman a los que están en funcionamiento. O el historial no recoge un cambio, o el " +
-            "vehículo vino de otro circuito: un candidato a revisar, nunca una avería (R-AGV-015).",
+          "No cuentan como en funcionamiento. O el historial no recoge un cambio, o vienen de otro " +
+            "circuito.",
           ["flota-sin-asignar", "circuito"],
         ),
       );
@@ -1167,13 +1167,6 @@ const DWELL_ROWS = 5;
 /** Marcas numeradas alrededor del anillo, como mucho: con más, los números se pisan. */
 const RING_MARKS = 20;
 
-const CANDIDATE_LABEL: Readonly<Record<string, string>> = {
-  bifurcacion: "bifurcación",
-  cruce: "cruce",
-  "parada-precisa": "parada precisa",
-  semaforo: "semáforo",
-};
-
 /**
  * Lo que el anillo radial necesita de un cohorte: su forma, la omisión de cada tag según la matriz,
  * y las marcas — primero los tags con función declarada (dato de planta), después los candidatos por
@@ -1192,11 +1185,11 @@ function ringDataOf(shape: CircuitViews["shapes"][number], matrix: Matrix | unde
   for (const tagId of shape.tags) {
     const fn = declared.get(tagId);
     if (fn !== undefined) {
-      declaredMarks.push({ tagId, label: fn, declared: true });
+      declaredMarks.push({ tagId, label: criticalFunctionLabel(fn), declared: true });
       continue;
     }
     const candidate = candidates.find((entry) => entry.tagId === tagId);
-    if (candidate !== undefined) candidateMarks.push({ tagId, label: CANDIDATE_LABEL[candidate.kind] ?? candidate.kind, declared: false });
+    if (candidate !== undefined) candidateMarks.push({ tagId, label: criticalFunctionLabel(candidate.kind), declared: false });
   }
   const order = new Map(shape.tags.map((tagId, index) => [tagId, index]));
   const marks = [...declaredMarks, ...candidateMarks]
@@ -1288,15 +1281,14 @@ function renderShapes(views: CircuitViews): void {
 
     const anchorPhrase =
       shape.anchorTruth === "observed"
-        ? `cerrado por «${shape.anchorTagId}», ancla declarada (R-GRA-009)`
-        : `cerrado por «${shape.anchorTagId}», ancla inferida del sucesor dominante y no una ` +
-          "medida del trazado";
+        ? `vuelta cortada en «${shape.anchorTagId}» (declarado)`
+        : `vuelta cortada en «${shape.anchorTagId}» (deducido del recorrido)`;
     viewsPanel.append(
       element(
         "p",
         "muted",
-        `Anillo de ${shape.tags.length} tags, ${anchorPhrase}. Su arista más débil se sostiene en ` +
-          `el ${Math.round(shape.weakestShare * 100)} % de las pasadas.`,
+        `Anillo de ${shape.tags.length} tags, ${anchorPhrase}. El orden es el que siguen los AGV, ` +
+          `con un ${Math.round(shape.weakestShare * 100)} % de coincidencia en el tramo más débil.`,
       ),
     );
     viewsPanel.append(ringChart(ringDataOf(shape, matrix, views)));
@@ -1305,15 +1297,15 @@ function renderShapes(views: CircuitViews): void {
     viewsPanel.append(
       lazyDetails(`Ver los ${shape.tags.length} tags del anillo, en orden`, () =>
         plainTable(
-          ["Posición", "Tag", ...(shape.zones === undefined ? [] : ["Zona"]), "Leído por pasada", "Patrón"],
+          ["Posición", "Tag", ...(shape.zones === undefined ? [] : ["Zona"]), "Leído por pasada", "Lectura"],
           shape.tags.map((tagId, index) => {
             const row = matrix?.tags.find((entry) => entry.tagId === tagId);
             return [
               String(index + 1),
               tagId,
-              ...(shape.zones === undefined ? [] : [shape.zones[index] ?? "—"]),
-              row?.isAnchor === true ? "— (ancla)" : percent(row?.rate ?? null),
-              row?.isAnchor === true ? "cierra la vuelta" : (row?.pattern ?? "sin datos"),
+              ...(shape.zones === undefined ? [] : [zoneLabel(shape.zones[index] ?? "—")]),
+              row?.isAnchor === true ? "— (corte de vuelta)" : percent(row?.rate ?? null),
+              row?.isAnchor === true ? "corte de vuelta" : row?.pattern === undefined ? "sin datos" : patternLabel(row.pattern),
             ];
           }),
         ),
@@ -1328,11 +1320,8 @@ function renderShapes(views: CircuitViews): void {
           (shape.offRingTags.length === 1
             ? "1 tag se lee y no está en el anillo. "
             : `${shape.offRingTags.length} tags se leen y no están en el anillo. `) +
-            "O son ramas que solo algunos recorren, o son tags de la línea que se leen tan poco " +
-            "que el sucesor " +
-            "dominante los saltó — y ese segundo caso es de los más sospechosos. Separarlos exige " +
-            "la prueba de tiempos (OQ-118), que todavía no está implementada, así que aquí salen " +
-            "enumerados y sin clasificar.",
+            "Pueden ser ramas que solo recorren algunos AGV o tags de la línea que se leen muy poco; " +
+            "estos últimos merecen revisarse.",
         ),
       );
       viewsPanel.append(
@@ -1354,8 +1343,8 @@ function renderShapes(views: CircuitViews): void {
         element(
           "p",
           "muted",
-          "Sin vueltas cerradas no hay tasa de lectura que sostener: haría falta que los vehículos " +
-            "pasen más de una vez por el tag que cierra la vuelta.",
+          "Todavía no hay vueltas completas: hace falta que los AGV pasen más de una vez por el corte " +
+            "de vuelta para medir la lectura.",
         ),
       );
       continue;
@@ -1367,9 +1356,8 @@ function renderShapes(views: CircuitViews): void {
       element(
         "p",
         "muted",
-        `${matrix.segmentsWithTime} de los ${matrix.ring.length} segmentos del anillo tienen ` +
-          "tiempo mediano medido; solo esos permiten comprobar si un tramo sin lecturas se recorrió " +
-          "de verdad.",
+        `${matrix.segmentsWithTime} de ${matrix.ring.length} tramos del anillo tienen tiempo de ` +
+          "recorrido medido.",
       ),
     );
     renderHighlights(matrix);
@@ -1378,7 +1366,7 @@ function renderShapes(views: CircuitViews): void {
   }
 
   for (const problem of views.lapAnchorProblems ?? []) {
-    viewsPanel.append(finding("Ancla de vuelta declarada que no se pudo usar", "—", problem));
+    viewsPanel.append(finding("Corte de vuelta declarado que no se pudo usar", "—", problem));
   }
 }
 
@@ -1407,25 +1395,21 @@ function renderHighlights(matrix: Matrix): void {
     element(
       "p",
       "muted",
-      "Porcentaje sobre las veces que el vehículo pasó por el punto. El paso se prueba encerrándolo " +
-        "entre dos lecturas suyas; si falta un tramo largo, decide el tiempo —¿tardó lo que ese " +
-        "tramo tarda?— y, cuando no hay tiempo con que comparar, el orden de los AGV que iban " +
-        "delante y detrás. Lo que ninguna de las tres sostiene no cuenta como pasada ni como fallo " +
-        "del tag. No es una tasa de salud: eso exige saber qué lleva cada vehículo en memoria y " +
-        "qué sigue instalado.",
+      "Porcentaje sobre las veces que el AGV pasó por el punto. No es una tasa de salud: para eso " +
+        "haría falta saber qué lleva cada AGV en memoria y qué tags siguen instalados.",
     ),
   );
 
   if (notable.length === 0) {
     viewsPanel.append(
-      element("p", "muted", "Ningún tag con patrón destacable: todos los que se pasan se leen."),
+      element("p", "muted", "Ningún tag destacable: todos se leen al pasar."),
     );
   } else {
     for (const tag of notable.slice(0, HIGHLIGHTS)) {
       viewsPanel.append(
         finding(
           `Tag ${tag.tagId} · posición ${tag.position + 1} de ${matrix.ring.length}`,
-          `${percent(tag.rate)} de las pasadas · ${tag.pattern}`,
+          `${percent(tag.rate)} de las pasadas · ${patternLabel(tag.pattern)}`,
           explain(tag),
           ["tag-lectura", tag.tagId],
         ),
@@ -1436,7 +1420,7 @@ function renderHighlights(matrix: Matrix): void {
         element(
           "p",
           "muted",
-          `Y ${notable.length - HIGHLIGHTS} más con el mismo tipo de patrón, en la matriz completa.`,
+          `Y ${notable.length - HIGHLIGHTS} más en la matriz completa.`,
         ),
       );
     }
@@ -1447,7 +1431,7 @@ function renderHighlights(matrix: Matrix): void {
       element(
         "p",
         "muted",
-        "Ningún vehículo concentra tags sin leer: lo que falte, falta para todos por igual.",
+        "Ningún AGV concentra tags sin leer.",
       ),
     );
   } else {
@@ -1458,11 +1442,9 @@ function renderHighlights(matrix: Matrix): void {
           `AGV ${vehicle.agvId} · ${vehicle.laps} vueltas`,
           `${blind} ${blind === 1 ? "tag que no lee" : "tags que no lee"} y los demás sí · ` +
             `${percent(vehicle.rate)} de lo que pasa`,
-          "Revisar lector, WiFi o memoria de este vehículo: el tag no es el problema, porque el " +
-            "resto de la flota lo lee." +
+          "Revisar lector, WiFi o memoria de este AGV: el resto de la flota sí lee esos tags." +
             (vehicle.unproven > 0
-              ? ` Además recorrió ${vehicle.unproven} tramos en menos tiempo del que tardan: o los ` +
-                "atajó, o hay una rama que el anillo no recoge."
+              ? ` Además hizo ${vehicle.unproven} tramos más rápido de lo normal: atajo o rama no registrada.`
               : ""),
           ["agv-lectura", vehicle.agvId],
         ),
@@ -1505,7 +1487,7 @@ function renderTrends(matrix: Matrix): void {
     viewsPanel.append(trendMultiplesChart(panels.slice(0, TREND_PANELS).map((entry) => entry.panel), FORMATS));
     if (panels.length > TREND_PANELS) {
       viewsPanel.append(
-        element("p", "muted", `Se dibujan los ${TREND_PANELS} cambios más marcados de ${panels.length}; todos están en las tarjetas.`),
+        element("p", "muted", `Se dibujan los ${TREND_PANELS} cambios más marcados de ${panels.length}; el resto, en las tarjetas.`),
       );
     }
   }
@@ -1516,8 +1498,7 @@ function renderTrends(matrix: Matrix): void {
         `Tag ${tag.tagId}: dejó de leerse en un instante concreto`,
         `${percent(tag.rateBefore ?? null)} → ${percent(tag.rateAfter ?? null)} el ` +
           formatInstant(tag.changedAtUtcMs as number),
-        "Un corte, no una fluctuación: se leía con normalidad y a partir de ahí casi nadie lo " +
-          "lee. Comprobar el tag en ese instante, no promediar toda la ventana (R-OPP-015).",
+        "Se leía con normalidad y desde ese momento casi nadie lo lee. Comprobar el tag.",
         ["tag-rotura", tag.tagId],
       ),
     );
@@ -1527,8 +1508,7 @@ function renderTrends(matrix: Matrix): void {
       finding(
         `Tag ${tag.tagId}: baja de forma sostenida a lo largo de la ventana`,
         (tag.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
-        "La caída es progresiva, no un promedio estable que la esconda: cuatro tramos temporales, " +
-          "cada uno peor que el anterior (R-OPP-015).",
+        "Cada tramo de tiempo se lee peor que el anterior.",
         ["tag-degradacion", tag.tagId],
       ),
     );
@@ -1539,8 +1519,7 @@ function renderTrends(matrix: Matrix): void {
         `AGV ${vehicle.agvId}: su lector dejó de responder en un instante concreto`,
         `${percent(vehicle.rateBefore ?? null)} → ${percent(vehicle.rateAfter ?? null)} el ` +
           formatInstant(vehicle.changedAtUtcMs as number),
-        "El corte es del vehículo, en todos los tags que recorre, no de uno solo: revisar su " +
-          "lector o su WiFi en ese instante (R-OPP-015).",
+        "Deja de leer en todos los tags a la vez: revisar su lector o su WiFi.",
         ["agv-rotura", vehicle.agvId],
       ),
     );
@@ -1550,8 +1529,7 @@ function renderTrends(matrix: Matrix): void {
       finding(
         `AGV ${vehicle.agvId}: su lector lee cada vez peor`,
         (vehicle.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
-        "La caída es de este vehículo en conjunto, no de un tag concreto: sus compañeros siguen " +
-          "leyendo los mismos tags con normalidad (R-OPP-015).",
+        "Empeora en todos los tags, mientras el resto de la flota los lee bien.",
         ["agv-degradacion", vehicle.agvId],
       ),
     );
@@ -1570,7 +1548,7 @@ function renderCharging(views: CircuitViews): void {
   const charging = views.charging;
   if (charging === undefined) return;
 
-  viewsPanel.append(element("h3", undefined, "Calles de carga online"));
+  viewsPanel.append(element("h3", undefined, "Calles de carga"));
 
   const zonas = views.zones ?? [];
   viewsPanel.append(
@@ -1579,11 +1557,8 @@ function renderCharging(views: CircuitViews): void {
       "muted",
       `${charging.lanes.length} calles declaradas` +
         (zonas.length === 0
-          ? ". Sin lista de zonas: el orden de convoy se sigue usando en todo el anillo, que es " +
-            "más optimista de lo que R-FLO-006 admite."
-          : `, y ${zonas.map((entry) => `${entry.tags} tags en zona ${entry.zone}`).join(" y ")}. ` +
-            `${views.orderWithheld} pasadas que el orden de convoy habría dado por buenas no se ` +
-            "usan: en zona vacía la reordenación está admitida (R-FLO-006)."),
+          ? ". Sin lista de zonas cargada."
+          : `, y ${zonas.map((entry) => `${entry.tags} tags en zona ${zoneLabel(entry.zone)}`).join(" y ")}.`),
     ),
   );
 
@@ -1599,8 +1574,7 @@ function renderCharging(views: CircuitViews): void {
       finding(
         `Nadie entró en «${lane.laneId}»`,
         "0 estancias",
-        "Sus tags no tuvieron ocasión de leerse, así que no son candidatos a obsoleto. La " +
-          "pregunta es si la calle sigue en servicio.",
+        "¿Sigue en servicio? Sus tags no se pudieron leer, así que no se juzgan.",
         ["calle-sin-servicio", lane.laneId],
       ),
     );
@@ -1615,9 +1589,8 @@ function renderCharging(views: CircuitViews): void {
         finding(
           `A ${breach.waited} se le saltó el turno en «${lane.laneId}»`,
           duration(breach.waitedMs),
-          `Entró antes que ${breach.overtakenBy.join(", ")} y salió después, con la mediana de la ` +
-            `calle en ${duration(lane.medianStayMs)}. La salida se relaciona con mayor antigüedad ` +
-            "(R-CO-003); qué lo explica no lo dice el dato.",
+          `Entró antes que ${breach.overtakenBy.join(", ")} y salió después. Estancia habitual en la ` +
+            `calle: ${duration(lane.medianStayMs)}.`,
           ["calle-espera", lane.laneId, breach.waited],
         ),
       );
@@ -1627,7 +1600,7 @@ function renderCharging(views: CircuitViews): void {
         finding(
           `${stay.agvId} permaneció en «${lane.laneId}» mucho más que el resto`,
           duration(stay.durationMs),
-          `La mediana de esa calle es ${duration(lane.medianStayMs)}.`,
+          `Lo habitual en esa calle: ${duration(lane.medianStayMs)}.`,
           ["calle-permanencia", lane.laneId, stay.agvId],
         ),
       );
@@ -1641,10 +1614,10 @@ function renderCharging(views: CircuitViews): void {
         : new Date(charging.coverageStartUtcMs).toISOString().slice(0, 16).replace("T", " ");
     viewsPanel.append(
       finding(
-        `${charging.startedInside.length} vehículos ya estaban cargando antes de empezar a mirar`,
+        `${charging.startedInside.length} AGV ya estaban cargando al empezar los datos`,
         charging.startedInside.map((stay) => stay.agvId).join(", "),
-        `Su primera lectura es la salida de una calle, así que desde ${desde} hasta que salieron ` +
-          "esas calles no estaban vacías: no había datos (R-CO-007).",
+        `Su primera lectura es la salida de una calle: desde ${desde} hasta que salieron, esas calles ` +
+          "no estaban vacías.",
         ["arranque-en-frio", "circuito"],
       ),
     );
@@ -1658,9 +1631,7 @@ function renderCharging(views: CircuitViews): void {
           ? "1 vehículo no entró en ninguna calle en toda la ventana"
           : `${charging.neverCharged.length} vehículos no entraron en ninguna calle en toda la ventana`,
         ids.length > 12 ? `${ids.slice(0, 12).join(", ")}…` : ids.join(", "),
-        "Solo quiere decir que no se les vio entrar en ninguna de las calles declaradas: pueden cargar " +
-          "en una que la lista no recoge, o haber estado poco tiempo en la ventana (mira su primera y " +
-          "última lectura). Sin SOC fiable no se juzga su batería (R-CO-004).",
+        "Pueden cargar en una calle no declarada o haber estado poco tiempo. No se juzga su batería.",
         ["sin-carga", "circuito"],
       ),
     );
@@ -1683,7 +1654,7 @@ function renderCharging(views: CircuitViews): void {
   viewsPanel.append(
     lazyDetails(`Detalle de las ${charging.lanes.length} calles`, () =>
       plainTable(
-        ["Calle", "Capacidad", "Estancias", "Mediana", "Turnos saltados"],
+        ["Calle", "Capacidad", "Estancias", "Estancia habitual", "Turnos saltados"],
         charging.lanes.map((lane) => [
           lane.laneId,
           lane.capacity === null ? "—" : String(lane.capacity),
@@ -1717,10 +1688,10 @@ function renderDrift(views: CircuitViews): void {
   type TagDriftEntry = NonNullable<CircuitViews["drift"]>["tagDrifts"][number];
 
   const kindLabel: Readonly<Record<string, string>> = {
-    desaparecido: "cambió: se leía en el periodo temprano y ya no se lee",
-    nuevo: "tag nuevo: sin lecturas en el periodo temprano",
-    "obsoleto-consolidado": "obsoleto consolidado: sin lecturas en los dos periodos",
-    "sustitucion-candidata": "sustitución candidata: mismo hueco de la secuencia, tag distinto",
+    desaparecido: "dejó de leerse",
+    nuevo: "tag nuevo",
+    "obsoleto-consolidado": "sin lecturas en ningún periodo",
+    "sustitucion-candidata": "posible sustitución",
   };
   const detailOf = (entry: TagDriftEntry): string =>
     entry.kind === "desaparecido"
@@ -1729,18 +1700,16 @@ function renderDrift(views: CircuitViews): void {
         ? `0 lecturas antes, ${entry.readingsAfter} ahora`
         : entry.kind === "sustitucion-candidata"
           ? `${entry.readingsBefore} lecturas de «${entry.tagId}» antes, ${entry.readingsAfter} de ` +
-            `«${entry.nuevoTagId}» ahora, mismo ${entry.neighborSide} (${entry.sharedNeighbor})`
+            `«${entry.nuevoTagId}» ahora, en el mismo sitio (junto a ${entry.sharedNeighbor})`
           : "0 lecturas en los dos periodos";
   const evidenceOf = (entry: TagDriftEntry): string =>
     entry.kind === "desaparecido"
-      ? "Cambió: murió, se sustituyó o se retiró; el dato no dice cuál (R-DAT-016)."
+      ? "Averiado, sustituido o retirado: comprobar en planta."
       : entry.kind === "nuevo"
-        ? "Sustitución o instalación; el dato no distingue cuál."
+        ? "Sustitución o instalación nueva."
         : entry.kind === "sustitucion-candidata"
-          ? "Comparte vecino y coincide en el tiempo con el tag que desapareció (R-DAT-017); no " +
-            "confirma que sea físicamente el mismo punto, solo la correlación (R-EVI-004, R-EVI-006)."
-          : "Candidato a obsoleto reforzado por dos periodos distantes, nunca confirmado sin ir a " +
-            "mirarlo (R-EVI-006).";
+          ? "Un tag desaparece y otro aparece en el mismo sitio a la vez. Confirmar en planta."
+          : "Probablemente ya no está instalado. Confirmar en planta.";
   const tagCellOf = (entry: TagDriftEntry): string =>
     entry.kind === "sustitucion-candidata" ? `${entry.tagId} → ${entry.nuevoTagId}` : entry.tagId;
 
@@ -1751,8 +1720,7 @@ function renderDrift(views: CircuitViews): void {
       "muted",
       `Periodo temprano: ${formatInstant(drift.earlyPeriod.from)} – ${formatInstant(drift.earlyPeriod.to)}. ` +
         `Periodo tardío: ${formatInstant(drift.latePeriod.from)} – ${formatInstant(drift.latePeriod.to)}. ` +
-        "Con una sola ventana, obsoleto y averiado dan el mismo dato; lo que los separa es el tiempo " +
-        "(R-DAT-016). El dato dice qué cambió, nunca por qué.",
+        "Dice qué cambió entre los dos periodos, no por qué.",
     ),
   );
   if (drift.tagDrifts.length > 0) viewsPanel.append(driftChart(drift));
@@ -1769,12 +1737,12 @@ function renderDrift(views: CircuitViews): void {
   }
   if (sortedTags.length > 0) {
     viewsPanel.append(
-      lazyDetails(`Detalle de los ${sortedTags.length} tags con deriva`, () =>
+      lazyDetails(`Detalle de los ${sortedTags.length} tags con cambios`, () =>
         plainTable(
-          ["Tag", "Clase", "Antes", "Ahora"],
+          ["Tag", "Cambio", "Antes", "Ahora"],
           sortedTags.map((entry) => [
             tagCellOf(entry),
-            entry.kind,
+            kindLabel[entry.kind] ?? entry.kind,
             String(entry.readingsBefore),
             String(entry.readingsAfter),
           ]),
@@ -1790,7 +1758,7 @@ function renderDrift(views: CircuitViews): void {
     const parts: string[] = [];
     if (entry.droppedTags.length > 0) parts.push(`dejó de leer ${entry.droppedTags.length} tags que sí leía antes`);
     if (entry.notAdoptedTags.length > 0) {
-      parts.push(`no registra ${entry.notAdoptedTags.length} tag(s) nuevo(s) que ya lee la mayoría de la flota`);
+      parts.push(`no registra ${entry.notAdoptedTags.length === 1 ? "1 tag nuevo" : `${entry.notAdoptedTags.length} tags nuevos`} que ya lee la mayoría de la flota`);
     }
     const detail = [
       entry.droppedTags.length > 0
@@ -1806,15 +1774,14 @@ function renderDrift(views: CircuitViews): void {
       finding(
         `${entry.agvId}: ${parts.join(", y ")}`,
         detail,
-        "El resto de la flota lee esos tags con normalidad: memoria actualizada o degradada de " +
-          "este vehículo (R-AGV-013). El dato no elige cuál.",
+        "El resto de la flota lee esos tags con normalidad: revisar la memoria de este AGV.",
         ["deriva-agv", entry.agvId],
       ),
     );
   }
   if (sortedVehicles.length > 0) {
     viewsPanel.append(
-      lazyDetails(`Detalle de los ${sortedVehicles.length} vehículos con deriva`, () =>
+      lazyDetails(`Detalle de los ${sortedVehicles.length} AGV con cambios`, () =>
         plainTable(
           ["AGV", "Tags dejados de leer", "Tags nuevos no adoptados"],
           sortedVehicles.map((entry) => [
@@ -1844,16 +1811,16 @@ function renderCriticalPoints(views: CircuitViews): void {
   type Candidate = NonNullable<CircuitViews["criticalPoints"]>[number]["candidates"][number];
 
   const kindLabel: Readonly<Record<Candidate["kind"], string>> = {
-    bifurcacion: "candidato a bifurcación",
-    cruce: "candidato a cruce",
-    "parada-precisa": "candidato a parada precisa",
-    semaforo: "candidato a semáforo",
+    bifurcacion: "posible bifurcación",
+    cruce: "posible cruce",
+    "parada-precisa": "posible parada precisa",
+    semaforo: "posible semáforo",
   };
   const weightOf = (candidate: Candidate): number => candidate.samples ?? candidate.support ?? 0;
   const detailOf = (candidate: Candidate): string =>
     candidate.kind === "bifurcacion" || candidate.kind === "cruce"
-      ? `${candidate.support ?? 0} pasadas`
-      : `${candidate.samples ?? 0} pasadas`;
+      ? `${(candidate.support ?? 0).toLocaleString("es-ES")} pasadas`
+      : `${(candidate.samples ?? 0).toLocaleString("es-ES")} pasadas`;
   const branchesOf = (candidate: Candidate): string =>
     (candidate.branches ?? []).map((branch) => `${branch.tagId} (${Math.round(branch.share * 100)} %)`).join(", ");
 
@@ -1862,9 +1829,8 @@ function renderCriticalPoints(views: CircuitViews): void {
     element(
       "p",
       "muted",
-      `${candidates.length} candidatos. Firma estadística, nunca función asignada ` +
-        "(R-GRA-007): la función de un tag crítico es dato de planta declarado, no se deduce del " +
-        "fichero. Se proponen para confirmar o descartar, no como avería.",
+      `${candidates.length} tags se comportan como un punto crítico. Son propuestas para confirmar ` +
+        "o descartar en planta; la función real la da la lista de críticos.",
     ),
   );
 
@@ -1900,7 +1866,7 @@ function renderCriticalPoints(views: CircuitViews): void {
     const rows: DwellRow[] = [
       {
         title: "Referencia",
-        detail: `todas las transiciones del cohorte · muestra de ${reference.length.toLocaleString("es-ES")} de ${cohort.referenceTotal.toLocaleString("es-ES")}`,
+        detail: `el resto del circuito · muestra de ${reference.length.toLocaleString("es-ES")} de ${cohort.referenceTotal.toLocaleString("es-ES")}`,
         note: `mediana ${Math.round((reference[Math.floor(reference.length / 2)] ?? 0) / 1000)} s`,
         durationsMs: reference,
         isReference: true,
@@ -1932,7 +1898,7 @@ function renderCriticalPoints(views: CircuitViews): void {
   viewsPanel.append(
     lazyDetails(`Detalle de los ${candidates.length} candidatos`, () =>
       plainTable(
-        ["Tag", "Función candidata", "Pasadas", "Detalle"],
+        ["Tag", "Posible función", "Pasadas", "Detalle"],
         sorted.map((candidate) => [
           candidate.tagId,
           candidate.kind,
@@ -1964,15 +1930,14 @@ function renderFifo(views: CircuitViews): void {
   const problems = fifo.flatMap((cohort) => cohort.problems);
   if (spans.length === 0 && problems.length === 0) return;
 
-  viewsPanel.append(element("h3", undefined, "FIFO en zona cargada"));
+  viewsPanel.append(element("h3", undefined, "Orden de paso en zona cargada (FIFO)"));
   viewsPanel.append(
     element(
       "p",
       "muted",
       `${spans.length} tramos de zona cargada, ${spans.filter((span) => span.evaluated).length} ` +
-        "con pasadas suficientes para evaluar. Un adelantamiento aquí es un candidato, no una " +
-        "avería: R-FLO-001 admite carga online, maniobra manual o excepción documentada, y el " +
-        "dato no dice cuál es (OQ-107).",
+        "con pasadas suficientes. Un adelantamiento puede tener explicación (carga, maniobra " +
+        "manual): hay que comprobarlo.",
     ),
   );
 
@@ -1999,8 +1964,8 @@ function renderFifo(views: CircuitViews): void {
       finding(
         `${overtake.overtaken} fue adelantado en el tramo cargado «${span.spanId}»`,
         `por ${overtake.overtakenBy.join(", ")}, ${duration(overtake.marginMs)} de margen`,
-        `Entró antes y salió después, con un tránsito de ${duration(overtake.transitMs)}. La zona ` +
-          "cargada espera FIFO (R-FLO-001); qué lo explica no lo dice el dato (OQ-107).",
+        `Entró antes y salió después (tránsito de ${duration(overtake.transitMs)}). En zona ` +
+          "cargada se espera que salgan en el orden en que entran.",
         ["fifo", span.spanId, overtake.overtaken],
       ),
     );
@@ -2009,7 +1974,7 @@ function renderFifo(views: CircuitViews): void {
   viewsPanel.append(
     lazyDetails(`Detalle de los ${spans.length} tramos`, () =>
       plainTable(
-        ["Tramo", "Tags", "Pasadas", "Tránsito mediano", "Adelantamientos"],
+        ["Tramo", "Tags", "Pasadas", "Tránsito habitual", "Adelantamientos"],
         spans.map((span) => [
           span.spanId,
           String(span.tagCount),
@@ -2056,16 +2021,16 @@ function finding(title: string, figure: string, evidence: string, review?: reado
 function explain(tag: TagRow): string {
   const base =
     tag.pattern === "bimodal-candidato"
-      ? `${tag.lowReaders.length} vehículos casi nunca lo leen y ${tag.highReaders.length} casi ` +
-        `siempre (${tag.lowReaders.slice(0, 3).join(", ")}…): revisar esos vehículos, no el tag`
-      : "todos los que pasan lo leen poco: revisar el tag o su punto";
+      ? `${tag.lowReaders.length} AGV casi nunca lo leen y ${tag.highReaders.length} casi ` +
+        `siempre (${tag.lowReaders.slice(0, 3).join(", ")}…): revisar esos AGV, no el tag`
+      : "Todos los AGV lo leen poco: revisar el tag o su posición";
   // Cómo se probó el paso importa tanto como el porcentaje: una tasa sostenida por tiempo es más
   // débil que una sostenida por los vecinos, y el usuario tiene que poder verlo sin preguntar.
   const vias: string[] = [];
-  if (tag.byTime > 0) vias.push(`${tag.byTime} probadas por tiempo`);
-  if (tag.byOrder > 0) vias.push(`${tag.byOrder} por orden de convoy`);
-  if (tag.unproven > 0) vias.push(`${tag.unproven} tramos que nada sostiene`);
-  return vias.length === 0 ? base : `${base}. De sus pasadas: ${vias.join(", ")}`;
+  if (tag.byTime > 0) vias.push(`${tag.byTime} se deducen por el tiempo`);
+  if (tag.byOrder > 0) vias.push(`${tag.byOrder} por el orden de los AGV`);
+  if (tag.unproven > 0) vias.push(`${tag.unproven} sin confirmar`);
+  return vias.length === 0 ? base : `${base}. De las pasadas, ${vias.join(", ")}.`;
 }
 
 /** La matriz entera, plegada y construida solo si alguien la abre. */
@@ -2073,7 +2038,7 @@ function renderFullMatrix(matrix: Matrix): void {
   const vehicles = matrix.vehicles.map((vehicle) => vehicle.agvId);
   viewsPanel.append(
     lazyDetails(
-      `Ver la matriz completa: ${matrix.tags.length} tags × ${vehicles.length} vehículos`,
+      `Ver la matriz completa: ${matrix.tags.length} tags × ${vehicles.length} AGV`,
       () =>
         scrollBox(
           plainTable(
@@ -2097,8 +2062,7 @@ function renderFullMatrix(matrix: Matrix): void {
     element(
       "p",
       "muted",
-      "En la matriz, «·» es que ese vehículo no pasó por ese punto — distinto de un 0, que sí " +
-        "sería un hecho.",
+      "«·»: ese AGV no pasó por ese punto (no es un 0).",
     ),
   );
 }
@@ -2121,25 +2085,23 @@ function renderDossier(): void {
 
   if (agv === undefined && tag === undefined) {
     dossierResult.append(
-      element("p", "muted", `Ningún AGV ni tag con el identificador exacto «${query}».`),
+      element("p", "muted", `Ningún AGV ni tag con el número «${query}» (se compara entero, con sus ceros).`),
     );
     return;
   }
 
   if (agv !== undefined) {
-    const shape = state.views?.shapes.find((entry) => entry.cohortId === agv.cohortId);
-    const anchorLabel =
-      shape?.anchorTruth === "observed" ? "Vueltas (ancla declarada)" : "Vueltas (ancla inferida)";
+    const anchorLabel = "Vueltas";
     const rows: readonly (readonly [string, string])[] = [
-      ["Cohorte", agv.cohortId === null ? "sin cohorte reconocible" : `${agv.cohortSize} vehículos`],
+      ["Grupo del circuito", agv.cohortId === null ? "sin grupo reconocible" : `${agv.cohortSize} AGV`],
       [
-        "Lecturas frente a la cohorte",
+        "Lecturas",
         `${agv.readingCount.toLocaleString("es-ES")} — mediana del resto: ` +
           agv.cohortMedianReadings.toLocaleString("es-ES"),
       ],
       [
         anchorLabel,
-        `${agv.laps.completas} completas, ${agv.laps.parciales} parciales, ${agv.laps.desconocidas} desconocidas`,
+        `${agv.laps.completas} completas, ${agv.laps.parciales} parciales, ${agv.laps.desconocidas} sin determinar`,
       ],
       [
         "Última lectura",
@@ -2148,10 +2110,10 @@ function renderDossier(): void {
           : `${agv.lastReading.tagId} — ${formatInstant(agv.lastReading.utcMs)}`,
       ],
       [
-        "Silencio abierto",
+        "Sin leer hasta el final",
         agv.openSilenceSinceUtcMs === null
-          ? "no: hay lectura reciente o la cobertura ya terminó antes"
-          : `desde ${formatInstant(agv.openSilenceSinceUtcMs)}, sin cerrar dentro de la cobertura`,
+          ? "no"
+          : `sí, desde ${formatInstant(agv.openSilenceSinceUtcMs)}`,
       ],
     ];
     const list = element("dl", "facts");
@@ -2184,10 +2146,8 @@ function renderDossier(): void {
           `${agv.inactivity.length} periodos de inactividad` +
             (cargas === 0
               ? ". "
-              : `, de los que ${cargas} son cargas en calle y no huecos que explicar (R-CO-006). `) +
-            "Cada uno con sus dos extremos: por dónde se fue y por dónde volvió. Volver al mismo " +
-            "tag y volver más adelante son hechos distintos, y ninguno de los dos es por sí solo " +
-            "una avería (R-AGV-006).",
+              : `, ${cargas} de ellos cargas en calle. `) +
+            "Para cada uno, por dónde se fue y por dónde volvió.",
         ),
       );
       dossierResult.append(
@@ -2220,10 +2180,8 @@ function renderDossier(): void {
         element(
           "p",
           undefined,
-          `Punto crítico declarado: ${tag.criticalFunction} (R-GRA-007). La función es dato de ` +
-            "planta, nunca deducida; si ha dejado de serlo, se corrige editando y volviendo a " +
-            "cargar el fichero que la declaró — «critico» o «circuito» —, nunca en la interfaz " +
-            "(R-EVI-006).",
+          `Punto crítico declarado: ${criticalFunctionLabel(tag.criticalFunction)}. Se cambia en el fichero de listas y ` +
+            "volviéndolo a cargar.",
         ),
       );
     }
@@ -2268,7 +2226,7 @@ function renderReplayFrame(): void {
     .map(([agvId, vehicleState]): readonly string[] => {
       switch (vehicleState.kind) {
         case "en-tag":
-          return [agvId, vehicleState.tagId, "—", vehicleState.truth];
+          return [agvId, vehicleState.tagId, "—", truthLabel(vehicleState.truth)];
         case "en-transito":
           return [
             agvId,
@@ -2281,7 +2239,7 @@ function renderReplayFrame(): void {
             agvId,
             vehicleState.lastTagId,
             `silencio desde ${formatInstant(vehicleState.sinceUtcMs)}`,
-            "unknown",
+            truthLabel("unknown"),
           ];
         default:
           // Antes de su primera lectura no hay silencio que diagnosticar: hay ausencia de datos
@@ -2307,14 +2265,14 @@ exportButton.addEventListener("click", () => {
     }
     if (!isAvailable()) {
       showMessage("error", "No hay almacén local", [
-        "Este navegador no permite guardar datos de sitio, así que no hay nada acumulado que exportar.",
+        "Este navegador no permite guardar datos, así que no hay nada que exportar.",
       ]);
       return;
     }
     const circuit = await loadCircuit(circuitId);
     if (circuit === undefined) {
       showMessage("warn", "Ese circuito no existe todavía", [
-        "Importa al menos una fuente indicando ese circuito y vuelve a intentarlo.",
+        "Importa primero un fichero de lecturas en ese circuito.",
       ]);
       return;
     }
@@ -2339,7 +2297,7 @@ exportButton.addEventListener("click", () => {
     // usuario ya ha hecho otra cosa —abrir un proyecto, por ejemplo— le pisa su mensaje con uno
     // que corresponde a la acción anterior.
     showMessage("info", "Proyecto exportado", [
-      `${circuit.sources.length} fuentes y su cobertura. Las lecturas se quedan en este dispositivo.`,
+      `${circuit.sources.length} ficheros y sus periodos. Las lecturas se quedan en este dispositivo.`,
       ...(reviews.length === 0 ? [] : [`Incluye ${reviews.length} hallazgos revisados en campo.`]),
     ]);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));

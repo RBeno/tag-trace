@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.12.0
+version: 0.13.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -153,6 +153,26 @@ nota opcional. Los avisos de configuración no los llevan, porque no se comprueb
 Lo que no hace: consolidar. Revisar es el paso «Revisión de hallazgos» del flujo de
 `MEMORY_CONSOLIDATION.md` §6; escribir esa revisión como versión nueva de la memoria del circuito es
 F4.
+
+## 4.4 Lenguaje de la interfaz
+
+La pantalla habla como un producto terminado, no como el proyecto que lo construye:
+
+- **Sin referencias internas.** Ningún texto visible cita reglas (`R-…`), preguntas abiertas
+  (`OQ-…`), casos de prueba ni fases. Esas referencias viven en la documentación y en el código.
+- **Sin identificadores internos.** Los valores con los que trabaja el dominio (`observed`,
+  `bimodal-candidato`, `obsoleto-candidato`, `vinculacion`…) se enseñan con su nombre en castellano
+  llano (`observado`, «unos AGV sí y otros no», «posible obsoleto», «vinculación»). La traducción
+  está en un solo sitio, `src/presentation/labels.ts`; lo que se guarda, se exporta y se prueba
+  sigue usando el identificador estable. Los nombres de lista (`circuito`, `critico`,
+  `carga-online`…) sí se enseñan tal cual, porque son los que el usuario escribe en su CSV.
+- **Lo técnico, plegado.** Los detalles de lectura de un fichero (hash, separador, columnas,
+  formato de fecha, zona, codificación, orden, tiempo de proceso) van en un desplegable; a la vista
+  quedan el fichero, el periodo y cuántas filas entraron o no.
+- **Frases cortas y la duda a la vista.** Cada hallazgo dice qué se ve y qué comprobar; los límites
+  que cambian la lectura («no es una tasa de salud», «fuera de la cobertura no hay datos, no
+  silencio», «posible…») se conservan, en una frase, porque son lo que evita una conclusión falsa.
+- **Singular y plural reales**, nunca «tag(s)».
 
 ## 5. Grafo y plano
 

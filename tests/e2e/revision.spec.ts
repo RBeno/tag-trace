@@ -53,7 +53,7 @@ test.describe("revisión en campo", () => {
     // La barra fija dice cuánto va revisado; el panel de debajo, el recuento, los filtros y el CSV.
     const bar = page.locator(".review-bar");
     const panel = page.locator(".review-panel");
-    await expect(bar).toContainText(/Revisión: 0 de \d+ revisados/);
+    await expect(bar).toContainText(/Revisados 0 de \d+/);
 
     await lane.getByRole("button", { name: /Confirmado/ }).click();
     await lane.getByRole("textbox").fill("Calle cerrada por obra");
@@ -63,7 +63,7 @@ test.describe("revisión en campo", () => {
 
     await expect(lane).toHaveAttribute("data-review", "confirmado");
     await expect(broken).toHaveAttribute("data-review", "pospuesto");
-    await expect(bar).toContainText(/Revisión: 2 de \d+ revisados/);
+    await expect(bar).toContainText(/Revisados 2 de \d+/);
     await expect(panel).toContainText("✓ 1 confirmado ·");
 
     // El filtro esconde las tarjetas de otro estado y deja el resto de la vista.
@@ -81,7 +81,7 @@ test.describe("revisión en campo", () => {
     await expect(laneAgain).toHaveAttribute("data-review", "confirmado", { timeout: 180_000 });
     await expect(laneAgain.getByRole("textbox")).toHaveValue("Calle cerrada por obra");
     await expect(page.locator(".finding", { hasText: "dejó de leerse" }).first()).toHaveAttribute("data-review", "pospuesto");
-    await expect(page.locator(".review-bar")).toContainText(/2 de \d+ revisados/);
+    await expect(page.locator(".review-bar")).toContainText(/Revisados 2 de \d+/);
 
     const download = page.waitForEvent("download");
     await page.locator(".review-panel").getByRole("button", { name: "Exportar revisión (CSV)" }).click();

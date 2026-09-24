@@ -67,7 +67,7 @@ export function compareAgainstVsystem(
         observedTag: anchor,
         verdict: "coincide",
         truth: "observed",
-        evidence: "El tag declarado aparece en el anillo observado en el mismo orden relativo.",
+        evidence: "Está donde Vsystem dice.",
       });
       declaredIndex += 1;
       observedIndex += 1;
@@ -102,7 +102,7 @@ function classifyGap(
         observedTag: observed,
         verdict: "no-declarado",
         truth: "inferred",
-        evidence: `«${declared}» sí se lee, pero no en esta posición del anillo; «${observed}» ocupa el hueco.`,
+        evidence: `«${declared}» sí se lee, pero en otro sitio; aquí se lee «${observed}».`,
       });
     } else {
       rows.push({
@@ -110,7 +110,7 @@ function classifyGap(
         observedTag: observed,
         verdict: "sustituido-candidato",
         truth: "inferred",
-        evidence: `«${declared}» no tiene ninguna lectura; «${observed}» ocupa exactamente su posición.`,
+        evidence: `«${declared}» no se lee nunca y en su sitio se lee «${observed}».`,
       });
     }
   }
@@ -120,7 +120,7 @@ function classifyGap(
       observedTag: null,
       verdict: "no-observado",
       truth: "unknown",
-      evidence: "Declarado sin lecturas y sin ningún tag ocupando su posición: el tramo se salta.",
+      evidence: "Declarado y sin lecturas, y ningún otro tag en su sitio.",
     });
   }
   for (let index = pairs; index < observedGap.length; index += 1) {
@@ -129,7 +129,7 @@ function classifyGap(
       observedTag: observedGap[index] as string,
       verdict: "no-declarado",
       truth: "observed",
-      evidence: "Se observa en el anillo y no está en la lista declarada.",
+      evidence: "Se lee en el recorrido y no está declarado.",
     });
   }
   return rows;

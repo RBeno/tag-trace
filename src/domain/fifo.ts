@@ -65,7 +65,7 @@ export function loadedZoneSpans(
   if (ring.every(isLoaded)) {
     return {
       spans: [],
-      problems: ["todo el anillo es zona cargada: sin frontera de zona vacía no hay con qué acotar un tramo (R-FLO-003)"],
+      problems: ["todo el anillo está declarado como zona cargada: sin frontera con una zona vacía no hay tramos que acotar"],
     };
   }
   if (ring.every((tag) => !isLoaded(tag))) return { spans: [], problems: [] };

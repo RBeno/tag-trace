@@ -107,8 +107,8 @@ export function assessAffinity(
       mayAccumulate: true,
       truth: "unknown",
       reason:
-        `La fuente trae ${sourceTags.size} tags distintos, menos de los ${thresholds.minTagsToJudge} ` +
-        "que hacen falta para que el solape signifique algo. Se acepta sin juzgarla.",
+        `El fichero trae solo ${sourceTags.size} tags distintos, menos de los ${thresholds.minTagsToJudge} ` +
+        "necesarios para saber si es de este circuito. Se acepta sin comprobarlo.",
     };
   }
 
@@ -119,7 +119,7 @@ export function assessAffinity(
       mayAccumulate: true,
       truth: "observed",
       reason:
-        `${percent(overlap)} de los tags de la fuente ya están en el circuito` +
+        `${percent(overlap)} de los tags del fichero ya están en el circuito` +
         (newTags === 0 ? "." : `, y los ${newTags} restantes son nuevos aquí.`),
     };
   }
@@ -131,9 +131,8 @@ export function assessAffinity(
       mayAccumulate: false,
       truth: "inferred",
       reason:
-        `Solo ${percent(overlap)} de los tags de la fuente están en este circuito. Lo más probable ` +
-        "es que sea la exportación de otro, y mezclarla dejaría el circuito con dos anillos " +
-        "superpuestos sin que nada lo avise después.",
+        `Solo ${percent(overlap)} de los tags del fichero están en este circuito: probablemente es ` +
+        "de otro circuito.",
     };
   }
 
@@ -143,8 +142,8 @@ export function assessAffinity(
     mayAccumulate: true,
     truth: "inferred",
     reason:
-      `${percent(overlap)} de los tags de la fuente están en el circuito y ${newTags} no. Puede ser ` +
-      "una ampliación del circuito o una mezcla de dos: el dato no lo distingue.",
+      `${percent(overlap)} de los tags del fichero están en el circuito y ${newTags} no: puede ser ` +
+      "una ampliación del circuito o una mezcla de dos.",
   };
 }
 
