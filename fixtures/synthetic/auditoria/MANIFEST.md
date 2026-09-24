@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/10`
+- Dataset ID/version: `auditoria/11`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -72,6 +72,7 @@ fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual q
 | `memoria-no-actualizada` | 1 tag fuera de anillo, 1 AGV | el vehículo señalado como candidato a memoria no actualizada: no registra el tag nuevo mientras la mayoría de la flota ya lo hace (R-AGV-013) | que el tag nuevo esté averiado, o acusar a otro vehículo |
 | `vinculacion-declarada` | 1 tag del anillo, declarado por la columna `funcion` del circuito virtual | el expediente del tag muestra la función crítica «vinculacion» (R-GRA-007) | que sea un hallazgo estadístico, ni que el producto la haya propuesto |
 | `desvinculacion-declarada` | 1 tag del anillo, declarado por la lista `critico` | el expediente del tag muestra la función crítica «desvinculacion» (R-GRA-007) | que sea un hallazgo estadístico, ni que el producto la haya propuesto |
+| `lectura-desigual-en-pocos-tags` | 1 AGV que lee 2 tags del anillo en la mitad de sus pasadas (uno sí y uno no, sin `random()`) | el AGV sale como «lee poco» en esos dos tags, en pocos tags, con su porcentaje (R-AGV-016) | una causa (lector, memoria o colocación), ni que los dos tags fallen para el resto |
 
 ## Resultados prohibidos
 

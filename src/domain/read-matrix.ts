@@ -21,6 +21,14 @@
  * Si ninguna de las tres sostiene el paso, **no se cuenta como pasada** y se registra aparte: un
  * tramo encerrado que el tiempo desmiente es candidato a atajo o a rama, no un tag fallado.
  *
+ * **Cada tag se mide dentro de su vida** (R-OPP-016). Si `tag-changes.ts` detectó que un tag empezó
+ * o dejó de leerse dentro del periodo —con la flota pasando por su sitio lo bastante como para que no
+ * sea casualidad—, las pasadas de antes de empezar o de después de acabar no cuentan en su celda: un
+ * tag recién puesto no puede haberse leído antes de existir, y uno que murió no es un fallo de cada
+ * vehículo que pasa. La línea temporal del tag sí conserva esas pasadas: es donde se ve la rotura.
+ * Sin cambio detectado, el tag vive toda la ventana; recortar por la primera y la última lectura a
+ * secas inflaría la tasa de un tag que se lee poco, cuyas rachas del borde son su ritmo normal.
+ *
  * **Nada de esto es una tasa de salud y el módulo no la llama así.** La salud exige oportunidad
  * elegible —en memoria *y* existente, R-OPP-011—, que necesita la configuración de planta de
  * OQ-B04 y la lista de memoria.
@@ -118,6 +126,13 @@ export interface PairReadRate {
    * para que el hueco no se convierta en un cero silencioso.
    */
   readonly unproven: number;
+  /** Primera y última lectura de este vehículo en este tag; `null` si no lo leyó nunca. */
+  readonly firstHitUtcMs: number | null;
+  readonly lastHitUtcMs: number | null;
+  /** Pasadas sin leer antes de su primera lectura (todas, si no lo leyó nunca). */
+  readonly leadingMisses: number;
+  /** Pasadas sin leer después de su última lectura (todas, si no lo leyó nunca). */
+  readonly trailingMisses: number;
 }
 
 export interface TagReadRow {
@@ -195,6 +210,17 @@ export interface VehicleReadRow {
  */
 export const TREND_SERIES_BINS = 24;
 
+/**
+ * Cuándo empezó y cuándo dejó de leerse un tag dentro del periodo (R-OPP-016), si `tag-changes.ts`
+ * lo detectó. `null` en un extremo: ese extremo no cambió.
+ */
+export interface TagLife {
+  readonly from: number | null;
+  readonly to: number | null;
+}
+
+const NO_LIVES: ReadonlyMap<string, TagLife> = new Map();
+
 export interface ReadMatrix {
   readonly cohortId: number;
   /** Anillo observado, en orden. */
@@ -230,6 +256,10 @@ interface Cell {
   byTime: number;
   byOrder: number;
   unproven: number;
+  firstHitUtcMs: number | null;
+  lastHitUtcMs: number | null;
+  leadingMisses: number;
+  trailingMisses: number;
 }
 
 /**
@@ -248,6 +278,7 @@ export function buildReadMatrix(
   thresholds: ReadRateThresholds,
   limits: OrderEvidenceLimits,
   trendThresholds: TrendThresholds,
+  lives: ReadonlyMap<string, TagLife> = NO_LIVES,
 ): ReadMatrix {
   const size = ring.length;
   const position = new Map<string, number>();
@@ -267,9 +298,30 @@ export function buildReadMatrix(
   // recorrido de abajo, reteniendo el instante en vez de tirarlo tras sumarlo a un contador.
   const tagTimelines = new Map<string, PassRecord[]>();
   const vehicleTimelines = new Map<string, PassRecord[]>();
-  const recordPass = (tagId: string, agvId: string, utcMs: number, hit: boolean): void => {
+  /**
+   * Una pasada probada. La línea del tag la guarda siempre —la rotura se ve justo en las pasadas de
+   * después de su vida—; la celda y la línea del vehículo, solo dentro de la vida del tag
+   * (R-OPP-016). Las pasadas de una celda llegan en orden: son de un solo vehículo y sus vueltas se
+   * recorren seguidas, así que las rachas del principio y del final se cuentan sobre la marcha.
+   */
+  const pass = (cell: Cell, tagId: string, agvId: string, utcMs: number, hit: boolean, via: PassVia): void => {
     pushRecord(tagTimelines, tagId, { utcMs, hit });
+    const span = lives.get(tagId);
+    if (span !== undefined && ((span.from !== null && utcMs < span.from) || (span.to !== null && utcMs > span.to))) {
+      return;
+    }
     pushRecord(vehicleTimelines, agvId, { utcMs, hit });
+    cell.passes += 1;
+    cell[via] += 1;
+    if (hit) {
+      cell.hits += 1;
+      if (cell.firstHitUtcMs === null) cell.firstHitUtcMs = utcMs;
+      cell.lastHitUtcMs = utcMs;
+      cell.trailingMisses = 0;
+      return;
+    }
+    if (cell.firstHitUtcMs === null) cell.leadingMisses += 1;
+    cell.trailingMisses += 1;
   };
 
   for (const [agvId, laps] of lapsByVehicle) {
@@ -286,10 +338,7 @@ export function buildReadMatrix(
 
         if (readPositions.has(index)) {
           // Leyó el tag: no hay forma de leerlo sin estar ahí.
-          cell.passes += 1;
-          cell.hits += 1;
-          cell.byNeighbours += 1;
-          recordPass(tagId, agvId, utcMsAtPosition.get(index) as number, true);
+          pass(cell, tagId, agvId, utcMsAtPosition.get(index) as number, true, "byNeighbours");
           continue;
         }
 
@@ -298,9 +347,7 @@ export function buildReadMatrix(
 
         const gap = bracket.after.rel - bracket.before.rel - 1;
         if (gap <= thresholds.maxGapProvenByNeighbours) {
-          cell.passes += 1;
-          cell.byNeighbours += 1;
-          recordPass(tagId, agvId, bracket.after.utcMs, false);
+          pass(cell, tagId, agvId, bracket.after.utcMs, false, "byNeighbours");
           continue;
         }
 
@@ -312,9 +359,7 @@ export function buildReadMatrix(
           // tarda es la firma de no haberlo recorrido, y buscar entonces otra vía que diga que sí
           // sería lavar una contradicción en vez de resolverla.
           if (observed >= expected * thresholds.minTimeRatio) {
-            cell.passes += 1;
-            cell.byTime += 1;
-            recordPass(tagId, agvId, bracket.after.utcMs, false);
+            pass(cell, tagId, agvId, bracket.after.utcMs, false, "byTime");
           } else {
             cell.unproven += 1;
           }
@@ -336,9 +381,7 @@ export function buildReadMatrix(
         }
 
         if (keptConvoy(convoy, agvId, bracket.before, bracket.after, observed)) {
-          cell.passes += 1;
-          cell.byOrder += 1;
-          recordPass(tagId, agvId, bracket.after.utcMs, false);
+          pass(cell, tagId, agvId, bracket.after.utcMs, false, "byOrder");
           continue;
         }
 
@@ -359,6 +402,10 @@ export function buildReadMatrix(
         byTime: cell.byTime,
         byOrder: cell.byOrder,
         unproven: cell.unproven,
+        firstHitUtcMs: cell.firstHitUtcMs,
+        lastHitUtcMs: cell.lastHitUtcMs,
+        leadingMisses: cell.leadingMisses,
+        trailingMisses: cell.trailingMisses,
       }))
       .sort((a, b) => a.agvId.localeCompare(b.agvId));
 
@@ -629,6 +676,8 @@ function medianPerSegment(
   });
 }
 
+type PassVia = "byNeighbours" | "byTime" | "byOrder";
+
 function cellFor(
   pairs: Map<string, Map<string, Cell>>,
   tagId: string,
@@ -641,7 +690,18 @@ function cellFor(
   }
   let cell = byTag.get(agvId);
   if (cell === undefined) {
-    cell = { passes: 0, hits: 0, byNeighbours: 0, byTime: 0, byOrder: 0, unproven: 0 };
+    cell = {
+      passes: 0,
+      hits: 0,
+      byNeighbours: 0,
+      byTime: 0,
+      byOrder: 0,
+      unproven: 0,
+      firstHitUtcMs: null,
+      lastHitUtcMs: null,
+      leadingMisses: 0,
+      trailingMisses: 0,
+    };
     byTag.set(agvId, cell);
   }
   return cell;

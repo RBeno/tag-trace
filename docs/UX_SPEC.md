@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.13.0
+version: 0.14.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -345,6 +345,23 @@ piden mirar:
 Dos hallazgos se enseñan de entrada, sin causa: los asignados que no leyeron nada en toda la ventana
 y los que leen sin estar asignados. La tabla equivalente del recuento son sus intervalos; la de la
 vida de cada AGV, el porcentaje de su tiempo en cada estado.
+
+## 5.5 Cambios de tag y lectura por AGV (Parte 43)
+
+Lo que más se va a ver en planta, destacado dentro de su sección y sin bloque de resumen arriba:
+
+- **Cambios de tag**, justo después del inventario. Dentro del periodo cargado: la pareja «viejo →
+  nuevo» con las dos horas, los que solo dejan de leerse o solo empiezan, y las caídas de lectura de
+  la matriz con su gráfico. Bajo cada tag nuevo, los AGV que no lo leen como el resto con su cifra:
+  «nunca (0 de 19 pasadas)», «desde las 17:40, 0 de 12», «empezó a leerlo a las 18:10, tras 9
+  pasadas», «45 % (9 de 20)».
+- **Lo que hay que mirar**: las tarjetas de tag separan quién no lo lee nunca, quién dejó de leerlo y
+  quién lo lee poco, con porcentajes; las de AGV van por tipo —nunca, dejó de leer, poco en muchos
+  tags, poco en pocos—, hasta cinco de cada uno y el resto en tabla.
+- **Calles de carga**: lo primero de la sección son los AGV que no entraron en ninguna calle, «N de M».
+
+Ninguna tarjeta nombra una causa (memoria, lector, colocación): la diferencia medida basta para ir a
+mirarlo, y la causa la pone quien lo mira (R-EVI-006, R-AGV-016).
 
 ## 6. Consolidación
 

@@ -36,6 +36,8 @@ import {
   type CriticalPointCandidate,
 } from "../../src/domain/critical-points.js";
 import { compareDistantPeriods, type DriftComparison } from "../../src/domain/drift.js";
+import { detectTagChanges, type TagChangeReport } from "../../src/domain/tag-changes.js";
+import { describeVehicleReading, type VehicleReadingReport } from "../../src/domain/vehicle-reading.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -96,6 +98,10 @@ interface Analysis {
   readonly anchorTruth: "observed" | "inferred" | undefined;
   /** Comparación entre el primer y el último periodo, construidos a mano a partir del escenario. */
   readonly drift: DriftComparison;
+  /** Cambios de tag dentro de **un solo** periodo, el de la ventana entera (R-DAT-019). */
+  readonly tagChanges: TagChangeReport;
+  /** Lectura de cada AGV sobre los tags que el resto lee bien (R-AGV-016). */
+  readonly vehicleReading: VehicleReadingReport;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
 }
@@ -169,6 +175,20 @@ function analyse(
 
   const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
 
+  // Cambios de tag dentro de un solo periodo (R-DAT-019), con la ventana entera como cobertura —el
+  // caso de una sola exportación—, antes que la matriz: su vida es lo que la matriz mide (R-OPP-016).
+  const tagChanges = detectTagChanges(
+    readings,
+    direction,
+    [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
+    PROVISIONAL_CONFIG.tagChanges,
+    {
+      minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
+      highRate: PROVISIONAL_CONFIG.readRate.highRate,
+      minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
+    },
+  );
+
   const laps: Lap[] =
     anchor === null
       ? []
@@ -194,7 +214,12 @@ function analyse(
           PROVISIONAL_CONFIG.readRate,
           { zoneOf: zoneConfig.zoneOf, laneEntryTags: laneEntryTags(laneConfig.lanes) },
           PROVISIONAL_CONFIG.trend,
+          tagChanges.lives,
         );
+  const vehicleReading =
+    matrix === undefined
+      ? { vehicles: [], tags: [] }
+      : describeVehicleReading(matrix, PROVISIONAL_CONFIG.readRate, PROVISIONAL_CONFIG.vehicleReading);
 
   const fifo =
     anchor === null
@@ -286,6 +311,8 @@ function analyse(
     anchorTagId: anchor?.tagId,
     anchorTruth,
     drift,
+    tagChanges,
+    vehicleReading,
     readings: readings.length,
   };
 }
@@ -308,6 +335,8 @@ describe("auditoría del circuito con verdad conocida", () => {
     anchorTagId,
     anchorTruth,
     drift,
+    tagChanges,
+    vehicleReading,
     readings,
   } = analysis;
 
@@ -716,6 +745,22 @@ describe("auditoría del circuito con verdad conocida", () => {
         detail: `función declarada: ${hallado?.criticalFunction ?? "ninguna"}`,
       };
     },
+    "lectura-desigual-en-pocos-tags": () => {
+      const defect = scenario.defects.find((d) => d.kind === "lectura-desigual-en-pocos-tags");
+      const hallado = vehicleReading.vehicles.find((entry) => entry.agvId === defect?.vehicles[0]);
+      const weak = new Set(hallado?.weak.map((entry) => entry.tagId) ?? []);
+      return {
+        ok:
+          hallado?.extent === "pocos" &&
+          (defect?.tags ?? []).every((tag) => weak.has(tag)) &&
+          hallado.never.length === 0 &&
+          hallado.stopped.length === 0,
+        detail:
+          hallado === undefined
+            ? "AGV plantado sin diferencias"
+            : `${hallado.extent ?? "sin «poco»"}: ${hallado.weak.map((entry) => `${entry.tagId} ${entry.hits}/${entry.passes}`).join(", ")}`,
+      };
+    },
   };
 
   it("publica el informe por clase", () => {
@@ -861,6 +906,73 @@ describe("auditoría del circuito con verdad conocida", () => {
       ?.tags ?? [])[0];
     const halladoTagNuevo = drift.tagDrifts.find((entry) => entry.tagId === tagNuevoInstalado);
     expect(halladoTagNuevo?.kind, "98001 no debería emparejarse con ningún desaparecido").toBe("nuevo");
+  }, PLAZO);
+
+  it("con una sola exportación, los cambios de tag y la lectura por AGV coinciden con lo plantado", () => {
+    const of = (kind: DefectClass) => scenario.defects.find((d) => d.kind === kind);
+
+    // Cambios dentro del periodo (R-DAT-019): la sustitución, las dos roturas y el tag nuevo suelto.
+    const sustitucion = of("sustitucion-candidata")?.tags ?? [];
+    const cambios = tagChanges.changes.filter((change) => change.kind === "cambio");
+    expect(cambios.map((change) => (change.kind === "cambio" ? [change.oldTagId, change.newTagId] : []))).toEqual([
+      sustitucion,
+    ]);
+    const dejan = tagChanges.changes.filter((change) => change.kind === "deja").map((change) => change.tagId).sort();
+    expect(dejan).toEqual([...(of("rotura-subita")?.tags ?? [])].sort());
+    const empiezan = tagChanges.changes.filter((change) => change.kind === "empieza").map((change) => change.tagId);
+    expect(empiezan).toEqual(of("tag-nuevo-a-mitad-de-ventana")?.tags ?? []);
+
+    // Frente al tag nuevo, solo el AGV plantado, y con «nunca».
+    const noActualizado = of("memoria-no-actualizada");
+    expect(tagChanges.adoption.map((issue) => [issue.agvId, issue.tagId, issue.fact.kind])).toEqual([
+      [noActualizado?.vehicles[0], noActualizado?.tags[0], "nunca"],
+    ]);
+
+    // Lectura por AGV (R-AGV-016): los ciegos no leen nunca sus tags, el de memoria actualizada deja
+    // de leer los suyos a la hora del corte, y el lector degradado lee poco en muchos.
+    const byId = new Map(vehicleReading.vehicles.map((entry) => [entry.agvId, entry]));
+    const memoria = of("omision-por-memoria");
+    for (const agvId of memoria?.vehicles ?? []) {
+      expect(byId.get(agvId)?.never.map((entry) => entry.tagId).sort(), agvId).toEqual([...(memoria?.tags ?? [])].sort());
+    }
+    const actualizada = of("memoria-actualizada-a-mitad-de-ventana");
+    const parado = byId.get(actualizada?.vehicles[0] ?? "");
+    expect(parado?.stopped.map((entry) => entry.tagId).sort()).toEqual([...(actualizada?.tags ?? [])].sort());
+    for (const entry of parado?.stopped ?? []) {
+      expect(Math.abs(entry.sinceUtcMs - scenario.periodSplitUtcMs)).toBeLessThan(60 * 60_000);
+    }
+    expect(byId.get(of("lector-agv-degradado")?.vehicles[0] ?? "")?.extent).toBe("muchos");
+  }, PLAZO);
+
+  it("con una sola exportación, ni cambios de tag ni lectura por AGV fuera de lo plantado", () => {
+    const of = (kind: DefectClass) => scenario.defects.find((d) => d.kind === kind);
+    const tocados = new Set(
+      tagChanges.changes.flatMap((change) => (change.kind === "cambio" ? [change.oldTagId, change.newTagId] : [change.tagId])),
+    );
+    const cambiosSobreSanos = scenario.cleanTags.filter((tag) => tocados.has(tag));
+    expect(cambiosSobreSanos, `cambios espurios: ${cambiosSobreSanos.join(", ")}`).toHaveLength(0);
+
+    // «Nunca» y «dejó de leer» solo en los AGV plantados para eso; «poco» solo en los que tienen una
+    // lectura desigual plantada (el de la tanda de tags saltados, el lector degradado y el nuevo caso).
+    const nunca = new Set(of("omision-por-memoria")?.vehicles ?? []);
+    const desde = new Set(of("memoria-actualizada-a-mitad-de-ventana")?.vehicles ?? []);
+    const poco = new Set([
+      ...(of("omision-conservando-convoy")?.vehicles ?? []),
+      ...(of("lector-agv-degradado")?.vehicles ?? []),
+      ...(of("lectura-desigual-en-pocos-tags")?.vehicles ?? []),
+    ]);
+    const espurios = vehicleReading.vehicles.filter(
+      (entry) =>
+        (entry.never.length > 0 && !nunca.has(entry.agvId)) ||
+        (entry.stopped.length > 0 && !desde.has(entry.agvId)) ||
+        (entry.weak.length > 0 && !poco.has(entry.agvId)),
+    );
+    expect(
+      espurios.map((entry) => entry.agvId),
+      `AGV con diferencias sin plantar: ${espurios
+        .map((entry) => `${entry.agvId} (nunca ${entry.never.length}, desde ${entry.stopped.length}, poco ${entry.weak.map((w) => `${w.tagId} ${w.hits}/${w.passes}`).join(" ")})`)
+        .join("; ")}`,
+    ).toHaveLength(0);
   }, PLAZO);
 
   it("detecta las clases que ya sabe detectar, y sigue haciéndolo", () => {

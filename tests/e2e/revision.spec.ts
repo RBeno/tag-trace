@@ -58,7 +58,7 @@ test.describe("revisión en campo", () => {
     await lane.getByRole("button", { name: /Confirmado/ }).click();
     await lane.getByRole("textbox").fill("Calle cerrada por obra");
     await lane.getByRole("textbox").press("Tab");
-    const broken = page.locator(".finding", { hasText: "dejó de leerse" }).first();
+    const broken = page.locator(".finding", { hasText: /Tag \d+: dejó de leerse/ }).first();
     await broken.getByRole("button", { name: /Pospuesto/ }).click();
 
     await expect(lane).toHaveAttribute("data-review", "confirmado");
@@ -80,7 +80,7 @@ test.describe("revisión en campo", () => {
     const laneAgain = page.locator(".finding", { hasText: "Nadie entró en" }).first();
     await expect(laneAgain).toHaveAttribute("data-review", "confirmado", { timeout: 180_000 });
     await expect(laneAgain.getByRole("textbox")).toHaveValue("Calle cerrada por obra");
-    await expect(page.locator(".finding", { hasText: "dejó de leerse" }).first()).toHaveAttribute("data-review", "pospuesto");
+    await expect(page.locator(".finding", { hasText: /Tag \d+: dejó de leerse/ }).first()).toHaveAttribute("data-review", "pospuesto");
     await expect(page.locator(".review-bar")).toContainText(/Revisados 2 de \d+/);
 
     const download = page.waitForEvent("download");

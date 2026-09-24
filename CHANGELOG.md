@@ -2,6 +2,56 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.22.0] - 2026-09-24
+
+Lo que más se va a ver en planta, bien detectado y destacado en su sección: cambios de tag, lectura
+por AGV y AGV que no cargan. Todo como diferencia medida, sin causa, por decisión del propietario.
+
+### Añadido
+
+- **Cambios de tag dentro de un mismo periodo** (`src/domain/tag-changes.ts`, R-DAT-019). Con una
+  sola exportación de dos o tres días:
+  - un tag que deja de leerse y otro que empieza en su mismo sitio salen como **un cambio**, «60438 →
+    99001», con las dos horas;
+  - los que solo dejan de leerse o solo empiezan salen aparte, con cuántas veces pasó la flota por su
+    sitio sin leerlos;
+  - frente al tag nuevo, cada AGV que no lo lee como el resto sale con su cifra: nunca, desde una hora
+    0 lecturas, empezó a leerlo más tarde, o el porcentaje.
+
+  Antes, un cambio de tag solo se veía comparando dos exportaciones separadas.
+- **Lectura por AGV** (`src/domain/vehicle-reading.ts`, R-AGV-016). Sobre los tags que el resto lee
+  bien, separa **nunca** («0 de 41 pasadas»), **desde una hora** («desde las 17:40, 0 de 12») y
+  **poco** («51 %»). Dice también si le pasa en **muchos** tags (el 10 % de los que recorre, mínimo
+  cinco) o en **pocos**. Las tarjetas de tag separan igual quién no lo lee nunca y quién lo lee poco.
+- Sección **«Cambios de tag»**, después del inventario. Agrupa los cambios, las tarjetas de rotura y
+  degradación de tags y su gráfico.
+- En **Calles de carga**, los AGV que no entraron en ninguna calle son lo primero de la sección:
+  «N de M AGV».
+- Configuración provisional `vehicleReading` y `tagChanges`, con su justificación (OQ-129: se
+  calibran con los datos del viernes).
+- TC-163–170. Auditoría `auditoria/11`, con el caso nuevo `lectura-desigual-en-pocos-tags`: un AGV
+  lee dos tags uno sí y uno no, sin `random()`.
+
+### Corregido
+
+- **Un tag recién puesto salía como «todos lo leen poco».** La matriz contaba como fallos las pasadas
+  de antes de que existiera. Ahora cada tag se mide dentro de su vida (R-OPP-016). Su línea temporal
+  conserva esas pasadas, así que la rotura se sigue viendo. Recortar por la primera y la última
+  lectura a secas se probó y se descartó: inflaba la tasa de los tags que se leen poco. La vida solo
+  se recorta cuando el cambio se detecta y la racha es improbable por azar.
+- **«Lee poco» por azar.** La primera versión de la lectura por AGV señalaba a seis AGV sanos en tags
+  que la flota lee al ~85 %: el azar deja a varios en el 74–79 %. Salió en la propia auditoría. Ahora
+  «poco» exige que la diferencia con el resto tenga menos de un 0,1 % de ser casualidad.
+
+### Cambiado
+
+- Las tarjetas de AGV y de tag dicen la cifra y no la causa. Se retiran «revisar esos AGV, no el
+  tag», «revisar el tag o su posición», «Comprobar el tag» y «revisar su lector o su WiFi».
+- Las tarjetas de AGV van por tipo, hasta cinco de cada uno; el resto, en una tabla plegada.
+- `drift.ts` exporta `dominant`, `sharedNeighborMatch` y sus tipos para reutilizarlos.
+- `tests/e2e/revision.spec.ts` marca como pospuesta la tarjeta «Tag N: dejó de leerse». La primera
+  tarjeta con esa frase es ahora la del cambio de tag. Lo que comprueba no cambia.
+
 ## [3.21.0] - 2026-09-24
 
 Interfaz con lenguaje de producto terminado (`UX_SPEC.md` §4.4). No se quita ninguna función, ninguna

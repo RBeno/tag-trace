@@ -147,4 +147,39 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });
+  test("con una sola exportación: el cambio de tag, quién no lee el nuevo, y la lectura por AGV con cifras", async ({ page }) => {
+    const scenario = buildAuditScenario();
+    const readings = { name: "auditoria.csv", mimeType: "text/csv", buffer: Buffer.from(scenario.readingsCsv, "utf8") };
+    const of = (kind: string) => scenario.defects.find((defect) => defect.kind === kind);
+    const [viejo, nuevo] = of("sustitucion-candidata")?.tags ?? [];
+    const sinActualizar = of("memoria-no-actualizada")?.vehicles[0] ?? "";
+
+    await freshPage(page);
+    await page.locator("#circuit-name").fill("auditoria");
+    await page.locator("#source-file").setInputFiles(readings);
+    await expect(page.getByText("Circuito «auditoria»")).toBeVisible({ timeout: 120_000 });
+    await page
+      .locator("#lists-file")
+      .setInputFiles({ name: "listas.csv", mimeType: "text/csv", buffer: Buffer.from(scenario.listsCsv, "utf8") });
+    await expect(page.getByText("Listas cargadas")).toBeVisible({ timeout: 30_000 });
+    await page.locator("#source-file").setInputFiles([]);
+    await page.locator("#source-file").setInputFiles(readings);
+
+    // Se espera a la vista de la segunda importación, la que ya lleva las listas: la primera también
+    // enseña los cambios de tag, y mirarla sería mirar una vista a punto de sustituirse.
+    await expect(page.locator(".finding", { hasText: "Nadie entró en" }).first()).toBeVisible({ timeout: 180_000 });
+
+    // El cambio de tag, dentro de un solo periodo, con el AGV que no lee el nuevo y su cifra.
+    await expect(page.getByRole("heading", { name: "Cambios de tag" })).toBeVisible();
+    const cambio = page.locator(".finding", { hasText: `${viejo} → ${nuevo}` }).first();
+    await expect(cambio).toBeVisible();
+    await expect(cambio).toContainText(`${sinActualizar}, nunca (0 de`);
+
+    // La lectura por AGV: «nunca» con su cifra, y «poco» en pocos tags con su porcentaje. Sin causa.
+    const ciego = of("omision-por-memoria")?.vehicles[0] ?? "";
+    await expect(page.locator(".finding", { hasText: `AGV ${ciego} · no lee nunca` })).toContainText(": 0 de ");
+    const desigual = of("lectura-desigual-en-pocos-tags")?.vehicles[0] ?? "";
+    await expect(page.locator(".finding", { hasText: `AGV ${desigual} · lee poco en 2 tags` })).toContainText("%");
+    await expect(page.locator(".finding", { hasText: /memoria|lector|colocación/i })).toHaveCount(0);
+  });
 });

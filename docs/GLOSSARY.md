@@ -1,8 +1,8 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.16.0
+version: 0.17.0
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-24
 ---
 
 # Glosario controlado
@@ -35,7 +35,9 @@ last_updated: 2026-09-23
 | Grafo validado | Versión del grafo aceptada por el propietario durante una consolidación. |
 | Perfil esperado | Distribución versionada de secuencias, tiempos y frecuencias válida para un contexto. |
 | Divergencia | Diferencia mensurable entre un periodo/AGV/grupo y el comportamiento esperado o colectivo. |
+| Cambio de tag | Dentro de un mismo periodo cargado, un tag que deja de leerse y otro que empieza en su mismo sitio —el mismo vecino de antes o de después en la secuencia de los AGV—, sin solaparse más de lo admitido (R-DAT-019). Candidato, nunca confirmación de que sea el mismo punto físico. Entre dos exportaciones separadas, lo equivalente es la sustitución candidata de la deriva. |
 | Deriva | Cambio detectado comparando el primer y el último periodo de cobertura de un circuito, nunca dentro de una sola ventana: un tag que se leía y deja de leerse, uno que empieza a leerse, o un vehículo que deja de leer un conjunto que sí leía mientras el resto de la flota lo sigue leyendo (R-DAT-016, R-AGV-013). Un caso particular es la **sustitución candidata** (R-DAT-017): un tag que deja de leerse y otro que empieza, correlacionados porque ocupan el mismo hueco de la secuencia de lecturas y coinciden en el tiempo — candidato, nunca confirmación de que sea el mismo punto físico. Y al revés, un vehículo puede ser candidato a **memoria no actualizada** cuando un tag nuevo ya adoptado por la mayoría de la flota no aparece nunca en sus lecturas. Distinta de la divergencia: esta compara el circuito consigo mismo a lo largo del tiempo, no contra lo esperado. |
+| Vida de un tag | Desde que empezó hasta que dejó de leerse dentro del periodo, cuando ese cambio se detecta (R-DAT-019). Su tasa y la de cada AGV se cuentan dentro de ella (R-OPP-016); sin cambio detectado, el tag vive todo el periodo. |
 | Salud | Indicador explicable derivado de oportunidades válidas, lecturas, estabilidad, contexto e incertidumbre; nunca mera frecuencia absoluta. |
 | Hueco censurado | Intervalo sin evidencia suficiente para afirmar qué ocurrió. |
 | CO | Carga online. Forma parte del circuito físico, pero se modela dentro de la zona vacía y no se rige por FIFO cargado. |

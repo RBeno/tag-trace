@@ -484,3 +484,45 @@ function convoyDeDos(): readonly Reading[] {
   at("C", "0100", 362_000);
   return readings;
 }
+
+/**
+ * Vida del tag y rachas por celda (R-OPP-016). Lo que se fija: con la vida detectada, un tag recién
+ * puesto no suma como fallos las pasadas de antes de existir, y sin ella sí —es la diferencia entre
+ * «se lee bien desde que está» y «todos lo leen poco»—; y cada celda lleva su primera y última
+ * lectura y las rachas sin leer de los dos extremos, que es de donde sale «desde tal hora, 0
+ * lecturas».
+ */
+describe("vida del tag y rachas por celda (R-OPP-016)", () => {
+  const RING6 = ["0100", "0200", "0300", "0400", "0500", "0600"];
+
+  it("con la vida detectada, las pasadas de antes de que el tag empezara a leerse no cuentan", () => {
+    const skip = (lap: number, tagId: string): boolean => tagId === "0300" && lap < 20;
+    const readings = ["H1", "H2", "H3"].flatMap((agvId) => constantPaceReadings(agvId, RING6, 40, skip));
+    const start = Math.min(...readings.filter((entry) => entry.tagId === "0300").map((entry) => entry.time.utcMs));
+
+    const sinVida = buildReadMatrix(0, readings, "oldest-first", [], RING6, "0100", THRESHOLDS, SIN_ZONAS, TREND);
+    const conVida = buildReadMatrix(0, readings, "oldest-first", [], RING6, "0100", THRESHOLDS, SIN_ZONAS, TREND,
+      new Map([["0300", { from: start, to: null }]]));
+
+    expect(sinVida.tags.find((entry) => entry.tagId === "0300")?.rate).toBe(0.5);
+    const tag = conVida.tags.find((entry) => entry.tagId === "0300");
+    expect(tag?.rate).toBe(1);
+    expect(tag?.pattern).toBe("uniforme-alto");
+  });
+
+  it("cada celda lleva su primera y última lectura y las rachas sin leer de los dos extremos", () => {
+    const readings = [
+      ...constantPaceReadings("H1", RING6, 40),
+      ...constantPaceReadings("H2", RING6, 40, (lap, tagId) => tagId === "0300" && (lap < 5 || lap >= 30)),
+      ...constantPaceReadings("H3", RING6, 40),
+    ];
+    const matrix = buildReadMatrix(0, readings, "oldest-first", [], RING6, "0100", THRESHOLDS, SIN_ZONAS, TREND);
+    const cell = matrix.tags.find((entry) => entry.tagId === "0300")?.byVehicle.find((entry) => entry.agvId === "H2");
+
+    expect(cell?.leadingMisses).toBe(5);
+    expect(cell?.trailingMisses).toBe(10);
+    // Vuelta 5 y vuelta 29, seis posiciones por vuelta a un segundo cada una: 0300 es la tercera.
+    expect(cell?.firstHitUtcMs).toBe(33_000);
+    expect(cell?.lastHitUtcMs).toBe(177_000);
+  });
+});

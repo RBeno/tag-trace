@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.16.0
+version: 0.17.0
 status: baseline-candidate
-last_updated: 2026-09-22
+last_updated: 2026-09-24
 ---
 
 # Catálogo de algoritmos
@@ -62,6 +62,8 @@ flowchart TD
 | ALG-019 | Inactividad e instante de cambio | Detección de silencios por objeto y del punto donde el comportamiento cambia | Periodos de inactividad clasificados e instante de cambio con alternativas | O(n) por objeto | F2 reducido, F3 completo |
 | ALG-020 | Rotura y degradación de tasa de lectura | Segmentación binaria de un corte, después caída monótona por tramos | Instante de rotura o tendencia sostenida, por tag y por AGV | O(n) sobre la línea de pasadas | F3 |
 | ALG-021 | Candidatos a punto crítico | Reparto de sucesores sostenido (bifurcación/cruce), coeficiente de variación (parada precisa), mayor salto proporcional (semáforo) | Candidatos por clase con evidencia y soporte, nunca asignación | O(n) | F3 |
+| ALG-022 | Cambios de tag dentro de un periodo | Pasadas por el sitio del tag; racha fuera de su vida larga e improbable por azar; pareja unívoca por vecino compartido | Cambios, tags que dejan o empiezan a leerse, su vida, y la diferencia de cada AGV frente al nuevo | O(n) sobre las lecturas | F3 |
+| ALG-023 | Lectura por AGV | Celdas dentro de la vida del tag; nunca, desde una hora, poco con cola binomial frente al resto | Por AGV y por tag, la diferencia medida y si pasa en muchos o en pocos tags | O(celdas) | F3 |
 
 ## 4. Oportunidades y salud
 
@@ -379,6 +381,44 @@ sin necesitar el anillo para conseguirlo).
 sobre el dato, nunca una conclusión de que sea el mismo punto (R-EVI-006). No cruza con el tercer
 descarte geométrico de R-DAT-016 (§6.1). No fija ningún valor de planta: `minAdoptionShare` es la
 reutilización declarada de un umbral ya `draft`.
+
+## 6.3 Cambios de tag dentro de un periodo, implementado (R-DAT-019, R-OPP-016)
+
+`src/domain/tag-changes.ts`. Solo con lecturas, igual que §6.1, y sirve para tags de dentro y de fuera
+del anillo.
+
+1. **Secuencia** de cada AGV en orden canónico (ADR-0013), sin repeticiones inmediatas, marcando a
+   qué tramo de cobertura pertenece cada lectura.
+2. **Sitio.** Vecino dominante de antes y de después (empate exacto: sin dominante), y los de segundo
+   orden. Cada par (antes, después) indexa los tags que encierra.
+3. **Pasadas por el sitio.** Un AGV lee un vecino de antes y, como mucho `maxReadsBetween` lecturas
+   más tarde y en el mismo tramo, uno de después; acierto si el tag está entre medias. Una pasada ya
+   contada con un par más ancho no se vuelve a contar con uno más estrecho.
+4. **Deja / empieza.** Fuera de la vida del tag —tras la última lectura de la flota, o antes de la
+   primera—, las pasadas de quienes lo leen son todas fallos. Cuenta si son al menos `minSlotPasses`
+   **y** `(1 − tasa)^n ≤ maxChance`, con la tasa medida dentro de su vida.
+5. **Pareja.** Deja y empieza en el mismo sitio (vecino compartido en el mismo lado), sin solaparse
+   más de `maxOverlapMs`, unívoca en los dos sentidos.
+6. **Frente al tag nuevo.** Desde que empieza, por AGV con al menos `minPassesForNever` pasadas y solo
+   si la flota ya lo lee (`minAdoptionShare`): nunca; desde una hora, 0 (racha final larga tras
+   leerlo bien); más tarde (racha inicial larga y después bien); o el porcentaje.
+
+La vida resultante va a la matriz (§4.4): sus celdas y su tasa se cuentan dentro de ella; la línea
+temporal del tag, no, porque es donde se ve la rotura.
+
+**Límites.** Un tag sin vecino dominante no tiene sitio y no se evalúa. Un cambio en el borde de una
+exportación es de §6.1–6.2. Una sustitución con un solape largo se enseña como dos hechos, no como
+pareja.
+
+## 6.4 Lectura por AGV, implementado (R-AGV-016)
+
+`src/domain/vehicle-reading.ts`, sobre la matriz ya medida dentro de la vida de cada tag. Cuenta un
+tag contra un AGV solo si, entre los demás con pasadas suficientes, al menos `fleetReadsWellShare` lo
+leen a `highRate` o más. Cada celda es **nunca** (0 aciertos con `minPassesForNever` pasadas),
+**desde una hora** (racha final de `minPassesForNever` tras leerlo a `highRate` o más) o **poco**
+(por debajo de `highRate` y con cola binomial inferior ≤ `maxChance` frente a la tasa del resto en ese
+tag). «Muchos» es `manyTagsShare` de los tags comparados con un mínimo de `minManyTags`. La salida son
+cifras, nunca una causa.
 
 ## 7. Segmentación de vueltas y huecos
 

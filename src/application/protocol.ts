@@ -18,6 +18,8 @@ import type { FleetTimeline } from "../domain/fleet.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
 import type { ReadMatrix } from "../domain/read-matrix.js";
+import type { TagChangeReport } from "../domain/tag-changes.js";
+import type { VehicleReadingReport } from "../domain/vehicle-reading.js";
 import type { VehicleReplayState } from "../domain/replay.js";
 import type { VsystemComparisonRow } from "../domain/vsystem.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
@@ -270,6 +272,13 @@ export interface CircuitViews {
   }[];
   /** Tasa de lectura por tag y vehículo, normalizada por pasada (R-OPP-010). Nunca es salud. */
   readonly readMatrices: readonly ReadMatrix[];
+  /**
+   * Lectura de cada AGV sobre los tags que el resto lee bien, por cohorte (R-AGV-016): nunca, desde
+   * una hora, poco. La diferencia medida, sin causa.
+   */
+  readonly vehicleReading: readonly (VehicleReadingReport & { readonly cohortId: number })[];
+  /** Cambios de tag dentro de un mismo periodo cubierto (R-DAT-019) y la diferencia de cada AGV frente al nuevo. */
+  readonly tagChanges: Pick<TagChangeReport, "changes" | "adoption">;
   /** Expediente reducido por AGV: búsqueda por identificador (UX_SPEC §4.1). Sin tasa de salud. */
   readonly agvDossiers: readonly AgvDossier[];
   /** Expediente reducido por tag. */

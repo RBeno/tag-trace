@@ -198,7 +198,7 @@ function buildNeighborTally(readings: readonly Reading[], period: Interval): Nei
 
 /** El vecino con más cuenta. Empate exacto en el máximo: sin dominante, `null` — sin firma no hay
  *  pareja posible, en vez de adivinar cuál de los empatados es el vecino real (R-EVI-004). */
-function dominant(counts: Map<string, number> | undefined): string | null {
+export function dominant(counts: Map<string, number> | undefined): string | null {
   if (counts === undefined || counts.size === 0) return null;
   let max = 0;
   for (const count of counts.values()) if (count > max) max = count;
@@ -206,7 +206,7 @@ function dominant(counts: Map<string, number> | undefined): string | null {
   return winners.length === 1 ? (winners[0] as string) : null;
 }
 
-interface NeighborSignature {
+export interface NeighborSignature {
   readonly predecessor: string | null;
   readonly successor: string | null;
 }
@@ -218,7 +218,7 @@ function signatureOf(tagId: string, tally: NeighborTally): NeighborSignature {
   };
 }
 
-interface SharedNeighborMatch {
+export interface SharedNeighborMatch {
   readonly side: "predecesor" | "sucesor";
   readonly neighbor: string;
 }
@@ -236,7 +236,7 @@ interface SharedNeighborMatch {
  * aparecen (que exigen lecturas en uno solo). Es una garantía del propio dato, no una comprobación
  * añadida por si acaso (no se valida lo que no puede ocurrir).
  */
-function sharedNeighborMatch(early: NeighborSignature, late: NeighborSignature): SharedNeighborMatch | null {
+export function sharedNeighborMatch(early: NeighborSignature, late: NeighborSignature): SharedNeighborMatch | null {
   if (early.successor !== null && early.successor === late.successor) {
     return { side: "sucesor", neighbor: early.successor };
   }

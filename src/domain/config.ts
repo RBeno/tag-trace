@@ -22,6 +22,8 @@ import type { FifoThresholds } from "./fifo.js";
 import type { GraphThresholds } from "./graph.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
 import type { TrendThresholds } from "./read-rate-trend.js";
+import type { TagChangeThresholds } from "./tag-changes.js";
+import type { VehicleReadingThresholds } from "./vehicle-reading.js";
 
 export interface SilenceThresholds {
   /**
@@ -52,6 +54,8 @@ export interface AnalysisConfig {
   readonly fifo: FifoThresholds;
   readonly criticalPoints: CriticalPointThresholds;
   readonly drift: DriftThresholds;
+  readonly vehicleReading: VehicleReadingThresholds;
+  readonly tagChanges: TagChangeThresholds;
 }
 
 /**
@@ -126,6 +130,18 @@ export interface AnalysisConfig {
  *   se supone. `minAdoptionShare` (sustitución candidata y adopción de tag nuevo, R-DAT-017) es
  *   deliberadamente el mismo número que `readRate.highRate`: la misma idea de «lo lee casi todo el
  *   mundo», aplicada aquí a cuántos vehículos adoptan un tag en vez de a cuántas veces se lee.
+ * - **Lectura por AGV (R-AGV-016).** Ocho pasadas sin leer para decir «nunca» o «desde tal hora»:
+ *   que un AGV que lee un tag la mitad de las veces falle ocho seguidas por azar es un 0,4 %. Un tag
+ *   cuenta contra un AGV solo si tres de cada cuatro del resto lo leen bien. «Muchos tags» es el 10 %
+ *   de los que recorre y como mínimo cinco, decisión del propietario (2026-09-24). «Lee poco» exige
+ *   además menos de un 0,1 % de que sea casualidad frente a lo que lee el resto en ese tag, el mismo
+ *   listón que los cambios de tag: sin él, un tag que la flota lee al 85 % deja a varios AGV en el
+ *   76 % solo por azar, y así salió en la propia auditoría.
+ * - **Cambios de tag dentro de un periodo (R-DAT-019).** Diez pasadas por el sitio fuera de la vida
+ *   del tag, y que esa racha sin leer tenga menos de un 0,1 % de ser casualidad dada su tasa: un tag
+ *   que se lee una de cada cinco veces necesita más de treinta seguidas. Dos lecturas entre los dos
+ *   vecinos admiten el propio tag y uno más al lado. Una hora de solape admite poner el nuevo antes
+ *   de quitar el viejo; más que eso ya no es una sustitución, son dos tags que conviven.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -159,6 +175,8 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     semaforo: { minGapRatio: 3, maxWithinClusterCv: 0.25, minClusterSamples: 4, minSamples: 20 },
   },
   drift: { minGapMs: 30 * 60_000, minReadingsPerVehicle: 10, minAdoptionShare: 0.8 },
+  vehicleReading: { minPassesForNever: 8, fleetReadsWellShare: 0.75, manyTagsShare: 0.1, minManyTags: 5, maxChance: 0.001 },
+  tagChanges: { minSlotPasses: 10, maxChance: 0.001, maxReadsBetween: 2, maxOverlapMs: 60 * 60_000 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

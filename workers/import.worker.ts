@@ -39,6 +39,8 @@ import {
   type LapAnchor,
 } from "../src/domain/laps.js";
 import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-matrix.js";
+import { detectTagChanges } from "../src/domain/tag-changes.js";
+import { describeVehicleReading } from "../src/domain/vehicle-reading.js";
 import { buildChargingReport, findLaneJunctions } from "../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans } from "../src/domain/fifo.js";
 import {
@@ -267,6 +269,14 @@ async function buildViews(
   const laps: Lap[] = [];
   const shapes: CircuitViews["shapes"][number][] = [];
   const matrices: CircuitViews["readMatrices"][number][] = [];
+  const vehicleReadings: CircuitViews["vehicleReading"][number][] = [];
+  // Cambios de tag dentro de un mismo periodo (R-DAT-019), antes que la matriz: cuándo empezó o dejó
+  // de leerse cada tag es lo que hace falta para medirlo solo dentro de su vida (R-OPP-016).
+  const tagChanges = detectTagChanges(readings, direction, coverage, PROVISIONAL_CONFIG.tagChanges, {
+    minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
+    highRate: PROVISIONAL_CONFIG.readRate.highRate,
+    minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
+  });
   const fifoCohorts: NonNullable<CircuitViews["fifo"]>[number][] = [];
   const criticalPointCohorts: CircuitViews["criticalPoints"][number][] = [];
   /** El ancla efectiva de cada cohorte (declarada si se resolvió, si no la inferida). */
@@ -345,19 +355,23 @@ async function buildViews(
             ),
           }),
     });
-    matrices.push(
-      buildReadMatrix(
-        cohort.id,
-        cohortReadings,
-        direction,
-        coverage,
-        effective.cycle,
-        effective.tagId,
-        PROVISIONAL_CONFIG.readRate,
-        orderLimits,
-        PROVISIONAL_CONFIG.trend,
-      ),
+    const matrix = buildReadMatrix(
+      cohort.id,
+      cohortReadings,
+      direction,
+      coverage,
+      effective.cycle,
+      effective.tagId,
+      PROVISIONAL_CONFIG.readRate,
+      orderLimits,
+      PROVISIONAL_CONFIG.trend,
+      tagChanges.lives,
     );
+    matrices.push(matrix);
+    vehicleReadings.push({
+      cohortId: cohort.id,
+      ...describeVehicleReading(matrix, PROVISIONAL_CONFIG.readRate, PROVISIONAL_CONFIG.vehicleReading),
+    });
 
     // FIFO en zona cargada (R-FLO-001): los tramos son propiedad del anillo de este cohorte, así
     // que se derivan aquí, no una sola vez fuera del bucle como las calles (que son de circuito).
@@ -432,6 +446,8 @@ async function buildViews(
     cohorts: cohortAssignment.cohorts,
     shapes,
     readMatrices: matrices,
+    vehicleReading: vehicleReadings,
+    tagChanges: { changes: tagChanges.changes, adoption: tagChanges.adoption },
     agvDossiers,
     tagDossiers,
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),

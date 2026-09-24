@@ -71,7 +71,9 @@ export type DefectClass =
   /** Función crítica declarada por la columna `funcion` del circuito virtual: contexto, no defecto. */
   | "vinculacion-declarada"
   /** Función crítica declarada por la lista `critico`, la vía de siempre: contexto, no defecto. */
-  | "desvinculacion-declarada";
+  | "desvinculacion-declarada"
+  /** Un AGV que lee dos tags en la mitad de sus pasadas y el resto de tags con normalidad. */
+  | "lectura-desigual-en-pocos-tags";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -332,6 +334,14 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
    * `sustitucionNueva` ni una sola vez, aunque la gran mayoría ya la detecta (R-AGV-013 ampliada).
    */
   const memoriaNoActualizada = vehicles[30] as string;
+  /**
+   * Un AGV que lee dos tags concretos en la mitad de sus pasadas, y todos los demás con normalidad
+   * (Parte 43, R-AGV-016). Uno sí y uno no, con un contador por tag y **sin `random()`**, en dos tags
+   * sin otro papel que no consumen sorteo: así no mueve la cascada compartida entre vehículos.
+   */
+  const lecturaDesigual = vehicles[9] as string;
+  const tagsDesiguales = [ring[80], ring[81]] as string[];
+  const pasesDesiguales = new Map<string, number>();
 
   // --- Zonas (R-FLO-003: la carga online va dentro de la zona vacía) -------------------------
   //
@@ -429,6 +439,11 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       else if (vehicle === memoriaActualizada && tagsDejados.includes(tag) && now >= periodSplit) {
         lee = false;
       } else if (tag === sustitucionOriginal && now >= periodSplit) lee = false;
+      else if (vehicle === lecturaDesigual && tagsDesiguales.includes(tag)) {
+        const pase = pasesDesiguales.get(tag) ?? 0;
+        pasesDesiguales.set(tag, pase + 1);
+        lee = pase % 2 === 0;
+      }
 
       // Se aplica **después** de las reglas del tag, nunca en su lugar: el lector degradado sigue
       // sin leer lo que nadie lee, y encima cada vez menos de lo que sí se lee, en cualquier tag...
@@ -686,6 +701,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     bifurcacionSinConvergerTag,
     paradaPrecisaTag,
     semaforoTag,
+    ...tagsDesiguales,
   ]);
 
   const defects: PlantedDefect[] = [
@@ -891,6 +907,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       vehicles: [],
       expect: "el expediente del tag muestra la función crítica «desvinculacion» (R-GRA-007)",
       mustNotSay: "que sea un hallazgo estadístico, ni que el producto la haya propuesto",
+    },
+    {
+      kind: "lectura-desigual-en-pocos-tags",
+      tags: tagsDesiguales,
+      vehicles: [lecturaDesigual],
+      expect: "el AGV sale como «lee poco» en esos dos tags, en pocos tags, con su porcentaje (R-AGV-016)",
+      mustNotSay: "una causa (lector, memoria o colocación), ni que los dos tags fallen para el resto",
     },
   ];
 

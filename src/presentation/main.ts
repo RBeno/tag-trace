@@ -1035,6 +1035,7 @@ function renderViews(views: CircuitViews): void {
       })),
     ),
   );
+  renderTagChanges(views);
   renderDrift(views);
 
   // Cohortes (R-DAT-012): un solo grupo es lo esperado; más de uno avisa de que el fichero mezcla
@@ -1155,6 +1156,8 @@ type TagRow = Matrix["tags"][number];
 
 /** Cuántos casos se enseñan de entrada. Es un parámetro de pantalla, no una magnitud de planta. */
 const HIGHLIGHTS = 8;
+/** Tarjetas de AGV por cada tipo de diferencia de lectura. Parámetro de pantalla. */
+const PER_KIND = 5;
 
 function percent(rate: number | null): string {
   return rate === null ? "—" : `${Math.round(rate * 100)} %`;
@@ -1360,7 +1363,7 @@ function renderShapes(views: CircuitViews): void {
           "recorrido medido.",
       ),
     );
-    renderHighlights(matrix);
+    renderHighlights(matrix, views.vehicleReading.find((entry) => entry.cohortId === matrix.cohortId));
     viewsPanel.append(readMatrixHeatmap(matrix, flaggedTagsOf(matrix), flaggedVehiclesOf(matrix)));
     renderFullMatrix(matrix);
   }
@@ -1370,25 +1373,14 @@ function renderShapes(views: CircuitViews): void {
   }
 }
 
+type VehicleReadingView = CircuitViews["vehicleReading"][number];
+
 /** Lo que hay que mirar, visible de entrada: los tags y los vehículos que se salen de lo normal. */
-function renderHighlights(matrix: Matrix): void {
+function renderHighlights(matrix: Matrix, reading: VehicleReadingView | undefined): void {
   const notable = matrix.tags
     .filter((tag) => tag.pattern === "bimodal-candidato" || tag.pattern === "uniforme-bajo")
     .sort((a, b) => (a.rate ?? 1) - (b.rate ?? 1));
-  // Los vehículos se destacan por **en cuántos tags son ellos los que no leen**, no por una tasa
-  // global con un corte inventado aquí: un 99 % de acierto sobre ciento cincuenta tags puede ser
-  // exactamente el vehículo que falla los dos que importan.
-  const blindCount = new Map<string, number>();
-  for (const tag of matrix.tags) {
-    if (tag.pattern !== "bimodal-candidato") continue;
-    for (const agvId of tag.lowReaders) blindCount.set(agvId, (blindCount.get(agvId) ?? 0) + 1);
-  }
-  const quietVehicles = [...matrix.vehicles]
-    .filter((vehicle) => (blindCount.get(vehicle.agvId) ?? 0) > 0)
-    .sort(
-      (a, b) => (blindCount.get(b.agvId) ?? 0) - (blindCount.get(a.agvId) ?? 0),
-    )
-    .slice(0, HIGHLIGHTS);
+  const readersOf = new Map((reading?.tags ?? []).map((entry) => [entry.tagId, entry]));
 
   viewsPanel.append(element("h3", undefined, "Lo que hay que mirar"));
   viewsPanel.append(
@@ -1401,86 +1393,275 @@ function renderHighlights(matrix: Matrix): void {
   );
 
   if (notable.length === 0) {
-    viewsPanel.append(
-      element("p", "muted", "Ningún tag destacable: todos se leen al pasar."),
-    );
+    viewsPanel.append(element("p", "muted", "Ningún tag destacable: todos se leen al pasar."));
   } else {
     for (const tag of notable.slice(0, HIGHLIGHTS)) {
       viewsPanel.append(
         finding(
           `Tag ${tag.tagId} · posición ${tag.position + 1} de ${matrix.ring.length}`,
           `${percent(tag.rate)} de las pasadas · ${patternLabel(tag.pattern)}`,
-          explain(tag),
+          explain(tag, readersOf.get(tag.tagId)),
           ["tag-lectura", tag.tagId],
         ),
       );
     }
     if (notable.length > HIGHLIGHTS) {
-      viewsPanel.append(
-        element(
-          "p",
-          "muted",
-          `Y ${notable.length - HIGHLIGHTS} más en la matriz completa.`,
+      viewsPanel.append(element("p", "muted", `Y ${notable.length - HIGHLIGHTS} más en la matriz completa.`));
+    }
+  }
+
+  renderVehicleReading(matrix, reading);
+  renderVehicleTrends(matrix);
+}
+
+/** Lista corta de tags con su cifra: los cuatro primeros y cuántos más. */
+function tagList(items: readonly string[]): string {
+  return items.length > 4 ? `${items.slice(0, 4).join("; ")}; y ${items.length - 4} más` : items.join("; ");
+}
+
+const tagWord = (count: number): string => (count === 1 ? "tag" : "tags");
+
+/**
+ * La lectura de cada AGV sobre los tags que el resto lee bien (R-AGV-016): nunca, desde una hora,
+ * poco en muchos tags, poco en pocos. La diferencia medida, sin causa.
+ */
+function renderVehicleReading(matrix: Matrix, reading: VehicleReadingView | undefined): void {
+  const vehicles = reading?.vehicles ?? [];
+  if (vehicles.length === 0) {
+    viewsPanel.append(element("p", "muted", "Ningún AGV se aparta de lo que lee el resto de la flota."));
+    return;
+  }
+  const unprovenOf = new Map(matrix.vehicles.map((vehicle) => [vehicle.agvId, vehicle.unproven]));
+  const extra = (agvId: string): string => {
+    const unproven = unprovenOf.get(agvId) ?? 0;
+    return unproven > 0 ? ` Además, ${unproven} tramos recorridos en menos tiempo de lo normal.` : "";
+  };
+
+  // Por tipo, para que ninguno quede escondido detrás de los demás: nunca, dejó de leer, poco en
+  // muchos tags y poco en pocos.
+  const groups: Record<"nunca" | "desde" | "muchos" | "pocos", HTMLElement[]> = { nunca: [], desde: [], muchos: [], pocos: [] };
+  for (const vehicle of vehicles) {
+    if (vehicle.never.length > 0) {
+      groups.nunca.push(
+        finding(
+          `AGV ${vehicle.agvId} · no lee nunca ${vehicle.never.length} ${tagWord(vehicle.never.length)} que el resto sí lee`,
+          tagList(vehicle.never.map((entry) => `${entry.tagId}: 0 de ${entry.passes} pasadas`)),
+          `Contado sobre las veces que pasó por cada punto.${extra(vehicle.agvId)}`,
+          ["agv-nunca", vehicle.agvId],
+        ),
+      );
+    }
+    if (vehicle.stopped.length > 0) {
+      groups.desde.push(
+        finding(
+          `AGV ${vehicle.agvId} · dejó de leer ${vehicle.stopped.length} ${tagWord(vehicle.stopped.length)} que el resto sigue leyendo`,
+          tagList(
+            vehicle.stopped.map(
+              (entry) => `${entry.tagId}: desde ${formatInstant(entry.sinceUtcMs)}, 0 de ${entry.passesSince} pasadas`,
+            ),
+          ),
+          "Antes los leía con normalidad.",
+          ["agv-desde", vehicle.agvId],
+        ),
+      );
+    }
+    if (vehicle.weak.length > 0) {
+      const weak = [...vehicle.weak].sort((a, b) => a.hits / a.passes - b.hits / b.passes);
+      const rates = weak.map((entry) => entry.hits / entry.passes).sort((a, b) => a - b);
+      const median = rates[Math.floor(rates.length / 2)] ?? null;
+      groups[vehicle.extent === "muchos" ? "muchos" : "pocos"].push(
+        finding(
+          vehicle.extent === "muchos"
+            ? `AGV ${vehicle.agvId} · lee poco en ${weak.length} de ${vehicle.consideredTags} tags ` +
+                `(${percent(weak.length / vehicle.consideredTags)})`
+            : `AGV ${vehicle.agvId} · lee poco en ${weak.length} ${tagWord(weak.length)}`,
+          (vehicle.extent === "muchos" ? `Mediana, ${percent(median)} de las pasadas. ` : "") +
+            tagList(weak.map((entry) => `${entry.tagId}: ${percent(entry.hits / entry.passes)} (${entry.hits} de ${entry.passes})`)),
+          `El resto de la flota lee esos tags con normalidad.${extra(vehicle.agvId)}`,
+          ["agv-poco", vehicle.agvId],
         ),
       );
     }
   }
+  let hidden = 0;
+  for (const cards of Object.values(groups)) {
+    for (const card of cards.slice(0, PER_KIND)) viewsPanel.append(card);
+    hidden += Math.max(0, cards.length - PER_KIND);
+  }
+  if (hidden > 0) viewsPanel.append(element("p", "muted", `Y ${hidden} más en la tabla.`));
+  viewsPanel.append(
+    lazyDetails(`Ver la lectura de los ${vehicles.length} AGV que se apartan del resto`, () =>
+      plainTable(
+        ["AGV", "Nunca", "Dejó de leer", "Lee poco", "Tags comparados"],
+        vehicles.map((vehicle) => [
+          vehicle.agvId,
+          String(vehicle.never.length),
+          String(vehicle.stopped.length),
+          String(vehicle.weak.length),
+          String(vehicle.consideredTags),
+        ]),
+      ),
+    ),
+  );
+}
 
-  if (quietVehicles.length === 0) {
+/** Lectura de un AGV que cae de golpe o baja a lo largo del periodo, en todos sus tags (R-OPP-015). */
+function renderVehicleTrends(matrix: Matrix): void {
+  const broken = matrix.vehicles.filter((vehicle) => vehicle.changedAtUtcMs !== undefined);
+  const declining = matrix.vehicles.filter((vehicle) => vehicle.trend === "bajando");
+  if (broken.length === 0 && declining.length === 0) return;
+
+  const panels = [...broken, ...declining]
+    .map((row) => trendPanel("AGV", row.agvId, row))
+    .filter((panel): panel is { readonly panel: TrendPanel; readonly drop: number } => panel !== null)
+    .sort((a, b) => b.drop - a.drop);
+  if (panels.length > 0) {
+    viewsPanel.append(trendMultiplesChart(panels.slice(0, TREND_PANELS).map((entry) => entry.panel), FORMATS));
+  }
+  for (const vehicle of broken) {
     viewsPanel.append(
-      element(
-        "p",
-        "muted",
-        "Ningún AGV concentra tags sin leer.",
+      finding(
+        `AGV ${vehicle.agvId}: su lectura cae de golpe`,
+        `${percent(vehicle.rateBefore ?? null)} → ${percent(vehicle.rateAfter ?? null)} desde ` +
+          formatInstant(vehicle.changedAtUtcMs as number),
+        "En todos los tags a la vez.",
+        ["agv-rotura", vehicle.agvId],
       ),
     );
-  } else {
-    for (const vehicle of quietVehicles) {
-      const blind = blindCount.get(vehicle.agvId) ?? 0;
-      viewsPanel.append(
-        finding(
-          `AGV ${vehicle.agvId} · ${vehicle.laps} vueltas`,
-          `${blind} ${blind === 1 ? "tag que no lee" : "tags que no lee"} y los demás sí · ` +
-            `${percent(vehicle.rate)} de lo que pasa`,
-          "Revisar lector, WiFi o memoria de este AGV: el resto de la flota sí lee esos tags." +
-            (vehicle.unproven > 0
-              ? ` Además hizo ${vehicle.unproven} tramos más rápido de lo normal: atajo o rama no registrada.`
-              : ""),
-          ["agv-lectura", vehicle.agvId],
-        ),
-      );
-    }
   }
-
-  renderTrends(matrix);
+  for (const vehicle of declining) {
+    viewsPanel.append(
+      finding(
+        `AGV ${vehicle.agvId}: su lectura baja a lo largo del periodo`,
+        (vehicle.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
+        "En todos los tags, mientras el resto de la flota los lee bien.",
+        ["agv-degradacion", vehicle.agvId],
+      ),
+    );
+  }
 }
 
 /**
- * Rotura súbita y degradación progresiva, sobre la misma matriz (R-OPP-015).
+ * Cambios de tag (R-DAT-019, R-OPP-015): lo que más se va a ver en planta.
  *
- * Junto a los destacados de siempre y no en una sección aparte: es exactamente el tipo de caso que
- * esa lista ya prioriza, y separarlo obligaría a mirar dos sitios para la misma pregunta.
+ * Dentro del periodo cargado: un tag que deja de leerse y otro que empieza en su sitio, los que solo
+ * dejan de leerse o solo empiezan, y las caídas de lectura de la matriz. Frente a cada tag nuevo, la
+ * diferencia de cada AGV que no lo lee como el resto. Hechos con su hora y sus cifras; la causa la
+ * pone una persona (R-EVI-006).
  */
-function renderTrends(matrix: Matrix): void {
-  const brokenTags = matrix.tags.filter((tag) => tag.changedAtUtcMs !== undefined);
-  const decliningTags = matrix.tags.filter((tag) => tag.trend === "bajando");
-  const brokenVehicles = matrix.vehicles.filter((vehicle) => vehicle.changedAtUtcMs !== undefined);
-  const decliningVehicles = matrix.vehicles.filter((vehicle) => vehicle.trend === "bajando");
+function renderTagChanges(views: CircuitViews): void {
+  const { changes, adoption } = views.tagChanges;
+  const explained = new Set<string>();
+  for (const change of changes) {
+    if (change.kind === "cambio") {
+      explained.add(change.oldTagId);
+      explained.add(change.newTagId);
+    } else {
+      explained.add(change.tagId);
+    }
+  }
+  const trendTags = views.readMatrices.flatMap((matrix) =>
+    matrix.tags.filter(
+      (tag) => !explained.has(tag.tagId) && (tag.changedAtUtcMs !== undefined || tag.trend === "bajando"),
+    ),
+  );
+  if (changes.length === 0 && trendTags.length === 0) return;
 
-  if (
-    brokenTags.length === 0 &&
-    decliningTags.length === 0 &&
-    brokenVehicles.length === 0 &&
-    decliningVehicles.length === 0
-  ) {
-    return;
+  viewsPanel.append(element("h3", undefined, "Cambios de tag"));
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      "Dentro del periodo cargado: tags que dejan de leerse, que empiezan a leerse o cuya lectura cae, " +
+        "con la hora y lo que pasó después.",
+    ),
+  );
+
+  const factText = (fact: CircuitViews["tagChanges"]["adoption"][number]["fact"]): string => {
+    switch (fact.kind) {
+      case "nunca":
+        return `nunca (0 de ${fact.passes} pasadas)`;
+      case "desde":
+        return `desde ${formatInstant(fact.sinceUtcMs)}, 0 de ${fact.passesSince} pasadas`;
+      case "tarde":
+        return `empezó a leerlo ${formatInstant(fact.startedUtcMs)}, tras ${fact.passesBefore} pasadas sin leerlo`;
+      case "poco":
+        return `${percent(fact.hits / fact.passes)} (${fact.hits} de ${fact.passes})`;
+    }
+  };
+  const adoptionLine = (tagId: string): string => {
+    const issues = adoption.filter((issue) => issue.tagId === tagId);
+    return issues.length === 0
+      ? ""
+      : ` AGV que no lo leen como el resto: ${tagList(issues.map((issue) => `${issue.agvId}, ${factText(issue.fact)}`))}.`;
+  };
+
+  const cards: HTMLElement[] = [];
+  for (const change of changes) {
+    if (change.kind === "cambio") {
+      cards.push(
+        finding(
+          `${change.oldTagId} → ${change.newTagId}`,
+          `${change.oldTagId} dejó de leerse ${formatInstant(change.oldLastUtcMs)}; ${change.newTagId} empezó ` +
+            formatInstant(change.newFirstUtcMs),
+          `En el mismo sitio (mismo ${change.neighborSide}, ${change.sharedNeighbor}). Después, la flota pasó ` +
+            `${change.passesAfterOld} veces sin leer ${change.oldTagId}.${adoptionLine(change.newTagId)}`,
+          ["cambio-tag", change.oldTagId, change.newTagId],
+        ),
+      );
+    } else if (change.kind === "deja") {
+      cards.push(
+        finding(
+          `Tag ${change.tagId}: dejó de leerse`,
+          `última lectura ${formatInstant(change.lastUtcMs)}`,
+          `Después, la flota pasó ${change.passesAfter} veces por su sitio sin leerlo.`,
+          ["tag-deja", change.tagId],
+        ),
+      );
+    } else {
+      cards.push(
+        finding(
+          `Tag ${change.tagId}: empezó a leerse`,
+          `primera lectura ${formatInstant(change.firstUtcMs)}`,
+          `Antes, la flota pasó ${change.passesBefore} veces por su sitio sin leerlo.${adoptionLine(change.tagId)}`,
+          ["tag-empieza", change.tagId],
+        ),
+      );
+    }
+  }
+  for (const card of cards.slice(0, HIGHLIGHTS)) viewsPanel.append(card);
+  if (changes.length > 0) {
+    viewsPanel.append(
+      lazyDetails(`Ver los ${changes.length} cambios dentro del periodo`, () =>
+        plainTable(
+          ["Tag", "Qué pasó", "Hora", "AGV que no lo leen como el resto"],
+          changes.map((change) => {
+            const tagId = change.kind === "cambio" ? `${change.oldTagId} → ${change.newTagId}` : change.tagId;
+            const what = change.kind === "cambio" ? "cambio de tag" : change.kind === "deja" ? "dejó de leerse" : "empezó a leerse";
+            const at =
+              change.kind === "cambio"
+                ? formatInstant(change.oldLastUtcMs)
+                : formatInstant(change.kind === "deja" ? change.lastUtcMs : change.firstUtcMs);
+            const newTag = change.kind === "cambio" ? change.newTagId : change.kind === "empieza" ? change.tagId : null;
+            const issues = newTag === null ? [] : adoption.filter((issue) => issue.tagId === newTag);
+            return [tagId, what, at, issues.length === 0 ? "—" : issues.map((issue) => issue.agvId).join(", ")];
+          }),
+        ),
+      ),
+    );
   }
 
-  // La forma del cambio, antes que las tarjetas: escalón o rampa, con el mismo eje para todos.
-  const panels = [
-    ...[...brokenTags, ...decliningTags].map((row) => trendPanel("Tag", row.tagId, row)),
-    ...[...brokenVehicles, ...decliningVehicles].map((row) => trendPanel("AGV", row.agvId, row)),
-  ]
+  renderTagTrends(trendTags);
+}
+
+/** Caídas de lectura de un tag que no son un cambio completo: de golpe o a lo largo del periodo (R-OPP-015). */
+function renderTagTrends(tags: readonly TagRow[]): void {
+  if (tags.length === 0) return;
+  const broken = tags.filter((tag) => tag.changedAtUtcMs !== undefined);
+  const declining = tags.filter((tag) => tag.trend === "bajando");
+
+  const panels = [...broken, ...declining]
+    .map((row) => trendPanel("Tag", row.tagId, row))
     .filter((panel): panel is { readonly panel: TrendPanel; readonly drop: number } => panel !== null)
     .sort((a, b) => b.drop - a.drop);
   if (panels.length > 0) {
@@ -1491,46 +1672,24 @@ function renderTrends(matrix: Matrix): void {
       );
     }
   }
-
-  for (const tag of brokenTags) {
+  for (const tag of broken) {
     viewsPanel.append(
       finding(
-        `Tag ${tag.tagId}: dejó de leerse en un instante concreto`,
-        `${percent(tag.rateBefore ?? null)} → ${percent(tag.rateAfter ?? null)} el ` +
+        `Tag ${tag.tagId}: su lectura cae de golpe`,
+        `${percent(tag.rateBefore ?? null)} → ${percent(tag.rateAfter ?? null)} desde ` +
           formatInstant(tag.changedAtUtcMs as number),
-        "Se leía con normalidad y desde ese momento casi nadie lo lee. Comprobar el tag.",
+        "Se leía con normalidad y desde ese momento casi no se lee.",
         ["tag-rotura", tag.tagId],
       ),
     );
   }
-  for (const tag of decliningTags) {
+  for (const tag of declining) {
     viewsPanel.append(
       finding(
-        `Tag ${tag.tagId}: baja de forma sostenida a lo largo de la ventana`,
+        `Tag ${tag.tagId}: su lectura baja a lo largo del periodo`,
         (tag.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
         "Cada tramo de tiempo se lee peor que el anterior.",
         ["tag-degradacion", tag.tagId],
-      ),
-    );
-  }
-  for (const vehicle of brokenVehicles) {
-    viewsPanel.append(
-      finding(
-        `AGV ${vehicle.agvId}: su lector dejó de responder en un instante concreto`,
-        `${percent(vehicle.rateBefore ?? null)} → ${percent(vehicle.rateAfter ?? null)} el ` +
-          formatInstant(vehicle.changedAtUtcMs as number),
-        "Deja de leer en todos los tags a la vez: revisar su lector o su WiFi.",
-        ["agv-rotura", vehicle.agvId],
-      ),
-    );
-  }
-  for (const vehicle of decliningVehicles) {
-    viewsPanel.append(
-      finding(
-        `AGV ${vehicle.agvId}: su lector lee cada vez peor`,
-        (vehicle.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
-        "Empeora en todos los tags, mientras el resto de la flota los lee bien.",
-        ["agv-degradacion", vehicle.agvId],
       ),
     );
   }
@@ -1564,6 +1723,34 @@ function renderCharging(views: CircuitViews): void {
 
   for (const problem of charging.problems) {
     viewsPanel.append(finding("Configuración que no se pudo usar", "—", problem));
+  }
+
+  // Lo primero de la sección: los AGV que no entraron a cargar en toda la ventana.
+  if (charging.neverCharged.length > 0) {
+    const ids = charging.neverCharged.map((entry) => entry.agvId);
+    const total = views.agvDossiers.length;
+    viewsPanel.append(
+      finding(
+        `${charging.neverCharged.length} de ${total} AGV no entraron en ninguna calle en toda la ventana`,
+        ids.length > 12 ? `${ids.slice(0, 12).join(", ")}…` : ids.join(", "),
+        "Ninguna lectura suya en una calle declarada. Cuánto tiempo estuvo presente cada uno, en el detalle.",
+        ["sin-carga", "circuito"],
+      ),
+    );
+    viewsPanel.append(
+      lazyDetails(`Ver los ${charging.neverCharged.length} AGV que no entraron a cargar`, () =>
+        plainTable(
+          ["AGV", "Primera lectura", "Última lectura", "Presente", "Lecturas"],
+          charging.neverCharged.map((entry) => [
+            entry.agvId,
+            formatInstant(entry.firstUtcMs),
+            formatInstant(entry.lastUtcMs),
+            duration(entry.lastUtcMs - entry.firstUtcMs),
+            entry.readings.toLocaleString("es-ES"),
+          ]),
+        ),
+      ),
+    );
   }
 
   if (charging.lanes.length > 0) viewsPanel.append(laneOccupancyChart(charging.lanes, state.coverage, FORMATS));
@@ -1623,33 +1810,6 @@ function renderCharging(views: CircuitViews): void {
     );
   }
 
-  if (charging.neverCharged.length > 0) {
-    const ids = charging.neverCharged.map((entry) => entry.agvId);
-    viewsPanel.append(
-      finding(
-        charging.neverCharged.length === 1
-          ? "1 vehículo no entró en ninguna calle en toda la ventana"
-          : `${charging.neverCharged.length} vehículos no entraron en ninguna calle en toda la ventana`,
-        ids.length > 12 ? `${ids.slice(0, 12).join(", ")}…` : ids.join(", "),
-        "Pueden cargar en una calle no declarada o haber estado poco tiempo. No se juzga su batería.",
-        ["sin-carga", "circuito"],
-      ),
-    );
-    viewsPanel.append(
-      lazyDetails(`Ver los ${charging.neverCharged.length} vehículos que no entraron a cargar`, () =>
-        plainTable(
-          ["AGV", "Primera lectura", "Última lectura", "Presente", "Lecturas"],
-          charging.neverCharged.map((entry) => [
-            entry.agvId,
-            formatInstant(entry.firstUtcMs),
-            formatInstant(entry.lastUtcMs),
-            duration(entry.lastUtcMs - entry.firstUtcMs),
-            entry.readings.toLocaleString("es-ES"),
-          ]),
-        ),
-      ),
-    );
-  }
 
   viewsPanel.append(
     lazyDetails(`Detalle de las ${charging.lanes.length} calles`, () =>
@@ -2018,12 +2178,26 @@ function finding(title: string, figure: string, evidence: string, review?: reado
 }
 
 /** La frase que acompaña a cada patrón. Enuncia la pregunta; no la responde (R-EVI-006). */
-function explain(tag: TagRow): string {
-  const base =
-    tag.pattern === "bimodal-candidato"
-      ? `${tag.lowReaders.length} AGV casi nunca lo leen y ${tag.highReaders.length} casi ` +
-        `siempre (${tag.lowReaders.slice(0, 3).join(", ")}…): revisar esos AGV, no el tag`
-      : "Todos los AGV lo leen poco: revisar el tag o su posición";
+function explain(tag: TagRow, readers: VehicleReadingView["tags"][number] | undefined): string {
+  const few = (ids: readonly string[]): string => (ids.length > 3 ? `${ids.slice(0, 3).join(", ")}…` : ids.join(", "));
+  let base: string;
+  if (tag.pattern !== "bimodal-candidato") {
+    base = "Todos los AGV lo leen poco";
+  } else if (readers === undefined) {
+    base = `${tag.lowReaders.length} AGV casi nunca lo leen (${few(tag.lowReaders)}) y ${tag.highReaders.length} casi siempre`;
+  } else {
+    // Quién no lo lee nunca, quién dejó de leerlo y quién lo lee poco: la diferencia, sin causa.
+    const parts: string[] = [];
+    if (readers.never.length > 0) parts.push(`${readers.never.length} AGV no lo leen nunca (${few(readers.never)})`);
+    if (readers.stopped.length > 0) parts.push(`${readers.stopped.length} dejaron de leerlo (${few(readers.stopped)})`);
+    if (readers.weak.length > 0) {
+      const weak = [...readers.weak].sort((a, b) => a.hits / a.passes - b.hits / b.passes);
+      const shown = weak.slice(0, 3).map((entry) => `${entry.agvId}: ${percent(entry.hits / entry.passes)}`);
+      parts.push(`${readers.weak.length} lo leen poco (${shown.join(", ")}${weak.length > 3 ? "…" : ""})`);
+    }
+    parts.push(`${readers.good} lo leen bien`);
+    base = parts.join("; ");
+  }
   // Cómo se probó el paso importa tanto como el porcentaje: una tasa sostenida por tiempo es más
   // débil que una sostenida por los vecinos, y el usuario tiene que poder verlo sin preguntar.
   const vias: string[] = [];

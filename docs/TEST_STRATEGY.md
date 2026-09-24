@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.28.0
+version: 0.29.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -212,6 +212,14 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-160 | Marcar tarjetas en el navegador, recargar, volver a importar y exportar | Las marcas y la nota siguen en su tarjeta; el progreso cuenta 2 revisadas; el filtro esconde solo tarjetas; el CSV lleva confirmado, pospuesto y pendientes | Guardar la revisión dentro del circuito, donde la siguiente importación la pisaría |
 | TC-161 | Imán de toque (`nearestWithin`) | Gana la marca más cercana dentro del radio; fuera del radio no hay ninguna; un toque dentro de una marca se queda con ella | Que un dedo no pueda leer una marca fina, o que lea una lejana |
 | TC-162 | Tableta táctil emulada con el circuito de auditoría | Un toque fija la lectura y sigue ahí; un toque cerca de un segmento del anillo lo lee; un toque en el centro vuelve al reposo; botones de 44 px con dedo; el ratón sigue leyendo al pasar y limpia al salir; sin desbordamiento a 768, 1.024, 1.366, 1.536 y 1.920 px | Volver a depender del `pointermove`, que con el dedo borraba la lectura al levantarlo |
+| TC-163 | Un tag sustituido a media ventana, dentro de un solo periodo | Un solo cambio con la hora del viejo y del nuevo, y la vida de cada uno | Dos hallazgos sueltos sin relación, o no verlo con una sola exportación |
+| TC-164 | Frente al tag nuevo: un AGV que no lo lee, otro que lo deja de leer, otro que empieza tarde y otro que lo lee a medias | Cada uno con su hecho medido: nunca, desde una hora, más tarde, porcentaje; sin causa | Llamarlo memoria, lector o colocación; señalar a alguien si la flota aún no lee el tag |
+| TC-165 | Dos tags seguidos sustituidos a la vez | Los dos cambios, por los vecinos de segundo orden | Perderlos porque el vecino inmediato de cada uno también desaparece |
+| TC-166 | Un tag que se lee una de cada cinco veces; un cambio en el borde de la cobertura; dos nuevos en el mismo sitio; un nuevo que convive mucho con el viejo | Ningún cambio espurio, ninguno en el borde, ninguna pareja forzada | Tomar el ritmo de un tag flojo por un cambio, o contar dos veces el cambio entre periodos |
+| TC-167 | Matriz con la vida de un tag recién puesto | Las pasadas de antes de existir no cuentan: se lee bien, no «todos lo leen poco»; cada celda lleva sus rachas de los dos extremos | Pedir revisar un tag recién instalado |
+| TC-168 | Lectura por AGV: nunca, desde una hora, poco; en muchos y en pocos tags | Cifras por tag; «poco» solo si la diferencia con el resto no es casualidad; un tag que lee mal casi toda la flota no cuenta contra nadie | Un 76 % frente a un 85 % de la flota tomado por diferencia |
+| TC-169 | Auditoría con una sola exportación | Cambio 60438 → 99001, dos que dejan de leerse, uno que empieza, el AGV que no lee el nuevo; ciegos en «nunca», memoria actualizada en «desde una hora», lector degradado en «muchos», lectura desigual en «pocos»; nada fuera de lo plantado | Diferencias en AGV o tags sanos |
+| TC-170 | Navegador con una sola exportación y las listas | Sección «Cambios de tag» con la pareja y el AGV que no lee el nuevo; tarjetas de AGV con cifras y sin causa | Volver a necesitar dos exportaciones para ver un cambio de tag |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
