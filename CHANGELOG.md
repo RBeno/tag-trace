@@ -2,6 +2,57 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.23.0] - 2026-09-24
+
+«Vida de cada AGV en el circuito» distingue paradas, saltos, desconexiones y mantenimiento. Pedido por
+el propietario tras mirar la versión publicada en el móvil: antes, todos los huecos sin carga salían
+iguales, en naranja.
+
+### Añadido
+
+- **Cómo reaparece un AGV tras un hueco** (`src/domain/silence-kind.ts`, R-AGV-017). Cada hueco sin
+  carga se describe por dónde vuelve a leer el AGV frente al anillo inferido, y por lo que suele tardar
+  ese tramo en ese turno (mediana en hora local, turnos 06–14, 14–22 y 22–06):
+  - **parado** (azul oscuro): vuelve por el tag siguiente, o por el mismo, más tarde de lo habitual;
+  - **un tag más allá** (amarillo) y **dos o más** (naranja);
+  - **una hora o más sin leer y vuelve en otro punto** (rojo apagado), y lo mismo para una hora o más
+    sin lecturas al principio o al final de los datos;
+  - **por un tag de mantenimiento** (verde con trama), por encima de todo lo demás;
+  - **fuera del anillo inferido**: solo contorno.
+
+  Un hueco que ese tramo tiene a menudo —hasta tres veces su mediana en ese turno— deja de ser un
+  hueco: se dibuja leyendo y cuenta como en funcionamiento.
+- Al tocar un tramo, la lectura da los hechos: «7113 — parado: volvió por 60156, el siguiente a 60153;
+  de 5:29 a 5:50 (20 min; lo habitual en ese tramo, turno 22–06: 16 s)». Nunca una causa (R-EVI-006).
+- La leyenda nombra cada clase y la tabla equivalente da el porcentaje de tiempo en cada una, en una
+  caja desplazable.
+- Configuración provisional `silenceKind`: tres veces lo habitual, una hora, turnos de 8 h. Decisión
+  del propietario; las horas reales de relevo siguen abiertas (OQ-108, OQ-129).
+- TC-171–174: `tests/unit/silence-kind.test.ts`, casos nuevos en `tests/unit/fleet.test.ts`, una
+  comprobación en la auditoría y otra en el navegador.
+
+### Cambiado
+
+- **La carga pasa de azul oscuro a violeta**, para dejar el azul oscuro a «parado». El ausente corto
+  pasa a gris neutro: el naranja queda para «dos o más tags más allá».
+- Colores validados con el comprobador de daltonismo en los dos temas, todos los pares: la visión
+  normal separa todo; verde y naranja quedan en la franja en que el color solo no basta, y por eso el
+  verde lleva trama. El azul oscuro y el amarillo salen a propósito de la banda de claridad —es lo que
+  se pidió— y nunca van solos: siempre con la lectura y la tabla.
+
+### Decidido al construirlo
+
+- **«Habitual» solo se aplica cuando el AGV vuelve por el tag siguiente.** El plan lo aplicaba a
+  cualquier hueco; con un tag saltado, eso habría dibujado como lectura normal una lectura que falta
+  solo porque el tiempo era el de siempre. Un tag saltado sale siempre como tal, con lo habitual del
+  recorrido al lado para compararlo.
+
+### Comprobado
+
+- En el circuito de auditoría, el único hueco sin carga de toda la ventana es el que se planta: el
+  AGV que espera 20 min tras un tag del tramo cargado y sigue por el siguiente sale **parado**. Ningún
+  hueco espurio en los demás.
+
 ## [3.22.0] - 2026-09-24
 
 Lo que más se va a ver en planta, bien detectado y destacado en su sección: cambios de tag, lectura

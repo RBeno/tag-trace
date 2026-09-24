@@ -6,12 +6,17 @@
  * asignado sale aparte y no suma a N; una baja a mitad de ventana baja M desde ese instante; y el
  * rato antes de la primera lectura o después de la última solo es ausencia si pasa del umbral de
  * silencio — si no, el peor momento de la ventana sería siempre su borde.
+ *
+ * Y cómo reapareció cada AGV (R-AGV-017): la clase de cada hueco llega a su tramo con sus hechos; un
+ * hueco habitual en ese tramo se dibuja leyendo y cuenta en N; un borde de una hora o más sin leer
+ * es desconexión, y uno más corto sigue siendo un ausente sin clase.
  */
 
 import { describe, expect, it } from "vitest";
 
 import { buildFleetTimeline, type FleetInput, type FleetState } from "../../src/domain/fleet.js";
 import type { Reading } from "../../src/domain/reading.js";
+import type { SilenceDetail } from "../../src/domain/silence-kind.js";
 
 const MINUTE = 60_000;
 
@@ -38,6 +43,7 @@ function input(partial: Partial<FleetInput>): FleetInput {
     inactivity: new Map(),
     coldStarts: new Map(),
     minGapMs: 5 * MINUTE,
+    longAbsenceMs: 60 * MINUTE,
     ...partial,
   };
 }
@@ -158,6 +164,57 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
     expect(countAt(timeline, 10)).toBe("2 de 2 (+0)");
     expect(stateAt(timeline, "B", 45)).toBe("fuera");
     expect(countAt(timeline, 45)).toBe("1 de 1 (+0)");
+  });
+
+  it("cada hueco lleva cómo reapareció el AGV, y uno habitual en su tramo se dibuja leyendo y cuenta en N", () => {
+    const detail: SilenceDetail = {
+      lastTagBefore: "60210",
+      firstTagAfter: "60213",
+      nextTagId: "60213",
+      skipped: 0,
+      usualMs: 40_000,
+      shift: "06–14",
+    };
+    const timeline = buildFleetTimeline(
+      input({
+        readings: [...every("A", 0, 10), ...every("A", 20, 30), ...every("A", 45, 60), ...every("B", 0, 60)],
+        history: [all("A"), all("B")],
+        inactivity: new Map([
+          [
+            "A",
+            [
+              { fromUtcMs: 10 * MINUTE, toUtcMs: 20 * MINUTE, cause: "silencio" as const, kind: "habitual" as const, detail },
+              { fromUtcMs: 30 * MINUTE, toUtcMs: 45 * MINUTE, cause: "silencio" as const, kind: "parada" as const, detail },
+            ],
+          ],
+        ]),
+      }),
+    );
+    expect(stateAt(timeline, "A", 15)).toBe("leyendo");
+    expect(countAt(timeline, 15)).toBe("2 de 2 (+0)");
+    const stop = timeline.vehicles
+      .find((vehicle) => vehicle.agvId === "A")
+      ?.segments.find((segment) => segment.fromUtcMs === 30 * MINUTE);
+    expect(stop).toMatchObject({ state: "silencio", kind: "parada", toUtcMs: 45 * MINUTE });
+    expect(stop?.detail).toBe(detail);
+    expect(countAt(timeline, 35)).toBe("1 de 2 (+0)");
+  });
+
+  it("un borde de una hora o más sin leer es desconexión; uno más corto, un ausente sin clase", () => {
+    const timeline = buildFleetTimeline(
+      input({
+        readings: [...every("A", 70, 180), ...every("B", 20, 180)],
+        coverage: [{ from: 0, to: 180 * MINUTE }],
+        history: [all("A"), all("B"), all("C")],
+      }),
+    );
+    const first = (agvId: string) => timeline.vehicles.find((vehicle) => vehicle.agvId === agvId)?.segments[0];
+    expect(first("A")).toMatchObject({ state: "ausente", kind: "desconexion", toUtcMs: 70 * MINUTE });
+    expect(first("A")?.detail).toMatchObject({ edge: "inicio", firstTagAfter: "1" });
+    expect(first("B")?.state).toBe("ausente");
+    expect(first("B")?.kind).toBeUndefined();
+    // Un asignado que no lee nada en tres horas: desconexión en todo el tramo.
+    expect(first("C")).toMatchObject({ state: "ausente", kind: "desconexion", toUtcMs: 180 * MINUTE });
   });
 
   it("sin historial, M son los vehículos que aparecen en las lecturas", () => {

@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.14.0
+version: 0.15.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -329,22 +329,34 @@ un asignado que no lee nada solo aparece aquí.
 | **Flota en funcionamiento** | «de 12:05 a 13:10, 38 de 40», y el peor momento de la ventana | escalonada: cambia solo donde cambia un tramo; fuera de la cobertura no se cuenta (trama); sin historial, M son los vistos (R-AGV-014) |
 | **Vida de cada AGV en el circuito** | cuándo leía, cargaba, callaba, faltaba o no estaba asignado cada vehículo | una fila por AGV en un único `canvas`; leer sin estar asignado es media barra, distinta también por la forma (R-AGV-015) |
 
-Siete estados, cada uno con su color y su leyenda, y ninguno con color de severidad salvo los dos que
-piden mirar:
+Cada tramo tiene su color y su leyenda. Los huecos sin carga se colorean por **cómo reapareció** el
+AGV (R-AGV-017, Parte 45), con los colores que pidió el propietario:
 
-- **leyendo** y **carga** (inferida) cuentan como en funcionamiento;
-- **falta de lecturas**: silencio sin calle que lo explique, causa desconocida (R-AGV-006), en
-  contorno naranja;
-- **ausente**: asignado y sin lecturas, antes de la primera, después de la última o en toda la
-  ventana, en naranja sólido — el «otro color» que pidió el propietario. En los bordes solo cuenta
-  si pasa del umbral de silencio: unos minutos antes de la primera lectura son el ritmo normal;
+- **leyendo** (azul) y **carga** inferida (violeta) cuentan como en funcionamiento. Un hueco que ese
+  tramo tiene a menudo en ese turno —hasta tres veces su mediana— se dibuja leyendo: no es un hueco;
+- **parado** (azul oscuro): vuelve por el tag siguiente, o por el mismo, más tarde de lo habitual;
+- **un tag más allá** (amarillo) y **dos o más** (naranja);
+- **una hora o más sin leer, o vuelve en otro punto** (rojo apagado): también el rato sin lecturas
+  de una hora o más al principio o al final de los datos;
+- **por un tag de mantenimiento** (verde, con trama: frente al naranja, el color solo no basta para
+  un daltónico);
+- **falta de lecturas fuera del anillo inferido**: solo contorno;
+- **asignado y sin leer, menos de una hora**: gris. En los bordes solo cuenta si pasa del umbral de
+  silencio: unos minutos antes de la primera lectura son el ritmo normal;
 - **fuera del circuito**: no asignado según el historial, casi del color del fondo;
-- **leyendo sin asignar**: se cuenta aparte, nunca en N;
+- **leyendo sin asignar**: media barra, se cuenta aparte y nunca en N;
 - **sin datos**: fuera de la cobertura, con trama (R-DAT-007).
+
+Al tocar un tramo, la lectura da los hechos: «7108 — parado: volvió por 60213, el siguiente a 60210;
+de 10:05 a 10:48 (43 min; lo habitual en ese tramo, turno 06–14: 40 s)». Nunca «descanso» ni
+«avería»: la causa la pone una persona (R-EVI-006). Los colores están validados para daltonismo en
+los dos temas; el azul oscuro y el amarillo salen a propósito de la banda de claridad y nunca van
+solos: siempre con la lectura y la tabla.
 
 Dos hallazgos se enseñan de entrada, sin causa: los asignados que no leyeron nada en toda la ventana
 y los que leen sin estar asignados. La tabla equivalente del recuento son sus intervalos; la de la
-vida de cada AGV, el porcentaje de su tiempo en cada estado.
+vida de cada AGV, el porcentaje de su tiempo en cada estado y en cada clase de hueco, desplazable
+dentro de su caja.
 
 ## 5.5 Cambios de tag y lectura por AGV (Parte 43)
 

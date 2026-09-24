@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.17.0
+version: 0.18.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -419,6 +419,35 @@ leen a `highRate` o más. Cada celda es **nunca** (0 aciertos con `minPassesForN
 (por debajo de `highRate` y con cola binomial inferior ≤ `maxChance` frente a la tasa del resto en ese
 tag). «Muchos» es `manyTagsShare` de los tags comparados con un mínimo de `minManyTags`. La salida son
 cifras, nunca una causa.
+
+## 6.5 Cómo reaparece un AGV tras un hueco, implementado (R-AGV-017)
+
+`src/domain/silence-kind.ts`, sobre los huecos del expediente que no explica ninguna calle de carga.
+
+**Lo habitual.** `usualSegmentTimes` toma, por cohorte, las transiciones directas entre cada tag del
+anillo y el siguiente, y guarda la mediana de su duración por turno (`shiftStartHours`, en la hora
+local de la zona del circuito) y la de toda la ventana. Los pares del mismo instante no miden nada y
+no cuentan (R-DAT-013); un paso que se salta un tag no mide el tramo. La hora local se lee una vez por
+cuarto de hora UTC: todos los cambios de hora caen en un cuarto, así que dentro de uno no cambia.
+
+**La clase.** `classifySilence` decide, en este orden:
+
+1. se fue o volvió por un tag de mantenimiento → `mantenimiento`;
+2. un extremo fuera del anillo (o el cohorte sin anillo) → `desconexion` si dura `longAbsenceMs` o
+   más, si no `sin-clasificar`;
+3. vuelve por el tag siguiente o por el mismo → `habitual` si no pasa de `factorOverUsual` veces lo
+   habitual del tramo en ese turno (con respaldo a toda la ventana), si no `parada`, dure lo que dure;
+4. dura `longAbsenceMs` o más → `desconexion`;
+5. salta un tag → `salta-uno`; dos o más → `salta-varios`.
+
+«Habitual» solo se aplica sin tags saltados: un tag sin leer es un hecho aunque el tiempo sea normal.
+Lo habitual de un recorrido que salta tags es la suma de las medianas de sus tramos, y va en la
+lectura para que se compare a ojo.
+
+**Los bordes.** En `buildFleetTimeline`, el rato sin lecturas antes de la primera o después de la
+última de un tramo de cobertura es desconexión si dura `longAbsenceMs` o más; si no, un ausente sin
+clase (o leyendo, por debajo del umbral de silencio). Un hueco `habitual` se dibuja leyendo y cuenta
+como en funcionamiento (R-AGV-014).
 
 ## 7. Segmentación de vueltas y huecos
 

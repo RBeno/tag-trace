@@ -28,6 +28,20 @@
   --viz-accent-wash: #fdebe2;
   /* Contexto: marcas que están ahí para comparar, no para llamar la atención. */
   --viz-neutral: #b0bac2;
+  /* Cómo reaparece un AGV en la vida de cada AGV (Parte 45, R-AGV-017). Los colores los pidió el
+     propietario: azul oscuro parado, amarillo un tag, naranja varios, rojo apagado desconexión,
+     verde mantenimiento; la carga pasa a violeta para no chocar con el azul oscuro. Validados con
+     el comprobador de daltonismo contra esta superficie, todos los pares: la visión normal separa
+     todo por encima de 15; verde y naranja quedan en la franja 6–8 para protan/deutan, así que el
+     verde lleva además trama. El azul oscuro y el amarillo salen a propósito de la banda de
+     claridad (es lo que se pidió), y el amarillo no llega a 3:1: nunca van solos, siempre con la
+     lectura al tocar y la tabla. */
+  --viz-carga: #553cb0;
+  --viz-parada: #0d366b;
+  --viz-salta-uno: #f2c230;
+  --viz-desconexion: #93302e;
+  --viz-mantenimiento: #34a352;
+  --viz-ausente: #b0bac2;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -48,6 +62,12 @@
     --viz-accent: #d95926;
     --viz-accent-wash: #3a2419;
     --viz-neutral: #4d5a64;
+    --viz-carga: #c7a6f2;
+    --viz-parada: #2159a8;
+    --viz-salta-uno: #e8c547;
+    --viz-desconexion: #8a3230;
+    --viz-mantenimiento: #2f8f4a;
+    --viz-ausente: #8a939b;
   }
 }
 * { box-sizing: border-box; }

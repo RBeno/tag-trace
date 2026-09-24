@@ -15,12 +15,17 @@
  *   desde cuándo. Sin él, la flota asignada son los vehículos que aparecen en las lecturas, y la
  *   vista lo dice: un AGV asignado que no lee nada no se puede contar sin el historial.
  *
+ * Cada hueco sin carga lleva además **cómo reapareció** el AGV (R-AGV-017, `silence-kind.ts`):
+ * parado en su sitio, un tag o varios más allá, una hora o más fuera, o por un tag de mantenimiento.
+ * Un hueco que ese tramo tiene a menudo en ese turno no es un hueco: se dibuja leyendo.
+ *
  * Nada de esto decide por qué un vehículo está ausente, en silencio o leyendo sin estar asignado:
  * lo enseña con sus tramos (R-EVI-006).
  */
 
 import { mergeIntervals, type Interval } from "./coverage.js";
 import type { Reading } from "./reading.js";
+import type { SilenceDetail, SilenceKind } from "./silence-kind.js";
 
 /** Un periodo de asignación de un AGV al circuito: `[desde, hasta)`. `hasta` nulo = sigue asignado. */
 export interface FleetPeriod {
@@ -107,10 +112,25 @@ export type FleetState =
   /** Fuera de la cobertura cargada: no hay datos y no se cuenta (R-DAT-007). */
   | "sin-datos";
 
+/** Clase de un hueco en la vida de un AGV. «Habitual» no llega aquí: se dibuja leyendo. */
+export type GapKind = Exclude<SilenceKind, "habitual">;
+
 export interface FleetSegment {
   readonly fromUtcMs: number;
   readonly toUtcMs: number;
   readonly state: FleetState;
+  /** Solo en `silencio` y `ausente`: cómo reapareció (R-AGV-017). Sin él, un ausente corto. */
+  readonly kind?: GapKind;
+  readonly detail?: SilenceDetail;
+}
+
+/** Un hueco del expediente, con su causa y, si se clasificó, cómo reapareció el AGV. */
+export interface FleetGap {
+  readonly fromUtcMs: number;
+  readonly toUtcMs: number;
+  readonly cause: "silencio" | "carga-online";
+  readonly kind?: SilenceKind;
+  readonly detail?: SilenceDetail;
 }
 
 export interface FleetVehicle {
@@ -147,10 +167,7 @@ export interface FleetInput {
   /** `null` sin historial cargado: la flota son los vehículos que aparecen en las lecturas. */
   readonly history: readonly FleetPeriod[] | null;
   /** Las inactividades de cada vehículo, con su causa, tal como las calcula el expediente. */
-  readonly inactivity: ReadonlyMap<
-    string,
-    readonly { readonly fromUtcMs: number; readonly toUtcMs: number; readonly cause: "silencio" | "carga-online" }[]
-  >;
+  readonly inactivity: ReadonlyMap<string, readonly FleetGap[]>;
   /** Instante de salida de los que ya estaban cargando al empezar la cobertura (R-CO-007). */
   readonly coldStarts: ReadonlyMap<string, number>;
   /**
@@ -160,9 +177,14 @@ export interface FleetInput {
    * valor por defecto (`AI_DEVELOPMENT_GOVERNANCE.md` §4).
    */
   readonly minGapMs: number;
+  /**
+   * A partir de cuánto un borde sin lecturas —antes de la primera o después de la última de un tramo
+   * de cobertura— es desconexión y no un ausente corto (R-AGV-017). Sin valor por defecto.
+   */
+  readonly longAbsenceMs: number;
 }
 
-type Piece = [number, number, FleetState];
+type Piece = [number, number, FleetState, (GapKind | undefined)?, (SilenceDetail | undefined)?];
 
 /** Parte `pieces` por los bordes de `spans` y aplica `inside`/`outside` a cada trozo. */
 function splitBy(
@@ -171,29 +193,34 @@ function splitBy(
   relabel: (state: FleetState, inside: boolean) => FleetState,
 ): Piece[] {
   const out: Piece[] = [];
-  for (const [from, to, state] of pieces) {
+  for (const [from, to, state, kind, detail] of pieces) {
     let cursor = from;
+    // Un tramo que cambia de estado pierde su clase: «fuera» o «sin datos» no reaparecen de ningún sitio.
+    const piece = (a: number, b: number, inside: boolean): Piece => {
+      const next = relabel(state, inside);
+      return next === state ? [a, b, state, kind, detail] : [a, b, next];
+    };
     for (const span of spans) {
       if (span.to <= cursor || span.from >= to) continue;
-      if (span.from > cursor) out.push([cursor, span.from, relabel(state, false)]);
+      if (span.from > cursor) out.push(piece(cursor, span.from, false));
       const end = Math.min(to, span.to);
-      out.push([Math.max(cursor, span.from), end, relabel(state, true)]);
+      out.push(piece(Math.max(cursor, span.from), end, true));
       cursor = end;
     }
-    if (cursor < to) out.push([cursor, to, relabel(state, false)]);
+    if (cursor < to) out.push(piece(cursor, to, false));
   }
   return out;
 }
 
 function mergeAdjacent(pieces: readonly Piece[]): FleetSegment[] {
   const out: FleetSegment[] = [];
-  for (const [from, to, state] of pieces) {
+  for (const [from, to, state, kind, detail] of pieces) {
     if (to <= from) continue;
     const last = out[out.length - 1];
-    if (last !== undefined && last.state === state && last.toUtcMs === from) {
-      out[out.length - 1] = { fromUtcMs: last.fromUtcMs, toUtcMs: to, state };
+    if (last !== undefined && last.state === state && last.toUtcMs === from && last.kind === kind && last.detail === detail) {
+      out[out.length - 1] = { ...last, toUtcMs: to };
     } else {
-      out.push({ fromUtcMs: from, toUtcMs: to, state });
+      out.push({ fromUtcMs: from, toUtcMs: to, state, ...(kind === undefined ? {} : { kind }), ...(detail === undefined ? {} : { detail }) });
     }
   }
   return out;
@@ -206,10 +233,18 @@ const ASSIGNED: ReadonlySet<FleetState> = new Set(["leyendo", "carga", "silencio
 export function buildFleetTimeline(input: FleetInput): FleetTimeline {
   const coverage = mergeIntervals([...input.coverage]);
   const timesOf = new Map<string, number[]>();
+  /** Qué tag leyó cada AGV en cada instante: lo que dice el borde de un tramo sin lecturas. */
+  const tagsOf = new Map<string, Map<number, string>>();
   for (const reading of input.readings) {
     const list = timesOf.get(reading.agvId);
     if (list === undefined) timesOf.set(reading.agvId, [reading.time.utcMs]);
     else list.push(reading.time.utcMs);
+    let tags = tagsOf.get(reading.agvId);
+    if (tags === undefined) {
+      tags = new Map();
+      tagsOf.set(reading.agvId, tags);
+    }
+    tags.set(reading.time.utcMs, reading.tagId);
   }
   const stats = new Map<string, { first: number; last: number; count: number }>();
   for (const [agvId, times] of timesOf) {
@@ -258,27 +293,55 @@ export function buildFleetTimeline(input: FleetInput): FleetTimeline {
     const coldExit = input.coldStarts.get(agvId);
     const gaps = [...(input.inactivity.get(agvId) ?? [])].sort((a, b) => a.fromUtcMs - b.fromUtcMs);
     // Antes de la primera lectura o después de la última, un hueco más corto que el umbral de
-    // silencio es el ritmo normal de lectura; más largo, el AGV no estaba (o no se sabe si estaba).
-    const edge = (duration: number): FleetState => (duration < input.minGapMs ? "leyendo" : "ausente");
+    // silencio es el ritmo normal de lectura; más largo, el AGV no estaba (o no se sabe si estaba), y
+    // a partir de `longAbsenceMs` es desconexión (R-AGV-017).
+    const edge = (from: number, to: number, detail: SilenceDetail): Piece =>
+      to - from < input.minGapMs
+        ? [from, to, "leyendo"]
+        : to - from >= input.longAbsenceMs
+          ? [from, to, "ausente", "desconexion", detail]
+          : [from, to, "ausente"];
+    const edgeDetail = (
+      edgeKind: "inicio" | "fin" | "todo",
+      lastTagBefore: string | null,
+      firstTagAfter: string | null,
+    ): SilenceDetail => ({
+      lastTagBefore,
+      firstTagAfter,
+      nextTagId: null,
+      skipped: null,
+      usualMs: null,
+      shift: null,
+      edge: edgeKind,
+    });
+    const tagAt = tagsOf.get(agvId) ?? new Map<number, string>();
     covered.forEach((span, index) => {
       const next = covered[index + 1];
       const inside = times.filter((t) => t >= span.from && t <= span.to);
       const first = inside[0];
       const last = inside[inside.length - 1];
       if (first === undefined || last === undefined) {
-        pieces0.push([span.from, span.to, "ausente"]);
+        pieces0.push(edge(span.from, span.to, edgeDetail("todo", null, null)));
       } else {
-        pieces0.push([span.from, first, coldExit === first ? "carga" : edge(first - span.from)]);
+        pieces0.push(
+          coldExit === first
+            ? [span.from, first, "carga"]
+            : edge(span.from, first, edgeDetail("inicio", null, tagAt.get(first) ?? null)),
+        );
         let cursor = first;
         for (const gap of gaps) {
           // Solo los huecos enteros dentro del tramo: uno que cruza un hueco de cobertura no mide nada.
           if (gap.fromUtcMs < first || gap.toUtcMs > last) continue;
           if (gap.fromUtcMs > cursor) pieces0.push([cursor, gap.fromUtcMs, "leyendo"]);
-          pieces0.push([gap.fromUtcMs, gap.toUtcMs, gap.cause === "carga-online" ? "carga" : "silencio"]);
+          if (gap.cause === "carga-online") pieces0.push([gap.fromUtcMs, gap.toUtcMs, "carga"]);
+          // Lo que ese tramo tarda a menudo en ese turno no es un hueco (R-AGV-017).
+          else if (gap.kind === "habitual") pieces0.push([gap.fromUtcMs, gap.toUtcMs, "leyendo"]);
+          else pieces0.push([gap.fromUtcMs, gap.toUtcMs, "silencio", gap.kind, gap.detail]);
           cursor = Math.max(cursor, gap.toUtcMs);
         }
         if (last > cursor) pieces0.push([cursor, last, "leyendo"]);
-        pieces0.push([Math.max(cursor, last), span.to, edge(span.to - last)]);
+        const lastAt = Math.max(cursor, last);
+        pieces0.push(edge(lastAt, span.to, edgeDetail("fin", tagAt.get(last) ?? null, null)));
       }
       if (next !== undefined) pieces0.push([span.to, next.from, "sin-datos"]);
     });

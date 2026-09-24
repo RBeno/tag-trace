@@ -21,6 +21,7 @@ import type { DriftThresholds } from "./drift.js";
 import type { FifoThresholds } from "./fifo.js";
 import type { GraphThresholds } from "./graph.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
+import type { SilenceKindThresholds } from "./silence-kind.js";
 import type { TrendThresholds } from "./read-rate-trend.js";
 import type { TagChangeThresholds } from "./tag-changes.js";
 import type { VehicleReadingThresholds } from "./vehicle-reading.js";
@@ -56,6 +57,7 @@ export interface AnalysisConfig {
   readonly drift: DriftThresholds;
   readonly vehicleReading: VehicleReadingThresholds;
   readonly tagChanges: TagChangeThresholds;
+  readonly silenceKind: SilenceKindThresholds;
 }
 
 /**
@@ -142,6 +144,11 @@ export interface AnalysisConfig {
  *   que se lee una de cada cinco veces necesita más de treinta seguidas. Dos lecturas entre los dos
  *   vecinos admiten el propio tag y uno más al lado. Una hora de solape admite poner el nuevo antes
  *   de quitar el viejo; más que eso ya no es una sustitución, son dos tags que conviven.
+ * - **Cómo reaparece un AGV (R-AGV-017).** Tres veces lo habitual de un tramo en su turno es lo que
+ *   empieza a ser una parada: por debajo, es el ritmo de ese tramo (una estación de trabajo que
+ *   siempre tarda). Una hora para «desconexión» y turnos de 8 h (06–14, 14–22, 22–06) son decisión
+ *   del propietario (2026-09-24), no medidas de planta: las horas reales de relevo siguen abiertas
+ *   (OQ-108) y se cambian aquí.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -177,6 +184,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   drift: { minGapMs: 30 * 60_000, minReadingsPerVehicle: 10, minAdoptionShare: 0.8 },
   vehicleReading: { minPassesForNever: 8, fleetReadsWellShare: 0.75, manyTagsShare: 0.1, minManyTags: 5, maxChance: 0.001 },
   tagChanges: { minSlotPasses: 10, maxChance: 0.001, maxReadsBetween: 2, maxOverlapMs: 60 * 60_000 },
+  silenceKind: { factorOverUsual: 3, longAbsenceMs: 60 * 60_000, shiftStartHours: [6, 14, 22] },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

@@ -134,6 +134,16 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     expect(await count.locator("svg title").count()).toBe(0);
     const lifeline = figureOf("Vida de cada AGV en el circuito");
     await expect(lifeline.locator("canvas")).toBeVisible();
+    // Cómo volvió cada AGV tras cada hueco (R-AGV-017): la leyenda nombra las clases, y el AGV que se
+    // retrasa 20 min en el tramo cargado y sigue por el tag siguiente sale parado.
+    for (const kind of ["parado: vuelve por el tag siguiente", "vuelve un tag más allá", "por un tag de mantenimiento"]) {
+      await expect(lifeline.getByText(kind), kind).toBeVisible();
+    }
+    const adelantado = scenario.defects.find((defect) => defect.kind === "adelantamiento-en-zona-cargada")?.vehicles[0] ?? "";
+    await lifeline.getByText("Ver los mismos datos en tabla").click();
+    const lifeRow = lifeline.locator("tr", { has: page.getByRole("cell", { name: adelantado, exact: true }) });
+    await expect(lifeline.locator("th").nth(5)).toHaveText("Parado");
+    await expect(lifeRow.locator("td").nth(5)).not.toHaveText("0 %");
     await expect(page.locator(".finding", { hasText: "asignado no leyó nada" })).toContainText(scenario.fleetNeverRead);
     await expect(page.locator(".finding", { hasText: "sin estar asignado" })).toContainText(scenario.fleetLeavesMidway);
 
