@@ -22,12 +22,29 @@ import { buildAuditScenario, toRealUtc, type DefectClass } from "../support/circ
 import { importReadings } from "../../src/ingestion/importer.js";
 import { buildTransitions } from "../../src/domain/graph.js";
 import { assignCohorts } from "../../src/domain/cohort.js";
-import { findDominantCycle, segmentLaps, type Lap } from "../../src/domain/laps.js";
+import { findDominantCycle, resolveDeclaredAnchor, segmentLaps, type Lap } from "../../src/domain/laps.js";
 import { buildReadMatrix, type ReadMatrix } from "../../src/domain/read-matrix.js";
 import { buildTagInventory } from "../../src/domain/inventory.js";
-import { buildAllAgvDossiers } from "../../src/domain/dossier.js";
+import { buildAllAgvDossiers, buildAllTagDossiers } from "../../src/domain/dossier.js";
 import { buildChargingReport, type ChargingReport } from "../../src/domain/charging.js";
-import { laneEntryTags, readCoLanes, readZones } from "../../src/domain/circuit-config.js";
+import { buildFifoReport, loadedZoneSpans, type FifoReport } from "../../src/domain/fifo.js";
+import {
+  classifyCrossings,
+  findBifurcationCandidates,
+  findPrecisePauseCandidates,
+  findTrafficLightCandidates,
+  type CriticalPointCandidate,
+} from "../../src/domain/critical-points.js";
+import { compareDistantPeriods, type DriftComparison } from "../../src/domain/drift.js";
+import { detectTagChanges, type TagChangeReport } from "../../src/domain/tag-changes.js";
+import { describeVehicleReading, type VehicleReadingReport } from "../../src/domain/vehicle-reading.js";
+import {
+  laneEntryTags,
+  readCoLanes,
+  readCriticalPoints,
+  readLapAnchors,
+  readZones,
+} from "../../src/domain/circuit-config.js";
 import { importCatalog } from "../../src/ingestion/catalog.js";
 import { PROVISIONAL_CONFIG } from "../../src/domain/config.js";
 
@@ -69,7 +86,22 @@ interface Analysis {
   readonly offRing: readonly string[];
   readonly inventory: ReturnType<typeof buildTagInventory>;
   readonly charging: ChargingReport;
+  readonly coLanes: ReturnType<typeof readCoLanes>["lanes"];
+  readonly fifo: FifoReport | undefined;
+  readonly criticalPoints: readonly CriticalPointCandidate[];
   readonly dossiers: ReturnType<typeof buildAllAgvDossiers>;
+  /** Expedientes de tag (Parte 36): trae la función crítica declarada, venga de la fuente que venga. */
+  readonly tagDossiers: ReturnType<typeof buildAllTagDossiers>;
+  /** El ancla efectiva del cohorte principal, y las vueltas segmentadas con esa verdad (R-GRA-009). */
+  readonly laps: readonly Lap[];
+  readonly anchorTagId: string | undefined;
+  readonly anchorTruth: "observed" | "inferred" | undefined;
+  /** Comparación entre el primer y el último periodo, construidos a mano a partir del escenario. */
+  readonly drift: DriftComparison;
+  /** Cambios de tag dentro de **un solo** periodo, el de la ventana entera (R-DAT-019). */
+  readonly tagChanges: TagChangeReport;
+  /** Lectura de cada AGV sobre los tags que el resto lee bien (R-AGV-016). */
+  readonly vehicleReading: VehicleReadingReport;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
 }
@@ -80,6 +112,12 @@ interface Analysis {
  * `conConfiguracion` decide si se le dan las listas de planta. Se puede ejecutar sin ellas a
  * propósito: es la única forma de comprobar que declararlas no cambia el veredicto de un tag sano,
  * que es lo que la clase `zona-vacia-declarada` vigila.
+ *
+ * La lista `ancla` queda **fuera** de ese apagado: decide qué tag cierra la vuelta, y cambiarlo
+ * desplaza dónde `traceLaps` corta cada vehículo — un efecto real (R-GRA-009) pero ajeno a lo que
+ * esta comparación aísla. Alternar el ancla a la vez que la zona contaminaría la comparación con un
+ * segundo efecto que no es el que la clase declara vigilar, así que el ancla se mantiene igual en
+ * las dos ejecuciones y solo la zona (y el resto de listas) se apaga.
  */
 function analyse(
   scenario: ReturnType<typeof buildAuditScenario>,
@@ -100,9 +138,17 @@ function analyse(
   // La configuración se lee **por el mismo camino que el producto**: del CSV de listas, con el
   // importador de catálogo. Construirla a mano aquí probaría el dominio y no el recorrido.
   const catalog = importCatalog(scenario.listsCsv);
-  const entriesOf = (name: string) => (conConfiguracion ? (catalog.lists.get(name) ?? []) : []);
+  const entriesOf = (name: string) =>
+    conConfiguracion || name === "ancla" ? (catalog.lists.get(name) ?? []) : [];
   const laneConfig = readCoLanes(entriesOf("carga-online"));
   const zoneConfig = readZones(entriesOf("zona"));
+  // La función de un tag crítico se declara en «critico», o alternativamente en la columna `funcion`
+  // del circuito virtual (Parte 36) — mismo merge que hace el Worker, `critico` primero.
+  const criticalPointsConfig = readCriticalPoints([
+    ...entriesOf("critico"),
+    ...entriesOf("circuito").filter((entry) => entry.funcion !== ""),
+  ]);
+  const lapAnchorsConfig = readLapAnchors(entriesOf("ancla"));
 
   const readings = result.readings;
   const direction = result.summary.direction;
@@ -113,11 +159,40 @@ function analyse(
 
   const vehicleSet = new Set(main.vehicles);
   const cohortTransitions = transitions.filter((entry) => vehicleSet.has(entry.agvId));
-  const anchor = findDominantCycle(cohortTransitions);
+  const inferredAnchor = findDominantCycle(cohortTransitions);
+
+  // Mismo encadenado que el Worker (Parte 32, R-GRA-009): el ancla declarada solo rota dónde se
+  // corta el ciclo ya reconstruido, y solo si aparece en él.
+  let anchor = inferredAnchor;
+  let anchorTruth: "observed" | "inferred" | undefined = inferredAnchor === null ? undefined : "inferred";
+  if (inferredAnchor !== null && lapAnchorsConfig.anchors.length > 0) {
+    const resolved = resolveDeclaredAnchor(inferredAnchor, lapAnchorsConfig.anchors);
+    if (resolved !== null) {
+      anchor = { tagId: resolved.tagId, cycle: resolved.cycle, weakestShare: inferredAnchor.weakestShare };
+      anchorTruth = "observed";
+    }
+  }
+
   const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
 
+  // Cambios de tag dentro de un solo periodo (R-DAT-019), con la ventana entera como cobertura —el
+  // caso de una sola exportación—, antes que la matriz: su vida es lo que la matriz mide (R-OPP-016).
+  const tagChanges = detectTagChanges(
+    readings,
+    direction,
+    [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
+    PROVISIONAL_CONFIG.tagChanges,
+    {
+      minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
+      highRate: PROVISIONAL_CONFIG.readRate.highRate,
+      minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
+    },
+  );
+
   const laps: Lap[] =
-    anchor === null ? [] : [...segmentLaps(cohortReadings, direction, [], anchor.tagId)];
+    anchor === null
+      ? []
+      : [...segmentLaps(cohortReadings, direction, [], anchor.tagId, anchorTruth ?? "inferred")];
 
   const charging = buildChargingReport(
     readings,
@@ -139,7 +214,29 @@ function analyse(
           PROVISIONAL_CONFIG.readRate,
           { zoneOf: zoneConfig.zoneOf, laneEntryTags: laneEntryTags(laneConfig.lanes) },
           PROVISIONAL_CONFIG.trend,
+          tagChanges.lives,
         );
+  const vehicleReading =
+    matrix === undefined
+      ? { vehicles: [], tags: [] }
+      : describeVehicleReading(matrix, PROVISIONAL_CONFIG.readRate, PROVISIONAL_CONFIG.vehicleReading);
+
+  const fifo =
+    anchor === null
+      ? undefined
+      : buildFifoReport(
+          main.id,
+          cohortReadings,
+          loadedZoneSpans(anchor.cycle, zoneConfig.zoneOf).spans,
+          PROVISIONAL_CONFIG.fifo,
+        );
+
+  const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
+  const criticalPoints = [
+    ...classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce),
+    ...findPrecisePauseCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa),
+    ...findTrafficLightCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo),
+  ];
 
   const ring = anchor?.cycle ?? [];
   const inRing = new Set(ring);
@@ -164,6 +261,7 @@ function analyse(
       emergency: new Set(),
       charging: laneTagsOf(() => true),
       unservedLaneTags: laneTagsOf((laneId) => noServidas.has(laneId)),
+      critical: criticalPointsConfig.funcionOf,
     },
     PROVISIONAL_CONFIG.blindness,
   );
@@ -172,18 +270,75 @@ function analyse(
     readings,
     cohorts,
     laps,
-    scenario.toUtcMs,
+    [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
     PROVISIONAL_CONFIG.silence.minGapMs,
     laneConfig.lanes,
   );
+  const tagDossiers = buildAllTagDossiers(
+    readings,
+    dossiers.map((entry) => entry.agvId),
+    criticalPointsConfig.funcionOf,
+  );
 
-  return { matrix, ring, offRing, inventory, charging, dossiers, readings: readings.length };
+  // Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013): la cobertura de dos tramos se
+  // construye a mano a partir del corte del propio escenario, con un margen a cada lado muy por
+  // encima de `minGapMs` — mismo patrón ya usado para la cobertura de `charging` más arriba, y no una
+  // segunda fuente real.
+  const driftBuffer = 60 * 60_000;
+  const driftCoverage = [
+    { from: scenario.fromUtcMs, to: scenario.periodSplitUtcMs - driftBuffer },
+    { from: scenario.periodSplitUtcMs + driftBuffer, to: scenario.toUtcMs },
+  ];
+  const knownTags = new Set([
+    ...declared,
+    ...laneTagsOf(() => true),
+    ...criticalPointsConfig.funcionOf.keys(),
+  ]);
+  const drift = compareDistantPeriods(readings, driftCoverage, knownTags, PROVISIONAL_CONFIG.drift);
+
+  return {
+    matrix,
+    ring,
+    offRing,
+    inventory,
+    charging,
+    coLanes: laneConfig.lanes,
+    fifo,
+    criticalPoints,
+    dossiers,
+    tagDossiers,
+    laps,
+    anchorTagId: anchor?.tagId,
+    anchorTruth,
+    drift,
+    tagChanges,
+    vehicleReading,
+    readings: readings.length,
+  };
 }
 
 describe("auditoría del circuito con verdad conocida", () => {
   const scenario = buildAuditScenario();
   const analysis = analyse(scenario);
-  const { matrix, ring, offRing, inventory, charging, dossiers, readings } = analysis;
+  const {
+    matrix,
+    ring,
+    offRing,
+    inventory,
+    charging,
+    coLanes,
+    fifo,
+    criticalPoints,
+    dossiers,
+    tagDossiers,
+    laps,
+    anchorTagId,
+    anchorTruth,
+    drift,
+    tagChanges,
+    vehicleReading,
+    readings,
+  } = analysis;
 
   /**
    * El mismo análisis **sin** las listas de planta, para poder contrastar los dos.
@@ -295,6 +450,12 @@ describe("auditoría del circuito con verdad conocida", () => {
       // Dos cosas, y las dos tienen que darse: que las estancias se reconozcan con una mediana
       // sensata, y —lo que de verdad importa— que esas medias horas **no** aparezcan como
       // periodos de inactividad en el expediente de nadie.
+      //
+      // El filtro se acota a los huecos que **empiezan en la parada precisa de una calle servida**:
+      // esos son los únicos candidatos a ser una carga mal reconocida. Desde R-OPP-015 el escenario
+      // tiene otra clase (`adelantamiento-en-zona-cargada`) que planta un silencio real de más de
+      // quince minutos en mitad del anillo, sin relación con ninguna calle; contarlo aquí confundiría
+      // dos causas distintas de silencio, que es justo lo que esta sonda existe para no hacer.
       const servidas = charging.lanes.filter((lane) => lane.served);
       const conMediana = servidas.filter(
         (lane) =>
@@ -302,9 +463,13 @@ describe("auditoría del circuito con verdad conocida", () => {
           lane.medianStayMs > 15 * 60_000 &&
           lane.medianStayMs < 50 * 60_000,
       );
+      const servidasIds = new Set(servidas.map((lane) => lane.laneId));
+      const stopTags = new Set(
+        coLanes.filter((lane) => servidasIds.has(lane.laneId)).map((lane) => lane.stopTagId),
+      );
       const huecos = dossiers.flatMap((dossier) => dossier.inactivity);
       const comoSilencio = huecos.filter(
-        (period) => period.cause === "silencio" && period.durationMs > 15 * 60_000,
+        (period) => period.cause === "silencio" && stopTags.has(period.lastTagBefore),
       ).length;
       const comoCarga = huecos.filter((period) => period.cause === "carga-online").length;
       return {
@@ -401,6 +566,201 @@ describe("auditoría del circuito con verdad conocida", () => {
           `tags con tendencia o rotura por su culpa: ${tagsAcusados.length}`,
       };
     },
+    "adelantamiento-en-zona-cargada": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "adelantamiento-en-zona-cargada")
+        ?.vehicles ?? [])[0];
+      // Mismo criterio que `salida-fuera-de-antiguedad`: lo que se exige es que el plantado salga
+      // **el primero** por margen, no que sea el único — una parada de carga real en el mismo
+      // escenario puede producir inversiones menores y legítimas en otro punto del mismo tramo.
+      const todas = (fifo?.spans ?? [])
+        .flatMap((span) => span.overtakes)
+        .sort((a, b) => b.marginMs - a.marginMs);
+      const primera = todas[0];
+      return {
+        ok: esperado !== undefined && primera?.overtaken === esperado,
+        detail:
+          primera === undefined
+            ? "nadie señalado"
+            : `el primero por margen es ${primera.overtaken} (se esperaba ${esperado ?? "—"}), ` +
+              `${Math.round(primera.marginMs / 60_000)} min de margen; ${todas.length - 1} más`,
+      };
+    },
+    "bifurcacion-real": () => {
+      const plantado = scenario.defects.find((d) => d.kind === "bifurcacion-real");
+      const [tagBifurcado, ramaEsperada] = plantado?.tags ?? [];
+      const candidato = criticalPoints.find((entry) => entry.tagId === tagBifurcado);
+      const ramas =
+        candidato?.kind === "bifurcacion" || candidato?.kind === "cruce"
+          ? (candidato.branches ?? []).map((branch) => branch.tagId)
+          : [];
+      return {
+        ok:
+          candidato !== undefined &&
+          candidato.kind === "bifurcacion" && // nunca `cruce`: es la regresión que Part 35 previene
+          ramas.length >= 2 &&
+          ramaEsperada !== undefined &&
+          ramas.includes(ramaEsperada),
+        detail:
+          candidato === undefined
+            ? "sin candidato para el tag plantado"
+            : `${candidato.kind}, ${ramas.length} ramas: ${ramas.join(", ")}`,
+      };
+    },
+    "cruce-real": () => {
+      const plantado = scenario.defects.find((d) => d.kind === "cruce-real");
+      const tagCruce = plantado?.tags[0];
+      const candidato = criticalPoints.find((entry) => entry.tagId === tagCruce);
+      return {
+        ok: candidato?.kind === "cruce" && candidato.reconvergesAt !== undefined,
+        detail:
+          candidato === undefined
+            ? "sin candidato para el tag plantado"
+            : candidato.kind === "cruce"
+              ? `reconverge en «${candidato.reconvergesAt}» a ${candidato.hops} salto(s)`
+              : `salió como ${candidato.kind}, no cruce`,
+      };
+    },
+    "parada-precisa-real": () => {
+      const plantado = scenario.defects.find((d) => d.kind === "parada-precisa-real");
+      const tag = plantado?.tags[0];
+      const candidato = criticalPoints.find((entry) => entry.tagId === tag);
+      return {
+        ok: candidato?.kind === "parada-precisa",
+        detail:
+          candidato === undefined
+            ? "sin candidato para el tag plantado"
+            : candidato.kind === "parada-precisa"
+              ? `media ${Math.round((candidato.meanDurationMs ?? 0) / 1000)} s, cv ${(candidato.coefficientOfVariation ?? 0).toFixed(2)}`
+              : `salió como ${candidato.kind}, no parada precisa`,
+      };
+    },
+    "semaforo-real": () => {
+      const plantado = scenario.defects.find((d) => d.kind === "semaforo-real");
+      const tag = plantado?.tags[0];
+      const candidato = criticalPoints.find((entry) => entry.tagId === tag);
+      return {
+        ok: candidato?.kind === "semaforo",
+        detail:
+          candidato === undefined
+            ? "sin candidato para el tag plantado"
+            : candidato.kind === "semaforo"
+              ? `${Math.round((candidato.lowClusterMeanMs ?? 0) / 1000)} s / ${Math.round((candidato.highClusterMeanMs ?? 0) / 1000)} s`
+              : `salió como ${candidato.kind}, no semáforo`,
+      };
+    },
+    "ancla-declarada": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "ancla-declarada")?.tags ?? [])[0];
+      const completas = laps.filter((lap) => lap.completeness === "completa");
+      return {
+        ok:
+          anchorTagId === esperado &&
+          anchorTruth === "observed" &&
+          completas.length > 0 &&
+          completas.every((lap) => lap.truth === "observed"),
+        detail:
+          `ancla efectiva: ${anchorTagId ?? "—"} (${anchorTruth ?? "sin ancla"}); ` +
+          `${completas.length} vueltas completas, ` +
+          `${completas.filter((lap) => lap.truth === "observed").length} con truth observed`,
+      };
+    },
+    "tag-nuevo-a-mitad-de-ventana": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "tag-nuevo-a-mitad-de-ventana")
+        ?.tags ?? [])[0];
+      const hallado = drift.tagDrifts.find((entry) => entry.tagId === esperado);
+      return {
+        ok: drift.evaluated && hallado?.kind === "nuevo",
+        detail: !drift.evaluated
+          ? `no evaluado: ${drift.reason ?? "sin razón"}`
+          : hallado === undefined
+            ? "sin hallazgo para el tag plantado"
+            : `${hallado.kind}` +
+              (hallado.kind === "nuevo" ? `, ${hallado.readingsAfter} lecturas en el periodo tardío` : ""),
+      };
+    },
+    "memoria-actualizada-a-mitad-de-ventana": () => {
+      const defect = scenario.defects.find((d) => d.kind === "memoria-actualizada-a-mitad-de-ventana");
+      const esperado = defect?.vehicles[0];
+      const esperados = new Set(defect?.tags ?? []);
+      const hallado = drift.vehicleDrifts.find((entry) => entry.agvId === esperado);
+      const dropped = new Set(hallado?.droppedTags ?? []);
+      const coincide = esperados.size > 0 && [...esperados].every((tag) => dropped.has(tag));
+      return {
+        ok: drift.evaluated && hallado !== undefined && coincide,
+        detail: !drift.evaluated
+          ? `no evaluado: ${drift.reason ?? "sin razón"}`
+          : hallado === undefined
+            ? "vehículo plantado sin deriva señalada"
+            : `${hallado.droppedTags.length} tags dejados: ${hallado.droppedTags.join(", ")}`,
+      };
+    },
+    "sustitucion-candidata": () => {
+      const defect = scenario.defects.find((d) => d.kind === "sustitucion-candidata");
+      const [esperadoViejo, esperadoNuevo] = defect?.tags ?? [];
+      const hallado = drift.tagDrifts.find(
+        (entry) => entry.kind === "sustitucion-candidata" && entry.tagId === esperadoViejo,
+      );
+      const coincide =
+        hallado !== undefined &&
+        hallado.kind === "sustitucion-candidata" &&
+        hallado.nuevoTagId === esperadoNuevo;
+      return {
+        ok: drift.evaluated && coincide,
+        detail: !drift.evaluated
+          ? `no evaluado: ${drift.reason ?? "sin razón"}`
+          : hallado === undefined
+            ? "sin sustitución candidata para el par plantado"
+            : hallado.kind === "sustitucion-candidata"
+              ? `${hallado.tagId} → ${hallado.nuevoTagId}, mismo ${hallado.neighborSide} (${hallado.sharedNeighbor})`
+              : `salió como ${hallado.kind}, no emparejado`,
+      };
+    },
+    "memoria-no-actualizada": () => {
+      const defect = scenario.defects.find((d) => d.kind === "memoria-no-actualizada");
+      const esperadoVehiculo = defect?.vehicles[0];
+      const esperadoTag = defect?.tags[0];
+      const hallado = drift.vehicleDrifts.find((entry) => entry.agvId === esperadoVehiculo);
+      const coincide = esperadoTag !== undefined && (hallado?.notAdoptedTags.includes(esperadoTag) ?? false);
+      return {
+        ok: drift.evaluated && coincide,
+        detail: !drift.evaluated
+          ? `no evaluado: ${drift.reason ?? "sin razón"}`
+          : hallado === undefined
+            ? "vehículo plantado sin adopción señalada"
+            : `no adoptados: ${hallado.notAdoptedTags.join(", ") || "ninguno"}`,
+      };
+    },
+    "vinculacion-declarada": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "vinculacion-declarada")?.tags ?? [])[0];
+      const hallado = tagDossiers.find((entry) => entry.tagId === esperado);
+      return {
+        ok: hallado?.criticalFunction === "vinculacion",
+        detail: `función declarada: ${hallado?.criticalFunction ?? "ninguna"}`,
+      };
+    },
+    "desvinculacion-declarada": () => {
+      const esperado = (scenario.defects.find((d) => d.kind === "desvinculacion-declarada")?.tags ?? [])[0];
+      const hallado = tagDossiers.find((entry) => entry.tagId === esperado);
+      return {
+        ok: hallado?.criticalFunction === "desvinculacion",
+        detail: `función declarada: ${hallado?.criticalFunction ?? "ninguna"}`,
+      };
+    },
+    "lectura-desigual-en-pocos-tags": () => {
+      const defect = scenario.defects.find((d) => d.kind === "lectura-desigual-en-pocos-tags");
+      const hallado = vehicleReading.vehicles.find((entry) => entry.agvId === defect?.vehicles[0]);
+      const weak = new Set(hallado?.weak.map((entry) => entry.tagId) ?? []);
+      return {
+        ok:
+          hallado?.extent === "pocos" &&
+          (defect?.tags ?? []).every((tag) => weak.has(tag)) &&
+          hallado.never.length === 0 &&
+          hallado.stopped.length === 0,
+        detail:
+          hallado === undefined
+            ? "AGV plantado sin diferencias"
+            : `${hallado.extent ?? "sin «poco»"}: ${hallado.weak.map((entry) => `${entry.tagId} ${entry.hits}/${entry.passes}`).join(", ")}`,
+      };
+    },
   };
 
   it("publica el informe por clase", () => {
@@ -490,6 +850,129 @@ describe("auditoría del circuito con verdad conocida", () => {
       return pattern === "bimodal-candidato" || pattern === "uniforme-bajo";
     });
     expect(falsos, `falsos positivos: ${falsos.slice(0, 8).join(", ")}`).toHaveLength(0);
+
+    // Ningún tag sano debe salir como candidato a punto crítico tampoco.
+    const candidatosSobreSanos = scenario.cleanTags.filter((tag) =>
+      criticalPoints.some((candidate) => candidate.tagId === tag),
+    );
+    expect(
+      candidatosSobreSanos,
+      `candidatos espurios: ${candidatosSobreSanos.slice(0, 8).join(", ")}`,
+    ).toHaveLength(0);
+
+    // Ningún tag sano debe traer una función crítica declarada que nadie plantó (Parte 36): las dos
+    // vías —«critico» y la columna del circuito virtual— solo declaran los dos tags plantados.
+    const funcionesEsperadas = new Set(
+      scenario.defects
+        .filter((d) => d.kind === "vinculacion-declarada" || d.kind === "desvinculacion-declarada")
+        .flatMap((d) => d.tags),
+    );
+    const funcionesEspurias = scenario.cleanTags.filter((tag) => {
+      if (funcionesEsperadas.has(tag)) return false;
+      return tagDossiers.find((entry) => entry.tagId === tag)?.criticalFunction != null;
+    });
+    expect(
+      funcionesEspurias,
+      `funciones críticas sin plantar: ${funcionesEspurias.slice(0, 8).join(", ")}`,
+    ).toHaveLength(0);
+
+    // Ningún tag sano debe aparecer con deriva entre los dos periodos, y ningún vehículo salvo el
+    // plantado debe aparecer con tags dejados de leer.
+    const derivaSobreSanos = scenario.cleanTags.filter((tag) =>
+      drift.tagDrifts.some((entry) => entry.tagId === tag),
+    );
+    expect(
+      derivaSobreSanos,
+      `deriva espuria sobre tags sanos: ${derivaSobreSanos.slice(0, 8).join(", ")}`,
+    ).toHaveLength(0);
+
+    const esperado = (scenario.defects.find((d) => d.kind === "memoria-actualizada-a-mitad-de-ventana")
+      ?.vehicles ?? [])[0];
+    const esperadoAdopcion = (scenario.defects.find((d) => d.kind === "memoria-no-actualizada")
+      ?.vehicles ?? [])[0];
+    const vehiculosConDerivaEspuria = drift.vehicleDrifts.filter(
+      (entry) =>
+        (entry.droppedTags.length > 0 && entry.agvId !== esperado) ||
+        (entry.notAdoptedTags.length > 0 && entry.agvId !== esperadoAdopcion),
+    );
+    expect(
+      vehiculosConDerivaEspuria.map((entry) => entry.agvId),
+      `vehículos con deriva sin plantar: ${vehiculosConDerivaEspuria.map((entry) => entry.agvId).join(", ")}`,
+    ).toHaveLength(0);
+
+    // La sustitución candidata no puede emparejar de más: el tag nuevo instalado a mitad de ventana
+    // (98001, sin ningún desaparecido en su misma posición) tiene que seguir siendo `nuevo` suelto.
+    const tagNuevoInstalado = (scenario.defects.find((d) => d.kind === "tag-nuevo-a-mitad-de-ventana")
+      ?.tags ?? [])[0];
+    const halladoTagNuevo = drift.tagDrifts.find((entry) => entry.tagId === tagNuevoInstalado);
+    expect(halladoTagNuevo?.kind, "98001 no debería emparejarse con ningún desaparecido").toBe("nuevo");
+  }, PLAZO);
+
+  it("con una sola exportación, los cambios de tag y la lectura por AGV coinciden con lo plantado", () => {
+    const of = (kind: DefectClass) => scenario.defects.find((d) => d.kind === kind);
+
+    // Cambios dentro del periodo (R-DAT-019): la sustitución, las dos roturas y el tag nuevo suelto.
+    const sustitucion = of("sustitucion-candidata")?.tags ?? [];
+    const cambios = tagChanges.changes.filter((change) => change.kind === "cambio");
+    expect(cambios.map((change) => (change.kind === "cambio" ? [change.oldTagId, change.newTagId] : []))).toEqual([
+      sustitucion,
+    ]);
+    const dejan = tagChanges.changes.filter((change) => change.kind === "deja").map((change) => change.tagId).sort();
+    expect(dejan).toEqual([...(of("rotura-subita")?.tags ?? [])].sort());
+    const empiezan = tagChanges.changes.filter((change) => change.kind === "empieza").map((change) => change.tagId);
+    expect(empiezan).toEqual(of("tag-nuevo-a-mitad-de-ventana")?.tags ?? []);
+
+    // Frente al tag nuevo, solo el AGV plantado, y con «nunca».
+    const noActualizado = of("memoria-no-actualizada");
+    expect(tagChanges.adoption.map((issue) => [issue.agvId, issue.tagId, issue.fact.kind])).toEqual([
+      [noActualizado?.vehicles[0], noActualizado?.tags[0], "nunca"],
+    ]);
+
+    // Lectura por AGV (R-AGV-016): los ciegos no leen nunca sus tags, el de memoria actualizada deja
+    // de leer los suyos a la hora del corte, y el lector degradado lee poco en muchos.
+    const byId = new Map(vehicleReading.vehicles.map((entry) => [entry.agvId, entry]));
+    const memoria = of("omision-por-memoria");
+    for (const agvId of memoria?.vehicles ?? []) {
+      expect(byId.get(agvId)?.never.map((entry) => entry.tagId).sort(), agvId).toEqual([...(memoria?.tags ?? [])].sort());
+    }
+    const actualizada = of("memoria-actualizada-a-mitad-de-ventana");
+    const parado = byId.get(actualizada?.vehicles[0] ?? "");
+    expect(parado?.stopped.map((entry) => entry.tagId).sort()).toEqual([...(actualizada?.tags ?? [])].sort());
+    for (const entry of parado?.stopped ?? []) {
+      expect(Math.abs(entry.sinceUtcMs - scenario.periodSplitUtcMs)).toBeLessThan(60 * 60_000);
+    }
+    expect(byId.get(of("lector-agv-degradado")?.vehicles[0] ?? "")?.extent).toBe("muchos");
+  }, PLAZO);
+
+  it("con una sola exportación, ni cambios de tag ni lectura por AGV fuera de lo plantado", () => {
+    const of = (kind: DefectClass) => scenario.defects.find((d) => d.kind === kind);
+    const tocados = new Set(
+      tagChanges.changes.flatMap((change) => (change.kind === "cambio" ? [change.oldTagId, change.newTagId] : [change.tagId])),
+    );
+    const cambiosSobreSanos = scenario.cleanTags.filter((tag) => tocados.has(tag));
+    expect(cambiosSobreSanos, `cambios espurios: ${cambiosSobreSanos.join(", ")}`).toHaveLength(0);
+
+    // «Nunca» y «dejó de leer» solo en los AGV plantados para eso; «poco» solo en los que tienen una
+    // lectura desigual plantada (el de la tanda de tags saltados, el lector degradado y el nuevo caso).
+    const nunca = new Set(of("omision-por-memoria")?.vehicles ?? []);
+    const desde = new Set(of("memoria-actualizada-a-mitad-de-ventana")?.vehicles ?? []);
+    const poco = new Set([
+      ...(of("omision-conservando-convoy")?.vehicles ?? []),
+      ...(of("lector-agv-degradado")?.vehicles ?? []),
+      ...(of("lectura-desigual-en-pocos-tags")?.vehicles ?? []),
+    ]);
+    const espurios = vehicleReading.vehicles.filter(
+      (entry) =>
+        (entry.never.length > 0 && !nunca.has(entry.agvId)) ||
+        (entry.stopped.length > 0 && !desde.has(entry.agvId)) ||
+        (entry.weak.length > 0 && !poco.has(entry.agvId)),
+    );
+    expect(
+      espurios.map((entry) => entry.agvId),
+      `AGV con diferencias sin plantar: ${espurios
+        .map((entry) => `${entry.agvId} (nunca ${entry.never.length}, desde ${entry.stopped.length}, poco ${entry.weak.map((w) => `${w.tagId} ${w.hits}/${w.passes}`).join(" ")})`)
+        .join("; ")}`,
+    ).toHaveLength(0);
   }, PLAZO);
 
   it("detecta las clases que ya sabe detectar, y sigue haciéndolo", () => {
@@ -500,6 +983,25 @@ describe("auditoría del circuito con verdad conocida", () => {
       if (!resultado.ok) fallos.push(`${defect.kind}: ${resultado.detail}`);
     }
     expect(fallos, fallos.join(" | ")).toHaveLength(0);
+  }, PLAZO);
+
+  it("la deriva entre dos periodos coincide con otras clases ya plantadas, sin sonda propia", () => {
+    // Los tags de rotura súbita mueren circuito-wide antes de la mitad de la ventana: tienen que
+    // aparecer como `desaparecido` sin que nadie los haya plantado a propósito para esta clase.
+    const rotos = scenario.defects.find((d) => d.kind === "rotura-subita")?.tags ?? [];
+    const desaparecidos = new Set(
+      drift.tagDrifts.filter((entry) => entry.kind === "desaparecido").map((entry) => entry.tagId),
+    );
+    for (const tag of rotos) expect(desaparecidos.has(tag), `${tag} debería salir desaparecido`).toBe(true);
+
+    // Los tags nunca leídos por nadie tienen que consolidarse con la segunda ventana.
+    const nuncaLeidos = scenario.defects.find((d) => d.kind === "declarado-sin-lecturas")?.tags ?? [];
+    const consolidados = new Set(
+      drift.tagDrifts.filter((entry) => entry.kind === "obsoleto-consolidado").map((entry) => entry.tagId),
+    );
+    for (const tag of nuncaLeidos) {
+      expect(consolidados.has(tag), `${tag} debería salir obsoleto-consolidado`).toBe(true);
+    }
   }, PLAZO);
 
   it("la lista de deuda conocida no miente: si algo empieza a detectarse, hay que sacarlo", () => {

@@ -31,12 +31,33 @@ import { activityBand, hourlyProfile } from "../src/domain/activity.js";
 import { buildTagInventory, describeAction } from "../src/domain/inventory.js";
 import { assignCohorts } from "../src/domain/cohort.js";
 import { buildTransitions } from "../src/domain/graph.js";
-import { findDominantCycle, segmentLaps, type Lap, type LapAnchor } from "../src/domain/laps.js";
+import {
+  findDominantCycle,
+  resolveDeclaredAnchor,
+  segmentLaps,
+  type Lap,
+  type LapAnchor,
+} from "../src/domain/laps.js";
 import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-matrix.js";
-import { buildChargingReport } from "../src/domain/charging.js";
+import { detectTagChanges } from "../src/domain/tag-changes.js";
+import { describeVehicleReading } from "../src/domain/vehicle-reading.js";
+import { buildChargingReport, findLaneJunctions } from "../src/domain/charging.js";
+import { buildFifoReport, loadedZoneSpans } from "../src/domain/fifo.js";
+import {
+  classifyCrossings,
+  findBifurcationCandidates,
+  findPrecisePauseCandidates,
+  findTrafficLightCandidates,
+  transitionDurationsByTag,
+} from "../src/domain/critical-points.js";
+import { compareDistantPeriods } from "../src/domain/drift.js";
+import { buildFleetTimeline, mergeFleetPeriods } from "../src/domain/fleet.js";
+import { FLEET_STRUCTURE, FleetFailure, importFleetHistory } from "../src/ingestion/fleet-history.js";
 import {
   laneEntryTags,
   readCoLanes,
+  readCriticalPoints,
+  readLapAnchors,
   readZones,
   type ConfigEntry,
 } from "../src/domain/circuit-config.js";
@@ -48,6 +69,7 @@ import type { CircuitViews } from "../src/application/protocol.js";
 import { isAvailable, loadCircuit, saveCircuit } from "../src/persistence/store.js";
 import type { Reading } from "../src/domain/reading.js";
 import type { SourceDirection } from "../src/domain/order.js";
+import type { TruthState } from "../src/domain/truth.js";
 import type { AccumulationReport } from "../src/application/protocol.js";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
@@ -137,6 +159,8 @@ async function accumulate(
     // borraba en silencio las listas de planta del circuito —el objeto se reescribe entero— y el
     // inventario desaparecía sin que nada lo dijera. Lo destapó la prueba de navegador.
     ...(existing?.lists === undefined ? {} : { lists: existing.lists }),
+    // Y el historial de flota, por la misma razón: lo destapó la prueba de navegador de la Parte 39.
+    ...(existing?.fleet === undefined ? {} : { fleet: existing.fleet }),
     updatedAt: Date.now(),
   });
 
@@ -161,6 +185,20 @@ const ACTIVITY_BINS = 96;
  * igual que `ACTIVITY_BINS`.
  */
 const REPLAY_FRAMES = 200;
+
+/**
+ * Duraciones que viajan, como mucho, por distribución de permanencias dibujada. Parámetro técnico,
+ * igual que `ACTIVITY_BINS`: por encima se toma una muestra de paso fijo, determinista, y la vista
+ * dice de cuántas sale.
+ */
+const DURATION_SAMPLE_MAX = 1000;
+
+/** Una muestra de paso fijo: determinista, sin azar, y declarada por quien la enseña. */
+function strideSample(values: readonly number[], max: number): number[] {
+  if (values.length <= max) return [...values];
+  const step = values.length / max;
+  return Array.from({ length: max }, (_, index) => values[Math.floor(index * step)] as number);
+}
 
 /**
  * Los agregados que alimentan las vistas.
@@ -200,6 +238,15 @@ async function buildViews(
     lists.find((entry) => entry.list === name)?.entries ?? [];
   const laneConfig = readCoLanes(entriesOf("carga-online"));
   const zoneConfig = readZones(entriesOf("zona"));
+  const lapAnchorsConfig = readLapAnchors(entriesOf("ancla"));
+  // La función de un tag crítico se declara en la lista `critico`, o alternativamente en la columna
+  // `funcion` del circuito virtual (`circuito`) — las dos conviven (Parte 36). `critico` va primero
+  // para que gane en caso de contradicción; el filtro sobre `circuito` es imprescindible, porque sin
+  // él cada tag ordinario del circuito (sin función) dispararía el aviso «no dice su función».
+  const criticalPointsConfig = readCriticalPoints([
+    ...entriesOf("critico"),
+    ...entriesOf("circuito").filter((entry) => entry.funcion !== ""),
+  ]);
   const orderLimits: OrderEvidenceLimits = {
     zoneOf: zoneConfig.zoneOf,
     laneEntryTags: laneEntryTags(laneConfig.lanes),
@@ -222,17 +269,48 @@ async function buildViews(
   const laps: Lap[] = [];
   const shapes: CircuitViews["shapes"][number][] = [];
   const matrices: CircuitViews["readMatrices"][number][] = [];
-  /** El ancla de cada cohorte, guardada para no volver a buscar el mismo ciclo más abajo. */
+  const vehicleReadings: CircuitViews["vehicleReading"][number][] = [];
+  // Cambios de tag dentro de un mismo periodo (R-DAT-019), antes que la matriz: cuándo empezó o dejó
+  // de leerse cada tag es lo que hace falta para medirlo solo dentro de su vida (R-OPP-016).
+  const tagChanges = detectTagChanges(readings, direction, coverage, PROVISIONAL_CONFIG.tagChanges, {
+    minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
+    highRate: PROVISIONAL_CONFIG.readRate.highRate,
+    minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
+  });
+  const fifoCohorts: NonNullable<CircuitViews["fifo"]>[number][] = [];
+  const criticalPointCohorts: CircuitViews["criticalPoints"][number][] = [];
+  /** El ancla efectiva de cada cohorte (declarada si se resolvió, si no la inferida). */
   const anchors = new Map<number, LapAnchor>();
+  const lapAnchorProblems: string[] = [];
 
   for (const cohort of cohortAssignment.cohorts) {
     const vehicleSet = new Set(cohort.vehicles);
     const cohortTransitions = transitions.filter((entry) => vehicleSet.has(entry.agvId));
     const anchor = findDominantCycle(cohortTransitions);
     if (anchor === null) continue; // Sin ciclo dominante limpio: ese cohorte no tiene vueltas segmentadas.
-    anchors.set(cohort.id, anchor);
+
+    // Ancla declarada (R-GRA-009): la topología la sigue dando el tráfico observado, y una ancla
+    // declarada solo rota dónde se corta ese mismo ciclo. Sin ninguna declarada, o si ninguna de
+    // las declaradas aparece en el ciclo reconstruido, se sigue con la inferida — sin fingir un
+    // corte que el dato no sostiene.
+    let effective: LapAnchor = anchor;
+    let anchorTruth: TruthState = "inferred";
+    if (lapAnchorsConfig.anchors.length > 0) {
+      const resolved = resolveDeclaredAnchor(anchor, lapAnchorsConfig.anchors);
+      if (resolved === null) {
+        lapAnchorProblems.push(
+          `Cohorte ${cohort.id}: ninguna de las anclas declaradas aparece en el ciclo ` +
+            `reconstruido; se sigue usando el ancla inferida «${anchor.tagId}».`,
+        );
+      } else {
+        effective = { tagId: resolved.tagId, cycle: resolved.cycle, weakestShare: anchor.weakestShare };
+        anchorTruth = "observed";
+      }
+    }
+    anchors.set(cohort.id, effective);
+
     const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
-    laps.push(...segmentLaps(cohortReadings, direction, coverage, anchor.tagId));
+    laps.push(...segmentLaps(cohortReadings, direction, coverage, effective.tagId, anchorTruth));
 
     // El ciclo dominante **es** la composición del circuito: cuántos tags lo forman y en qué orden.
     // Estaba calculado desde F2 y se descartaba entero salvo el tag de ancla.
@@ -241,7 +319,7 @@ async function buildViews(
     // dominante lo salta **desaparecería del análisis justo por ser el más sospechoso**. Se cuentan
     // aparte, con sus lectores, sin decidir si son ramas o tags de la línea mal leídos — eso lo
     // separa la prueba de tiempos de OQ-118, que todavía no está implementada.
-    const inRing = new Set(anchor.cycle);
+    const inRing = new Set(effective.cycle);
     const offRing = new Map<string, Set<string>>();
     for (const entry of cohortReadings) {
       if (inRing.has(entry.tagId)) continue;
@@ -253,48 +331,114 @@ async function buildViews(
       readers.add(entry.agvId);
     }
 
+    // Para dibujar el anillo: la zona de cada tag (solo con la lista `zona`) y el tag del anillo
+    // del que cuelga cada calle (solo con la lista `carga-online`). Proyecciones de lo ya leído.
+    const servedLanes = new Set(charging.lanes.filter((lane) => lane.served).map((lane) => lane.laneId));
     shapes.push({
       cohortId: cohort.id,
       vehicles: cohort.vehicles.length,
-      tags: anchor.cycle,
-      anchorTagId: anchor.tagId,
-      weakestShare: anchor.weakestShare,
+      tags: effective.cycle,
+      anchorTagId: effective.tagId,
+      anchorTruth,
+      weakestShare: effective.weakestShare,
       offRingTags: [...offRing.entries()]
         .map(([tagId, readers]) => ({ tagId, readers: readers.size }))
         .sort((a, b) => b.readers - a.readers),
+      ...(zoneConfig.zoneOf.size === 0
+        ? {}
+        : { zones: effective.cycle.map((tagId) => zoneConfig.zoneOf.get(tagId) ?? null) }),
+      ...(laneConfig.lanes.length === 0
+        ? {}
+        : {
+            laneJunctions: findLaneJunctions(laneConfig.lanes, cohortTransitions, effective.cycle).map(
+              (junction) => ({ ...junction, served: servedLanes.has(junction.laneId) }),
+            ),
+          }),
     });
-    matrices.push(
-      buildReadMatrix(
-        cohort.id,
-        cohortReadings,
-        direction,
-        coverage,
-        anchor.cycle,
-        anchor.tagId,
-        PROVISIONAL_CONFIG.readRate,
-        orderLimits,
-        PROVISIONAL_CONFIG.trend,
-      ),
+    const matrix = buildReadMatrix(
+      cohort.id,
+      cohortReadings,
+      direction,
+      coverage,
+      effective.cycle,
+      effective.tagId,
+      PROVISIONAL_CONFIG.readRate,
+      orderLimits,
+      PROVISIONAL_CONFIG.trend,
+      tagChanges.lives,
     );
+    matrices.push(matrix);
+    vehicleReadings.push({
+      cohortId: cohort.id,
+      ...describeVehicleReading(matrix, PROVISIONAL_CONFIG.readRate, PROVISIONAL_CONFIG.vehicleReading),
+    });
+
+    // FIFO en zona cargada (R-FLO-001): los tramos son propiedad del anillo de este cohorte, así
+    // que se derivan aquí, no una sola vez fuera del bucle como las calles (que son de circuito).
+    if (zoneConfig.zoneOf.size > 0) {
+      const { spans, problems: spanProblems } = loadedZoneSpans(effective.cycle, zoneConfig.zoneOf);
+      const fifoReport = buildFifoReport(cohort.id, cohortReadings, spans, PROVISIONAL_CONFIG.fifo);
+      fifoCohorts.push({ cohortId: cohort.id, spans: fifoReport.spans, problems: spanProblems });
+    }
+
+    // Candidatos a punto crítico (R-GRA-007): sobre las transiciones del cohorte entero, no solo el
+    // anillo — restringir a `anchor.cycle` escondería justo la rama fuera de él que la firma busca.
+    const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
+    const conCruces = classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce);
+    const paradas = findPrecisePauseCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa);
+    const semaforos = findTrafficLightCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo);
+    // Para dibujar la distribución que la firma resume: las duraciones de cada candidato de tiempo y
+    // una muestra de referencia con todas las del cohorte (sin pares del mismo instante, R-DAT-013).
+    const durations = transitionDurationsByTag(cohortTransitions);
+    const allDurations = [...durations.values()].flat();
+    criticalPointCohorts.push({
+      cohortId: cohort.id,
+      candidates: [
+        ...conCruces,
+        ...[...paradas, ...semaforos].map((candidate) => ({
+          ...candidate,
+          durationsMs: strideSample(durations.get(candidate.tagId) ?? [], DURATION_SAMPLE_MAX),
+        })),
+      ],
+      referenceDurationsMs: strideSample(allDurations, DURATION_SAMPLE_MAX),
+      referenceTotal: allDurations.length,
+    });
   }
 
-  const coverageEnd =
+  // Un hueco entre dos exportaciones no es inactividad de nadie (R-DAT-007): el expediente recibe
+  // los tramos de cobertura, no solo su final.
+  const dossierCoverage =
     coverage.length > 0
-      ? Math.max(...coverage.map((span) => span.to))
-      : (readings[readings.length - 1] as Reading).time.utcMs;
+      ? coverage
+      : [{ from: (readings[0] as Reading).time.utcMs, to: (readings[readings.length - 1] as Reading).time.utcMs }];
 
   const agvDossiers = buildAllAgvDossiers(
     readings,
     cohortAssignment,
     laps,
-    coverageEnd,
+    dossierCoverage,
     PROVISIONAL_CONFIG.silence.minGapMs,
     laneConfig.lanes,
   );
   const vehicleIds = agvDossiers.map((dossier) => dossier.agvId);
-  const tagDossiers = buildAllTagDossiers(readings, vehicleIds);
+  const tagDossiers = buildAllTagDossiers(readings, vehicleIds, criticalPointsConfig.funcionOf);
 
   const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, PROVISIONAL_CONFIG.silence.minGapMs);
+
+  // La flota a lo largo del tiempo (DS-012, R-AGV-014): reutiliza las inactividades del expediente
+  // y los arranques en frío de las calles, y recorta todo a la cobertura (R-DAT-007).
+  const fleet = buildFleetTimeline({
+    readings,
+    coverage,
+    history: stored?.fleet?.periods ?? null,
+    inactivity: new Map(agvDossiers.map((dossier) => [dossier.agvId, dossier.inactivity])),
+    coldStarts: new Map(
+      charging.startedInside
+        .filter((stay) => stay.leftUtcMs !== null)
+        .map((stay) => [stay.agvId, stay.leftUtcMs as number]),
+    ),
+    minGapMs: PROVISIONAL_CONFIG.silence.minGapMs,
+  });
 
   const views: CircuitViews = {
     hourly: hourlyProfile(readings, zone),
@@ -302,9 +446,12 @@ async function buildViews(
     cohorts: cohortAssignment.cohorts,
     shapes,
     readMatrices: matrices,
+    vehicleReading: vehicleReadings,
+    tagChanges: { changes: tagChanges.changes, adoption: tagChanges.adoption },
     agvDossiers,
     tagDossiers,
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
+    fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null },
     ...(laneConfig.lanes.length === 0 && laneConfig.problems.length === 0
       ? {}
       : {
@@ -314,6 +461,12 @@ async function buildViews(
               capacity: lane.capacity,
               served: lane.served,
               stays: lane.stays.length,
+              stayList: lane.stays.map((stay) => ({
+                agvId: stay.agvId,
+                enteredUtcMs: stay.enteredUtcMs,
+                leftUtcMs: stay.leftUtcMs,
+                state: stay.state,
+              })),
               medianStayMs: lane.medianStayMs,
               longStays: lane.longStays.map((stay) => ({
                 agvId: stay.agvId,
@@ -331,6 +484,7 @@ async function buildViews(
               leftUtcMs: stay.leftUtcMs,
             })),
             coverageStartUtcMs: charging.coverageStartUtcMs,
+            neverCharged: charging.neverCharged,
             problems: [...laneConfig.problems, ...zoneConfig.problems],
           },
         }),
@@ -342,7 +496,12 @@ async function buildViews(
             tags: [...zoneConfig.zoneOf].filter(([, value]) => value === zoneName).length,
           })),
         }),
+    ...(fifoCohorts.length === 0 ? {} : { fifo: fifoCohorts }),
     orderWithheld: matrices.reduce((total, matrix) => total + matrix.orderWithheld, 0),
+    criticalPoints: criticalPointCohorts,
+    ...(lapAnchorsConfig.problems.length === 0 && lapAnchorProblems.length === 0
+      ? {}
+      : { lapAnchorProblems: [...lapAnchorsConfig.problems, ...lapAnchorProblems] }),
   };
 
   if (lists.length === 0) return views;
@@ -354,6 +513,14 @@ async function buildViews(
       .filter((lane) => !lane.served)
       .flatMap((lane) => laneConfig.lanes.find((item) => item.laneId === lane.laneId)?.tags ?? []),
   );
+  const knownTags = new Set([
+    ...byName("circuito"),
+    ...byName("memoria"),
+    ...byName("mantenimiento"),
+    ...byName("emergencia"),
+    ...byName("carga-online"),
+    ...criticalPointsConfig.funcionOf.keys(),
+  ]);
   const inventory = buildTagInventory(
     readings,
     {
@@ -363,9 +530,14 @@ async function buildViews(
       emergency: byName("emergencia"),
       charging: byName("carga-online"),
       unservedLaneTags,
+      critical: criticalPointsConfig.funcionOf,
     },
     PROVISIONAL_CONFIG.blindness,
   );
+
+  // Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013): usa la cobertura que ya existe
+  // -la unión de todas las fuentes aceptadas-, nunca un segundo fichero pedido aparte.
+  const drift = compareDistantPeriods(readings, coverage, knownTags, PROVISIONAL_CONFIG.drift);
 
   const counts = new Map<string, number>();
   const truthOf = new Map<string, string>();
@@ -409,6 +581,31 @@ async function buildViews(
       listsLoaded: lists.map((entry) => entry.list),
     },
     ...(vsystemContrast === undefined ? {} : { vsystemContrast }),
+    ...(criticalPointsConfig.problems.length === 0
+      ? {}
+      : { criticalPointsProblems: criticalPointsConfig.problems }),
+    ...(!drift.evaluated || drift.earlyPeriod === null || drift.latePeriod === null
+      ? {}
+      : {
+          drift: {
+            earlyPeriod: drift.earlyPeriod,
+            latePeriod: drift.latePeriod,
+            tagDrifts: drift.tagDrifts.map((entry) => ({
+              tagId: entry.tagId,
+              kind: entry.kind,
+              readingsBefore: entry.kind === "desaparecido" || entry.kind === "sustitucion-candidata" ? entry.readingsBefore : 0,
+              readingsAfter: entry.kind === "nuevo" || entry.kind === "sustitucion-candidata" ? entry.readingsAfter : 0,
+              ...(entry.kind === "sustitucion-candidata"
+                ? { nuevoTagId: entry.nuevoTagId, sharedNeighbor: entry.sharedNeighbor, neighborSide: entry.neighborSide }
+                : {}),
+            })),
+            vehicleDrifts: drift.vehicleDrifts.map((entry) => ({
+              agvId: entry.agvId,
+              droppedTags: entry.droppedTags,
+              notAdoptedTags: entry.notAdoptedTags,
+            })),
+          },
+        }),
   };
 }
 
@@ -611,6 +808,98 @@ async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<
   }
 }
 
+const FLEET_REJECTION_LABEL: Readonly<Record<string, string>> = {
+  SIN_AGV: "sin AGV",
+  FECHA_INVALIDA: "fecha no válida (día/mes/año)",
+  HASTA_ANTES_DE_DESDE: "«hasta» no posterior a «desde»",
+  CAMPOS_INSUFICIENTES: "faltan columnas en la fila",
+};
+
+/**
+ * Carga el historial de flota de un circuito (DS-012) y lo **fusiona** con el guardado por (AGV,
+ * `desde`): para registrar un cambio basta subir esa fila. Si el fichero trae varios circuitos y
+ * ninguno está elegido, pregunta cuál es este en lugar de elegirlo por proximidad del nombre.
+ */
+async function runFleet(message: Extract<ToWorker, { type: "fleet" }>): Promise<void> {
+  const { jobId, file, circuitId } = message;
+  const fail = (cause: string, recovery: string): void =>
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  if (!isAvailable()) {
+    fail("Este navegador no permite guardar datos de sitio.", "Sin almacén local no hay dónde guardar el historial.");
+    return;
+  }
+  try {
+    const existing = await loadCircuit(circuitId);
+    if (existing === undefined) {
+      fail(
+        `El circuito «${circuitId}» todavía no existe.`,
+        "Importa al menos una fuente de lecturas en ese circuito y vuelve a intentarlo.",
+      );
+      return;
+    }
+    const { text } = decodeSource(await file.arrayBuffer());
+    const result = importFleetHistory(text, existing.zone);
+
+    let circuitName: string | null = null;
+    if (result.circuits.length > 1) {
+      const wanted = message.circuitName ?? existing.fleet?.circuitName ?? undefined;
+      if (wanted === undefined || !result.circuits.some((entry) => entry.name === wanted)) {
+        emit({ type: "fleet-choose-circuit", circuitId, options: result.circuits }, jobId);
+        return;
+      }
+      circuitName = wanted;
+    } else if (result.circuits.length === 1) {
+      circuitName = result.circuits[0]?.name ?? null;
+    }
+    const incoming = result.rows
+      .filter((row) => circuitName === null || row.circuit === circuitName || row.circuit === "")
+      .map((row) => ({ agvId: row.agvId, fromUtcMs: row.fromUtcMs, toUtcMs: row.toUtcMs, note: row.note }));
+    const merged = mergeFleetPeriods(existing.fleet?.periods ?? [], incoming);
+    const loadedAt = Date.now();
+    await saveCircuit({
+      ...existing,
+      fleet: {
+        circuitName,
+        periods: merged.periods,
+        loadedAt,
+        fileNames: [...(existing.fleet?.fileNames ?? []), file.name],
+      },
+      updatedAt: loadedAt,
+    });
+
+    const rejectedBy = new Map<string, number>();
+    for (const row of result.rejected) {
+      const label = FLEET_REJECTION_LABEL[row.reason] ?? row.reason;
+      rejectedBy.set(label, (rejectedBy.get(label) ?? 0) + 1);
+    }
+    emit(
+      {
+        type: "fleet-loaded",
+        circuitId,
+        circuitName,
+        accepted: incoming.length,
+        rejected: [...rejectedBy.entries()].map(([reason, rows]) => ({ reason, rows })),
+        added: merged.added,
+        replaced: merged.replaced,
+        periods: merged.periods.length,
+        warnings: result.warnings,
+      },
+      jobId,
+    );
+  } catch (error) {
+    const failure = error instanceof FleetFailure ? error : null;
+    emit(
+      {
+        type: "error",
+        code: "SCHEMA_UNRECOGNISED",
+        cause: failure?.reason ?? "No se pudo leer el historial de flota.",
+        recovery: failure?.recovery ?? `Se espera una cabecera «${FLEET_STRUCTURE.header.join(";")}».`,
+      },
+      jobId,
+    );
+  }
+}
+
 scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   const message = event.data;
   if (message.protocolVersion !== PROTOCOL_VERSION) return;
@@ -619,6 +908,13 @@ scope.onmessage = (event: MessageEvent<ToWorker>): void => {
     currentJobId = message.jobId;
     seq = 0;
     void runLists(message);
+    return;
+  }
+
+  if (message.type === "fleet") {
+    currentJobId = message.jobId;
+    seq = 0;
+    void runFleet(message);
     return;
   }
 

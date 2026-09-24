@@ -41,7 +41,8 @@ export function compareAgainstVsystem(
   observedRing: readonly string[],
   readTags: ReadonlySet<string>,
 ): readonly VsystemComparisonRow[] {
-  const common = longestCommonSubsequence(declaredOrder, observedRing);
+  const aligned = rotateToDeclaredStart(observedRing, declaredOrder);
+  const common = longestCommonSubsequence(declaredOrder, aligned);
   const rows: VsystemComparisonRow[] = [];
 
   let declaredIndex = 0;
@@ -53,8 +54,8 @@ export function compareAgainstVsystem(
       declaredIndex += 1;
     }
     const observedGap: string[] = [];
-    while (observedIndex < observedRing.length && observedRing[observedIndex] !== anchor) {
-      observedGap.push(observedRing[observedIndex] as string);
+    while (observedIndex < aligned.length && aligned[observedIndex] !== anchor) {
+      observedGap.push(aligned[observedIndex] as string);
       observedIndex += 1;
     }
 
@@ -66,7 +67,7 @@ export function compareAgainstVsystem(
         observedTag: anchor,
         verdict: "coincide",
         truth: "observed",
-        evidence: "El tag declarado aparece en el anillo observado en el mismo orden relativo.",
+        evidence: "Está donde Vsystem dice.",
       });
       declaredIndex += 1;
       observedIndex += 1;
@@ -101,7 +102,7 @@ function classifyGap(
         observedTag: observed,
         verdict: "no-declarado",
         truth: "inferred",
-        evidence: `«${declared}» sí se lee, pero no en esta posición del anillo; «${observed}» ocupa el hueco.`,
+        evidence: `«${declared}» sí se lee, pero en otro sitio; aquí se lee «${observed}».`,
       });
     } else {
       rows.push({
@@ -109,7 +110,7 @@ function classifyGap(
         observedTag: observed,
         verdict: "sustituido-candidato",
         truth: "inferred",
-        evidence: `«${declared}» no tiene ninguna lectura; «${observed}» ocupa exactamente su posición.`,
+        evidence: `«${declared}» no se lee nunca y en su sitio se lee «${observed}».`,
       });
     }
   }
@@ -119,7 +120,7 @@ function classifyGap(
       observedTag: null,
       verdict: "no-observado",
       truth: "unknown",
-      evidence: "Declarado sin lecturas y sin ningún tag ocupando su posición: el tramo se salta.",
+      evidence: "Declarado y sin lecturas, y ningún otro tag en su sitio.",
     });
   }
   for (let index = pairs; index < observedGap.length; index += 1) {
@@ -128,10 +129,31 @@ function classifyGap(
       observedTag: observedGap[index] as string,
       verdict: "no-declarado",
       truth: "observed",
-      evidence: "Se observa en el anillo y no está en la lista declarada.",
+      evidence: "Se lee en el recorrido y no está declarado.",
     });
   }
   return rows;
+}
+
+/**
+ * El anillo observado es cíclico y puede entrar cortado por cualquier punto —el ancla es inferida
+ * (ciclo dominante) o declarada en un tag que no es el primero de la lista Vsystem—. La subsecuencia
+ * común más larga es lineal y sensible a dónde se corta: un corte que cae en mitad de un tramo
+ * idéntico lo parte en dos coincidencias más cortas en vez de reconocerlo como una sola. Rotar aquí,
+ * hasta el primer tag de la lista declarada que aparece en el anillo, evita que el contraste dependa
+ * de por dónde entró el ancla. Sin ningún tag en común, el anillo se deja como está: no hay alrededor
+ * de qué rotar.
+ */
+function rotateToDeclaredStart(
+  ring: readonly string[],
+  declaredOrder: readonly string[],
+): readonly string[] {
+  for (const tag of declaredOrder) {
+    const index = ring.indexOf(tag);
+    if (index === -1) continue;
+    return [...ring.slice(index), ...ring.slice(0, index)];
+  }
+  return ring;
 }
 
 /** Subsecuencia común más larga, por programación dinámica clásica. O(n·m); ~200 tags es trivial. */

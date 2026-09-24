@@ -11,6 +11,7 @@
 
 import type { Cohort } from "./cohort.js";
 import type { CoLane } from "./circuit-config.js";
+import { mergeIntervals, type Interval } from "./coverage.js";
 import type { Lap } from "./laps.js";
 import type { Reading } from "./reading.js";
 import type { TruthState } from "./truth.js";
@@ -71,6 +72,11 @@ export interface AgvDossier {
  * defecto**: es el intervalo normal de lectura, configuración de planta (R-OPP-006), y quien llame
  * tiene que haberlo decidido.
  *
+ * `coverage` son los tramos con datos cargados. Un hueco entre dos lecturas que cruza un tramo sin
+ * datos —el que queda entre dos exportaciones— **no es inactividad**: lo que pasó dentro no se sabe
+ * (R-DAT-007). Sus bordes tampoco se listan, igual que no se lista el rato anterior a la primera
+ * lectura (R-GRA-010); la vista de flota los enseña con su umbral.
+ *
  * Agrupa `readings` por vehículo en cada llamada: correcto para una consulta aislada (como en las
  * pruebas), pero quien construya el expediente de **todos** los vehículos de un circuito debe usar
  * `buildAllAgvDossiers`, que agrupa una sola vez en vez de una vez por vehículo y por cada par de
@@ -81,7 +87,7 @@ export function buildAgvDossier(
   readings: readonly Reading[],
   cohorts: CohortLookup,
   laps: readonly Lap[],
-  coverageEndUtcMs: number,
+  coverage: readonly Interval[],
   minGapMs: number,
   lanes: readonly CoLane[],
 ): AgvDossier {
@@ -90,7 +96,7 @@ export function buildAgvDossier(
     groupByVehicle(readings),
     cohorts,
     laps,
-    coverageEndUtcMs,
+    mergeIntervals(coverage),
     minGapMs,
     laneSignatures(lanes),
   );
@@ -107,17 +113,16 @@ export function buildAllAgvDossiers(
   readings: readonly Reading[],
   cohorts: CohortLookup,
   laps: readonly Lap[],
-  coverageEndUtcMs: number,
+  coverage: readonly Interval[],
   minGapMs: number,
   lanes: readonly CoLane[],
 ): readonly AgvDossier[] {
   const grouped = groupByVehicle(readings);
   const signatures = laneSignatures(lanes);
+  const spans = mergeIntervals(coverage);
   return [...grouped.keys()]
     .sort()
-    .map((agvId) =>
-      computeAgvDossier(agvId, grouped, cohorts, laps, coverageEndUtcMs, minGapMs, signatures),
-    );
+    .map((agvId) => computeAgvDossier(agvId, grouped, cohorts, laps, spans, minGapMs, signatures));
 }
 
 /**
@@ -150,11 +155,17 @@ function computeAgvDossier(
   grouped: ReadonlyMap<string, readonly Reading[]>,
   cohorts: CohortLookup,
   laps: readonly Lap[],
-  coverageEndUtcMs: number,
+  spans: readonly Interval[],
   minGapMs: number,
   laneSignature: ReadonlyMap<string, string>,
 ): AgvDossier {
   const own = grouped.get(agvId) ?? [];
+  // Sin cobertura declarada no hay huecos que conocer: todo el intervalo de las lecturas cuenta.
+  const insideOneSpan = (from: number, to: number): boolean =>
+    spans.length === 0 || spans.some((span) => span.from <= from && to <= span.to);
+  const lastOwn = own[own.length - 1];
+  const coverageEndUtcMs =
+    spans.length > 0 ? (spans[spans.length - 1] as Interval).to : (lastOwn?.time.utcMs ?? 0);
 
   const cohortId = cohorts.cohortOf.get(agvId) ?? null;
   const cohort = cohortId === null ? null : cohorts.cohorts[cohortId];
@@ -168,7 +179,7 @@ function computeAgvDossier(
     const previous = own[index - 1] as Reading;
     const current = own[index] as Reading;
     const gap = current.time.utcMs - previous.time.utcMs;
-    if (gap >= minGapMs) {
+    if (gap >= minGapMs && insideOneSpan(previous.time.utcMs, current.time.utcMs)) {
       const laneId = laneSignature.get(`${previous.tagId}\u0000${current.tagId}`);
       inactivity.push({
         fromUtcMs: previous.time.utcMs,
@@ -232,6 +243,9 @@ export interface TagDossier {
   readonly tagId: string;
   readonly readers: readonly TagReaderStatus[];
   readonly totalReadings: number;
+  /** Función crítica declarada (R-GRA-007), o `null` si el tag no está en la lista `critico` ni en
+   *  la columna `funcion` del circuito virtual. Dato de planta, nunca deducido. */
+  readonly criticalFunction: string | null;
 }
 
 /**
@@ -246,6 +260,7 @@ export function buildTagDossier(
   tagId: string,
   readings: readonly Reading[],
   vehicles: readonly string[],
+  funcionOf: ReadonlyMap<string, string>,
 ): TagDossier {
   const lastByVehicle = new Map<string, number>();
   let total = 0;
@@ -256,13 +271,19 @@ export function buildTagDossier(
     if (current === undefined || entry.time.utcMs > current) lastByVehicle.set(entry.agvId, entry.time.utcMs);
   }
 
-  return { tagId, readers: readerStatuses(lastByVehicle, vehicles), totalReadings: total };
+  return {
+    tagId,
+    readers: readerStatuses(lastByVehicle, vehicles),
+    totalReadings: total,
+    criticalFunction: funcionOf.get(tagId) ?? null,
+  };
 }
 
 /** El expediente de todos los tags, en una sola pasada sobre las lecturas. */
 export function buildAllTagDossiers(
   readings: readonly Reading[],
   vehicles: readonly string[],
+  funcionOf: ReadonlyMap<string, string>,
 ): readonly TagDossier[] {
   const lastByTagAndVehicle = new Map<string, Map<string, number>>();
   const totalByTag = new Map<string, number>();
@@ -281,6 +302,7 @@ export function buildAllTagDossiers(
     tagId,
     readers: readerStatuses(lastByTagAndVehicle.get(tagId) ?? new Map(), vehicles),
     totalReadings: totalByTag.get(tagId) ?? 0,
+    criticalFunction: funcionOf.get(tagId) ?? null,
   }));
 }
 

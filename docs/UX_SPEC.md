@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.8.0
+version: 0.14.0
 status: baseline-candidate
-last_updated: 2026-09-21
+last_updated: 2026-09-24
 ---
 
 # Especificación de experiencia de usuario
@@ -127,6 +127,53 @@ Una matriz es bidimensional por naturaleza, así que se desplaza **dentro de su 
 contradice la regla de §5.1 —ningún gráfico exige desplazamiento para llegar a su contenido útil—
 porque el contenido útil ya está arriba, sin desplegar nada.
 
+## 4.3 Revisión en campo
+
+Para ir a los puntos conflictivos con el móvil y dejar constancia de lo que se vio. Cada tarjeta de
+hallazgo lleva cuatro botones: **○ Pendiente · ✓ Confirmado · ✕ Descartado · » Pospuesto**, y una
+nota opcional. Los avisos de configuración no los llevan, porque no se comprueban en campo.
+
+- **Se guarda sola** en el dispositivo en cada pulsación, y sigue ahí al recargar la página o al
+  cargar otra extracción: la marca va con el tipo y el sujeto del hallazgo, no con su texto
+  (R-EVI-007).
+- **El estado se ve por tres canales**: borde de la tarjeta (acento si está confirmado, gris si está
+  descartado, discontinuo si está pospuesto), el botón pulsado con su texto, y el icono. Nunca solo
+  por color. Botones de 40 px, por encima de los 24 px de WCAG 2.2, porque se usa de pie.
+- **Una barra fija arriba** dice cuánto va revisado («Revisión: 12 de 40 revisados») con su barra de
+  progreso, y lleva el botón **Siguiente pendiente**. Es compacta a propósito: en el móvil, todo lo
+  demás fijo taparía media pantalla.
+- **Debajo, sin quedarse fijo**: el recuento por estado, los filtros (todos, pendientes,
+  confirmados, descartados, pospuestos; solo esconden tarjetas, nunca gráficos) y **Exportar
+  revisión (CSV)**, con los pendientes incluidos, que son la lista de lo que falta.
+- **Si la cifra de un hallazgo cambió desde que se marcó**, la tarjeta lo dice con la cifra de
+  entonces: una confirmación sobre datos distintos no es la misma confirmación.
+- **Una marca cuyo hallazgo ya no aparece** no se borra: se cuenta aparte y va en el CSV.
+- La revisión viaja en el `.agvproj` exportado.
+
+Lo que no hace: consolidar. Revisar es el paso «Revisión de hallazgos» del flujo de
+`MEMORY_CONSOLIDATION.md` §6; escribir esa revisión como versión nueva de la memoria del circuito es
+F4.
+
+## 4.4 Lenguaje de la interfaz
+
+La pantalla habla como un producto terminado, no como el proyecto que lo construye:
+
+- **Sin referencias internas.** Ningún texto visible cita reglas (`R-…`), preguntas abiertas
+  (`OQ-…`), casos de prueba ni fases. Esas referencias viven en la documentación y en el código.
+- **Sin identificadores internos.** Los valores con los que trabaja el dominio (`observed`,
+  `bimodal-candidato`, `obsoleto-candidato`, `vinculacion`…) se enseñan con su nombre en castellano
+  llano (`observado`, «unos AGV sí y otros no», «posible obsoleto», «vinculación»). La traducción
+  está en un solo sitio, `src/presentation/labels.ts`; lo que se guarda, se exporta y se prueba
+  sigue usando el identificador estable. Los nombres de lista (`circuito`, `critico`,
+  `carga-online`…) sí se enseñan tal cual, porque son los que el usuario escribe en su CSV.
+- **Lo técnico, plegado.** Los detalles de lectura de un fichero (hash, separador, columnas,
+  formato de fecha, zona, codificación, orden, tiempo de proceso) van en un desplegable; a la vista
+  quedan el fichero, el periodo y cuántas filas entraron o no.
+- **Frases cortas y la duda a la vista.** Cada hallazgo dice qué se ve y qué comprobar; los límites
+  que cambian la lectura («no es una tasa de salud», «fuera de la cobertura no hay datos, no
+  silencio», «posible…») se conservan, en una frase, porque son lo que evita una conclusión falsa.
+- **Singular y plural reales**, nunca «tag(s)».
+
 ## 5. Grafo y plano
 
 - Alternar capas: Vsystem, observado del periodo, validado y divergencias.
@@ -201,6 +248,11 @@ Y una que se dice por omisión deliberada: mientras la calle no esté declarada,
 apareciendo como silencios. Es la degradación que R-CO-006 exige, y la vista lo advierte en lugar
 de aproximar la calle por proximidad.
 
+Y los vehículos que **no entraron en ninguna calle** en toda la ventana, con su primera y última
+lectura y el tiempo que estuvieron presentes. Se enseñan de entrada, con lo que no significa escrito
+al lado: pueden cargar en una calle no declarada o haber estado poco tiempo en la ventana, y sin SOC
+no se juzga su batería (R-CO-004). Un arranque en frío sí cuenta como entrada (R-CO-007).
+
 ### 5.2.2 Rotura súbita y degradación progresiva (R-OPP-015)
 
 Junto a los destacados de la matriz de lectura, no en una sección aparte: son exactamente el tipo de
@@ -236,6 +288,81 @@ su `viewBox`. Un lienzo mucho más ancho que el hueco donde se pinta encoge las 
 se pisan, y ni los tipos ni las pruebas lo detectan. El lienzo se mantiene cerca del ancho real de
 pintado.
 
+## 5.3 Vistas de diagnóstico (Parte 38)
+
+Diez vistas llevadas a la aplicación desde la galería de propuestas (Parte 37), elegidas por el
+propietario. Ninguna calcula nada nuevo: dibujan lo que la matriz, las calles, el FIFO, los puntos
+críticos y la deriva ya calculaban y hasta ahora solo se leía en tarjetas y tablas. Cada una va
+**encima** de las tarjetas de su sección, que se quedan como vía accesible.
+
+| Vista | Qué responde | Su límite, escrito al lado |
+|---|---|---|
+| **Anillo radial** | dónde se concentra la omisión, qué zona es cuál, dónde están los puntos críticos y de dónde cuelgan las calles | el ángulo es orden en el anillo, no distancia; relleno = declarado, hueco = candidato por firma |
+| **Mapa de omisión tag × AGV** | si lo que falta es del tag (fila) o del vehículo (columna) | pinta lo que falta, no lo que se lee; «no pasó» lleva trama y no es 0 % (R-OPP-013) |
+| **Rotura y degradación en el tiempo** | la forma del cambio: escalón o rampa, y cuándo | mismo eje en todos los paneles; un tramo sin pasadas corta la línea, no la lleva a cero |
+| **Permanencia en los candidatos de tiempo** | parada precisa (estrecha y desplazada) y semáforo (dos grupos) frente a la referencia del cohorte | proporción de pasadas con el mismo eje; sin pares del mismo instante (R-DAT-013); firma, nunca función (R-GRA-007) |
+| **Salidas de los tags con reparto** | cruce (las ramas vuelven a juntarse) o bifurcación (no) | el grosor es la cuota, con su soporte; el margen de saltos es configuración |
+| **Ocupación de las calles de carga** | quién estuvo en cada calle y cuándo, la calle sin servicio, quién esperó de más | solo es barra lo que se sabe: una estancia sin entrada o sin salida es una marca en su extremo conocido; fuera de cobertura, trama (R-CO-007, R-DAT-007) |
+| **Entrada y salida del tramo cargado** | un adelantamiento como una línea que cruza a las demás | candidato, no avería: OQ-107 sigue sin catálogo de excepciones (R-FLO-001) |
+| **Deriva entre los dos periodos** | qué tag desapareció, apareció o se sustituyó, en lecturas | correlación de posición y tiempo, nunca confirmación física (R-DAT-017, R-EVI-004) |
+| **Inventario** | cuánto hay que valorar frente a lo que no, y qué acción pide cada clase | sin color de severidad: «a valorar» es una pregunta, no un problema (§5.2) |
+| **Expediente de un AGV en el tiempo** | cuándo lee, cuándo carga, cuándo calla y qué periodo está cargado | la carga es inferida; el silencio, causa desconocida; lo que cae fuera de la cobertura no se dibuja como silencio |
+
+Tres reglas nuevas, las tres aprendidas al mirar el render con el circuito de auditoría:
+
+- **Se dibujan al ancho real** de su contenedor y se redibujan al cambiar, en lugar de escalar un
+  lienzo fijo. Con un lienzo de 640 unidades en 360 px, un rótulo de 10 se lee a 5,6 px.
+- **Una sola lectura al puntero por gráfico**, en una región viva, y nunca un `<title>` por marca. La
+  matriz, que es la que más celdas tiene, es un único `canvas`.
+- **Un extremo que no se ve no se inventa.** Una estancia cuya salida no consta no es una barra hasta
+  el final de la ventana; es una marca en la entrada. Un silencio que cruza un hueco de cobertura se
+  dibuja solo en la parte cubierta.
+
+## 5.4 Flota del circuito (Parte 39)
+
+Cuántos vehículos de los asignados están en funcionamiento en cada momento, y la vida entera de cada
+uno en tramos continuos. Va justo después de la banda de actividad, que solo enseña a los que leen:
+un asignado que no lee nada solo aparece aquí.
+
+| Vista | Qué responde | Su límite, escrito al lado |
+|---|---|---|
+| **Flota en funcionamiento** | «de 12:05 a 13:10, 38 de 40», y el peor momento de la ventana | escalonada: cambia solo donde cambia un tramo; fuera de la cobertura no se cuenta (trama); sin historial, M son los vistos (R-AGV-014) |
+| **Vida de cada AGV en el circuito** | cuándo leía, cargaba, callaba, faltaba o no estaba asignado cada vehículo | una fila por AGV en un único `canvas`; leer sin estar asignado es media barra, distinta también por la forma (R-AGV-015) |
+
+Siete estados, cada uno con su color y su leyenda, y ninguno con color de severidad salvo los dos que
+piden mirar:
+
+- **leyendo** y **carga** (inferida) cuentan como en funcionamiento;
+- **falta de lecturas**: silencio sin calle que lo explique, causa desconocida (R-AGV-006), en
+  contorno naranja;
+- **ausente**: asignado y sin lecturas, antes de la primera, después de la última o en toda la
+  ventana, en naranja sólido — el «otro color» que pidió el propietario. En los bordes solo cuenta
+  si pasa del umbral de silencio: unos minutos antes de la primera lectura son el ritmo normal;
+- **fuera del circuito**: no asignado según el historial, casi del color del fondo;
+- **leyendo sin asignar**: se cuenta aparte, nunca en N;
+- **sin datos**: fuera de la cobertura, con trama (R-DAT-007).
+
+Dos hallazgos se enseñan de entrada, sin causa: los asignados que no leyeron nada en toda la ventana
+y los que leen sin estar asignados. La tabla equivalente del recuento son sus intervalos; la de la
+vida de cada AGV, el porcentaje de su tiempo en cada estado.
+
+## 5.5 Cambios de tag y lectura por AGV (Parte 43)
+
+Lo que más se va a ver en planta, destacado dentro de su sección y sin bloque de resumen arriba:
+
+- **Cambios de tag**, justo después del inventario. Dentro del periodo cargado: la pareja «viejo →
+  nuevo» con las dos horas, los que solo dejan de leerse o solo empiezan, y las caídas de lectura de
+  la matriz con su gráfico. Bajo cada tag nuevo, los AGV que no lo leen como el resto con su cifra:
+  «nunca (0 de 19 pasadas)», «desde las 17:40, 0 de 12», «empezó a leerlo a las 18:10, tras 9
+  pasadas», «45 % (9 de 20)».
+- **Lo que hay que mirar**: las tarjetas de tag separan quién no lo lee nunca, quién dejó de leerlo y
+  quién lo lee poco, con porcentajes; las de AGV van por tipo —nunca, dejó de leer, poco en muchos
+  tags, poco en pocos—, hasta cinco de cada uno y el resto en tabla.
+- **Calles de carga**: lo primero de la sección son los AGV que no entraron en ninguna calle, «N de M».
+
+Ninguna tarjeta nombra una causa (memoria, lector, colocación): la diferencia medida basta para ir a
+mirarlo, y la causa la pone quien lo mira (R-EVI-006, R-AGV-016).
+
 ## 6. Consolidación
 
 La pantalla muestra explícitamente:
@@ -250,7 +377,30 @@ La pantalla muestra explícitamente:
 
 El botón final usa una confirmación inequívoca. No existe consolidación automática ni deshacer destructivo; una corrección genera nueva versión/revocación.
 
-## 7. Móvil
+## 7. Móvil, tableta y portátil
+
+La misma aplicación se usa con el móvil, con una tableta y con un portátil, y con dedo, ratón o el
+panel táctil del portátil. Todo tiene que poder hacerse con cualquiera de ellos:
+
+- **Leer un gráfico.** Con ratón o panel táctil, la lectura sigue al puntero y se va al salir del
+  gráfico. Con el dedo, **un toque fija la lectura y se queda** hasta el siguiente toque; tocar un
+  hueco vuelve al texto de reposo. Arrastrar sigue desplazando la página, así que una matriz ancha se
+  recorre igual. Los textos de reposo dicen «Toca o pasa el puntero…».
+- **Imán de toque.** Un dedo no acierta una marca de 3 px: si el toque no cae encima de una, se lee
+  la más cercana dentro de 22 px (`src/presentation/pointer.ts`).
+- **La lectura se ve siempre.** Va pegada abajo mientras el gráfico está a la vista, así que en uno más
+  alto que la pantalla tocar arriba no deja la respuesta fuera.
+- **Los gráficos de cobertura y de perfil horario**, que solo tenían el tooltip nativo, ganan la misma
+  línea de lectura: en una pantalla táctil el tooltip no aparece nunca.
+- **Objetivos de toque de 44 px** con `(any-pointer: coarse)`: botones, selectores de gráfico,
+  campos, desplegables, selector de fichero y el control del replay; el cuerpo, a 16 px. Se usa
+  `any-pointer` para que un portátil con pantalla táctil también los tenga, aunque su puntero
+  principal sea el panel.
+- **Ancho.** Hasta 1.440 px de contenido, para que un portátil grande aproveche los gráficos densos.
+  El texto corrido se limita a unos 90 caracteres por línea. Probado sin desbordamiento a 768, 1.024,
+  1.366, 1.536 y 1.920 px de ancho.
+
+Además, en el móvil:
 
 - Controles táctiles de al menos 24×24 px CSS, conforme a WCAG 2.2 nivel AA.
 - Paneles apilados y detalle bajo demanda.

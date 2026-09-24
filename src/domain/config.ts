@@ -16,9 +16,14 @@
 import type { AffinityThresholds } from "./affinity.js";
 import type { BlindnessThresholds } from "./inventory.js";
 import type { ChargingThresholds } from "./charging.js";
+import type { CriticalPointThresholds } from "./critical-points.js";
+import type { DriftThresholds } from "./drift.js";
+import type { FifoThresholds } from "./fifo.js";
 import type { GraphThresholds } from "./graph.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
 import type { TrendThresholds } from "./read-rate-trend.js";
+import type { TagChangeThresholds } from "./tag-changes.js";
+import type { VehicleReadingThresholds } from "./vehicle-reading.js";
 
 export interface SilenceThresholds {
   /**
@@ -46,6 +51,11 @@ export interface AnalysisConfig {
   readonly readRate: ReadRateThresholds;
   readonly charging: ChargingThresholds;
   readonly trend: TrendThresholds;
+  readonly fifo: FifoThresholds;
+  readonly criticalPoints: CriticalPointThresholds;
+  readonly drift: DriftThresholds;
+  readonly vehicleReading: VehicleReadingThresholds;
+  readonly tagChanges: TagChangeThresholds;
 }
 
 /**
@@ -85,6 +95,53 @@ export interface AnalysisConfig {
  *   0,3 para degradación es más laxo porque ahí la señal es la forma sostenida en cuatro tramos, no
  *   un salto único. Los mismos umbrales sirven para AGV que para tags: la línea temporal es la misma
  *   idea, solo cambia qué se agrupa.
+ * - **FIFO en zona cargada (R-FLO-001).** Cuatro pasadas mínimas para el tránsito mediano de un
+ *   tramo, mismo razonamiento que las cuatro estancias de carga online: menos que eso y la mediana
+ *   la decide un solo vehículo. El margen de adelantamiento es doble a propósito — tres minutos en
+ *   absoluto, muy por encima del jitter normal de lectura, **o** el 15 % del tránsito mediano del
+ *   propio tramo, lo que sea mayor (R-FLO-004: cuánto tarda un tramo cargado es local, no una
+ *   constante universal). El 0,15 es deliberadamente el mismo número que `minShareEachSide`: las dos
+ *   son la misma idea, una fracción real de la magnitud medida y no solo un conteo absoluto.
+ * - **Candidatos a punto crítico (R-GRA-007).** Una cuota del 30 % por rama descarta un sucesor
+ *   dominante con una excepción rara (95/5 no es reparto); cinco pasadas mínimas por rama, uno más
+ *   que las cuatro estancias de carga online, descarta un 50/50 sostenido por un puñado de pasadas.
+ *   Las dos guardas se exigen a la vez, mismo principio dual que el margen de FIFO y que
+ *   `GraphThresholds.minShareForObserved`/`minSupportForObserved`. El 15 % en cada mitad de la
+ *   ventana —mismo número que `minShareEachSide`/`minOvertakeMarginRatio`, la misma idea de fracción
+ *   real y no solo un conteo— descarta el caso encontrado en la propia auditoría: un tag justo antes
+ *   de una rotura súbita aguas abajo parece bifurcado porque casi todas sus salidas van al sucesor de
+ *   siempre antes de la rotura y al que lo sustituye después, sin que exista ningún reparto estable.
+ *   **Cruce, parada precisa y semáforo, ampliación (R-GRA-007).** Tres saltos para dar por
+ *   reconvergidas dos ramas separa con margen el cruce del escenario sintético (reconverge en 1
+ *   salto) de la bifurcación sin reconvergencia que también planta (cadena de 6, muy por encima).
+ *   Para parada precisa, el jitter normal del propio generador ya produce un coeficiente de
+ *   variación en torno a 0,16 solo por el paso aleatorio; 0,1 queda claramente por debajo, y una
+ *   parada añadida de magnitud fija lo baja hasta ~0,04. Semáforo reproduce la misma separación para
+ *   dos regímenes: 0,25 de compacidad por grupo y un salto de 3x entre ellos. `minClusterSamples`
+ *   reutiliza la razón de `minStaysForMedian`/`minPassesForSpan` (cuatro es lo mínimo para que un
+ *   grupo no lo decida un solo vehículo); `minSamples` de semáforo reutiliza literalmente el valor y
+ *   la razón de `TrendThresholds.minPassesForTrend` (por debajo, un corte encontrado es casualidad).
+ * - **Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013).** `minReadingsPerVehicle`
+ *   reutiliza literalmente el valor ya elegido para `blindness`: es el mismo concepto —un vehículo
+ *   con pocas lecturas no informa de nada— aplicado ahora dentro de cada periodo en vez de en toda la
+ *   ventana. `minGapMs` es una magnitud claramente del escenario sintético (media hora, para que un
+ *   fixture de 30 h la pueda ejercitar sin un segundo fichero): en planta, «distante» son días o
+ *   semanas —el hueco real de 38 días de PC2 que motivó esta pieza—, y ese valor no se fija aquí ni
+ *   se supone. `minAdoptionShare` (sustitución candidata y adopción de tag nuevo, R-DAT-017) es
+ *   deliberadamente el mismo número que `readRate.highRate`: la misma idea de «lo lee casi todo el
+ *   mundo», aplicada aquí a cuántos vehículos adoptan un tag en vez de a cuántas veces se lee.
+ * - **Lectura por AGV (R-AGV-016).** Ocho pasadas sin leer para decir «nunca» o «desde tal hora»:
+ *   que un AGV que lee un tag la mitad de las veces falle ocho seguidas por azar es un 0,4 %. Un tag
+ *   cuenta contra un AGV solo si tres de cada cuatro del resto lo leen bien. «Muchos tags» es el 10 %
+ *   de los que recorre y como mínimo cinco, decisión del propietario (2026-09-24). «Lee poco» exige
+ *   además menos de un 0,1 % de que sea casualidad frente a lo que lee el resto en ese tag, el mismo
+ *   listón que los cambios de tag: sin él, un tag que la flota lee al 85 % deja a varios AGV en el
+ *   76 % solo por azar, y así salió en la propia auditoría.
+ * - **Cambios de tag dentro de un periodo (R-DAT-019).** Diez pasadas por el sitio fuera de la vida
+ *   del tag, y que esa racha sin leer tenga menos de un 0,1 % de ser casualidad dada su tasa: un tag
+ *   que se lee una de cada cinco veces necesita más de treinta seguidas. Dos lecturas entre los dos
+ *   vecinos admiten el propio tag y uno más al lado. Una hora de solape admite poner el nuevo antes
+ *   de quitar el viejo; más que eso ya no es una sustitución, son dos tags que conviven.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -110,6 +167,16 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     trendSegments: 4,
     minGradientDrop: 0.3,
   },
+  fifo: { minPassesForSpan: 4, minOvertakeMarginMs: 3 * 60_000, minOvertakeMarginRatio: 0.15 },
+  criticalPoints: {
+    bifurcacion: { minBranchShare: 0.3, minBranchSupport: 5, minBranchShareEachHalf: 0.15 },
+    cruce: { maxHopsToReconverge: 3 },
+    paradaPrecisa: { minDurationMs: 30_000, maxCv: 0.1, minSamples: 4 },
+    semaforo: { minGapRatio: 3, maxWithinClusterCv: 0.25, minClusterSamples: 4, minSamples: 20 },
+  },
+  drift: { minGapMs: 30 * 60_000, minReadingsPerVehicle: 10, minAdoptionShare: 0.8 },
+  vehicleReading: { minPassesForNever: 8, fleetReadsWellShare: 0.75, manyTagsShare: 0.1, minManyTags: 5, maxChance: 0.001 },
+  tagChanges: { minSlotPasses: 10, maxChance: 0.001, maxReadsBetween: 2, maxOverlapMs: 60 * 60_000 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

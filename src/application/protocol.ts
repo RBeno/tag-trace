@@ -14,9 +14,12 @@
  */
 
 import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
+import type { FleetTimeline } from "../domain/fleet.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
 import type { ReadMatrix } from "../domain/read-matrix.js";
+import type { TagChangeReport } from "../domain/tag-changes.js";
+import type { VehicleReadingReport } from "../domain/vehicle-reading.js";
 import type { VehicleReplayState } from "../domain/replay.js";
 import type { VsystemComparisonRow } from "../domain/vsystem.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
@@ -118,7 +121,39 @@ export interface ListsLoadedMessage extends Envelope {
   readonly unknownLists: readonly string[];
 }
 
-export type ToWorker = StartMessage | CancelMessage | LoadListsMessage;
+/** Cargar el historial de flota de un circuito (DS-012). */
+export interface LoadFleetMessage {
+  readonly type: "fleet";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly file: File;
+  readonly circuitId: string;
+  /** El valor de la columna `circuito` elegido, cuando el fichero trae varios. */
+  readonly circuitName?: string;
+}
+
+export interface FleetLoadedMessage extends Envelope {
+  readonly type: "fleet-loaded";
+  readonly circuitId: string;
+  readonly circuitName: string | null;
+  readonly accepted: number;
+  readonly rejected: readonly { readonly reason: string; readonly rows: number }[];
+  /** Periodos nuevos y periodos que sustituyeron a uno guardado con el mismo AGV y la misma fecha de alta. */
+  readonly added: number;
+  readonly replaced: number;
+  /** Periodos que quedan guardados tras la fusión. */
+  readonly periods: number;
+  readonly warnings: readonly string[];
+}
+
+/** El fichero trae varios circuitos y ninguno está elegido todavía: hay que preguntar cuál es este. */
+export interface FleetChooseCircuitMessage extends Envelope {
+  readonly type: "fleet-choose-circuit";
+  readonly circuitId: string;
+  readonly options: readonly { readonly name: string; readonly rows: number }[];
+}
+
+export type ToWorker = StartMessage | CancelMessage | LoadListsMessage | LoadFleetMessage;
 
 interface Envelope {
   readonly protocolVersion: number;
@@ -213,6 +248,11 @@ export interface CircuitViews {
     readonly vehicles: number;
     readonly tags: readonly string[];
     readonly anchorTagId: string;
+    /**
+     * `"observed"` cuando el ancla es una de las declaradas en la lista `ancla` (R-GRA-009) y
+     * apareció en el ciclo reconstruido; `"inferred"` cuando es el ciclo dominante sin más.
+     */
+    readonly anchorTruth: "observed" | "inferred";
     readonly weakestShare: number;
     /**
      * Tags leídos por el cohorte que **no** están en el anillo.
@@ -222,9 +262,23 @@ export interface CircuitViews {
      * sospechoso, y callarlo lo haría invisible por ser sospechoso.
      */
     readonly offRingTags: readonly { readonly tagId: string; readonly readers: number }[];
+    /** Zona declarada de cada tag del anillo, en el mismo orden que `tags`. Solo con la lista `zona`. */
+    readonly zones?: readonly (string | null)[];
+    /**
+     * De qué tag del anillo cuelga cada calle de carga, observado en el dato (la lista no lo dice).
+     * Solo con la lista `carga-online`; una calle sin entradas desde el anillo no aparece.
+     */
+    readonly laneJunctions?: readonly { readonly laneId: string; readonly tagId: string; readonly served: boolean }[];
   }[];
   /** Tasa de lectura por tag y vehículo, normalizada por pasada (R-OPP-010). Nunca es salud. */
   readonly readMatrices: readonly ReadMatrix[];
+  /**
+   * Lectura de cada AGV sobre los tags que el resto lee bien, por cohorte (R-AGV-016): nunca, desde
+   * una hora, poco. La diferencia medida, sin causa.
+   */
+  readonly vehicleReading: readonly (VehicleReadingReport & { readonly cohortId: number })[];
+  /** Cambios de tag dentro de un mismo periodo cubierto (R-DAT-019) y la diferencia de cada AGV frente al nuevo. */
+  readonly tagChanges: Pick<TagChangeReport, "changes" | "adoption">;
   /** Expediente reducido por AGV: búsqueda por identificador (UX_SPEC §4.1). Sin tasa de salud. */
   readonly agvDossiers: readonly AgvDossier[];
   /** Expediente reducido por tag. */
@@ -236,9 +290,9 @@ export interface CircuitViews {
   /**
    * Calles de carga online. Solo cuando el circuito tiene la lista `carga-online` cargada.
    *
-   * Viaja en forma compacta —recuentos y los casos notables, no las estancias una a una— porque lo
-   * que la vista necesita es a cuáles mirar; el detalle completo se reconstruye abriendo el
-   * expediente del vehículo, que ya lo tiene.
+   * Lleva los recuentos y los casos notables y, desde la Parte 38, también las estancias una a una
+   * (`stayList`): son las que dibujan los carriles de ocupación. Cuatro campos por estancia y unas
+   * pocas por vehículo y día — cientos de números, no las lecturas otra vez (WP-001).
    */
   readonly charging?: {
     readonly lanes: readonly {
@@ -246,6 +300,14 @@ export interface CircuitViews {
       readonly capacity: number | null;
       readonly served: boolean;
       readonly stays: number;
+      readonly stayList: readonly {
+        readonly agvId: string;
+        /** `null` si entró antes de la cobertura: no se sabe cuándo (R-CO-007). */
+        readonly enteredUtcMs: number | null;
+        /** `null` si seguía dentro al terminar la cobertura. */
+        readonly leftUtcMs: number | null;
+        readonly state: "completa" | "abierta-al-inicio" | "abierta-al-final" | "incompleta";
+      }[];
       readonly medianStayMs: number | null;
       readonly longStays: readonly { readonly agvId: string; readonly durationMs: number | null }[];
       readonly outOfSeniority: readonly {
@@ -261,6 +323,13 @@ export interface CircuitViews {
       readonly leftUtcMs: number | null;
     }[];
     readonly coverageStartUtcMs: number | null;
+    /** Vehículos sin ninguna estancia en ninguna calle declarada: nada se dice de su batería (R-CO-004). */
+    readonly neverCharged: readonly {
+      readonly agvId: string;
+      readonly firstUtcMs: number;
+      readonly lastUtcMs: number;
+      readonly readings: number;
+    }[];
     /** Calles y zonas declaradas que no se pudieron montar, con su motivo. */
     readonly problems: readonly string[];
   };
@@ -273,6 +342,113 @@ export interface CircuitViews {
    * cargar las zonas daría menos pasadas sin que nada explicara por qué.
    */
   readonly orderWithheld: number;
+  /**
+   * FIFO en zona cargada (R-FLO-001), por cohorte: los tramos derivados del anillo y quién adelantó
+   * a quién dentro de cada uno. Solo con la lista `zona` cargada. Nunca es una avería confirmada:
+   * OQ-107 no tiene el catálogo de excepciones legítimas, así que lo que sale son candidatos.
+   */
+  readonly fifo?: readonly {
+    readonly cohortId: number;
+    readonly spans: readonly {
+      readonly spanId: string;
+      readonly entryTagId: string;
+      readonly exitTagId: string;
+      readonly tagCount: number;
+      readonly passes: number;
+      readonly medianTransitMs: number | null;
+      readonly evaluated: boolean;
+      readonly overtakes: readonly {
+        readonly overtaken: string;
+        readonly overtakenBy: readonly string[];
+        readonly transitMs: number;
+        readonly marginMs: number;
+      }[];
+      /** Pasadas completas alrededor del adelantamiento con más vehículos por delante, en orden de entrada. */
+      readonly focus: readonly {
+        readonly agvId: string;
+        readonly enteredUtcMs: number;
+        readonly leftUtcMs: number;
+      }[];
+    }[];
+    readonly problems: readonly string[];
+  }[];
+  /**
+   * Candidatos a punto crítico (R-GRA-007), por cohorte. No necesita ninguna lista cargada: solo
+   * las transiciones que ya hacen falta para `shapes`/`readMatrices`.
+   *
+   * Firma estadística, nunca función asignada: la función de un tag crítico es dato de planta
+   * declarado, no se deduce del fichero. Cuatro clases con firma: bifurcación, cruce (una
+   * bifurcación cuyas ramas reconvergen), parada precisa y semáforo.
+   */
+  readonly criticalPoints: readonly {
+    readonly cohortId: number;
+    readonly candidates: readonly {
+      readonly tagId: string;
+      readonly kind: "bifurcacion" | "cruce" | "parada-precisa" | "semaforo";
+      readonly evidence: string;
+      /** Presentes en `bifurcacion` y `cruce`. */
+      readonly support?: number;
+      readonly branches?: readonly { readonly tagId: string; readonly support: number; readonly share: number }[];
+      /** Presentes solo en `cruce`. */
+      readonly reconvergesAt?: string;
+      readonly hops?: number;
+      /** Presentes en `parada-precisa` y `semaforo`. */
+      readonly samples?: number;
+      /** Presente solo en `parada-precisa`. */
+      readonly meanDurationMs?: number;
+      readonly coefficientOfVariation?: number;
+      /** Presentes solo en `semaforo`. */
+      readonly lowClusterMeanMs?: number;
+      readonly highClusterMeanMs?: number;
+      /** Presente en `parada-precisa` y `semaforo`: las duraciones que la firma resume, para dibujarlas. */
+      readonly durationsMs?: readonly number[];
+    }[];
+    /**
+     * Referencia para esas distribuciones: duraciones de todas las transiciones del cohorte, sin
+     * pares del mismo instante (R-DAT-013), en muestra de paso fijo si pasan del tope.
+     */
+    readonly referenceDurationsMs: readonly number[];
+    /** De cuántas duraciones sale la muestra de referencia. */
+    readonly referenceTotal: number;
+  }[];
+  /** Por qué una fila de la lista `critico` no se pudo usar. Solo con la lista `critico` cargada. */
+  readonly criticalPointsProblems?: readonly string[];
+  /**
+   * Por qué un ancla declarada no se pudo usar (R-GRA-009): repetida en la lista `ancla`, o
+   * ninguna de las declaradas apareció en el ciclo reconstruido de algún cohorte. Global, no por
+   * cohorte: la lista `ancla` es de circuito completo.
+   */
+  readonly lapAnchorProblems?: readonly string[];
+  /**
+   * La flota del circuito a lo largo del tiempo (DS-012, R-AGV-014): la vida de cada AGV en tramos
+   * continuos y el recuento N de M. Sin historial cargado, M son los vehículos que aparecen en las
+   * lecturas, y `historyLoaded` lo dice.
+   */
+  readonly fleet: FleetTimeline & { readonly circuitName: string | null };
+  /**
+   * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando
+   * el circuito tiene listas de planta cargadas **y** al menos dos periodos distantes: con una sola
+   * fuente cargada no hay con qué comparar, y no mostrar nada es más honesto que un aviso permanente.
+   */
+  readonly drift?: {
+    readonly earlyPeriod: { readonly from: number; readonly to: number };
+    readonly latePeriod: { readonly from: number; readonly to: number };
+    readonly tagDrifts: readonly {
+      readonly tagId: string;
+      readonly kind: "desaparecido" | "nuevo" | "obsoleto-consolidado" | "sustitucion-candidata";
+      readonly readingsBefore: number;
+      readonly readingsAfter: number;
+      /** Presentes solo cuando `kind === "sustitucion-candidata"` (R-DAT-017). */
+      readonly nuevoTagId?: string;
+      readonly sharedNeighbor?: string;
+      readonly neighborSide?: "predecesor" | "sucesor";
+    }[];
+    readonly vehicleDrifts: readonly {
+      readonly agvId: string;
+      readonly droppedTags: readonly string[];
+      readonly notAdoptedTags: readonly string[];
+    }[];
+  };
 }
 
 /** `ReplayFrame` tal como cruza el `postMessage`: el mapa de vehículos, ya como pares. */
@@ -314,7 +490,9 @@ export type FromWorker =
   | CompleteMessage
   | ErrorMessage
   | CancelledMessage
-  | ListsLoadedMessage;
+  | ListsLoadedMessage
+  | FleetLoadedMessage
+  | FleetChooseCircuitMessage;
 
 /**
  * `Omit` sobre una unión colapsa a las claves comunes y pierde el discriminante. Distribuyendo

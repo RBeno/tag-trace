@@ -47,7 +47,33 @@ export type DefectClass =
   /** La zona de vacíos declarada: contexto, no defecto. Declararla no puede cambiar veredictos. */
   | "zona-vacia-declarada"
   /** Un AGV cuyo lector falla cada vez más en cualquier tag, no en uno concreto. */
-  | "lector-agv-degradado";
+  | "lector-agv-degradado"
+  /** Un AGV que se demora en la zona cargada y el resto lo adelanta (R-FLO-001). */
+  | "adelantamiento-en-zona-cargada"
+  /** Un tag reparte sus salidas entre dos sucesores con cuota comparable (R-GRA-007). */
+  | "bifurcacion-real"
+  /** El ancla de vuelta declarada: contexto, no defecto. Declararla no cambia qué tags forman el anillo. */
+  | "ancla-declarada"
+  /** Un vehículo deja de leer un conjunto de tags a mitad de ventana; el resto los sigue leyendo. */
+  | "memoria-actualizada-a-mitad-de-ventana"
+  /** Un tag fuera de anillo no tiene ninguna lectura antes de la mitad y sí después. */
+  | "tag-nuevo-a-mitad-de-ventana"
+  /** Un tag desaparece y otro ocupa su mismo hueco en la secuencia, a partir del corte. */
+  | "sustitucion-candidata"
+  /** La mayoría de la flota ya lee el tag nuevo y un vehículo concreto no lo registra nunca. */
+  | "memoria-no-actualizada"
+  /** Dos ramas de una bifurcación que vuelven a coincidir en pocos saltos: un cruce físico. */
+  | "cruce-real"
+  /** Una espera larga y de poca varianza tras un tag: parada precisa. */
+  | "parada-precisa-real"
+  /** Una espera bimodal tras un tag: unas veces corta, otras larga. */
+  | "semaforo-real"
+  /** Función crítica declarada por la columna `funcion` del circuito virtual: contexto, no defecto. */
+  | "vinculacion-declarada"
+  /** Función crítica declarada por la lista `critico`, la vía de siempre: contexto, no defecto. */
+  | "desvinculacion-declarada"
+  /** Un AGV que lee dos tags en la mitad de sus pasadas y el resto de tags con normalidad. */
+  | "lectura-desigual-en-pocos-tags";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -84,6 +110,22 @@ export interface AuditScenario {
   }[];
   /** Zona declarada de cada tag: `vacio` o `cargado`. */
   readonly zoneOf: ReadonlyMap<string, string>;
+  /**
+   * Corte entre el periodo temprano y el tardío, para la comparación entre dos periodos distantes
+   * (R-DAT-016, Parte 33). No delimita una fuente real: la auditoría construye a mano la cobertura de
+   * dos tramos a partir de este instante, igual que ya hace con la de `charging`.
+   */
+  readonly periodSplitUtcMs: number;
+  /**
+   * Historial de flota (DS-012, Parte 39), en el formato que el importador declara. No cambia
+   * ninguna lectura, así que la auditoría no cambia de resultado: los 40 vehículos asignados desde
+   * antes de la ventana, uno asignado que no lee nunca (`fleetNeverRead`), uno que se da de baja a
+   * mitad y sigue leyendo (`fleetLeavesMidway`), y una fila de otro circuito para el selector.
+   */
+  readonly fleetCsv: string;
+  readonly fleetCircuit: string;
+  readonly fleetNeverRead: string;
+  readonly fleetLeavesMidway: string;
 }
 
 const RING_SIZE = 150;
@@ -169,6 +211,56 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const tramoConvoy = ring.slice(90, 95) as string[]; // varios seguidos, conservando convoy
   const rotos = [ring[100], ring[101]] as string[];
   const degradados = [ring[110], ring[111]] as string[];
+  /**
+   * Cruce (R-GRA-007, Parte 35): la rama que se desvía por `cruceRama` vuelve a coincidir con la
+   * rama mayoritaria en `ring[121]` un salto después —el código no toca `position` al desviar, así
+   * que el siguiente tag leído es siempre el mismo, tome o no el desvío—. Es la firma exacta de un
+   * cruce físico de dos caminos que se abren y se cierran enseguida, no de una bifurcación que dure.
+   */
+  const cruceTag = ring[120] as string;
+  /** Fuera del anillo declarado, numeración distinta de `mantenimiento` para distinguirla a simple vista. */
+  const cruceRama = "96001";
+  /**
+   * Bifurcación sin reconvergencia (R-GRA-007, Parte 35): la rama minoritaria recorre una cadena de
+   * seis tags fuera de anillo antes de reincorporarse a `ring[126]`. Seis saltos es más del doble de
+   * `maxHopsToReconverge` (3), así que el paseo desde esta rama no alcanza nunca el territorio de la
+   * mayoritaria dentro del margen: se queda como bifurcación, nunca como cruce.
+   */
+  const bifurcacionSinConvergerTag = ring[30] as string;
+  const ramaLarga = ["95001", "95002", "95003", "95004", "95005", "95006"];
+  /**
+   * Parada precisa (R-GRA-007, Parte 35): todos los vehículos suman una espera fija tras leerlo, sin
+   * `random()` adicional. El jitter propio del paso ya varía unos segundos; sumarle una constante
+   * grande sube la media y dejar la desviación intacta baja el coeficiente de variación muy por
+   * debajo del de un tránsito normal.
+   */
+  const paradaPrecisaTag = ring[70] as string;
+  const PARADA_PRECISA_MS = 45_000;
+  /**
+   * Semáforo (R-GRA-007, Parte 35): un contador de pasadas por vehículo, determinista, marca una de
+   * cada tres pasadas como «rojo» (espera larga); las otras dos quedan en tránsito normal («verde»).
+   * Dos grupos claramente separados, cada uno compacto por separado.
+   */
+  const semaforoTag = ring[105] as string;
+  const SEMAFORO_ROJO_MS = 90_000;
+  /**
+   * El tag inmediatamente siguiente a cada punto crítico de tiempo. La duración que se mide es
+   * siempre «desde el punto crítico hasta la siguiente lectura de este vehículo»: basta con que esa
+   * siguiente lectura concreta sea fiable para que la transición sea de un solo salto, sin importar
+   * qué ocurra más adelante en el anillo (Parte 35, ver `enPuntoCriticoDeTiempo` más abajo).
+   */
+  const paradaPrecisaSiguienteTag = ring[71] as string;
+  const semaforoSiguienteTag = ring[106] as string;
+  /**
+   * Vinculación y desvinculación (R-GRA-007, Parte 36): declaración pura, sin firma en el dato — el
+   * mismo caso que `cambio-de-mapa`. Ninguno de los dos tags necesita ningún mecanismo nuevo en el
+   * generador de lecturas: se leen con normalidad, y lo único que cambia es la declaración en
+   * `listsCsv`, por las dos vías que ahora conviven. `vinculacionTag` se declara por la columna
+   * `funcion` del propio circuito virtual (`circuito`); `desvinculacionTag`, por la lista `critico`
+   * de siempre — para que el escenario ejercite las dos fuentes a la vez, no solo una.
+   */
+  const vinculacionTag = ring[15] as string;
+  const desvinculacionTag = ring[65] as string;
   const mantenimiento = ["90001", "90002"]; // fuera del anillo declarado
 
   const ciegos = vehicles.filter((_, index) => index % 8 === 0); // se saltan `porMemoria`
@@ -201,6 +293,55 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
    * de su propio lector se mezclaría con otra causa y dejaría de ser un caso limpio.
    */
   const lectorDegradado = vehicles[20] as string;
+  /**
+   * Excluir los dos puntos críticos de tiempo y su siguiente inmediato del efecto de este vehículo
+   * (Parte 35, ver `enPuntoCriticoDeTiempo` más abajo) resta margen a la caída medida entre el
+   * primer y el último tramo -esas lecturas, siempre garantizadas para él, ya no declinan con
+   * `avance`-. Con el coeficiente original de la Parte 28 (0,7) la caída real quedaba justo por
+   * debajo de `minGradientDrop` (0,3). Este valor la devuelve por encima con margen, calibrado para
+   * no acercarse tampoco a una rotura de un solo corte (`minRateDrop` es 0,5) ni bajar tanto el
+   * suelo de lectura que algún tag aislado, de por sí con pocas pasadas en la mitad tardía, acabe
+   * con cero lecturas de este vehículo por puro azar -eso lo contaría `drift.ts` como una deriva de
+   * memoria que nadie plantó-.
+   */
+  const LECTOR_DEGRADADO_COEFICIENTE = 0.74;
+  /**
+   * Se demora una sola vez al entrar en la zona cargada y el resto de la flota lo adelanta con su
+   * propio reloj (R-FLO-001). Libre de cualquier otro papel por la misma razón que `lectorDegradado`:
+   * si arrastrara otro defecto, el adelantamiento se mezclaría con otra causa.
+   */
+  const elAdelantado = vehicles[13] as string;
+  /**
+   * Libre de cualquier otro papel: deja de leer un tramo de tags que sí leía, a partir de la mitad de
+   * la ventana, mientras el resto de la flota los sigue leyendo con normalidad (R-AGV-013).
+   */
+  const memoriaActualizada = vehicles[25] as string;
+  /** El tramo de cinco tags contiguos que `memoriaActualizada` deja de leer a partir de la mitad. */
+  const tagsDejados = ring.slice(140, 145) as string[];
+  /** Fuera de anillo: no tiene ninguna lectura antes de la mitad de la ventana y sí después (R-DAT-016). */
+  const tagNuevo = "98001";
+  /**
+   * Sustitución candidata (R-DAT-017): a partir del corte, `sustitucionOriginal` deja de leerse por
+   * completo —igual mecanismo que `rotos`— y `sustitucionNueva` ocupa su mismo hueco en la secuencia
+   * —igual mecanismo que `tagNuevo`—, con el mismo predecesor y el mismo sucesor a cada lado. Es la
+   * firma posicional que R-DAT-017 correlaciona, construida sin ambigüedad a propósito.
+   */
+  const sustitucionPosicion = 146;
+  const sustitucionOriginal = ring[sustitucionPosicion] as string;
+  const sustitucionNueva = "99001";
+  /**
+   * Libre de cualquier otro papel: no se ha actualizado con el resto de la flota, así que no lee
+   * `sustitucionNueva` ni una sola vez, aunque la gran mayoría ya la detecta (R-AGV-013 ampliada).
+   */
+  const memoriaNoActualizada = vehicles[30] as string;
+  /**
+   * Un AGV que lee dos tags concretos en la mitad de sus pasadas, y todos los demás con normalidad
+   * (Parte 43, R-AGV-016). Uno sí y uno no, con un contador por tag y **sin `random()`**, en dos tags
+   * sin otro papel que no consumen sorteo: así no mueve la cascada compartida entre vehículos.
+   */
+  const lecturaDesigual = vehicles[9] as string;
+  const tagsDesiguales = [ring[80], ring[81]] as string[];
+  const pasesDesiguales = new Map<string, number>();
 
   // --- Zonas (R-FLO-003: la carga online va dentro de la zona vacía) -------------------------
   //
@@ -222,6 +363,18 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const from = Date.UTC(2026, 8, 14, 5, 0, 0);
   const to = from + HOURS * 3_600_000;
   const rotura = from + Math.floor((to - from) * 0.55);
+  /**
+   * Corte entre el periodo temprano y el tardío para la comparación entre dos periodos distantes
+   * (R-DAT-016). No es una segunda fuente real: la auditoría construye la cobertura de dos tramos a
+   * mano a partir de este mismo instante (Parte 33), igual que ya hace con la cobertura de `charging`.
+   *
+   * Coincide **a propósito** con `rotura`: si el corte cayera antes, la ventana tardía arrancaría
+   * todavía dentro del tramo en que los tags rotos se siguen leyendo con normalidad, y no saldrían
+   * `desaparecido` sino con lecturas en los dos periodos. Con el mismo instante, el margen de la
+   * comparación (`driftBuffer` en la auditoría) queda centrado justo en la rotura y la deja entera
+   * dentro del hueco entre periodos, a un lado o al otro.
+   */
+  const periodSplit = rotura;
 
   const filas: Array<{ t: number; v: string; tag: string }> = [];
 
@@ -235,6 +388,25 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     // El salto de convoy dura varias vueltas seguidas y después se recupera, para que el vehículo
     // conserve su sitio entre los mismos AGV en vez de descolgarse.
     let saltandoTramo = false;
+    // Solo la primera pasada de `elAdelantado` por la zona cargada se demora: una vez basta para que
+    // el resto de la flota lo adelante, y repetirlo en cada vuelta dejaría de ser un caso limpio.
+    let primerPaseCargado = true;
+    // Contadores deterministas de pasadas para la bifurcación sin reconvergencia y el semáforo
+    // (Parte 35): sin `random()`, para no arriesgar la cascada compartida entre vehículos.
+    let bifurcacionSinConvergerPases = 0;
+    let semaforoPases = 0;
+    /**
+     * Deuda de reloj (Parte 35). Las tres paradas sintéticas de esta parte (precisa, semáforo,
+     * cadena sin reconvergencia) tienen que añadir minutos reales para que la duración se vea en el
+     * dato — no hay atajo ahí. Pero sin devolver ese tiempo, cada vehículo completaría menos vueltas
+     * en las mismas 30 h, y eso desplaza cuántas veces llama a `random()` antes de ceder el turno al
+     * siguiente vehículo: la misma fragilidad de cascada ya diagnosticada en las Partes 30, 31 y 33,
+     * aquí por una vía distinta —no son sorteos de más, es reloj de más—. Se devuelve descontando el
+     * mismo tiempo del avance normal de los pasos siguientes, sin dejar nunca de sortear el jitter
+     * -mismo número de llamadas a `random()`, en el mismo orden, con o sin deuda-, así que el total
+     * transcurrido por vehículo en toda la ventana no cambia.
+     */
+    let debtMs = 0;
 
     if (enFrio) {
       // Ya estaba cargando antes de que empezara la ventana, así que **no tiene ninguna lectura
@@ -264,14 +436,165 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       else if (degradados.includes(tag)) lee = random() < 0.9 - 0.5 * avance;
       else if (tasaAlta.has(tag)) lee = random() < (tasaAlta.get(tag) as number);
       else if (tasaMedia.has(tag)) lee = random() < (tasaMedia.get(tag) as number);
+      else if (vehicle === memoriaActualizada && tagsDejados.includes(tag) && now >= periodSplit) {
+        lee = false;
+      } else if (tag === sustitucionOriginal && now >= periodSplit) lee = false;
+      else if (vehicle === lecturaDesigual && tagsDesiguales.includes(tag)) {
+        const pase = pasesDesiguales.get(tag) ?? 0;
+        pasesDesiguales.set(tag, pase + 1);
+        lee = pase % 2 === 0;
+      }
 
       // Se aplica **después** de las reglas del tag, nunca en su lugar: el lector degradado sigue
-      // sin leer lo que nadie lee, y encima cada vez menos de lo que sí se lee, en cualquier tag.
-      if (lee && vehicle === lectorDegradado) lee = random() < 1 - 0.7 * avance;
+      // sin leer lo que nadie lee, y encima cada vez menos de lo que sí se lee, en cualquier tag...
+      // salvo en los tags de punto crítico de tiempo (parada precisa y semáforo, Parte 35) **y su
+      // siguiente inmediato**. Su señal exige duraciones limpias, y un salto de varias posiciones por
+      // una lectura fallida no solo pierde esa lectura -lo que ya se prueba en otros tags-, sino que
+      // fusiona el tránsito de dos o más tramos en una sola transición de duración intermedia,
+      // exactamente entre los dos grupos que el semáforo necesita separar. Excluir solo el propio tag
+      // crítico no basta: la duración medida es «hasta la siguiente lectura de este vehículo», así
+      // que si esa siguiente lectura (el tag inmediatamente posterior) se pierde, la transición sigue
+      // fusionándose igual, ahora un tramo más allá. Con el siguiente también garantizado, la
+      // transición desde el punto crítico es siempre de un solo salto, sea cual sea el destino
+      // posterior de la degradación. El resultado no era un hallazgo del lector degradado: era ruido
+      // topológico sobre la firma de otro punto crítico, indistinguible de una tercera clase que
+      // nadie plantó. Se mantiene la degradación en el resto del anillo, que es donde este defecto sí
+      // debe verse.
+      //
+      // El sorteo se hace siempre que `lee && vehicle === lectorDegradado`, en el mismo orden que
+      // antes de esta exclusión -nunca condicionado al tag-, para no desplazar cuántas llamadas a
+      // `random()` consume este vehículo frente a la línea base (la misma fragilidad de cascada de
+      // las Partes 30/31/33, aquí por omitir un sorteo en vez de añadir uno de más). Solo se descarta
+      // el resultado cuando el tag es un punto crítico de tiempo o su siguiente inmediato.
+      const enPuntoCriticoDeTiempo =
+        tag === paradaPrecisaTag ||
+        tag === semaforoTag ||
+        tag === paradaPrecisaSiguienteTag ||
+        tag === semaforoSiguienteTag;
+      if (lee && vehicle === lectorDegradado) {
+        const roll = random() < 1 - LECTOR_DEGRADADO_COEFICIENTE * avance;
+        if (!enPuntoCriticoDeTiempo) lee = roll;
+      }
 
       if (lee) filas.push({ t: now, v: vehicle, tag });
 
-      now += (STEP_SECONDS + Math.floor(random() * 9)) * 1000;
+      // Justo tras entrar en el tramo cargado (posición 50 es la entrada; aquí, la siguiente), se
+      // demora 20 min: muy por encima de la desviación típica del tránsito por jitter de lectura
+      // (segundos), y de sobra para que otros vehículos, entrando después, lo adelanten sin ayuda.
+      if (position === 51 && vehicle === elAdelantado && primerPaseCargado) {
+        now += 20 * 60_000;
+        primerPaseCargado = false;
+      }
+
+      // Cruce (R-GRA-007, Parte 35): al 42 % de las pasadas por esta posición, el vehículo se desvía
+      // por un tag fuera de anillo antes de reincorporarse en `ring[121]` — el mismo tag al que
+      // llega la rama mayoritaria, porque el código nunca toca `position` al desviar. Dos caminos
+      // que se abren y se cierran enseguida: un cruce, no una bifurcación que dure. No es un defecto
+      // de un vehículo concreto, así que no depende de `vehicle`. El 42 % y no el 50 %: con semilla
+      // fija, un reparto exacto podría voltear cuál de los dos tags queda en el ciclo dominante de
+      // `findDominantCycle`, que usa `>` estricto.
+      if (position === 120 && random() < 0.42) {
+        now += (STEP_SECONDS + Math.floor(random() * 9)) * 1000;
+        filas.push({ t: now, v: vehicle, tag: cruceRama });
+      }
+
+      // Bifurcación sin reconvergencia (R-GRA-007, Parte 35): 2 de cada 5 pasadas (40 %),
+      // determinista por vehículo, desvían por una cadena de seis tags fuera de anillo antes de
+      // reincorporarse con normalidad. Seis saltos superan `maxHopsToReconverge`, así que esta rama
+      // nunca reconverge dentro del margen: se queda como bifurcación, nunca como cruce.
+      //
+      // Ninguna de las tres deudas nuevas se abre si no queda margen de sobra para devolverla antes
+      // de que la ventana termine: sin esto, el último tramo de cada vehículo podría cerrar el
+      // `while` con deuda pendiente, que es exactamente el resto de tiempo que desplazaría cuántas
+      // llamadas a `random()` consume ese vehículo frente a la línea base. Veinte minutos son muchas
+      // veces más que lo que cualquiera de las tres tarda en devolverse a este ritmo.
+      //
+      // Y las tres posiciones (30, 70, 105) están deliberadamente lejos entre sí, no contiguas: con
+      // el tope al 50 % del avance nominal, devolver una deuda de 45-90 s tarda del orden de 5-9
+      // pasos. Probado primero con las tres muy juntas (125, 128, 133): la deuda de una nunca llegaba
+      // a cero antes de que la siguiente añadiera más, así que quedaba flotando permanentemente y
+      // contaminaba la duración medida del tramo intermedio —apareció como candidato a semáforo
+      // espurio en un tag completamente ajeno a esta parte—. Con 35-40 pasos de margen entre cada
+      // una, la deuda siempre llega a cero mucho antes de la siguiente.
+      const margenSuficiente = to - now > 20 * 60_000;
+
+      if (margenSuficiente && position === 30) {
+        bifurcacionSinConvergerPases += 1;
+        if (bifurcacionSinConvergerPases % 5 < 2) {
+          for (const ramaTag of ramaLarga) {
+            now += STEP_SECONDS * 1000;
+            debtMs += STEP_SECONDS * 1000;
+            filas.push({ t: now, v: vehicle, tag: ramaTag });
+          }
+        }
+      }
+
+      // Parada precisa (R-GRA-007, Parte 35): espera fija tras leer el tag, para todos los
+      // vehículos y sin `random()` adicional. El jitter propio del paso ya varía unos segundos;
+      // sumarle una constante grande sube la media sin tocar la desviación, así que el coeficiente
+      // de variación baja muy por debajo del de un tránsito normal. El lector degradado no toca este
+      // tag (exclusión ya aplicada arriba, en `enPuntoCriticoDeTiempo`), así que todas las pasadas
+      // están garantizadas de un solo salto.
+      if (margenSuficiente && position === 70) {
+        now += PARADA_PRECISA_MS;
+        debtMs += PARADA_PRECISA_MS;
+      }
+
+      // Semáforo (R-GRA-007, Parte 35): contador determinista de pasadas por vehículo, sin
+      // `random()`. Una de cada tres pasadas es «rojo» (espera larga); las otras dos son «verde»
+      // (tránsito normal). Dos grupos claramente separados y compactos por separado. Mismo motivo de
+      // exclusión del lector degradado que la parada precisa: un salto de varias posiciones aquí
+      // fragmentaría justo el salto bimodal que este tag necesita mostrar.
+      if (margenSuficiente && position === 105) {
+        semaforoPases += 1;
+        if (semaforoPases % 3 === 0) {
+          now += SEMAFORO_ROJO_MS;
+          debtMs += SEMAFORO_ROJO_MS;
+        }
+      }
+
+      // Tag nuevo a mitad de ventana (R-DAT-016): a partir del corte, cualquier vehículo que pase
+      // por esta posición también lee el tag nuevo justo después — sin depender de un vehículo
+      // concreto, como una instalación o sustitución real y no un defecto de uno solo.
+      //
+      // Sin jitter aleatorio a propósito: a diferencia de la bifurcación (que ya consumía random()
+      // desde la Parte 31), esta inyección se dispara para los 40 vehículos en toda la mitad tardía
+      // de la ventana. Un `random()` extra ahí desplaza el estado compartido de todos los vehículos
+      // que se procesan después — la misma fragilidad de cascada ya diagnosticada en las Partes 30 y
+      // 31 —, y llegó a borrar la tendencia de `lectorAgvDegradado` (vehículo 20) al correrlo. El paso
+      // sigue siendo determinista y de igual duración que el resto.
+      if (position === 135 && now >= periodSplit) {
+        now += STEP_SECONDS * 1000;
+        filas.push({ t: now, v: vehicle, tag: tagNuevo });
+      }
+
+      // Sustitución candidata (R-DAT-017): tras el corte, justo donde `sustitucionOriginal` dejó de
+      // leerse (arriba), aparece `sustitucionNueva` en el mismo hueco de la secuencia -mismo
+      // predecesor y mismo sucesor-, salvo para `memoriaNoActualizada`, que no se ha actualizado y
+      // no la lee nunca (memoria no actualizada, R-AGV-013 ampliada). Sin `random()` adicional, por
+      // la misma razón que la inyección de `tagNuevo`: un sorteo extra aquí desplazaría el estado
+      // compartido de todos los vehículos procesados después (Partes 30, 31 y 33).
+      if (position === sustitucionPosicion && now >= periodSplit && vehicle !== memoriaNoActualizada) {
+        now += STEP_SECONDS * 1000;
+        filas.push({ t: now, v: vehicle, tag: sustitucionNueva });
+      }
+
+      // El avance normal del paso siempre sortea el jitter, con o sin deuda pendiente, para no
+      // desplazar cuántas llamadas a `random()` consume este vehículo. Con deuda, ese avance se
+      // descuenta (nunca por debajo de cero) en vez de sumarse, hasta devolver lo añadido arriba.
+      //
+      // El descuento se limita a la mitad del avance nominal, nunca a su totalidad: si `now` se
+      // quedara exactamente igual dos pasos seguidos, esas dos lecturas del mismo vehículo caerían
+      // en el mismo instante, y R-DAT-013 dice que un empate así no ordena nada — el importador
+      // reconstruiría la sucesión en cualquiera de las dos direcciones, fabricando justo el ruido
+      // topológico que este mecanismo debía evitar. Con el tope a la mitad, `now` avanza siempre
+      // algo, la deuda se devuelve en un puñado de pasos más en vez de en uno solo, y no se inventa
+      // ningún instante repetido.
+      const jitterRoll = Math.floor(random() * 9);
+      const nominal = (STEP_SECONDS + jitterRoll) * 1000;
+      const payback = Math.min(debtMs, Math.floor(nominal / 2));
+      debtMs -= payback;
+      now += nominal - payback;
       position = (position + 1) % RING_SIZE;
 
       if (position === LANE_JUNCTION && now >= proximaCarga && now < to) {
@@ -297,12 +620,39 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   }
 
   // Mantenimiento: lecturas sueltas, de pocos vehículos y fuera del anillo.
+  //
+  // Aisladas de verdad: si el instante al azar cae dentro de una estancia de carga del mismo
+  // vehículo, se vuelve a sortear. Sin esto, una lectura de mantenimiento puede interponerse entre
+  // la parada precisa y la salida de una calle por pura coincidencia, y la estancia deja de
+  // reconocerse como carga — no porque el detector falle, sino porque el escenario mezcló sin
+  // querer dos clases plantadas que se declaran independientes.
+  const laneTagsAll = new Set(lanes.flatMap((lane) => [lane.entry, lane.stop, lane.exit]));
+  const chargingWindowsByVehicle = new Map<string, Array<readonly [number, number]>>();
+  for (const vehicle of vehicles) {
+    const hits = filas
+      .filter((fila) => fila.v === vehicle && laneTagsAll.has(fila.tag))
+      .sort((a, b) => a.t - b.t);
+    const windows: Array<readonly [number, number]> = [];
+    let openAt: number | null = null;
+    for (const hit of hits) {
+      if (lanes.some((lane) => lane.entry === hit.tag)) {
+        openAt = hit.t;
+      } else if (lanes.some((lane) => lane.exit === hit.tag) && openAt !== null) {
+        windows.push([openAt, hit.t]);
+        openAt = null;
+      }
+    }
+    chargingWindowsByVehicle.set(vehicle, windows);
+  }
+
   for (let index = 0; index < 14; index += 1) {
-    filas.push({
-      t: from + Math.floor(random() * (to - from)),
-      v: vehicles[index % 4] as string,
-      tag: mantenimiento[index % mantenimiento.length] as string,
-    });
+    const vehicle = vehicles[index % 4] as string;
+    const windows = chargingWindowsByVehicle.get(vehicle) ?? [];
+    let t: number;
+    do {
+      t = from + Math.floor(random() * (to - from));
+    } while (windows.some(([start, end]) => t >= start && t <= end));
+    filas.push({ t, v: vehicle, tag: mantenimiento[index % mantenimiento.length] as string });
   }
 
   filas.sort((a, b) => b.t - a.t); // Pila: lo más reciente primero, como la fuente real.
@@ -314,7 +664,14 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   // Las listas llevan ya las columnas de configuración: sin `funcion` y `grupo` una calle es un
   // conjunto de tres tags sin orden ni papeles, y R-CO-006 no se puede evaluar sobre eso.
   const listsCsv = ["lista;tag;orden;funcion;grupo;capacidad"]
-    .concat(ring.map((tag, index) => `circuito;${tag};${index + 1};;;`))
+    .concat(
+      ring.map((tag, index) =>
+        // Vinculación (Parte 36) se declara aquí, en la propia columna `funcion` del circuito
+        // virtual — la vía alternativa a la lista `critico`, para ejercitar las dos fuentes.
+        `circuito;${tag};${index + 1};${tag === vinculacionTag ? "vinculacion" : ""};;`,
+      ),
+    )
+    .concat([`critico;${desvinculacionTag};;desvinculacion`])
     .concat(
       lanes.flatMap((lane) =>
         (
@@ -327,6 +684,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       ),
     )
     .concat([...zoneOf].map(([tag, zona]) => `zona;${tag};;;${zona};`))
+    .concat([`ancla;${ring[0] as string};1`])
     .join("\r\n");
 
   const plantados = new Set([
@@ -337,6 +695,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     ...tramoConvoy,
     ...rotos,
     ...degradados,
+    cruceTag,
+    ...tagsDejados,
+    sustitucionOriginal,
+    bifurcacionSinConvergerTag,
+    paradaPrecisaTag,
+    semaforoTag,
+    ...tagsDesiguales,
   ]);
 
   const defects: PlantedDefect[] = [
@@ -445,11 +810,132 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       expect: "una tendencia a la baja en la fila del propio AGV, no del tag",
       mustNotSay: "que los tags que lee ese AGV estén fallando",
     },
+    {
+      kind: "adelantamiento-en-zona-cargada",
+      tags: [],
+      vehicles: [elAdelantado],
+      expect: "se enumera a quién adelantó y con qué margen, como candidato, en el tramo en que se le adelantó",
+      mustNotSay: "llamarlo avería: R-FLO-001 admite excepciones y OQ-107 no tiene el catálogo",
+    },
+    {
+      kind: "bifurcacion-real",
+      tags: [bifurcacionSinConvergerTag, ramaLarga[0] as string],
+      vehicles: [],
+      expect: "candidato a bifurcación en el tag, con las dos ramas y su cuota; sigue siendo bifurcación, nunca cruce",
+      mustNotSay: "que sea una avería, ni reclasificarla como cruce sin que reconverja de verdad (R-GRA-007)",
+    },
+    {
+      kind: "cruce-real",
+      tags: [cruceTag, cruceRama],
+      vehicles: [],
+      expect: "candidato a cruce: las dos ramas reconvergen en pocos saltos (R-GRA-007)",
+      mustNotSay: "que sea una avería, ni dejarla como bifurcación sin más porque reconverge",
+    },
+    {
+      kind: "parada-precisa-real",
+      tags: [paradaPrecisaTag],
+      vehicles: [],
+      expect: "candidato a parada precisa: duración larga y de poca varianza (R-GRA-007)",
+      mustNotSay: "que sea una avería o una carga; la función sigue siendo dato de planta",
+    },
+    {
+      kind: "semaforo-real",
+      tags: [semaforoTag],
+      vehicles: [],
+      expect: "candidato a semáforo: duración bimodal, unas veces corta y otras larga (R-GRA-007)",
+      mustNotSay: "una tendencia de rotura o degradación (R-OPP-015): es alternancia estable, no cambio sostenido",
+    },
+    {
+      kind: "ancla-declarada",
+      tags: [ring[0] as string],
+      vehicles: [],
+      expect:
+        "las vueltas completas del cohorte principal salen observed; el ancla efectiva es la " +
+        "declarada y el anillo mostrado empieza ahí (R-GRA-009)",
+      mustNotSay: "que declarar el ancla cambie qué tags forman el anillo, más allá de rotar el punto de inicio",
+    },
+    {
+      kind: "tag-nuevo-a-mitad-de-ventana",
+      tags: [tagNuevo],
+      vehicles: [],
+      atUtcMs: toRealUtc(periodSplit),
+      expect: "tag nuevo: sin lecturas en el periodo temprano, con lecturas en el tardío (R-DAT-016)",
+      mustNotSay: "que sea un tag obsoleto, o que existiera desde el principio de la ventana",
+    },
+    {
+      kind: "memoria-actualizada-a-mitad-de-ventana",
+      tags: tagsDejados,
+      vehicles: [memoriaActualizada],
+      atUtcMs: toRealUtc(periodSplit),
+      expect:
+        "deriva de ese vehículo: dejó de leer un conjunto de tags que sí leía antes, mientras el " +
+        "resto de la flota los sigue leyendo (R-AGV-013)",
+      mustNotSay: "que esos tags estén averiados, o acusar a otro vehículo",
+    },
+    {
+      kind: "sustitucion-candidata",
+      tags: [sustitucionOriginal, sustitucionNueva],
+      vehicles: [],
+      atUtcMs: toRealUtc(periodSplit),
+      expect:
+        "candidato a sustitución: el tag que desaparece y el que ocupa su mismo hueco en la " +
+        "secuencia, correlacionados por vecino compartido y por tiempo (R-DAT-017)",
+      mustNotSay:
+        "tratarlos como dos hallazgos sueltos sin relación, ni afirmar que es físicamente el " +
+        "mismo punto sin más evidencia (R-EVI-004)",
+    },
+    {
+      kind: "memoria-no-actualizada",
+      tags: [sustitucionNueva],
+      vehicles: [memoriaNoActualizada],
+      atUtcMs: toRealUtc(periodSplit),
+      expect:
+        "el vehículo señalado como candidato a memoria no actualizada: no registra el tag nuevo " +
+        "mientras la mayoría de la flota ya lo hace (R-AGV-013)",
+      mustNotSay: "que el tag nuevo esté averiado, ni que sea culpa de otro vehículo",
+    },
+    {
+      kind: "vinculacion-declarada",
+      tags: [vinculacionTag],
+      vehicles: [],
+      expect: "el expediente del tag muestra la función crítica «vinculacion» (R-GRA-007)",
+      mustNotSay: "que sea un hallazgo estadístico, ni que el producto la haya propuesto",
+    },
+    {
+      kind: "desvinculacion-declarada",
+      tags: [desvinculacionTag],
+      vehicles: [],
+      expect: "el expediente del tag muestra la función crítica «desvinculacion» (R-GRA-007)",
+      mustNotSay: "que sea un hallazgo estadístico, ni que el producto la haya propuesto",
+    },
+    {
+      kind: "lectura-desigual-en-pocos-tags",
+      tags: tagsDesiguales,
+      vehicles: [lecturaDesigual],
+      expect: "el AGV sale como «lee poco» en esos dos tags, en pocos tags, con su porcentaje (R-AGV-016)",
+      mustNotSay: "una causa (lector, memoria o colocación), ni que los dos tags fallen para el resto",
+    },
   ];
+
+  const fleetCircuit = "SE-AUDITORIA";
+  const fleetNeverRead = "7199";
+  const fleetLeavesMidway = vehicles[10] as string;
+  const fleetCsv = ["circuito;agv;desde;hasta;nota"]
+    .concat(
+      vehicles.map(
+        (vehicle) => `${fleetCircuit};${vehicle};01/09/2026;${vehicle === fleetLeavesMidway ? stamp(periodSplit) : ""};`,
+      ),
+    )
+    .concat([`${fleetCircuit};${fleetNeverRead};01/09/2026;;asignado y sin lecturas`, "OTRO-CIRCUITO;7201;01/09/2026;;"])
+    .join("\r\n");
 
   return {
     readingsCsv,
     listsCsv,
+    fleetCsv,
+    fleetCircuit,
+    fleetNeverRead,
+    fleetLeavesMidway,
     defects,
     cleanTags: ring.filter((tag) => !plantados.has(tag)),
     declaredRing: ring,
@@ -458,5 +944,6 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     toUtcMs: toRealUtc(to),
     lanes,
     zoneOf,
+    periodSplitUtcMs: toRealUtc(periodSplit),
   };
 }

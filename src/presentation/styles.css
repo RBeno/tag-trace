@@ -22,6 +22,12 @@
   /* «Sin datos cargados» no es un valor bajo: es la ausencia de dato. Va en gris y con trama, para
      que no se confunda con un cero ni dependa del color (UX §4, R-DAT-007). */
   --viz-empty: #9aa2b1;
+  /* Lo que hay que mirar (Parte 38). Validado frente a --viz-series para daltonismo en los dos
+     modos (ΔE 24,7 en claro, 26,8 en oscuro): nunca va solo, siempre con rótulo o tabla. */
+  --viz-accent: #eb6834;
+  --viz-accent-wash: #fdebe2;
+  /* Contexto: marcas que están ahí para comparar, no para llamar la atención. */
+  --viz-neutral: #b0bac2;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -39,12 +45,18 @@
     --viz-5: #cde2fb;
     --viz-grid: #2a2f3a;
     --viz-empty: #5b6270;
+    --viz-accent: #d95926;
+    --viz-accent-wash: #3a2419;
+    --viz-neutral: #4d5a64;
   }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-#app { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+/* 1.440 px: en un portátil de 1.920 los gráficos densos (vida de cada AGV, mapa de omisión) aprovechan
+   el ancho; el texto corrido no, y se limita a una línea legible más abajo. */
+#app { max-width: 1440px; margin: 0 auto; padding: 24px 16px 64px; }
+.panel p:not(.readout) { max-width: 90ch; }
 h1 { font-size: 1.4rem; margin: 0; letter-spacing: 0.02em; }
 h2 { font-size: 1rem; margin: 0 0 12px; }
 .muted { color: var(--muted); margin: 4px 0 0; }
@@ -119,8 +131,102 @@ table.data th { color: var(--muted); font-weight: 600; }
 .legend li { display: flex; align-items: center; gap: 6px; }
 .legend .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 
+/* --- Vistas de diagnóstico (Parte 38) -------------------------------------
+   Se dibujan al ancho real de su contenedor: el SVG lleva su propio ancho y no se estira, así que
+   el texto se lee al tamaño escrito también en el móvil. */
+.chart .viz-host { position: relative; width: 100%; min-width: 0; }
+.chart .viz-host svg { width: auto; max-width: 100%; }
+.chart .viz-host canvas { display: block; max-width: 100%; }
+.chart .label { fill: var(--ink); font-size: 12px; }
+.chart .big { fill: var(--ink); font-size: 28px; font-weight: 600; }
+.chart .on-ink { fill: var(--bg); font-size: 10px; font-weight: 600; }
+.chart .id { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.chart .readout { font-size: 0.85rem; margin: 6px 0; min-height: 1.5em; font-variant-numeric: tabular-nums; }
+/* La lectura se queda pegada abajo mientras el gráfico está a la vista: en uno más alto que la
+   pantalla, tocar arriba no deja la respuesta fuera (UX_SPEC §7). */
+.chart .readout { position: sticky; bottom: 0; z-index: 1; background: var(--panel);
+  border-top: 1px solid var(--line); padding: 6px 0; }
+.chart .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; padding: 2px; margin: 0 0 8px; }
+.chart .seg button { border: 0; background: transparent; color: var(--muted); padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; min-height: 28px; }
+.chart .seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+.chart .multiples, .chart .forks { display: grid; gap: 14px 24px; }
+.chart .panel-title { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin: 0 0 4px; font-size: 0.85rem; }
+.chart .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.chart .chip.attn { background: var(--viz-accent-wash); border-color: transparent; color: var(--ink); }
+.chart .ring-marks { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: 0.85rem; }
+.chart .ring-marks li { display: grid; grid-template-columns: 22px auto minmax(0, 1fr); gap: 8px; align-items: center; }
+.chart .ring-marks .mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 600; border: 1.5px solid var(--ink); color: var(--ink); }
+.chart .ring-marks .mark.declared { background: var(--ink); color: var(--bg); }
+.chart .inv-strip { display: flex; gap: 2px; height: 22px; border-radius: 5px; overflow: hidden; margin: 4px 0 6px; }
+.chart .inv-strip div { min-width: 3px; }
+.chart .inv-rows { display: grid; grid-template-columns: max-content minmax(60px, 1fr) 4ch minmax(0, 1.4fr); gap: 6px 12px; align-items: center; margin-top: 10px; font-size: 0.85rem; }
+.chart .inv-track { height: 10px; }
+.chart .inv-bar { display: block; height: 10px; border-radius: 0 3px 3px 0; min-width: 0; }
+.chart .inv-count { text-align: right; font-variant-numeric: tabular-nums; }
+.chart .inv-action { margin: 0; }
+
 @media (max-width: 560px) {
+  .chart .inv-rows { grid-template-columns: minmax(0, 1fr) 4ch; }
+  .chart .inv-track { display: none; }
+  .chart .inv-action { grid-column: 1 / -1; margin-top: -4px; }
   .facts { grid-template-columns: 1fr; gap: 2px 0; }
   .facts dd { margin-bottom: 8px; }
   table.readings th:nth-child(5), table.readings td:nth-child(5) { display: none; }
+}
+
+/* --- Revisión en campo (UX_SPEC §4.3) ---------------------------------------------------------
+   Se usa de pie, con el móvil en una mano: botones de 40 px, por encima de los 24 px de WCAG 2.2.
+   El estado de cada tarjeta se ve por tres canales a la vez —borde, texto del botón pulsado e
+   icono—, nunca solo por color. Lo confirmado lleva el acento (hay que actuar); lo descartado se
+   apaga; lo pospuesto va en trazo discontinuo, porque sigue abierto. */
+.review { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+.review .seg, .review-panel .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.review .seg button, .review-panel .seg button { min-height: 40px; padding: 6px 12px; font-size: 0.9rem; }
+.review .seg button[aria-pressed="true"] { font-weight: 600; box-shadow: inset 0 0 0 1px currentColor; }
+.review .seg button[data-state="confirmado"][aria-pressed="true"] { background: var(--viz-accent-wash); border-color: var(--viz-accent); }
+.review .seg button[data-state="descartado"][aria-pressed="true"] { background: var(--panel); border-color: var(--viz-neutral); color: var(--muted); }
+.review .seg button[data-state="pospuesto"][aria-pressed="true"] { border-style: dashed; border-color: var(--warn); }
+.review .seg button[data-state="pendiente"][aria-pressed="true"] { background: var(--panel); }
+.review-note { font: inherit; width: 100%; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.review-changed { color: var(--warn); font-size: 0.85rem; margin: 0; }
+.finding.reviewable { border-left-width: 4px; }
+.finding[data-review="confirmado"] { border-left-color: var(--viz-accent); }
+.finding[data-review="descartado"] { border-left-color: var(--viz-neutral); }
+.finding[data-review="descartado"] .finding-title { color: var(--muted); }
+.finding[data-review="pospuesto"] { border-left-style: dashed; border-left-color: var(--warn); }
+
+.review-bar { position: sticky; top: 0; z-index: 3; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 8px 12px; margin: 0 0 8px; }
+.review-bar-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.review-bar-row button { min-height: 40px; flex: none; }
+.review-panel { margin: 0 0 16px; }
+.review-heading { font-weight: 600; margin: 0; }
+.review-counts { margin: 4px 0 8px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.review-progress { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--viz-grid); margin: 6px 0 0; }
+.review-progress span[data-state="confirmado"] { background: var(--viz-accent); }
+.review-progress span[data-state="descartado"] { background: var(--viz-neutral); }
+.review-progress span[data-state="pospuesto"] { background: repeating-linear-gradient(135deg, var(--warn) 0 3px, transparent 3px 6px); }
+.review-progress span[data-state="pendiente"] { background: transparent; }
+.review-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.review-actions button { min-height: 40px; }
+
+/* Filtro: solo esconde tarjetas revisables de otro estado; gráficos y tablas se quedan. */
+[data-review-filter="pendiente"] .finding.reviewable:not([data-review="pendiente"]),
+[data-review-filter="confirmado"] .finding.reviewable:not([data-review="confirmado"]),
+[data-review-filter="descartado"] .finding.reviewable:not([data-review="descartado"]),
+[data-review-filter="pospuesto"] .finding.reviewable:not([data-review="pospuesto"]) { display: none; }
+
+/* --- Dedo (UX_SPEC §7) ---------------------------------------------------------------------------
+   `any-pointer` y no `pointer`: un portátil con pantalla táctil tiene el panel como puntero
+   principal, y el dedo también cuenta. 44 px de alto en todo lo que se pulsa; el cuerpo, a 16 px. */
+@media (any-pointer: coarse) {
+  body { font-size: 16px; }
+  button, select, input[type="text"], input[type="search"], input[type="number"] { min-height: 44px; }
+  .chart .seg button, .review .seg button, .review-panel .seg button, .review-bar-row button,
+  .review-actions button { min-height: 44px; }
+  details > summary { padding: 12px 0; }
+  .chart details summary { font-size: 0.9rem; }
+  input[type="file"]::file-selector-button { min-height: 44px; padding: 8px 14px; margin-right: 10px; }
+  input[type="range"] { height: 44px; width: 100%; }
 }

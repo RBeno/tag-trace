@@ -1,8 +1,8 @@
 ---
 document_id: TT-GATES-001
-version: 0.15.0
+version: 0.18.0
 status: baseline-candidate
-last_updated: 2026-09-21
+last_updated: 2026-09-23
 ---
 
 # Puertas de fase
@@ -72,9 +72,11 @@ una casilla que no se ha demostrado no se marca, y ninguna IA cierra una puerta 
 - [ ] Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta configurados
       y versionados (OQ-B04). **Sigue abierta**: SE2/4 es ahora el circuito priorizado, con dos
       hechos operativos aportados (punto de carga, descansos) pero sin tags exactos todavía.
-- [x] Vueltas completas, parciales y desconocidas representadas. **Con matiz**: el ancla es
-      inferida (ciclo dominante del cohorte, R-GRA-009), no declarada — nunca `observed` hasta que
-      exista `lap_anchors`.
+- [x] Vueltas completas, parciales y desconocidas representadas. El mecanismo de ancla declarada
+      (`lap_anchors`, R-GRA-009) ya existe: una vuelta `completa` sale `observed` cuando hay una
+      ancla declarada y resuelta contra el ciclo, `inferred` cuando no la hay; una `parcial` sigue
+      `inferred` siempre, porque uno de sus extremos es un corte de los datos. **Con matiz**: sin
+      valores de planta (OQ-B04 sigue abierta), lo que hay hoy es el mecanismo, no anclas reales.
 - [x] Grafos por AGV/vuelta y consenso con soporte.
 - [x] Vsystem y físico permanecen separados. Contraste por alineación de secuencia implementado
       (`src/domain/vsystem.ts`); probado con una sustitución real detectada por posición.
@@ -99,11 +101,18 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
 ## G3 — Autorizar F4
 
 - [ ] Oportunidades y salud explicadas.
-- [ ] Diagnóstico individual/grupal/colectivo validado.
+- [ ] Diagnóstico individual/grupal/colectivo validado. **Con matiz**: el componente histórico de
+      ALG-009 —comparación entre el primer y el último periodo de cobertura, R-DAT-016, R-AGV-013—
+      ya está implementado y probado (`src/domain/drift.ts`). El individual/grupal/colectivo contra
+      lo esperado sigue pendiente de oportunidad elegible (OQ-B04, OQ-120) y calendario (OQ-108).
 - [ ] Calendario, pausas y takt versionados.
-- [ ] FIFO cargado y reordenación vacía diferenciados. **A medias**: la zona de cada tag ya se
-      declara en CSV y el orden de convoy deja de probar el paso donde la reordenación está
-      admitida (R-FLO-006), pero el FIFO cargado como tal no se modela todavía.
+- [ ] FIFO cargado y reordenación vacía diferenciados. **Modelado**: el FIFO cargado se detecta como
+      inversión de orden dentro de los tramos contiguos de zona cargada del anillo —derivados del
+      anillo y la lista `zona`, no configurados aparte—, con un margen mínimo dual (absoluto y
+      proporcional al tránsito mediano del propio tramo) para no confundir el jitter normal de
+      lectura con un adelantamiento real. **Sin marcar**: son candidatos, no averías confirmadas —
+      OQ-107 sigue sin el catálogo de excepciones legítimas (carga online, maniobra manual,
+      excepción documentada), así que no se puede cerrar la puerta.
 - [ ] Cinco calles CO modeladas sin SOC. **Modeladas** (R-CO-001/002/003/006/007/008: estancias,
       arranque en frío, salida fuera de antigüedad y calle sin servicio), y sin SOC, que R-CO-004
       excluye. **Sin marcar** porque solo se han ejercitado contra el circuito sintético de
@@ -114,6 +123,9 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
       clase de fallo). **Sigue sin marcarse**, no por falta de mecanismo sino por alcance: solo
       cubre las clases de fallo ya identificadas en el sintético (14 de 14 detectadas al
       2026-09-21, cero falsos positivos, `DEUDA_CONOCIDA` vacía), no todavía las de OQ-B04.
+      Con datos de planta, la medida sale de la **revisión en campo** (`UX_SPEC.md` §4.3): cada
+      hallazgo confirmado o descartado en el punto es un acierto o un falso positivo de su clase, y
+      el CSV exportado da el recuento.
 
 ## G4 — Autorizar F5
 

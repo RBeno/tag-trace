@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/3`
+- Dataset ID/version: `auditoria/11`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -36,7 +36,13 @@ imprime dónde está plantado cada fallo, con sus tags y vehículos.
 Además, **cinco calles de carga online** de tres tags cada una —entrada, parada precisa y salida—,
 que es lo que R-CO-001 fija para el fixture sintético, y una **zona de vacíos** que engloba las
 cinco calles más un tercio contiguo del anillo (R-FLO-003). La carga dura una media hora de media;
-esa magnitud es del escenario, no de planta, y por eso vive en el generador y no en `src/`.
+esa magnitud es del escenario, no de planta, y por eso vive en el generador y no en `src/`. Y un
+**ancla de vuelta declarada** en la lista `ancla` (R-GRA-009): el primer tag del anillo.
+
+El generador declara además un **corte** a mitad de ventana (coincidente con el instante de la
+rotura súbita) para poder comparar un periodo temprano contra uno tardío sin necesitar una segunda
+fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual que ya hace con la de
+`carga-online` (R-DAT-016).
 
 | Clase plantada | Dónde | Qué debe decir el producto | Qué **no** puede decir |
 |---|---|---|---|
@@ -54,6 +60,19 @@ esa magnitud es del escenario, no de planta, y por eso vive en el generador y no
 | `carga-anterior-a-la-ventana` | 5 AGV | estaban dentro antes de la cobertura (R-CO-007) | que estuvieran ausentes, ni la calle vacía |
 | `zona-vacia-declarada` | 1/3 del anillo + calles | la zona se enumera y las calles caen dentro | que declararla mueva el veredicto de un tag sano |
 | `lector-agv-degradado` | 1 AGV, sin otro papel | tendencia a la baja en la fila del **vehículo** (R-OPP-015) | que los tags que lee ese AGV salgan con tendencia o rotura |
+| `adelantamiento-en-zona-cargada` | 1 AGV, sin otro papel | se enumera a quién adelantó y con qué margen, como candidato (R-FLO-001) | llamarlo avería: R-FLO-001 admite excepciones y OQ-107 no tiene el catálogo |
+| `bifurcacion-real` | 1 tag del anillo, cadena de 6 tags fuera de anillo | candidato a `bifurcacion` con las dos ramas y su cuota, nunca reclasificado a `cruce` (las ramas no reconvergen dentro del margen) (R-GRA-007) | asignar la función, o llamarlo avería |
+| `cruce-real` | 1 tag del anillo, 1 tag fuera de anillo, que reconverge un salto después | candidato a `cruce`: dos ramas que se abren y se cierran enseguida, con el punto y el número de saltos de reconvergencia (R-GRA-007) | dejarlo como bifurcación sin comprobar reconvergencia, o llamarlo avería |
+| `parada-precisa-real` | 1 tag del anillo, todos los vehículos | candidato a `parada-precisa`: duración media alta con coeficiente de variación bajo (R-GRA-007) | llamarlo avería o carga |
+| `semaforo-real` | 1 tag del anillo, todos los vehículos | candidato a `semaforo`: duración bimodal con dos grupos compactos (R-GRA-007) | confundirlo con una tendencia de rotura o degradación (R-OPP-015): es alternancia estable, no cambio sostenido |
+| `ancla-declarada` | 1 tag del anillo, declarado en la lista `ancla` | vueltas completas `observed`; el ancla efectiva es la declarada (R-GRA-009) | que declararla cambie qué tags forman el anillo, más allá de rotar el punto de inicio |
+| `tag-nuevo-a-mitad-de-ventana` | 1 tag fuera de anillo | sin lecturas en el periodo temprano, con lecturas en el tardío: `nuevo` (R-DAT-016) | que sea obsoleto, o que existiera desde el principio de la ventana |
+| `memoria-actualizada-a-mitad-de-ventana` | 5 tags contiguos, 1 AGV | ese vehículo dejó de leerlos a mitad de ventana; el resto de la flota los sigue leyendo (R-AGV-013) | que esos tags estén averiados, o acusar a otro vehículo |
+| `sustitucion-candidata` | 2 tags (1 del anillo, 1 fuera) | candidato a sustitución: el que desaparece y el que ocupa su mismo hueco de secuencia, correlacionados por vecino y tiempo (R-DAT-017) | tratarlos como dos hallazgos sueltos, o afirmar que es el mismo punto físico sin más evidencia |
+| `memoria-no-actualizada` | 1 tag fuera de anillo, 1 AGV | el vehículo señalado como candidato a memoria no actualizada: no registra el tag nuevo mientras la mayoría de la flota ya lo hace (R-AGV-013) | que el tag nuevo esté averiado, o acusar a otro vehículo |
+| `vinculacion-declarada` | 1 tag del anillo, declarado por la columna `funcion` del circuito virtual | el expediente del tag muestra la función crítica «vinculacion» (R-GRA-007) | que sea un hallazgo estadístico, ni que el producto la haya propuesto |
+| `desvinculacion-declarada` | 1 tag del anillo, declarado por la lista `critico` | el expediente del tag muestra la función crítica «desvinculacion» (R-GRA-007) | que sea un hallazgo estadístico, ni que el producto la haya propuesto |
+| `lectura-desigual-en-pocos-tags` | 1 AGV que lee 2 tags del anillo en la mitad de sus pasadas (uno sí y uno no, sin `random()`) | el AGV sale como «lee poco» en esos dos tags, en pocos tags, con su porcentaje (R-AGV-016) | una causa (lector, memoria o colocación), ni que los dos tags fallen para el resto |
 
 ## Resultados prohibidos
 

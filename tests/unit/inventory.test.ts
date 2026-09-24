@@ -40,7 +40,11 @@ function laps(agvId: string, tags: readonly string[], count: number, offset = 0)
   return out;
 }
 
-function lists(partial: Partial<Record<keyof TagLists, readonly string[]>>): TagLists {
+type SetLists = Exclude<keyof TagLists, "critical">;
+
+function lists(
+  partial: Partial<Record<SetLists, readonly string[]>> & { critical?: Record<string, string> },
+): TagLists {
   return {
     virtual: new Set(partial.virtual ?? []),
     memory: new Set(partial.memory ?? []),
@@ -48,6 +52,7 @@ function lists(partial: Partial<Record<keyof TagLists, readonly string[]>>): Tag
     emergency: new Set(partial.emergency ?? []),
     charging: new Set(partial.charging ?? []),
     unservedLaneTags: new Set(partial.unservedLaneTags ?? []),
+    critical: new Map(Object.entries(partial.critical ?? {})),
   };
 }
 
@@ -94,6 +99,63 @@ describe("inventario contrastado", () => {
     // a mirar, y la deja registrada con el hallazgo.
     expect(row?.action).toBe("valorar-sustituir-o-eliminar");
     expect(describeAction(row?.action ?? "ninguna")).toContain("sigue instalado");
+  });
+
+  it("un punto crítico declarado, en memoria y nunca leído es critico-sin-lectura, no obsoleto-candidato (R-GRA-008)", () => {
+    const readings = [...laps("A", RUTA, 5), ...laps("B", RUTA, 5, 100_000)];
+    const inventory = buildTagInventory(
+      readings,
+      lists({
+        virtual: [...RUTA, "0999"],
+        memory: [...RUTA, "0999"],
+        critical: { "0999": "bifurcacion" },
+      }),
+      THRESHOLDS,
+    );
+
+    const row = inventory.rows.find((candidate) => candidate.tagId === "0999");
+    expect(row?.tagClass).toBe("critico-sin-lectura");
+    // Sigue sin ser avería: el dato no distingue obsoleto de averiado (R-DAT-016).
+    expect(row?.truth).toBe("unknown");
+    expect(row?.criticalFunction).toBe("bifurcacion");
+    expect(row?.action).toBe("valorar-funcion-critica-perdida");
+    expect(describeAction(row?.action ?? "ninguna")).toContain("perdió su función");
+  });
+
+  it("un punto crítico sin memoria se queda declarado-sin-memoria, sin matiz (R-OPP-009 manda sobre R-GRA-008)", () => {
+    const readings = [...laps("A", RUTA, 5), ...laps("B", RUTA, 5, 100_000)];
+    const inventory = buildTagInventory(
+      readings,
+      lists({
+        virtual: [...RUTA, "0999"],
+        memory: RUTA, // "0999" declarado, pero fuera de la memoria maestra
+        critical: { "0999": "bifurcacion" },
+      }),
+      THRESHOLDS,
+    );
+
+    const row = inventory.rows.find((candidate) => candidate.tagId === "0999");
+    expect(row?.tagClass).toBe("declarado-sin-memoria");
+  });
+
+  it("un punto crítico que sí se lee sigue activo, y lleva su función nombrada", () => {
+    const readings = [
+      ...laps("A", [...RUTA, "0999"], 5),
+      ...laps("B", [...RUTA, "0999"], 5, 100_000),
+    ];
+    const inventory = buildTagInventory(
+      readings,
+      lists({
+        virtual: [...RUTA, "0999"],
+        memory: [...RUTA, "0999"],
+        critical: { "0999": "cruce" },
+      }),
+      THRESHOLDS,
+    );
+
+    const row = inventory.rows.find((candidate) => candidate.tagId === "0999");
+    expect(row?.tagClass).toBe("activo");
+    expect(row?.criticalFunction).toBe("cruce");
   });
 
   it("cada clase indica qué hay que valorar, y solo dos no abren ninguna tarea", () => {

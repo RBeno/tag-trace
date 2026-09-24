@@ -102,6 +102,21 @@ export interface ChargingReport {
    * Sin el instante, la vista solo podría decir que alguien salió sin haber entrado.
    */
   readonly coverageStartUtcMs: number | null;
+  /**
+   * Vehículos con lecturas y **ninguna estancia** en ninguna calle declarada, en ningún estado.
+   *
+   * Es un hecho sobre las calles declaradas y nada más: puede cargar en una calle que la lista no
+   * recoge, o haber estado poco tiempo dentro de la ventana — por eso viaja con su primera y su
+   * última lectura. Y no dice nada de su batería: sin SOC fiable no se juzga (R-CO-004).
+   */
+  readonly neverCharged: readonly NeverCharged[];
+}
+
+export interface NeverCharged {
+  readonly agvId: string;
+  readonly firstUtcMs: number;
+  readonly lastUtcMs: number;
+  readonly readings: number;
 }
 
 /** Los tres papeles de un tag dentro de una calle, para clasificar una lectura de un vistazo. */
@@ -184,7 +199,7 @@ function staysOf(
         evidence:
           open.stoppedUtcMs === null
             ? `entró y salió de «${hit.lane.laneId}» sin leer la parada precisa`
-            : `entrada, parada precisa y salida de «${hit.lane.laneId}» en orden (R-CO-006)`,
+            : `entrada, parada precisa y salida de «${hit.lane.laneId}» en orden`,
       });
       open = null;
       continue;
@@ -202,8 +217,7 @@ function staysOf(
       truth: index === 0 ? "inferred" : "unknown",
       evidence:
         index === 0
-          ? `su primera lectura es la salida de «${hit.lane.laneId}»: ya estaba dentro antes de ` +
-            "la cobertura (R-CO-007)"
+          ? `su primera lectura es la salida de «${hit.lane.laneId}»: ya estaba dentro al empezar los datos`
           : `salió de «${hit.lane.laneId}» sin que conste su entrada`,
     };
     stays.push(stay);
@@ -279,7 +293,7 @@ export function buildChargingReport(
   coverage: readonly Interval[],
   thresholds: ChargingThresholds,
 ): ChargingReport {
-  if (lanes.length === 0) return { lanes: [], startedInside: [], coverageStartUtcMs: null };
+  if (lanes.length === 0) return { lanes: [], startedInside: [], coverageStartUtcMs: null, neverCharged: [] };
 
   const index = roleIndex(lanes);
   const coverageStartUtcMs =
@@ -289,11 +303,16 @@ export function buildChargingReport(
   // calle, que son una fracción diminuta del total (WP-001: nada de recorrer el CSV varias veces).
   const byVehicle = new Map<string, LaneHit[]>();
   const firstReadingOf = new Map<string, number>();
+  const lastReadingOf = new Map<string, number>();
+  const readingCount = new Map<string, number>();
   for (const reading of readings) {
     const previous = firstReadingOf.get(reading.agvId);
     if (previous === undefined || reading.time.utcMs < previous) {
       firstReadingOf.set(reading.agvId, reading.time.utcMs);
     }
+    const latest = lastReadingOf.get(reading.agvId);
+    if (latest === undefined || reading.time.utcMs > latest) lastReadingOf.set(reading.agvId, reading.time.utcMs);
+    readingCount.set(reading.agvId, (readingCount.get(reading.agvId) ?? 0) + 1);
     const role = index.get(reading.tagId);
     if (role === undefined) continue;
     let hits = byVehicle.get(reading.agvId);
@@ -307,10 +326,12 @@ export function buildChargingReport(
   const staysByLane = new Map<string, LaneStay[]>();
   for (const lane of lanes) staysByLane.set(lane.laneId, []);
   const startedInside: LaneStay[] = [];
+  const withStay = new Set<string>();
 
   for (const [agvId, hits] of byVehicle) {
     hits.sort((a, b) => a.utcMs - b.utcMs);
     const result = staysOf(agvId, hits);
+    if (result.stays.length > 0) withStay.add(agvId);
     for (const stay of result.stays) staysByLane.get(stay.laneId)?.push(stay);
     // Solo cuenta como arranque en frío si esa salida es también la primera lectura **de todas**
     // las del vehículo. Si antes hubo lecturas de anillo, no estaba dentro: entró y no se le vio.
@@ -346,5 +367,55 @@ export function buildChargingReport(
     };
   });
 
-  return { lanes: report, startedInside, coverageStartUtcMs };
+  const neverCharged: NeverCharged[] = [...firstReadingOf.keys()]
+    .filter((agvId) => !withStay.has(agvId))
+    .sort()
+    .map((agvId) => ({
+      agvId,
+      firstUtcMs: firstReadingOf.get(agvId) as number,
+      lastUtcMs: lastReadingOf.get(agvId) as number,
+      readings: readingCount.get(agvId) ?? 0,
+    }));
+
+  return { lanes: report, startedInside, coverageStartUtcMs, neverCharged };
+}
+
+/** De qué tag del anillo cuelga una calle: el que precede con más frecuencia a su tag de entrada. */
+export interface LaneJunction {
+  readonly laneId: string;
+  readonly tagId: string;
+}
+
+/**
+ * El punto del anillo del que sale cada calle, para poder dibujarla colgada de él.
+ *
+ * Es el predecesor **observado** más frecuente del tag de entrada, restringido al anillo: la calle
+ * se declara (R-CO-001), pero dónde se engancha al circuito no viene en la lista, así que se mira en
+ * el dato. Una calle en la que nadie entró desde el anillo no tiene punto de enganche y no se
+ * inventa uno: no aparece.
+ */
+export function findLaneJunctions(
+  lanes: readonly CoLane[],
+  transitions: readonly { readonly from: string; readonly to: string }[],
+  ring: readonly string[],
+): readonly LaneJunction[] {
+  const inRing = new Set(ring);
+  const junctions: LaneJunction[] = [];
+  for (const lane of lanes) {
+    const counts = new Map<string, number>();
+    for (const entry of transitions) {
+      if (entry.to !== lane.entryTagId || !inRing.has(entry.from)) continue;
+      counts.set(entry.from, (counts.get(entry.from) ?? 0) + 1);
+    }
+    let best: string | null = null;
+    let bestCount = 0;
+    for (const [tagId, count] of counts) {
+      if (count > bestCount || (count === bestCount && best !== null && tagId < best)) {
+        best = tagId;
+        bestCount = count;
+      }
+    }
+    if (best !== null) junctions.push({ laneId: lane.laneId, tagId: best });
+  }
+  return junctions;
 }

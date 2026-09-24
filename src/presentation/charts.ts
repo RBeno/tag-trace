@@ -18,6 +18,9 @@
  * Este módulo no calcula nada: recibe agregados que el Worker ya produjo (WP-001).
  */
 
+import { tagClassLabel, truthLabel } from "./labels.js";
+import { inspect } from "./pointer.js";
+
 const NS = "http://www.w3.org/2000/svg";
 
 /**
@@ -34,9 +37,9 @@ const NS = "http://www.w3.org/2000/svg";
 const WIDTH = 640;
 
 /** Trama diagonal para «sin datos cargados». Se define una vez por SVG que la use. */
-const HATCH_ID = "tt-hatch";
+export const HATCH_ID = "tt-hatch";
 
-function svg<K extends keyof SVGElementTagNameMap>(
+export function svg<K extends keyof SVGElementTagNameMap>(
   tag: K,
   attributes: Readonly<Record<string, string | number>> = {},
 ): SVGElementTagNameMap[K] {
@@ -46,7 +49,7 @@ function svg<K extends keyof SVGElementTagNameMap>(
 }
 
 /** Un valor importado nunca se interpreta como marcado (TH-007). */
-function text(
+export function text(
   x: number,
   y: number,
   content: string,
@@ -69,10 +72,31 @@ function withTooltip<T extends SVGElement>(node: T, label: string): T {
   const title = svg("title");
   title.textContent = label;
   node.append(title);
+  // El mismo texto, para la línea de lectura: en una pantalla táctil el `<title>` no se ve nunca.
+  node.setAttribute("data-tip", label);
   return node;
 }
 
-function hatchPattern(): SVGDefsElement {
+/**
+ * La línea de lectura de un gráfico con `withTooltip`: con ratón acompaña al tooltip nativo, y con
+ * el dedo es la única forma de leer una marca (UX_SPEC §7).
+ */
+function tipReadout(canvas: SVGSVGElement, rest: string): HTMLParagraphElement {
+  const line = document.createElement("p");
+  line.className = "muted readout";
+  line.setAttribute("aria-live", "polite");
+  line.textContent = rest;
+  inspect(
+    canvas,
+    (point) => {
+      line.textContent = point?.target.closest("[data-tip]")?.getAttribute("data-tip") ?? rest;
+    },
+    { snap: "[data-tip]" },
+  );
+  return line;
+}
+
+export function hatchPattern(): SVGDefsElement {
   const defs = svg("defs");
   const pattern = svg("pattern", {
     id: HATCH_ID,
@@ -87,7 +111,7 @@ function hatchPattern(): SVGDefsElement {
   return defs;
 }
 
-function figure(title: string, caption: string): HTMLElement {
+export function figure(title: string, caption: string): HTMLElement {
   const wrapper = document.createElement("figure");
   wrapper.className = "chart";
   const heading = document.createElement("h3");
@@ -131,7 +155,7 @@ export function plainTable(headers: readonly string[], rows: readonly (readonly 
  * La tabla equivalente de un gráfico, plegada por defecto: es la vía accesible y el respaldo
  * cuando el color falla, no la vista principal.
  */
-function table(headers: readonly string[], rows: readonly (readonly string[])[]): HTMLElement {
+export function table(headers: readonly string[], rows: readonly (readonly string[])[]): HTMLElement {
   const details = document.createElement("details");
   const summary = document.createElement("summary");
   summary.textContent = "Ver los mismos datos en tabla";
@@ -169,7 +193,7 @@ export function scrollBox(node: HTMLElement): HTMLElement {
   return box;
 }
 
-function legendList(items: readonly (readonly [string, string])[]): HTMLElement {
+export function legendList(items: readonly (readonly [string, string])[]): HTMLElement {
   const list = document.createElement("ul");
   list.className = "legend";
   for (const [fill, label] of items) {
@@ -205,12 +229,12 @@ export function coverageChart(
 ): HTMLElement {
   const wrapper = figure(
     "Cobertura cargada",
-    "Lo que se puede analizar. Fuera de los tramos llenos no hay silencio: no hay datos.",
+    "Periodos con datos. Fuera de ellos no hay datos, no silencio.",
   );
   if (coverage.length === 0) {
     const empty = document.createElement("p");
     empty.className = "muted";
-    empty.textContent = "Todavía no hay ningún tramo completo.";
+    empty.textContent = "Todavía no hay ningún periodo completo.";
     wrapper.append(empty);
     return wrapper;
   }
@@ -225,7 +249,7 @@ export function coverageChart(
   const canvas = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img" });
   canvas.append(hatchPattern());
   const label = svg("title");
-  label.textContent = `Cobertura entre ${format(from)} y ${format(to)}, en ${coverage.length} tramo(s).`;
+  label.textContent = `Cobertura entre ${format(from)} y ${format(to)}, en ${coverage.length} ${coverage.length === 1 ? "tramo" : "tramos"}.`;
   canvas.append(label);
 
   // El fondo entero es «sin datos cargados»; encima se pintan los tramos que sí lo están. Así el
@@ -233,7 +257,7 @@ export function coverageChart(
   canvas.append(
     withTooltip(
       svg("rect", { x: 0, y: 8, width, height: 26, fill: `url(#${HATCH_ID})`, rx: 4 }),
-      "Sin datos cargados: no se analiza, y nunca es una parada ni un silencio.",
+      "Sin datos cargados: no es una parada ni un silencio.",
     ),
   );
 
@@ -257,7 +281,7 @@ export function coverageChart(
 
   canvas.append(text(0, 50, format(from), "axis"));
   canvas.append(text(width, 50, format(to), "axis", { "text-anchor": "end" }));
-  wrapper.append(canvas);
+  wrapper.append(canvas, tipReadout(canvas, "Toca o pasa el puntero por la barra para leer un tramo."));
   wrapper.append(
     legendList([
       ["var(--viz-series)", "cargado y analizable"],
@@ -291,8 +315,7 @@ export interface HourlyData {
 export function hourlyChart(data: HourlyData): HTMLElement {
   const wrapper = figure(
     "Perfil horario",
-    `Lecturas por hora del día, sumando los ${data.days} día(s) cargados. Un valle no es una parada: ` +
-      "distinguirlo exige el calendario.",
+    `Lecturas por hora del día, sumando ${data.days} ${data.days === 1 ? "día" : "días"}. Un valle no es necesariamente una parada.`,
   );
 
   const width = WIDTH;
@@ -340,7 +363,7 @@ export function hourlyChart(data: HourlyData): HTMLElement {
   });
 
   canvas.append(svg("line", { x1: 0, y1: bottom, x2: width, y2: bottom, class: "grid" }));
-  wrapper.append(canvas);
+  wrapper.append(canvas, tipReadout(canvas, "Toca o pasa el puntero por una barra para leer su hora."));
   wrapper.append(
     table(
       ["Hora", "Lecturas"],
@@ -372,8 +395,7 @@ export interface ActivityData {
 export function activityChart(data: ActivityData, format: (utcMs: number) => string): HTMLElement {
   const wrapper = figure(
     "Actividad por vehículo",
-    "Una fila por AGV. Más oscuro, más lecturas en ese tramo. Una celda con trama es falta de datos, " +
-      "no silencio del vehículo.",
+    "Una fila por AGV; más oscuro, más lecturas. Con trama: sin datos cargados.",
   );
   if (data.rows.length === 0) {
     const empty = document.createElement("p");
@@ -457,33 +479,37 @@ export function activityChart(data: ActivityData, format: (utcMs: number) => str
    * adicional, y una región viva se lee mejor con lector de pantalla que cinco mil títulos.
    */
   const readout = document.createElement("p");
-  readout.className = "muted";
+  readout.className = "muted readout";
   readout.setAttribute("aria-live", "polite");
-  const REPOSO = "Pasa el puntero por la banda para leer una celda.";
+  const REPOSO = "Toca o pasa el puntero por la banda para leer una celda.";
   readout.textContent = REPOSO;
-  canvas.addEventListener("pointermove", (event) => {
-    const box = canvas.getBoundingClientRect();
-    if (box.width === 0 || box.height === 0) return;
-    const localX = ((event.clientX - box.left) * width) / box.width;
-    const localY = ((event.clientY - box.top) * height) / box.height;
-    const rowIndex = Math.floor(localY / (rowHeight + gap));
-    const bin = Math.floor((localX - labelWidth) / cellWidth);
-    const row = data.rows[rowIndex];
-    if (row === undefined || bin < 0 || bin >= binCount) {
-      readout.textContent = REPOSO;
-      return;
-    }
-    const instant = format(data.binStarts[bin] ?? 0);
-    const count = row.bins[bin] ?? 0;
-    readout.textContent = uncovered.has(bin)
-      ? `${row.agvId} · ${instant} — sin datos cargados: no se analiza, y no es un silencio`
-      : count === 0
-        ? `${row.agvId} · ${instant} — sin lecturas, con datos cargados`
-        : `${row.agvId} · ${instant} — ${count.toLocaleString("es-ES")} lecturas`;
-  });
-  canvas.addEventListener("pointerleave", () => {
-    readout.textContent = REPOSO;
-  });
+  inspect(
+    canvas,
+    (point) => {
+      if (point === null) {
+        readout.textContent = REPOSO;
+        return;
+      }
+      const box = canvas.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) return;
+      const localX = ((point.clientX - box.left) * width) / box.width;
+      const localY = ((point.clientY - box.top) * height) / box.height;
+      const rowIndex = Math.floor(localY / (rowHeight + gap));
+      const bin = Math.floor((localX - labelWidth) / cellWidth);
+      const row = data.rows[rowIndex];
+      if (row === undefined || bin < 0 || bin >= binCount) {
+        readout.textContent = REPOSO;
+        return;
+      }
+      const instant = format(data.binStarts[bin] ?? 0);
+      const count = row.bins[bin] ?? 0;
+      readout.textContent = uncovered.has(bin)
+        ? `${row.agvId} · ${instant} — sin datos cargados`
+        : count === 0
+          ? `${row.agvId} · ${instant} — sin lecturas`
+          : `${row.agvId} · ${instant} — ${count.toLocaleString("es-ES")} lecturas`;
+    },
+  );
   wrapper.append(readout);
 
   wrapper.append(
@@ -536,50 +562,81 @@ export interface InventoryBar {
 export function inventoryChart(bars: readonly InventoryBar[]): HTMLElement {
   const wrapper = figure(
     "Inventario de tags",
-    "Cruce de lo declarado, lo que la memoria permite leer y lo observado. Ninguna clase es un " +
-      "diagnóstico: la última columna dice qué hay que valorar.",
+    "Lo declarado, lo que los AGV llevan en memoria y lo que se lee, cruzado. Cada clase dice " +
+      "qué hay que comprobar.",
   );
   if (bars.length === 0) {
     const empty = document.createElement("p");
     empty.className = "muted";
-    empty.textContent = "Carga las listas de tags para contrastar el inventario.";
+    empty.textContent = "Carga las listas de tags para ver el inventario.";
     wrapper.append(empty);
     return wrapper;
   }
 
-  const width = WIDTH;
-  const rowHeight = 24;
-  const labelWidth = 150;
-  const height = bars.length * rowHeight + 8;
+  // Primero la proporción que pide atención frente a la que no (Parte 38, propuesta 10); después
+  // cada clase con su acción en la misma línea, que es lo que antes solo estaba en la tabla.
+  const groupOf = (label: string): "ok" | "ctx" | "val" =>
+    label === "activo" ? "ok" : label === "especial" ? "ctx" : "val";
+  const groups: readonly (readonly ["ok" | "ctx" | "val", string, string])[] = [
+    ["ok", "nada que valorar", "var(--viz-neutral)"],
+    // Azul de serie y no naranja: ninguna clase del inventario lleva color de severidad (UX §5.2).
+    ["val", "a valorar", "var(--viz-series)"],
+    ["ctx", "fuera de toda tasa", "repeating-linear-gradient(135deg, var(--viz-empty) 0 2px, var(--panel) 2px 5px)"],
+  ];
+  const total = Math.max(1, bars.reduce((sum, bar) => sum + bar.count, 0));
+  const strip = document.createElement("div");
+  strip.className = "inv-strip";
+  strip.setAttribute("role", "img");
+  const stripLabels = document.createElement("ul");
+  stripLabels.className = "legend";
+  const summary: string[] = [];
+  for (const [group, label, fill] of groups) {
+    const count = bars.filter((bar) => groupOf(bar.label) === group).reduce((sum, bar) => sum + bar.count, 0);
+    if (count === 0) continue;
+    const part = document.createElement("div");
+    part.style.flex = `${count} 1 0`;
+    part.style.background = fill;
+    strip.append(part);
+    const item = document.createElement("li");
+    const swatch = document.createElement("span");
+    swatch.className = "swatch";
+    swatch.style.background = fill;
+    const caption = document.createElement("span");
+    caption.textContent = `${label}: ${count} (${Math.round((count / total) * 100)} %)`;
+    item.append(swatch, caption);
+    stripLabels.append(item);
+    summary.push(`${label} ${count}`);
+  }
+  strip.setAttribute("aria-label", `Inventario: ${summary.join(", ")}`);
+
+  const rows = document.createElement("div");
+  rows.className = "inv-rows";
   const max = Math.max(1, ...bars.map((bar) => bar.count));
+  for (const bar of [...bars].sort((a, b) => b.count - a.count)) {
+    const name = document.createElement("span");
+    name.className = "inv-name";
+    name.textContent = tagClassLabel(bar.label);
+    const track = document.createElement("span");
+    track.className = "inv-track";
+    const fill = document.createElement("span");
+    fill.className = "inv-bar";
+    fill.style.width = `${(bar.count / max) * 100}%`;
+    fill.style.background = groupOf(bar.label) === "val" ? "var(--viz-series)" : "var(--viz-neutral)";
+    track.append(fill);
+    const count = document.createElement("span");
+    count.className = "inv-count";
+    count.textContent = String(bar.count);
+    const action = document.createElement("span");
+    action.className = "inv-action muted";
+    action.textContent = bar.action;
+    rows.append(name, track, count, action);
+  }
 
-  const canvas = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img" });
-  bars.forEach((bar, index) => {
-    const y = index * rowHeight + 4;
-    const barWidth = Math.max(bar.count === 0 ? 0 : 3, (bar.count / max) * (width - labelWidth - 44));
-    canvas.append(text(0, y + 13, bar.label, "axis"));
-    canvas.append(
-      withTooltip(
-        svg("rect", {
-          x: labelWidth,
-          y,
-          width: barWidth,
-          height: rowHeight - 8,
-          rx: 4,
-          fill: "var(--viz-series)",
-        }),
-        `${bar.label}: ${bar.count} tag(s) · ${bar.truth} · ${bar.action}`,
-      ),
-    );
-    // Rótulo directo con la cifra: el gráfico da la proporción, el número da el dato exacto.
-    canvas.append(text(labelWidth + barWidth + 6, y + 13, String(bar.count), "value"));
-  });
-
-  wrapper.append(canvas);
+  wrapper.append(strip, stripLabels, rows);
   wrapper.append(
     table(
-      ["Clase", "Tags", "Estado de verdad", "Qué valorar"],
-      bars.map((bar) => [bar.label, String(bar.count), bar.truth, bar.action]),
+      ["Clase", "Tags", "Certeza", "Qué comprobar"],
+      bars.map((bar) => [tagClassLabel(bar.label), String(bar.count), truthLabel(bar.truth), bar.action]),
     ),
   );
   return wrapper;

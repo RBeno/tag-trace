@@ -122,8 +122,8 @@ test.describe("listas de tags e inventario", () => {
     const inventario = page.locator("figure.chart", { hasText: "Inventario de tags" });
     await inventario.getByText("Ver los mismos datos en tabla").click();
     // El tag retirado del suelo y nunca borrado de la lista sale como pregunta, no como avería.
-    await expect(inventario.getByRole("cell", { name: "obsoleto-candidato" })).toBeVisible();
-    await expect(inventario.getByRole("cell", { name: "unknown" })).toBeVisible();
+    await expect(inventario.getByRole("cell", { name: "posible obsoleto" })).toBeVisible();
+    await expect(inventario.getByRole("cell", { name: "sin determinar" })).toBeVisible();
     // Sobre la celda, no sobre el texto suelto: el mismo texto está además en el `<title>` del SVG
     // —que es el tooltip— y un `<title>` nunca es visible, así que la aserción fallaría por donde
     // no toca.
@@ -175,6 +175,6 @@ test.describe("vistas", () => {
     expect(celdas).toBeGreaterThan(10);
     // Solo el rótulo del gráfico entero, nunca uno por celda.
     expect(rotulos).toBeLessThanOrEqual(1);
-    await expect(banda.getByText("Pasa el puntero por la banda para leer una celda.")).toBeVisible();
+    await expect(banda.getByText("Toca o pasa el puntero por la banda para leer una celda.")).toBeVisible();
   });
 });

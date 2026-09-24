@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
-last_updated: 2026-09-20
+last_updated: 2026-09-23
 ---
 
 # Memoria compacta del proyecto
@@ -166,3 +166,29 @@ porque el segundo no era del workflow:
    real de la visibilidad es el 2026-09-20, no el 2026-09-03.
 
 Con el repositorio ya público, el tercer intento (`workflow_dispatch`) desplegó sin tocar nada más.
+
+## Zonas compartidas entre circuitos, reservadas para F7 (2026-09-23)
+
+El propietario deja abierta, **sin construirla ahora**, la posibilidad de analizar circuitos que
+comparten un cruce, un semáforo o un tramo. Hechos de planta aportados:
+
+- los circuitos salen del mismo servidor, que gestiona los cruces y da un reloj común (R-DAT-018);
+- el número de un tag es único en toda la planta; solo se comparten entre circuitos los tags de
+  cruces y semáforos, y en un tramo físico común cada circuito mantiene sus propios tags (R-GRA-012);
+- un AGV no está en el tag: ocupa el espacio hasta el siguiente, y en ese espacio caben uno o varios
+  según su longitud física.
+
+Decisión de diseño: los circuitos siguen aislados y la zona será una vista aparte que compara la
+ocupación de sus espacios con su capacidad (R-GRA-013). Lo que habrá que adaptar para que no choque
+con lo existente está anotado en `ROADMAP.md` F7. OQ-127 sigue abierta y OQ-128, parcial.
+
+**Corregido el mismo día**: la primera redacción de R-GRA-012 decía que cada tag es un espacio que
+ocupa un AGV, y que el tramo compartido salía de cruzar las listas. Las dos cosas eran falsas.
+
+## Revisión en campo antes de consolidar (2026-09-23)
+
+Para las pruebas en planta, el propietario pide poder dejar trabajo a medias, volver a cargar y
+seguir. Decisiones: cuatro estados por hallazgo (pendiente, confirmado, descartado, pospuesto),
+botones solo en las tarjetas de hallazgo, guardado automático en el dispositivo y exportación a CSV
+(R-EVI-007, `UX_SPEC.md` §4.3). **Solo la revisión**, que es F3: la consolidación es F4 y espera a
+`CONTINÚA FASE 4`. Cuando llegue, lo pospuesto no bloquea: pasa al periodo siguiente con su motivo.

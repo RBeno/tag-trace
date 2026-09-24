@@ -155,7 +155,7 @@ test.describe("ida y vuelta de `.agvproj` por la interfaz", () => {
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("button", { name: "Exportar .agvproj" }).click(),
+      page.getByRole("button", { name: "Exportar circuito (.agvproj)" }).click(),
     ]);
     // Ruta sin acentos: `outputPath` la deriva del título de la prueba, y este lleva `ñ`.
     const { mkdtempSync } = await import("node:fs");

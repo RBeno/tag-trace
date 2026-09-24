@@ -14,10 +14,11 @@ import {
   laneEntryTags,
   laneTags,
   readCoLanes,
+  readCriticalPoints,
   readZones,
   type ConfigEntry,
 } from "../../src/domain/circuit-config.js";
-import { buildChargingReport, type ChargingThresholds } from "../../src/domain/charging.js";
+import { buildChargingReport, findLaneJunctions, type ChargingThresholds } from "../../src/domain/charging.js";
 import type { Reading } from "../../src/domain/reading.js";
 
 const THRESHOLDS: ChargingThresholds = { longStayRatio: 2, minStaysForMedian: 4 };
@@ -98,6 +99,56 @@ describe("configuración de calles (R-CO-001)", () => {
     expect(zoneOf.get("10")).toBe("vacio");
     expect(zoneOf.get("11")).toBe("cargado");
     expect(problems.join(" ")).toContain("dos zonas");
+  });
+
+  it("los puntos críticos se leen por función, y una función fuera de la taxonomía se conserva con aviso (R-GRA-007)", () => {
+    const { funcionOf, problems } = readCriticalPoints([
+      entry("102185", "bifurcacion", ""),
+      entry("103358", "parada-precisa", ""),
+      entry("999999", "girar-a-la-izquierda", ""),
+    ]);
+    expect(funcionOf.get("102185")).toBe("bifurcacion");
+    expect(funcionOf.get("103358")).toBe("parada-precisa");
+    expect(funcionOf.get("999999")).toBe("girar-a-la-izquierda");
+    expect(problems.join(" ")).toContain("999999");
+  });
+
+  it("un punto crítico con dos funciones contradictorias se queda con la primera", () => {
+    const { funcionOf, problems } = readCriticalPoints([
+      entry("102185", "bifurcacion", ""),
+      entry("102185", "cruce", ""),
+    ]);
+    expect(funcionOf.get("102185")).toBe("bifurcacion");
+    expect(problems.join(" ")).toContain("dos funciones");
+  });
+
+  it("las nueve funciones de la taxonomía se aceptan sin aviso (Parte 36: vinculación/desvinculación)", () => {
+    const { funcionOf, problems } = readCriticalPoints([
+      entry("1", "parada-precisa", ""),
+      entry("2", "cruce", ""),
+      entry("3", "semaforo", ""),
+      entry("4", "dejar-carro", ""),
+      entry("5", "recoger-carro", ""),
+      entry("6", "cambio-de-mapa", ""),
+      entry("7", "bifurcacion", ""),
+      entry("8", "vinculacion", ""),
+      entry("9", "desvinculacion", ""),
+    ]);
+    expect(funcionOf.get("8")).toBe("vinculacion");
+    expect(funcionOf.get("9")).toBe("desvinculacion");
+    expect(problems).toHaveLength(0);
+  });
+
+  it("la función crítica se lee igual venga de «critico» o del circuito virtual — es el llamador quien combina las fuentes, no esta función", () => {
+    // `readCriticalPoints` no distingue de qué lista vienen las entradas: el merge de fuentes
+    // (Parte 36) vive en el punto de llamada (`import.worker.ts`/`auditoria.test.ts`), concatenando
+    // las entradas de «critico» con las de «circuito» que sí declaran función. Aquí basta confirmar
+    // que dos arrays concatenados, simulando cada fuente, se comportan como una sola lista.
+    const desdeCritico = [entry("102185", "vinculacion", "")];
+    const desdeCircuito = [entry("103358", "desvinculacion", "")];
+    const { funcionOf } = readCriticalPoints([...desdeCritico, ...desdeCircuito]);
+    expect(funcionOf.get("102185")).toBe("vinculacion");
+    expect(funcionOf.get("103358")).toBe("desvinculacion");
   });
 });
 
@@ -220,5 +271,50 @@ describe("máquina de estados de la calle (R-CO-002)", () => {
     const calle1 = report.lanes.find((item) => item.laneId === "calle-1");
     expect(calle1?.medianStayMs).toBeNull();
     expect(calle1?.longStays).toEqual([]);
+  });
+});
+
+describe("de qué tag del anillo cuelga cada calle (findLaneJunctions)", () => {
+  const { lanes } = readCoLanes([...lane("calle-1", 700), ...lane("calle-2", 710)]);
+  const ring = ["A", "B", "C"];
+
+  it("es el predecesor del anillo más frecuente de su tag de entrada", () => {
+    const transitions = [
+      { from: "A", to: "700" },
+      { from: "A", to: "700" },
+      { from: "B", to: "700" },
+      // Muchas desde fuera del anillo no cuentan: la calle se dibuja colgada del anillo.
+      ...Array.from({ length: 5 }, () => ({ from: "X", to: "700" })),
+    ];
+    expect(findLaneJunctions(lanes, transitions, ring)).toEqual([{ laneId: "calle-1", tagId: "A" }]);
+  });
+
+  it("una calle en la que nadie entró desde el anillo no tiene punto de enganche inventado", () => {
+    expect(findLaneJunctions(lanes, [{ from: "A", to: "700" }], ring).map((junction) => junction.laneId)).toEqual([
+      "calle-1",
+    ]);
+  });
+});
+
+describe("vehículos que no entraron en ninguna calle (neverCharged)", () => {
+  const { lanes } = readCoLanes([...lane("calle-1", 700)]);
+
+  it("sale quien no tiene ninguna estancia; no salen ni una estancia completa ni un arranque en frío", () => {
+    const readings = [
+      // A entra, para y sale: tiene estancia.
+      read("A", "1", 0),
+      read("A", "700", 1 * MINUTE),
+      read("A", "701", 2 * MINUTE),
+      read("A", "702", 30 * MINUTE),
+      // B circula y no entra nunca.
+      read("B", "1", 0),
+      read("B", "2", 5 * MINUTE),
+      // C ya estaba dentro al empezar (R-CO-007): su estancia es abierta al inicio, pero es estancia.
+      read("C", "702", 0),
+      read("C", "1", 1 * MINUTE),
+    ];
+    const report = buildChargingReport(readings, lanes, [{ from: 0, to: 60 * MINUTE }], THRESHOLDS);
+    expect(report.neverCharged.map((entry) => entry.agvId)).toEqual(["B"]);
+    expect(report.neverCharged[0]).toMatchObject({ firstUtcMs: 0, lastUtcMs: 5 * MINUTE, readings: 2 });
   });
 });

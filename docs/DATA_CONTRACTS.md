@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.11.0
+version: 0.13.0
 status: baseline-candidate
-last_updated: 2026-09-17
+last_updated: 2026-09-23
 ---
 
 # Contratos de datos y procedencia
@@ -26,6 +26,7 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-009 | Calendario productivo | vigencia, turnos, pausas, paradas y takt | Contexto versionado |
 | DS-010 | Proyecto anterior | `.agvproj` con manifiesto y versión | Persistencia local |
 | DS-011 | Informe ampliado de Vsystem | Tipo, fecha con segundos, AGV, circuito y, según el tipo, tag o uso | Enriquecida, opcional |
+| DS-012 | Historial de flota | AGV y fecha de alta; circuito, fecha de baja y nota opcionales | Configuración, incremental (§3.6) |
 
 ## 3. Contrato mínimo de lecturas
 
@@ -234,6 +235,44 @@ Dos límites que se muestran junto a la tabla y no en una nota al pie:
 Ninguna de las seis clases emite una tasa de salud. Publican hechos y, donde toca, la hipótesis
 prioritaria con su estado de verdad.
 
+### 3.6 Historial de flota del circuito (DS-012)
+
+Qué vehículos están asignados a un circuito y desde cuándo. Sin él, un AGV asignado que no lee nada
+es invisible: la flota solo se puede contar con los que aparecen en las lecturas, y así lo dice la
+vista (R-AGV-014).
+
+Una fila por AGV y periodo, escrita a mano, así que la forma la fija el programa y se enseña antes de
+pedir el fichero:
+
+```text
+circuito;agv;desde;hasta;nota
+SE2/4;7101;01/09/2026;;
+SE2/4;7102;01/09/2026;15/09/2026 14:00;baja por mantenimiento
+```
+
+| Columna | Obligatoria | Qué es |
+|---|---|---|
+| `agv` | sí | identificador tal cual; `0040` no es `40` (R-DAT-001) |
+| `desde` | sí | instante del alta, día/mes/año con hora opcional; sin hora es a las 00:00 |
+| `hasta` | no | instante de la baja; vacío es que sigue asignado |
+| `circuito` | no | a qué circuito pertenece la fila, cuando un mismo fichero trae varios |
+| `nota` | no | texto libre, se conserva y no se interpreta |
+
+- **El periodo es `[desde, hasta)`**: `hasta` es el instante de la baja, no el último en que estuvo.
+- **Las fechas son día/mes**, declarado y no adivinado, en la zona del circuito.
+- **Rechazo por fila, contado y enseñado**: sin AGV, fecha inválida, `hasta` no posterior a `desde`,
+  o menos campos que la cabecera exige. Dos periodos del mismo AGV que se pisan **no** se rechazan:
+  se avisan y se cargan tal cual, porque cuál manda no lo dice el dato.
+- **Un fichero con varios circuitos no se reparte solo.** Si la columna `circuito` trae más de un
+  valor, la interfaz pregunta cuál es este circuito, importa solo esas filas (y las que no dicen
+  circuito) y recuerda la respuesta para las cargas siguientes.
+
+**Actualización incremental, a diferencia de las listas.** Una lista se sustituye entera; el
+historial **se fusiona** con lo guardado por la clave (AGV, `desde`). Una fila con la misma clave
+sustituye a la anterior —así se cierra un periodo: se vuelve a subir su fila con `hasta`— y las demás
+se conservan. Para registrar un cambio basta subir esa fila. Borrar un periodo subiendo filas no se
+puede: queda como límite declarado.
+
 ## 4. Proceso de importación
 
 1. Calcular hash y metadatos sin enviar el contenido.
@@ -384,6 +423,12 @@ formaliza en F1a y se completa en F4. Como mínimo contendrá:
 - registro append-only de consolidaciones y migraciones.
 
 No incluirá el bruto completo por defecto. Un expediente puede conservar un recorte normalizado mínimo cuando sea necesario para reproducir una incidencia.
+
+La **revisión en campo** (R-EVI-007) viaja en una sección opcional `revision`: una entrada por
+hallazgo marcado, con su clave, estado, nota, instante y lo que decía la tarjeta al marcarlo. Sin
+marcas la sección no se escribe, así que un proyecto sin revisión queda igual que antes. En el
+dispositivo vive en su propia tabla (almacén versión 5), separada del circuito para que una
+importación nunca pise una marca; borrar el circuito la borra con él.
 
 ### 9.1 El dispositivo acumula, el fichero viaja
 

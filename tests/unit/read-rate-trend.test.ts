@@ -10,7 +10,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { detectTrend, type PassRecord, type TrendThresholds } from "../../src/domain/read-rate-trend.js";
+import {
+  binTimeline,
+  detectTrend,
+  type PassRecord,
+  type TrendThresholds,
+} from "../../src/domain/read-rate-trend.js";
 
 const THRESHOLDS: TrendThresholds = {
   minPassesForTrend: 20,
@@ -160,5 +165,34 @@ describe("lo que no debe dispararse nunca (falsos positivos)", () => {
     // Con exactamente 20, sí hay soporte para el corte de rotura (10 a cada lado, mínimo 5): debe
     // detectarla como rotura, no como degradación ni como abstención.
     expect(result.kind).toBe("rotura-candidata");
+  });
+});
+
+describe("serie para dibujar (binTimeline)", () => {
+  it("reparte por tiempo en tramos iguales y deja en null el tramo sin pasadas, nunca en 0", () => {
+    const series = binTimeline(
+      [
+        { utcMs: 0, hit: true },
+        { utcMs: 10, hit: false },
+        { utcMs: 100, hit: true },
+      ],
+      4,
+    );
+    expect(series?.fromUtcMs).toBe(0);
+    expect(series?.binWidthMs).toBe(25);
+    expect(series?.rates).toEqual([0.5, null, null, 1]);
+  });
+
+  it("con una sola pasada, o todas en el mismo instante, no inventa ninguna forma", () => {
+    expect(binTimeline([{ utcMs: 5, hit: true }], 4)).toBeNull();
+    expect(
+      binTimeline(
+        [
+          { utcMs: 5, hit: true },
+          { utcMs: 5, hit: false },
+        ],
+        4,
+      ),
+    ).toBeNull();
   });
 });

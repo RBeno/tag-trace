@@ -90,6 +90,45 @@ export function detectTrend(
 }
 
 /**
+ * La misma línea de pasadas, repartida en tramos **de tiempo** iguales, para dibujarla.
+ *
+ * No decide nada: `detectTrend` ya decidió con los tramos por recuento. Esto es solo la forma de
+ * enseñar el cambio en un eje de tiempo, y por eso reparte por calendario y no por recuento — al
+ * revés que `findGradient`, cuya razón para no hacerlo aquí no aplica: un tramo casi vacío se dibuja
+ * como tal, no decide ninguna tendencia.
+ */
+export interface TimelineSeries {
+  readonly fromUtcMs: number;
+  readonly binWidthMs: number;
+  /** Tasa de acierto de cada tramo; `null` si el tramo no tiene pasadas — nunca un 0 inventado. */
+  readonly rates: readonly (number | null)[];
+}
+
+export function binTimeline(timeline: readonly PassRecord[], bins: number): TimelineSeries | null {
+  if (timeline.length < 2 || bins < 1) return null;
+  let from = Infinity;
+  let to = -Infinity;
+  for (const record of timeline) {
+    if (record.utcMs < from) from = record.utcMs;
+    if (record.utcMs > to) to = record.utcMs;
+  }
+  if (to <= from) return null;
+  const binWidthMs = (to - from) / bins;
+  const passes = new Array<number>(bins).fill(0);
+  const hits = new Array<number>(bins).fill(0);
+  for (const record of timeline) {
+    const index = Math.min(bins - 1, Math.floor((record.utcMs - from) / binWidthMs));
+    passes[index] = (passes[index] as number) + 1;
+    if (record.hit) hits[index] = (hits[index] as number) + 1;
+  }
+  return {
+    fromUtcMs: from,
+    binWidthMs,
+    rates: passes.map((count, index) => (count === 0 ? null : (hits[index] as number) / count)),
+  };
+}
+
+/**
  * Segmentación binaria de un único corte, en `O(n)` mediante sumas acumuladas.
  *
  * Se prueba cada corte posible entre `minPassesEachSide` y `length − minPassesEachSide`, y se

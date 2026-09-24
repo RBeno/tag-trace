@@ -1,8 +1,8 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.7.0
+version: 0.17.0
 status: baseline-candidate
-last_updated: 2026-09-18
+last_updated: 2026-09-24
 ---
 
 # Glosario controlado
@@ -19,12 +19,15 @@ last_updated: 2026-09-18
 | Cobertura | Unión de los intervalos temporales de las fuentes aceptadas de un circuito. Delimita sobre qué se puede concluir algo. |
 | Sin datos cargados | Estado de un intervalo que queda fuera de la cobertura. Distinto de `unknown`: en `unknown` hubo evidencia y no basta para decidir; aquí nunca hubo evidencia. No es una parada ni un silencio. |
 | Muestra | Periodo acotado que se importa y analiza. El producto trabaja por muestras, no sobre un histórico continuo; dos muestras solo se comparan si su contexto de calendario es equivalente. |
+| Flota asignada | Vehículos que el historial de flota (DS-012) asigna al circuito en un instante dado: los que tienen un periodo `[desde, hasta)` que lo contiene. Es la M del recuento «N de M». Sin historial cargado no se conoce, y se sustituye por los vehículos vistos en las lecturas diciéndolo (R-AGV-014). |
+| En funcionamiento | Un vehículo asignado que, en un instante dentro de la cobertura, lee o está en carga inferida (R-CO-006, R-CO-007). Es la N del recuento. Un silencio sin carga que lo explique no cuenta, y leer sin estar asignado se cuenta aparte, nunca en N (R-AGV-014, R-AGV-015). |
 | Periodo de inactividad | Intervalo dentro de la cobertura en el que un objeto no produce lecturas. Como un AGV detenido no emite, la inactividad no se distingue del fallo de comunicación por la ausencia en sí, sino por el contexto colectivo, el punto de la última lectura y el calendario. |
 | Instante de cambio | Última lectura antes de un silencio o de un cambio sostenido de comportamiento. Es `inferred`: marca el último momento con evidencia, no el instante real en que el objeto dejó de funcionar. |
 | Expediente de objeto | Vista que reúne todo lo conocido sobre un AGV o un tag concreto, con su contraste de cohorte, su inactividad y su evidencia navegable. No confundir con el expediente de incidencia. |
 | Lectura | Evento observado procedente de una fuente: instante, AGV, tag y procedencia. |
 | Oportunidad | Paso contextualmente sustentado en el que un tag podría haber sido leído. No equivale a inventar una lectura. |
 | Vuelta | Recorrido segmentado de un AGV a través de una secuencia/ciclo del circuito, con confianza explícita. |
+| Ancla | Tag por el que se corta una vuelta. Sin ninguna declarada, es el ciclo dominante que el propio grafo revela y la vuelta nunca es `observed`. Declarada y presente en el ciclo reconstruido (`lap_anchors`, R-GRA-009), solo rota dónde se corta ese mismo ciclo —nunca qué tags lo forman— y una vuelta `completa` cortada por ella sí puede ser `observed`; una `parcial` no, porque uno de sus extremos es siempre un corte de los datos. |
 | Tramo | Relación topológica entre dos nodos/tags o puntos funcionales consecutivos. |
 | Grafo teórico | Topología procedente de plano, inventario o configuración. |
 | Grafo observado | Transiciones contenidas directamente en las lecturas normalizadas. |
@@ -32,10 +35,23 @@ last_updated: 2026-09-18
 | Grafo validado | Versión del grafo aceptada por el propietario durante una consolidación. |
 | Perfil esperado | Distribución versionada de secuencias, tiempos y frecuencias válida para un contexto. |
 | Divergencia | Diferencia mensurable entre un periodo/AGV/grupo y el comportamiento esperado o colectivo. |
+| Cambio de tag | Dentro de un mismo periodo cargado, un tag que deja de leerse y otro que empieza en su mismo sitio —el mismo vecino de antes o de después en la secuencia de los AGV—, sin solaparse más de lo admitido (R-DAT-019). Candidato, nunca confirmación de que sea el mismo punto físico. Entre dos exportaciones separadas, lo equivalente es la sustitución candidata de la deriva. |
+| Deriva | Cambio detectado comparando el primer y el último periodo de cobertura de un circuito, nunca dentro de una sola ventana: un tag que se leía y deja de leerse, uno que empieza a leerse, o un vehículo que deja de leer un conjunto que sí leía mientras el resto de la flota lo sigue leyendo (R-DAT-016, R-AGV-013). Un caso particular es la **sustitución candidata** (R-DAT-017): un tag que deja de leerse y otro que empieza, correlacionados porque ocupan el mismo hueco de la secuencia de lecturas y coinciden en el tiempo — candidato, nunca confirmación de que sea el mismo punto físico. Y al revés, un vehículo puede ser candidato a **memoria no actualizada** cuando un tag nuevo ya adoptado por la mayoría de la flota no aparece nunca en sus lecturas. Distinta de la divergencia: esta compara el circuito consigo mismo a lo largo del tiempo, no contra lo esperado. |
+| Vida de un tag | Desde que empezó hasta que dejó de leerse dentro del periodo, cuando ese cambio se detecta (R-DAT-019). Su tasa y la de cada AGV se cuentan dentro de ella (R-OPP-016); sin cambio detectado, el tag vive todo el periodo. |
 | Salud | Indicador explicable derivado de oportunidades válidas, lecturas, estabilidad, contexto e incertidumbre; nunca mera frecuencia absoluta. |
 | Hueco censurado | Intervalo sin evidencia suficiente para afirmar qué ocurrió. |
 | CO | Carga online. Forma parte del circuito físico, pero se modela dentro de la zona vacía y no se rige por FIFO cargado. |
+| Zona cargada | Tramo del anillo donde se espera FIFO —quien entra primero sale primero— salvo carga online, maniobra manual o excepción documentada (R-FLO-001). Se declara por tag, no se calcula. |
+| Zona vacía | Tramo del anillo donde puede haber reordenación sin que sea, por sí sola, una rotura de FIFO (R-FLO-002). Incluye las calles CO (R-FLO-003). |
+| Adelantamiento (zona cargada) | Un vehículo entra después de otro en un tramo de zona cargada y sale antes, por un margen que no explica el jitter normal de lectura. Es un candidato, nunca una avería confirmada: OQ-107 no tiene el catálogo de excepciones legítimas. |
 | Punto crítico | Punto cuya falta de alimentación/paso puede afectar directamente al proceso productivo, con grado configurable. |
+| Punto crítico candidato | Tag propuesto para una de las nueve clases de punto crítico por la firma que deja en el dato, nunca por asignación (R-GRA-007): la función es dato de planta declarado, por la lista `critico` o alternativamente por la columna `funcion` del circuito virtual. |
+| Bifurcación candidata | Un tag cuyas salidas se reparten entre dos o más sucesores con cuota comparable, sostenida en el tiempo — ninguno domina. |
+| Cruce candidato (interno) | Una bifurcación candidata cuyas ramas reconvergen en pocos saltos dentro del mismo cohorte: dos caminos que se abren y se cierran enseguida, no una bifurcación que dure. Distinto del cruce entre circuitos protegido por un par de tags (OQ-121), que no deja firma. |
+| Vinculación / desvinculación | Dos clases de tag crítico sin firma estadística: el AGV sincroniza (o deja de sincronizar) su velocidad con la línea de producción al leerlas. Declaración pura, como cambio de mapa — se muestran en el expediente del tag, nunca se proponen. |
+| Zona compartida | Parte del recorrido que usan varios circuitos: un cruce, un semáforo o un tramo físico común. Los tags de cruce y semáforo pueden estar en varios circuitos; en un tramo común, cada circuito mantiene casi siempre sus propios tags, así que el tramo se declara y no se deduce de cruzar listas. Lo que se comprueba en ella es la ocupación de sus espacios frente a su capacidad, con las lecturas de todos los circuitos que la comparten y en la franja que cubren todos (R-GRA-012, R-GRA-013). Alcance de F7. |
+| Espacio (de un tag) | Lo que va de un tag al siguiente del recorrido. Un AGV no está en el tag: el tag es el último que leyó, y el AGV ocupa el espacio que sigue. Cuántos caben depende de la longitud física del espacio —uno si el siguiente tag está a centímetros, varios si está a metros—, y es dato de planta (R-GRA-012). |
+| Revisión en campo | Decisión humana sobre un hallazgo tras ir a comprobarlo: confirmado (el fallo existe), descartado (no existe) o pospuesto (queda para otra ocasión); sin marcar, pendiente. Se guarda aparte del análisis y no lo modifica; es el paso previo a la consolidación (R-EVI-007). |
 | Consolidación | Aceptación humana de un periodo revisado para producir una nueva versión compacta de memoria y sus divergencias. |
 | Incidencia | Expediente separado que conserva síntoma, intervalo, replay, evidencia, hipótesis, contramedidas y verificación. |
 | Contramedida | Acción propuesta o realizada para reducir una causa, registrada con responsable, estado y verificación. |

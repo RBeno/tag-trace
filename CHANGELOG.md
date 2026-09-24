@@ -2,6 +2,808 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.22.0] - 2026-09-24
+
+Lo que más se va a ver en planta, bien detectado y destacado en su sección: cambios de tag, lectura
+por AGV y AGV que no cargan. Todo como diferencia medida, sin causa, por decisión del propietario.
+
+### Añadido
+
+- **Cambios de tag dentro de un mismo periodo** (`src/domain/tag-changes.ts`, R-DAT-019). Con una
+  sola exportación de dos o tres días:
+  - un tag que deja de leerse y otro que empieza en su mismo sitio salen como **un cambio**, «60438 →
+    99001», con las dos horas;
+  - los que solo dejan de leerse o solo empiezan salen aparte, con cuántas veces pasó la flota por su
+    sitio sin leerlos;
+  - frente al tag nuevo, cada AGV que no lo lee como el resto sale con su cifra: nunca, desde una hora
+    0 lecturas, empezó a leerlo más tarde, o el porcentaje.
+
+  Antes, un cambio de tag solo se veía comparando dos exportaciones separadas.
+- **Lectura por AGV** (`src/domain/vehicle-reading.ts`, R-AGV-016). Sobre los tags que el resto lee
+  bien, separa **nunca** («0 de 41 pasadas»), **desde una hora** («desde las 17:40, 0 de 12») y
+  **poco** («51 %»). Dice también si le pasa en **muchos** tags (el 10 % de los que recorre, mínimo
+  cinco) o en **pocos**. Las tarjetas de tag separan igual quién no lo lee nunca y quién lo lee poco.
+- Sección **«Cambios de tag»**, después del inventario. Agrupa los cambios, las tarjetas de rotura y
+  degradación de tags y su gráfico.
+- En **Calles de carga**, los AGV que no entraron en ninguna calle son lo primero de la sección:
+  «N de M AGV».
+- Configuración provisional `vehicleReading` y `tagChanges`, con su justificación (OQ-129: se
+  calibran con los datos del viernes).
+- TC-163–170. Auditoría `auditoria/11`, con el caso nuevo `lectura-desigual-en-pocos-tags`: un AGV
+  lee dos tags uno sí y uno no, sin `random()`.
+
+### Corregido
+
+- **Un tag recién puesto salía como «todos lo leen poco».** La matriz contaba como fallos las pasadas
+  de antes de que existiera. Ahora cada tag se mide dentro de su vida (R-OPP-016). Su línea temporal
+  conserva esas pasadas, así que la rotura se sigue viendo. Recortar por la primera y la última
+  lectura a secas se probó y se descartó: inflaba la tasa de los tags que se leen poco. La vida solo
+  se recorta cuando el cambio se detecta y la racha es improbable por azar.
+- **«Lee poco» por azar.** La primera versión de la lectura por AGV señalaba a seis AGV sanos en tags
+  que la flota lee al ~85 %: el azar deja a varios en el 74–79 %. Salió en la propia auditoría. Ahora
+  «poco» exige que la diferencia con el resto tenga menos de un 0,1 % de ser casualidad.
+
+### Cambiado
+
+- Las tarjetas de AGV y de tag dicen la cifra y no la causa. Se retiran «revisar esos AGV, no el
+  tag», «revisar el tag o su posición», «Comprobar el tag» y «revisar su lector o su WiFi».
+- Las tarjetas de AGV van por tipo, hasta cinco de cada uno; el resto, en una tabla plegada.
+- `drift.ts` exporta `dominant`, `sharedNeighborMatch` y sus tipos para reutilizarlos.
+- `tests/e2e/revision.spec.ts` marca como pospuesta la tarjeta «Tag N: dejó de leerse». La primera
+  tarjeta con esa frase es ahora la del cambio de tag. Lo que comprueba no cambia.
+
+## [3.21.0] - 2026-09-24
+
+Interfaz con lenguaje de producto terminado (`UX_SPEC.md` §4.4). No se quita ninguna función, ninguna
+vista ni ningún dato: cambia cómo se dice.
+
+### Cambiado
+
+- **Ningún texto visible cita reglas, preguntas abiertas ni fases.** Se retiran las referencias
+  `R-…` y `OQ-…` de tarjetas, pies de gráfico, lecturas al puntero y evidencias del dominio (carga,
+  FIFO, listas, puntos críticos, Vsystem, afinidad). Siguen en la documentación y en el código.
+- **Los identificadores internos se enseñan en castellano llano**, desde un solo sitio
+  (`src/presentation/labels.ts`): estados de verdad (`observado`, `inferido`, `sin determinar`…),
+  patrones de lectura («se lee bien», «unos AGV sí y otros no», «todos lo leen poco»…), clases del
+  inventario («posible obsoleto», «unos AGV no lo leen»…), veredictos del contraste («posible
+  sustitución», «sin lecturas»…), zonas («cargada», «vacía») y funciones críticas («vinculación»,
+  «parada precisa»…). Lo que se guarda, se exporta y se prueba sigue usando el identificador estable.
+- **Títulos más directos**: «Tiempo de parada en los posibles puntos críticos», «Tags donde el
+  recorrido se divide», «Cambios entre los dos periodos», «Análisis», «Circuito», «Copia del
+  circuito», «Exportar circuito (.agvproj)», «Revisados N de M»; los candidatos a punto crítico se
+  titulan «posible cruce», «posible semáforo»…
+- **Resumen de la fuente en dos niveles**: a la vista, fichero, periodo, lecturas aceptadas, filas
+  que no son lecturas y filas con errores; plegados en «Detalles de lectura del fichero», el hash,
+  separador, columnas, formato de fecha, zona, codificación, orden, lecturas simultáneas y tiempo de
+  proceso.
+- Pies de gráfico, lecturas y evidencias más cortos. Se conservan las frases que evitan una
+  conclusión falsa («No es una tasa de salud», «fuera de ella no hay datos, no silencio», «posible…»).
+- Singular y plural reales en lugar de «tag(s)», «fila(s)», «día(s)»; miles con separador en las
+  pasadas de los puntos críticos; «a 0 tag(s)» pasa a «enseguida» o «tras N tags».
+- Las pruebas de navegador que fijaban textos visibles se actualizan a los nuevos; ninguna
+  comprobación de resultado cambia.
+
+## [3.20.0] - 2026-09-24
+
+Tableta y portátil, con dedo, ratón o panel táctil (`UX_SPEC.md` §7). Antes, casi todos los gráficos
+solo se podían leer con ratón.
+
+### Corregido
+
+- **Con el dedo, la lectura de un gráfico se borraba en el mismo instante en que aparecía.** Los
+  gráficos leían con `pointermove` y limpiaban con `pointerleave`, y al levantar el dedo el navegador
+  dispara `pointerleave`. Ahora un toque fija la lectura y se queda; con ratón o panel táctil todo
+  sigue como antes. Un único `inspect()` (`src/presentation/pointer.ts`) sustituye los 12 pares de
+  manejadores.
+- **Las marcas finas no se podían tocar.** Un segmento del anillo mide unos 8 px en una tableta, y una
+  línea de FIFO, 2 px. Si el toque no cae encima, se lee la marca más cercana dentro de 22 px.
+- **Cobertura y perfil horario solo tenían tooltip nativo**, que en táctil no aparece nunca. Ganan la
+  misma línea de lectura que el resto.
+
+### Cambiado
+
+- La lectura de cada gráfico queda pegada abajo mientras el gráfico está a la vista.
+- Con dedo (`any-pointer: coarse`), botones, campos, desplegables y controles de 44 px, y el cuerpo de
+  texto a 16 px.
+- Contenido hasta 1.440 px de ancho (antes, 1.100), con el texto corrido limitado a unos 90 caracteres.
+- «Pasa el puntero por…» pasa a «Toca o pasa el puntero por…».
+- TC-161–162: `tests/unit/pointer.test.ts` y `tests/e2e/tactil.spec.ts`, una tableta emulada con
+  pantalla táctil que además recorre cinco anchuras de tableta y portátil.
+
+## [3.19.0] - 2026-09-23
+
+Revisión en campo de los hallazgos, para las pruebas en planta: ir al punto conflictivo, marcar lo
+que se vio, dejar el resto para otro día y seguir donde se dejó (R-EVI-007, `UX_SPEC.md` §4.3). Solo
+la revisión: la consolidación es F4 y espera a `CONTINÚA FASE 4`.
+
+### Añadido
+
+- Cada tarjeta de hallazgo lleva **○ Pendiente · ✓ Confirmado · ✕ Descartado · » Pospuesto** y una
+  nota opcional. Se guarda sola en cada pulsación y sobrevive a recargar y a volver a importar: la
+  marca va con el tipo y el sujeto del hallazgo, no con su texto.
+- Una barra fija con el progreso y **Siguiente pendiente**; debajo, el recuento por estado, filtros y
+  **Exportar revisión (CSV)**, con los pendientes incluidos.
+- Si la cifra de un hallazgo cambió desde que se marcó, la tarjeta lo avisa. Las marcas de hallazgos
+  que ya no aparecen no se borran: se cuentan aparte y van en el CSV.
+- `src/domain/review.ts`, `src/presentation/review-ui.ts`; almacén en versión 5 con una tabla
+  `reviews` propia, separada del circuito para que una importación nunca pise una marca; sección
+  opcional `revision` en el `.agvproj`. TC-159–160.
+- Decisión del propietario para F4: al consolidar solo bloquea lo pendiente; lo pospuesto pasa al
+  periodo siguiente (`MEMORY_CONSOLIDATION.md` §6).
+
+### Corregido antes de publicarse, al mirar el render
+
+- En el móvil, el panel de revisión fijo tapaba casi media pantalla. Solo queda fija una barra
+  compacta con el progreso y «Siguiente pendiente»; filtros y exportación van debajo.
+- El icono de «Pospuesto» (⏸) apenas se leía en el móvil; pasa a «»».
+
+## [3.18.3] - 2026-09-23
+
+### Corregido
+
+- **El expediente de un AGV contaba como inactividad el hueco entre dos exportaciones** (anotado como
+  «Conocido» en `[3.17.0]`). `buildAgvDossier` y `buildAllAgvDossiers` reciben ahora los tramos de
+  cobertura en lugar de solo su final. Un hueco entre dos lecturas que cruza un tramo sin datos ya no
+  es un silencio, porque lo que pasó dentro no se sabe (R-DAT-007). Sus bordes tampoco se listan,
+  igual que el rato antes de la primera lectura (R-GRA-010); la vista de flota los enseña con su
+  umbral. Importa desde ya: con varias extracciones cargadas, cada AGV tenía un silencio falso en
+  cada hueco. TC-158.
+
+## [3.18.2] - 2026-09-23
+
+Solo documentación. Corrige dos afirmaciones de `[3.18.1]` con los hechos de planta que aportó el
+propietario.
+
+### Corregido
+
+- **R-GRA-012 decía que cada tag es un espacio que ocupa un AGV.** No es así: el tag es el último que
+  leyó el AGV, y el AGV ocupa el espacio hasta el siguiente tag. En ese espacio caben uno o varios
+  según su longitud física, que es dato de planta. R-GRA-013 compara ahora la ocupación con esa
+  capacidad, en vez de exigir un AGV por tag.
+- **El tramo compartido no sale de cruzar las listas `circuito`.** Solo se comparten los tags de
+  cruces y semáforos; en un tramo físico común cada circuito mantiene sus propios tags, así que el
+  tramo hay que declararlo (`CONFIG_SCHEMA.md` §3.4.1, `ROADMAP.md` F7).
+- OQ-128 pasa a parcial: el número de un tag es único en toda la planta (Vsystem no permite
+  repetirlo). Sigue abierto de dónde sale la capacidad de cada espacio.
+- Glosario: «Espacio (de un tag)», y «Zona compartida» reescrita.
+
+## [3.18.1] - 2026-09-23
+
+Solo documentación: se deja preparada, sin construirla, la posibilidad de analizar circuitos que
+comparten un cruce o un tramo (F7), para que cuando llegue no choque con lo que ya existe.
+
+### Añadido
+
+- **R-DAT-018**: los circuitos del mismo servidor de Vsystem comparten reloj, porque es el servidor
+  el que gestiona los cruces.
+- **R-GRA-012**: un tag no es exclusivo de un circuito; en Vsystem es un espacio que ocupan AGV de
+  cualquier circuito.
+- **R-GRA-013** (`candidate`, F7): en una zona compartida se comprueba la ocupación de los espacios,
+  en la intersección de coberturas, con cada circuito todavía aislado. Los tags compartidos salen de
+  la intersección de las listas `circuito`, sin configuración nueva.
+- `ROADMAP.md` F7 enumera lo que hoy supone tags exclusivos y habrá que adaptar: la afinidad de una
+  fuente (`affinity.ts`), el agrupamiento por aristas exclusivas (`cohort.ts`) y el «leyendo sin
+  asignar» de la flota.
+- OQ-127 (si la exportación de un circuito trae las lecturas de AGV ajenos en los tags compartidos) y
+  OQ-128 (capacidad de un espacio y unicidad del identificador de tag en la planta).
+
+## [3.18.0] - 2026-09-23
+
+La flota del circuito a lo largo del tiempo, y los vehículos que no entran a cargar (Parte 39). Hasta
+ahora un AGV asignado que no leía nada era invisible: la banda de actividad solo enseña a los que
+aparecen en las lecturas. Con un historial de flota cargado, la aplicación cuenta cuántos de los
+asignados están en funcionamiento en cada momento («38 de 40 de 12:05 a 13:10») y enseña la vida
+entera de cada uno en tramos continuos.
+
+### Añadido
+
+- **DS-012, historial de flota** (`src/ingestion/fleet-history.ts`): `circuito;agv;desde;hasta;nota`,
+  una fila por AGV y periodo `[desde, hasta)`, fechas día/mes con hora opcional, columnas por nombre y
+  rechazo por fila con su motivo. **Se fusiona** con lo guardado por (AGV, `desde`) en lugar de
+  sustituirse como las listas: un alta o una baja se registran subiendo solo su fila. Si el fichero
+  trae varios circuitos, la interfaz pregunta cuál es este y recuerda la respuesta.
+- `src/domain/fleet.ts`: `buildFleetTimeline` da, por AGV asignado alguna vez o visto en las
+  lecturas, sus tramos continuos en siete estados —leyendo, carga, falta de lecturas, ausente, fuera
+  del circuito, leyendo sin asignar y sin datos— y el recuento escalonado «N de M». Reutiliza las
+  inactividades y su causa del expediente y los arranques en frío de las calles; no recalcula nada.
+  Todo se recorta a la cobertura, así que un hueco entre exportaciones es sin datos, nunca silencio.
+- **R-AGV-014** (en funcionamiento = lee o está en carga inferida; M = flota asignada según el
+  historial; sin historial, los vistos, dicho en la vista) y **R-AGV-015** (leer sin estar asignado
+  es candidato, nunca avería, y no suma a N).
+- Vistas «Flota en funcionamiento» (serie escalonada con el peor momento de la ventana) y «Vida de
+  cada AGV en el circuito» (un único `canvas`, una fila por AGV; la ausencia en naranja sólido), con
+  su tabla equivalente y los dos hallazgos de entrada: asignados que no leyeron nada y vehículos que
+  leen sin estar asignados (`UX_SPEC.md` §5.4).
+- **Vehículos que no entraron en ninguna calle** (`ChargingReport.neverCharged`): tarjeta en la
+  sección de carga con su primera y última lectura. Lo que no significa va escrito al lado: calle no
+  declarada, poco tiempo en la ventana, y sin SOC no se juzga la batería (R-CO-004).
+- Almacén en versión 4 (`StoredCircuit.fleet`, peldaño vacío en `MIGRATIONS`); mensajes `fleet`,
+  `fleet-loaded` y `fleet-choose-circuit` (`WORKER_PROTOCOL.md`, que además recoge ahora `lists` y
+  `lists-loaded`, que ya existían sin documentar).
+- TC-148–157; el escenario de auditoría genera `fleetCsv` con dos circuitos, un asignado que no lee
+  nunca y otro dado de baja a mitad de ventana que sigue leyendo. No cambia ninguna lectura, así que
+  el informe de la auditoría no se mueve.
+
+### Corregido antes de publicarse
+
+- **Importar otra fuente borraba el historial de flota.** `accumulate()` reescribía el circuito
+  guardado sin el campo nuevo. Lo encontró la prueba de navegador: el historial se cargaba, se
+  importaba la segunda exportación y los hallazgos de flota salían como si no hubiera historial.
+  Ahora se conserva, igual que las listas.
+- **El peor momento de la ventana era siempre su borde.** Antes de su primera lectura, cada AGV
+  contaba como ausente aunque fueran unos segundos, así que el mínimo «N de M» caía en el primer
+  instante de la cobertura. Ahora los bordes se juzgan con el mismo umbral de silencio que decide si
+  un hueco entre dos lecturas es inactividad: más corto, es el ritmo normal de lectura. Y cada tramo
+  de cobertura se trata por separado, así que un silencio que cruza un hueco entre exportaciones ya
+  no deja trozos de silencio a sus lados. Lo encontró la mirada al render, no una prueba.
+
+### Conocido, sin corregir aquí
+
+- Un periodo del historial no se puede borrar subiendo filas; solo sustituir o cerrar.
+- Sigue pendiente el defecto de dominio del expediente anotado en `[3.17.0]` (inactividad a través de
+  un hueco de cobertura). La vista de flota lo evita por su cuenta recortando a la cobertura.
+
+## [3.17.0] - 2026-09-23
+
+Diez vistas de diagnóstico en la aplicación (Parte 38), las propuestas 2 a 11 de la galería que el
+propietario eligió. Nada cambia en el cálculo: los hallazgos que hasta ahora se leían en tarjetas y
+tablas se ven. Cada vista va encima de las tarjetas de su sección, que se quedan como vía accesible,
+y lleva su tabla equivalente (`UX_SPEC.md` §5.3).
+
+### Añadido
+
+- `src/presentation/diagnostic-charts.ts`: anillo radial, mapa de omisión tag × AGV (un único
+  `canvas`), pequeños múltiplos de rotura y degradación, histograma de permanencias, horquilla de
+  cruce o bifurcación, carriles de ocupación por calle, entrada frente a salida del tramo cargado,
+  deriva entre dos periodos y expediente de un AGV en el tiempo. Dibujados al ancho real del
+  contenedor y con una sola lectura al puntero por gráfico, nunca un `<title>` por marca.
+- `inventoryChart` rehecho en su sitio: franja al 100 % (nada que valorar / a valorar / fuera de
+  toda tasa) y cada clase con su acción en la misma línea. Mismo título y misma tabla.
+- Datos compactos nuevos en `CircuitViews`, todos proyecciones de lo ya calculado:
+  `binTimeline` y `trendSeries` (solo en filas con tendencia), `SpanReport.focus` (tope
+  `FIFO_FOCUS_MAX`), `stayList` por calle, `durationsMs` en los candidatos de tiempo con una muestra
+  de referencia por cohorte, y `zones` y `laneJunctions` (`findLaneJunctions`) en la forma del anillo.
+- Tokens `--viz-accent` (validado frente a `--viz-series` para daltonismo en los dos modos),
+  `--viz-accent-wash` y `--viz-neutral`.
+- TC-141–147; `tests/e2e/vistas-diagnostico.spec.ts` carga el circuito de auditoría en dos
+  exportaciones con un hueco entre medias, para que también aparezca la deriva.
+
+### Corregido antes de publicarse, al mirar el render
+
+- **Una estancia sin salida vista se dibujaba como barra hasta el final de la ventana**, afirmando
+  horas de carga que nadie observó. Ahora solo es barra lo que se sabe: una estancia completa, o un
+  arranque en frío (R-CO-007). Si falta un extremo por otra razón, es una marca en el extremo conocido.
+- **El anillo repetía la tabla del anillo**, y la prueba existente que la busca encontraba la copia
+  vacía. El anillo no lleva tabla propia: la suya es la lista ordenada de debajo, que gana la columna
+  de zona.
+- **El inventario pintaba «a valorar» en naranja**, contra la regla de §5.2: ninguna clase lleva color
+  de severidad. Va en el azul de serie.
+
+### Conocido, sin corregir aquí
+
+- **El expediente de un AGV cuenta como inactividad un hueco de cobertura** entre dos exportaciones
+  (`buildAllAgvDossiers` no recibe la cobertura). Es contrario a R-DAT-007. La vista nueva lo recorta
+  y dibuja solo la parte cubierta, pero la tabla del expediente sigue listándolo. La corrección es de
+  dominio y queda para un cambio propio.
+
+## [3.16.0] - 2026-09-23
+
+Dos clases nuevas de tag crítico (R-GRA-007) — **vinculación** y **desvinculación**: sincronizar la
+velocidad del AGV con la línea de producción, o dejar de hacerlo. Declaración pura, sin firma
+estadística, el mismo caso que `cambio-de-mapa`. Y una segunda vía para declarar la función de
+cualquier tag crítico: la columna `funcion` del propio circuito virtual (`circuito`), que convive con
+la lista `critico` de siempre — quien ya carga ese fichero con esa columna no necesita mantener dos.
+
+### Añadido
+
+- `src/domain/tag-lists.ts` — `LIST_FUNCTIONS.critico` gana `vinculacion` y `desvinculacion`, nueve
+  clases en vez de siete. `EXPECTED_STRUCTURE.example` enseña la vía nueva junto a la ya existente.
+- **Las dos vías conviven sin tocar `readCriticalPoints()`**: ya recibía entradas genéricas, sin
+  ninguna referencia a qué lista las trae. El cambio es de wiring, no de arquitectura — en los puntos
+  de llamada (`workers/import.worker.ts`, `tests/audit/auditoria.test.ts`), la función crítica se lee
+  de `[...entriesOf("critico"), ...entriesOf("circuito").filter(e => e.funcion !== "")]`, con
+  `critico` primero para que gane en caso de contradicción (reutilizando la guardia de contradicción
+  ya existente, R-EVI-004).
+- `src/domain/dossier.ts` — `TagDossier` gana `criticalFunction: string | null`.
+  `buildTagDossier`/`buildAllTagDossiers` ganan un parámetro `funcionOf` sin valor por defecto
+  (`AI_DEVELOPMENT_GOVERNANCE.md` §4). Cierra un hueco encontrado al diseñar: la función crítica ya
+  se calculaba (R-GRA-008, Parte 31) pero no llegaba a ninguna parte de la interfaz.
+- Expediente de tag (`renderDossier`, `src/presentation/main.ts`): si el tag tiene función crítica
+  declarada, se muestra citando R-GRA-007, con la vía de corrección —editar y recargar el fichero que
+  la declaró, nunca un botón en la interfaz (R-EVI-006)— en el mismo texto.
+- Dos clases nuevas en el circuito de auditoría (`auditoria/10`): `vinculacion-declarada` (declarada
+  por la columna del circuito virtual) y `desvinculacion-declarada` (por la lista `critico`), para
+  ejercitar las dos fuentes a la vez.
+
+### Documentación
+
+`docs/CONFIG_SCHEMA.md` §3.4.1 (nueve clases; las dos vías de declaración; corregido de paso el
+estado de implementación, desactualizado desde la Parte 35) y §3.4.3 (fila nueva en la tabla de
+formato); `docs/RULE_CATALOG.md` (R-GRA-007 ampliada); `docs/GLOSSARY.md` (nueve clases; entrada
+nueva para vinculación/desvinculación; corregida la entrada de bifurcación candidata, que decía
+«única clase construida» siendo ya falso desde la Parte 35); `docs/TEST_STRATEGY.md` (TC-137–140);
+`docs/TRACEABILITY_MATRIX.md` (fila de R-GRA-007 ampliada); `fixtures/synthetic/auditoria/MANIFEST.md`
+(`auditoria/10`).
+
+### Lo que esta entrega no hace
+
+No construye ningún detector estadístico para vinculación/desvinculación. No implementa el censo de
+tags de mantenimiento ni el listado de intervenciones propuesto en la misma conversación —el
+propietario pidió tratarlo aparte, con un requisito de actualización incremental sobre un circuito
+que se trata como «vivo»—, que queda pendiente de su propio plan.
+
+## [3.15.0] - 2026-09-22
+
+Parada precisa, semáforo y cruce por reconvergencia (R-GRA-007), completando las cuatro de las siete
+clases de punto crítico con firma alcanzable hoy (bifurcación ya estaba desde `[3.11.0]`). El
+propietario fijó qué significa «cruce» en este proyecto, entre dos fenómenos que compartían nombre:
+una bifurcación cuyas ramas **reconvergen en pocos saltos dentro del mismo cohorte** (esta entrega),
+distinta del cruce **entre circuitos** protegido por un par de tags (R-AGV-009/011, sigue bloqueado
+por OQ-121, sin tocar).
+
+### Añadido
+
+- **`src/domain/critical-points.ts`** — `CriticalPointCandidate` pasa de una forma plana a una unión
+  discriminada por `kind` (`bifurcacion` | `cruce` | `parada-precisa` | `semaforo`), cada variante con
+  solo los campos que le corresponden. `findBifurcationCandidates` no cambia de lógica, solo de forma
+  de salida. Tres piezas nuevas:
+  - `classifyCrossings()` — reclasifica un candidato a bifurcación a `cruce` cuando el sucesor
+    dominante de dos de sus ramas visita el mismo tag dentro de `maxHopsToReconverge` saltos. Con 2
+    ramas es el caso único que se resuelve; con 3 o más basta que un par reconverja.
+  - `findPrecisePauseCandidates()` — duración media alta y coeficiente de variación bajo, sobre las
+    transiciones agrupadas por tag y **excluyendo `sameInstant`** (R-DAT-013: un empate del mismo
+    instante no mide ninguna duración).
+  - `findTrafficLightCandidates()` — mayor salto proporcional entre dos duraciones consecutivas que
+    deje grupos compactos por separado a los dos lados (guarda dual, mismo principio que `fifo.ts` y
+    `read-rate-trend.ts`): un hueco sin compacidad a los lados es ruido con un pico, no dos regímenes.
+- `CriticalPointThresholds` gana `cruce` (`maxHopsToReconverge`), `paradaPrecisa` (`minDurationMs`,
+  `maxCv`, `minSamples`) y `semaforo` (`minGapRatio`, `maxWithinClusterCv`, `minClusterSamples`,
+  `minSamples`), todos `draft` y sin valor por defecto.
+- Wiring completo: `import.worker.ts` compone las cuatro funciones sobre las transiciones del
+  cohorte; `protocol.ts` transporta `kind` y los campos propios de cada variante; `main.ts` renderiza
+  las cuatro clases con su propia redacción, citando R-GRA-007 en todas.
+- Cuatro clases nuevas en el circuito de auditoría (`auditoria/9`): `bifurcacion-real` (reubicada,
+  ver más abajo), `cruce-real`, `parada-precisa-real`, `semaforo-real`, cada una con su sonda en
+  `tests/audit/auditoria.test.ts` y su lote de pruebas unitarias en `tests/unit/critical-points.test.ts`.
+
+### Corregido — el escenario ya tenía un cruce y no lo sabía
+
+El único candidato a bifurcación que existía en el circuito de auditoría desde la Parte 31
+(`ring[120]`/`96001`) **ya reconvergía**: el código nunca tocaba `position` al desviar, así que el
+siguiente tag leído era siempre el mismo, tomara o no el desvío. Con la definición de cruce que
+acaba de fijarse, eso **es** un cruce, no una bifurcación sin resolver. No se tocó el resultado
+esperado de ninguna prueba para que pasara: se relabró el mecanismo (`bifurcacion-real` →
+`cruce-real`) y se plantó una bifurcación genuina y nueva (`ring[30]`, cadena de seis tags fuera de
+anillo sin reconvergencia posible dentro del margen) para no perder cobertura de esa clase.
+
+### Corregido — una cuarta variante de la fragilidad de RNG compartido, y su resolución
+
+Añadir espera fija a tres posiciones del generador (parada precisa, semáforo, la cadena de
+bifurcación) sin devolver ese tiempo habría cambiado cuántas vueltas completa cada vehículo en las
+mismas 30 h, desplazando cuántas llamadas a `random()` consume antes de ceder el turno al siguiente
+vehículo — la misma fragilidad de cascada de las Partes 30, 31 y 33, esta vez por reloj de más y no
+por sorteos de más. Resuelto con un acumulador de deuda por vehículo: cada espera añadida se anota
+como deuda, y el avance normal del paso la descuenta (hasta el 50 % del avance nominal, nunca el
+100 %, para no fabricar un empate de instante que R-DAT-013 prohíbe tratar como orden) hasta
+devolverla del todo. Con las tres posiciones bien espaciadas entre sí (30, 70 y 105 de 150), la
+deuda siempre llega a cero mucho antes de la siguiente.
+
+Un segundo defecto, más sutil, apareció al auditar el propio mecanismo: el vehículo del defecto
+`lector-agv-degradado` (Parte 28, lectura cada vez menos fiable en cualquier tag) podía fallar
+precisamente la lectura de parada precisa o semáforo, o la del tag siguiente. Como la espera
+inyectada no dependía de si la lectura se registró, un fallo ahí fusionaba el tránsito de dos o más
+tramos en una única transición de duración intermedia — un candidato a semáforo espurio en un tag
+limpio adyacente, y una fragmentación del propio salto bimodal que impedía detectar el semáforo real.
+Corregido excluyendo los dos puntos críticos de tiempo **y su siguiente inmediato** del efecto de ese
+vehículo — el sorteo se sigue haciendo siempre, en el mismo orden, solo se descarta el resultado en
+esas cuatro posiciones, para no repetir la fragilidad de cascada por otra vía—. Esa exclusión, al
+diluir ligeramente la caída medida en el vehículo degradado, dejó su propia tendencia justo por
+debajo del umbral de degradación; se ajustó la magnitud sintética de su curva de fallo (0,7 → 0,74,
+un número del generador, nunca de planta) para devolver margen sin acercarse al riesgo opuesto —un
+suelo de lectura tan bajo que algún tag aislado, con pocas pasadas en la mitad tardía, acumulara cero
+lecturas de ese vehículo por puro azar, lo que `drift.ts` habría contado como una deriva de memoria
+que nadie plantó—.
+
+### Documentación
+
+`docs/RULE_CATALOG.md` (R-GRA-007: «cruce» distingue explícitamente el interno del protegido entre
+circuitos; nota de estado de implementación), `docs/ALGORITHM_CATALOG.md` (§8.2 ampliada con los tres
+métodos nuevos), `docs/TEST_STRATEGY.md` (TC-125–136, y la nota sobre el cambio de mecanismo de
+`bifurcacion-real`), `docs/TRACEABILITY_MATRIX.md` (fila de R-GRA-007 ampliada),
+`docs/OPEN_QUESTIONS.md` (OQ-122: cuatro de siete clases resueltas, no las siete),
+`fixtures/synthetic/auditoria/MANIFEST.md` (`auditoria/9`).
+
+## [3.14.0] - 2026-09-22
+
+Refinamiento directo de la comparación entre dos periodos distantes de `[3.13.0]`, pedido por el
+propietario: correlacionar un tag que desaparece con uno que aparece en su mismo hueco de secuencia
+(sustitución candidata, R-DAT-017 nueva), y señalar por vehículo un tag nuevo ya adoptado por la
+flota que ese vehículo concreto nunca ha registrado (R-AGV-013 ampliada).
+
+### Añadido
+
+- **`src/domain/drift.ts`** — sustitución candidata: la firma de vecino se mide directamente sobre la
+  secuencia cronológica de lecturas de cada vehículo, nunca sobre el anillo reconstruido (el módulo
+  sigue sin depender de `laps.ts`/`cohort.ts`). Un tag `desaparecido` y uno `nuevo` se correlacionan
+  solo si comparten vecino dominante en el mismo lado —mismo predecesor o mismo sucesor— **y** la
+  correlación es unívoca en los dos sentidos: cada desaparecido con exactamente un candidato
+  compatible, y viceversa. Con 0 o 2+ coincidencias en cualquiera de los dos lados, no se empareja:
+  quedan como dos hallazgos sueltos en vez de una pareja forzada (R-EVI-004).
+- **Adopción de tag nuevo** — `VehicleDrift` gana `notAdoptedTags`: un tag nuevo (o el lado nuevo de
+  una sustitución candidata) ya leído por al menos `minAdoptionShare` de los testigos tardíos señala,
+  en cada testigo tardío que no lo ha leído ni una vez, un candidato a memoria no actualizada. Sin
+  necesidad de topología: un tag de una rama que solo recorre parte de la flota nunca alcanza la
+  cuota entre todos los testigos, así que el mecanismo no dispara sobre quien simplemente no pasa por
+  ahí, en vez de fabricar un falso positivo.
+- `DriftThresholds.minAdoptionShare` en `config.ts`, `draft` y sin valor por defecto:
+  deliberadamente el mismo número que `ReadRateThresholds.highRate` (0,8) — la misma idea de «lo lee
+  casi todo el mundo», aplicada aquí a cuántos vehículos adoptan un tag en vez de a cuántas veces se
+  lee.
+- Vista: la fila «Tag → nuevo tag» en el detalle de deriva, y el bloque de vehículos combina
+  `droppedTags` y `notAdoptedTags` en un solo hallazgo por vehículo.
+- Dos clases nuevas en el circuito de auditoría (`auditoria/8`): `sustitucion-candidata` (un tag del
+  anillo que deja de leerse justo cuando otro, fuera de anillo, ocupa su mismo hueco de secuencia) y
+  `memoria-no-actualizada` (un vehículo, sin ningún otro papel, que nunca lee ese tag nuevo mientras
+  el resto de la flota ya lo detecta).
+
+### Riesgo real encontrado durante el diseño
+
+Un vecino compartido entre la firma temprana de un desaparecido y la firma tardía de un nuevo no
+puede a su vez ser otro tag que desaparece o aparece: para coincidir en los dos lados tiene que tener
+lecturas en los dos periodos, lo que ya lo excluye de esas dos listas por construcción del propio
+dato. La primera versión del diseño llevaba una comprobación explícita de estabilidad del vecino que,
+razonada con cuidado, resultó ser inalcanzable — se retiró en vez de dejarla como validación de un
+caso que no puede ocurrir.
+
+## [3.13.0] - 2026-09-22
+
+Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013), la pieza «histórico» de ALG-009 y
+la única ausencia de código que `docs/TRACEABILITY_MATRIX.md` seguía señalando explícitamente desde
+la Parte 21. No es F4 —`docs/ROADMAP.md` la lista dentro de F3, «comparación individual, cohorte,
+colectiva **e histórica**»—, así que no requería `CONTINÚA FASE 4`. R-DAT-016 ya escribía el
+mecanismo exacto desde que se aceptó: «leído antes y no ahora es un cambio; no leído en ninguna
+ventana es obsoleto consolidado». Faltaba construirlo.
+
+No hace falta pedir un segundo fichero: `coverage` ya es la unión de los intervalos de todas las
+fuentes aceptadas, así que dos exportaciones separadas en el tiempo ya producen, hoy mismo, dos o
+más intervalos disjuntos — es justo lo que `tests/e2e/acumulacion.spec.ts` («dos ventanas disjuntas
+dejan el hueco al descubierto») ya prueba desde antes.
+
+### Añadido
+
+- **`src/domain/drift.ts`** — `compareDistantPeriods()`: compara el primer y el último periodo de
+  cobertura (nunca los intermedios), con un hueco mínimo (`minGapMs`) para no tratar como distantes
+  dos fuentes casi contiguas. Cuatro hallazgos, los tres primeros puramente binarios —presencia o
+  ausencia, sin ningún umbral de magnitud—: `desaparecido` (se leía y ya no, circuito completo),
+  `nuevo` (sin lecturas antes, con lecturas ahora), `obsoleto-consolidado` (sin lecturas en los dos
+  periodos, y solo si el tag está declarado en alguna lista — si no, no hay cómo saber que existe), y
+  la deriva de un vehículo concreto (R-AGV-013 nueva) que deja de leer un conjunto que sí leía
+  mientras el resto de la flota lo sigue leyendo con normalidad.
+- `DriftThresholds` en `config.ts`, `draft` y sin valor por defecto en ninguna función.
+  `minReadingsPerVehicle` reutiliza literalmente el valor ya elegido para `blindness` (mismo
+  concepto); `minGapMs` es una magnitud del escenario sintético, declarada como tal.
+- `CircuitViews.drift`, presente solo cuando hay listas de planta cargadas y al menos dos periodos
+  distantes: sin eso, no hay nada que mostrar y no mostrar nada es más honesto que un aviso
+  permanente.
+- Vista: bloque «Comparación entre dos periodos» tras el inventario, con la redacción obligada a
+  citar R-DAT-016 y a no elegir causa (R-EVI-006): el dato dice qué cambió, nunca por qué.
+- Dos clases nuevas en el circuito de auditoría (`auditoria/7`): `tag-nuevo-a-mitad-de-ventana` (un
+  tag fuera de anillo que solo empieza a leerse pasado el corte) y
+  `memoria-actualizada-a-mitad-de-ventana` (un vehículo, sin ningún otro papel, que deja de leer un
+  tramo de cinco tags contiguos pasado el corte, mientras el resto de la flota los sigue leyendo).
+
+### Dos riesgos reales, encontrados auditando el propio detector
+
+1. **Guarda de soporte.** Un tag con tasa de lectura probabilística (una `lectura-media` ya conocida
+   por otro motivo) puede, por puro azar, no producir ninguna lectura de un vehículo concreto en el
+   periodo tardío aunque ese vehículo lo hubiera leído antes: no es una deriva, es la misma
+   variabilidad que ya explica esa tasa. Corregido exigiendo que el vehículo haya leído el tag, en el
+   periodo temprano, al menos `minReadingsPerVehicle` veces antes de contar su ausencia como deriva —
+   mismo umbral y misma razón que ya usa la ceguera de una sola ventana.
+2. **El corte de la comparación coincidía casi, pero no del todo, con la rotura súbita ya plantada.**
+   Con el corte a mitad exacta de la ventana y la rotura al 55 %, el periodo tardío arrancaba todavía
+   dentro del tramo en que los tags rotos se seguían leyendo con normalidad, así que no salían
+   `desaparecido` sino con lecturas en los dos periodos — y, como el tag no se daba por muerto
+   circuito completo, la ausencia se atribuía de más a cada vehículo que lo había leído. Corregido
+   haciendo coincidir el corte con el instante de la rotura, para que el margen de la comparación
+   quede centrado exactamente ahí.
+
+Un tercer efecto, ya conocido de las Partes 30 y 31: la inyección del tag nuevo consumía un
+`random()` extra por vehículo en toda la mitad tardía de la ventana, desplazando el estado
+compartido del generador para los vehículos procesados después y borrando la tendencia ya plantada
+de `lector-agv-degradado`. Corregido quitando el jitter aleatorio de esa inyección — el paso sigue
+siendo determinista y de igual duración, sin consumir ningún sorteo.
+
+### El informe, con las diecinueve clases
+
+```
+239.129 lecturas, 40 vehículos. Anillo reconstruido: 147 tags de 150 declarados. Fuera del anillo: 16.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 10/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  DETECTA     rotura-subita — con el instante dentro de margen: 2/2
+  DETECTA     degradacion-progresiva — con tendencia sostenida: 2/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 96 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 2 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+  DETECTA     lector-agv-degradado — 7120: bajando (90% → 78% → 62% → 51%); tags con tendencia o rotura por su culpa: 0
+  DETECTA     adelantamiento-en-zona-cargada — el primero por margen es 7113 (se esperaba 7113), 4 min de margen; 2 más
+  DETECTA     bifurcacion-real — 2 ramas: 60363 58%, 96001 42%
+  DETECTA     ancla-declarada — ancla efectiva: 60000 (observed); 1656 vueltas completas, 1656 con truth observed
+  DETECTA     tag-nuevo-a-mitad-de-ventana — nuevo, 713 lecturas en el periodo tardío
+  DETECTA     memoria-actualizada-a-mitad-de-ventana — 5 tags dejados: 60420, 60423, 60426, 60429, 60432
+```
+
+**Diecinueve de diecinueve clases detectadas, cero falsos positivos, `DEUDA_CONOCIDA` vacía.**
+
+### Gobierno
+
+- `docs/RULE_CATALOG.md` (R-AGV-013 nueva); `docs/ALGORITHM_CATALOG.md` (§6.1 nueva, puntero desde
+  ALG-009); `docs/TEST_STRATEGY.md` (TC-112–117); `docs/TRACEABILITY_MATRIX.md` (fila nueva, y se
+  quita la comparación entre dos periodos distantes de la lista de lo que seguía sin implementar);
+  `docs/PHASE_GATES.md` (G3, nota sobre el componente histórico de ALG-009, sin marcar el criterio
+  completo); `docs/GLOSSARY.md` (Deriva); `docs/OPEN_QUESTIONS.md` (OQ-117: el mecanismo ya existe,
+  sigue faltando una segunda exportación real de SE2/4); `fixtures/synthetic/auditoria/MANIFEST.md`
+  (`auditoria/7`).
+
+## [3.12.0] - 2026-09-22
+
+Anclas de vuelta declaradas (R-GRA-009, `lap_anchors`), pedido explícitamente por el propietario
+tras quedar ofrecido y sin pedir en `[3.6.0]` («anclas de vuelta declaradas»), tercero y último de
+los tres «programables ya» — FIFO (`[3.10.0]`) y candidatos a punto crítico (`[3.11.0]`) ya están
+fusionados. `src/domain/laps.ts` lo anunciaba desde que se escribió: «Cuando exista `lap_anchors`...
+esto se sustituye por el ancla real». Ya existe.
+
+Sin ancla declarada, la única disponible sigue siendo el ciclo dominante que el propio grafo revela,
+y una vuelta cortada por ella sigue siendo siempre `inferred`. Con una declarada y presente en el
+ciclo ya reconstruido, el mecanismo **rota** ese mismo ciclo —nunca recalcula qué tags lo forman— y
+una vuelta `completa` cortada por ella pasa a `observed`. Una vuelta `parcial` no, declarada o no la
+ancla: por definición uno de sus dos extremos es un corte de los datos, no el ancla, y declararla
+`observed` ahí inventaría una certeza que el dato no sostiene.
+
+### Añadido
+
+- Lista `ancla` en `src/domain/tag-lists.ts` (`KNOWN_LISTS`, `LIST_PURPOSE`): el tag, o varios en
+  orden de prioridad, que el propietario declara como corte de vuelta.
+- `src/domain/circuit-config.ts` gana `readLapAnchors()`, calcado de `readZones`.
+- **`src/domain/laps.ts`**: `resolveDeclaredAnchor()` prueba cada ancla declarada, en orden, contra
+  el ciclo ya reconstruido y se queda con la primera que aparece, rotándolo sin alterar el orden
+  relativo; `null` si ninguna aparece, sin inventar un corte que el dato no sostenga.
+  `segmentLaps()`/`buildLap()` ganan un parámetro `anchorTruth: TruthState` sin valor por defecto: el
+  `truth` final depende de completitud **y** origen del ancla, nunca de uno solo.
+- `workers/import.worker.ts`: por cohorte, se resuelve el ancla declarada contra el ciclo inferido y
+  se construye un ancla «efectiva» que sustituye a la inferida en todo lo que la usa —vueltas,
+  composición del circuito, matriz de lectura, tramos de FIFO y contraste contra Vsystem—, sin
+  duplicar el cálculo del ciclo dominante.
+- `CircuitViews.shapes[].anchorTruth` (`"observed" | "inferred"`) y `CircuitViews.lapAnchorProblems`;
+  la vista dice «ancla declarada» o «ancla inferida» según corresponda, en el resumen del circuito y
+  en el expediente de AGV.
+- Decimoséptima clase plantada en el circuito de auditoría, `ancla-declarada`: el primer tag del
+  anillo declarado como ancla, contexto y no defecto — declararla no puede cambiar qué tags forman
+  el anillo, solo desde dónde se cuentan las vueltas.
+
+### Un riesgo real de invariancia, encontrado antes de auditar
+
+`compareAgainstVsystem` alinea la lista declarada contra el anillo observado con subsecuencia común
+más larga (LCS), que es lineal y sensible a **dónde se corta** un anillo que en realidad es cíclico.
+Antes de esta entrega el corte ya era arbitrario —el punto donde `findDominantCycle` cierra el
+ciclo—, pero ahora puede ser además el tag que el propietario declaró, en cualquier posición de la
+lista Vsystem. Un corte que cae en mitad de un tramo idéntico lo partía en dos coincidencias más
+cortas en vez de reconocerlo como una sola. Corregido rotando el anillo observado, **dentro** de
+`compareAgainstVsystem`, hasta el primer tag de la lista declarada que aparece en él, antes de
+calcular la LCS — así el contraste no depende de por dónde entró el ancla, se declare o se infiera.
+
+### Un segundo riesgo, encontrado auditando: el ancla contamina una comparación que no la mira
+
+La sonda `zona-vacia-declarada` compara dos ejecuciones del mismo escenario —con y sin las listas de
+planta— para comprobar que **declarar la zona** no mueve el veredicto de ningún tag sano. Añadir la
+lista `ancla` a esa comparación (apagada en la ejecución «sin configuración», como el resto) cambió
+qué tag cierra cada vuelta entre las dos ejecuciones, y eso desplazó el patrón de dieciséis tags
+sanos — no por la zona, sino por dónde `traceLaps` corta la segmentación en cada caso. La ancla
+decide un mecanismo distinto (R-GRA-009) del que esa sonda existe para vigilar (R-FLO-002/006), así
+que contaminaba la comparación con una segunda variable en vez de aislar la primera. Corregido
+manteniendo la lista `ancla` cargada en **las dos** ejecuciones: la comparación vuelve a aislar solo
+lo que declara vigilar.
+
+### El informe, con las diecisiete clases
+
+```
+238.680 lecturas, 40 vehículos. Anillo reconstruido: 147 tags de 150 declarados. Fuera del anillo: 15.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 10/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  DETECTA     rotura-subita — con el instante dentro de margen: 2/2
+  DETECTA     degradacion-progresiva — con tendencia sostenida: 2/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 98 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 3 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+  DETECTA     lector-agv-degradado — 7120: bajando (89% → 79% → 66% → 48%); tags con tendencia o rotura por su culpa: 0
+  DETECTA     adelantamiento-en-zona-cargada — el primero por margen es 7113 (se esperaba 7113), 4 min de margen; 1 más
+  DETECTA     bifurcacion-real — 2 ramas: 60363 57%, 96001 42%
+  DETECTA     ancla-declarada — ancla efectiva: 60000 (observed); 1653 vueltas completas, 1653 con truth observed
+```
+
+**Diecisiete de diecisiete clases detectadas, cero falsos positivos, `DEUDA_CONOCIDA` vacía.**
+
+### Gobierno
+
+- `docs/CONFIG_SCHEMA.md` gana la subsección §3.4.2 «Anclas de vuelta declaradas» (antes una fila de
+  una línea sin gramática de campos), renumerando la de las listas de tags a §3.4.3;
+  `docs/ALGORITHM_CATALOG.md` gana §7.1 y corrige la fila de ALG-004; `docs/TEST_STRATEGY.md` corrige
+  TC-061 («sin ninguna declarada», no «siempre») y añade TC-108–111; `docs/TRACEABILITY_MATRIX.md`
+  gana fila para R-GRA-009 y corrige la referencia de sección desplazada; `docs/PHASE_GATES.md` G2
+  describe la condición real en vez de «nunca observed»; `docs/GLOSSARY.md` (Ancla);
+  `docs/OPEN_QUESTIONS.md` anota que el mecanismo de OQ-102/OQ-B04 ya existe, sin cerrarlas;
+  `fixtures/synthetic/auditoria/MANIFEST.md` (`auditoria/6`).
+
+## [3.11.0] - 2026-09-22
+
+Candidatos a punto crítico (R-GRA-007), pedido explícitamente por el propietario tras quedar
+ofrecido y sin pedir en `[3.6.0]` («puntos críticos candidatos»). De las siete clases que
+`CONFIG_SCHEMA.md` §3.4.1 declara, esta entrega construye solo la firma de **bifurcación**:
+`parada-precisa` y `semáforo` necesitan una firma de tiempo de permanencia que no existe todavía, y
+`cruce` resultó ser un problema distinto —`assignCohorts` fusiona dos vehículos en un cohorte en
+cuanto comparten una sola transición, así que un cruce real entre circuitos no sobrevive como dos
+cohortes unidos por una arista rara: se fusiona, y la bifurcación resultante queda indistinguible de
+una normal sin una comprobación de reconvergencia que esta entrega no construye—. Las tres quedan
+diseñadas y documentadas, no silenciadas (OQ-122 pasa a Parcial, no a resuelta).
+
+También R-GRA-008: un punto crítico declarado (lista `critico`), en memoria y nunca leído, deja de
+salir como `obsoleto-candidato` — pierde una función, no solo una lectura.
+
+### Añadido
+
+- **`src/domain/critical-points.ts`** — `findBifurcationCandidates()`: recuento de sucesores por
+  tag (el mismo que `findDominantCycle` ya reduce para encontrar el sucesor mayoritario), con guarda
+  dual de cuota y soporte para descartar un sucesor dominante con una excepción rara o un reparto
+  parejo sostenido por un puñado de pasadas.
+- `src/domain/circuit-config.ts` gana `readCriticalPoints()`, calcado de `readZones`.
+- `src/domain/inventory.ts`: `TagLists.critical`, nuevo `TagClass` `critico-sin-lectura` (R-GRA-008),
+  subordinado a la memoria — sin ella, sigue siendo `declarado-sin-memoria` sin matiz, porque
+  R-OPP-009 ya explica el silencio del todo.
+- `CriticalPointThresholds` en `config.ts`, `draft` y sin valor por defecto en ninguna función.
+- Vista: bloque «Candidatos a punto crítico» tras la composición del circuito, con la redacción
+  obligada a citar R-GRA-007 — firma estadística, nunca función asignada.
+- Decimosexta clase plantada en el circuito de auditoría, `bifurcacion-real`: un tag del anillo
+  reparte sus salidas 58/42 hacia un tag fuera de anillo, sin depender de ningún vehículo concreto
+  —cualquiera puede tomar cualquiera de las dos ramas—.
+
+### Un riesgo real, encontrado auditando el propio detector
+
+La guarda de cuota y soporte no basta: un tag justo antes de una rotura súbita aguas abajo (la
+propia clase `rotura-subita` de este mismo escenario) sale como bifurcación falsa, porque casi todas
+sus salidas van al sucesor de siempre antes de la rotura y al que la sustituye después, y esas dos
+cuotas agregadas sobre toda la ventana son perfectamente comparables sin que exista ningún reparto
+real. Corregido con una tercera guarda: cada rama debe sostenerse, por recuento y no por tiempo, en
+las **dos mitades** de las pasadas del tag — una bifurcación real persiste en las dos, un cambio de
+régimen desaparece en una. La prueba que expuso el problema queda fijada como caso de regresión.
+
+Un segundo efecto, más pequeño: plantar la bifurcación en todos los vehículos (no en uno solo, como
+`adelantamiento-en-zona-cargada`) reordena el generador aleatorio compartido lo bastante como para
+que una lectura de mantenimiento —hasta ahora repartida sin ninguna exclusión— cayera, por pura
+coincidencia, dentro de la estancia de carga de un vehículo, y esa carga dejara de reconocerse como
+tal. Las lecturas de mantenimiento pasan a evitar las estancias de carga de su propio vehículo, que
+es lo que su propia clase (`mantenimiento-aislado`, aislada de verdad) ya prometía.
+
+### El informe, con las dieciséis clases
+
+```
+238.680 lecturas, 40 vehículos. Anillo reconstruido: 147 tags de 150 declarados. Fuera del anillo: 15.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 10/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  DETECTA     rotura-subita — con el instante dentro de margen: 2/2
+  DETECTA     degradacion-progresiva — con tendencia sostenida: 2/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 98 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 3 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+  DETECTA     lector-agv-degradado — 7120: bajando (90% → 79% → 68% → 50%); tags con tendencia o rotura por su culpa: 0
+  DETECTA     adelantamiento-en-zona-cargada — el primero por margen es 7113 (se esperaba 7113), 4 min de margen; 1 más
+  DETECTA     bifurcacion-real — 2 ramas: 60363 57%, 96001 42%
+```
+
+**Dieciséis de dieciséis clases detectadas, cero falsos positivos, `DEUDA_CONOCIDA` vacía.**
+
+### Gobierno
+
+- `docs/CONFIG_SCHEMA.md` corrige la taxonomía de `critico` a las siete clases ya implementadas
+  (`dejar-carro`/`recoger-carro` separadas) y declara aspiracionales los campos que ni `ConfigEntry`
+  ni `CatalogEntry` llevan todavía (`grade`, `redundancy`, `protection_pair`, `expected_tag`,
+  `target_circuit`); `docs/ALGORITHM_CATALOG.md` ALG-021 y §8.2, distinguiéndolo explícitamente de
+  ALG-013/§9 (bloqueado por OQ-108); `docs/TEST_STRATEGY.md` TC-102–107; `docs/TRACEABILITY_MATRIX.md`;
+  `docs/OPEN_QUESTIONS.md` OQ-122 pasa a Parcial; `docs/GLOSSARY.md` (punto crítico candidato,
+  bifurcación candidata); `fixtures/synthetic/auditoria/MANIFEST.md` (`auditoria/5`).
+
+## [3.10.0] - 2026-09-21
+
+FIFO en zona cargada (R-FLO-001), pedido explícitamente por el propietario tras quedar ofrecido y
+sin pedir en `[3.6.0]`. La puerta G3 ya lo decía en sus propias palabras: la zona de cada tag se
+declara en CSV y el orden de convoy deja de probar el paso donde la reordenación está admitida
+(R-FLO-006), pero el FIFO cargado como tal no se modelaba todavía. Se reutiliza el mismo cálculo que
+ya resuelve `charging.ts` para R-CO-003 —quién entró antes pero salió después de otro—, aplicado a
+un tramo del anillo en vez de a una calle.
+
+### Añadido
+
+- **`src/domain/fifo.ts`** — `loadedZoneSpans()`: deriva tramos contiguos de zona cargada del
+  anillo (nunca configurados aparte), manejando el cruce del índice 0 del array sin partir un tramo
+  en dos. `buildFifoReport()`: máquina de dos paradas (entrada/salida, sin la parada intermedia de
+  una calle) sobre cada tramo, e inversión de orden con margen mínimo dual —absoluto y proporcional
+  al tránsito mediano del propio tramo, el que sea mayor— para no confundir el jitter normal de
+  lectura con un adelantamiento real.
+- `FifoThresholds` en `config.ts`, `draft` y sin valor por defecto en ninguna función.
+- `CircuitViews.fifo`, por cohorte: los tramos y quién adelantó a quién en cada uno.
+- Vista: bloque «FIFO en zona cargada» tras las calles de carga, con los cinco adelantamientos de
+  mayor margen de todo el circuito (recorte global, no por tramo: a diferencia de las calles, el
+  número de tramos no está acotado por diseño) y el detalle completo plegado.
+- Séptima clase plantada en el circuito de auditoría, `adelantamiento-en-zona-cargada`: un AGV libre
+  de cualquier otro papel que se demora 20 minutos, una sola vez, justo al entrar en el tramo
+  cargado — no se fabrica el adelantamiento, el resto de la flota lo adelanta con su propio reloj.
+
+### Un riesgo real, anticipado antes de escribir el detector
+
+Una calle de carga es una cola física real: cualquier inversión de orden es señal fuerte. Un tramo
+de zona cargada es tránsito abierto — dos vehículos sanos muestran pequeñas diferencias de orden por
+el jitter normal de lectura, y un vehículo que vuelve de cargar (una de las excepciones que la propia
+R-FLO-001 nombra) reaparece con una fase nueva frente a sus antiguos vecinos, lo que puede producir
+una inversión grande y enteramente inocente. Portar sin más el cálculo de `seniorityBreaches()`
+—cero margen, correcto para una cola física— habría arriesgado exactamente el mismo tipo de falso
+positivo que `minShareEachSide` corrigió en `[3.9.0]` para rotura y degradación. El margen dual se
+exige en las dos puntas del adelantamiento (entrada y salida), no solo en una: si la diferencia de
+entrada ya está dentro del ruido, «quién es el más antiguo» es tan incierto como la inversión de
+salida que supuestamente explica.
+
+### El informe, con las quince clases
+
+```
+238.879 lecturas, 40 vehículos. Anillo reconstruido: 146 tags de 150 declarados. Fuera del anillo: 15.
+  DETECTA     declarado-sin-lecturas — clases: obsoleto-candidato, obsoleto-candidato, obsoleto-candidato
+  DETECTA     lectura-alta — señalados sin motivo: 0/10
+  DETECTA     lectura-media — 9/10
+  DETECTA     omision-por-memoria — 2/2
+  DETECTA     omision-conservando-convoy — tags acusados por su culpa: 0
+  DETECTA     rotura-subita — con el instante dentro de margen: 2/2
+  DETECTA     degradacion-progresiva — con tendencia sostenida: 2/2
+  DETECTA     mantenimiento-aislado — fuera del anillo: 2/2
+  DETECTA     carga-online-normal — 4/4 calles con mediana en torno a la media hora; 94 paradas leídas como carga y 0 como silencio
+  DETECTA     calle-sin-servicio — 1 calle sin entradas; clases: calle-sin-servicio, calle-sin-servicio, calle-sin-servicio
+  DETECTA     salida-fuera-de-antiguedad — el primero por espera es 7112 (se esperaba 7112), 300 min; 2 inversiones más, que son cargas simultáneas de duración distinta y no un hallazgo
+  DETECTA     carga-anterior-a-la-ventana — 5/5 inferidos, 5 señalados en total
+  DETECTA     zona-vacia-declarada — 2 zonas declaradas, calles dentro de la vacía: sí; tags sanos con veredicto movido: 0; pasadas retiradas de la vía de orden: 0
+  DETECTA     lector-agv-degradado — 7120: bajando (90% → 75% → 64% → 55%); tags con tendencia o rotura por su culpa: 0
+  DETECTA     adelantamiento-en-zona-cargada — el primero por margen es 7113 (se esperaba 7113), 4 min de margen; 2 más
+```
+
+**Quince de quince clases detectadas, cero falsos positivos, `DEUDA_CONOCIDA` vacía.** Añadir la
+nueva clase destapó una sonda existente demasiado amplia: `carga-online-normal` contaba **cualquier**
+silencio de más de quince minutos en todo el escenario como candidato a carga mal reconocida, y el
+propio silencio de veinte minutos que planta esta entrega —a mitad del anillo, sin relación con
+ninguna calle— lo hacía saltar sin ser un fallo de `charging.ts`. Corregida para mirar solo los
+huecos que empiezan en la parada precisa de una calle servida, que es lo único que la sonda dice
+comprobar en su propio comentario.
+
+### Gobierno
+
+- `PHASE_GATES.md` G3 (FIFO cargado modelado, sin marcar porque OQ-107 sigue sin el catálogo de
+  excepciones); `ALGORITHM_CATALOG.md` ALG-011 y §8.1; `TEST_STRATEGY.md` TC-097–101;
+  `TRACEABILITY_MATRIX.md`; `OPEN_QUESTIONS.md` OQ-107 pasa a Parcial; `GLOSSARY.md` (zona cargada,
+  zona vacía, adelantamiento); `fixtures/synthetic/auditoria/MANIFEST.md` (`auditoria/4`).
+
 ## [3.9.0] - 2026-09-21
 
 Rotura súbita y degradación progresiva (R-OPP-015): las dos únicas clases que la auditoría de

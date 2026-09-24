@@ -1,8 +1,8 @@
 ---
 document_id: TT-TRACE-001
-version: 0.16.0
+version: 0.30.0
 status: baseline-candidate
-last_updated: 2026-09-21
+last_updated: 2026-09-24
 ---
 
 # Matriz de trazabilidad
@@ -70,7 +70,7 @@ regla exista: la matriz no es una lista de intenciones.
 | FR-030 umbrales fuera del código | `src/domain/config.ts` | Todos los módulos los exigen como parámetro: sin ellos no compilan |
 | UX §5.2 las cuatro vistas | `src/domain/activity.ts`, `src/presentation/charts.ts` | `tests/e2e/vistas.spec.ts` |
 | R-DAT-012 agrupamiento por circuito (aristas exclusivas, Union-Find) | `src/domain/cohort.ts` | `tests/unit/cohort.test.ts` |
-| ALG-004 vueltas por AGV, ancla por ciclo dominante (R-GRA-009) | `src/domain/laps.ts` | `tests/unit/laps.test.ts` |
+| ALG-004 vueltas por AGV, ancla por ciclo dominante o declarada (`resolveDeclaredAnchor`, R-GRA-009) | `src/domain/laps.ts`, `src/domain/circuit-config.ts` (`readLapAnchors`) | `tests/unit/laps.test.ts` |
 | ALG-018 expediente de AGV y tag (`UX_SPEC.md` §4.1) | `src/domain/dossier.ts` | `tests/unit/dossier.test.ts` |
 | R-GRA-001 contraste contra Vsystem por alineación de secuencia (LCS) | `src/domain/vsystem.ts` | `tests/unit/vsystem.test.ts` |
 | `PERFORMANCE_BUDGET.md` §6 replay básico determinista, posición como fracción temporal | `src/domain/replay.ts` | `tests/unit/replay.test.ts` |
@@ -84,7 +84,7 @@ regla exista: la matriz no es una lista de intenciones.
 | TC-075 / UX §4 destacados primero, conjunto a demanda | `src/presentation/main.ts` (`finding`), `src/presentation/charts.ts` (`lazyDetails`) | `tests/e2e/f2.spec.ts` |
 | TC-068 la banda de actividad no emite un rótulo por celda | `src/presentation/charts.ts` (`activityChart`) | `tests/e2e/vistas.spec.ts` · «la banda de actividad no emite un rótulo por celda» |
 | `TEST_STRATEGY.md` §7 / G3 falsos positivos y desconocidos medidos por categoría | `tests/support/circuito-auditoria.ts` (verdad plantada) | `tests/audit/auditoria.test.ts` · informe por clase, cero falsos positivos y deuda que no se pudre |
-| `CONFIG_SCHEMA.md` §3.4.2 la configuración de planta entra como CSV | `src/domain/tag-lists.ts`, `src/ingestion/catalog.ts`, `src/persistence/store.ts` (peldaño 3) | `tests/unit/catalog.test.ts`, `tests/unit/charging.test.ts` |
+| `CONFIG_SCHEMA.md` §3.4.3 la configuración de planta entra como CSV | `src/domain/tag-lists.ts`, `src/ingestion/catalog.ts`, `src/persistence/store.ts` (peldaño 3) | `tests/unit/catalog.test.ts`, `tests/unit/charging.test.ts` |
 | R-CO-001 / R-CO-002 cinco calles y su máquina de estados | `src/domain/circuit-config.ts`, `src/domain/charging.ts` | `tests/unit/charging.test.ts` |
 | R-CO-006 / TC-080–082 la parada en carga no es un silencio | `src/domain/dossier.ts` (`laneSignatures`, `cause`) | `tests/unit/dossier.test.ts` · «una parada entre la parada precisa y la salida…» |
 | R-CO-007 / TC-084–085 el que ya estaba dentro antes de la cobertura | `src/domain/charging.ts` (`staysOf`, `startedInside`) | `tests/unit/charging.test.ts` |
@@ -92,13 +92,28 @@ regla exista: la matriz no es una lista de intenciones.
 | R-CO-008 / TC-083 una calle sin servicio no acusa a sus tags | `src/domain/inventory.ts` (`calle-sin-servicio`) | `tests/unit/inventory.test.ts` |
 | R-FLO-006 / TC-089 el orden de convoy no prueba nada en zona vacía | `src/domain/read-matrix.ts` (`orderUsableByPosition`, `stretchAllows`) | `tests/unit/read-matrix.test.ts` |
 | R-OPP-015 / ALG-020 / TC-091–096 rotura súbita y degradación progresiva, por tag y por AGV | `src/domain/read-rate-trend.ts` | `tests/unit/read-rate-trend.test.ts`, `tests/unit/read-matrix.test.ts` |
+| R-FLO-001 / ALG-011 / TC-097–101 FIFO en zona cargada, adelantamiento candidato | `src/domain/fifo.ts` | `tests/unit/fifo.test.ts` |
+| R-GRA-007 / ALG-021 / TC-102–105 candidatos a bifurcación; TC-125–136 cruce interno, parada precisa y semáforo (Parte 35); TC-137–140 vinculación/desvinculación y declaración dual por `critico`/`circuito` (Parte 36); R-GRA-008 / TC-106–107 omisión crítica diferenciada | `src/domain/critical-points.ts`, `src/domain/inventory.ts`, `src/domain/circuit-config.ts`, `src/domain/dossier.ts`, `src/domain/tag-lists.ts` | `tests/unit/critical-points.test.ts`, `tests/unit/inventory.test.ts`, `tests/unit/charging.test.ts`, `tests/unit/dossier.test.ts` |
+| R-GRA-009 / `CONFIG_SCHEMA.md` §3.4.2 / TC-108–111 anclas de vuelta declaradas, `truth` condicional a completitud | `src/domain/laps.ts` (`resolveDeclaredAnchor`, `buildLap`), `src/domain/circuit-config.ts` (`readLapAnchors`), `workers/import.worker.ts` | `tests/unit/laps.test.ts`, `tests/unit/vsystem.test.ts` (invariancia a la rotación), `tests/audit/auditoria.test.ts` |
+| R-DAT-016 / R-AGV-013 / R-DAT-017 / ALG-009 §6.1–6.2 / TC-112–124 comparación entre dos periodos distantes, sustitución candidata y adopción de tag nuevo | `src/domain/drift.ts` (`compareDistantPeriods`) | `tests/unit/drift.test.ts`, `tests/audit/auditoria.test.ts` |
+| `UX_SPEC.md` §5.3 / TC-141–147 vistas de diagnóstico (Parte 38): anillo, mapa de omisión, tendencias, permanencias, horquilla, calles, FIFO, deriva, inventario y expediente en el tiempo | `src/presentation/diagnostic-charts.ts`, `src/presentation/charts.ts` (`inventoryChart`), `src/domain/read-rate-trend.ts` (`binTimeline`), `src/domain/read-matrix.ts` (`trendSeries`), `src/domain/fifo.ts` (`focus`), `src/domain/charging.ts` (`findLaneJunctions`), `src/domain/critical-points.ts` (`transitionDurationsByTag`), `workers/import.worker.ts` | `tests/unit/read-rate-trend.test.ts`, `tests/unit/read-matrix.test.ts`, `tests/unit/fifo.test.ts`, `tests/unit/charging.test.ts`, `tests/unit/critical-points.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
+| DS-012 / R-AGV-014 / R-AGV-015 / TC-148–157 flota del circuito y vehículos que no cargan (Parte 39): historial de flota incremental, vida de cada AGV en tramos, recuento «N de M» | `src/domain/fleet.ts`, `src/ingestion/fleet-history.ts`, `src/domain/charging.ts` (`neverCharged`), `src/persistence/store.ts` (`fleet`, versión 4), `workers/import.worker.ts` (`runFleet`, `accumulate`), `src/presentation/diagnostic-charts.ts` (`fleetCountChart`, `fleetLifelineChart`) | `tests/unit/fleet.test.ts`, `tests/unit/fleet-history.test.ts`, `tests/unit/charging.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
+| R-DAT-007 / TC-158 el expediente de un AGV no cuenta un hueco de cobertura como inactividad | `src/domain/dossier.ts` (`coverage` por tramos), `workers/import.worker.ts` | `tests/unit/dossier.test.ts` |
+| R-EVI-007 / TC-159–160 revisión en campo de los hallazgos | `src/domain/review.ts`, `src/persistence/store.ts` (tabla `reviews`, versión 5), `src/presentation/review-ui.ts`, `src/presentation/main.ts` (`finding`, `.agvproj`) | `tests/unit/review.test.ts`, `tests/e2e/revision.spec.ts` |
+| `UX_SPEC.md` §7 / TC-161–162 lectura de gráficos con dedo, ratón o panel táctil; tamaños de tableta y portátil | `src/presentation/pointer.ts`, `src/presentation/diagnostic-charts.ts`, `src/presentation/charts.ts`, `src/presentation/styles.css` | `tests/unit/pointer.test.ts`, `tests/e2e/tactil.spec.ts` |
+| `UX_SPEC.md` §4.4 lenguaje de la interfaz: sin referencias internas, identificadores traducidos a castellano llano | `src/presentation/labels.ts`, `src/presentation/main.ts`, `src/presentation/charts.ts`, `src/presentation/diagnostic-charts.ts` | `tests/e2e/f2.spec.ts`, `tests/e2e/vistas.spec.ts`, `tests/e2e/vistas-diagnostico.spec.ts` (fijan los textos visibles) |
+| R-DAT-019 / R-OPP-016 / TC-163–167 cambios de tag dentro de un periodo y vida del tag | `src/domain/tag-changes.ts`, `src/domain/read-matrix.ts` (`TagLife`, rachas por celda), `workers/import.worker.ts`, `src/presentation/main.ts` (`renderTagChanges`) | `tests/unit/tag-changes.test.ts`, `tests/unit/read-matrix.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
+| R-AGV-016 / TC-168–170 lectura por AGV: nunca, desde una hora, poco | `src/domain/vehicle-reading.ts`, `src/domain/config.ts`, `src/presentation/main.ts` (`renderVehicleReading`, `explain`) | `tests/unit/vehicle-reading.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
-planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` — y la
-comparación entre dos periodos distantes, que es la única que separa un obsoleto de un tag
-averiado. La **tasa a lo largo del tiempo**, que hasta el 2026-09-21 era la tercera ausencia de esta
-lista, ya tiene fila: la auditoría la midió, no la dio por hecha, y las dos clases que dependían de
-ella —rotura súbita y degradación progresiva— salieron de `DEUDA_CONOCIDA` en
+planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` —, y el tercer
+descarte de R-DAT-016 (comprobar con tiempos si el tramo que rodea a un tag obsoleto se recorre en
+directo), que es geométrico y distinto de la comparación entre dos periodos que ya tiene fila arriba.
+La **comparación entre dos periodos distantes**, que hasta el 2026-09-22 era la ausencia señalada en
+este párrafo, ya tiene fila: separa un tag obsoleto de uno averiado con dos muestras, no con una
+hipótesis (R-DAT-016). La **tasa a lo largo del tiempo**, que hasta el 2026-09-21 era la tercera
+ausencia de esta lista, ya tiene fila: la auditoría la midió, no la dio por hecha, y las dos clases
+que dependían de ella —rotura súbita y degradación progresiva— salieron de `DEUDA_CONOCIDA` en
 `tests/audit/auditoria.test.ts` el mismo día que se detectaron.
 
 **La advertencia anterior queda cerrada, no borrada.** Hasta esta entrega, `inventory.ts` y

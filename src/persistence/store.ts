@@ -11,13 +11,27 @@
  */
 
 import type { Interval } from "../domain/coverage.js";
+import type { FleetPeriod } from "../domain/fleet.js";
 import type { Reading } from "../domain/reading.js";
+import type { ReviewEntry } from "../domain/review.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 3;
+export const STORE_VERSION = 5;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
+/**
+ * La revisión en campo, en su propia tabla y no dentro del circuito. No es orden: el Worker
+ * reescribe el circuito entero en cada importación, y una marca guardada desde la interfaz mientras
+ * tanto se perdería. Aquí solo escribe la interfaz, y cada marca es su propia transacción.
+ */
+const REVIEWS = "reviews";
+
+/** Las marcas de revisión de un circuito, por clave de hallazgo (`src/domain/review.ts`). */
+export interface StoredReviews {
+  readonly circuitId: string;
+  readonly entries: Readonly<Record<string, ReviewEntry>>;
+}
 
 export interface StoredSource {
   readonly sourceId: string;
@@ -79,7 +93,21 @@ export interface StoredCircuit {
   readonly readings: readonly Reading[];
   /** Listas de planta vigentes. Ausente en circuitos guardados antes de la versión 2. */
   readonly lists?: readonly StoredTagList[];
+  /** Historial de flota (DS-012). Ausente hasta que se carga, y en circuitos anteriores a la versión 4. */
+  readonly fleet?: StoredFleet;
   readonly updatedAt: number;
+}
+
+/**
+ * El historial de flota del circuito, **acumulado**: cada carga se fusiona por (AGV, `desde`) con lo
+ * guardado, a diferencia de las listas, que se sustituyen enteras.
+ */
+export interface StoredFleet {
+  /** El valor de la columna `circuito` que corresponde a este circuito, si el fichero trae varios. */
+  readonly circuitName: string | null;
+  readonly periods: readonly FleetPeriod[];
+  readonly loadedAt: number;
+  readonly fileNames: readonly string[];
 }
 
 /**
@@ -112,6 +140,20 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
     // en la versión 2 sigue leyéndose, no monta calles, y R-CO-006 dice justamente eso, que sin
     // calles configuradas la firma no se reconoce. Volver a cargar el fichero la completa.
     apply: () => {},
+  },
+  {
+    to: 4,
+    // El historial de flota entra en el circuito (DS-012). Campo opcional: un circuito anterior se
+    // abre sin historial y su flota son los vehículos que aparecen en las lecturas, que es lo que
+    // la vista dice cuando no hay historial.
+    apply: () => {},
+  },
+  {
+    to: 5,
+    // La revisión en campo, en una tabla nueva y vacía: nada que reescribir en los circuitos.
+    apply: (db) => {
+      db.createObjectStore(REVIEWS, { keyPath: "circuitId" });
+    },
   },
 ];
 
@@ -194,10 +236,51 @@ export async function deleteCircuit(circuitId: string): Promise<void> {
   const db = await open();
   try {
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(CIRCUITS, "readwrite");
+      // El circuito y su revisión se van juntos: una marca sin su circuito no significa nada.
+      const tx = db.transaction([CIRCUITS, REVIEWS], "readwrite");
       tx.objectStore(CIRCUITS).delete(circuitId);
+      tx.objectStore(REVIEWS).delete(circuitId);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error ?? new Error("No se pudo borrar el circuito."));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** Las marcas de revisión de un circuito; vacías si nunca se ha marcado nada. */
+export async function loadReviews(circuitId: string): Promise<ReadonlyMap<string, ReviewEntry>> {
+  const db = await open();
+  try {
+    const tx = db.transaction(REVIEWS, "readonly");
+    const store = tx.objectStore(REVIEWS);
+    const stored = await run(store, store.get(circuitId) as IDBRequest<StoredReviews | undefined>);
+    return new Map(Object.entries(stored?.entries ?? {}));
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Guarda o borra una marca, leyendo y escribiendo en la **misma** transacción: dos pulsaciones
+ * seguidas no se pisan. `null` la borra, que es volver a «pendiente».
+ */
+export async function saveReview(circuitId: string, key: string, entry: ReviewEntry | null): Promise<void> {
+  const db = await open();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(REVIEWS, "readwrite");
+      const store = tx.objectStore(REVIEWS);
+      const request = store.get(circuitId) as IDBRequest<StoredReviews | undefined>;
+      request.onsuccess = () => {
+        const entries = { ...(request.result?.entries ?? {}) };
+        if (entry === null) delete entries[key];
+        else entries[key] = entry;
+        store.put({ circuitId, entries } satisfies StoredReviews);
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("No se pudo guardar la revisión."));
+      tx.onabort = () => reject(tx.error ?? new Error("La escritura de la revisión se abortó."));
     });
   } finally {
     db.close();
