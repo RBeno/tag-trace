@@ -18,6 +18,8 @@
  * Este módulo no calcula nada: recibe agregados que el Worker ya produjo (WP-001).
  */
 
+import { inspect } from "./pointer.js";
+
 const NS = "http://www.w3.org/2000/svg";
 
 /**
@@ -69,7 +71,28 @@ function withTooltip<T extends SVGElement>(node: T, label: string): T {
   const title = svg("title");
   title.textContent = label;
   node.append(title);
+  // El mismo texto, para la línea de lectura: en una pantalla táctil el `<title>` no se ve nunca.
+  node.setAttribute("data-tip", label);
   return node;
+}
+
+/**
+ * La línea de lectura de un gráfico con `withTooltip`: con ratón acompaña al tooltip nativo, y con
+ * el dedo es la única forma de leer una marca (UX_SPEC §7).
+ */
+function tipReadout(canvas: SVGSVGElement, rest: string): HTMLParagraphElement {
+  const line = document.createElement("p");
+  line.className = "muted readout";
+  line.setAttribute("aria-live", "polite");
+  line.textContent = rest;
+  inspect(
+    canvas,
+    (point) => {
+      line.textContent = point?.target.closest("[data-tip]")?.getAttribute("data-tip") ?? rest;
+    },
+    { snap: "[data-tip]" },
+  );
+  return line;
 }
 
 export function hatchPattern(): SVGDefsElement {
@@ -257,7 +280,7 @@ export function coverageChart(
 
   canvas.append(text(0, 50, format(from), "axis"));
   canvas.append(text(width, 50, format(to), "axis", { "text-anchor": "end" }));
-  wrapper.append(canvas);
+  wrapper.append(canvas, tipReadout(canvas, "Toca o pasa el puntero por la barra para leer un tramo."));
   wrapper.append(
     legendList([
       ["var(--viz-series)", "cargado y analizable"],
@@ -340,7 +363,7 @@ export function hourlyChart(data: HourlyData): HTMLElement {
   });
 
   canvas.append(svg("line", { x1: 0, y1: bottom, x2: width, y2: bottom, class: "grid" }));
-  wrapper.append(canvas);
+  wrapper.append(canvas, tipReadout(canvas, "Toca o pasa el puntero por una barra para leer su hora."));
   wrapper.append(
     table(
       ["Hora", "Lecturas"],
@@ -457,33 +480,37 @@ export function activityChart(data: ActivityData, format: (utcMs: number) => str
    * adicional, y una región viva se lee mejor con lector de pantalla que cinco mil títulos.
    */
   const readout = document.createElement("p");
-  readout.className = "muted";
+  readout.className = "muted readout";
   readout.setAttribute("aria-live", "polite");
-  const REPOSO = "Pasa el puntero por la banda para leer una celda.";
+  const REPOSO = "Toca o pasa el puntero por la banda para leer una celda.";
   readout.textContent = REPOSO;
-  canvas.addEventListener("pointermove", (event) => {
-    const box = canvas.getBoundingClientRect();
-    if (box.width === 0 || box.height === 0) return;
-    const localX = ((event.clientX - box.left) * width) / box.width;
-    const localY = ((event.clientY - box.top) * height) / box.height;
-    const rowIndex = Math.floor(localY / (rowHeight + gap));
-    const bin = Math.floor((localX - labelWidth) / cellWidth);
-    const row = data.rows[rowIndex];
-    if (row === undefined || bin < 0 || bin >= binCount) {
-      readout.textContent = REPOSO;
-      return;
-    }
-    const instant = format(data.binStarts[bin] ?? 0);
-    const count = row.bins[bin] ?? 0;
-    readout.textContent = uncovered.has(bin)
-      ? `${row.agvId} · ${instant} — sin datos cargados: no se analiza, y no es un silencio`
-      : count === 0
-        ? `${row.agvId} · ${instant} — sin lecturas, con datos cargados`
-        : `${row.agvId} · ${instant} — ${count.toLocaleString("es-ES")} lecturas`;
-  });
-  canvas.addEventListener("pointerleave", () => {
-    readout.textContent = REPOSO;
-  });
+  inspect(
+    canvas,
+    (point) => {
+      if (point === null) {
+        readout.textContent = REPOSO;
+        return;
+      }
+      const box = canvas.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) return;
+      const localX = ((point.clientX - box.left) * width) / box.width;
+      const localY = ((point.clientY - box.top) * height) / box.height;
+      const rowIndex = Math.floor(localY / (rowHeight + gap));
+      const bin = Math.floor((localX - labelWidth) / cellWidth);
+      const row = data.rows[rowIndex];
+      if (row === undefined || bin < 0 || bin >= binCount) {
+        readout.textContent = REPOSO;
+        return;
+      }
+      const instant = format(data.binStarts[bin] ?? 0);
+      const count = row.bins[bin] ?? 0;
+      readout.textContent = uncovered.has(bin)
+        ? `${row.agvId} · ${instant} — sin datos cargados: no se analiza, y no es un silencio`
+        : count === 0
+          ? `${row.agvId} · ${instant} — sin lecturas, con datos cargados`
+          : `${row.agvId} · ${instant} — ${count.toLocaleString("es-ES")} lecturas`;
+    },
+  );
   wrapper.append(readout);
 
   wrapper.append(

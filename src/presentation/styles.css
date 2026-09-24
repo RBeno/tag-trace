@@ -53,7 +53,10 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-#app { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+/* 1.440 px: en un portátil de 1.920 los gráficos densos (vida de cada AGV, mapa de omisión) aprovechan
+   el ancho; el texto corrido no, y se limita a una línea legible más abajo. */
+#app { max-width: 1440px; margin: 0 auto; padding: 24px 16px 64px; }
+.panel p:not(.readout) { max-width: 90ch; }
 h1 { font-size: 1.4rem; margin: 0; letter-spacing: 0.02em; }
 h2 { font-size: 1rem; margin: 0 0 12px; }
 .muted { color: var(--muted); margin: 4px 0 0; }
@@ -139,6 +142,10 @@ table.data th { color: var(--muted); font-weight: 600; }
 .chart .on-ink { fill: var(--bg); font-size: 10px; font-weight: 600; }
 .chart .id { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .chart .readout { font-size: 0.85rem; margin: 6px 0; min-height: 1.5em; font-variant-numeric: tabular-nums; }
+/* La lectura se queda pegada abajo mientras el gráfico está a la vista: en uno más alto que la
+   pantalla, tocar arriba no deja la respuesta fuera (UX_SPEC §7). */
+.chart .readout { position: sticky; bottom: 0; z-index: 1; background: var(--panel);
+  border-top: 1px solid var(--line); padding: 6px 0; }
 .chart .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; padding: 2px; margin: 0 0 8px; }
 .chart .seg button { border: 0; background: transparent; color: var(--muted); padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; min-height: 28px; }
 .chart .seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
@@ -209,3 +216,17 @@ table.data th { color: var(--muted); font-weight: 600; }
 [data-review-filter="confirmado"] .finding.reviewable:not([data-review="confirmado"]),
 [data-review-filter="descartado"] .finding.reviewable:not([data-review="descartado"]),
 [data-review-filter="pospuesto"] .finding.reviewable:not([data-review="pospuesto"]) { display: none; }
+
+/* --- Dedo (UX_SPEC §7) ---------------------------------------------------------------------------
+   `any-pointer` y no `pointer`: un portátil con pantalla táctil tiene el panel como puntero
+   principal, y el dedo también cuenta. 44 px de alto en todo lo que se pulsa; el cuerpo, a 16 px. */
+@media (any-pointer: coarse) {
+  body { font-size: 16px; }
+  button, select, input[type="text"], input[type="search"], input[type="number"] { min-height: 44px; }
+  .chart .seg button, .review .seg button, .review-panel .seg button, .review-bar-row button,
+  .review-actions button { min-height: 44px; }
+  details > summary { padding: 12px 0; }
+  .chart details summary { font-size: 0.9rem; }
+  input[type="file"]::file-selector-button { min-height: 44px; padding: 8px 14px; margin-right: 10px; }
+  input[type="range"] { height: 44px; width: 100%; }
+}

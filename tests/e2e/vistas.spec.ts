@@ -175,6 +175,6 @@ test.describe("vistas", () => {
     expect(celdas).toBeGreaterThan(10);
     // Solo el rótulo del gráfico entero, nunca uno por celda.
     expect(rotulos).toBeLessThanOrEqual(1);
-    await expect(banda.getByText("Pasa el puntero por la banda para leer una celda.")).toBeVisible();
+    await expect(banda.getByText("Toca o pasa el puntero por la banda para leer una celda.")).toBeVisible();
   });
 });

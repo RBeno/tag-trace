@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.27.0
+version: 0.28.0
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-24
 ---
 
 # Estrategia de pruebas y evaluación
@@ -210,6 +210,8 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-158 | Expediente de un AGV con dos exportaciones cargadas y un hueco sin datos entre medias | El hueco no aparece como inactividad; un silencio con sus dos lecturas dentro de un mismo tramo sí; el silencio abierto se mide contra el final del último tramo | Listar como silencio del AGV el rato entre dos exportaciones (R-DAT-007) |
 | TC-159 | Clave, recuento y CSV de la revisión (`src/domain/review.ts`) | La clave es tipo y sujeto; un cambio de cifra desde que se marcó se detecta; las marcas sin tarjeta se cuentan aparte; el CSV lleva los pendientes y escapa el separador | Perder una marca al reanalizar, o dar por buena una confirmación hecha sobre otra cifra |
 | TC-160 | Marcar tarjetas en el navegador, recargar, volver a importar y exportar | Las marcas y la nota siguen en su tarjeta; el progreso cuenta 2 revisadas; el filtro esconde solo tarjetas; el CSV lleva confirmado, pospuesto y pendientes | Guardar la revisión dentro del circuito, donde la siguiente importación la pisaría |
+| TC-161 | Imán de toque (`nearestWithin`) | Gana la marca más cercana dentro del radio; fuera del radio no hay ninguna; un toque dentro de una marca se queda con ella | Que un dedo no pueda leer una marca fina, o que lea una lejana |
+| TC-162 | Tableta táctil emulada con el circuito de auditoría | Un toque fija la lectura y sigue ahí; un toque cerca de un segmento del anillo lo lee; un toque en el centro vuelve al reposo; botones de 44 px con dedo; el ratón sigue leyendo al pasar y limpia al salir; sin desbordamiento a 768, 1.024, 1.366, 1.536 y 1.920 px | Volver a depender del `pointermove`, que con el dedo borraba la lectura al levantarlo |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

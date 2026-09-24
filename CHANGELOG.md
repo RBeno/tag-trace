@@ -2,6 +2,33 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.20.0] - 2026-09-24
+
+Tableta y portátil, con dedo, ratón o panel táctil (`UX_SPEC.md` §7). Antes, casi todos los gráficos
+solo se podían leer con ratón.
+
+### Corregido
+
+- **Con el dedo, la lectura de un gráfico se borraba en el mismo instante en que aparecía.** Los
+  gráficos leían con `pointermove` y limpiaban con `pointerleave`, y al levantar el dedo el navegador
+  dispara `pointerleave`. Ahora un toque fija la lectura y se queda; con ratón o panel táctil todo
+  sigue como antes. Un único `inspect()` (`src/presentation/pointer.ts`) sustituye los 12 pares de
+  manejadores.
+- **Las marcas finas no se podían tocar.** Un segmento del anillo mide unos 8 px en una tableta, y una
+  línea de FIFO, 2 px. Si el toque no cae encima, se lee la marca más cercana dentro de 22 px.
+- **Cobertura y perfil horario solo tenían tooltip nativo**, que en táctil no aparece nunca. Ganan la
+  misma línea de lectura que el resto.
+
+### Cambiado
+
+- La lectura de cada gráfico queda pegada abajo mientras el gráfico está a la vista.
+- Con dedo (`any-pointer: coarse`), botones, campos, desplegables y controles de 44 px, y el cuerpo de
+  texto a 16 px.
+- Contenido hasta 1.440 px de ancho (antes, 1.100), con el texto corrido limitado a unos 90 caracteres.
+- «Pasa el puntero por…» pasa a «Toca o pasa el puntero por…».
+- TC-161–162: `tests/unit/pointer.test.ts` y `tests/e2e/tactil.spec.ts`, una tableta emulada con
+  pantalla táctil que además recorre cinco anchuras de tableta y portátil.
+
 ## [3.19.0] - 2026-09-23
 
 Revisión en campo de los hallazgos, para las pruebas en planta: ir al punto conflictivo, marcar lo

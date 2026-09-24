@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.11.0
+version: 0.12.0
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-24
 ---
 
 # Especificación de experiencia de usuario
@@ -340,7 +340,30 @@ La pantalla muestra explícitamente:
 
 El botón final usa una confirmación inequívoca. No existe consolidación automática ni deshacer destructivo; una corrección genera nueva versión/revocación.
 
-## 7. Móvil
+## 7. Móvil, tableta y portátil
+
+La misma aplicación se usa con el móvil, con una tableta y con un portátil, y con dedo, ratón o el
+panel táctil del portátil. Todo tiene que poder hacerse con cualquiera de ellos:
+
+- **Leer un gráfico.** Con ratón o panel táctil, la lectura sigue al puntero y se va al salir del
+  gráfico. Con el dedo, **un toque fija la lectura y se queda** hasta el siguiente toque; tocar un
+  hueco vuelve al texto de reposo. Arrastrar sigue desplazando la página, así que una matriz ancha se
+  recorre igual. Los textos de reposo dicen «Toca o pasa el puntero…».
+- **Imán de toque.** Un dedo no acierta una marca de 3 px: si el toque no cae encima de una, se lee
+  la más cercana dentro de 22 px (`src/presentation/pointer.ts`).
+- **La lectura se ve siempre.** Va pegada abajo mientras el gráfico está a la vista, así que en uno más
+  alto que la pantalla tocar arriba no deja la respuesta fuera.
+- **Los gráficos de cobertura y de perfil horario**, que solo tenían el tooltip nativo, ganan la misma
+  línea de lectura: en una pantalla táctil el tooltip no aparece nunca.
+- **Objetivos de toque de 44 px** con `(any-pointer: coarse)`: botones, selectores de gráfico,
+  campos, desplegables, selector de fichero y el control del replay; el cuerpo, a 16 px. Se usa
+  `any-pointer` para que un portátil con pantalla táctil también los tenga, aunque su puntero
+  principal sea el panel.
+- **Ancho.** Hasta 1.440 px de contenido, para que un portátil grande aproveche los gráficos densos.
+  El texto corrido se limita a unos 90 caracteres por línea. Probado sin desbordamiento a 768, 1.024,
+  1.366, 1.536 y 1.920 px de ancho.
+
+Además, en el móvil:
 
 - Controles táctiles de al menos 24×24 px CSS, conforme a WCAG 2.2 nivel AA.
 - Paneles apilados y detalle bajo demanda.

@@ -20,6 +20,7 @@
 
 import type { CircuitViews } from "../application/protocol.js";
 import { HATCH_ID, figure, hatchPattern, lazyDetails, legendList, plainTable, svg, table, text } from "./charts.js";
+import { inspect } from "./pointer.js";
 
 export interface Formats {
   /** Instante completo, para las lecturas al puntero y las tablas. */
@@ -200,7 +201,7 @@ export function ringChart(data: RingData): HTMLElement {
       "tiene geometría. Lo normal queda en gris; solo se colorea lo que falta.",
   );
   const area = host();
-  const line = readout("Pasa el puntero por el anillo para leer un tag.");
+  const line = readout("Toca o pasa el puntero por el anillo para leer un tag.");
   const hasZones = data.tags.some((tag) => tag.zone !== null);
   const zoneNames = [...new Set(data.tags.map((tag) => tag.zone).filter((zone): zone is string => zone !== null))];
 
@@ -312,38 +313,45 @@ export function ringChart(data: RingData): HTMLElement {
       }),
     );
 
-    canvas.addEventListener("pointermove", (event) => {
-      const target = event.target as SVGElement;
-      const index = target.getAttribute("data-index");
-      const markTag = target.getAttribute("data-mark");
-      const laneId = target.getAttribute("data-lane");
-      if (index !== null) {
-        const tag = data.tags[Number(index)];
-        if (tag === undefined) return;
-        const where = `Tag ${tag.tagId} · posición ${Number(index) + 1} de ${count}` + (tag.zone === null ? "" : ` · zona ${tag.zone}`);
-        line.show(
-          tag.isAnchor
-            ? `${where} — ancla de la vuelta: su tasa es 1 por construcción y no es evidencia de nada`
-            : tag.omission === null
-              ? `${where} — nadie pasó por este punto: sin pasadas no hay tasa`
-              : `${where} — ${percent(tag.omission)} de omisión en ${tag.passes} pasadas · ${tag.pattern}`,
-        );
-      } else if (markTag !== null) {
-        const mark = markByTag.get(markTag);
-        if (mark !== undefined) {
-          line.show(
-            `${mark.number} · Tag ${mark.tagId} — ${mark.label}, ` +
-              (mark.declared ? "declarado en lista (dato de planta)" : "candidato por firma, para confirmar o descartar (R-GRA-007)"),
-          );
+    inspect(
+      canvas,
+      (point) => {
+        if (point === null) {
+          line.show(null);
+          return;
         }
-      } else if (laneId !== null) {
-        const lane = data.junctions.find((entry) => entry.laneId === laneId);
-        line.show(`Calle «${laneId}» — ${lane?.served === false ? "nadie entró en toda la ventana" : "cuelga de este punto del anillo"}`);
-      } else {
-        line.show(null);
-      }
-    });
-    canvas.addEventListener("pointerleave", () => line.show(null));
+        const target = point.target as SVGElement;
+        const index = target.getAttribute("data-index");
+        const markTag = target.getAttribute("data-mark");
+        const laneId = target.getAttribute("data-lane");
+        if (index !== null) {
+          const tag = data.tags[Number(index)];
+          if (tag === undefined) return;
+          const where = `Tag ${tag.tagId} · posición ${Number(index) + 1} de ${count}` + (tag.zone === null ? "" : ` · zona ${tag.zone}`);
+          line.show(
+            tag.isAnchor
+              ? `${where} — ancla de la vuelta: su tasa es 1 por construcción y no es evidencia de nada`
+              : tag.omission === null
+                ? `${where} — nadie pasó por este punto: sin pasadas no hay tasa`
+                : `${where} — ${percent(tag.omission)} de omisión en ${tag.passes} pasadas · ${tag.pattern}`,
+          );
+        } else if (markTag !== null) {
+          const mark = markByTag.get(markTag);
+          if (mark !== undefined) {
+            line.show(
+              `${mark.number} · Tag ${mark.tagId} — ${mark.label}, ` +
+                (mark.declared ? "declarado en lista (dato de planta)" : "candidato por firma, para confirmar o descartar (R-GRA-007)"),
+            );
+          }
+        } else if (laneId !== null) {
+          const lane = data.junctions.find((entry) => entry.laneId === laneId);
+          line.show(`Calle «${laneId}» — ${lane?.served === false ? "nadie entró en toda la ventana" : "cuelga de este punto del anillo"}`);
+        } else {
+          line.show(null);
+        }
+      },
+      { snap: "[data-index],[data-mark],[data-lane]" },
+    );
     area.append(canvas);
   });
 
@@ -475,7 +483,7 @@ export function readMatrixHeatmap(
   toolbar.append(byRing, byWorst);
 
   const area = host();
-  const line = readout("Pasa el puntero por la matriz para leer una celda.");
+  const line = readout("Toca o pasa el puntero por la matriz para leer una celda.");
   const vehicles = matrix.vehicles.map((vehicle) => vehicle.agvId);
   const cellsByTag = new Map(matrix.tags.map((tag) => [tag.tagId, new Map(tag.byVehicle.map((cell) => [cell.agvId, cell]))]));
   let order: "ring" | "worst" = "ring";
@@ -569,38 +577,42 @@ export function readMatrixHeatmap(
     context.fillText("tag", left + gridWidth + 6, top - 8);
     context.fillText("AGV", 0, top - 8);
 
-    overlay.addEventListener("pointermove", (event) => {
-      const box = overlay.getBoundingClientRect();
-      const x = event.clientX - box.left;
-      const y = event.clientY - box.top;
-      const j = Math.floor((x - left) / cellWidth);
-      const r = Math.floor((y - top) / rowHeight);
-      pointer.clearRect(0, 0, totalWidth, totalHeight);
-      const tag = rows[r];
-      const agvId = vehicles[j];
-      if (tag === undefined || agvId === undefined || j < 0 || r < 0) {
-        line.show(null);
-        return;
-      }
-      pointer.strokeStyle = ink;
-      pointer.lineWidth = 1;
-      pointer.strokeRect(left - 0.5, top + r * rowHeight - 0.5, gridWidth + 1, rowHeight + 1);
-      pointer.strokeRect(left + j * cellWidth - 0.5, top - 0.5, cellWidth + 1, gridHeight + 1);
-      const cell = cellsByTag.get(tag.tagId)?.get(agvId);
-      line.show(
-        `Tag ${tag.tagId} × AGV ${agvId} — ` +
-          (cell === undefined || cell.passes === 0
-            ? "no pasó por este punto: no es un 0 %"
-            : tag.isAnchor
-              ? "ancla: su tasa es 1 por construcción"
-              : `${percent(1 - cell.hits / cell.passes)} de omisión, ${cell.passes - cell.hits} de ${cell.passes} pasadas sin leer`) +
-          (tag.rate === null ? "" : ` · el tag en la flota: ${percent(1 - tag.rate)}`),
-      );
-    });
-    overlay.addEventListener("pointerleave", () => {
-      pointer.clearRect(0, 0, totalWidth, totalHeight);
-      line.show(null);
-    });
+    inspect(
+      overlay,
+      (point) => {
+        if (point === null) {
+          pointer.clearRect(0, 0, totalWidth, totalHeight);
+          line.show(null);
+          return;
+        }
+        const box = overlay.getBoundingClientRect();
+        const x = point.clientX - box.left;
+        const y = point.clientY - box.top;
+        const j = Math.floor((x - left) / cellWidth);
+        const r = Math.floor((y - top) / rowHeight);
+        pointer.clearRect(0, 0, totalWidth, totalHeight);
+        const tag = rows[r];
+        const agvId = vehicles[j];
+        if (tag === undefined || agvId === undefined || j < 0 || r < 0) {
+          line.show(null);
+          return;
+        }
+        pointer.strokeStyle = ink;
+        pointer.lineWidth = 1;
+        pointer.strokeRect(left - 0.5, top + r * rowHeight - 0.5, gridWidth + 1, rowHeight + 1);
+        pointer.strokeRect(left + j * cellWidth - 0.5, top - 0.5, cellWidth + 1, gridHeight + 1);
+        const cell = cellsByTag.get(tag.tagId)?.get(agvId);
+        line.show(
+          `Tag ${tag.tagId} × AGV ${agvId} — ` +
+            (cell === undefined || cell.passes === 0
+              ? "no pasó por este punto: no es un 0 %"
+              : tag.isAnchor
+                ? "ancla: su tasa es 1 por construcción"
+                : `${percent(1 - cell.hits / cell.passes)} de omisión, ${cell.passes - cell.hits} de ${cell.passes} pasadas sin leer`) +
+            (tag.rate === null ? "" : ` · el tag en la flota: ${percent(1 - tag.rate)}`),
+        );
+      },
+    );
   });
 
   const setOrder = (next: "ring" | "worst"): void => {
@@ -650,7 +662,7 @@ export function trendMultiplesChart(panels: readonly TrendPanel[], formats: Form
   );
   const area = host();
   area.classList.add("multiples");
-  const line = readout("Pasa el puntero por un panel: todos marcan el mismo instante.");
+  const line = readout("Toca o pasa el puntero por un panel: todos marcan el mismo instante.");
   const from = Math.min(...panels.map((panel) => panel.series.fromUtcMs));
   const to = Math.max(...panels.map((panel) => panel.series.fromUtcMs + panel.series.binWidthMs * panel.series.rates.length));
   const rateAt = (panel: TrendPanel, utcMs: number): number | null => {
@@ -729,32 +741,36 @@ export function trendMultiplesChart(panels: readonly TrendPanel[], formats: Form
       canvas.append(cross, dot);
       cursors.push({ cross, dot, panel });
 
-      canvas.addEventListener("pointermove", (event) => {
-        const bounds = canvas.getBoundingClientRect();
-        const at = from + ((event.clientX - bounds.left - margin.left) / innerWidth) * (to - from);
-        if (at < from || at > to) return;
-        const parts: string[] = [];
-        for (const cursor of cursors) {
-          const rate = rateAt(cursor.panel, at);
-          cursor.cross.setAttribute("x1", String(x(at)));
-          cursor.cross.setAttribute("x2", String(x(at)));
-          cursor.cross.setAttribute("visibility", "visible");
-          cursor.dot.setAttribute("visibility", rate === null ? "hidden" : "visible");
-          if (rate !== null) {
-            cursor.dot.setAttribute("cx", String(x(at)));
-            cursor.dot.setAttribute("cy", String(y(rate)));
+      inspect(
+        canvas,
+        (point) => {
+          if (point === null) {
+            for (const cursor of cursors) {
+            cursor.cross.setAttribute("visibility", "hidden");
+            cursor.dot.setAttribute("visibility", "hidden");
+            }
+            line.show(null);
+            return;
           }
-          parts.push(`${cursor.panel.who} ${cursor.panel.id} ${rate === null ? "sin pasadas" : percent(rate)}`);
-        }
-        line.show(`${formats.instant(at)} — ${parts.join(" · ")}`);
-      });
-      canvas.addEventListener("pointerleave", () => {
-        for (const cursor of cursors) {
-          cursor.cross.setAttribute("visibility", "hidden");
-          cursor.dot.setAttribute("visibility", "hidden");
-        }
-        line.show(null);
-      });
+          const bounds = canvas.getBoundingClientRect();
+          const at = from + ((point.clientX - bounds.left - margin.left) / innerWidth) * (to - from);
+          if (at < from || at > to) return;
+          const parts: string[] = [];
+          for (const cursor of cursors) {
+            const rate = rateAt(cursor.panel, at);
+            cursor.cross.setAttribute("x1", String(x(at)));
+            cursor.cross.setAttribute("x2", String(x(at)));
+            cursor.cross.setAttribute("visibility", "visible");
+            cursor.dot.setAttribute("visibility", rate === null ? "hidden" : "visible");
+            if (rate !== null) {
+              cursor.dot.setAttribute("cx", String(x(at)));
+              cursor.dot.setAttribute("cy", String(y(rate)));
+            }
+            parts.push(`${cursor.panel.who} ${cursor.panel.id} ${rate === null ? "sin pasadas" : percent(rate)}`);
+          }
+          line.show(`${formats.instant(at)} — ${parts.join(" · ")}`);
+        },
+      );
       box.append(title, canvas);
       area.append(box);
     }
@@ -806,7 +822,7 @@ export function dwellChart(rows: readonly DwellRow[]): HTMLElement {
       "firma, nunca la función asignada (R-GRA-007).",
   );
   const area = host();
-  const line = readout("Pasa el puntero por una columna para leer su recuento.");
+  const line = readout("Toca o pasa el puntero por una columna para leer su recuento.");
   const BINS = 40;
   const candidates = rows.filter((row) => !row.isReference);
   const basis = (candidates.length > 0 ? candidates : rows).map((row) => quantile([...row.durationsMs].sort((a, b) => a - b), 0.98));
@@ -870,19 +886,26 @@ export function dwellChart(rows: readonly DwellRow[]): HTMLElement {
       const anchor = px < 20 ? "start" : px > width - 30 ? "end" : "middle";
       canvas.append(text(px, axisY, stepSeconds >= 60 ? `${(tick * stepSeconds) / 60} min` : `${tick * stepSeconds} s`, "axis", { "text-anchor": anchor }));
     }
-    canvas.addEventListener("pointermove", (event) => {
-      const key = (event.target as SVGElement).getAttribute("data-k");
-      if (key === null) {
-        line.show(null);
-        return;
-      }
-      const [r, bin] = key.split(":").map(Number) as [number, number];
-      const row = rows[r];
-      const count = histograms[r]?.counts[bin] ?? 0;
-      if (row === undefined) return;
-      line.show(`${row.title} — entre ${seconds(bin * binMs)} y ${seconds((bin + 1) * binMs)}: ${count} pasadas (${percent(count / (histograms[r]?.total ?? 1))})`);
-    });
-    canvas.addEventListener("pointerleave", () => line.show(null));
+    inspect(
+      canvas,
+      (point) => {
+        if (point === null) {
+          line.show(null);
+          return;
+        }
+        const key = (point.target as SVGElement).getAttribute("data-k");
+        if (key === null) {
+          line.show(null);
+          return;
+        }
+        const [r, bin] = key.split(":").map(Number) as [number, number];
+        const row = rows[r];
+        const count = histograms[r]?.counts[bin] ?? 0;
+        if (row === undefined) return;
+        line.show(`${row.title} — entre ${seconds(bin * binMs)} y ${seconds((bin + 1) * binMs)}: ${count} pasadas (${percent(count / (histograms[r]?.total ?? 1))})`);
+      },
+      { snap: "[data-k]" },
+    );
     area.append(canvas);
   });
 
@@ -929,7 +952,7 @@ export function forkChart(forks: readonly ForkData[], maxHops: number): HTMLElem
   );
   const area = host();
   area.classList.add("forks");
-  const line = readout("Pasa el puntero por una rama para leer su soporte.");
+  const line = readout("Toca o pasa el puntero por una rama para leer su soporte.");
 
   responsive(area, (width) => {
     area.replaceChildren();
@@ -1001,16 +1024,23 @@ export function forkChart(forks: readonly ForkData[], maxHops: number): HTMLElem
           canvas.append(svg("circle", { cx: xe, cy: yt, r: 4, fill: "var(--panel)", stroke: "var(--ink)", "stroke-width": 1.5 }));
         }
       }
-      canvas.addEventListener("pointermove", (event) => {
-        const key = (event.target as SVGElement).getAttribute("data-k");
-        const branch = key === null ? undefined : shown[Number(key)];
-        line.show(
-          branch === undefined
-            ? null
-            : `${fork.tagId} → ${branch.tagId}: ${branch.support} de ${fork.support} pasadas (${percent(branch.share)})`,
-        );
-      });
-      canvas.addEventListener("pointerleave", () => line.show(null));
+      inspect(
+        canvas,
+        (point) => {
+          if (point === null) {
+            line.show(null);
+            return;
+          }
+          const key = (point.target as SVGElement).getAttribute("data-k");
+          const branch = key === null ? undefined : shown[Number(key)];
+          line.show(
+            branch === undefined
+              ? null
+              : `${fork.tagId} → ${branch.tagId}: ${branch.support} de ${fork.support} pasadas (${percent(branch.share)})`,
+          );
+        },
+        { snap: "[data-k]" },
+      );
 
       const verdict = document.createElement("p");
       verdict.className = "muted";
@@ -1061,7 +1091,7 @@ export function laneOccupancyChart(
       "ve; si falta la entrada o la salida, solo se dibuja el extremo conocido, nunca una duración.",
   );
   const area = host();
-  const line = readout("Pasa el puntero por una estancia para leerla.");
+  const line = readout("Toca o pasa el puntero por una estancia para leerla.");
   const allTimes = lanes.flatMap((lane) => lane.stayList.flatMap((stay) => [stay.enteredUtcMs, stay.leftUtcMs])).filter((value): value is number => value !== null);
   const covFrom = coverage.length > 0 ? Math.min(...coverage.map((span) => span.from)) : Math.min(...allTimes);
   const covTo = coverage.length > 0 ? Math.max(...coverage.map((span) => span.to)) : Math.max(...allTimes);
@@ -1187,26 +1217,33 @@ export function laneOccupancyChart(
       y += rowHeight;
     });
 
-    canvas.addEventListener("pointermove", (event) => {
-      const key = (event.target as SVGElement).getAttribute("data-k");
-      const stay = key === null ? undefined : flat[Number(key)];
-      if (stay === undefined) {
-        line.show(null);
-        return;
-      }
-      const lane = tracks.find((entry) => entry.lane.stayList.includes(stay))?.lane;
-      const entered =
-        stay.enteredUtcMs !== null
-          ? formats.instant(stay.enteredUtcMs)
-          : stay.state === "abierta-al-inicio"
-            ? "antes de la cobertura (ya estaba dentro)"
-            : "no consta";
-      const left_ = stay.leftUtcMs !== null ? formats.instant(stay.leftUtcMs) : "no se vio";
-      const length = stay.enteredUtcMs !== null && stay.leftUtcMs !== null ? ` · ${minutes(stay.leftUtcMs - stay.enteredUtcMs)}` : "";
-      const note = role.get(stay) === "espera" ? " · esperó mientras otros que entraron después salían antes" : role.get(stay) === "cola" ? " · entró después y salió antes" : "";
-      line.show(`${stay.agvId} en «${lane?.laneId ?? "?"}» — entrada ${entered}, salida ${left_}${length}${note}`);
-    });
-    canvas.addEventListener("pointerleave", () => line.show(null));
+    inspect(
+      canvas,
+      (point) => {
+        if (point === null) {
+          line.show(null);
+          return;
+        }
+        const key = (point.target as SVGElement).getAttribute("data-k");
+        const stay = key === null ? undefined : flat[Number(key)];
+        if (stay === undefined) {
+          line.show(null);
+          return;
+        }
+        const lane = tracks.find((entry) => entry.lane.stayList.includes(stay))?.lane;
+        const entered =
+          stay.enteredUtcMs !== null
+            ? formats.instant(stay.enteredUtcMs)
+            : stay.state === "abierta-al-inicio"
+              ? "antes de la cobertura (ya estaba dentro)"
+              : "no consta";
+        const left_ = stay.leftUtcMs !== null ? formats.instant(stay.leftUtcMs) : "no se vio";
+        const length = stay.enteredUtcMs !== null && stay.leftUtcMs !== null ? ` · ${minutes(stay.leftUtcMs - stay.enteredUtcMs)}` : "";
+        const note = role.get(stay) === "espera" ? " · esperó mientras otros que entraron después salían antes" : role.get(stay) === "cola" ? " · entró después y salió antes" : "";
+        line.show(`${stay.agvId} en «${lane?.laneId ?? "?"}» — entrada ${entered}, salida ${left_}${length}${note}`);
+      },
+      { snap: "[data-k]" },
+    );
     area.append(canvas);
   });
 
@@ -1254,7 +1291,7 @@ export function fifoSlopeChart(span: FifoSpan, overtaken: string, formats: Forma
       "excepciones y el dato no dice cuál (OQ-107).",
   );
   const area = host();
-  const line = readout("Pasa el puntero por una línea para leer su pasada.");
+  const line = readout("Toca o pasa el puntero por una línea para leer su pasada.");
   const passes = [...span.focus].sort((a, b) => a.enteredUtcMs - b.enteredUtcMs);
   const exitRank = new Map([...passes].sort((a, b) => a.leftUtcMs - b.leftUtcMs).map((pass, rank) => [pass, rank]));
   const slow = passes.find((pass) => pass.agvId === overtaken);
@@ -1293,19 +1330,26 @@ export function fifoSlopeChart(span: FifoSpan, overtaken: string, formats: Forma
     passes.forEach((pass, index) => {
       if (pass === slow) draw(pass, index);
     });
-    canvas.addEventListener("pointermove", (event) => {
-      const key = (event.target as SVGElement).getAttribute("data-k");
-      const pass = key === null ? undefined : passes[Number(key)];
-      if (pass === undefined) {
-        line.show(null);
-        return;
-      }
-      line.show(
-        `${pass.agvId} — entra ${Number(key) + 1}.º (${formats.instant(pass.enteredUtcMs)}), sale ` +
-          `${(exitRank.get(pass) ?? 0) + 1}.º (${formats.instant(pass.leftUtcMs)}), tránsito ${minutes(pass.leftUtcMs - pass.enteredUtcMs)}`,
-      );
-    });
-    canvas.addEventListener("pointerleave", () => line.show(null));
+    inspect(
+      canvas,
+      (point) => {
+        if (point === null) {
+          line.show(null);
+          return;
+        }
+        const key = (point.target as SVGElement).getAttribute("data-k");
+        const pass = key === null ? undefined : passes[Number(key)];
+        if (pass === undefined) {
+          line.show(null);
+          return;
+        }
+        line.show(
+          `${pass.agvId} — entra ${Number(key) + 1}.º (${formats.instant(pass.enteredUtcMs)}), sale ` +
+            `${(exitRank.get(pass) ?? 0) + 1}.º (${formats.instant(pass.leftUtcMs)}), tránsito ${minutes(pass.leftUtcMs - pass.enteredUtcMs)}`,
+        );
+      },
+      { snap: "[data-k]" },
+    );
     area.append(canvas);
   });
 
@@ -1346,7 +1390,7 @@ export function driftChart(drift: DriftView): HTMLElement {
       "(R-DAT-017). Correlación, nunca confirmación física (R-EVI-004).",
   );
   const area = host();
-  const line = readout("Pasa el puntero por una fila para leer sus recuentos.");
+  const line = readout("Toca o pasa el puntero por una fila para leer sus recuentos.");
   const order: Readonly<Record<string, number>> = { desaparecido: 0, "sustitucion-candidata": 1, nuevo: 2, "obsoleto-consolidado": 3 };
   const rows: { tagId: string; kind: string; early: number; late: number; pair: number | null }[] = [];
   const sorted = [...drift.tagDrifts].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9) || a.tagId.localeCompare(b.tagId));
@@ -1408,12 +1452,19 @@ export function driftChart(drift: DriftView): HTMLElement {
         ),
       );
     });
-    canvas.addEventListener("pointermove", (event) => {
-      const key = (event.target as SVGElement).getAttribute("data-k");
-      const row = key === null ? undefined : rows[Number(key)];
-      line.show(row === undefined ? null : `${row.tagId} · ${row.kind} — ${row.early} lecturas en el periodo temprano, ${row.late} en el tardío`);
-    });
-    canvas.addEventListener("pointerleave", () => line.show(null));
+    inspect(
+      canvas,
+      (point) => {
+        if (point === null) {
+          line.show(null);
+          return;
+        }
+        const key = (point.target as SVGElement).getAttribute("data-k");
+        const row = key === null ? undefined : rows[Number(key)];
+        line.show(row === undefined ? null : `${row.tagId} · ${row.kind} — ${row.early} lecturas en el periodo temprano, ${row.late} en el tardío`);
+      },
+      { snap: "[data-k]" },
+    );
     area.append(canvas);
   });
 
@@ -1480,7 +1531,7 @@ export function agvTimelineChart(data: AgvTimelineData, formats: Formats): HTMLE
       "un silencio tiene causa desconocida (R-AGV-006); fuera de la cobertura no hay datos (R-DAT-007).",
   );
   const area = host();
-  const line = readout("Pasa el puntero por un tramo para leerlo.");
+  const line = readout("Toca o pasa el puntero por un tramo para leerlo.");
   const first = data.binStarts[0] ?? 0;
   const last = (data.binStarts[data.binStarts.length - 1] ?? first) + data.binWidthMs;
   const covFrom = data.coverage.length > 0 ? Math.min(...data.coverage.map((span) => span.from)) : first;
@@ -1560,35 +1611,42 @@ export function agvTimelineChart(data: AgvTimelineData, formats: Formats): HTMLE
       }
     });
 
-    canvas.addEventListener("pointermove", (event) => {
-      const key = (event.target as SVGElement).getAttribute("data-k");
-      if (key === null) {
-        line.show(null);
-        return;
-      }
-      if (key === "cov") {
-        line.show(`Cobertura cargada — fuera de ella no hay datos, y no es un silencio`);
-        return;
-      }
-      if (key.startsWith("b")) {
-        const bin = Number(key.slice(1));
-        line.show(`${formats.instant(data.binStarts[bin] ?? first)} — ${data.bins[bin] ?? 0} lecturas en el tramo`);
-        return;
-      }
-      const period = data.inactivity[Number(key.slice(1))];
-      if (period === undefined) return;
-      const covered = clipToCoverage(period.fromUtcMs, period.toUtcMs, spans).reduce((sum, [a, b]) => sum + (b - a), 0);
-      const clipped = covered < period.toUtcMs - period.fromUtcMs - 1000;
-      line.show(
-        (period.cause === "carga-online"
-          ? `En carga${period.laneId === undefined ? "" : ` en «${period.laneId}»`} (inferido)`
-          : "Silencio, causa desconocida") +
-          ` — ${formats.instant(period.fromUtcMs)} → ${formats.instant(period.toUtcMs)}, ${minutes(period.toUtcMs - period.fromUtcMs)}; ` +
-          `se fue tras ${period.lastTagBefore} y volvió en ${period.firstTagAfter}` +
-          (clipped ? `; solo ${minutes(covered)} caen dentro de la cobertura, el resto no tiene datos` : ""),
-      );
-    });
-    canvas.addEventListener("pointerleave", () => line.show(null));
+    inspect(
+      canvas,
+      (point) => {
+        if (point === null) {
+          line.show(null);
+          return;
+        }
+        const key = (point.target as SVGElement).getAttribute("data-k");
+        if (key === null) {
+          line.show(null);
+          return;
+        }
+        if (key === "cov") {
+          line.show(`Cobertura cargada — fuera de ella no hay datos, y no es un silencio`);
+          return;
+        }
+        if (key.startsWith("b")) {
+          const bin = Number(key.slice(1));
+          line.show(`${formats.instant(data.binStarts[bin] ?? first)} — ${data.bins[bin] ?? 0} lecturas en el tramo`);
+          return;
+        }
+        const period = data.inactivity[Number(key.slice(1))];
+        if (period === undefined) return;
+        const covered = clipToCoverage(period.fromUtcMs, period.toUtcMs, spans).reduce((sum, [a, b]) => sum + (b - a), 0);
+        const clipped = covered < period.toUtcMs - period.fromUtcMs - 1000;
+        line.show(
+          (period.cause === "carga-online"
+            ? `En carga${period.laneId === undefined ? "" : ` en «${period.laneId}»`} (inferido)`
+            : "Silencio, causa desconocida") +
+            ` — ${formats.instant(period.fromUtcMs)} → ${formats.instant(period.toUtcMs)}, ${minutes(period.toUtcMs - period.fromUtcMs)}; ` +
+            `se fue tras ${period.lastTagBefore} y volvió en ${period.firstTagAfter}` +
+            (clipped ? `; solo ${minutes(covered)} caen dentro de la cobertura, el resto no tiene datos` : ""),
+        );
+      },
+      { snap: "[data-k]" },
+    );
     area.append(canvas);
   });
 
@@ -1637,7 +1695,7 @@ export function fleetCountChart(
   );
   const counts = fleet.counts;
   const area = host();
-  const line = readout("Pasa el puntero por la gráfica para leer el recuento de ese momento.");
+  const line = readout("Toca o pasa el puntero por la gráfica para leer el recuento de ese momento.");
   if (counts.length === 0) {
     wrapper.append(Object.assign(document.createElement("p"), { className: "muted", textContent: "Sin tramos cubiertos que contar." }));
     return wrapper;
@@ -1721,24 +1779,28 @@ export function fleetCountChart(
     }
     const cross = svg("line", { y1: top, y2: top + plotHeight, stroke: "var(--ink)", visibility: "hidden" });
     canvas.append(cross);
-    canvas.addEventListener("pointermove", (event) => {
-      const box = canvas.getBoundingClientRect();
-      const at = fleet.fromUtcMs + ((event.clientX - box.left - left) / innerWidth) * (fleet.toUtcMs - fleet.fromUtcMs);
-      const entry = counts.find((candidate) => at >= candidate.fromUtcMs && at < candidate.toUtcMs);
-      if (entry === undefined) {
-        cross.setAttribute("visibility", "hidden");
-        line.show(at >= fleet.fromUtcMs && at <= fleet.toUtcMs ? `${formats.instant(at)} — sin datos cargados: no se cuenta` : null);
-        return;
-      }
-      cross.setAttribute("x1", String(x(at)));
-      cross.setAttribute("x2", String(x(at)));
-      cross.setAttribute("visibility", "visible");
-      line.show(describe(entry));
-    });
-    canvas.addEventListener("pointerleave", () => {
-      cross.setAttribute("visibility", "hidden");
-      line.show(null);
-    });
+    inspect(
+      canvas,
+      (point) => {
+        if (point === null) {
+          cross.setAttribute("visibility", "hidden");
+          line.show(null);
+          return;
+        }
+        const box = canvas.getBoundingClientRect();
+        const at = fleet.fromUtcMs + ((point.clientX - box.left - left) / innerWidth) * (fleet.toUtcMs - fleet.fromUtcMs);
+        const entry = counts.find((candidate) => at >= candidate.fromUtcMs && at < candidate.toUtcMs);
+        if (entry === undefined) {
+          cross.setAttribute("visibility", "hidden");
+          line.show(at >= fleet.fromUtcMs && at <= fleet.toUtcMs ? `${formats.instant(at)} — sin datos cargados: no se cuenta` : null);
+          return;
+        }
+        cross.setAttribute("x1", String(x(at)));
+        cross.setAttribute("x2", String(x(at)));
+        cross.setAttribute("visibility", "visible");
+        line.show(describe(entry));
+      },
+    );
     area.append(canvas);
   });
 
@@ -1781,7 +1843,7 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
       "lee sin estar asignado va a media altura.",
   );
   const area = host();
-  const line = readout("Pasa el puntero por una fila para leer el tramo.");
+  const line = readout("Toca o pasa el puntero por una fila para leer el tramo.");
   const vehicles = fleet.vehicles;
 
   responsive(area, (width) => {
@@ -1849,22 +1911,28 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
       context.fillText(formats.tick(tick), px, top + plotHeight + 14);
     }
 
-    node.addEventListener("pointermove", (event) => {
-      const box = node.getBoundingClientRect();
-      const row = Math.floor((event.clientY - box.top - top) / (rowHeight + gap));
-      const vehicle = vehicles[row];
-      const at = fleet.fromUtcMs + ((event.clientX - box.left - left) / innerWidth) * (fleet.toUtcMs - fleet.fromUtcMs);
-      const segment = vehicle?.segments.find((candidate) => at >= candidate.fromUtcMs && at < candidate.toUtcMs);
-      if (vehicle === undefined || segment === undefined) {
-        line.show(null);
-        return;
-      }
-      line.show(
-        `${vehicle.agvId} — ${FLEET_STATE_LABEL[segment.state]}, de ${formats.instant(segment.fromUtcMs)} a ` +
-          `${formats.instant(segment.toUtcMs)} (${minutes(segment.toUtcMs - segment.fromUtcMs)})`,
-      );
-    });
-    node.addEventListener("pointerleave", () => line.show(null));
+    inspect(
+      node,
+      (point) => {
+        if (point === null) {
+          line.show(null);
+          return;
+        }
+        const box = node.getBoundingClientRect();
+        const row = Math.floor((point.clientY - box.top - top) / (rowHeight + gap));
+        const vehicle = vehicles[row];
+        const at = fleet.fromUtcMs + ((point.clientX - box.left - left) / innerWidth) * (fleet.toUtcMs - fleet.fromUtcMs);
+        const segment = vehicle?.segments.find((candidate) => at >= candidate.fromUtcMs && at < candidate.toUtcMs);
+        if (vehicle === undefined || segment === undefined) {
+          line.show(null);
+          return;
+        }
+        line.show(
+          `${vehicle.agvId} — ${FLEET_STATE_LABEL[segment.state]}, de ${formats.instant(segment.fromUtcMs)} a ` +
+            `${formats.instant(segment.toUtcMs)} (${minutes(segment.toUtcMs - segment.fromUtcMs)})`,
+        );
+      },
+    );
   });
 
   const share = (vehicle: FleetView["vehicles"][number], state: FleetStateName): number => {

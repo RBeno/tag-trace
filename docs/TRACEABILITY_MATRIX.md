@@ -1,8 +1,8 @@
 ---
 document_id: TT-TRACE-001
-version: 0.27.0
+version: 0.28.0
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-24
 ---
 
 # Matriz de trazabilidad
@@ -100,6 +100,7 @@ regla exista: la matriz no es una lista de intenciones.
 | DS-012 / R-AGV-014 / R-AGV-015 / TC-148–157 flota del circuito y vehículos que no cargan (Parte 39): historial de flota incremental, vida de cada AGV en tramos, recuento «N de M» | `src/domain/fleet.ts`, `src/ingestion/fleet-history.ts`, `src/domain/charging.ts` (`neverCharged`), `src/persistence/store.ts` (`fleet`, versión 4), `workers/import.worker.ts` (`runFleet`, `accumulate`), `src/presentation/diagnostic-charts.ts` (`fleetCountChart`, `fleetLifelineChart`) | `tests/unit/fleet.test.ts`, `tests/unit/fleet-history.test.ts`, `tests/unit/charging.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 | R-DAT-007 / TC-158 el expediente de un AGV no cuenta un hueco de cobertura como inactividad | `src/domain/dossier.ts` (`coverage` por tramos), `workers/import.worker.ts` | `tests/unit/dossier.test.ts` |
 | R-EVI-007 / TC-159–160 revisión en campo de los hallazgos | `src/domain/review.ts`, `src/persistence/store.ts` (tabla `reviews`, versión 5), `src/presentation/review-ui.ts`, `src/presentation/main.ts` (`finding`, `.agvproj`) | `tests/unit/review.test.ts`, `tests/e2e/revision.spec.ts` |
+| `UX_SPEC.md` §7 / TC-161–162 lectura de gráficos con dedo, ratón o panel táctil; tamaños de tableta y portátil | `src/presentation/pointer.ts`, `src/presentation/diagnostic-charts.ts`, `src/presentation/charts.ts`, `src/presentation/styles.css` | `tests/unit/pointer.test.ts`, `tests/e2e/tactil.spec.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` —, y el tercer
