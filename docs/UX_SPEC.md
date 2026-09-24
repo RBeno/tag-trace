@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.15.0
+version: 0.16.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -326,7 +326,7 @@ un asignado que no lee nada solo aparece aquí.
 
 | Vista | Qué responde | Su límite, escrito al lado |
 |---|---|---|
-| **Flota en funcionamiento** | «de 12:05 a 13:10, 38 de 40», y el peor momento de la ventana | escalonada: cambia solo donde cambia un tramo; fuera de la cobertura no se cuenta (trama); sin historial, M son los vistos (R-AGV-014) |
+| **Flota en el circuito** | «de 10:00 a 10:15, 40 de 40 en el circuito, 2 leyendo», y los dos peores momentos: menos en el circuito y menos leyendo | tres escalonadas: asignados, en el circuito y, discontinua, leyendo; las paradas de la producción como bandas; fuera de la cobertura no se cuenta (trama); sin historial, M son los vistos (R-AGV-014, R-AGV-018) |
 | **Vida de cada AGV en el circuito** | cuándo leía, cargaba, callaba, faltaba o no estaba asignado cada vehículo | una fila por AGV en un único `canvas`; leer sin estar asignado es media barra, distinta también por la forma (R-AGV-015) |
 
 Cada tramo tiene su color y su leyenda. Los huecos sin carga se colorean por **cómo reapareció** el
@@ -334,7 +334,12 @@ AGV (R-AGV-017, Parte 45), con los colores que pidió el propietario:
 
 - **leyendo** (azul) y **carga** inferida (violeta) cuentan como en funcionamiento. Un hueco que ese
   tramo tiene a menudo en ese turno —hasta tres veces su mediana— se dibuja leyendo: no es un hueco;
-- **parado** (azul oscuro): vuelve por el tag siguiente, o por el mismo, más tarde de lo habitual;
+- **parado sin nada que lo explique** (azul oscuro liso): vuelve por el tag siguiente, o por el
+  mismo, más tarde de lo habitual, sin nadie parado delante y con la producción en marcha;
+- **parado, explicado** (el mismo azul con rayas del fondo): con la producción parada o en cola
+  detrás de otro parado (R-AGV-018). Se distingue por la textura, no por otro color —con diez clases
+  no quedan colores que separar a ojo—, y se aparta para que lo liso sea lo que hay que mirar;
+- **el primero de una cola que no avanza**: azul oscuro con contorno de acento;
 - **un tag más allá** (amarillo) y **dos o más** (naranja);
 - **una hora o más sin leer, o vuelve en otro punto** (rojo apagado): también el rato sin lecturas
   de una hora o más al principio o al final de los datos;
@@ -347,14 +352,20 @@ AGV (R-AGV-017, Parte 45), con los colores que pidió el propietario:
 - **leyendo sin asignar**: media barra, se cuenta aparte y nunca en N;
 - **sin datos**: fuera de la cobertura, con trama (R-DAT-007).
 
-Al tocar un tramo, la lectura da los hechos: «7108 — parado: volvió por 60213, el siguiente a 60210;
-de 10:05 a 10:48 (43 min; lo habitual en ese tramo, turno 06–14: 40 s)». Nunca «descanso» ni
+Una franja arriba marca cuándo estuvo parada la producción. Al tocar un tramo, la lectura da los
+hechos y qué hacía el resto: «7108 — parado: volvió por 60213, el siguiente a 60210; de 10:05 a 10:48
+(43 min; lo habitual en ese tramo, turno 06–14: 40 s); nadie parado delante y la producción en
+marcha», o «…; la producción estaba parada (ningún tag crítico leído)», o «…; en cola: el de delante
+también estaba parado». Nunca «descanso» ni
 «avería»: la causa la pone una persona (R-EVI-006). Los colores están validados para daltonismo en
 los dos temas; el azul oscuro y el amarillo salen a propósito de la banda de claridad y nunca van
 solos: siempre con la lectura y la tabla.
 
-Dos hallazgos se enseñan de entrada, sin causa: los asignados que no leyeron nada en toda la ventana
-y los que leen sin estar asignados. La tabla equivalente del recuento son sus intervalos; la de la
+Se enseñan de entrada, sin causa: **las paradas de la producción** (cuándo, cuáles se repiten a la
+misma hora otro día, si todos siguieron por su sitio y quién aparece delante de quien iba detrás),
+**el primero de cada cola sin avanzar** con la producción en marcha (dónde, cuánto de más, cuántos
+detrás y cuántas lecturas críticas mientras tanto), los asignados que no leyeron nada en toda la
+ventana y los que leen sin estar asignados. La tabla equivalente del recuento son sus intervalos; la de la
 vida de cada AGV, el porcentaje de su tiempo en cada estado y en cada clase de hueco, desplazable
 dentro de su caja.
 

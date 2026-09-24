@@ -15,6 +15,7 @@
 
 import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
 import type { FleetTimeline } from "../domain/fleet.js";
+import type { Blockage, ProductionStop } from "../domain/flow-stops.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
 import type { ReadMatrix } from "../domain/read-matrix.js";
@@ -424,7 +425,31 @@ export interface CircuitViews {
    * continuos y el recuento N de M. Sin historial cargado, M son los vehículos que aparecen en las
    * lecturas, y `historyLoaded` lo dice.
    */
-  readonly fleet: FleetTimeline & { readonly circuitName: string | null };
+  readonly fleet: FleetTimeline & {
+    readonly circuitName: string | null;
+    /**
+     * Cuándo estuvo parada la producción y cómo salió cada AGV de cada parada (R-AGV-018): cuántos
+     * siguieron por su sitio, quién no, y si se mantuvo el orden a lo largo del anillo.
+     */
+    readonly production: {
+      readonly basis: "criticos" | "flota";
+      readonly basisTags: number;
+      readonly stops: readonly (ProductionStop & {
+        readonly vehicles: number;
+        readonly inPlace: number;
+        readonly notInPlace: readonly {
+          readonly agvId: string;
+          readonly fromTagId: string;
+          readonly toTagId: string;
+          readonly skipped: number | null;
+        }[];
+        readonly orderKept: boolean | null;
+        readonly orderChanges: readonly { readonly agvId: string; readonly passed: string }[];
+      })[];
+    };
+    /** El primero de una cola sin avanzar, sin nada que lo explique (R-AGV-018). */
+    readonly blockages: readonly Blockage[];
+  };
   /**
    * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando
    * el circuito tiene listas de planta cargadas **y** al menos dos periodos distantes: con una sola

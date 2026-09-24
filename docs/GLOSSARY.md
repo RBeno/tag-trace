@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.18.0
+version: 0.19.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -20,7 +20,10 @@ last_updated: 2026-09-24
 | Sin datos cargados | Estado de un intervalo que queda fuera de la cobertura. Distinto de `unknown`: en `unknown` hubo evidencia y no basta para decidir; aquí nunca hubo evidencia. No es una parada ni un silencio. |
 | Muestra | Periodo acotado que se importa y analiza. El producto trabaja por muestras, no sobre un histórico continuo; dos muestras solo se comparan si su contexto de calendario es equivalente. |
 | Flota asignada | Vehículos que el historial de flota (DS-012) asigna al circuito en un instante dado: los que tienen un periodo `[desde, hasta)` que lo contiene. Es la M del recuento «N de M». Sin historial cargado no se conoce, y se sustituye por los vehículos vistos en las lecturas diciéndolo (R-AGV-014). |
-| En funcionamiento | Un vehículo asignado que, en un instante dentro de la cobertura, lee o está en carga inferida (R-CO-006, R-CO-007). Es la N del recuento. Un silencio sin carga que lo explique no cuenta, y leer sin estar asignado se cuenta aparte, nunca en N (R-AGV-014, R-AGV-015). |
+| En el circuito | Un vehículo asignado que, en un instante dentro de la cobertura, lee, carga, o está parado o circulando sin leer: ningún AGV cambia de circuito. Es la N del recuento, y aparte se dice cuántos leen. Solo quedan fuera mantenimiento y una hora o más sin leer que nada explica; leer sin estar asignado se cuenta aparte, nunca en N (R-AGV-014, R-AGV-015, R-AGV-018). Sustituye a «en funcionamiento», que dejaba fuera a cada AGV parado. |
+| Parada de la producción | Tramo sin ninguna lectura en los tags críticos declarados, largo e improbable por azar con el ritmo de ese turno (sin críticos declarados, de toda la flota). Explica las paradas de los AGV que caen dentro. Sale de los datos, no se declara (R-AGV-018). |
+| Cola | AGV parados uno detrás de otro, a dos tags o menos, porque el de delante tampoco avanza. Una cola que avanza cada poco es saturación o un pulmón (R-AGV-018). |
+| Primero de la cola (bloqueo) | La parada de una cola sin nadie parado delante. Si pasa dos minutos de lo habitual con la producción en marcha, es un bloqueo: se dice dónde, cuánto, cuántos quedaron detrás y cuántas lecturas críticas hubo mientras tanto. Sin causa (R-AGV-018, R-EVI-006). |
 | Periodo de inactividad | Intervalo dentro de la cobertura en el que un objeto no produce lecturas. Como un AGV detenido no emite, la inactividad no se distingue del fallo de comunicación por la ausencia en sí, sino por el contexto colectivo, el punto de la última lectura y el calendario. |
 | Instante de cambio | Última lectura antes de un silencio o de un cambio sostenido de comportamiento. Es `inferred`: marca el último momento con evidencia, no el instante real en que el objeto dejó de funcionar. |
 | Expediente de objeto | Vista que reúne todo lo conocido sobre un AGV o un tag concreto, con su contraste de cohorte, su inactividad y su evidencia navegable. No confundir con el expediente de incidencia. |

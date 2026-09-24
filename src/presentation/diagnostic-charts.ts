@@ -1679,9 +1679,11 @@ const FLEET_STATE_LABEL: Readonly<Record<FleetStateName, string>> = {
 };
 
 /**
- * Cuántos de los asignados están en funcionamiento en cada momento — «38 de 40» —, como dos series
- * escalonadas: la flota asignada detrás y los que leen o cargan delante (R-AGV-014). Los que leen sin
- * estar asignados van aparte, en naranja, y nunca suman a N (R-AGV-015).
+ * Cuántos de los asignados están en el circuito en cada momento — «40 de 40» —, y cuántos de ellos
+ * leen (R-AGV-014). Un AGV parado sigue en el circuito: no tener lecturas no es no estar (R-AGV-018).
+ * Tres series escalonadas: la flota asignada, los que están en el circuito y, discontinua, los que
+ * leen. Las paradas de la producción van como bandas. Los que leen sin estar asignados van aparte, en
+ * naranja, y nunca suman a N (R-AGV-015).
  */
 export function fleetCountChart(
   fleet: FleetView,
@@ -1689,8 +1691,9 @@ export function fleetCountChart(
   formats: Formats,
 ): HTMLElement {
   const wrapper = figure(
-    "Flota en funcionamiento",
-    "AGV asignados que leen o están cargando, sobre el total asignado. Donde no hay datos no se cuenta.",
+    "Flota en el circuito",
+    "AGV asignados en el circuito —leyendo, cargando o parados en su sitio— sobre el total asignado, " +
+      "y cuántos de ellos leen. Las bandas son paradas de la producción. Donde no hay datos no se cuenta.",
   );
   const counts = fleet.counts;
   const area = host();
@@ -1700,26 +1703,30 @@ export function fleetCountChart(
     return wrapper;
   }
 
-  // El peor momento, que es lo que se busca al mirar esto: la menor proporción en funcionamiento.
+  // Los dos peores momentos: el de menos en el circuito, y el de menos leyendo.
   const withFleet = counts.filter((entry) => entry.assigned > 0);
-  const worst =
+  const lowest = (pick: (entry: (typeof counts)[number]) => number) =>
     withFleet.length === 0
       ? null
-      : withFleet.reduce((best, entry) =>
-          entry.inService / entry.assigned < best.inService / best.assigned ? entry : best,
-        );
+      : withFleet.reduce((best, entry) => (pick(entry) / entry.assigned < pick(best) / best.assigned ? entry : best));
+  const worst = lowest((entry) => entry.inCircuit);
+  const worstReading = lowest((entry) => entry.reading);
   const summary = document.createElement("p");
   summary.className = "muted";
   summary.textContent =
-    worst === null
+    worst === null || worstReading === null
       ? "Ningún AGV asignado dentro de la cobertura."
-      : `Menos en funcionamiento: ${worst.inService} de ${worst.assigned}, de ` +
-        `${formats.instant(worst.fromUtcMs)} a ${formats.instant(worst.toUtcMs)}.`;
-  const maxAssigned = Math.max(1, ...counts.map((entry) => Math.max(entry.assigned, entry.inService + entry.unassignedActive)));
-  const describe = (entry: (typeof counts)[number]): string =>
-    `de ${formats.instant(entry.fromUtcMs)} a ${formats.instant(entry.toUtcMs)} · ${entry.inService} de ` +
-    `${entry.assigned} en funcionamiento` +
-    (entry.unassignedActive > 0 ? ` (+${entry.unassignedActive} leyendo sin estar asignados)` : "");
+      : `Menos en el circuito: ${worst.inCircuit} de ${worst.assigned}, de ` +
+        `${formats.instant(worst.fromUtcMs)} a ${formats.instant(worst.toUtcMs)}. Menos leyendo: ` +
+        `${worstReading.reading} de ${worstReading.assigned}, de ${formats.instant(worstReading.fromUtcMs)} a ` +
+        `${formats.instant(worstReading.toUtcMs)}.`;
+  const maxAssigned = Math.max(1, ...counts.map((entry) => Math.max(entry.assigned, entry.inCircuit + entry.unassignedActive)));
+  const stopAt = (utcMs: number) => fleet.production.stops.find((stop) => utcMs >= stop.fromUtcMs && utcMs <= stop.toUtcMs);
+  const describe = (entry: (typeof counts)[number], at: number): string =>
+    `de ${formats.instant(entry.fromUtcMs)} a ${formats.instant(entry.toUtcMs)} · ${entry.inCircuit} de ` +
+    `${entry.assigned} en el circuito, ${entry.reading} leyendo` +
+    (entry.unassignedActive > 0 ? ` (+${entry.unassignedActive} leyendo sin estar asignados)` : "") +
+    (stopAt(at) === undefined ? "" : " · producción parada");
 
   responsive(area, (width) => {
     area.replaceChildren();
@@ -1745,6 +1752,18 @@ export function fleetCountChart(
       if (span.from > cursor) canvas.append(svg("rect", { x: x(cursor), y: top, width: x(span.from) - x(cursor), height: plotHeight, fill: HATCH_FILL }));
       cursor = Math.max(cursor, span.to);
     }
+    // Paradas de la producción: bandas suaves, detrás de las líneas.
+    for (const stop of fleet.production.stops) {
+      canvas.append(
+        svg("rect", {
+          x: x(stop.fromUtcMs),
+          y: top,
+          width: Math.max(1.5, x(stop.toUtcMs) - x(stop.fromUtcMs)),
+          height: plotHeight,
+          fill: "var(--viz-stop-band)",
+        }),
+      );
+    }
     timeAxis(canvas, x, fleet.fromUtcMs, fleet.toUtcMs, top, top + plotHeight, height - 6, width, formats.tick);
 
     const step = (pick: (entry: (typeof counts)[number]) => number): string[] => {
@@ -1768,8 +1787,11 @@ export function fleetCountChart(
     for (const d of step((entry) => entry.assigned)) {
       canvas.append(svg("path", { d, fill: "none", stroke: "var(--viz-neutral)", "stroke-width": 2 }));
     }
-    for (const d of step((entry) => entry.inService)) {
+    for (const d of step((entry) => entry.inCircuit)) {
       canvas.append(svg("path", { d, fill: "none", stroke: "var(--viz-series)", "stroke-width": 2 }));
+    }
+    for (const d of step((entry) => entry.reading)) {
+      canvas.append(svg("path", { d, fill: "none", stroke: "var(--viz-series)", "stroke-width": 1.5, "stroke-dasharray": "4 3" }));
     }
     if (counts.some((entry) => entry.unassignedActive > 0)) {
       for (const d of step((entry) => entry.unassignedActive)) {
@@ -1797,7 +1819,7 @@ export function fleetCountChart(
         cross.setAttribute("x1", String(x(at)));
         cross.setAttribute("x2", String(x(at)));
         cross.setAttribute("visibility", "visible");
-        line.show(describe(entry));
+        line.show(describe(entry, at));
       },
     );
     area.append(canvas);
@@ -1806,8 +1828,10 @@ export function fleetCountChart(
   wrapper.append(summary, area, line.node);
   wrapper.append(
     legendList([
-      ["var(--viz-series)", "en funcionamiento (N)"],
+      ["var(--viz-series)", "en el circuito (N)"],
+      ["repeating-linear-gradient(90deg, var(--viz-series) 0 4px, transparent 4px 7px)", "de ellos, leyendo (discontinua)"],
       ["var(--viz-neutral)", "asignados (M)"],
+      ["var(--viz-stop-band)", "producción parada"],
       ["var(--viz-accent)", "leyendo sin estar asignados"],
       [HATCH_SWATCH, "sin datos cargados"],
     ]),
@@ -1815,11 +1839,12 @@ export function fleetCountChart(
   wrapper.append(
     lazyDetails("Ver los mismos datos en tabla", () =>
       plainTable(
-        ["Desde", "Hasta", "En funcionamiento", "Asignados", "Leyendo sin asignar"],
+        ["Desde", "Hasta", "En el circuito", "Leyendo", "Asignados", "Leyendo sin asignar"],
         counts.map((entry) => [
           formats.instant(entry.fromUtcMs),
           formats.instant(entry.toUtcMs),
-          String(entry.inService),
+          String(entry.inCircuit),
+          String(entry.reading),
           String(entry.assigned),
           String(entry.unassignedActive),
         ]),
@@ -1838,7 +1863,7 @@ type GapKindName = NonNullable<FleetSegmentView["kind"]>;
  * además trama, porque frente al naranja cae en la franja en que el color solo no basta.
  */
 const GAP_KIND: Readonly<Record<GapKindName, { readonly token: string; readonly label: string }>> = {
-  parada: { token: "--viz-parada", label: "parado: vuelve por el tag siguiente" },
+  parada: { token: "--viz-parada", label: "parado sin nada que lo explique: vuelve por el tag siguiente" },
   "salta-uno": { token: "--viz-salta-uno", label: "vuelve un tag más allá" },
   "salta-varios": { token: "--viz-accent", label: "vuelve dos o más tags más allá" },
   desconexion: { token: "--viz-desconexion", label: "una hora o más sin leer, o vuelve en otro punto" },
@@ -1846,14 +1871,27 @@ const GAP_KIND: Readonly<Record<GapKindName, { readonly token: string; readonly 
   "sin-clasificar": { token: "--viz-empty", label: "falta de lecturas fuera del anillo inferido" },
 };
 
+/** Un contorno de `line` sobre `fill`, para la leyenda. */
+function outlineSwatch(line: string, fill: string, width = 1): string {
+  return [
+    `linear-gradient(${line} 0 0) top / 100% ${width}px no-repeat`,
+    `linear-gradient(${line} 0 0) bottom / 100% ${width}px no-repeat`,
+    `linear-gradient(${line} 0 0) left / ${width}px 100% no-repeat`,
+    `linear-gradient(${line} 0 0) right / ${width}px 100% no-repeat`,
+    fill,
+  ].join(", ");
+}
+
 /** Un contorno sin relleno, como se dibuja un hueco sin clasificar. */
-const OUTLINE_SWATCH = [
-  "linear-gradient(var(--viz-empty) 0 0) top / 100% 1px no-repeat",
-  "linear-gradient(var(--viz-empty) 0 0) bottom / 100% 1px no-repeat",
-  "linear-gradient(var(--viz-empty) 0 0) left / 1px 100% no-repeat",
-  "linear-gradient(var(--viz-empty) 0 0) right / 1px 100% no-repeat",
-  "var(--panel)",
-].join(", ");
+const OUTLINE_SWATCH = outlineSwatch("var(--viz-empty)", "var(--panel)");
+
+/**
+ * Una parada que explica el resto —producción parada o cola— es la misma parada, con rayas del fondo:
+ * se distingue por la textura y no por otro color, y se aparta para que lo que queda en azul oscuro
+ * liso sea lo que hay que mirar (R-AGV-018). Con diez clases ya no hay colores que separar a ojo.
+ */
+const EXPLAINED_SWATCH = "repeating-linear-gradient(135deg, var(--viz-parada) 0 2px, var(--panel) 2px 4.5px)";
+const BLOCKING_SWATCH = outlineSwatch("var(--viz-accent)", "var(--viz-parada)", 2);
 
 const MAINTENANCE_SWATCH = "repeating-linear-gradient(135deg, var(--viz-mantenimiento) 0 3px, var(--panel) 3px 4.5px)";
 
@@ -1862,8 +1900,8 @@ function duration(ms: number): string {
   return ms < 90_000 ? seconds(ms) : minutes(ms);
 }
 
-/** Relleno a rayas para el canvas: el color de base con líneas finas del fondo. */
-function canvasStripes(context: CanvasRenderingContext2D, base: string, gap: string): CanvasPattern | string {
+/** Relleno a rayas para el canvas: el color de base con líneas del fondo. */
+function canvasStripes(context: CanvasRenderingContext2D, base: string, gap: string, lineWidth = 1.2): CanvasPattern | string {
   const tile = document.createElement("canvas");
   tile.width = 5;
   tile.height = 5;
@@ -1872,7 +1910,7 @@ function canvasStripes(context: CanvasRenderingContext2D, base: string, gap: str
   pen.fillStyle = base;
   pen.fillRect(0, 0, 5, 5);
   pen.strokeStyle = gap;
-  pen.lineWidth = 1.2;
+  pen.lineWidth = lineWidth;
   pen.beginPath();
   pen.moveTo(0, 0);
   pen.lineTo(5, 5);
@@ -1884,8 +1922,34 @@ function canvasStripes(context: CanvasRenderingContext2D, base: string, gap: str
   return context.createPattern(tile, "repeat") ?? base;
 }
 
+/** Qué hacía el resto mientras tanto (R-AGV-018), como cola de la lectura de un tramo. */
+function describeJustification(segment: FleetSegmentView, basis: FleetView["production"]["basis"]): string {
+  switch (segment.justification) {
+    case "produccion":
+      return `; la producción estaba parada (${basis === "criticos" ? "ningún tag crítico leído" : "la flota sin leer"})`;
+    case "cola":
+      return "; en cola: el de delante también estaba parado";
+    case "sin-explicacion":
+      return (
+        "; nadie parado delante y la producción en marcha" +
+        (segment.blocking === undefined ? "" : `; ${segment.blocking} AGV quedaron detrás`)
+      );
+    default:
+      return "";
+  }
+}
+
 /** Lo que dice un tramo al tocarlo: la clase y los hechos que la sostienen, sin causa (R-EVI-006). */
-function describeLifeSegment(agvId: string, segment: FleetSegmentView, formats: Formats): string {
+function describeLifeSegment(
+  agvId: string,
+  segment: FleetSegmentView,
+  formats: Formats,
+  basis: FleetView["production"]["basis"],
+): string {
+  return describeLifeFacts(agvId, segment, formats) + describeJustification(segment, basis);
+}
+
+function describeLifeFacts(agvId: string, segment: FleetSegmentView, formats: Formats): string {
   const when =
     `de ${formats.instant(segment.fromUtcMs)} a ${formats.instant(segment.toUtcMs)} ` +
     `(${duration(segment.toUtcMs - segment.fromUtcMs)}`;
@@ -1900,6 +1964,9 @@ function describeLifeSegment(agvId: string, segment: FleetSegmentView, formats: 
       : `se fue por ${detail.lastTagBefore} y volvió por ${detail.firstTagAfter}`;
   switch (segment.kind) {
     case "parada": {
+      if (detail?.edge === "inicio") return `${agvId} — parado al principio de los datos, hasta su primera lectura en ${detail.firstTagAfter ?? "?"}; ${when})`;
+      if (detail?.edge === "fin") return `${agvId} — parado al final de los datos, desde su última lectura en ${detail.lastTagBefore ?? "?"}; ${when})`;
+      if (detail?.edge === "todo") return `${agvId} — parado, sin ninguna lectura en estos datos; ${when})`;
       const back =
         detail?.firstTagAfter === detail?.lastTagBefore
           ? `volvió por el mismo tag, ${detail?.firstTagAfter ?? ""}`
@@ -1941,13 +2008,18 @@ function describeLifeSegment(agvId: string, segment: FleetSegmentView, formats: 
  * Cada hueco sin carga se colorea por cómo reapareció el AGV (R-AGV-017): parado en su sitio, un tag
  * o varios más allá, una hora o más fuera, o por un tag de mantenimiento. Un hueco que ese tramo tiene
  * a menudo en ese turno se dibuja leyendo: no es un hueco.
+ *
+ * Y cada parada se lee contra el resto (R-AGV-018): con la producción parada o en cola detrás de otro
+ * parado va con rayas —explicada—; sin nada que la explique, en azul oscuro liso; y el primero de una
+ * cola que no avanza, además con contorno. Una franja arriba marca cuándo estuvo parada la producción.
  */
 export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElement {
   const wrapper = figure(
     "Vida de cada AGV en el circuito",
-    "Qué hacía cada AGV en cada momento, y cómo volvió tras cada hueco sin lecturas. Toca un tramo " +
-      "para leer por dónde se fue, por dónde volvió y lo que suele tardar ese tramo en ese turno. " +
-      "Media altura: lee sin estar asignado.",
+    "Qué hacía cada AGV en cada momento, cómo volvió tras cada hueco sin lecturas y qué hacía el resto " +
+      "mientras tanto. Toca un tramo para leer por dónde se fue, por dónde volvió, lo que suele tardar " +
+      "ese tramo en ese turno y si la producción o el de delante estaban parados. La franja de arriba " +
+      "marca cuándo estuvo parada la producción. Media altura: lee sin estar asignado.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por una fila para leer el tramo.");
@@ -1959,7 +2031,8 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
     const right = 6;
     const rowHeight = 11;
     const gap = 3;
-    const top = 4;
+    const strip = 6;
+    const top = 4 + strip + 4;
     const plotHeight = vehicles.length * (rowHeight + gap);
     const height = top + plotHeight + 22;
     const innerWidth = width - left - right;
@@ -1994,7 +2067,13 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
         : kind === "sin-clasificar"
           ? color("--panel")
           : color(GAP_KIND[kind].token);
-    const kindFills = new Map<GapKindName, string | CanvasPattern>();
+    const kindFills = new Map<string, string | CanvasPattern>();
+    const explained = canvasStripes(context, color("--viz-parada"), color("--panel"), 2.2);
+    // La franja de la producción parada, arriba, con la misma textura que una parada explicada.
+    for (const stop of fleet.production.stops) {
+      context.fillStyle = explained;
+      context.fillRect(x(stop.fromUtcMs), 4, Math.max(1.5, x(stop.toUtcMs) - x(stop.fromUtcMs)), strip);
+    }
     context.font = "10px ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
     vehicles.forEach((vehicle, row) => {
       const y = top + row * (rowHeight + gap);
@@ -2005,7 +2084,10 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
         const x0 = x(segment.fromUtcMs);
         const w = Math.max(0.8, x(segment.toUtcMs) - x0);
         let fill = fills[segment.state];
-        if (segment.kind !== undefined) {
+        const isExplained = segment.justification === "produccion" || segment.justification === "cola";
+        if ((segment.kind === "parada" || segment.kind === "sin-clasificar") && isExplained) {
+          fill = explained;
+        } else if (segment.kind !== undefined) {
           const known = kindFills.get(segment.kind);
           fill = known ?? kindFill(segment.kind);
           if (known === undefined) kindFills.set(segment.kind, fill);
@@ -2017,10 +2099,16 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
           context.fillRect(x0, y, w, rowHeight);
         }
         // Un hueco sin clasificar, o sin la configuración para clasificarlo, es solo un contorno.
-        if (segment.state === "silencio" && (segment.kind === undefined || segment.kind === "sin-clasificar")) {
+        if (segment.state === "silencio" && !isExplained && (segment.kind === undefined || segment.kind === "sin-clasificar")) {
           context.strokeStyle = color("--viz-empty");
           context.lineWidth = 1;
           context.strokeRect(x0 + 0.5, y + 0.5, Math.max(0, w - 1), rowHeight - 1);
+        }
+        // El primero de una cola que no avanza, sin nada que lo explique: contorno de acento.
+        if (segment.blocking !== undefined && segment.blocking > 0) {
+          context.strokeStyle = color("--viz-accent");
+          context.lineWidth = 2;
+          context.strokeRect(x0 + 1, y + 1, Math.max(0, w - 2), rowHeight - 2);
         }
       }
     });
@@ -2048,7 +2136,7 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
           line.show(null);
           return;
         }
-        line.show(describeLifeSegment(vehicle.agvId, segment, formats));
+        line.show(describeLifeSegment(vehicle.agvId, segment, formats, fleet.production.basis));
       },
     );
   });
@@ -2076,6 +2164,9 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
             : `var(${GAP_KIND[kind].token})`,
         GAP_KIND[kind].label,
       ]),
+      [EXPLAINED_SWATCH, "parado con la producción parada o en cola detrás de otro parado"],
+      [BLOCKING_SWATCH, "el primero de una cola, sin avanzar y sin nada que lo explique"],
+      [EXPLAINED_SWATCH, "franja de arriba: producción parada"],
       ["var(--viz-ausente)", "asignado y sin leer, menos de una hora"],
       ["var(--viz-grid)", FLEET_STATE_LABEL.fuera],
       ["linear-gradient(transparent 30%, var(--viz-series) 30% 70%, transparent 70%)", FLEET_STATE_LABEL["leyendo-sin-asignar"]],
@@ -2083,7 +2174,7 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
     ]),
   );
   wrapper.append(
-    // Trece columnas: se desplazan dentro de su caja en vez de romper la página en el móvil.
+    // Catorce columnas: se desplazan dentro de su caja en vez de romper la página en el móvil.
     lazyDetails("Ver los mismos datos en tabla", () =>
       scrollBox(plainTable(
         [
@@ -2092,7 +2183,8 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
           "Lecturas",
           "Leyendo",
           "En carga",
-          "Parado",
+          "Parado, explicado",
+          "Parado, sin explicar",
           "Un tag más allá",
           "Varios tags más allá",
           "Una hora o más",
@@ -2107,7 +2199,21 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
           vehicle.readings.toLocaleString("es-ES"),
           percent(share(vehicle, (segment) => segment.state === "leyendo")),
           percent(share(vehicle, (segment) => segment.state === "carga")),
-          ...(["parada", "salta-uno", "salta-varios", "desconexion", "mantenimiento"] as const).map((kind) =>
+          percent(
+            share(
+              vehicle,
+              (segment) =>
+                segment.kind === "parada" && (segment.justification === "produccion" || segment.justification === "cola"),
+            ),
+          ),
+          percent(
+            share(
+              vehicle,
+              (segment) =>
+                segment.kind === "parada" && segment.justification !== "produccion" && segment.justification !== "cola",
+            ),
+          ),
+          ...(["salta-uno", "salta-varios", "desconexion", "mantenimiento"] as const).map((kind) =>
             percent(share(vehicle, (segment) => segment.kind === kind)),
           ),
           percent(

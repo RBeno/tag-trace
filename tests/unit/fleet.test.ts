@@ -2,7 +2,9 @@
  * La flota a lo largo del tiempo (R-AGV-014, R-AGV-015): tramos de cada AGV y recuento N de M.
  *
  * Lo que se fija: un asignado sin lecturas es ausente, no silencio; un hueco de cobertura es sin
- * datos y nunca cuenta; la carga cuenta como en funcionamiento y el silencio no; quien lee sin estar
+ * datos y nunca cuenta; N es «en el circuito» —leyendo, cargando o parado entre dos lecturas—, y aparte
+ * cuántos leen: un AGV sin lecturas no ha salido del circuito (R-AGV-018, decisión del propietario
+ * 2026-09-24; antes un silencio restaba de N); quien lee sin estar
  * asignado sale aparte y no suma a N; una baja a mitad de ventana baja M desde ese instante; y el
  * rato antes de la primera lectura o después de la última solo es ausencia si pasa del umbral de
  * silencio — si no, el peor momento de la ventana sería siempre su borde.
@@ -10,6 +12,9 @@
  * Y cómo reapareció cada AGV (R-AGV-017): la clase de cada hueco llega a su tramo con sus hechos; un
  * hueco habitual en ese tramo se dibuja leyendo y cuenta en N; un borde de una hora o más sin leer
  * es desconexión, y uno más corto sigue siendo un ausente sin clase.
+ *
+ * Y qué hacía el resto (R-AGV-018): la justificación y el bloqueo llegan al tramo; un borde que cae
+ * en una parada de la producción es parado y justificado, y cuenta en el circuito; mantenimiento no.
  */
 
 import { describe, expect, it } from "vitest";
@@ -44,6 +49,7 @@ function input(partial: Partial<FleetInput>): FleetInput {
     coldStarts: new Map(),
     minGapMs: 5 * MINUTE,
     longAbsenceMs: 60 * MINUTE,
+    productionStops: [],
     ...partial,
   };
 }
@@ -58,7 +64,9 @@ function stateAt(timeline: ReturnType<typeof buildFleetTimeline>, agvId: string,
 function countAt(timeline: ReturnType<typeof buildFleetTimeline>, minute: number): string {
   const t = minute * MINUTE;
   const entry = timeline.counts.find((count) => t >= count.fromUtcMs && t < count.toUtcMs);
-  return entry === undefined ? "sin recuento" : `${entry.inService} de ${entry.assigned} (+${entry.unassignedActive})`;
+  return entry === undefined
+    ? "sin recuento"
+    : `${entry.inCircuit} de ${entry.assigned}, ${entry.reading} leyendo (+${entry.unassignedActive})`;
 }
 
 const all = (agvId: string) => ({ agvId, fromUtcMs: -1_000 * MINUTE, toUtcMs: null, note: "" });
@@ -69,10 +77,10 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
       input({ readings: every("A", 0, 60), history: [all("A"), all("B")] }),
     );
     expect(stateAt(timeline, "B", 30)).toBe("ausente");
-    expect(countAt(timeline, 30)).toBe("1 de 2 (+0)");
+    expect(countAt(timeline, 30)).toBe("1 de 2, 1 leyendo (+0)");
   });
 
-  it("tres asignados con uno en silencio dan 2 de 3 exactamente en ese intervalo", () => {
+  it("tres asignados con uno en silencio: 3 de 3 en el circuito, y 2 leyendo exactamente en ese intervalo", () => {
     const timeline = buildFleetTimeline(
       input({
         readings: [...every("A", 0, 60), ...every("B", 0, 60), ...every("C", 0, 20), ...every("C", 40, 60)],
@@ -81,12 +89,12 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
       }),
     );
     expect(stateAt(timeline, "C", 30)).toBe("silencio");
-    expect(countAt(timeline, 10)).toBe("3 de 3 (+0)");
-    expect(countAt(timeline, 30)).toBe("2 de 3 (+0)");
-    expect(countAt(timeline, 50)).toBe("3 de 3 (+0)");
+    expect(countAt(timeline, 10)).toBe("3 de 3, 3 leyendo (+0)");
+    expect(countAt(timeline, 30)).toBe("3 de 3, 2 leyendo (+0)");
+    expect(countAt(timeline, 50)).toBe("3 de 3, 3 leyendo (+0)");
   });
 
-  it("la carga cuenta como en funcionamiento; el arranque en frío es carga hasta su salida", () => {
+  it("la carga cuenta en el circuito; el arranque en frío es carga hasta su salida", () => {
     const timeline = buildFleetTimeline(
       input({
         readings: [...every("A", 0, 20), ...every("A", 50, 60), ...every("B", 15, 60)],
@@ -97,7 +105,7 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
     );
     expect(stateAt(timeline, "A", 30)).toBe("carga");
     expect(stateAt(timeline, "B", 5)).toBe("carga");
-    expect(countAt(timeline, 30)).toBe("2 de 2 (+0)");
+    expect(countAt(timeline, 30)).toBe("2 de 2, 1 leyendo (+0)");
   });
 
   it("un hueco de cobertura es sin datos, nunca silencio, y no tiene recuento", () => {
@@ -123,9 +131,10 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
     // A empieza a leer a los 2 min y acaba a los 57: ritmo normal, en funcionamiento de borde a borde.
     expect(stateAt(timeline, "A", 1)).toBe("leyendo");
     expect(stateAt(timeline, "A", 59)).toBe("leyendo");
-    // B tarda 20 min en leer por primera vez: eso sí es ausencia.
+    // B tarda 20 min en leer por primera vez: eso sí es ausencia de lecturas, pero no de circuito
+    // (R-AGV-018): cuenta en N y no leyendo.
     expect(stateAt(timeline, "B", 10)).toBe("ausente");
-    expect(countAt(timeline, 1)).toBe("1 de 2 (+0)");
+    expect(countAt(timeline, 1)).toBe("2 de 2, 1 leyendo (+0)");
   });
 
   it("un silencio que cruza un hueco de cobertura no deja trozos de silencio en sus bordes", () => {
@@ -145,13 +154,13 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
     expect(stateAt(timeline, "A", 19)).toBe("leyendo");
     expect(stateAt(timeline, "A", 30)).toBe("sin-datos");
     expect(stateAt(timeline, "A", 41)).toBe("leyendo");
-    expect(countAt(timeline, 19)).toBe("1 de 1 (+0)");
+    expect(countAt(timeline, 19)).toBe("1 de 1, 1 leyendo (+0)");
   });
 
   it("quien lee sin estar asignado sale aparte y no suma a N", () => {
     const timeline = buildFleetTimeline(input({ readings: [...every("A", 0, 60), ...every("X", 0, 60)], history: [all("A")] }));
     expect(stateAt(timeline, "X", 30)).toBe("leyendo-sin-asignar");
-    expect(countAt(timeline, 30)).toBe("1 de 1 (+1)");
+    expect(countAt(timeline, 30)).toBe("1 de 1, 1 leyendo (+1)");
   });
 
   it("una baja a mitad de ventana baja M desde ese instante, y el AGV pasa a fuera", () => {
@@ -161,9 +170,9 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
         history: [all("A"), { agvId: "B", fromUtcMs: -1_000 * MINUTE, toUtcMs: 30 * MINUTE, note: "" }],
       }),
     );
-    expect(countAt(timeline, 10)).toBe("2 de 2 (+0)");
+    expect(countAt(timeline, 10)).toBe("2 de 2, 2 leyendo (+0)");
     expect(stateAt(timeline, "B", 45)).toBe("fuera");
-    expect(countAt(timeline, 45)).toBe("1 de 1 (+0)");
+    expect(countAt(timeline, 45)).toBe("1 de 1, 1 leyendo (+0)");
   });
 
   it("cada hueco lleva cómo reapareció el AGV, y uno habitual en su tramo se dibuja leyendo y cuenta en N", () => {
@@ -191,13 +200,13 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
       }),
     );
     expect(stateAt(timeline, "A", 15)).toBe("leyendo");
-    expect(countAt(timeline, 15)).toBe("2 de 2 (+0)");
+    expect(countAt(timeline, 15)).toBe("2 de 2, 2 leyendo (+0)");
     const stop = timeline.vehicles
       .find((vehicle) => vehicle.agvId === "A")
       ?.segments.find((segment) => segment.fromUtcMs === 30 * MINUTE);
     expect(stop).toMatchObject({ state: "silencio", kind: "parada", toUtcMs: 45 * MINUTE });
     expect(stop?.detail).toBe(detail);
-    expect(countAt(timeline, 35)).toBe("1 de 2 (+0)");
+    expect(countAt(timeline, 35)).toBe("2 de 2, 1 leyendo (+0)");
   });
 
   it("un borde de una hora o más sin leer es desconexión; uno más corto, un ausente sin clase", () => {
@@ -217,11 +226,56 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
     expect(first("C")).toMatchObject({ state: "ausente", kind: "desconexion", toUtcMs: 180 * MINUTE });
   });
 
+  it("la justificación y el bloqueo llegan al tramo; mantenimiento no cuenta en el circuito", () => {
+    const timeline = buildFleetTimeline(
+      input({
+        readings: [...every("A", 0, 10), ...every("A", 20, 60), ...every("B", 0, 30), ...every("B", 45, 60)],
+        history: [all("A"), all("B")],
+        inactivity: new Map([
+          [
+            "A",
+            [{ fromUtcMs: 10 * MINUTE, toUtcMs: 20 * MINUTE, cause: "silencio" as const, kind: "parada" as const, justification: "sin-explicacion" as const, blocking: 3 }],
+          ],
+          ["B", [{ fromUtcMs: 30 * MINUTE, toUtcMs: 45 * MINUTE, cause: "silencio" as const, kind: "mantenimiento" as const }]],
+        ]),
+      }),
+    );
+    const stop = timeline.vehicles.find((vehicle) => vehicle.agvId === "A")?.segments.find((segment) => segment.fromUtcMs === 10 * MINUTE);
+    expect(stop).toMatchObject({ kind: "parada", justification: "sin-explicacion", blocking: 3 });
+    expect(countAt(timeline, 35)).toBe("1 de 2, 1 leyendo (+0)");
+  });
+
+  it("un borde sin lecturas dentro de una parada de la producción es parado y justificado, y cuenta en el circuito", () => {
+    const timeline = buildFleetTimeline(
+      input({
+        readings: [...every("A", 0, 60), ...every("B", 20, 60)],
+        history: [all("A"), all("B")],
+        productionStops: [{ from: 0, to: 18 * MINUTE }],
+      }),
+    );
+    const first = timeline.vehicles.find((vehicle) => vehicle.agvId === "B")?.segments[0];
+    expect(first).toMatchObject({ state: "silencio", kind: "parada", justification: "produccion", toUtcMs: 20 * MINUTE });
+    expect(countAt(timeline, 10)).toBe("2 de 2, 1 leyendo (+0)");
+  });
+
   it("sin historial, M son los vehículos que aparecen en las lecturas", () => {
     const timeline = buildFleetTimeline(input({ readings: [...every("A", 0, 60), ...every("B", 0, 30)] }));
     expect(timeline.historyLoaded).toBe(false);
-    expect(countAt(timeline, 10)).toBe("2 de 2 (+0)");
-    // Después de su última lectura, B está ausente: sigue en M y no en N.
-    expect(countAt(timeline, 45)).toBe("1 de 2 (+0)");
+    expect(countAt(timeline, 10)).toBe("2 de 2, 2 leyendo (+0)");
+    // Después de su última lectura, B está ausente de lecturas, pero menos de una hora: sigue en el
+    // circuito (R-AGV-018).
+    expect(countAt(timeline, 45)).toBe("2 de 2, 1 leyendo (+0)");
+  });
+
+  it("una hora o más sin leer que nada explica sí saca del recuento; mantenimiento también", () => {
+    const timeline = buildFleetTimeline(
+      input({
+        readings: [...every("A", 0, 180), ...every("B", 0, 30)],
+        coverage: [{ from: 0, to: 180 * MINUTE }],
+        history: [all("A"), all("B")],
+      }),
+    );
+    // B deja de leer a los 30 min y no vuelve en dos horas y media: desconexión, fuera de N.
+    expect(countAt(timeline, 120)).toBe("1 de 2, 1 leyendo (+0)");
   });
 });

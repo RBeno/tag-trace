@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.31.0
+version: 0.32.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -104,6 +104,7 @@ regla exista: la matriz no es una lista de intenciones.
 | `UX_SPEC.md` §4.4 lenguaje de la interfaz: sin referencias internas, identificadores traducidos a castellano llano | `src/presentation/labels.ts`, `src/presentation/main.ts`, `src/presentation/charts.ts`, `src/presentation/diagnostic-charts.ts` | `tests/e2e/f2.spec.ts`, `tests/e2e/vistas.spec.ts`, `tests/e2e/vistas-diagnostico.spec.ts` (fijan los textos visibles) |
 | R-DAT-019 / R-OPP-016 / TC-163–167 cambios de tag dentro de un periodo y vida del tag | `src/domain/tag-changes.ts`, `src/domain/read-matrix.ts` (`TagLife`, rachas por celda), `workers/import.worker.ts`, `src/presentation/main.ts` (`renderTagChanges`) | `tests/unit/tag-changes.test.ts`, `tests/unit/read-matrix.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 | R-AGV-016 / TC-168–170 lectura por AGV: nunca, desde una hora, poco | `src/domain/vehicle-reading.ts`, `src/domain/config.ts`, `src/presentation/main.ts` (`renderVehicleReading`, `explain`) | `tests/unit/vehicle-reading.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
+| R-AGV-018 / R-AGV-014 / TC-175–179 paradas contra el flujo y flota en el circuito | `src/domain/flow-stops.ts`, `src/domain/fleet.ts`, `src/domain/silence-kind.ts`, `src/domain/config.ts` (`flowStops`), `workers/import.worker.ts`, `src/presentation/diagnostic-charts.ts` (`fleetCountChart`, `fleetLifelineChart`), `src/presentation/main.ts` (`renderFlowStops`) | `tests/unit/flow-stops.test.ts`, `tests/unit/fleet.test.ts`, `tests/unit/silence-kind.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 | R-AGV-017 / TC-171–174 cómo reaparece un AGV tras un hueco | `src/domain/silence-kind.ts`, `src/domain/fleet.ts`, `src/domain/config.ts` (`silenceKind`), `workers/import.worker.ts`, `src/presentation/diagnostic-charts.ts` (`fleetLifelineChart`), `src/presentation/styles.css` | `tests/unit/silence-kind.test.ts`, `tests/unit/fleet.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de

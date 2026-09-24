@@ -1115,6 +1115,7 @@ function renderFleet(views: CircuitViews): void {
     ),
   );
   viewsPanel.append(fleetCountChart(fleet, state.coverage, FORMATS));
+  renderFlowStops(fleet);
 
   if (fleet.historyLoaded) {
     const neverRead = assigned.filter((vehicle) => vehicle.readings === 0).map((vehicle) => vehicle.agvId);
@@ -1141,14 +1142,103 @@ function renderFleet(views: CircuitViews): void {
             ? "1 AGV lee en el circuito sin estar asignado"
             : `${unassigned.length} AGV leen en el circuito sin estar asignados`,
           unassigned.join(", "),
-          "No cuentan como en funcionamiento. O el historial no recoge un cambio, o vienen de otro " +
-            "circuito.",
+          "No cuentan en el circuito. O el historial no recoge un cambio, o vienen de otro circuito.",
           ["flota-sin-asignar", "circuito"],
         ),
       );
     }
   }
   viewsPanel.append(fleetLifelineChart(fleet, FORMATS));
+}
+
+/**
+ * Las paradas leídas contra el flujo (R-AGV-018): cuándo estuvo parada la producción y si todos
+ * siguieron después por su sitio y en orden, y los primeros de cola que no avanzaron sin nada que lo
+ * explique. Hechos con su evidencia; la causa la pone una persona (R-EVI-006).
+ */
+function renderFlowStops(fleet: CircuitViews["fleet"]): void {
+  const { production, blockages } = fleet;
+  const basisText =
+    production.basis === "criticos"
+      ? `ninguna lectura en los ${production.basisTags} tags críticos`
+      : "ninguna lectura de toda la flota: no hay tags críticos declarados con que contrastarlo";
+  if (production.stops.length > 0) {
+    const when = production.stops.map(
+      (stop) =>
+        `${formatTick(stop.fromUtcMs)} a ${formatTick(stop.toUtcMs)}` +
+        (stop.sameTimeOn.length > 0 ? " (se repite a esa hora otro día)" : ""),
+    );
+    const exceptions = production.stops.flatMap((stop) => stop.notInPlace);
+    const orderBroken = production.stops.filter((stop) => stop.orderKept === false);
+    const vehicles = Math.max(...production.stops.map((stop) => stop.vehicles));
+    const resumed =
+      exceptions.length === 0 && orderBroken.length === 0
+        ? `En todas, los AGV parados siguieron por su tag y en el mismo orden (hasta ${vehicles} a la vez): ` +
+          "no salieron del circuito."
+        : [
+            exceptions.length === 0
+              ? ""
+              : `No siguieron por su sitio: ${exceptions
+                  .slice(0, 5)
+                  .map((entry) => `${entry.agvId} (de ${entry.fromTagId} a ${entry.toTagId})`)
+                  .join(", ")}${exceptions.length > 5 ? "…" : ""}.`,
+            orderBroken.length === 0
+              ? ""
+              : `El orden cambió: ${orderBroken
+                  .flatMap((stop) => stop.orderChanges)
+                  .slice(0, 4)
+                  .map((change) => `${change.agvId} aparece delante de ${change.passed}`)
+                  .join(", ")}.`,
+          ]
+            .filter((part) => part !== "")
+            .join(" ");
+    viewsPanel.append(
+      finding(
+        production.stops.length === 1
+          ? "La producción se paró 1 vez"
+          : `La producción se paró ${production.stops.length} veces`,
+        when.join(" · "),
+        `Tramos con ${basisText}, más largos de lo que el azar explica en ese turno. ${resumed}`.trim(),
+        ["produccion-parada", "circuito"],
+      ),
+    );
+  }
+  const shown = blockages.slice(0, PER_KIND);
+  for (const blockage of shown) {
+    const where = blockage.functionAtTag === null ? blockage.tagId : `${blockage.tagId} (${blockage.functionAtTag})`;
+    viewsPanel.append(
+      finding(
+        `${blockage.agvId}: el primero de la cola, sin avanzar ${duration(blockage.toUtcMs - blockage.fromUtcMs)}`,
+        `En ${where}, de ${formatTick(blockage.fromUtcMs)} a ${formatTick(blockage.toUtcMs)}; lo habitual hasta ` +
+          `${blockage.nextTagId}: ${duration(blockage.usualMs)}`,
+        `Nadie parado delante y la producción en marcha: ${blockage.basisReads} lecturas ` +
+          `${production.basis === "criticos" ? "en los tags críticos" : "de la flota"} mientras tanto. ` +
+          (blockage.behind.length === 0
+            ? "Nadie quedó detrás."
+            : `${blockage.behind.length} AGV quedaron detrás: ${blockage.behind.slice(0, 6).join(", ")}` +
+              `${blockage.behind.length > 6 ? "…" : ""}.`),
+        ["bloqueo", `${blockage.agvId} ${blockage.tagId} ${blockage.fromUtcMs}`],
+      ),
+    );
+  }
+  if (blockages.length > shown.length) {
+    viewsPanel.append(
+      lazyDetails(`Ver los ${blockages.length} primeros de cola sin avanzar`, () =>
+        plainTable(
+          ["AGV", "Tag", "Desde", "Hasta", "Lo habitual", "Detrás", "Lecturas mientras tanto"],
+          blockages.map((blockage) => [
+            blockage.agvId,
+            blockage.tagId,
+            formatTick(blockage.fromUtcMs),
+            formatTick(blockage.toUtcMs),
+            duration(blockage.usualMs),
+            String(blockage.behind.length),
+            String(blockage.basisReads),
+          ]),
+        ),
+      ),
+    );
+  }
 }
 
 type Matrix = CircuitViews["readMatrices"][number];
@@ -2150,6 +2240,7 @@ function renderFifo(views: CircuitViews): void {
 /** Una duración en la unidad que se lee de un vistazo. `null` es «no se sabe», nunca cero. */
 function duration(ms: number | null): string {
   if (ms === null) return "—";
+  if (ms < 90_000) return `${Math.round(ms / 1000)} s`;
   const minutes = Math.round(ms / 60_000);
   if (minutes < 90) return `${minutes} min`;
   return `${(minutes / 60).toFixed(1)} h`;

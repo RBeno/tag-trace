@@ -2,6 +2,87 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.24.0] - 2026-09-24
+
+Un AGV sin lecturas sigue en el circuito: cada parada se lee contra lo que hacía el resto. Pedido
+por el propietario: «que no haya mediciones no quiere decir que no estén». Cómo funciona la planta,
+según él:
+- nadie para toda la línea;
+- los AGV siguen hasta encontrar un obstáculo, y las paradas se propagan en cola;
+- ninguno cambia de circuito;
+- el problema es el primero de la cola sin avanzar más de dos minutos mientras los tags críticos se
+  siguen leyendo.
+
+### Añadido
+
+- **Paradas de la producción** (`src/domain/flow-stops.ts`, R-AGV-018).
+  - Qué son: tramos sin ninguna lectura en los tags críticos declarados, largos e **improbables por
+    azar** con el ritmo de ese turno.
+  - Sin tags críticos declarados, se usa toda la flota, y se dice.
+  - Salen de los datos, sin declarar franjas, y se marca cuáles se repiten a la misma hora otro día.
+  - De cada una se dice si todos siguieron por su sitio y quién aparece delante de quien iba detrás.
+- **Colas y bloqueos.** Cada parada de un AGV —más de lo habitual para ese par de tags en ese
+  turno— se justifica, en este orden:
+  1. por la producción parada;
+  2. por el de delante, también parado (cola);
+  3. o queda sin explicación.
+
+  El primero de una cola sin justificar, con dos minutos o más de exceso, es un **bloqueo**. Se dice:
+  - dónde estaba;
+  - cuánto de más estuvo parado;
+  - cuántos quedaron detrás;
+  - cuántas lecturas críticas hubo mientras tanto.
+
+  Una cola que avanza cada poco no sale.
+- **Vistas:**
+  - En el **recuento**, N pasa a «en el circuito», con una línea discontinua de los que leen y las
+    paradas de la producción como bandas.
+  - En la **vida de cada AGV**:
+    - las paradas explicadas van con rayas;
+    - las paradas sin explicar, en azul oscuro liso;
+    - el primero de una cola que no avanza lleva contorno;
+    - una franja arriba marca la producción parada.
+  - **Tarjetas** de paradas de la producción y de bloqueos. La lectura al tocar dice qué hacía el
+    resto.
+- Configuración provisional `flowStops`. Los dos minutos (bloqueo y producción parada) son del
+  propietario; el resto de umbrales, con su justificación (OQ-129).
+- TC-175–179: `tests/unit/flow-stops.test.ts` (9), casos nuevos en `fleet.test.ts` y
+  `silence-kind.test.ts`, auditoría y navegador.
+- Auditoría `auditoria/12` con dos clases nuevas:
+  - **`parada-de-produccion`**: tres franjas de 15 min congelando el reloj **después** de generar,
+    sin `random()`. La verdad con instante pasa por la misma función.
+  - **`bloqueo-sin-justificar`**.
+
+### Cambiado
+
+- **R-AGV-014 reescrita (decisión del propietario).** N son los asignados **en el circuito**. Solo
+  quedan fuera mantenimiento y una hora o más sin leer que nada explica.
+  - Antes, cada silencio restaba de N.
+  - Las pruebas de flota que contaban un silencio o un borde corto como fuera de N cambian de cifra
+    por esta regla, con el motivo escrito en cada una.
+  - La figura pasa de «Flota en funcionamiento» a «Flota en el circuito».
+- **Con la producción parada o en cola, una hora sin leer ya no es «desconexión»** (R-AGV-017): la
+  justificación manda.
+- **Los tiempos habituales y las firmas de parada precisa y semáforo ya no usan las transiciones que
+  cruzan una parada de la producción.** Un descanso de 15 min rompería el coeficiente de variación
+  de una parada precisa.
+- En las tarjetas, las duraciones de menos de un minuto y medio se dan en segundos.
+
+### Corregido antes de publicar
+
+- **Un par de lecturas que saltaba el hueco entre dos exportaciones salía como bloqueo de 40 min.**
+  - Lo encontró la prueba de navegador con dos exportaciones.
+  - Causa: `buildTransitions` solo descarta el par si cruza el hueco entero, y la cobertura acaba en
+    el último minuto completo.
+  - Solución: las paradas exigen ahora las dos lecturas en el mismo tramo de cobertura, como el
+    expediente (Parte 41).
+- **El orden tras una parada.**
+  - La primera versión comparaba el orden de lectura dentro del mismo tag, donde no hay orden fiable.
+    Ahora solo cuenta que uno que iba detrás de otro cercano aparezca delante.
+  - En la auditoría sale un caso así (7105 delante de 7115). Es real en los datos, porque el
+    generador deja adelantar al circular, así que el orden se informa y no se exige.
+  - Lo fija una prueba unitaria.
+
 ## [3.23.0] - 2026-09-24
 
 «Vida de cada AGV en el circuito» distingue paradas, saltos, desconexiones y mantenimiento. Pedido por

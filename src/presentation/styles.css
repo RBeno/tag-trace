@@ -42,6 +42,8 @@
   --viz-desconexion: #93302e;
   --viz-mantenimiento: #34a352;
   --viz-ausente: #b0bac2;
+  /* Banda de producción parada detrás del recuento (Parte 46): fondo, no marca; va con leyenda. */
+  --viz-stop-band: #d6e0ef;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -68,6 +70,7 @@
     --viz-desconexion: #8a3230;
     --viz-mantenimiento: #2f8f4a;
     --viz-ausente: #8a939b;
+    --viz-stop-band: #2e4263;
   }
 }
 * { box-sizing: border-box; }

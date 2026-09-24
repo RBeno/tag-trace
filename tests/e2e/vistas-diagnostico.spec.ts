@@ -125,25 +125,37 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await heatmap.getByRole("button", { name: "Peor omisión primero" }).click();
     await expect(heatmap.getByRole("button", { name: "Peor omisión primero" })).toHaveAttribute("aria-pressed", "true");
 
-    // La flota: el recuento N de M, la vida de cada AGV en un único lienzo, el asignado que no lee
-    // nunca y el que sigue leyendo después de su baja.
+    // La flota: el recuento N de M —en el circuito, y cuántos leen—, la vida de cada AGV en un único
+    // lienzo, el asignado que no lee nunca y el que sigue leyendo después de su baja.
     await expect(page.getByRole("heading", { name: "Flota del circuito" })).toBeVisible();
-    const count = figureOf("Flota en funcionamiento");
-    await expect(count.getByText(/Menos en funcionamiento: \d+ de \d+/)).toBeVisible();
+    const count = figureOf("Flota en el circuito");
+    await expect(count.getByText(/Menos en el circuito: \d+ de \d+.*Menos leyendo: \d+ de \d+/)).toBeVisible();
     await expect(count.getByText("Ver los mismos datos en tabla")).toBeVisible();
     expect(await count.locator("svg title").count()).toBe(0);
     const lifeline = figureOf("Vida de cada AGV en el circuito");
     await expect(lifeline.locator("canvas")).toBeVisible();
     // Cómo volvió cada AGV tras cada hueco (R-AGV-017): la leyenda nombra las clases, y el AGV que se
     // retrasa 20 min en el tramo cargado y sigue por el tag siguiente sale parado.
-    for (const kind of ["parado: vuelve por el tag siguiente", "vuelve un tag más allá", "por un tag de mantenimiento"]) {
+    for (const kind of [
+      "parado sin nada que lo explique: vuelve por el tag siguiente",
+      "parado con la producción parada o en cola detrás de otro parado",
+      "el primero de una cola, sin avanzar y sin nada que lo explique",
+      "vuelve un tag más allá",
+      "por un tag de mantenimiento",
+    ]) {
       await expect(lifeline.getByText(kind), kind).toBeVisible();
     }
     const adelantado = scenario.defects.find((defect) => defect.kind === "adelantamiento-en-zona-cargada")?.vehicles[0] ?? "";
     await lifeline.getByText("Ver los mismos datos en tabla").click();
     const lifeRow = lifeline.locator("tr", { has: page.getByRole("cell", { name: adelantado, exact: true }) });
-    await expect(lifeline.locator("th").nth(5)).toHaveText("Parado");
-    await expect(lifeRow.locator("td").nth(5)).not.toHaveText("0 %");
+    await expect(lifeline.locator("th").nth(6)).toHaveText("Parado, sin explicar");
+    await expect(lifeRow.locator("td").nth(6)).not.toHaveText("0 %");
+    // Contra el flujo (R-AGV-018): las tres paradas de la producción plantadas, la de las 10:00
+    // repetida, y el mismo AGV como el primero de su cola sin avanzar con la producción en marcha.
+    await expect(page.locator(".finding", { hasText: "La producción se paró 3 veces" })).toContainText(
+      "se repite a esa hora otro día",
+    );
+    await expect(page.locator(".finding", { hasText: "el primero de la cola" }).first()).toContainText(adelantado);
     await expect(page.locator(".finding", { hasText: "asignado no leyó nada" })).toContainText(scenario.fleetNeverRead);
     await expect(page.locator(".finding", { hasText: "sin estar asignado" })).toContainText(scenario.fleetLeavesMidway);
 

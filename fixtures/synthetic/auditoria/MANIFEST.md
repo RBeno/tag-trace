@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/11`
+- Dataset ID/version: `auditoria/12`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -73,6 +73,8 @@ fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual q
 | `vinculacion-declarada` | 1 tag del anillo, declarado por la columna `funcion` del circuito virtual | el expediente del tag muestra la función crítica «vinculacion» (R-GRA-007) | que sea un hallazgo estadístico, ni que el producto la haya propuesto |
 | `desvinculacion-declarada` | 1 tag del anillo, declarado por la lista `critico` | el expediente del tag muestra la función crítica «desvinculacion» (R-GRA-007) | que sea un hallazgo estadístico, ni que el producto la haya propuesto |
 | `lectura-desigual-en-pocos-tags` | 1 AGV que lee 2 tags del anillo en la mitad de sus pasadas (uno sí y uno no, sin `random()`) | el AGV sale como «lee poco» en esos dos tags, en pocos tags, con su porcentaje (R-AGV-016) | una causa (lector, memoria o colocación), ni que los dos tags fallen para el resto |
+| `parada-de-produccion` | toda la flota congelada 15 min a las 10:00 y a las 18:00 del día 1 y a las 10:00 del día 2: después de generar, cada fila posterior a una franja se desplaza su duración (sin `random()`), y los dos tags críticos declarados se quedan sin lecturas | tres paradas de la producción y ninguna más, la de las 10:00 repetida; todos siguen por su sitio; cada hueco dentro, justificado (R-AGV-018). El orden no es verdad plantada: el generador deja que un AGV adelante a otro al circular, y se informa | que algún AGV se desconectara o saliera del circuito, o un bloqueo dentro de una franja |
+| `bloqueo-sin-justificar` | el mismo AGV que se retrasa 20 min en la zona cargada | el único bloqueo: el primero de su cola, sin avanzar y con la producción en marcha, con sus lecturas críticas | una causa, o justificarlo con una parada de la producción que no hubo |
 
 ## Resultados prohibidos
 

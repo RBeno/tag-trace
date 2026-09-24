@@ -19,6 +19,7 @@ import type { ChargingThresholds } from "./charging.js";
 import type { CriticalPointThresholds } from "./critical-points.js";
 import type { DriftThresholds } from "./drift.js";
 import type { FifoThresholds } from "./fifo.js";
+import type { FlowStopThresholds } from "./flow-stops.js";
 import type { GraphThresholds } from "./graph.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
 import type { SilenceKindThresholds } from "./silence-kind.js";
@@ -58,6 +59,7 @@ export interface AnalysisConfig {
   readonly vehicleReading: VehicleReadingThresholds;
   readonly tagChanges: TagChangeThresholds;
   readonly silenceKind: SilenceKindThresholds;
+  readonly flowStops: FlowStopThresholds;
 }
 
 /**
@@ -149,6 +151,14 @@ export interface AnalysisConfig {
  *   siempre tarda). Una hora para «desconexión» y turnos de 8 h (06–14, 14–22, 22–06) son decisión
  *   del propietario (2026-09-24), no medidas de planta: las horas reales de relevo siguen abiertas
  *   (OQ-108) y se cambian aquí.
+ * - **Paradas contra el flujo (R-AGV-018).** Dos minutos del primero de la cola sin avanzar, y dos
+ *   minutos sin lecturas críticas para hablar de producción parada, son del propietario (2026-09-24).
+ *   Treinta segundos por encima de lo habitual es lo mínimo para llamar parada a una transición: una
+ *   cola que fluye avanza cada ~40 s y no debe dejar cabezas de dos minutos. Dos tags por delante es
+ *   hasta dónde cuenta como «el de delante»: en cola, los AGV se quedan en el mismo tag o en el de al
+ *   lado. Una centésima de parada falsa por turno es el margen de azar: con dos tags críticos, un hueco
+ *   de tres minutos sale decenas de veces en 30 h por pura casualidad. Quince minutos de margen para
+ *   decir que una parada se repite a la misma hora. Cuatro muestras de un par, como en las calles.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -185,6 +195,15 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   vehicleReading: { minPassesForNever: 8, fleetReadsWellShare: 0.75, manyTagsShare: 0.1, minManyTags: 5, maxChance: 0.001 },
   tagChanges: { minSlotPasses: 10, maxChance: 0.001, maxReadsBetween: 2, maxOverlapMs: 60 * 60_000 },
   silenceKind: { factorOverUsual: 3, longAbsenceMs: 60 * 60_000, shiftStartHours: [6, 14, 22] },
+  flowStops: {
+    headStallMs: 2 * 60_000,
+    minProductionStopMs: 2 * 60_000,
+    minStopExcessMs: 30_000,
+    reachTags: 2,
+    maxFalseStops: 0.01,
+    sameTimeToleranceMs: 15 * 60_000,
+    minPairSamples: 4,
+  },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

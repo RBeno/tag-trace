@@ -53,6 +53,13 @@ import {
 import { compareDistantPeriods } from "../src/domain/drift.js";
 import { buildFleetTimeline, mergeFleetPeriods } from "../src/domain/fleet.js";
 import { classifySilence, usualSegmentTimes, type UsualTimes } from "../src/domain/silence-kind.js";
+import {
+  flowStops,
+  outsideProductionStops,
+  productionStops,
+  type FlowReport,
+  type VehicleStop,
+} from "../src/domain/flow-stops.js";
 import { FLEET_STRUCTURE, FleetFailure, importFleetHistory } from "../src/ingestion/fleet-history.js";
 import {
   laneEntryTags,
@@ -285,6 +292,18 @@ async function buildViews(
   const lapAnchorProblems: string[] = [];
   /** Lo que suele tardar cada tramo del anillo, por turno, para el cohorte de cada AGV (R-AGV-017). */
   const usualByVehicle = new Map<string, UsualTimes>();
+  // Cuándo estuvo parada la producción (R-AGV-018): ningún tag crítico leído, y no por azar. Va antes
+  // que cualquier tiempo habitual, porque un descanso no mide un tramo.
+  const production = productionStops(
+    readings,
+    new Set(criticalPointsConfig.funcionOf.keys()),
+    coverage,
+    zone,
+    PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
+    PROVISIONAL_CONFIG.flowStops,
+  );
+  const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
+  const flowReports: FlowReport[] = [];
 
   for (const cohort of cohortAssignment.cohorts) {
     const vehicleSet = new Set(cohort.vehicles);
@@ -312,13 +331,30 @@ async function buildViews(
     }
     anchors.set(cohort.id, effective);
 
+    // Las transiciones que cruzan una parada de la producción no miden ningún tramo.
+    const timedTransitions = outsideProductionStops(cohortTransitions, production.stops);
     const usual = usualSegmentTimes(
-      cohortTransitions,
+      timedTransitions,
       effective.cycle,
       zone,
       PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
     );
     for (const agvId of cohort.vehicles) usualByVehicle.set(agvId, usual);
+    flowReports.push(
+      flowStops(
+        {
+          transitions: cohortTransitions,
+          coverage,
+          usual,
+          production,
+          laneTags,
+          functionOf: criticalPointsConfig.funcionOf,
+          zone,
+          shiftStartHours: PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
+        },
+        PROVISIONAL_CONFIG.flowStops,
+      ),
+    );
 
     const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
     laps.push(...segmentLaps(cohortReadings, direction, coverage, effective.tagId, anchorTruth));
@@ -396,11 +432,13 @@ async function buildViews(
     // anillo — restringir a `anchor.cycle` escondería justo la rama fuera de él que la firma busca.
     const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
     const conCruces = classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce);
-    const paradas = findPrecisePauseCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa);
-    const semaforos = findTrafficLightCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo);
+    // Las firmas de tiempo, sin las paradas de la producción: un descanso de 15 min rompería el
+    // coeficiente de variación de una parada precisa (R-AGV-018).
+    const paradas = findPrecisePauseCandidates(timedTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa);
+    const semaforos = findTrafficLightCandidates(timedTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo);
     // Para dibujar la distribución que la firma resume: las duraciones de cada candidato de tiempo y
     // una muestra de referencia con todas las del cohorte (sin pares del mismo instante, R-DAT-013).
-    const durations = transitionDurationsByTag(cohortTransitions);
+    const durations = transitionDurationsByTag(timedTransitions);
     const allDurations = [...durations.values()].flat();
     criticalPointCohorts.push({
       cohortId: cohort.id,
@@ -441,6 +479,28 @@ async function buildViews(
   // carga lleva cómo reapareció el AGV (R-AGV-017): el expediente no cambia, esto solo alimenta la
   // vida de cada AGV.
   const maintenance = new Set(entriesOf("mantenimiento").map((entry) => entry.tagId));
+  // Qué hacía el resto durante cada hueco (R-AGV-018): la parada de ese AGV que empieza donde empieza
+  // el hueco, o, si no se pudo medir, si el hueco cae en una parada de la producción.
+  const stopOfGap = new Map<string, VehicleStop>();
+  for (const report of flowReports) {
+    for (const stop of report.stops) stopOfGap.set(`${stop.agvId}\u0000${stop.fromUtcMs}`, stop);
+  }
+  const blockageBehind = new Map<string, number>();
+  for (const report of flowReports) {
+    for (const blockage of report.blockages) {
+      if (blockage.behind.length > 0) blockageBehind.set(`${blockage.agvId}\u0000${blockage.fromUtcMs}`, blockage.behind.length);
+    }
+  }
+  const productionIntervals = production.stops.map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs }));
+  const justificationOf = (agvId: string, from: number, to: number) => {
+    const stop = stopOfGap.get(`${agvId}\u0000${from}`);
+    if (stop !== undefined) return stop.justification;
+    const stopped = productionIntervals.reduce(
+      (sum, stop) => sum + Math.max(0, Math.min(to, stop.to) - Math.max(from, stop.from)),
+      0,
+    );
+    return stopped >= 0.5 * (to - from) ? ("produccion" as const) : null;
+  };
   const fleet = buildFleetTimeline({
     readings,
     coverage,
@@ -448,18 +508,20 @@ async function buildViews(
     inactivity: new Map(
       agvDossiers.map((dossier) => [
         dossier.agvId,
-        dossier.inactivity.map((gap) =>
-          gap.cause === "carga-online"
-            ? gap
-            : {
-                ...gap,
-                ...classifySilence(
-                  gap,
-                  { usual: usualByVehicle.get(dossier.agvId) ?? null, maintenance },
-                  PROVISIONAL_CONFIG.silenceKind,
-                ),
-              },
-        ),
+        dossier.inactivity.map((gap) => {
+          if (gap.cause === "carga-online") return gap;
+          const justification = justificationOf(dossier.agvId, gap.fromUtcMs, gap.toUtcMs);
+          return {
+            ...gap,
+            justification,
+            blocking: blockageBehind.get(`${dossier.agvId}\u0000${gap.fromUtcMs}`) ?? 0,
+            ...classifySilence(
+              gap,
+              { usual: usualByVehicle.get(dossier.agvId) ?? null, maintenance, justification },
+              PROVISIONAL_CONFIG.silenceKind,
+            ),
+          };
+        }),
       ]),
     ),
     coldStarts: new Map(
@@ -469,7 +531,29 @@ async function buildViews(
     ),
     minGapMs: PROVISIONAL_CONFIG.silence.minGapMs,
     longAbsenceMs: PROVISIONAL_CONFIG.silenceKind.longAbsenceMs,
+    productionStops: productionIntervals,
   });
+
+  // Cómo salió cada AGV de cada parada de la producción, sumando los cohortes.
+  const productionView = {
+    basis: production.basis,
+    basisTags: production.basisTags,
+    stops: production.stops.map((stop, index) => {
+      const flows = flowReports.map((report) => report.productionFlow[index]).filter((flow) => flow !== undefined);
+      const orders = flows.map((flow) => flow.orderKept).filter((kept): kept is boolean => kept !== null);
+      return {
+        ...stop,
+        vehicles: flows.reduce((sum, flow) => sum + flow.vehicles, 0),
+        inPlace: flows.reduce((sum, flow) => sum + flow.inPlace, 0),
+        notInPlace: flows.flatMap((flow) => flow.notInPlace),
+        orderKept: orders.length === 0 ? null : orders.every(Boolean),
+        orderChanges: flows.flatMap((flow) => flow.orderChanges),
+      };
+    }),
+  };
+  const blockages = flowReports
+    .flatMap((report) => report.blockages)
+    .sort((a, b) => b.behind.length - a.behind.length || b.excessMs - a.excessMs);
 
   const views: CircuitViews = {
     hourly: hourlyProfile(readings, zone),
@@ -482,7 +566,7 @@ async function buildViews(
     agvDossiers,
     tagDossiers,
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
-    fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null },
+    fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null, production: productionView, blockages },
     ...(laneConfig.lanes.length === 0 && laneConfig.problems.length === 0
       ? {}
       : {

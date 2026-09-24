@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.30.0
+version: 0.31.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -223,6 +223,11 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-171 | Lo habitual de cada tramo (`usualSegmentTimes`) | Mediana por turno en hora local (04:30 UTC son las 06:30 en Madrid), sin pares del mismo instante ni pasos que saltan un tag; sin muestras del turno, la de toda la ventana | Juzgar un tramo por el reloj UTC, o por un par sin duración |
 | TC-172 | Clase de cada hueco (`classifySilence`) | Siguiente dentro de 3× lo habitual → no es hueco; más tarde → parado aunque dure horas; un tag → un tag; dos → varios; una hora y en otro punto → desconexión; fuera del anillo → sin clasificar; mantenimiento manda | Llamar habitual a un tag saltado; nombrar una causa |
 | TC-173 | Vida de cada AGV con clases (`buildFleetTimeline`) | La clase y sus hechos llegan al tramo; un hueco habitual se dibuja leyendo y suma a N; un borde de una hora o más sin leer es desconexión y uno más corto un ausente sin clase | Contar como fuera de servicio el ritmo normal de un tramo |
+| TC-175 | Paradas contra el flujo (`flowStops`, `productionStops`) sobre un anillo de 40 tags hecho a mano | Una cola de tres detrás de una cabeza parada 5 min con los críticos leyéndose → un bloqueo con los tres detrás; una cola que avanza cada 40 s → ninguno; 15 min sin críticos → parada de la producción, todo justificado, todos por su sitio; sin críticos → base «flota»; la misma hora dos días → repetida; uno que aparece delante de quien iba detrás → nombrado; un par que salta el hueco entre exportaciones o una calle de carga → no es parada | Tomar por parada de la producción un hueco que el azar explica; llamar bloqueo a una cola que fluye |
+| TC-176 | Recuento de la flota con la regla nueva (`buildFleetTimeline`) | Un silencio entre lecturas y un borde de menos de una hora cuentan en el circuito, no leyendo; un borde dentro de una parada de la producción es parado y justificado; una hora sin leer sin explicar y mantenimiento no cuentan | Restar de N a un AGV parado en su sitio |
+| TC-177 | Clase de un hueco justificado (`classifySilence`) | Con producción parada o en cola, una hora sin leer se clasifica por la posición (parado, un tag, varios); sin explicar, sigue siendo desconexión | Llamar desconexión a esperar en un descanso |
+| TC-178 | Auditoría con tres paradas de la producción plantadas (reloj congelado tras generar) | Las tres detectadas y ninguna más, la de las 10:00 repetida; todos por su sitio; cada hueco dentro, justificado; el AGV retrasado, el único bloqueo; ningún hueco «desconexión»; las clases anteriores intactas | Una parada inventada, un bloqueo dentro de una franja, o una clase anterior perdida |
+| TC-179 | Navegador con el circuito de auditoría | «Flota en el circuito» con los dos peores momentos; tarjeta de las tres paradas de la producción con la repetida; tarjeta del primero de la cola; leyenda con explicado, sin explicar y bloqueo | Volver a contar un silencio como fuera del circuito |
 | TC-174 | Auditoría y navegador con el circuito de auditoría | El AGV que espera 20 min tras un tag y sigue por el siguiente sale parado, con el tag siguiente y lo habitual; ningún otro hueco en todo el escenario; la leyenda nombra las clases y su tabla da el porcentaje parado | Un hueco espurio en un AGV sano |
 
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no

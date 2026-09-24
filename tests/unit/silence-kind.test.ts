@@ -107,6 +107,15 @@ describe("cómo reaparece el AGV", () => {
     expect(classifySilence(gap("A", "D", 60 * MINUTE), context(), THRESHOLDS).kind).toBe("desconexion");
   });
 
+  it("si la producción o el de delante estaban parados, una hora no es desconexión: se clasifica por la posición (R-AGV-018)", () => {
+    const stopped = (justification: "produccion" | "cola" | "sin-explicacion") => ({ ...context(), justification });
+    expect(classifySilence(gap("A", "D", 70 * MINUTE), stopped("produccion"), THRESHOLDS).kind).toBe("salta-varios");
+    expect(classifySilence(gap("A", "B", 70 * MINUTE), stopped("cola"), THRESHOLDS).kind).toBe("parada");
+    expect(classifySilence(gap("X", "B", 70 * MINUTE), stopped("cola"), THRESHOLDS).kind).toBe("sin-clasificar");
+    // Sin nada que lo explique, la hora sigue mandando.
+    expect(classifySilence(gap("A", "D", 70 * MINUTE), stopped("sin-explicacion"), THRESHOLDS).kind).toBe("desconexion");
+  });
+
   it("fuera del anillo no hay posición que comparar: sin clasificar, o desconexión si pasa de una hora", () => {
     expect(classifySilence(gap("A", "X", 10 * MINUTE), context(), THRESHOLDS)).toMatchObject({
       kind: "sin-clasificar",

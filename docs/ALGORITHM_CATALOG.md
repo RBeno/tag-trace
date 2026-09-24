@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.18.0
+version: 0.19.0
 status: baseline-candidate
 last_updated: 2026-09-24
 ---
@@ -448,6 +448,42 @@ lectura para que se compare a ojo.
 última de un tramo de cobertura es desconexión si dura `longAbsenceMs` o más; si no, un ausente sin
 clase (o leyendo, por debajo del umbral de silencio). Un hueco `habitual` se dibuja leyendo y cuenta
 como en funcionamiento (R-AGV-014).
+
+## 6.6 Paradas contra el flujo, implementado (R-AGV-018)
+
+`src/domain/flow-stops.ts`, antes que cualquier tiempo habitual.
+
+**Paradas de la producción** (`productionStops`). La base son las lecturas de los tags críticos
+declarados (sin ninguno, las de toda la flota, `basis: "flota"`). Su ritmo se mide **por turno**
+—lecturas entre tiempo cubierto—, leyendo la hora local una vez por cuarto de hora. Cada hueco entre
+lecturas de la base, dentro de un tramo de cobertura (y los bordes del tramo), es parada si dura al
+menos `minProductionStopMs` y si `huecos del turno × e^(−ritmo × duración) ≤ maxFalseStops`: el
+número esperado de huecos así de largos por azar. Una parada «se repite» si otra empieza a la misma
+hora local, ±`sameTimeToleranceMs`, otro día.
+
+**Los tiempos, sin las paradas.** `outsideProductionStops` quita las transiciones que cruzan una
+parada antes de `usualSegmentTimes` y de las firmas de parada precisa y semáforo.
+
+**Paradas de cada AGV** (`flowStops`). Solo transiciones con las dos lecturas en el mismo tramo de
+cobertura, que no toquen una calle de carga ni sean del mismo instante. Lo habitual es la mediana del
+par (desde, hasta) en ese turno, o en toda la ventana, con `minPairSamples`; si no, la suma de las
+medianas del anillo. Una parada es un exceso sobre lo habitual de `minStopExcessMs` o más. El de
+delante es el AGV más cercano aguas abajo, a `reachTags` o menos según su último tag leído (en el
+mismo tag, solo si lo pasó antes). Justificación, en orden: la parada solapa una de la producción en
+la mitad de su exceso o más → `produccion`; el de delante tiene una parada que cubre el punto medio
+de esta → `cola`; si no, `sin-explicacion`. Las colas se siguen hasta su cabeza; una cabeza sin
+justificar con exceso de `headStallMs` o más es un bloqueo, con las paradas encadenadas detrás y las
+lecturas de la base durante el bloqueo.
+
+**Cómo salen de una parada de la producción.** Por su sitio: el mismo tag, uno más allá en el anillo,
+o un paso que se da a menudo (una rama o una calle tienen su propio siguiente). El orden se compara
+solo entre AGV cercanos (hasta `reachTags + 1` tags): uno que iba detrás y aparece delante después
+se nombra. En el mismo tag no hay orden que comparar.
+
+**En la flota.** Cada hueco del expediente toma la justificación de la parada que empieza donde él, o
+`produccion` si cae en una parada de la producción en su mitad o más. Un borde sin lecturas dentro de
+una parada de la producción es parado y justificado. N cuenta todos los asignados salvo
+mantenimiento y una hora o más sin leer sin justificar (R-AGV-014).
 
 ## 7. Segmentación de vueltas y huecos
 

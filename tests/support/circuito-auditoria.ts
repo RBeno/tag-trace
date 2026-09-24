@@ -73,7 +73,11 @@ export type DefectClass =
   /** Función crítica declarada por la lista `critico`, la vía de siempre: contexto, no defecto. */
   | "desvinculacion-declarada"
   /** Un AGV que lee dos tags en la mitad de sus pasadas y el resto de tags con normalidad. */
-  | "lectura-desigual-en-pocos-tags";
+  | "lectura-desigual-en-pocos-tags"
+  /** Toda la flota parada a la vez en tres franjas; ningún tag crítico leído (R-AGV-018). */
+  | "parada-de-produccion"
+  /** Un AGV parado mucho más de lo habitual, sin nadie parado delante y con la producción en marcha. */
+  | "bloqueo-sin-justificar";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -116,6 +120,11 @@ export interface AuditScenario {
    * dos tramos a partir de este instante, igual que ya hace con la de `charging`.
    */
   readonly periodSplitUtcMs: number;
+  /**
+   * Las paradas de la producción plantadas (R-AGV-018, Parte 46): toda la flota congelada donde esté,
+   * a la vez, y por tanto sin ninguna lectura en los tags críticos.
+   */
+  readonly productionStopsUtcMs: readonly { readonly fromUtcMs: number; readonly toUtcMs: number }[];
   /**
    * Historial de flota (DS-012, Parte 39), en el formato que el importador declara. No cambia
    * ninguna lectura, así que la auditoría no cambia de resultado: los 40 vehículos asignados desde
@@ -375,6 +384,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
    * dentro del hueco entre periodos, a un lado o al otro.
    */
   const periodSplit = rotura;
+  const PARADA_PRODUCCION_MS = 15 * 60_000;
+  /** Inicio de cada franja en el reloj **final** (10:00 y 18:00 del día 1, 10:00 del día 2). */
+  const franjas = [5, 13, 29].map((horas) => from + horas * 3_600_000);
+  /** El mismo inicio en el reloj con que se generó, antes de desplazar las franjas anteriores. */
+  const franjasOriginales = franjas.map((inicio, index) => inicio - index * PARADA_PRODUCCION_MS);
+  const congelar = (t: number): number =>
+    t + PARADA_PRODUCCION_MS * franjasOriginales.filter((inicio) => t >= inicio).length;
 
   const filas: Array<{ t: number; v: string; tag: string }> = [];
 
@@ -655,6 +671,19 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     filas.push({ t, v: vehicle, tag: mantenimiento[index % mantenimiento.length] as string });
   }
 
+  // Paradas de la producción (Parte 46, R-AGV-018): la flota entera se congela donde esté durante
+  // 15 min a las 10:00 y a las 18:00 del primer día y a las 10:00 del segundo, las franjas de descanso
+  // que el propietario describe. Se hace **después** de generar, desplazando cada fila posterior a
+  // una franja: ni una llamada más a `random()` (sin cascada), el orden relativo de todos se conserva,
+  // y los tags críticos declarados se quedan sin lecturas en la franja. Lo que pasa de `to` se
+  // descarta. La verdad plantada con instante (`rotura`, `periodSplit`) pasa por la misma función.
+  // Con un bucle y no con `splice(…, ...congeladas)`: doscientos mil argumentos desbordan la pila.
+  let quedan = 0;
+  for (const fila of filas) {
+    const t = congelar(fila.t);
+    if (t <= to) filas[quedan++] = { ...fila, t };
+  }
+  filas.length = quedan;
   filas.sort((a, b) => b.t - a.t); // Pila: lo más reciente primero, como la fuente real.
 
   const readingsCsv = ["Fecha;AGV;Tag"]
@@ -744,7 +773,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "rotura-subita",
       tags: rotos,
       vehicles: [],
-      atUtcMs: toRealUtc(rotura),
+      atUtcMs: toRealUtc(congelar(rotura)),
       expect: "un cambio con su instante: se leía y dejó de leerse",
       mustNotSay: "una tasa media que mezcle el antes y el después como si fuera un régimen",
     },
@@ -858,7 +887,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "tag-nuevo-a-mitad-de-ventana",
       tags: [tagNuevo],
       vehicles: [],
-      atUtcMs: toRealUtc(periodSplit),
+      atUtcMs: toRealUtc(congelar(periodSplit)),
       expect: "tag nuevo: sin lecturas en el periodo temprano, con lecturas en el tardío (R-DAT-016)",
       mustNotSay: "que sea un tag obsoleto, o que existiera desde el principio de la ventana",
     },
@@ -866,7 +895,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "memoria-actualizada-a-mitad-de-ventana",
       tags: tagsDejados,
       vehicles: [memoriaActualizada],
-      atUtcMs: toRealUtc(periodSplit),
+      atUtcMs: toRealUtc(congelar(periodSplit)),
       expect:
         "deriva de ese vehículo: dejó de leer un conjunto de tags que sí leía antes, mientras el " +
         "resto de la flota los sigue leyendo (R-AGV-013)",
@@ -876,7 +905,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "sustitucion-candidata",
       tags: [sustitucionOriginal, sustitucionNueva],
       vehicles: [],
-      atUtcMs: toRealUtc(periodSplit),
+      atUtcMs: toRealUtc(congelar(periodSplit)),
       expect:
         "candidato a sustitución: el tag que desaparece y el que ocupa su mismo hueco en la " +
         "secuencia, correlacionados por vecino compartido y por tiempo (R-DAT-017)",
@@ -888,7 +917,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "memoria-no-actualizada",
       tags: [sustitucionNueva],
       vehicles: [memoriaNoActualizada],
-      atUtcMs: toRealUtc(periodSplit),
+      atUtcMs: toRealUtc(congelar(periodSplit)),
       expect:
         "el vehículo señalado como candidato a memoria no actualizada: no registra el tag nuevo " +
         "mientras la mayoría de la flota ya lo hace (R-AGV-013)",
@@ -914,6 +943,24 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       vehicles: [lecturaDesigual],
       expect: "el AGV sale como «lee poco» en esos dos tags, en pocos tags, con su porcentaje (R-AGV-016)",
       mustNotSay: "una causa (lector, memoria o colocación), ni que los dos tags fallen para el resto",
+    },
+    {
+      kind: "parada-de-produccion",
+      tags: [vinculacionTag, desvinculacionTag],
+      vehicles: [],
+      atUtcMs: toRealUtc(franjas[0] as number),
+      expect:
+        "tres paradas de la producción en las franjas plantadas, la de las 10:00 repetida al día " +
+        "siguiente; todas las paradas de AGV dentro, justificadas; todos siguen por su sitio. El orden " +
+        "no es verdad plantada: el generador deja adelantar al circular",
+      mustNotSay: "que algún AGV se desconectara o saliera del circuito, ni un bloqueo dentro de una franja",
+    },
+    {
+      kind: "bloqueo-sin-justificar",
+      tags: [],
+      vehicles: [elAdelantado],
+      expect: "el primero de su cola, sin avanzar y con la producción en marcha: un bloqueo con sus lecturas críticas",
+      mustNotSay: "una causa, ni justificarlo con una parada de la producción que no hubo",
     },
   ];
 
@@ -944,6 +991,10 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     toUtcMs: toRealUtc(to),
     lanes,
     zoneOf,
-    periodSplitUtcMs: toRealUtc(periodSplit),
+    periodSplitUtcMs: toRealUtc(congelar(periodSplit)),
+    productionStopsUtcMs: franjas.map((inicio) => ({
+      fromUtcMs: toRealUtc(inicio),
+      toUtcMs: toRealUtc(inicio + PARADA_PRODUCCION_MS),
+    })),
   };
 }

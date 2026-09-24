@@ -40,6 +40,13 @@ import { detectTagChanges, type TagChangeReport } from "../../src/domain/tag-cha
 import { describeVehicleReading, type VehicleReadingReport } from "../../src/domain/vehicle-reading.js";
 import { classifySilence, usualSegmentTimes, type SilenceClass } from "../../src/domain/silence-kind.js";
 import {
+  flowStops,
+  outsideProductionStops,
+  productionStops,
+  type FlowReport,
+  type ProductionStopReport,
+} from "../../src/domain/flow-stops.js";
+import {
   laneEntryTags,
   readCoLanes,
   readCriticalPoints,
@@ -103,8 +110,18 @@ interface Analysis {
   readonly tagChanges: TagChangeReport;
   /** Lectura de cada AGV sobre los tags que el resto lee bien (R-AGV-016). */
   readonly vehicleReading: VehicleReadingReport;
+  /** Cuándo estuvo parada la producción, y las paradas de cada AGV leídas contra el flujo (R-AGV-018). */
+  readonly production: ProductionStopReport;
+  readonly flow: FlowReport;
   /** Cómo reapareció cada AGV tras cada hueco sin carga (R-AGV-017), por vehículo. */
-  readonly silences: ReadonlyMap<string, readonly (SilenceClass & { readonly fromUtcMs: number; readonly toUtcMs: number })[]>;
+  readonly silences: ReadonlyMap<
+    string,
+    readonly (SilenceClass & {
+      readonly fromUtcMs: number;
+      readonly toUtcMs: number;
+      readonly justification: "produccion" | "cola" | "sin-explicacion" | null;
+    })[]
+  >;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
 }
@@ -234,11 +251,23 @@ function analyse(
           PROVISIONAL_CONFIG.fifo,
         );
 
+  // Mismo encadenado que el Worker (R-AGV-018): cuándo estuvo parada la producción, y las firmas de
+  // tiempo y lo habitual sin esas franjas — un descanso no mide un tramo.
+  const production = productionStops(
+    readings,
+    new Set(criticalPointsConfig.funcionOf.keys()),
+    [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
+    "Europe/Madrid",
+    PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
+    PROVISIONAL_CONFIG.flowStops,
+  );
+  const timedTransitions = outsideProductionStops(cohortTransitions, production.stops);
+
   const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
   const criticalPoints = [
     ...classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce),
-    ...findPrecisePauseCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa),
-    ...findTrafficLightCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo),
+    ...findPrecisePauseCandidates(timedTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa),
+    ...findTrafficLightCandidates(timedTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo),
   ];
 
   const ring = anchor?.cycle ?? [];
@@ -282,8 +311,31 @@ function analyse(
   const usual =
     anchor === null
       ? null
-      : usualSegmentTimes(cohortTransitions, anchor.cycle, "Europe/Madrid", PROVISIONAL_CONFIG.silenceKind.shiftStartHours);
+      : usualSegmentTimes(timedTransitions, anchor.cycle, "Europe/Madrid", PROVISIONAL_CONFIG.silenceKind.shiftStartHours);
   const maintenanceTags = new Set(entriesOf("mantenimiento").map((entry) => entry.tagId));
+  const flow = flowStops(
+    {
+      transitions: cohortTransitions,
+      coverage: [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
+      usual,
+      production,
+      laneTags: new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags])),
+      functionOf: criticalPointsConfig.funcionOf,
+      zone: "Europe/Madrid",
+      shiftStartHours: PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
+    },
+    PROVISIONAL_CONFIG.flowStops,
+  );
+  const stopOfGap = new Map(flow.stops.map((stop) => [`${stop.agvId}\u0000${stop.fromUtcMs}`, stop]));
+  const justificationOf = (agvId: string, from: number, to: number) => {
+    const stop = stopOfGap.get(`${agvId}\u0000${from}`);
+    if (stop !== undefined) return stop.justification;
+    const stopped = production.stops.reduce(
+      (sum, entry) => sum + Math.max(0, Math.min(to, entry.toUtcMs) - Math.max(from, entry.fromUtcMs)),
+      0,
+    );
+    return stopped >= 0.5 * (to - from) ? ("produccion" as const) : null;
+  };
   const silences = new Map(
     dossiers.map((dossier) => [
       dossier.agvId,
@@ -292,9 +344,14 @@ function analyse(
         .map((gap) => ({
           fromUtcMs: gap.fromUtcMs,
           toUtcMs: gap.toUtcMs,
+          justification: justificationOf(dossier.agvId, gap.fromUtcMs, gap.toUtcMs),
           ...classifySilence(
             gap,
-            { usual: vehicleSet.has(dossier.agvId) ? usual : null, maintenance: maintenanceTags },
+            {
+              usual: vehicleSet.has(dossier.agvId) ? usual : null,
+              maintenance: maintenanceTags,
+              justification: justificationOf(dossier.agvId, gap.fromUtcMs, gap.toUtcMs),
+            },
             PROVISIONAL_CONFIG.silenceKind,
           ),
         })),
@@ -334,6 +391,8 @@ function analyse(
     dossiers,
     tagDossiers,
     silences,
+    production,
+    flow,
     laps,
     anchorTagId: anchor?.tagId,
     anchorTruth,
@@ -359,6 +418,8 @@ describe("auditoría del circuito con verdad conocida", () => {
     dossiers,
     tagDossiers,
     silences,
+    production,
+    flow,
     laps,
     anchorTagId,
     anchorTruth,
@@ -789,6 +850,55 @@ describe("auditoría del circuito con verdad conocida", () => {
             : `${hallado.extent ?? "sin «poco»"}: ${hallado.weak.map((entry) => `${entry.tagId} ${entry.hits}/${entry.passes}`).join(", ")}`,
       };
     },
+    "parada-de-produccion": () => {
+      // Cada franja plantada tiene su parada detectada que la cubre, y no hay ninguna más.
+      const planted = scenario.productionStopsUtcMs;
+      const covering = planted.map((band) =>
+        production.stops.findIndex((stop) => stop.fromUtcMs <= band.fromUtcMs + 60_000 && stop.toUtcMs >= band.toUtcMs - 60_000),
+      );
+      // El orden se informa pero no se exige: el generador deja que un AGV adelante a otro al circular
+      // (no modela una vía única), así que no es verdad plantada. Lo fija la prueba unitaria.
+      const flows = flow.productionFlow;
+      const allInPlace = flows.every((entry) => entry.notInPlace.length === 0);
+      const repeated = covering[0] !== undefined && covering[0] >= 0 && (production.stops[covering[0]]?.sameTimeOn.length ?? 0) > 0;
+      const insideJustified = flow.stops
+        .filter((stop) => planted.some((band) => stop.fromUtcMs < band.toUtcMs && stop.toUtcMs > band.fromUtcMs))
+        .every((stop) => stop.justification === "produccion");
+      return {
+        ok:
+          production.basis === "criticos" &&
+          covering.every((index) => index >= 0) &&
+          production.stops.length === planted.length &&
+          allInPlace &&
+          repeated &&
+          insideJustified,
+        detail:
+          `${production.stops.length} paradas (${planted.length} plantadas), ` +
+          `${flows
+            .map(
+              (entry) =>
+                `${entry.inPlace}/${entry.vehicles} por su sitio` +
+                (entry.orderChanges.length === 0
+                  ? ""
+                  : ` (orden: ${entry.orderChanges.map((change) => `${change.agvId} delante de ${change.passed}`).join(", ")})`),
+            )
+            .join(", ")}` +
+          `${repeated ? ", la de las 10:00 se repite" : ", sin repetición"}` +
+          `${insideJustified ? "" : ", alguna parada dentro sin justificar"}`,
+      };
+    },
+    "bloqueo-sin-justificar": () => {
+      const esperado = scenario.defects.find((d) => d.kind === "bloqueo-sin-justificar")?.vehicles[0];
+      const hallado = flow.blockages.find((blockage) => blockage.agvId === esperado);
+      return {
+        ok: hallado !== undefined && hallado.basisReads > 0,
+        detail:
+          hallado === undefined
+            ? `sin bloqueo de ${esperado ?? "?"}; ${flow.blockages.length} bloqueos en total`
+            : `${hallado.agvId} en ${hallado.tagId}, ${Math.round(hallado.excessMs / 60_000)} min de más, ` +
+              `${hallado.basisReads} lecturas críticas mientras tanto, ${hallado.behind.length} detrás`,
+      };
+    },
   };
 
   it("publica el informe por clase", () => {
@@ -1013,12 +1123,31 @@ describe("auditoría del circuito con verdad conocida", () => {
     expect(parada, `huecos de ${adelantado}: ${suyos.map((entry) => entry.kind).join(", ")}`).toBeDefined();
     expect(parada?.detail.firstTagAfter).toBe(parada?.detail.nextTagId);
     expect(parada?.detail.usualMs).not.toBeNull();
+    // Sin nadie parado delante y con la producción en marcha: lo único sin explicar (R-AGV-018).
+    expect(parada?.justification).toBe("sin-explicacion");
 
     const reparto = new Map<string, number>();
     for (const list of silences.values()) {
-      for (const entry of list) reparto.set(entry.kind, (reparto.get(entry.kind) ?? 0) + 1);
+      for (const entry of list) {
+        const key = `${entry.kind}/${entry.justification ?? "—"}`;
+        reparto.set(key, (reparto.get(key) ?? 0) + 1);
+      }
     }
     console.log(`\n=== HUECOS POR CLASE === ${[...reparto].map(([kind, n]) => `${kind}: ${n}`).join(" · ")}\n`);
+  }, PLAZO);
+
+  it("contra el flujo: los huecos de las franjas, justificados por la producción; ningún otro sin explicar (R-AGV-018)", () => {
+    const adelantado = scenario.defects.find((d) => d.kind === "bloqueo-sin-justificar")?.vehicles[0] ?? "";
+    const sinExplicar = [...silences].flatMap(([agvId, list]) =>
+      list.filter((entry) => entry.justification !== "produccion" && entry.justification !== "cola").map((entry) => ({ agvId, entry })),
+    );
+    expect(
+      sinExplicar.filter(({ agvId }) => agvId !== adelantado).map(({ agvId, entry }) => `${agvId} ${entry.kind}`),
+    ).toEqual([]);
+    // Ningún hueco de la flota es «desconexión»: todos vuelven por su sitio.
+    expect([...silences.values()].flat().filter((entry) => entry.kind === "desconexion")).toEqual([]);
+    // Y el único bloqueo es el plantado.
+    expect(flow.blockages.map((blockage) => blockage.agvId)).toEqual([adelantado]);
   }, PLAZO);
 
   it("detecta las clases que ya sabe detectar, y sigue haciéndolo", () => {
