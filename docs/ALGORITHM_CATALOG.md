@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.24.0
+version: 0.24.1
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -820,6 +820,13 @@ entre circuitos protegido por par de tags: las tres siguen sin firma disponible 
 dato de planta (OQ-121). Tampoco comprueba reconvergencia entre más de un par de ramas a la vez con
 4 o más ramas simultáneas. OQ-122 queda Parcial: responde a cuatro de las siete clases, no a las
 siete.
+
+**Con la hora al minuto, sin firmas de tiempo.** Parada precisa y semáforo se reconocen por la
+duración hasta la siguiente lectura. Si todas las duraciones son múltiplos de un minuto
+(`sourceResolutionMs`, la misma resolución que usa la horquilla), la varianza y los dos grupos salen
+del redondeo y no del vehículo: con dato real al minuto salían decenas de «paradas precisas». No se
+buscan, y la vista lo dice (`timeSignaturesMeasurable`). Bifurcación y cruce no dependen del reloj y
+se siguen buscando.
 
 ## 9. Punto crítico y análisis temporal
 

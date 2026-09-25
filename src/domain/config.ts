@@ -20,6 +20,7 @@ import type { CircuitStateThresholds } from "./circuit-state.js";
 import type { BandThresholds, RegimeThresholds } from "./segment-bands.js";
 import type { BlindnessThresholds } from "./inventory.js";
 import type { ChargingThresholds } from "./charging.js";
+import type { CohortThresholds } from "./cohort.js";
 import type { CriticalPointThresholds } from "./critical-points.js";
 import type { DriftThresholds } from "./drift.js";
 import type { FifoThresholds } from "./fifo.js";
@@ -53,6 +54,7 @@ export interface AnalysisConfig {
   /** Identidad de esta configuración, que se registra con cada análisis (FR-031). */
   readonly configVersion: string;
   readonly affinity: AffinityThresholds;
+  readonly cohorts: CohortThresholds;
   readonly blindness: BlindnessThresholds;
   readonly graph: Omit<GraphThresholds, "resolutionMs">;
   readonly silence: SilenceThresholds;
@@ -83,6 +85,11 @@ export interface AnalysisConfig {
  * - **Afinidad.** Dos exportaciones del mismo circuito comparten casi todos los tags; el contraste
  *   de PC2 contra sus listas dio un 90,8 % de alineación con cuatro errores de lista de por medio.
  *   Por debajo de un 20 % de solape, lo que queda no es una ampliación: es otro sitio.
+ * - **Circuitos de una misma exportación (R-DAT-012).** Tres de cada cuatro tags en común para que
+ *   dos vehículos vayan al mismo circuito, y cinco aristas y cinco tags propios para que un grupo sea
+ *   un circuito. Con dato real, los tres circuitos de una exportación que comparten tramo tienen 39,
+ *   12 y 8 tags propios; un vehículo que se salta tags tenía 9 aristas propias y ningún tag propio; y
+ *   una exportación de 54 vehículos sale como un solo circuito.
  * - **Ceguera.** Diez lecturas es lo mínimo para que el silencio de un vehículo sobre un tag no sea
  *   simplemente que apenas circuló. Es una cota grosera y lo seguirá siendo hasta que existan las
  *   vueltas, que es la normalización correcta (R-OPP-010).
@@ -208,6 +215,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
   configVersion: "provisional-0",
   affinity: { compatible: 0.6, foreign: 0.2, minTagsToJudge: 5 },
+  cohorts: { sameCircuitSimilarity: 0.75, minExclusiveEdges: 5, minOwnTags: 5 },
   blindness: { minReadingsPerVehicle: 10, minReadersForContrast: 2 },
   graph: { minShareForObserved: 0.9, minSupportForObserved: 3, maxSameInstantShare: 0.5 },
   silence: { minGapMs: 5 * 60_000 },

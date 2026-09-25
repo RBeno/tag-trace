@@ -20,6 +20,7 @@ import {
   findBifurcationCandidates,
   findPrecisePauseCandidates,
   findTrafficLightCandidates,
+  timeSignaturesMeasurable,
   transitionDurationsByTag,
   type BifurcationThresholds,
   type CriticalPointCandidate,
@@ -319,6 +320,26 @@ describe("semáforo (findTrafficLightCandidates)", () => {
       "semaforo",
     );
     expect(candidate.samples).toBe(20); // los 8 en el mismo instante no cuentan
+  });
+});
+
+describe("con la hora al minuto no se buscan firmas de tiempo", () => {
+  // Al minuto, cada duración es 0, 60, 120… s: una parada de coeficiente 0 o dos grupos perfectos
+  // salen del redondeo, no del vehículo. Así salieron decenas de «paradas precisas» con dato real.
+  const alMinuto = durations("A", [60_000, 60_000, 60_000, 60_000, 60_000, 60_000]);
+
+  it("una parada que al segundo sería perfecta no es candidato", () => {
+    expect(timeSignaturesMeasurable(alMinuto)).toBe(false);
+    expect(findPrecisePauseCandidates(alMinuto, { minDurationMs: 30_000, maxCv: 0.1, minSamples: 4 })).toEqual([]);
+  });
+
+  it("dos grupos perfectos no son un semáforo", () => {
+    const transitions = durations("A", [...Array.from({ length: 10 }, () => 60_000), ...Array.from({ length: 10 }, () => 240_000)]);
+    expect(findTrafficLightCandidates(transitions, { minGapRatio: 3, maxWithinClusterCv: 0.25, minClusterSamples: 4, minSamples: 20 })).toEqual([]);
+  });
+
+  it("con segundos, sí", () => {
+    expect(timeSignaturesMeasurable(durations("A", [59_000, 60_000, 61_000]))).toBe(true);
   });
 });
 

@@ -1,8 +1,8 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.9.0
+version: 0.9.1
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-25
 ---
 
 # Etapas, entregables y resultados
@@ -214,9 +214,9 @@ Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria port
   Cada circuito sigue aislado; la zona es una vista aparte que lee de cada circuito solo sus pasadas
   por ella, en la intersección de coberturas, con un reloj común (R-DAT-018). Para que no choque con
   lo que ya existe, al abrirla hay que:
-  - descontar las transiciones entre tags compartidos en el agrupamiento por aristas exclusivas
-    (`src/domain/cohort.ts`): hoy una sola transición común funde dos circuitos en un cohorte, y dos
-    tags de cruce o de semáforo seguidos, leídos por los dos circuitos, la producen;
+  - ~~descontar las transiciones entre tags compartidos en el agrupamiento por aristas exclusivas
+    (`src/domain/cohort.ts`)~~: resuelto el 2026-09-25 (CHANGELOG [3.30.2]). Un circuito exige ahora
+    aristas **y** tags propios, así que un tramo común ya no funde dos circuitos;
   - descontar los tags compartidos en la afinidad de una fuente (`src/domain/affinity.ts`), que supone
     que un tag es de un solo circuito. Como solo se comparten los de cruces y semáforos, el efecto es
     pequeño, pero la suposición deja de ser cierta;

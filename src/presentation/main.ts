@@ -2454,7 +2454,8 @@ function renderDrift(views: CircuitViews): void {
 function renderCriticalPoints(views: CircuitViews): void {
   const problems = views.criticalPointsProblems ?? [];
   const candidates = views.criticalPoints.flatMap((cohort) => cohort.candidates);
-  if (candidates.length === 0 && problems.length === 0) return;
+  const atMinute = views.criticalPoints.some((cohort) => !cohort.timeSignatures);
+  if (candidates.length === 0 && problems.length === 0 && !atMinute) return;
 
   type Candidate = NonNullable<CircuitViews["criticalPoints"]>[number]["candidates"][number];
 
@@ -2481,6 +2482,16 @@ function renderCriticalPoints(views: CircuitViews): void {
         "o descartar en planta; la función real la da la lista de críticos.",
     ),
   );
+  if (atMinute) {
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        "La hora de esta fuente va al minuto: no se buscan paradas precisas ni semáforos, que se " +
+          "reconocen por cuánto dura la espera y eso, al minuto, no se puede medir.",
+      ),
+    );
+  }
 
   for (const problem of problems) {
     viewsPanel.append(finding("Punto crítico declarado que no se pudo usar", "—", problem));

@@ -19,6 +19,11 @@ export type VsystemVerdict =
   | "sustituido-candidato"
   /** El tag declarado no tiene ninguna lectura, y nada ocupa su posición: el tramo se salta. */
   | "no-observado"
+  /**
+   * El tag declarado sí se lee, pero no en el recorrido dominante: en una rama, o donde el sucesor
+   * más frecuente lo salta. No es «sin lecturas» (CHANGELOG [3.30.1]).
+   */
+  | "fuera-del-anillo"
   /** El tag se observa en el anillo y Vsystem no lo declara. */
   | "no-declarado";
 
@@ -115,13 +120,24 @@ function classifyGap(
     }
   }
   for (let index = pairs; index < declaredGap.length; index += 1) {
-    rows.push({
-      declaredTag: declaredGap[index] as string,
-      observedTag: null,
-      verdict: "no-observado",
-      truth: "unknown",
-      evidence: "Declarado y sin lecturas, y ningún otro tag en su sitio.",
-    });
+    const declared = declaredGap[index] as string;
+    rows.push(
+      readTags.has(declared)
+        ? {
+            declaredTag: declared,
+            observedTag: null,
+            verdict: "fuera-del-anillo",
+            truth: "observed",
+            evidence: `«${declared}» se lee, pero no en el recorrido dominante: en una rama o donde el sucesor más frecuente lo salta.`,
+          }
+        : {
+            declaredTag: declared,
+            observedTag: null,
+            verdict: "no-observado",
+            truth: "unknown",
+            evidence: "Declarado y sin lecturas, y ningún otro tag en su sitio.",
+          },
+    );
   }
   for (let index = pairs; index < observedGap.length; index += 1) {
     rows.push({

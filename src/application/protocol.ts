@@ -410,6 +410,8 @@ export interface CircuitViews {
       /** Presente en `parada-precisa` y `semaforo`: las duraciones que la firma resume, para dibujarlas. */
       readonly durationsMs?: readonly number[];
     }[];
+    /** `false` con la hora al minuto: no se buscan paradas precisas ni semáforos, y se dice. */
+    readonly timeSignatures: boolean;
     /**
      * Referencia para esas distribuciones: duraciones de todas las transiciones del cohorte, sin
      * pares del mismo instante (R-DAT-013), en muestra de paso fijo si pasan del tope.

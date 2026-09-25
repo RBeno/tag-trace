@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.14.1
+version: 0.14.2
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -93,13 +93,16 @@ Separarlos importa porque **el cohorte de comparación es el circuito**: compara
 otros que recorren un trazado distinto no mide su estado, mide el trazado. En esa exportación, un
 vehículo quedaba «en la mediana» de la flota entera y era **el último de los ocho** de su circuito.
 
-La separación se hace por **aristas exclusivas**: si un conjunto de vehículos recorre transiciones
-que ningún otro recorre jamás, están en circuitos distintos. El parecido entre conjuntos de tags
-agrupa, pero no decide: un vehículo que simplemente lee peor se separaría solo y acabaría siendo su
-propio cohorte, que es la forma más silenciosa de no comparar nada.
+El parecido entre conjuntos de tags agrupa, pero no decide. Un grupo es un circuito si tiene **lo
+suyo**: transiciones que solo recorren sus vehículos **y** tags que solo leen ellos. Compartir una
+transición no basta para juntarlos: los circuitos de esa exportación comparten tramo, y con ese
+criterio salían como uno solo. Y las transiciones solas no bastan para separar: un vehículo que se
+salta tags hace saltos que nadie más hace, y acabaría siendo su propio cohorte, que es la forma más
+silenciosa de no comparar nada. Un vehículo que lee peor, o que solo se vio en parte del recorrido,
+va al circuito que contiene sus tags.
 
-Un vehículo con muy pocas lecturas no se asigna a ningún circuito, y entonces **no se compara**: se
-declara que no hay evidencia y se para. Un informe de comparaciones contra un cohorte vacío es peor
+Un vehículo cuyos tags no contiene ningún circuito no se asigna a ninguno, y entonces **no se
+compara**: se declara que no hay evidencia y se para. Un informe de comparaciones contra un cohorte vacío es peor
 que no tener informe, porque parece un análisis.
 
 ### 3.3 Eventos que no son lecturas

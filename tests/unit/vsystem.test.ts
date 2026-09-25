@@ -43,6 +43,19 @@ describe("contraste contra Vsystem", () => {
     expect(fila?.truth).toBe("unknown");
   });
 
+  it("un declarado que sobra en un hueco pero se lee en otro sitio no sale «sin lecturas»", () => {
+    // 0200 no está en el recorrido dominante y nada ocupa su sitio, pero tiene lecturas (una rama, o
+    // el sucesor más frecuente lo salta). Llamarlo «sin lecturas» era falso (CHANGELOG [3.30.1]).
+    const declarado = ["0100", "0200", "0300"];
+    const observado = ["0100", "0300"];
+    const rows = compareAgainstVsystem(declarado, observado, new Set(["0100", "0200", "0300"]));
+
+    const fila = rows.find((row) => row.declaredTag === "0200");
+    expect(fila?.verdict).toBe("fuera-del-anillo");
+    expect(fila?.truth).toBe("observed");
+    expect(fila?.evidence).not.toContain("sin lecturas");
+  });
+
   it("un tag observado que Vsystem no declara sale no-declarado, con estado observed", () => {
     const declarado = ["0100", "0300"];
     const observado = ["0100", "0250", "0300"]; // 0250 es nuevo, no está en la lista

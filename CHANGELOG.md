@@ -2,6 +2,40 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.30.2] - 2026-09-25
+
+Los tres defectos encontrados con las exportaciones reales, corregidos.
+
+### Corregido
+
+- **Circuitos que comparten tramo** (R-DAT-012, `src/domain/cohort.ts`). Dos AGV iban al mismo
+  circuito en cuanto compartían una sola transición, así que tres circuitos con un tramo común
+  salían como uno. El comentario del módulo decía que era el método validado a mano, y no lo era.
+  Ahora:
+  - los AGV se agrupan por el parecido de sus tags;
+  - un grupo es un circuito si tiene **aristas y tags propios** (cinco de cada, como mínimo);
+  - lo demás va al circuito que contiene sus tags, o queda aparte.
+
+  Con solo las aristas, que es como estaba el método a mano, un AGV que se salta tags salía como
+  circuito propio: 9 aristas suyas y ningún tag suyo.
+
+  Con las exportaciones reales:
+  - la de tres circuitos sale como tres, de 9, 3 y 3 AGV;
+  - las demás, como uno solo cada una: 54, 36 y 37 AGV.
+
+  Umbrales en `config.ts` (`cohorts`, draft).
+- **Contraste con Vsystem** (`vsystem.ts`). Un tag declarado que sobraba en un hueco salía como «sin
+  lecturas» aunque se leyera en otro sitio. Ahora sale `fuera-del-anillo`: «se lee fuera del
+  recorrido», `observed`.
+- **Hora al minuto** (R-GRA-007, `critical-points.ts`). Con todas las duraciones en minutos enteros
+  ya no se proponen paradas precisas ni semáforos, porque salían del redondeo: con dato real, decenas
+  de «paradas precisas». La vista dice por qué no hay. Bifurcación y cruce se siguen buscando.
+- Documentación:
+  - R-DAT-012 y R-GRA-007;
+  - `ALGORITHM_CATALOG.md` §8.2 y `DATA_CONTRACTS.md` (circuitos de una exportación);
+  - la nota de F7 en `ROADMAP.md`;
+  - TC-207–209 y la trazabilidad.
+
 ## [3.30.1] - 2026-09-25
 
 Los libros de Excel se entregan como ficheros: la aplicación solo los importa.
@@ -23,7 +57,7 @@ Los libros de Excel se entregan como ficheros: la aplicación solo los importa.
 
 ### Conocido, sin corregir aquí
 
-Encontrado al sacar el circuito de las exportaciones reales, que se entrega aparte:
+Encontrado al sacar el circuito de las exportaciones reales, que se entrega aparte (corregido en [3.30.2]):
 
 - Una exportación con **tres circuitos que comparten tramo** sale como un solo circuito: el
   agrupamiento une dos AGV en cuanto comparten una transición (R-DAT-012). Separados por los AGV de

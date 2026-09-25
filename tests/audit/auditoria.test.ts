@@ -223,7 +223,7 @@ function analyse(
   const readings = result.readings;
   const direction = result.summary.direction;
   const { transitions } = buildTransitions(readings, direction, []);
-  const cohorts = assignCohorts(readings, transitions);
+  const cohorts = assignCohorts(readings, transitions, PROVISIONAL_CONFIG.cohorts);
   const main = cohorts.cohorts[0];
   if (main === undefined) throw new Error("La auditoría necesita al menos un cohorte.");
 

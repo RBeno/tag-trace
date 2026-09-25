@@ -37,6 +37,7 @@ const VERDICT: Readonly<Record<string, string>> = {
   coincide: "coincide",
   "sustituido-candidato": "posible sustitución",
   "no-observado": "sin lecturas",
+  "fuera-del-anillo": "se lee fuera del recorrido",
   "no-declarado": "no declarado",
 };
 

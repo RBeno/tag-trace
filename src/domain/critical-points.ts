@@ -24,6 +24,8 @@
  * de la interacción con un carro. Quedan fuera, documentadas, no silenciadas.
  */
 
+import { sourceResolutionMs } from "./segment-bands.js";
+
 /** Un sucesor de un tag, con cuánto tráfico sostiene esa rama. */
 export interface BranchShare {
   readonly tagId: string;
@@ -331,6 +333,16 @@ export function transitionDurationsByTag(
   return byTag;
 }
 
+/**
+ * ¿Se pueden medir duraciones con esta fuente? Con la hora al minuto, cada duración es 0, 60, 120…
+ * segundos: la varianza de una parada precisa y los dos grupos de un semáforo salen del redondeo, no
+ * del vehículo, así que esas firmas no se buscan (CHANGELOG [3.30.1]). Es la misma resolución que
+ * mide la horquilla de un tramo (`sourceResolutionMs`).
+ */
+export function timeSignaturesMeasurable(transitions: readonly { readonly fromTime: number; readonly toTime: number }[]): boolean {
+  return sourceResolutionMs(transitions) <= 1_000;
+}
+
 function mean(values: readonly number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
@@ -354,6 +366,7 @@ export function findPrecisePauseCandidates(
   }[],
   thresholds: PrecisePauseThresholds,
 ): readonly CriticalPointCandidate[] {
+  if (!timeSignaturesMeasurable(transitions)) return [];
   const candidates: PrecisePauseCandidate[] = [];
   for (const [tagId, durations] of transitionDurationsByTag(transitions)) {
     if (durations.length < thresholds.minSamples) continue;
@@ -411,6 +424,7 @@ export function findTrafficLightCandidates(
   }[],
   thresholds: TrafficLightThresholds,
 ): readonly CriticalPointCandidate[] {
+  if (!timeSignaturesMeasurable(transitions)) return [];
   const candidates: TrafficLightCandidate[] = [];
   for (const [tagId, durations] of transitionDurationsByTag(transitions)) {
     if (durations.length < thresholds.minSamples) continue;

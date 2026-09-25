@@ -49,6 +49,7 @@ import {
   findBifurcationCandidates,
   findPrecisePauseCandidates,
   findTrafficLightCandidates,
+  timeSignaturesMeasurable,
   transitionDurationsByTag,
 } from "../src/domain/critical-points.js";
 import { compareDistantPeriods } from "../src/domain/drift.js";
@@ -302,7 +303,7 @@ async function buildViews(
   // mezclados no comparten ancla, y buscar un ciclo dominante sobre los dos a la vez produciría un
   // ancla sin sentido para ninguno.
   const { transitions } = buildTransitions(readings, direction, coverage);
-  const cohortAssignment = assignCohorts(readings, transitions);
+  const cohortAssignment = assignCohorts(readings, transitions, PROVISIONAL_CONFIG.cohorts);
 
   const laps: Lap[] = [];
   const shapes: CircuitViews["shapes"][number][] = [];
@@ -539,6 +540,7 @@ async function buildViews(
       ],
       referenceDurationsMs: strideSample(allDurations, DURATION_SAMPLE_MAX),
       referenceTotal: allDurations.length,
+      timeSignatures: timeSignaturesMeasurable(productionTimed),
     });
 
     // El estado normal del circuito (R-TIM-009): una parada precisa o un semáforo, declarados o

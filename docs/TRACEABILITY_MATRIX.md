@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.38.1
+version: 0.38.2
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -69,7 +69,7 @@ regla exista: la matriz no es una lista de intenciones.
 | R-EVI-006 el programa enuncia, la persona decide | `src/domain/inventory.ts` (`describeAction`) | «cada clase indica qué hay que valorar…» |
 | FR-030 umbrales fuera del código | `src/domain/config.ts` | Todos los módulos los exigen como parámetro: sin ellos no compilan |
 | UX §5.2 las cuatro vistas | `src/domain/activity.ts`, `src/presentation/charts.ts` | `tests/e2e/vistas.spec.ts` |
-| R-DAT-012 agrupamiento por circuito (aristas exclusivas, Union-Find) | `src/domain/cohort.ts` | `tests/unit/cohort.test.ts` |
+| R-DAT-012 / TC-207 agrupamiento por circuito (parecido de tags, aristas y tags propios) | `src/domain/cohort.ts`, `src/domain/config.ts` (`cohorts`) | `tests/unit/cohort.test.ts` |
 | ALG-004 vueltas por AGV, ancla por ciclo dominante o declarada (`resolveDeclaredAnchor`, R-GRA-009) | `src/domain/laps.ts`, `src/domain/circuit-config.ts` (`readLapAnchors`) | `tests/unit/laps.test.ts` |
 | ALG-018 expediente de AGV y tag (`UX_SPEC.md` §4.1) | `src/domain/dossier.ts` | `tests/unit/dossier.test.ts` |
 | R-GRA-001 contraste contra Vsystem por alineación de secuencia (LCS) | `src/domain/vsystem.ts` | `tests/unit/vsystem.test.ts` |
@@ -111,6 +111,8 @@ regla exista: la matriz no es una lista de intenciones.
 | R-DAT-021 / TC-195–199 cambios de estructura por la suma entre anclas | `src/domain/anchor-sums.ts`, `src/domain/config.ts` (`anchorSums`), `workers/import.worker.ts` (dentro de cada fichero y entre ficheros), `src/application/protocol.ts` (`franjas.cohorts[].structure`), `src/presentation/franjas-ui.ts` (`describeGap`, `gapLineFor`, marcas del anillo en tiempo), `src/presentation/main.ts` (`renderTagChanges`, `renderDrift`) | `tests/unit/anchor-sums.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 | R-AGV-019 / R-AGV-020 / TC-200–203 ritmo de cada AGV y quién retiene | `src/domain/vehicle-pace.ts`, `src/domain/config.ts` (`pace`), `workers/import.worker.ts` (en todo lo cargado y por fichero), `src/application/protocol.ts` (`circuitState.cohorts[].pace`, `franjas.cohorts[].measures[].pace`), `src/presentation/main.ts` (`renderCircuitState`), `src/presentation/franjas-ui.ts` (tabla y CSV de ritmo por fichero) | `tests/unit/vehicle-pace.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 | DATA_CONTRACTS §3.7 / TC-204–206 listas e historial en Excel | `src/persistence/xlsx.ts` (lectura), `src/ingestion/catalog.ts` (`importCatalogRows`), `src/ingestion/fleet-history.ts` (`importFleetRows`, `excelSerialToText`), `workers/import.worker.ts` (lee `.xlsx`), `src/presentation/main.ts` (los selectores aceptan `.xlsx`); plantillas que se entregan: `tests/support/plantillas-excel.ts`, `tests/support/xlsx-writer.ts`, `scripts/generar-plantillas-excel.ts` | `tests/unit/xlsx.test.ts`, `tests/unit/plantillas-excel.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
+| R-GRA-001 / TC-208 declarado de Vsystem que se lee fuera del recorrido dominante | `src/domain/vsystem.ts` (`fuera-del-anillo`), `src/presentation/labels.ts` | `tests/unit/vsystem.test.ts` |
+| R-GRA-007 / TC-209 sin firmas de tiempo con la hora al minuto | `src/domain/critical-points.ts` (`timeSignaturesMeasurable`), `workers/import.worker.ts`, `src/application/protocol.ts` (`criticalPoints[].timeSignatures`), `src/presentation/main.ts` (`renderCriticalPoints`) | `tests/unit/critical-points.test.ts` |
 | R-AGV-017 / TC-171–174 cómo reaparece un AGV tras un hueco | `src/domain/silence-kind.ts`, `src/domain/fleet.ts`, `src/domain/config.ts` (`silenceKind`), `workers/import.worker.ts`, `src/presentation/diagnostic-charts.ts` (`fleetLifelineChart`), `src/presentation/styles.css` | `tests/unit/silence-kind.test.ts`, `tests/unit/fleet.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
