@@ -175,6 +175,19 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     const franjaText = readFileSync(await franjaCsv.path(), "utf8").replace(/^﻿/, "");
     expect(franjaText.split("\r\n")[0]).toBe("desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s;primera;ultima;posicion_desde_s");
 
+    // El ritmo de cada AGV y quién retiene (R-AGV-019, R-AGV-020): quien retiene, en el estado normal; el
+    // que se vuelve más lento, en la tabla de ficheros con su cifra; y el CSV de ritmo con su cabecera.
+    const retenedor = scenario.defects.find((defect) => defect.kind === "retiene-a-otros")?.vehicles[0] ?? "";
+    const lento = scenario.defects.find((defect) => defect.kind === "ritmo-mas-lento-en-un-fichero")?.vehicles[0] ?? "";
+    await expect(page.locator(".finding", { hasText: `${retenedor} retiene a otros AGV` })).toContainText("AGV distintos");
+    await expect(page.locator("tr", { hasText: lento }).filter({ hasText: "más lento" }).first()).toBeVisible();
+    const [paceCsvFile] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Descargar ritmo de «tardio.csv» (CSV)" }).click(),
+    ]);
+    const paceText = readFileSync(await paceCsvFile.path(), "utf8").replace(/^﻿/, "");
+    expect(paceText.split("\r\n")[0]).toBe("agv;muestras;ritmo;veredicto;retenciones;min_retenidos");
+
     // Los cambios de estructura por la suma entre anclas (R-DAT-021). Aquí el mantenimiento cae dentro del
     // segundo fichero, a las diez de la noche: el bloque de tres sale sustituido en su sitio con su hora,
     // una sola vez, y marcado en la fila de ese fichero con su forma.

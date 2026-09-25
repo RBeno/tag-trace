@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.23.0
+version: 0.24.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -27,6 +27,8 @@ last_updated: 2026-09-25
 | Horquilla de tiempos | Lo que tarda un tramo —de un tag a otro— en un régimen: p50, p80 y p95 de sus propias transiciones. Es el estado normal de ese tramo, y se compara entre periodos (R-FLO-007, R-TIM-010). No confundir con un tag donde el recorrido se divide (bifurcación). |
 | Lecturas que llegaron juntas | Varias lecturas de un AGV que el servidor recibe casi a la vez tras un hueco: un volcado al recuperar la comunicación, porque la hora del fichero es la de llegada. Con la suma del recorrido normal, el AGV no paró (R-DAT-020). También «entrega agrupada». |
 | Franja | Un fichero de lecturas cargado, medido por separado en su ventana completa (R-TIM-011). Dos exportaciones que se solapan son dos franjas; un fichero repetido, una sola. |
+| Ritmo de un AGV | La mitad de sus tramos, cada uno medido contra lo habitual de ese tramo, frente a lo mismo de toda la flota; sin paradas ni esperas detrás de otro. Un 1,10 es un 10 % más lento (R-AGV-019). |
+| Retener | Ir delante de otro AGV, más despacio de lo habitual en ese tramo, mientras el de detrás espera. Quien retiene no tiene por qué pararse (R-AGV-020). |
 | Suma entre anclas | El tiempo entre dos tags que siguen en su sitio a los dos lados de un cambio (las anclas). Es del recorrido: si entre ellas se pone, se quita o se cambia un tag y la suma sigue igual, solo cambió lo de en medio (R-DAT-021). |
 | Posición en tiempo | Los segundos de recorrido desde el ancla hasta un tag, sumando la mitad de las pasadas de cada paso. Es tiempo, nunca distancia; un tag que no se puede situar no se interpola (R-TIM-011). |
 | Valla | Límite de la horquilla de un tramo: p95 + max(p95 − p50, margen mínimo, resolución). Por encima, una transición es una parada candidata (R-FLO-007). |

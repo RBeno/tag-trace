@@ -66,6 +66,7 @@ import {
 import { buildCircuitState, type CircuitState } from "../../src/domain/circuit-state.js";
 import { measureFranjaCohort, type FranjaCohort } from "../../src/domain/franjas.js";
 import type { Interval } from "../../src/domain/coverage.js";
+import { paceInWindow, vehiclePace, type PaceReport, type VehiclePaceThresholds } from "../../src/domain/vehicle-pace.js";
 import {
   anchorSequences,
   compareAnchorGaps,
@@ -165,6 +166,9 @@ interface Analysis {
     readonly entreFicheros: readonly AnchorGapChange[];
     readonly dentroDelFichero: readonly AnchorGapChange[];
   };
+  /** Ritmo de cada AGV y quién retiene, en toda la ventana y en cada fichero (R-AGV-019, R-AGV-020). */
+  readonly pace: PaceReport | null;
+  readonly franjaPace: readonly PaceReport[];
   /** Lecturas que llegaron juntas al servidor, y dónde se concentran (R-DAT-020). */
   readonly groupedDelivery: GroupedDeliveryReport;
   readonly deliverySummary: DeliverySummary;
@@ -503,6 +507,26 @@ function analyse(
           ),
         }));
 
+  // Ritmo y quién retiene (R-AGV-019, R-AGV-020), como el Worker: en toda la ventana y en cada fichero.
+  const paceThresholds: VehiclePaceThresholds = {
+    ...PROVISIONAL_CONFIG.pace,
+    minSamples: PROVISIONAL_CONFIG.bands.minBandSamples,
+    maxFalsePoints: PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
+    minVehiclesForContrast: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
+  };
+  const paceInput = { transitions: measuredTimed, regimeOf, flow, zoneOf: zoneConfig.zoneOf };
+  const pace = bands === null ? null : vehiclePace({ ...paceInput, bands }, paceThresholds);
+  const franjaPace = franjas.map((franja, index) =>
+    paceInWindow(
+      paceInput,
+      driftCoverage[index] as Interval,
+      franja.ring,
+      PROVISIONAL_CONFIG.bands,
+      PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+      paceThresholds,
+    ),
+  );
+
   // Cambios de estructura (R-DAT-021), con el mismo contexto que el Worker: ni calles, ni paradas de la
   // producción, ni noche, ni lecturas que llegaron juntas.
   const anchorContext: AnchorSumContext = {
@@ -553,6 +577,8 @@ function analyse(
     deliverySummary,
     franjas,
     structure: { entreFicheros, dentroDelFichero },
+    pace,
+    franjaPace,
     readings: readings.length,
   };
 }
@@ -586,6 +612,8 @@ describe("auditoría del circuito con verdad conocida", () => {
     deliverySummary,
     franjas,
     structure,
+    pace,
+    franjaPace,
     readings,
   } = analysis;
 
@@ -1228,6 +1256,37 @@ describe("auditoría del circuito con verdad conocida", () => {
       const dentro = lee(structure.dentroDelFichero);
       return { ok: entre.ok && dentro.ok, detail: `entre ficheros ${entre.detail}; dentro ${dentro.detail}` };
     },
+    "ritmo-mas-lento-en-un-fichero": () => {
+      const agv = scenario.defects.find((d) => d.kind === "ritmo-mas-lento-en-un-fichero")?.vehicles[0] ?? "";
+      const [temprano, tardio] = franjaPace;
+      const antes = temprano?.vehicles.find((vehicle) => vehicle.agvId === agv);
+      const despues = tardio?.vehicles.find((vehicle) => vehicle.agvId === agv);
+      const ratio = despues === undefined ? null : despues.ratio / despues.fleetRatio;
+      return {
+        ok:
+          antes?.verdict === null &&
+          despues?.verdict === "mas-lento" &&
+          despues.where === "toda-la-linea" &&
+          ratio !== null &&
+          Math.abs(ratio - 1.1) < 0.04,
+        detail:
+          `${agv}: fichero de antes ${antes === undefined ? "sin medir" : `${(antes.ratio / antes.fleetRatio).toFixed(3)} ${antes.verdict ?? "a su paso"}`}; ` +
+          `de después ${despues === undefined ? "sin medir" : `${(ratio as number).toFixed(3)} ${despues.verdict ?? "a su paso"} (${JSON.stringify(despues.where)}, ${despues.samples} transiciones; ${despues.zones.map((zone) => `${zone.zone} ${zone.samples} ${(zone.ratio / zone.fleetRatio).toFixed(3)} ${zone.verdict ?? "—"}`).join(", ")})`}`,
+      };
+    },
+    "retiene-a-otros": () => {
+      const defect = scenario.defects.find((d) => d.kind === "retiene-a-otros");
+      const agv = defect?.vehicles[0] ?? "";
+      const holder = pace?.holders.find((entry) => entry.agvId === agv);
+      return {
+        ok: holder !== undefined && holder.expected !== null && holder.sites.includes(defect?.tags[0] ?? ""),
+        detail:
+          holder === undefined
+            ? `${agv} no retiene a nadie`
+            : `${agv}: ${holder.retentions} retenciones de ${holder.retained.length} AGV (el azar daría ${(holder.expected ?? 0).toFixed(1)}), ` +
+              `${(holder.waitMs / 60_000).toFixed(1)} min esperados detrás, en ${holder.sites.join(", ")}`,
+      };
+    },
     "entrega-agrupada": () => {
       const defect = scenario.defects.find((d) => d.kind === "entrega-agrupada");
       const agv = defect?.vehicles[0] as string;
@@ -1264,6 +1323,9 @@ describe("auditoría del circuito con verdad conocida", () => {
       `  sin explicación, noche: ${s.unexplained.noche.length} (${s.unexplained.noche.slice(0, 6).map((u) => `${u.agvId} ${pos(u.fromTagId)} +${(u.excessMs / 1000).toFixed(0)} s`).join(", ")})`,
       `  noche frente a producción: ${s.night.slice(0, 5).map((n) => `${pos(n.from)} ${(n.produccionP50Ms / 1000).toFixed(0)}→${(n.nocheP50Ms / 1000).toFixed(0)} s`).join(", ")}`,
       `  retenciones de producción: ${flow.retentions.filter((r) => r.regime === "produccion").length}; paradas: ${flow.stops.length}`,
+      `  ritmo: ${pace?.vehicles.filter((v) => v.verdict !== null).map((v) => `${v.agvId} ${v.verdict} ${(v.ratio / v.fleetRatio).toFixed(3)}`).join(", ") || "nadie"}; ` +
+        `por fichero: ${franjaPace.map((report, index) => `f${index + 1} ${report.vehicles.filter((v) => v.verdict !== null).map((v) => `${v.agvId} ${v.verdict} ${(v.ratio / v.fleetRatio).toFixed(3)}`).join(", ") || "nadie"}`).join("; ")}`,
+      `  quién retiene: ${pace?.holders.slice(0, 5).map((h) => `${h.agvId} ${h.retentions}${h.expected === null ? "" : ` (azar ${h.expected.toFixed(1)})`}`).join(", ") || "nadie"}`,
       `  lecturas que llegaron juntas: ${groupedDelivery.deliveries.length} (${groupedDelivery.deliveries.map((d) => `${d.agvId} ${pos(d.fromTagId)} ${d.kind}`).join(", ") || "ninguna"})`,
     ].join("\n");
   };
@@ -1397,6 +1459,22 @@ describe("auditoría del circuito con verdad conocida", () => {
       state.unexplained.produccion.filter((stop) => !plantadas.has(stop.agvId)).map((stop) => `${stop.agvId}@${stop.fromTagId}`),
     ).toEqual([]);
     expect(state.unexplained.noche.map((stop) => `${stop.agvId}@${stop.fromTagId}`)).toEqual([]);
+
+    // Ritmo y quién retiene (R-AGV-019, R-AGV-020): solo los plantados, en toda la ventana y en cada fichero.
+    const lento = scenario.defects.find((d) => d.kind === "ritmo-mas-lento-en-un-fichero")?.vehicles[0];
+    const retiene = scenario.defects.find((d) => d.kind === "retiene-a-otros")?.vehicles[0];
+    const ritmos = [pace, ...franjaPace].flatMap((report, index) =>
+      (report?.vehicles ?? [])
+        .filter((vehicle) => vehicle.verdict !== null && vehicle.agvId !== lento)
+        .map((vehicle) => `${index === 0 ? "todo" : `f${index}`} ${vehicle.agvId} ${vehicle.verdict}`),
+    );
+    expect(ritmos, "ritmos señalados sin plantar").toEqual([]);
+    const retenedores = [pace, ...franjaPace].flatMap((report, index) =>
+      (report?.holders ?? [])
+        .filter((holder) => holder.expected !== null && holder.agvId !== retiene)
+        .map((holder) => `${index === 0 ? "todo" : `f${index}`} ${holder.agvId}`),
+    );
+    expect(retenedores, "retenedores señalados sin plantar").toEqual([]);
   }, PLAZO);
 
   it("no señala ningún tag sano: cero falsos positivos", () => {

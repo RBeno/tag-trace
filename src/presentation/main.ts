@@ -1445,6 +1445,66 @@ function renderCircuitState(views: CircuitViews): void {
       );
     }
 
+    // Ritmo de cada AGV y quién retiene a otros (R-AGV-019, R-AGV-020): hechos con su cifra, sin causa.
+    const pace = cohort.pace;
+    const whereText = (where: (typeof pace.vehicles)[number]["where"]): string =>
+      where === null || where === "toda-la-linea" ? "en toda la línea" : `solo en la zona ${where.map((zone) => `«${zone}»`).join(" y ")}`;
+    const paced = pace.vehicles.filter((vehicle) => vehicle.verdict !== null);
+    for (const vehicle of paced.slice(0, PER_KIND)) {
+      const shift = Math.abs(vehicle.ratio / vehicle.fleetRatio - 1);
+      viewsPanel.append(
+        finding(
+          `${vehicle.agvId} va un ${Math.round(shift * 100)} % más ${vehicle.verdict === "mas-lento" ? "lento" : "rápido"} que la flota, ${whereText(vehicle.where)}`,
+          `La mitad de sus tramos tarda ${vehicle.ratio.toFixed(2).replace(".", ",")} veces lo habitual del tramo; la de la flota, ` +
+            `${vehicle.fleetRatio.toFixed(2).replace(".", ",")} (${vehicle.samples} tramos)`,
+          "Contra la horquilla de cada tramo, en producción y sin contar paradas ni esperas detrás de otro. Con tantos " +
+            "tramos una diferencia pequeña ya sale por encima del azar: solo se enseña desde un 5 %. La causa no la dice " +
+            "el dato.",
+          ["ritmo-agv", vehicle.agvId],
+        ),
+      );
+    }
+    const holding = pace.holders.filter((holder) => holder.expected !== null);
+    for (const holder of holding.slice(0, PER_KIND)) {
+      viewsPanel.append(
+        finding(
+          `${holder.agvId} retiene a otros AGV`,
+          `${holder.retentions} veces, a ${holder.retained.length} AGV distintos (${few(holder.retained)}), cuando el azar daría ` +
+            `${chance(holder.expected as number)} con sus pasadas`,
+          `Iba delante, más despacio de lo habitual en ese tramo, y los de detrás esperaron ${duration(holder.waitMs)} en total, ` +
+            `en ${few(holder.sites)}. Quien retiene no tiene por qué pararse: basta con que tarde más donde otros vienen ` +
+            "detrás. La causa no la dice el dato.",
+          ["retiene-agv", holder.agvId],
+        ),
+      );
+    }
+    if (pace.vehicles.length > 0) {
+      if (paced.length === 0 && holding.length === 0) {
+        viewsPanel.append(
+          element("p", "muted", "Ningún AGV va un 5 % o más lento o más rápido que la flota, y nadie retiene a otros más de lo que da el azar."),
+        );
+      }
+      const holderOf = new Map(pace.holders.map((holder) => [holder.agvId, holder]));
+      viewsPanel.append(
+        lazyDetails(`Ver el ritmo de los ${pace.vehicles.length} AGV`, () =>
+          plainTable(
+            ["AGV", "Tramos", "Ritmo frente a la flota", "Lectura", "Retenciones", "Esperas detrás"],
+            pace.vehicles.map((vehicle) => {
+              const holder = holderOf.get(vehicle.agvId);
+              return [
+                vehicle.agvId,
+                String(vehicle.samples),
+                percent(vehicle.ratio / vehicle.fleetRatio),
+                vehicle.verdict === null ? "a su paso" : `${vehicle.verdict === "mas-lento" ? "más lento" : "más rápido"}, ${whereText(vehicle.where)}`,
+                String(holder?.retentions ?? 0),
+                holder === undefined ? "—" : duration(holder.waitMs),
+              ];
+            }),
+          ),
+        ),
+      );
+    }
+
     // La noche, medida aparte.
     const nightDiffers = measured.night.filter(
       (entry) => Math.abs(Math.log(entry.nocheP50Ms / Math.max(1, entry.produccionP50Ms))) >= Math.log(1.5),

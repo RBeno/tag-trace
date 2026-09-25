@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.23.0
+version: 0.24.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -651,6 +651,32 @@ de T después), en el régimen de la suma; si no, `otro-punto`.
 
 Un mismo cambio se enseña una vez: primero los de dentro de un fichero, que dicen la hora; entre
 ficheros, solo lo que no esté ya dicho.
+
+## 6.11 Ritmo de cada AGV y quién retiene, implementado (R-AGV-019, R-AGV-020)
+
+`src/domain/vehicle-pace.ts`, por cohorte y por fichero.
+
+**Transiciones libres.** Las del cohorte ya limpias (lecturas agrupadas colapsadas, medibles, fuera de
+las paradas de la producción), de régimen producción, que no son una parada ni una retención de
+`flowStops`. Razón = duración / p50 de `bandFor` en producción (su par, o la suma de los tramos del
+anillo que recorre).
+
+**Ritmo** (`vehiclePace`). Por AGV con al menos `bands.minBandSamples` razones: la mediana. La de la
+flota, M, es la mediana de todas. Prueba de signo (`signTest`): razones por encima de M, los empates
+a mitad, aproximación normal de dos colas; multiplicada por los AGV mirados, ≤
+`circuitState.maxFalsePoints`. Y |ritmo / M − 1| ≥ `pace.minPaceShift`. Con zonas, lo mismo con las
+transiciones cuyos dos tags son de la misma zona, frente a la mediana de la flota en esa zona y con el
+azar multiplicado por AGV × zonas. `where`: `toda-la-linea` si ninguna zona con muestras queda por
+debajo del efecto mínimo en esa dirección; si no, las zonas que sí se apartan; si el conjunto no sale
+y una zona sí, esa zona.
+
+**Quién retiene.** Retenciones de producción por `holderAgvId`: veces, AGV retenidos distintos, espera
+sumada y sitios. `concentrated` con la exposición de cada AGV = sus transiciones de producción, y al
+menos `readRate.minVehiclesForContrast` retenidos distintos.
+
+**Por fichero** (`paceInWindow`). Las transiciones de la ventana, con una horquilla hecha solo con
+ellas y el anillo de ese fichero; paradas y retenciones del análisis entero recortadas a la ventana.
+**CSV** (`paceCsv`): `agv;muestras;ritmo;veredicto;retenciones;min_retenidos`.
 
 ## 7. Segmentación de vueltas y huecos
 

@@ -11,6 +11,7 @@
 import type { CircuitViews } from "../application/protocol.js";
 import type { AnchorGapChange, StructureChange } from "../domain/anchor-sums.js";
 import { franjaCsv, type HistoryKind } from "../domain/franjas.js";
+import { paceCsv } from "../domain/vehicle-pace.js";
 import { plainTable, scrollBox } from "./charts.js";
 import { ringTimeChart, segmentHistoryChart, type RingTimeRow, type SegmentHistoryPanel } from "./diagnostic-charts.js";
 
@@ -194,13 +195,19 @@ export function renderFranjas(panel: HTMLElement, views: CircuitViews, deps: Fra
     for (const source of measured) {
       const measure = bySource.get(source.sourceId);
       if (measure === undefined) continue;
+      const base = source.fileName.replace(/\.[^.]+$/, "");
       const button = node("button", undefined, `Descargar «${source.fileName}» (CSV)`);
       button.type = "button";
       button.addEventListener("click", () => {
-        const base = source.fileName.replace(/\.[^.]+$/, "");
         download(`medicion-${deps.circuitId ?? "circuito"}-${cohort.cohortId}-${base}.csv`, franjaCsv(measure, deps.formatInstant));
       });
-      buttons.append(button);
+      // El ritmo de cada AGV en ese fichero (R-AGV-019, R-AGV-020): un segundo CSV.
+      const paceButton = node("button", undefined, `Descargar ritmo de «${source.fileName}» (CSV)`);
+      paceButton.type = "button";
+      paceButton.addEventListener("click", () => {
+        download(`ritmo-${deps.circuitId ?? "circuito"}-${cohort.cohortId}-${base}.csv`, paceCsv(measure.pace));
+      });
+      buttons.append(button, paceButton);
     }
     panel.append(buttons);
 
@@ -264,6 +271,48 @@ export function renderFranjas(panel: HTMLElement, views: CircuitViews, deps: Fra
           "muted",
           `En ${unshared.map((measure) => `«${labelOf.get(measure.sourceId) ?? measure.sourceId}»`).join(", ")} el ancla del ` +
             "circuito no está en el anillo: sus posiciones empiezan en otro tag y no se comparan con las demás.",
+        ),
+      );
+    }
+
+    // El ritmo de cada AGV fichero a fichero, contra la horquilla de cada uno: los que se apartan de la
+    // flota en alguno, o retienen a otros.
+    const pacedIds = [
+      ...new Set(
+        cohort.measures.flatMap((measure) => [
+          ...measure.pace.vehicles.filter((vehicle) => vehicle.verdict !== null).map((vehicle) => vehicle.agvId),
+          ...measure.pace.holders.filter((holder) => holder.expected !== null).map((holder) => holder.agvId),
+        ]),
+      ),
+    ].sort();
+    if (pacedIds.length > 0) {
+      const withPace = cohort.measures.filter((measure) => measure.pace.vehicles.length > 0);
+      panel.append(
+        node(
+          "p",
+          "muted",
+          "Ritmo de cada AGV en cada fichero, frente a la flota y contra la horquilla de ese fichero: los que se apartan un " +
+            "5 % o más en alguno, o retienen a otros. Así se ve si un AGV se vuelve más lento de un fichero al siguiente.",
+        ),
+      );
+      panel.append(
+        scrollBox(
+          plainTable(
+            ["AGV", ...withPace.map((measure) => labelOf.get(measure.sourceId) ?? measure.sourceId)],
+            pacedIds.map((agvId) => [
+              agvId,
+              ...withPace.map((measure) => {
+                const vehicle = measure.pace.vehicles.find((entry) => entry.agvId === agvId);
+                const holder = measure.pace.holders.find((entry) => entry.agvId === agvId && entry.expected !== null);
+                const pace =
+                  vehicle === undefined
+                    ? "—"
+                    : `${Math.round((vehicle.ratio / vehicle.fleetRatio) * 100)} %` +
+                      (vehicle.verdict === null ? "" : vehicle.verdict === "mas-lento" ? ", más lento" : ", más rápido");
+                return holder === undefined ? pace : `${pace}; retiene a ${holder.retained.length} (${holder.retentions} veces)`;
+              }),
+            ]),
+          ),
         ),
       );
     }

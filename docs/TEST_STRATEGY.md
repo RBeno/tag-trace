@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.35.0
+version: 0.36.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -249,6 +249,10 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-197 | Pocas pasadas y otro régimen | Con tres pasadas después, la estructura sale y la suma queda sin medir; con el después de noche, la estructura sale igual y la suma se compara de noche si hay bastante a los dos lados, o no se compara | Esperar a tener muchas pasadas para decir qué tags cambiaron; comparar una suma de día con una de noche |
 | TC-198 | Dónde se mira dentro de un fichero (`structureBoundaries`, `windowsAroundChanges`) | Los bordes de lectura caen donde se cambió el bloque aunque sus vecinos también cambiaran; cada grupo se compara con lo que hay hasta el grupo vecino, no con el resto del tramo | Medir la suma de un cambio con otro cambio a medias en uno de los lados |
 | TC-199 | Auditoría (`tres-sustituidos-seguidos`, `insertado-misma-suma`) y navegador | Entre los dos ficheros y dentro de la ventana entera, el bloque de tres sustituido en su sitio con el del medio emparejado y la suma igual, el insertado en la línea, 98001 alargando el tramo, 60438 → 99001 en otro punto y los rotos como que ya no se leen; ningún tag sano en un cambio de estructura; en el navegador, una sola tarjeta del bloque, la línea «Entre anclas» en la tarjeta del tag nuevo, y marcas con forma en el anillo en tiempo | El mismo cambio enseñado dos veces |
+| TC-200 | Ritmo de cada AGV (`vehiclePace`, `signTest`) | Un 10 % más lento, en toda la línea; un 1 % no aunque la prueba de signo lo encuentre; uno más rápido; solo en la zona donde se aparta, y una zona con pocas muestras y la misma diferencia no convierte «toda la línea» en «solo aquí»; las paradas no cuentan como ritmo; con pocas muestras, nada; los empates a mitad | Señalar a un AGV por un 1 %; decir «solo en una zona» porque la otra tiene pocas muestras |
+| TC-201 | Quién retiene (`vehiclePace`) | Quien retiene a varios AGV más de lo que da el azar por sus pasadas sale, con veces, retenidos y espera; quien retiene lo que le toca no; siempre al mismo AGV no basta | Llamar retenedor a cada ocupante de un cuello de botella |
+| TC-202 | Por fichero (`paceInWindow`, `paceCsv`) | CSV `agv;muestras;ritmo;veredicto;retenciones;min_retenidos` con coma decimal | Comparar un fichero contra la horquilla de otro |
+| TC-203 | Auditoría (`ritmo-mas-lento-en-un-fichero`, `retiene-a-otros`) y navegador | El AGV estirado un 10 % después de la noche, más lento en el fichero de después (≈ 1,10, en toda la línea) y a su paso en el de antes; el que se queda en el semáforo retiene a varios AGV más de lo que da el azar, sin pararse él; nadie más señalado ni en toda la ventana ni en ningún fichero; en el navegador, la tarjeta de quien retiene, la fila del lento en la tabla de ficheros y el CSV de ritmo con su cabecera | Un ritmo o un retenedor señalado sin plantar |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda

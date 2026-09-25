@@ -15,6 +15,7 @@
 
 import type { AffinityThresholds } from "./affinity.js";
 import type { AnchorSumThresholds } from "./anchor-sums.js";
+import type { PaceThresholds } from "./vehicle-pace.js";
 import type { CircuitStateThresholds } from "./circuit-state.js";
 import type { BandThresholds, RegimeThresholds } from "./segment-bands.js";
 import type { BlindnessThresholds } from "./inventory.js";
@@ -71,6 +72,7 @@ export interface AnalysisConfig {
   readonly groupedDelivery: GroupedDeliveryThresholds;
   readonly franjas: FranjaThresholds;
   readonly anchorSums: AnchorSumThresholds;
+  readonly pace: PaceThresholds;
 }
 
 /**
@@ -196,6 +198,11 @@ export interface AnalysisConfig {
  *   de un tag no necesita ese mínimo —se prueba con el mismo 0,1 % de azar que los cambios de tag
  *   (`tagChanges.maxChance`)—, y así un fichero corto justo después de un mantenimiento ya enseña qué
  *   tags cambiaron, aunque diga que la suma todavía no se puede medir.
+ * - **Ritmo de cada AGV (R-AGV-019).** Un 5 % de diferencia con el de la flota, como mínimo, además de
+ *   la prueba de signo: con miles de transiciones un 1 % sale significativo y no le dice nada a nadie en
+ *   planta, y un 5 % es un AGV que pierde una vuelta de cada veinte. Las muestras mínimas son las de una
+ *   horquilla (`bands.minBandSamples`), el azar el de los sitios del circuito (`circuitState.maxFalsePoints`)
+ *   y, para quien retiene, los AGV distintos de un contraste (`readRate.minVehiclesForContrast`).
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -247,6 +254,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   groupedDelivery: { minFastSteps: 2 },
   franjas: { minPositionSamples: 4 },
   anchorSums: { minAnchorPasses: 5 },
+  pace: { minPaceShift: 0.05 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

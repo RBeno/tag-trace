@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.20.0
+version: 0.21.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -413,6 +413,11 @@ lo de la sección usa solo producción (R-TIM-009). Después, destacados primero
   tarjetas **«AGV: le llegan lecturas juntas»** y **«Lecturas juntas al pasar por X»** para lo que se
   concentra más de lo que da el azar, con la última ráfaga y si paró o no. Sin causa: «apunta a la
   comunicación». Todas, en tabla plegada. Sin evaluar con resolución de minuto, y se dice.
+- **Ritmo de cada AGV** (R-AGV-019): «7122 va un 10 % más lento que la flota, en toda la línea» (o
+  «solo en la zona X»), con la mitad de sus tramos frente a la de la flota y cuántos tramos; y **quién
+  retiene a otros** (R-AGV-020): «7107 retiene a otros AGV», cuántas veces, a cuántos AGV distintos
+  frente al azar, la espera sumada detrás y dónde. Sin causa. Si no hay nada, una línea que lo dice. El
+  ritmo de todos, en tabla plegada.
 - **La noche**, en una línea: qué tramos cambian la mitad o más y cuántas paradas sin explicación hubo
   medidas contra la horquilla de noche.
 - **Horquilla de tiempos de cada tramo**: una barra por tramo del anillo, en su orden (no es
@@ -444,6 +449,10 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
   de P. Se dice con las palabras de la tabla del propietario: «tag nuevo en la línea», «tag nuevo que
   cambia el recorrido: revisar su configuración», «sustituido en su sitio», «se lee en otro punto»,
   «ya no se lee entre P y Q». Sin causas.
+- **Ritmo de cada AGV en cada fichero** (R-AGV-019, R-AGV-020): una tabla, en su caja con
+  desplazamiento, con los AGV que se apartan de la flota en algún fichero o retienen a otros, y su ritmo
+  en cada fichero contra la horquilla de ese fichero. Un segundo botón por fichero, **«Descargar ritmo
+  de «fichero» (CSV)»**, con `agv;muestras;ritmo;veredicto;retenciones;min_retenidos`.
 - Con dos ficheros o más, las **tarjetas de los tramos que cambian** en producción (escalón desde un
   fichero, deriva, o cambio sin distinguir con dos) y la **historia de esos tramos** en pequeños
   múltiplos: el punto es la mitad de las pasadas y la barra del 80 % al 95 %, con acento en el fichero

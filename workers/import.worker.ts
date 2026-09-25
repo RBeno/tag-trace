@@ -64,6 +64,7 @@ import {
 import { buildCircuitState } from "../src/domain/circuit-state.js";
 import { collapseGroupedDeliveries, summarizeDeliveries } from "../src/domain/grouped-delivery.js";
 import { franjaWindows, measureFranjaCohort, segmentHistories } from "../src/domain/franjas.js";
+import { paceInWindow, vehiclePace, type VehiclePaceThresholds } from "../src/domain/vehicle-pace.js";
 import {
   anchorSequences,
   changedTags,
@@ -548,10 +549,17 @@ async function buildViews(
     for (const candidate of [...paradas, ...semaforos]) {
       if (!timeCritical.has(candidate.tagId)) timeCritical.set(candidate.tagId, candidate.kind);
     }
+    // El ritmo de cada AGV y quién retiene (R-AGV-019, R-AGV-020), en todo lo cargado y en cada fichero.
+    const paceThresholds: VehiclePaceThresholds = {
+      ...PROVISIONAL_CONFIG.pace,
+      minSamples: PROVISIONAL_CONFIG.bands.minBandSamples,
+      maxFalsePoints: PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
+      minVehiclesForContrast: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
+    };
+    const paceInput = { transitions: measuredTimed, regimeOf, flow, zoneOf: zoneConfig.zoneOf };
     // La medición de cada fichero (R-TIM-011), con las mismas transiciones limpias.
-    const measures = measuredWindows.map((entry) => ({
-      sourceId: entry.source.sourceId,
-      ...measureFranjaCohort(
+    const measures = measuredWindows.map((entry) => {
+      const measure = measureFranjaCohort(
         { cohortId: cohort.id, transitions: cohortTimeline, measured: measuredTimed, anchorTagId: effective.tagId },
         entry.window,
         regimeOf,
@@ -559,8 +567,20 @@ async function buildViews(
         PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
         PROVISIONAL_CONFIG.franjas,
         PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
-      ),
-    }));
+      );
+      return {
+        sourceId: entry.source.sourceId,
+        ...measure,
+        pace: paceInWindow(
+          paceInput,
+          entry.window,
+          measure.ring,
+          PROVISIONAL_CONFIG.bands,
+          PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+          paceThresholds,
+        ),
+      };
+    });
     // Tags insertados y sustituidos, por la suma entre anclas (R-DAT-021): entre ficheros seguidos, y
     // alrededor de cada grupo de cambios de tag dentro de un tramo de cobertura. Un mismo conjunto de
     // tags cambiados se enseña una sola vez.
@@ -619,6 +639,7 @@ async function buildViews(
     const size = effective.cycle.length;
     circuitStateCohorts.push({
       cohortId: cohort.id,
+      pace: vehiclePace({ ...paceInput, bands }, paceThresholds),
       resolutionMs: bands.resolutionMs,
       marginMs: bands.marginMs,
       bands: [...bands.pairs.values()]

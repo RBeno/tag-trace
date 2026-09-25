@@ -2,6 +2,49 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.29.0] - 2026-09-25
+
+Cuarta y última entrega sobre los tiempos por fichero: el ritmo de cada AGV y quién retiene a otros.
+
+### Añadido
+
+- **Ritmo de cada AGV** (R-AGV-019, `src/domain/vehicle-pace.ts`). De cada tramo libre —de producción,
+  sin paradas ni esperas detrás de otro, con las lecturas que llegaron juntas colapsadas— lo que tardó
+  frente a la mitad de las pasadas de ese tramo; el ritmo es la mediana, frente a la de la flota. Se
+  señala con dos pruebas a la vez: la de signo, con el azar repartido entre todos los AGV, y un efecto
+  mínimo, porque con miles de tramos un 1 % ya es significativo. Con zonas, «en toda la línea» o «solo en
+  la zona X»; lo segundo solo si en las demás su diferencia no llega al mínimo.
+- **Quién retiene a otros** (R-AGV-020): las retenciones agrupadas por el AGV de delante, frente a lo que
+  da el azar por sus pasadas, a varios AGV distintos. Es del vehículo, no del sitio: en un cuello de
+  botella cada uno retiene cuando le toca.
+- **Por fichero**, contra la horquilla de ese fichero: una tabla en «Mediciones por fichero» con los AGV
+  que se apartan o retienen en alguno, y un segundo CSV por fichero
+  (`agv;muestras;ritmo;veredicto;retenciones;min_retenidos`). En «Estado normal del circuito», las
+  tarjetas «va un 10 % más lento que la flota» y «retiene a otros AGV», y el ritmo de todos plegado. Sin
+  causas.
+- Configuración `pace` (draft): un 5 % de diferencia como mínimo. El resto se reutiliza (muestras de una
+  horquilla, azar de los sitios, AGV de un contraste).
+- Auditoría `auditoria/17`: `ritmo-mas-lento-en-un-fichero` (7122 estirado un 10 % tras la noche, sin
+  `random()`) y `retiene-a-otros` (7107 se queda en el semáforo dentro de su horquilla y los de detrás
+  esperan, con la deuda de reloj). **40 de 40 clases detectadas**; nadie más con ritmo ni retenedor
+  señalado, ni en toda la ventana ni en ningún fichero. 7122 sale a 1,111 en el fichero de después y a su
+  paso en el de antes; en toda la ventana no llega al 5 %, porque solo va más lento en la última parte.
+
+### Corregido antes de publicar
+
+- La primera versión decía «solo en la zona cargada» de 7122, estirado en todas: en la zona vacía iba un
+  6,7 % más lento, pero con menos muestras su prueba no llegaba. Decir «solo aquí» afirma que en las demás
+  va a su paso, y eso lo dice su propia diferencia, no una prueba que no alcanza.
+
+### Cambiado frente al plan
+
+- El plan era que el AGV que retiene doblara su estancia en el cuello de botella; no se llegó a plantar
+  así, porque ahí cada ocupante retiene cuando le toca y no se distinguiría. Se planta en el semáforo, con
+  una espera que cabe en su horquilla, y solo esperan quienes ya lo tenían delante al leer el tag
+  anterior, que es lo que la regla de la cola exige. Y el AGV lento no se estira desde su primera lectura:
+  movería el corte, la rotura, el tag nuevo y la noche lenta de ese AGV; se estira desde la mañana del
+  segundo día, y por eso sale en el fichero de después y no en toda la ventana.
+
 ## [3.28.0] - 2026-09-25
 
 Tercera entrega sobre los tiempos por fichero: los tags insertados y sustituidos se leen por la suma

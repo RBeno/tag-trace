@@ -20,6 +20,7 @@ import type { CircuitState } from "../domain/circuit-state.js";
 import type { DeliveryConcentration, GroupedDelivery } from "../domain/grouped-delivery.js";
 import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { StructureSet } from "../domain/anchor-sums.js";
+import type { PaceReport } from "../domain/vehicle-pace.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
@@ -465,6 +466,8 @@ export interface CircuitViews {
     readonly night: { readonly fromHour: number; readonly toHour: number };
     readonly cohorts: readonly {
       readonly cohortId: number;
+      /** El ritmo de cada AGV frente a la flota y quién retiene a otros (R-AGV-019, R-AGV-020). */
+      readonly pace: PaceReport;
       readonly resolutionMs: number;
       readonly marginMs: number;
       /** Cada par con horquilla; `position` es su sitio en el anillo si es un tramo del anillo. */
@@ -508,7 +511,8 @@ export interface CircuitViews {
     }[];
     readonly cohorts: readonly {
       readonly cohortId: number;
-      readonly measures: readonly (FranjaCohort & { readonly sourceId: string })[];
+      /** Cada fichero, con el ritmo de cada AGV contra la horquilla de ese fichero (R-AGV-019). */
+      readonly measures: readonly (FranjaCohort & { readonly sourceId: string; readonly pace: PaceReport })[];
       readonly histories: readonly SegmentHistory[];
       /**
        * Tags insertados, retirados y sustituidos, por la suma entre anclas (R-DAT-021): entre ficheros

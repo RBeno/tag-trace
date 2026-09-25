@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.14.0
+version: 0.15.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -215,3 +215,7 @@ posición en tiempo, cambios de estructura por la suma entre anclas, y ritmo por
 Un tag cambiado nunca es ancla: por eso un bloque de tres cambiados a la vez queda situado entero entre
 las dos anclas que lo rodean, cuando el vecino compartido (R-DAT-017, R-DAT-019) deja suelto el del
 medio. Qué tags hay no depende de la hora; la suma sí, y se compara en un solo régimen (R-DAT-021).
+El ritmo de un AGV se mide contra la horquilla de cada tramo y frente a la flota, sin paradas ni
+esperas, con prueba de signo y un efecto mínimo; por fichero, para ver si se vuelve más lento. Quién
+retiene es del AGV de delante, no del sitio: en un cuello cada uno retiene cuando le toca (R-AGV-019,
+R-AGV-020).

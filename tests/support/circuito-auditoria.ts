@@ -95,7 +95,9 @@ export type DefectClass =
   /** Mantenimiento: tres tags seguidos cambiados a la vez, en su sitio (R-DAT-021). */
   | "tres-sustituidos-seguidos"
   /** Un tag nuevo entre dos que no cambia el recorrido (R-DAT-021). */
-  | "insertado-misma-suma";
+  | "insertado-misma-suma"
+  | "ritmo-mas-lento-en-un-fichero"
+  | "retiene-a-otros";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -403,6 +405,16 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const cuelloPosicion = 116;
   const CUELLO_ESPERA_MS = 40_000;
   const ocupacionCuello: { from: number; to: number }[] = [];
+  /**
+   * Quién retiene a otros (Parte 50, R-AGV-020): un AGV sin otro papel se queda en el semáforo más que
+   * nadie, en cada pasada de día, y los que llegan detrás —ya lo tenían delante al leer el tag de
+   * antes— esperan a que salga. Su espera cabe en la horquilla del semáforo, así que él no para: retiene.
+   * Con la deuda de reloj, sin `random()`. El lector degradado no espera, por lo mismo que en el cuello.
+   */
+  const retenedor = vehicles[7] as string;
+  const RETENEDOR_ESPERA_MS = 105_000;
+  const semaforoPosicion = 105;
+  const ocupacionRetenedor: { from: number; to: number }[] = [];
 
   // --- Zonas (R-FLO-003: la carga online va dentro de la zona vacía) -------------------------
   //
@@ -492,6 +504,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     const conflictoHecho = new Set<number>();
     let paradaAisladaHecha = false;
     let entradaCuello: number | null = null;
+    let ultimaLectura = -Infinity;
 
     if (enFrio) {
       // Ya estaba cargando antes de que empezara la ventana, así que **no tiene ninguna lectura
@@ -583,7 +596,20 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         entradaCuello = null;
       }
 
-      if (lee) filas.push({ t: now, v: vehicle, tag });
+      // Detrás del que retiene en el semáforo: solo quien ya lo tenía delante al leer el tag anterior.
+      if (position === semaforoPosicion && vehicle !== retenedor && vehicle !== lectorDegradado) {
+        const ocupado = ocupacionRetenedor.find((entry) => entry.from <= ultimaLectura && now < entry.to);
+        if (ocupado !== undefined) {
+          const extra = ocupado.to + 2_000 - now;
+          now += extra;
+          debtMs += extra;
+        }
+      }
+
+      if (lee) {
+        filas.push({ t: now, v: vehicle, tag });
+        ultimaLectura = now;
+      }
 
       if (position === cuelloPosicion && enVentanaCuello) {
         entradaCuello = now;
@@ -691,7 +717,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       // (tránsito normal). Dos grupos claramente separados y compactos por separado. Mismo motivo de
       // exclusión del lector degradado que la parada precisa: un salto de varias posiciones aquí
       // fragmentaría justo el salto bimodal que este tag necesita mostrar.
-      if (margenSuficiente && position === 105) {
+      const deDia = now < nocheDesde - 20 * 60_000 || now >= nocheHasta + 20 * 60_000;
+      if (margenSuficiente && position === semaforoPosicion && vehicle === retenedor && deDia) {
+        semaforoPases += 1;
+        ocupacionRetenedor.push({ from: now, to: now + RETENEDOR_ESPERA_MS });
+        now += RETENEDOR_ESPERA_MS;
+        debtMs += RETENEDOR_ESPERA_MS;
+      } else if (margenSuficiente && position === semaforoPosicion) {
         semaforoPases += 1;
         if (semaforoPases % 3 === 0) {
           now += SEMAFORO_ROJO_MS;
@@ -810,6 +842,20 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   // y los tags críticos declarados se quedan sin lecturas en la franja. Lo que pasa de `to` se
   // descarta. La verdad plantada con instante (`rotura`, `periodSplit`) pasa por la misma función.
   // Con un bucle y no con `splice(…, ...congeladas)`: doscientos mil argumentos desbordan la pila.
+  // Un AGV más lento en el segundo fichero (Parte 50, R-AGV-019): desde la mañana del segundo día, ya
+  // pasada la noche, sus lecturas se estiran un 10 % respecto a esa hora, antes de congelar. Después de
+  // generar, sin `random()`, y donde ninguna otra plantación depende de su reloj: el corte, la rotura,
+  // el tag nuevo, la noche lenta y el cuello quedan antes.
+  const ritmoLento = vehicles[22] as string;
+  const RITMO_LENTO = 1.1;
+  const lentoDesde = from + 23.5 * HORA + 10 * 60_000;
+  for (let index = 0; index < filas.length; index += 1) {
+    const fila = filas[index] as (typeof filas)[number];
+    if (fila.v === ritmoLento && fila.t > lentoDesde) {
+      filas[index] = { ...fila, t: lentoDesde + Math.round(((fila.t - lentoDesde) * RITMO_LENTO) / 1000) * 1000 };
+    }
+  }
+
   let quedan = 0;
   for (const fila of filas) {
     const t = congelar(fila.t);
@@ -1235,6 +1281,23 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       atUtcMs: toRealUtc(corte),
       expect: "un tag nuevo en la línea entre sus dos vecinos, con la suma igual",
       mustNotSay: "que cambie el recorrido",
+    },
+    {
+      kind: "ritmo-mas-lento-en-un-fichero",
+      tags: [],
+      vehicles: [ritmoLento],
+      atUtcMs: toRealUtc(congelar(lentoDesde)),
+      expect:
+        "en el fichero de después, un 10 % más lento que la flota contra la horquilla de ese fichero, en toda la línea; " +
+        "en el de antes, a su paso",
+      mustNotSay: "una causa, ni otro AGV más lento o más rápido",
+    },
+    {
+      kind: "retiene-a-otros",
+      tags: [ring[semaforoPosicion] as string],
+      vehicles: [retenedor],
+      expect: "quien retiene a varios AGV más de lo que da el azar por sus pasadas, en el semáforo, sin pararse él",
+      mustNotSay: "que retenga otro AGV, o una parada sin explicación de quien espera detrás",
     },
     {
       kind: "posicion-en-tiempo",
