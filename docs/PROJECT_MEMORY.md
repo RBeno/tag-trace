@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.15.0
+version: 0.15.1
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -219,3 +219,7 @@ El ritmo de un AGV se mide contra la horquilla de cada tramo y frente a la flota
 esperas, con prueba de signo y un efecto mínimo; por fichero, para ver si se vuelve más lento. Quién
 retiene es del AGV de delante, no del sitio: en un cuello cada uno retiene cuando le toca (R-AGV-019,
 R-AGV-020).
+
+Los libros de Excel se entregan como ficheros; la aplicación solo los importa (propietario,
+2026-09-25): las plantillas de listas y flota y el circuito de cada análisis se generan fuera del
+programa, y en la interfaz no hay descargas de Excel.

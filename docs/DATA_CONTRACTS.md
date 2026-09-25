@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.14.0
+version: 0.14.1
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -283,8 +283,8 @@ escriben en Excel. Un CSV abierto en Excel pierde justo lo que importa: conviert
 AGV (R-DAT-001)— y las fechas en números, y al guardarlo hay que acertar con separador y codificación.
 Por eso:
 
-- **El programa da la plantilla**, un `.xlsx` hecho en el navegador —el repositorio no guarda
-  ninguno—: la primera hoja con la cabecera en su sitio (`lista;tag;orden;funcion;grupo;capacidad;nota`
+- **La plantilla se entrega como fichero**, no la da el programa: un `.xlsx` hecho con
+  `scripts/generar-plantillas-excel.ts` —el repositorio no guarda ninguno—, con la primera hoja con la cabecera en su sitio (`lista;tag;orden;funcion;grupo;capacidad;nota`
   o `circuito;agv;desde;hasta;nota`), las columnas en **formato texto**, la cabecera fija, desplegables
   que avisan pero admiten otros valores (`lista` y `funcion`), una hoja de instrucciones y otra de
   ejemplo.
@@ -299,14 +299,11 @@ Por eso:
   del zip de `.agvproj` (§9, TH-005), y un XML con declaración de tipo de documento se rechaza.
 - El CSV sigue valiendo, con las mismas reglas de §4 y §5.
 
-**Borrador del circuito.** Desde el anillo de un análisis el programa descarga, en el mismo formato,
-un borrador de la lista `circuito`: el recorrido observado en su orden —el de Vsystem si hay lista
-cargada con la que contrastarlo (R-GRA-001)—, con cada diferencia en su fila (columna `vsystem`), las
-lecturas y el origen de cada fila, y los tags de Vsystem que no están en el recorrido en su sitio y sin
-`orden`. El ancla y los posibles puntos críticos van en `nota`, nunca en `funcion` (R-GRA-007). Se
-importa tal cual, pero **es un borrador**: la lista `circuito` es lo que Vsystem declara, así que se
-corrige contra Vsystem antes de cargarla. Lo que se lee fuera del anillo va en otra hoja, que no se
-importa.
+El circuito de un análisis también se entrega en este formato, como borrador de la lista `circuito`,
+con columnas de más (la diferencia con Vsystem, las lecturas y el origen de cada fila) que el
+importador ignora. Es un borrador: la lista `circuito` es lo que Vsystem declara, así que se corrige
+contra Vsystem antes de cargarla (R-GRA-001). La función de un punto crítico no se rellena sola
+(R-GRA-007).
 
 ## 4. Proceso de importación
 

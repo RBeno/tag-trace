@@ -2,6 +2,37 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.30.1] - 2026-09-25
+
+Los libros de Excel se entregan como ficheros: la aplicación solo los importa.
+
+### Quitado
+
+- Los botones «Descargar plantilla de listas (Excel)», «Descargar plantilla de flota (Excel)» y
+  «Descargar el circuito en Excel», y con ellos `src/domain/list-templates.ts`,
+  `src/presentation/excel-ui.ts` y `vsystemCohortId`. El propietario pidió los ficheros, no
+  herramientas en la aplicación.
+
+### Cambiado
+
+- El escritor de `.xlsx` y las plantillas pasan a `tests/support/` (`xlsx-writer.ts`,
+  `plantillas-excel.ts`), y `scripts/generar-plantillas-excel.ts` las escribe en `local/`. Las pruebas
+  siguen comprobando que la primera hoja de cada plantilla se importa tal cual (TC-204–206).
+- Se conserva la importación del `.xlsx` en listas y flota: sin ella, los libros entregados habría que
+  convertirlos a CSV, que es donde se pierden los ceros a la izquierda.
+
+### Conocido, sin corregir aquí
+
+Encontrado al sacar el circuito de las exportaciones reales, que se entrega aparte:
+
+- Una exportación con **tres circuitos que comparten tramo** sale como un solo circuito: el
+  agrupamiento une dos AGV en cuanto comparten una transición (R-DAT-012). Separados por los AGV de
+  cada uno, salen los tres.
+- En el contraste con Vsystem, un tag declarado que sobra en un hueco sale como «sin lecturas» sin
+  mirar si se lee fuera del recorrido dominante (`classifyGap` en `vsystem.ts`).
+- Con la hora **al minuto** salen igualmente candidatos a parada precisa y semáforo, que se firman con
+  duraciones que esa resolución no da.
+
 ## [3.30.0] - 2026-09-25
 
 Libros de Excel para rellenar e importar, y el circuito de cada análisis como borrador de la lista

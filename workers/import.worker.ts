@@ -947,7 +947,7 @@ async function buildViews(
       })),
       listsLoaded: lists.map((entry) => entry.list),
     },
-    ...(vsystemContrast === undefined || mainCohort === undefined ? {} : { vsystemContrast, vsystemCohortId: mainCohort.id }),
+    ...(vsystemContrast === undefined ? {} : { vsystemContrast }),
     ...(criticalPointsConfig.problems.length === 0
       ? {}
       : { criticalPointsProblems: criticalPointsConfig.problems }),

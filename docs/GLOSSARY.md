@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.25.0
+version: 0.25.1
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -29,7 +29,6 @@ last_updated: 2026-09-25
 | Franja | Un fichero de lecturas cargado, medido por separado en su ventana completa (R-TIM-011). Dos exportaciones que se solapan son dos franjas; un fichero repetido, una sola. |
 | Ritmo de un AGV | La mitad de sus tramos, cada uno medido contra lo habitual de ese tramo, frente a lo mismo de toda la flota; sin paradas ni esperas detrás de otro. Un 1,10 es un 10 % más lento (R-AGV-019). |
 | Retener | Ir delante de otro AGV, más despacio de lo habitual en ese tramo, mientras el de detrás espera. Quien retiene no tiene por qué pararse (R-AGV-020). |
-| Borrador del circuito | Libro de Excel que el programa saca del anillo de un análisis con la forma de la lista `circuito`: el recorrido observado en su orden y, en cada fila, dónde difiere de Vsystem. Se corrige contra Vsystem antes de importarlo, porque esa lista es lo que Vsystem declara (R-GRA-001). |
 | Suma entre anclas | El tiempo entre dos tags que siguen en su sitio a los dos lados de un cambio (las anclas). Es del recorrido: si entre ellas se pone, se quita o se cambia un tag y la suma sigue igual, solo cambió lo de en medio (R-DAT-021). |
 | Posición en tiempo | Los segundos de recorrido desde el ancla hasta un tag, sumando la mitad de las pasadas de cada paso. Es tiempo, nunca distancia; un tag que no se puede situar no se interpola (R-TIM-011). |
 | Valla | Límite de la horquilla de un tramo: p95 + max(p95 − p50, margen mínimo, resolución). Por encima, una transición es una parada candidata (R-FLO-007). |

@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.37.0
+version: 0.37.1
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -253,9 +253,9 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-201 | Quién retiene (`vehiclePace`) | Quien retiene a varios AGV más de lo que da el azar por sus pasadas sale, con veces, retenidos y espera; quien retiene lo que le toca no; siempre al mismo AGV no basta | Llamar retenedor a cada ocupante de un cuello de botella |
 | TC-202 | Por fichero (`paceInWindow`, `paceCsv`) | CSV `agv;muestras;ritmo;veredicto;retenciones;min_retenidos` con coma decimal | Comparar un fichero contra la horquilla de otro |
 | TC-203 | Auditoría (`ritmo-mas-lento-en-un-fichero`, `retiene-a-otros`) y navegador | El AGV estirado un 10 % después de la noche, más lento en el fichero de después (≈ 1,10, en toda la línea) y a su paso en el de antes; el que se queda en el semáforo retiene a varios AGV más de lo que da el azar, sin pararse él; nadie más señalado ni en toda la ventana ni en ningún fichero; en el navegador, la tarjeta de quien retiene, la fila del lento en la tabla de ficheros y el CSV de ritmo con su cabecera | Un ritmo o un retenedor señalado sin plantar |
-| TC-204 | Libro de Excel (`writeXlsx`, `readXlsxRows`) | Lo que se escribe se lee igual —ceros a la izquierda, tildes, punto y coma y `<&>` en una celda, celdas vacías en medio—, en la primera hoja; un libro como los de Excel (cadenas compartidas, texto enriquecido, guías fonéticas, números, fórmulas, filas sin guardar) se lee; con declaración de tipo de documento, o sin ser un zip, se rechaza | Perder un cero a la izquierda; evaluar una fórmula |
-| TC-205 | Plantillas e importación por filas (`listsTemplate`, `fleetTemplate`, `importCatalogRows`, `importFleetRows`) | Las columnas del importador, en su orden, con desplegables de lista y función; una hoja se importa igual que el mismo texto, con una celda que falta al final como vacía; una fecha guardada como número se lee como la que se escribió | Leer un número de serie como un AGV o una fecha distinta |
-| TC-206 | Borrador del circuito (`circuitDraft`) y navegador | Sin Vsystem, el recorrido desde su ancla; con Vsystem, en su orden con cada diferencia en su fila y lo que falta en su sitio y sin orden; los candidatos en la nota, nunca en `funcion`; se importa tal cual; en el navegador, la plantilla con sus columnas, el borrador con los tags nunca leídos sin orden, reimportado como una lista, y un historial en Excel con una fecha como número | Un candidato convertido en función declarada; un borrador que no se puede volver a importar |
+| TC-204 | Libro de Excel (`readXlsxRows`, y el escritor de las pruebas `tests/support/xlsx-writer.ts`) | Lo que se escribe se lee igual —ceros a la izquierda, tildes, punto y coma y `<&>` en una celda, celdas vacías en medio—, en la primera hoja; un libro como los de Excel (cadenas compartidas, texto enriquecido, guías fonéticas, números, fórmulas, filas sin guardar) se lee; con declaración de tipo de documento, o sin ser un zip, se rechaza | Perder un cero a la izquierda; evaluar una fórmula |
+| TC-205 | Plantillas que se entregan (`tests/support/plantillas-excel.ts`) e importación por filas (`importCatalogRows`, `importFleetRows`) | Las columnas del importador, en su orden, con desplegables de lista y función; una hoja se importa igual que el mismo texto, con una celda que falta al final como vacía; una fecha guardada como número se lee como la que se escribió | Leer un número de serie como un AGV o una fecha distinta |
+| TC-206 | Navegador | Unas listas y un historial de flota en `.xlsx` se cargan tal cual por sus selectores, con los ceros a la izquierda y una fecha que Excel guardó como número; la aplicación no ofrece descargas de Excel | Pedir convertir el libro a CSV para poder cargarlo |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda

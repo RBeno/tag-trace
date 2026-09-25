@@ -28,8 +28,6 @@ import {
   scrollBox,
 } from "./charts.js";
 import { FLEET_STRUCTURE } from "../domain/fleet.js";
-import { circuitDraft, fleetTemplate, listsTemplate } from "../domain/list-templates.js";
-import { workbookButton } from "./excel-ui.js";
 import {
   agvTimelineChart,
   driftChart,
@@ -257,11 +255,7 @@ const fleetNote = element("p", "muted", "");
       "Una lista con otro nombre se conserva y se avisa.",
     ),
   );
-  // La plantilla de Excel: las columnas en su sitio, en formato texto y con los valores posibles en
-  // desplegables. Se rellena y se carga tal cual.
-  const listsTemplateRow = element("p", "button-row");
-  listsTemplateRow.append(workbookButton("Descargar plantilla de listas (Excel)", () => "plantilla-listas.xlsx", listsTemplate));
-  listsPanel.append(structure, listsTemplateRow, listsNote);
+  listsPanel.append(structure, listsNote);
 
   const fleetStructure = element("details");
   fleetStructure.append(element("summary", undefined, "Qué forma tiene que tener el historial"));
@@ -277,9 +271,7 @@ const fleetNote = element("p", "muted", "");
   const fleetExample = element("pre", "mono raw", FLEET_STRUCTURE.example.join("\n"));
   fleetExample.style.overflowX = "auto";
   fleetStructure.append(fleetExample);
-  const fleetTemplateRow = element("p", "button-row");
-  fleetTemplateRow.append(workbookButton("Descargar plantilla de flota (Excel)", () => "plantilla-flota.xlsx", fleetTemplate));
-  listsPanel.append(fleetLabel, fleetInput, fleetStructure, fleetTemplateRow, fleetNote);
+  listsPanel.append(fleetLabel, fleetInput, fleetStructure, fleetNote);
 }
 
 const viewsPanel = element("section", "panel");
@@ -1748,42 +1740,6 @@ function renderShapes(views: CircuitViews): void {
       ),
     );
     viewsPanel.append(ringChart(ringDataOf(shape, matrix, views)));
-
-    // El borrador de la lista «circuito», sacado de este anillo, con las diferencias con Vsystem en su
-    // fila: la parte mecánica de escribir la lista, hecha. Se corrige contra Vsystem y se importa.
-    const draftRow = element("p", "button-row");
-    draftRow.append(
-      workbookButton(
-        "Descargar el circuito en Excel (borrador de la lista «circuito»)",
-        () => `circuito-${state.circuitId ?? "circuito"}-${shape.cohortId}.xlsx`,
-        () => {
-          const dossiers = views.tagDossiers;
-          const candidateLabel: Readonly<Record<string, string>> = {
-            bifurcacion: "posible bifurcación",
-            cruce: "posible cruce",
-            "parada-precisa": "posible parada precisa",
-            semaforo: "posible semáforo",
-          };
-          return circuitDraft({
-            ring: shape.tags,
-            anchorTagId: shape.anchorTagId,
-            anchorTruth: shape.anchorTruth,
-            offRing: shape.offRingTags,
-            contrast: views.vsystemCohortId === shape.cohortId ? (views.vsystemContrast ?? null) : null,
-            readingsOf: new Map(dossiers.map((dossier) => [dossier.tagId, dossier.totalReadings])),
-            functionOf: new Map(
-              dossiers.flatMap((dossier) => (dossier.criticalFunction === null ? [] : [[dossier.tagId, dossier.criticalFunction] as const])),
-            ),
-            candidateOf: new Map(
-              (views.criticalPoints.find((entry) => entry.cohortId === shape.cohortId)?.candidates ?? []).map(
-                (candidate) => [candidate.tagId, candidateLabel[candidate.kind] ?? candidate.kind] as const,
-              ),
-            ),
-          });
-        },
-      ),
-    );
-    viewsPanel.append(draftRow);
 
     // La lista ordenada, plegada: es la que se contrasta con el circuito virtual y con la memoria.
     viewsPanel.append(

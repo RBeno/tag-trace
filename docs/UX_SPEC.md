@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.22.0
+version: 0.22.1
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -460,17 +460,12 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
 
 ## 5.8 Libros de Excel para rellenar e importar
 
-- En «Listas del circuito», junto a cada selector de fichero, **«Descargar plantilla de listas
-  (Excel)»** y **«Descargar plantilla de flota (Excel)»**: la primera hoja con la cabecera en su sitio,
-  en formato texto (los ceros a la izquierda se conservan), la cabecera fija, desplegables en `lista`
-  y `funcion` que avisan pero no prohíben, una hoja de instrucciones y otra de ejemplo. Los dos
-  selectores aceptan el `.xlsx` tal cual, además del CSV.
-- En la composición del circuito, bajo el anillo de cada cohorte, **«Descargar el circuito en Excel
-  (borrador de la lista «circuito»)»**: el recorrido observado en su orden, con la columna `vsystem`
-  diciendo en cada fila dónde difiere de Vsystem, los tags de Vsystem que faltan en su sitio y sin
-  orden, el ancla y los posibles puntos críticos en `nota`, y lo que se lee fuera del anillo en otra
-  hoja. Las instrucciones del libro dicen que es un borrador que se corrige contra Vsystem antes de
-  importarlo.
+- Los dos selectores de «Listas del circuito» —listas de tags e historial de flota— aceptan el
+  `.xlsx` tal cual, además del CSV. Un libro que no se puede leer se rechaza con su motivo y la salida:
+  guardarlo de nuevo en Excel o exportarlo como CSV.
+- **La aplicación no descarga libros.** Las plantillas y el circuito de cada análisis se entregan como
+  ficheros (`DATA_CONTRACTS.md` §3.7); en la interfaz no hay botones de descarga de Excel
+  (propietario, 2026-09-25).
 
 ## 6. Consolidación
 

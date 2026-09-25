@@ -1,5 +1,6 @@
 /**
- * Libro de Excel mínimo (`src/persistence/xlsx.ts`).
+ * Lectura de libros de Excel (`src/persistence/xlsx.ts`), y el escritor de las pruebas
+ * (`tests/support/xlsx-writer.ts`) con el que se hacen los libros que se entregan.
  *
  * Lo que se fija: lo que se escribe se lee igual —ceros a la izquierda, tildes, punto y coma dentro de
  * una celda, `<&>` y celdas vacías en medio—; se lee siempre la primera hoja; un libro como los que
@@ -9,8 +10,9 @@
 
 import { describe, expect, it } from "vitest";
 
-import { columnName, looksLikeZip, readXlsxRows, writeXlsx, XlsxError } from "../../src/persistence/xlsx.js";
+import { looksLikeZip, readXlsxRows, XlsxError } from "../../src/persistence/xlsx.js";
 import { writeZip } from "../../src/persistence/zip.js";
+import { columnName, writeXlsx } from "../support/xlsx-writer.js";
 
 describe("libro de Excel", () => {
   it("lo que se escribe se lee igual, en la primera hoja", async () => {

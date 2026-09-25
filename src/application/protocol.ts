@@ -292,8 +292,6 @@ export interface CircuitViews {
   readonly tagDossiers: readonly TagDossier[];
   /** Solo si el circuito tiene la lista `circuito` cargada con orden: sin ella no hay con qué alinear. */
   readonly vsystemContrast?: readonly VsystemComparisonRow[];
-  /** El cohorte cuyo anillo se contrastó con Vsystem (el mayor). */
-  readonly vsystemCohortId?: number;
   /** Fotogramas del replay, en fracción temporal — nunca posición física (`PERFORMANCE_BUDGET.md` §6). */
   readonly replay: readonly SerializedReplayFrame[];
   /**
