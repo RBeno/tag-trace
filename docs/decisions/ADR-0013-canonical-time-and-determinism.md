@@ -90,3 +90,18 @@ eso el sentido se mide en cada fichero en lugar de asumirse una sola vez.
   que quede determinado.
 - Medir la monotonía aporta un diagnóstico que antes no existía: las entregas diferidas se vuelven
   visibles en lugar de confundirse con desorden.
+
+## Nota del 2026-09-25: la hora es la de recepción en el servidor
+
+El propietario confirma que la hora de cada lectura del fichero es la de **recepción en el
+servidor**, no la de lectura del tag en el AGV. La decisión de esta ADR no cambia: el orden sigue
+siendo el de la pila, el sentido se sigue midiendo y la monotonía se sigue registrando. Cambia lo
+que significa una entrega retrasada:
+
+- con hora de servidor, una lectura que llega tarde lleva la hora de llegada, así que **no desordena
+  la pila**. Una inversión de monotonía pasa a ser un defecto de integridad de la fuente, no la
+  firma de una entrega diferida;
+- una entrega retrasada se ve como un hueco seguido de varias lecturas casi a la vez. Esa firma la
+  trata R-DAT-020, y el análisis de tiempos toma el recorrido entero como una sola transición.
+
+Lo medido hasta ahora encaja: cero inversiones en las exportaciones contrastadas.

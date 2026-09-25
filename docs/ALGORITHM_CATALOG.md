@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.20.1
+version: 0.21.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -542,6 +542,44 @@ siempre en el mismo régimen.
 cuello de botella se planta a mano, y la deuda de reloj con que el generador devuelve el tiempo
 añadido acorta los pasos siguientes. La deuda de la noche se devuelve a un segundo por paso para no
 aplastar la horquilla de noche.
+
+## 6.8 Lecturas que llegaron juntas, implementado (R-DAT-020)
+
+`src/domain/grouped-delivery.ts`, por cohorte, **antes** de cualquier tiempo: lo habitual de cada
+tramo, las horquillas, las paradas y las firmas de tiempo usan ya la secuencia colapsada.
+
+**Por qué.** La hora del fichero es la de recepción en el servidor (propietario, 2026-09-25). Un AGV
+sin comunicación sigue leyendo y vuelca al reconectar: el servidor recibe varias lecturas casi a la
+vez y el hueco de antes parece una parada.
+
+**Horquilla previa.** La misma `buildSegmentBands` sobre las transiciones medibles fuera de las
+paradas de la producción, sin colapsar: una ráfaga es rara y apenas la mueve.
+
+**Firma** (`collapseGroupedDeliveries`), por AGV y en orden, sin tags de calle:
+
+1. el hueco: P → X1 por encima del p95 de su horquilla;
+2. una ráfaga de `minFastSteps` o más transiciones seguidas, cada una del mismo instante o por debajo
+   de `readRate.minTimeRatio × p50` de su tramo, y todas juntas en menos de `minTimeRatio` veces el
+   p50 más corto de ellas;
+3. el hueco se lleva al menos `minTimeRatio` del p50 de P a Q (la última de la ráfaga).
+
+La segunda condición, sobre la ráfaga entera, separa un volcado de un AGV que recupera el ritmo tras
+una espera: dos pasos de medio tramo son rápidos cada uno y juntos cuestan un tramo. La tercera
+separa un volcado de un AGV que va más deprisa que la horquilla de su régimen: se encontró en la
+propia auditoría al empezar la noche, cuando la horquilla ya es la lenta de noche y los AGV aún van a
+ritmo de día; ahí los pasos parecen imposibles de rápidos, pero el hueco es un tramo normal.
+
+**Suma.** Con `bandFor` de P a Q en el régimen del recorrido: dentro de la valla, `sin-parada`; por
+encima, `con-tiempo-de-mas`. Sin horquilla de P a Q no se toca nada.
+
+**Colapso.** La ráfaga se sustituye por una transición de P a Q en el sitio de la primera, y la salida
+conserva el orden de entrada. `flowStops` la juzga como cualquier otra: una espera real sigue saliendo,
+ahora de P a Q.
+
+**Concentración** (`summarizeDeliveries`). Por AGV, con sus transiciones como exposición, y por sitio
+P, con sus pasadas; la misma prueba de Poisson que los cuellos de botella (`concentrated`).
+
+**Sin evaluar** con resolución de minuto (`resolutionMs` > 1 s), y se dice.
 
 ## 7. Segmentación de vueltas y huecos
 

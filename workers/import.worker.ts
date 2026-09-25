@@ -62,6 +62,7 @@ import {
   transitionRegime,
 } from "../src/domain/segment-bands.js";
 import { buildCircuitState } from "../src/domain/circuit-state.js";
+import { collapseGroupedDeliveries, summarizeDeliveries } from "../src/domain/grouped-delivery.js";
 import {
   flowStops,
   outsideProductionStops,
@@ -210,6 +211,12 @@ const REPLAY_FRAMES = 200;
  */
 const DURATION_SAMPLE_MAX = 1000;
 
+/**
+ * Lecturas agrupadas que viajan, como mucho, por cohorte: las más recientes. Parámetro técnico, igual
+ * que `DURATION_SAMPLE_MAX`; la vista dice cuántas hubo en total.
+ */
+const DELIVERY_LIST_MAX = 1000;
+
 /** Una muestra de paso fijo: determinista, sin azar, y declarada por quien la enseña. */
 function strideSample(values: readonly number[], max: number): number[] {
   if (values.length <= max) return [...values];
@@ -343,8 +350,28 @@ async function buildViews(
     }
     anchors.set(cohort.id, effective);
 
+    // Lecturas que llegaron juntas al servidor (R-DAT-020): la hora del fichero es la de llegada, así
+    // que un hueco seguido de una ráfaga no es una parada. Se juzga con una horquilla previa —una
+    // ráfaga es rara y apenas la mueve— y desde aquí todo lo de tiempos usa la ráfaga colapsada.
+    const preliminaryBands = buildSegmentBands(
+      measurableTransitions(outsideProductionStops(cohortTransitions, production.stops), coverage, laneTags),
+      effective.cycle,
+      regimeOf,
+      PROVISIONAL_CONFIG.bands,
+      PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+    );
+    const grouped = collapseGroupedDeliveries(
+      cohortTransitions,
+      preliminaryBands,
+      regimeOf,
+      PROVISIONAL_CONFIG.readRate.minTimeRatio,
+      laneTags,
+      PROVISIONAL_CONFIG.groupedDelivery,
+    );
+    const cohortTimeline = grouped.transitions;
+
     // Las transiciones que cruzan una parada de la producción no miden ningún tramo.
-    const timedTransitions = outsideProductionStops(cohortTransitions, production.stops);
+    const timedTransitions = outsideProductionStops(cohortTimeline, production.stops);
     const usual = usualSegmentTimes(
       timedTransitions,
       effective.cycle,
@@ -363,7 +390,7 @@ async function buildViews(
     );
     const flow = flowStops(
       {
-        transitions: cohortTransitions,
+        transitions: cohortTimeline,
         coverage,
         bands,
         regimeOf,
@@ -508,6 +535,17 @@ async function buildViews(
         },
         PROVISIONAL_CONFIG.circuitState,
       ),
+      groupedDelivery: {
+        evaluated: grouped.evaluated,
+        reason: grouped.reason,
+        total: grouped.deliveries.length,
+        deliveries: grouped.deliveries.slice(-DELIVERY_LIST_MAX),
+        ...summarizeDeliveries(
+          grouped.deliveries,
+          measurableTransitions(cohortTransitions, coverage, laneTags),
+          PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
+        ),
+      },
       changes: bandChangesBetweenPeriods(
         measuredTimed,
         coverage,

@@ -2,6 +2,51 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.26.0] - 2026-09-25
+
+Primera de las cuatro entregas aprobadas por el propietario sobre los tiempos por fichero: las
+lecturas que llegaron juntas al servidor dejan de parecer paradas (punto 9).
+
+### Decidido
+
+- **La hora del fichero es la de recepción en el servidor** (propietario, 2026-09-25). Resuelve una
+  contradicción entre documentos: TC-023 y ADR-0013 suponían hora del AGV, y con ella una entrega
+  retrasada se veía como lecturas desordenadas. Con hora de servidor la pila no se desordena: la
+  entrega retrasada se ve como un hueco seguido de varias lecturas casi a la vez. Notas fechadas en
+  ADR-0013, TC-023 y R-DAT-008; la monotonía se sigue midiendo, como integridad de la fuente.
+- Una franja es un fichero, y sus mediciones se rehacen y se descargan en CSV: una copia fija es
+  consolidar (F4). Se aplica en las entregas siguientes.
+
+### Añadido
+
+- **Lecturas que llegaron juntas** (R-DAT-020, `src/domain/grouped-delivery.ts`). La firma, por AGV:
+  - un hueco por encima del p95 de su tramo;
+  - dos o más lecturas casi seguidas, todas juntas en menos de lo que cuesta un tramo;
+  - y el hueco llevándose el recorrido hasta la última que llegó.
+
+  Con la suma dentro de la valla, el AGV **no paró**; con la suma de más, hubo una espera en algún
+  punto de ese tramo, sin poder situarla. En los dos casos, todo el análisis de tiempos (horquillas,
+  paradas, lo habitual, firmas de tiempo) toma el recorrido entero como una sola transición. Con
+  resolución de minuto no se evalúa, y se dice.
+- Tarjetas en «Estado normal del circuito»: el AGV o el sitio donde se concentran, con el test de
+  azar, y la tabla completa plegada. Sin causa: «apunta a la comunicación de ese AGV».
+- Configuración `groupedDelivery` (draft): dos pasos casi seguidos como mínimo. «Imposible de rápido»
+  reutiliza `readRate.minTimeRatio`.
+- Escenario de auditoría `auditoria/14`: la clase `entrega-agrupada`, cuatro ráfagas de 7121 plantadas
+  tras generar, sin `random()` y con el recorrido igual. Informe: **37 de 37 clases detectadas**.
+- OQ-131: cómo vuelca un AGV lo que guardó sin comunicación.
+
+### Corregido antes de publicarse
+
+- **Una ráfaga falsa al empezar la noche.** La primera versión de la firma encontró dos ráfagas en
+  AGV sanos a las 22:05: la horquilla de noche de esos tramos es lenta (plantada), y ellos aún iban a
+  ritmo de día, así que sus pasos normales parecían imposibles de rápidos. Faltaba la condición
+  física: en un volcado, el hueco se lleva casi todo el recorrido. Con ella, cero ráfagas falsas.
+
+### Verificado
+
+- Sin el colapso, las cuatro ráfagas eran cuatro paradas «sin explicación» de 7121; con él, ninguna.
+
 ## [3.25.1] - 2026-09-25
 
 ### Corregido

@@ -23,6 +23,7 @@ import type { DriftThresholds } from "./drift.js";
 import type { FifoThresholds } from "./fifo.js";
 import type { FlowStopThresholds } from "./flow-stops.js";
 import type { GraphThresholds } from "./graph.js";
+import type { GroupedDeliveryThresholds } from "./grouped-delivery.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
 import type { SilenceKindThresholds } from "./silence-kind.js";
 import type { TrendThresholds } from "./read-rate-trend.js";
@@ -65,6 +66,7 @@ export interface AnalysisConfig {
   readonly regimes: RegimeThresholds;
   readonly bands: BandThresholds;
   readonly circuitState: CircuitStateThresholds;
+  readonly groupedDelivery: GroupedDeliveryThresholds;
 }
 
 /**
@@ -175,6 +177,11 @@ export interface AnalysisConfig {
  *   Zona oscura a 1,5 veces el hueco típico del circuito: perder un tag alarga el hueco un 100 %, y el
  *   jitter normal de un tramo ronda el 16 %; 1,5 queda entre los dos. Una centésima de punto marcado
  *   por azar en todo el circuito, la misma idea que `flowStops.maxFalseStops`.
+ * - **Lecturas que llegaron juntas (R-DAT-020).** La hora del fichero es la de llegada al servidor
+ *   (propietario, 2026-09-25). Dos pasos casi seguidos tras un hueco, como mínimo, para hablar de
+ *   ráfaga: con uno solo, un tag muy cerca del siguiente tras una espera real ya lo imitaría. Lo que es
+ *   «imposible de rápido» no es un número nuevo: es `readRate.minTimeRatio`, el mismo 0,6 que ya dice
+ *   que un tramo recorrido en menos de ese tanto de lo normal no se recorrió circulando.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -223,6 +230,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   regimes: { nightFromHour: 22, nightToHour: 5 },
   bands: { minBandSamples: 20 },
   circuitState: { darkZoneFactor: 1.5, maxFalsePoints: 0.01 },
+  groupedDelivery: { minFastSteps: 2 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

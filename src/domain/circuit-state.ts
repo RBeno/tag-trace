@@ -138,7 +138,7 @@ function median(values: readonly number[]): number | null {
  * el que se le compara y se escondería a sí mismo—, y con una más repartida por todo el circuito,
  * para que dos paradas solas en un circuito sin ninguna otra no parezcan un patrón.
  */
-function expectedElsewhere(total: number, count: number, exposure: number, totalExposure: number): number {
+export function expectedElsewhere(total: number, count: number, exposure: number, totalExposure: number): number {
   return totalExposure === 0 ? 0 : ((total - count + 1) * exposure) / totalExposure;
 }
 
@@ -148,7 +148,7 @@ function expectedElsewhere(total: number, count: number, exposure: number, total
  * leído—, y se marca el que tiene tantos que, con todos los tags del circuito mirados a la vez, saldría
  * por casualidad menos de `maxFalsePoints` veces.
  */
-function concentrated(
+export function concentrated(
   counts: ReadonlyMap<string, number>,
   exposure: ReadonlyMap<string, number>,
   maxFalsePoints: number,

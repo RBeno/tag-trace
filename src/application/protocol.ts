@@ -17,6 +17,7 @@ import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
 import type { FleetTimeline } from "../domain/fleet.js";
 import type { Blockage, ProductionStop } from "../domain/flow-stops.js";
 import type { CircuitState } from "../domain/circuit-state.js";
+import type { DeliveryConcentration, GroupedDelivery } from "../domain/grouped-delivery.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
@@ -473,6 +474,18 @@ export interface CircuitViews {
         readonly noche: Band | null;
       }[];
       readonly state: CircuitState;
+      /**
+       * Lecturas que llegaron juntas al servidor (R-DAT-020): cada ráfaga, ya colapsada en todo lo
+       * de tiempos, y dónde se concentran. `deliveries` trae las más recientes; `total`, cuántas hubo.
+       */
+      readonly groupedDelivery: {
+        readonly evaluated: boolean;
+        readonly reason: string | null;
+        readonly total: number;
+        readonly deliveries: readonly GroupedDelivery[];
+        readonly vehicles: readonly DeliveryConcentration[];
+        readonly sites: readonly DeliveryConcentration[];
+      };
       readonly changes: PeriodBandChanges | null;
     }[];
   };

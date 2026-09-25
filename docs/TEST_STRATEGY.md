@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.32.1
+version: 0.33.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -236,6 +236,10 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-183 | Cambio de horquilla entre periodos (`compareBands`, `bandChangesBetweenPeriods`) y CSV (`bandsCsv`) | Más lento, más rápido e igual dentro del mismo régimen; con un solo tramo de cobertura, nada; CSV con `;`, coma decimal y una fila por tramo y régimen | Comparar medias o regímenes distintos |
 | TC-184 | Auditoría con noche lenta, parada aislada, punto conflictivo y cuello de botella plantados | Los cinco nuevos detectados (con la zona oscura de los tags poco leídos); ningún cuello, punto, zona oscura ni parada sin explicación sobre tramos limpios ni de noche; las 31 clases anteriores intactas | Un hallazgo del estado normal en un tramo sano |
 | TC-185 | Navegador con una sola exportación y las listas | Sección «Estado normal del circuito»: la horquilla dibujada sin un rótulo por marca y con su tabla; tarjetas de cuello de botella («la cola fluye»), punto conflictivo (8 AGV), zona oscura y parada aislada sin causa; la noche aparte; el CSV se descarga con su cabecera | Nombrar una causa; perder la horquilla al cerrar la pestaña sin poder guardarla |
+| TC-187 | Lecturas que llegaron juntas (`collapseGroupedDeliveries`) sobre un anillo de seis tags | Hueco + tres lecturas en 2 s con la suma normal → no paró, colapsada de P a Q; suma de más → espera sin situar, sigue siendo parada de P a Q; parada real y pasos normales → nada; dos pasos de medio tramo → nada; un solo paso rápido → nada; un AGV más deprisa que la horquilla de su régimen → nada (el hueco no se lleva el recorrido); lecturas del mismo instante cuentan; un tag de calle corta; resolución de minuto → sin evaluar, con su razón; el orden de salida es el de entrada | Llamar parada a un volcado; llamar volcado a un AGV que recupera el ritmo |
+| TC-188 | Dónde se concentran (`summarizeDeliveries`) | Un AGV con varias ráfagas frente a una flota sin ninguna → concentrado; repartidas por sitios → ningún sitio | Señalar un AGV o un sitio por una ráfaga suelta |
+| TC-189 | Auditoría con cuatro ráfagas plantadas de un AGV (tres lecturas movidas a los tres segundos antes de la siguiente, tras generar) | Las cuatro halladas sin parada y el AGV concentrado; sin el colapso eran cuatro paradas sin explicación suyas, con él ninguna; ninguna ráfaga de otro AGV (ni por la deuda de reloj del generador ni al empezar la noche); las 36 clases anteriores intactas | Una ráfaga de un AGV sano; perder una clase anterior |
+| TC-190 | Navegador con una sola exportación y las listas | Tarjeta «le llegan lecturas juntas» del AGV plantado, con la última ráfaga y «no paró» | Nombrar una causa |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda

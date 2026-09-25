@@ -221,6 +221,9 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
       page.locator(".finding", { hasText: `${aislada?.vehicles[0] ?? ""}:` }).filter({ hasText: `de más en ${aislada?.tags[0] ?? ""}` }),
     ).toContainText("Qué lo paró no lo dice el dato");
     await expect(page.getByText(/De noche \(de 22:00 a 05:00\): \d+ tramos cambian/)).toBeVisible();
+    // Las lecturas que llegaron juntas al servidor (R-DAT-020): el AGV plantado, y el hueco no es parada.
+    const agrupado = of("entrega-agrupada")?.vehicles[0] ?? "";
+    await expect(page.locator(".finding", { hasText: `${agrupado}: le llegan lecturas juntas` })).toContainText("no paró");
 
     // La horquilla se descarga en CSV, una fila por tramo y régimen.
     const [download] = await Promise.all([

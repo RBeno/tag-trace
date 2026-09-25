@@ -87,7 +87,9 @@ export type DefectClass =
   /** Se forma cola detrás de un sitio que solo admite uno a la vez, y fluye (R-FLO-008). */
   | "cuello-de-botella"
   /** Un tramo donde falta información: tags que se saltan (R-GRA-014). */
-  | "zona-oscura";
+  | "zona-oscura"
+  /** Tras un hueco, varias lecturas llegan casi a la vez al servidor, con la suma normal (R-DAT-020). */
+  | "entrega-agrupada";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -135,6 +137,11 @@ export interface AuditScenario {
    * a la vez, y por tanto sin ninguna lectura en los tags críticos.
    */
   readonly productionStopsUtcMs: readonly { readonly fromUtcMs: number; readonly toUtcMs: number }[];
+  /**
+   * Lecturas que llegaron juntas (R-DAT-020, Parte 50): el instante real de la última lectura antes
+   * de cada hueco plantado, una por ráfaga.
+   */
+  readonly groupedDeliveriesUtcMs: readonly number[];
   /**
    * Historial de flota (DS-012, Parte 39), en el formato que el importador declara. No cambia
    * ninguna lectura, así que la auditoría no cambia de resultado: los 40 vehículos asignados desde
@@ -803,6 +810,44 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     if (t <= to) filas[quedan++] = { ...fila, t };
   }
   filas.length = quedan;
+
+  // Lecturas que llegaron juntas al servidor (Parte 50, R-DAT-020): cuatro veces, de día, tres lecturas
+  // de un AGV sin otro papel se reciben en los tres segundos antes de la siguiente, como un volcado
+  // tras perder la comunicación. Se hace **después** de generar y de congelar, moviendo solo la hora de
+  // esas tres filas: ni una llamada más a `random()`, y el recorrido entero, del tag de antes del hueco
+  // al último, tarda exactamente lo mismo. Fuera de las ráfagas quedan las calles, las ramas y los
+  // puntos críticos de tiempo, cuyas esperas son de otra clase plantada.
+  const entregaAgrupada = vehicles[21] as string;
+  const entregaDesde = [3, 8, 11, 26].map((horas) => from + horas * HORA);
+  const fueraDeRafaga = new Set([30, 70, 71, 105, 106, 116, 117, 120].map((index) => ring[index] as string));
+  const posicionDe = new Map(ring.map((tag, index) => [tag, index]));
+  const propias = filas
+    .map((fila, index) => ({ fila, index }))
+    .filter((entry) => entry.fila.v === entregaAgrupada)
+    .sort((a, b) => a.fila.t - b.fila.t);
+  const entregasPlantadas: number[] = [];
+  for (const desde of entregaDesde) {
+    for (let k = 0; k + 4 < propias.length; k += 1) {
+      const tramo = propias.slice(k, k + 5);
+      const primera = tramo[0] as (typeof propias)[number];
+      const ultima = tramo[4] as (typeof propias)[number];
+      if (primera.fila.t < desde) continue;
+      const posiciones = tramo.map((entry) => posicionDe.get(entry.fila.tag));
+      const seguidas = posiciones.every(
+        (posicion, i) =>
+          posicion !== undefined &&
+          !fueraDeRafaga.has((tramo[i] as (typeof propias)[number]).fila.tag) &&
+          (i === 0 || posicion === ((posiciones[i - 1] as number) + 1) % RING_SIZE),
+      );
+      if (!seguidas || ultima.fila.t - primera.fila.t >= 2 * 60_000) continue;
+      for (const [offset, entry] of tramo.slice(1, 4).entries()) {
+        filas[entry.index] = { ...entry.fila, t: ultima.fila.t - (3 - offset) * 1000 };
+      }
+      entregasPlantadas.push(primera.fila.t);
+      break;
+    }
+  }
+
   filas.sort((a, b) => b.t - a.t); // Pila: lo más reciente primero, como la fuente real.
 
   const readingsCsv = ["Fecha;AGV;Tag"]
@@ -1126,6 +1171,16 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       expect: "una zona oscura que incluye los tags poco leídos, con la causa «se salta el tag»",
       mustNotSay: "que el tramo sea largo, ni una zona en tramos limpios",
     },
+    {
+      kind: "entrega-agrupada",
+      tags: [],
+      vehicles: [entregaAgrupada],
+      atUtcMs: toRealUtc(entregasPlantadas[0] ?? from),
+      expect:
+        "cada ráfaga como lecturas que llegaron juntas con la suma normal (no paró), el AGV concentrado, y " +
+        "ninguna parada suya en esos tramos",
+      mustNotSay: "una parada en el hueco, ni lecturas agrupadas de otro AGV",
+    },
   ];
 
   const fleetCircuit = "SE-AUDITORIA";
@@ -1156,6 +1211,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     lanes,
     zoneOf,
     periodSplitUtcMs: toRealUtc(congelar(periodSplit)),
+    groupedDeliveriesUtcMs: entregasPlantadas.map(toRealUtc),
     productionStopsUtcMs: franjas.map((inicio) => ({
       fromUtcMs: toRealUtc(inicio),
       toUtcMs: toRealUtc(inicio + PARADA_PRODUCCION_MS),

@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.12.0
+version: 0.13.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -202,3 +202,13 @@ cuellos de botella, zonas oscuras y puntos conflictivos, sin causa. La cola es f
 iba delante y no se iba. **La horquilla se descarga en CSV y se compara el primer periodo cargado con
 el último, que es F3**; guardarla como referencia consolidada y compararla mes a mes es F4 y espera a
 `CONTINÚA FASE 4` (OQ-130).
+
+## Tiempos por fichero (2026-09-25)
+
+Decisiones del propietario: una franja es **un fichero**; la hora del fichero es la de **recepción
+en el servidor**, así que una entrega retrasada se ve como lecturas que llegan juntas y no desordena
+la pila (R-DAT-020, nota en ADR-0013 y TC-023). Las mediciones por fichero **se rehacen** desde las
+lecturas guardadas en cada importación y se descargan en CSV; guardar una copia fija es consolidar y
+espera a F4. Por mantenimiento se cambian a veces 2 o 3 tags seguidos, y eso tiene que detectarse
+bien desde las primeras mediciones. Orden aprobado: lecturas agrupadas, medición por fichero y
+posición en tiempo, cambios de estructura por la suma entre anclas, y ritmo por AGV y quién retiene.

@@ -1376,6 +1376,72 @@ function renderCircuitState(views: CircuitViews): void {
       );
     }
 
+    // Lecturas que llegaron juntas al servidor (R-DAT-020): primero dónde se concentran, lo demás plegado.
+    const grouped = cohort.groupedDelivery;
+    const deliveryText = (delivery: (typeof grouped.deliveries)[number]): string =>
+      `de ${delivery.fromTagId} a ${delivery.tags[delivery.tags.length - 1] ?? "—"} (${formatTick(delivery.fromUtcMs)}): ` +
+      `tras ${duration(delivery.gapMs)} sin nada, ${delivery.tags.length} lecturas en ${duration(delivery.spreadMs)}; ` +
+      `el recorrido entero tardó ${duration(delivery.totalMs)}, lo normal ${duration(delivery.usualMs)}: ` +
+      (delivery.kind === "sin-parada" ? "no paró" : "hubo una espera en algún punto de ese tramo, sin poder situarla");
+    if (!grouped.evaluated) {
+      viewsPanel.append(element("p", "muted", `Lecturas que llegaron juntas al servidor: sin evaluar (${grouped.reason ?? "—"}).`));
+    } else if (grouped.total > 0) {
+      viewsPanel.append(
+        element(
+          "p",
+          "muted",
+          `La hora del fichero es la de llegada al servidor. ${grouped.total} ${grouped.total === 1 ? "vez" : "veces"} un AGV ` +
+            "pasó un rato sin dar señal y después llegaron varias lecturas casi a la vez: se hicieron antes y llegaron " +
+            "juntas. Para medir tiempos se toma el recorrido entero, del tag de antes del hueco al último que llegó; el " +
+            "hueco no cuenta como parada.",
+        ),
+      );
+      for (const vehicle of grouped.vehicles.slice(0, PER_KIND)) {
+        const latest = [...grouped.deliveries].reverse().find((delivery) => delivery.agvId === vehicle.id);
+        viewsPanel.append(
+          finding(
+            `${vehicle.id}: le llegan lecturas juntas`,
+            `${vehicle.count} veces, cuando el azar daría ${chance(vehicle.expected)} con los tramos que recorre`,
+            (latest === undefined ? "" : `La última, ${deliveryText(latest)}. `) +
+              "Apunta a la comunicación de ese AGV; la causa no la dice el dato.",
+            ["entrega-agrupada-agv", vehicle.id],
+          ),
+        );
+      }
+      for (const site of grouped.sites.slice(0, PER_KIND)) {
+        const vehicles = [...new Set(grouped.deliveries.filter((delivery) => delivery.fromTagId === site.id).map((delivery) => delivery.agvId))];
+        viewsPanel.append(
+          finding(
+            `Lecturas juntas al pasar por ${site.id}`,
+            `${site.count} veces, de ${vehicles.length} AGV (${few(vehicles)}), cuando el azar daría ${chance(site.expected)} ` +
+              "con las pasadas de ese sitio",
+            "Apunta a la comunicación en ese punto del circuito; la causa no la dice el dato.",
+            ["entrega-agrupada-sitio", site.id],
+          ),
+        );
+      }
+      viewsPanel.append(
+        lazyDetails(
+          `Ver las ${grouped.total} veces que llegaron lecturas juntas` +
+            (grouped.deliveries.length < grouped.total ? ` (las ${grouped.deliveries.length} más recientes)` : ""),
+          () =>
+            plainTable(
+              ["AGV", "Desde", "Llegaron juntas", "Hueco", "En", "Recorrido", "Lo normal", "Lectura"],
+              grouped.deliveries.map((delivery) => [
+                delivery.agvId,
+                `${delivery.fromTagId} (${formatTick(delivery.fromUtcMs)})`,
+                delivery.tags.join(" → "),
+                duration(delivery.gapMs),
+                duration(delivery.spreadMs),
+                duration(delivery.totalMs),
+                duration(delivery.usualMs),
+                delivery.kind === "sin-parada" ? "no paró" : "espera sin situar",
+              ]),
+            ),
+        ),
+      );
+    }
+
     // La noche, medida aparte.
     const nightDiffers = measured.night.filter(
       (entry) => Math.abs(Math.log(entry.nocheP50Ms / Math.max(1, entry.produccionP50Ms))) >= Math.log(1.5),

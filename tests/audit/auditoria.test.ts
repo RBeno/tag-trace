@@ -64,6 +64,12 @@ import {
   type SegmentBands,
 } from "../../src/domain/segment-bands.js";
 import { buildCircuitState, type CircuitState } from "../../src/domain/circuit-state.js";
+import {
+  collapseGroupedDeliveries,
+  summarizeDeliveries,
+  type DeliverySummary,
+  type GroupedDeliveryReport,
+} from "../../src/domain/grouped-delivery.js";
 import { PROVISIONAL_CONFIG } from "../../src/domain/config.js";
 
 /**
@@ -136,6 +142,9 @@ interface Analysis {
       readonly justification: "produccion" | "cola" | "sin-explicacion" | null;
     })[]
   >;
+  /** Lecturas que llegaron juntas al servidor, y dónde se concentran (R-DAT-020). */
+  readonly groupedDelivery: GroupedDeliveryReport;
+  readonly deliverySummary: DeliverySummary;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
 }
@@ -275,9 +284,37 @@ function analyse(
     PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
     PROVISIONAL_CONFIG.flowStops,
   );
-  const timedTransitions = outsideProductionStops(cohortTransitions, production.stops);
   // Régimen de cada instante (R-TIM-009): las firmas de tiempo, solo en producción.
   const regimeOf = regimeReader("Europe/Madrid", PROVISIONAL_CONFIG.regimes);
+  const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
+  const window = [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }];
+  // Mismo encadenado que el Worker (R-DAT-020): las lecturas que llegaron juntas se colapsan en un solo
+  // recorrido antes de medir ningún tiempo, juzgadas con una horquilla previa.
+  const preliminaryBands =
+    anchor === null
+      ? null
+      : buildSegmentBands(
+          measurableTransitions(outsideProductionStops(cohortTransitions, production.stops), window, laneTags),
+          anchor.cycle,
+          regimeOf,
+          PROVISIONAL_CONFIG.bands,
+          PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+        );
+  const groupedDelivery = collapseGroupedDeliveries(
+    cohortTransitions,
+    preliminaryBands,
+    regimeOf,
+    PROVISIONAL_CONFIG.readRate.minTimeRatio,
+    laneTags,
+    PROVISIONAL_CONFIG.groupedDelivery,
+  );
+  const cohortTimeline = groupedDelivery.transitions;
+  const deliverySummary = summarizeDeliveries(
+    groupedDelivery.deliveries,
+    measurableTransitions(cohortTransitions, window, laneTags),
+    PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
+  );
+  const timedTransitions = outsideProductionStops(cohortTimeline, production.stops);
   const productionTimed = timedTransitions.filter((transition) => transitionRegime(transition, regimeOf) === "produccion");
 
   const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
@@ -330,8 +367,6 @@ function analyse(
       ? null
       : usualSegmentTimes(timedTransitions, anchor.cycle, "Europe/Madrid", PROVISIONAL_CONFIG.silenceKind.shiftStartHours);
   const maintenanceTags = new Set(entriesOf("mantenimiento").map((entry) => entry.tagId));
-  const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
-  const window = [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }];
   const measuredTimed = measurableTransitions(timedTransitions, window, laneTags);
   const bands =
     anchor === null
@@ -339,7 +374,7 @@ function analyse(
       : buildSegmentBands(measuredTimed, anchor.cycle, regimeOf, PROVISIONAL_CONFIG.bands, PROVISIONAL_CONFIG.flowStops.minStopExcessMs);
   const flow = flowStops(
     {
-      transitions: cohortTransitions,
+      transitions: cohortTimeline,
       coverage: window,
       bands,
       regimeOf,
@@ -451,6 +486,8 @@ function analyse(
     drift,
     tagChanges,
     vehicleReading,
+    groupedDelivery,
+    deliverySummary,
     readings: readings.length,
   };
 }
@@ -480,6 +517,8 @@ describe("auditoría del circuito con verdad conocida", () => {
     drift,
     tagChanges,
     vehicleReading,
+    groupedDelivery,
+    deliverySummary,
     readings,
   } = analysis;
 
@@ -1053,6 +1092,24 @@ describe("auditoría del circuito con verdad conocida", () => {
             : `${zona.tags[0]}…${zona.tags[zona.tags.length - 1]}: ${(zona.gapMs / 1000).toFixed(0)} s sin leer frente a ${(zona.typicalMs / 1000).toFixed(0)} s típicos, ${zona.cause} (${(zona.skipShare * 100).toFixed(0)} % salta)`,
       };
     },
+    "entrega-agrupada": () => {
+      const defect = scenario.defects.find((d) => d.kind === "entrega-agrupada");
+      const agv = defect?.vehicles[0] as string;
+      const plantadas = scenario.groupedDeliveriesUtcMs;
+      const suyas = groupedDelivery.deliveries.filter((delivery) => delivery.agvId === agv);
+      const halladas = plantadas.filter((at) => suyas.some((delivery) => delivery.fromUtcMs === at && delivery.kind === "sin-parada"));
+      // Sin el colapso, el hueco de cada ráfaga saldría como parada de ese AGV justo ahí.
+      const paradasEnRafaga = flow.stops.filter(
+        (stop) => stop.agvId === agv && plantadas.some((at) => stop.fromUtcMs >= at && stop.fromUtcMs < at + 2 * 60_000),
+      ).length;
+      const concentrado = deliverySummary.vehicles.some((entry) => entry.id === agv);
+      return {
+        ok: plantadas.length > 0 && halladas.length === plantadas.length && paradasEnRafaga === 0 && concentrado,
+        detail:
+          `${halladas.length} de ${plantadas.length} ráfagas de ${agv} halladas sin parada; ${paradasEnRafaga} paradas en ellas; ` +
+          `${concentrado ? "concentrado en él" : "no concentrado"}; total de ráfagas: ${groupedDelivery.deliveries.length}`,
+      };
+    },
   };
 
   /** Resumen del estado normal medido, para leerlo en el informe junto a las clases. */
@@ -1071,6 +1128,7 @@ describe("auditoría del circuito con verdad conocida", () => {
       `  sin explicación, noche: ${s.unexplained.noche.length} (${s.unexplained.noche.slice(0, 6).map((u) => `${u.agvId} ${pos(u.fromTagId)} +${(u.excessMs / 1000).toFixed(0)} s`).join(", ")})`,
       `  noche frente a producción: ${s.night.slice(0, 5).map((n) => `${pos(n.from)} ${(n.produccionP50Ms / 1000).toFixed(0)}→${(n.nocheP50Ms / 1000).toFixed(0)} s`).join(", ")}`,
       `  retenciones de producción: ${flow.retentions.filter((r) => r.regime === "produccion").length}; paradas: ${flow.stops.length}`,
+      `  lecturas que llegaron juntas: ${groupedDelivery.deliveries.length} (${groupedDelivery.deliveries.map((d) => `${d.agvId} ${pos(d.fromTagId)} ${d.kind}`).join(", ") || "ninguna"})`,
     ].join("\n");
   };
 
@@ -1248,6 +1306,16 @@ describe("auditoría del circuito con verdad conocida", () => {
       ?.tags ?? [])[0];
     const halladoTagNuevo = drift.tagDrifts.find((entry) => entry.tagId === tagNuevoInstalado);
     expect(halladoTagNuevo?.kind, "98001 no debería emparejarse con ningún desaparecido").toBe("nuevo");
+
+    // Lecturas que llegaron juntas (R-DAT-020): solo las del AGV plantado. El generador devuelve su
+    // deuda de reloj con pasos de medio tramo tras cada espera plantada; si eso se confundiera con una
+    // ráfaga, saldrían aquí los AGV del punto conflictivo, la parada aislada o el cuello.
+    const agrupadoEsperado = (scenario.defects.find((d) => d.kind === "entrega-agrupada")?.vehicles ?? [])[0];
+    const agrupadasEspurias = groupedDelivery.deliveries.filter((delivery) => delivery.agvId !== agrupadoEsperado);
+    expect(
+      agrupadasEspurias.map((delivery) => `${delivery.agvId} ${delivery.fromTagId}`),
+      "lecturas agrupadas sin plantar",
+    ).toHaveLength(0);
   }, PLAZO);
 
   it("con una sola exportación, los cambios de tag y la lectura por AGV coinciden con lo plantado", () => {

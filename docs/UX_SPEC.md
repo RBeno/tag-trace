@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.17.0
+version: 0.18.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -401,6 +401,11 @@ lo de la sección usa solo producción (R-TIM-009). Después, destacados primero
   precisa o un semáforo.
 - **AGV: tanto de más en X**: las paradas sin explicación que no son de un punto conflictivo, con
   quién iba delante y cuánto avanzó. «Qué lo paró no lo dice el dato.» Todas, en tabla plegada.
+- **Lecturas que llegaron juntas** (R-DAT-020): una línea que dice que la hora del fichero es la de
+  llegada al servidor y cuántas veces llegaron varias lecturas casi a la vez tras un hueco; después,
+  tarjetas **«AGV: le llegan lecturas juntas»** y **«Lecturas juntas al pasar por X»** para lo que se
+  concentra más de lo que da el azar, con la última ráfaga y si paró o no. Sin causa: «apunta a la
+  comunicación». Todas, en tabla plegada. Sin evaluar con resolución de minuto, y se dice.
 - **La noche**, en una línea: qué tramos cambian la mitad o más y cuántas paradas sin explicación hubo
   medidas contra la horquilla de noche.
 - **Horquilla de tiempos de cada tramo**: una barra por tramo del anillo, en su orden (no es
