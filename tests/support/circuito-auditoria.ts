@@ -77,7 +77,17 @@ export type DefectClass =
   /** Toda la flota parada a la vez en tres franjas; ningún tag crítico leído (R-AGV-018). */
   | "parada-de-produccion"
   /** Un AGV parado mucho más de lo habitual, sin nadie parado delante y con la producción en marcha. */
-  | "bloqueo-sin-justificar";
+  | "bloqueo-sin-justificar"
+  /** De noche un tramo va más lento; la horquilla de producción no se entera (R-TIM-009). */
+  | "noche-medida-aparte"
+  /** Una sola parada de un minuto de más, sin nadie delante que lo retenga (R-FLO-007). */
+  | "parada-sin-explicacion-aislada"
+  /** Varios AGV paran sin explicación en el mismo sitio (R-FLO-009). */
+  | "punto-conflictivo"
+  /** Se forma cola detrás de un sitio que solo admite uno a la vez, y fluye (R-FLO-008). */
+  | "cuello-de-botella"
+  /** Un tramo donde falta información: tags que se saltan (R-GRA-014). */
+  | "zona-oscura";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -352,6 +362,35 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const tagsDesiguales = [ring[80], ring[81]] as string[];
   const pasesDesiguales = new Map<string, number>();
 
+  // --- Estado normal del circuito (Parte 47, R-TIM-009) ---------------------------------------
+  //
+  // Todo con la deuda de reloj de la Parte 35 (`debtMs`): el tiempo que se añade se devuelve en los
+  // pasos siguientes sin dejar de sortear el jitter, así que ni cambia cuántas veces se llama a
+  // `random()` ni el reloj total de cada vehículo.
+  /**
+   * De noche, cuatro tramos seguidos van más lentos: 45 s de más en cada uno, en cada pasada. La
+   * horquilla de producción de esos tramos no tiene que enterarse, y la de noche tiene que medirlo.
+   */
+  const nocheLenta = [54, 55, 56, 57];
+  const NOCHE_EXTRA_MS = 45_000;
+  /**
+   * La deuda de la noche se devuelve a un segundo por paso, no a medio paso: devolverla deprisa
+   * dejaría media vuelta de noche con pasos de la mitad, y esa horquilla aplastada convertiría en
+   * parada a cualquier AGV que fuera a su ritmo. A un segundo por paso, ningún tramo se acorta más de
+   * un 6 %, y lo que quede al amanecer se devuelve igual de despacio.
+   */
+  const NOCHE_DEVOLUCION_MS = 1_000;
+  /** Una parada de un minuto de más, una sola vez, de un AGV sin otro papel (el ejemplo del propietario). */
+  const paradaAislada = { vehicle: vehicles[1] as string, position: 86, extraMs: 63_000 };
+  /** Ocho AGV sin otro papel paran sin explicación en el mismo sitio, dos veces cada uno. */
+  const conflicto = [2, 4, 6, 11, 14, 15, 18, 19].map((index) => vehicles[index] as string);
+  const conflictoPosiciones = [72, 73];
+  const CONFLICTO_EXTRA_MS = 70_000;
+  /** Un sitio que solo admite un AGV a la vez, durante hora y media: se forma cola y fluye. */
+  const cuelloPosicion = 116;
+  const CUELLO_ESPERA_MS = 40_000;
+  const ocupacionCuello: { from: number; to: number }[] = [];
+
   // --- Zonas (R-FLO-003: la carga online va dentro de la zona vacía) -------------------------
   //
   // Un tercio contiguo del anillo alrededor del empalme, más las quince tags de calle.
@@ -391,6 +430,18 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const franjasOriginales = franjas.map((inicio, index) => inicio - index * PARADA_PRODUCCION_MS);
   const congelar = (t: number): number =>
     t + PARADA_PRODUCCION_MS * franjasOriginales.filter((inicio) => t >= inicio).length;
+  /**
+   * Horas de la Parte 47 en el reloj con que se genera. La noche (22:00–05:00 en el reloj final) cae
+   * después de dos franjas congeladas, así que en el de generación empieza media hora antes.
+   */
+  const HORA = 3_600_000;
+  const nocheDesde = from + 16.5 * HORA + 10 * 60_000;
+  const nocheHasta = from + 23.5 * HORA - 10 * 60_000;
+  const paradaAisladaDesde = from + 9 * HORA;
+  const conflictoDesde = [from + 2 * HORA, from + 7 * HORA];
+  /** De 19:30 a 21:00 en el reloj final: de día, lejos de las paradas y antes de la noche. */
+  const cuelloDesde = from + 14 * HORA;
+  const cuelloHasta = from + 15.5 * HORA;
 
   const filas: Array<{ t: number; v: string; tag: string }> = [];
 
@@ -423,6 +474,11 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
      * transcurrido por vehículo en toda la ventana no cambia.
      */
     let debtMs = 0;
+    let debtNocheMs = 0;
+    // Parte 47: cada plantación ocurre una vez por vehículo y posición.
+    const conflictoHecho = new Set<number>();
+    let paradaAisladaHecha = false;
+    let entradaCuello: number | null = null;
 
     if (enFrio) {
       // Ya estaba cargando antes de que empezara la ventana, así que **no tiene ninguna lectura
@@ -492,7 +548,35 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         if (!enPuntoCriticoDeTiempo) lee = roll;
       }
 
+      // Cuello de botella (Parte 47, R-FLO-008): quien llega mientras otro ocupa el sitio espera a
+      // que salga. Solo se conocen los vehículos ya generados, así que la cola se forma detrás de la
+      // mitad de ellos: basta para que se vea, y nunca se fabrica una espera que el reloj no pida.
+      //
+      // Se espera a **un** ocupante, no a una cadena: generando un vehículo detrás de otro, el último
+      // vería ocupado el sitio por los 39 anteriores y esperaría minutos, que ya no es una cola que
+      // fluye. El lector degradado queda fuera: su tendencia se mide sobre pasadas probadas por
+      // tiempo, y devolver la deuda con pasos cortos le quitaría justo esas pruebas.
+      const enVentanaCuello = now >= cuelloDesde && now < cuelloHasta && vehicle !== lectorDegradado;
+      if (position === cuelloPosicion && enVentanaCuello) {
+        const ocupado = ocupacionCuello.find((entry) => entry.from <= now && now < entry.to);
+        if (ocupado !== undefined) {
+          const extra = ocupado.to + 2_000 - now;
+          now += extra;
+          debtMs += extra;
+        }
+      }
+      if (position === cuelloPosicion + 1 && entradaCuello !== null) {
+        ocupacionCuello.push({ from: entradaCuello, to: now });
+        entradaCuello = null;
+      }
+
       if (lee) filas.push({ t: now, v: vehicle, tag });
+
+      if (position === cuelloPosicion && enVentanaCuello) {
+        entradaCuello = now;
+        now += CUELLO_ESPERA_MS;
+        debtMs += CUELLO_ESPERA_MS;
+      }
 
       // Justo tras entrar en el tramo cargado (posición 50 es la entrada; aquí, la siguiente), se
       // demora 20 min: muy por encima de la desviación típica del tránsito por jitter de lectura
@@ -533,6 +617,39 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       // espurio en un tag completamente ajeno a esta parte—. Con 35-40 pasos de margen entre cada
       // una, la deuda siempre llega a cero mucho antes de la siguiente.
       const margenSuficiente = to - now > 20 * 60_000;
+
+      // Noche más lenta (Parte 47): solo con la transición entera dentro de la noche, con diez
+      // minutos de margen a cada lado, para que ni una muestra lenta caiga en la horquilla de producción.
+      if (margenSuficiente && nocheLenta.includes(position) && now >= nocheDesde && now < nocheHasta) {
+        now += NOCHE_EXTRA_MS;
+        debtNocheMs += NOCHE_EXTRA_MS;
+      }
+      // Parada aislada (Parte 47): la primera pasada por su sitio pasada la hora fijada.
+      if (
+        margenSuficiente &&
+        vehicle === paradaAislada.vehicle &&
+        position === paradaAislada.position &&
+        !paradaAisladaHecha &&
+        now >= paradaAisladaDesde
+      ) {
+        now += paradaAislada.extraMs;
+        debtMs += paradaAislada.extraMs;
+        paradaAisladaHecha = true;
+      }
+      // Punto conflictivo (Parte 47): cada uno de los ocho, una vez en cada posición, a horas de día
+      // lejos de las paradas de la producción.
+      const conflictoHora = conflictoPosiciones.indexOf(position);
+      if (
+        margenSuficiente &&
+        conflictoHora >= 0 &&
+        conflicto.includes(vehicle) &&
+        !conflictoHecho.has(position) &&
+        now >= (conflictoDesde[conflictoHora] as number)
+      ) {
+        now += CONFLICTO_EXTRA_MS;
+        debtMs += CONFLICTO_EXTRA_MS;
+        conflictoHecho.add(position);
+      }
 
       if (margenSuficiente && position === 30) {
         bifurcacionSinConvergerPases += 1;
@@ -610,7 +727,9 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       const nominal = (STEP_SECONDS + jitterRoll) * 1000;
       const payback = Math.min(debtMs, Math.floor(nominal / 2));
       debtMs -= payback;
-      now += nominal - payback;
+      const paybackNoche = Math.min(debtNocheMs, NOCHE_DEVOLUCION_MS, Math.floor(nominal / 2) - payback);
+      debtNocheMs -= paybackNoche;
+      now += nominal - payback - paybackNoche;
       position = (position + 1) % RING_SIZE;
 
       if (position === LANE_JUNCTION && now >= proximaCarga && now < to) {
@@ -731,6 +850,14 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     paradaPrecisaTag,
     semaforoTag,
     ...tagsDesiguales,
+    // Parte 47: los tramos plantados, con sus dos extremos.
+    ...[...nocheLenta, 58].map((index) => ring[index] as string),
+    ring[paradaAislada.position] as string,
+    ring[paradaAislada.position + 1] as string,
+    ...[...conflictoPosiciones, 74].map((index) => ring[index] as string),
+    ring[cuelloPosicion - 1] as string,
+    ring[cuelloPosicion] as string,
+    ring[cuelloPosicion + 1] as string,
   ]);
 
   const defects: PlantedDefect[] = [
@@ -961,6 +1088,43 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       vehicles: [elAdelantado],
       expect: "el primero de su cola, sin avanzar y con la producción en marcha: un bloqueo con sus lecturas críticas",
       mustNotSay: "una causa, ni justificarlo con una parada de la producción que no hubo",
+    },
+    {
+      kind: "noche-medida-aparte",
+      tags: nocheLenta.map((index) => ring[index] as string),
+      vehicles: [],
+      expect:
+        "la horquilla de producción de esos tramos como la de uno limpio, la de noche con el doble o " +
+        "más, y ninguna parada de noche por esa lentitud",
+      mustNotSay: "mezclar la noche con el día, ni llamar parada a lo que de noche es lo normal",
+    },
+    {
+      kind: "parada-sin-explicacion-aislada",
+      tags: [ring[paradaAislada.position] as string],
+      vehicles: [paradaAislada.vehicle],
+      expect: "una parada candidata sin explicación, con quién iba delante y cuánto avanzó mientras tanto",
+      mustNotSay: "una causa (batería, revisión, persona…), ni un bloqueo, ni un punto conflictivo",
+    },
+    {
+      kind: "punto-conflictivo",
+      tags: conflictoPosiciones.map((index) => ring[index] as string),
+      vehicles: conflicto,
+      expect: "un punto conflictivo que une los dos tags, con los ocho AGV",
+      mustNotSay: "que sea de un solo AGV, ni un bloqueo",
+    },
+    {
+      kind: "cuello-de-botella",
+      tags: [ring[cuelloPosicion] as string],
+      vehicles: [],
+      expect: "un cuello de botella en ese tag, con su cola y sin bloqueos: fluye",
+      mustNotSay: "una avería, ni paradas sin explicación de los que esperan detrás",
+    },
+    {
+      kind: "zona-oscura",
+      tags: lecturaMedia.slice(0, 4),
+      vehicles: [],
+      expect: "una zona oscura que incluye los tags poco leídos, con la causa «se salta el tag»",
+      mustNotSay: "que el tramo sea largo, ni una zona en tramos limpios",
     },
   ];
 

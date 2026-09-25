@@ -54,6 +54,16 @@ import {
   readZones,
 } from "../../src/domain/circuit-config.js";
 import { importCatalog } from "../../src/ingestion/catalog.js";
+import {
+  buildSegmentBands,
+  measurableTransitions,
+  pairKey,
+  regimeReader,
+  transitionRegime,
+  type Regime,
+  type SegmentBands,
+} from "../../src/domain/segment-bands.js";
+import { buildCircuitState, type CircuitState } from "../../src/domain/circuit-state.js";
 import { PROVISIONAL_CONFIG } from "../../src/domain/config.js";
 
 /**
@@ -113,6 +123,10 @@ interface Analysis {
   /** Cuándo estuvo parada la producción, y las paradas de cada AGV leídas contra el flujo (R-AGV-018). */
   readonly production: ProductionStopReport;
   readonly flow: FlowReport;
+  /** La horquilla de cada tramo por régimen, y el estado normal medido con ella (R-TIM-009). */
+  readonly bands: SegmentBands | null;
+  readonly circuitState: CircuitState | null;
+  readonly regimeOf: (utcMs: number) => Regime;
   /** Cómo reapareció cada AGV tras cada hueco sin carga (R-AGV-017), por vehículo. */
   readonly silences: ReadonlyMap<
     string,
@@ -262,12 +276,15 @@ function analyse(
     PROVISIONAL_CONFIG.flowStops,
   );
   const timedTransitions = outsideProductionStops(cohortTransitions, production.stops);
+  // Régimen de cada instante (R-TIM-009): las firmas de tiempo, solo en producción.
+  const regimeOf = regimeReader("Europe/Madrid", PROVISIONAL_CONFIG.regimes);
+  const productionTimed = timedTransitions.filter((transition) => transitionRegime(transition, regimeOf) === "produccion");
 
   const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
   const criticalPoints = [
     ...classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce),
-    ...findPrecisePauseCandidates(timedTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa),
-    ...findTrafficLightCandidates(timedTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo),
+    ...findPrecisePauseCandidates(productionTimed, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa),
+    ...findTrafficLightCandidates(productionTimed, PROVISIONAL_CONFIG.criticalPoints.semaforo),
   ];
 
   const ring = anchor?.cycle ?? [];
@@ -313,19 +330,51 @@ function analyse(
       ? null
       : usualSegmentTimes(timedTransitions, anchor.cycle, "Europe/Madrid", PROVISIONAL_CONFIG.silenceKind.shiftStartHours);
   const maintenanceTags = new Set(entriesOf("mantenimiento").map((entry) => entry.tagId));
+  const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
+  const window = [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }];
+  const measuredTimed = measurableTransitions(timedTransitions, window, laneTags);
+  const bands =
+    anchor === null
+      ? null
+      : buildSegmentBands(measuredTimed, anchor.cycle, regimeOf, PROVISIONAL_CONFIG.bands, PROVISIONAL_CONFIG.flowStops.minStopExcessMs);
   const flow = flowStops(
     {
       transitions: cohortTransitions,
-      coverage: [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
-      usual,
+      coverage: window,
+      bands,
+      regimeOf,
       production,
-      laneTags: new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags])),
+      laneTags,
       functionOf: criticalPointsConfig.funcionOf,
-      zone: "Europe/Madrid",
-      shiftStartHours: PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
     },
     PROVISIONAL_CONFIG.flowStops,
   );
+  // Mismo encadenado que el Worker: una parada precisa o un semáforo explican su espera.
+  const timeCritical = new Map<string, string>();
+  for (const [tagId, functionName] of criticalPointsConfig.funcionOf) {
+    if (functionName === "parada-precisa" || functionName === "semaforo") timeCritical.set(tagId, functionName);
+  }
+  for (const candidate of criticalPoints) {
+    if ((candidate.kind === "parada-precisa" || candidate.kind === "semaforo") && !timeCritical.has(candidate.tagId)) {
+      timeCritical.set(candidate.tagId, candidate.kind);
+    }
+  }
+  const circuitState =
+    bands === null
+      ? null
+      : buildCircuitState(
+          {
+            bands,
+            transitions: measuredTimed,
+            regimeOf,
+            flow,
+            timeCritical,
+            reachTags: PROVISIONAL_CONFIG.flowStops.reachTags,
+            minVehicles: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
+            headStallMs: PROVISIONAL_CONFIG.flowStops.headStallMs,
+          },
+          PROVISIONAL_CONFIG.circuitState,
+        );
   const stopOfGap = new Map(flow.stops.map((stop) => [`${stop.agvId}\u0000${stop.fromUtcMs}`, stop]));
   const justificationOf = (agvId: string, from: number, to: number) => {
     const stop = stopOfGap.get(`${agvId}\u0000${from}`);
@@ -393,6 +442,9 @@ function analyse(
     silences,
     production,
     flow,
+    bands,
+    circuitState,
+    regimeOf,
     laps,
     anchorTagId: anchor?.tagId,
     anchorTruth,
@@ -420,6 +472,8 @@ describe("auditoría del circuito con verdad conocida", () => {
     silences,
     production,
     flow,
+    bands,
+    circuitState,
     laps,
     anchorTagId,
     anchorTruth,
@@ -878,6 +932,9 @@ describe("auditoría del circuito con verdad conocida", () => {
             .map(
               (entry) =>
                 `${entry.inPlace}/${entry.vehicles} por su sitio` +
+                (entry.notInPlace.length === 0
+                  ? ""
+                  : ` (no: ${entry.notInPlace.map((miss) => `${miss.agvId} ${miss.fromTagId}→${miss.toTagId}`).join(", ")})`) +
                 (entry.orderChanges.length === 0
                   ? ""
                   : ` (orden: ${entry.orderChanges.map((change) => `${change.agvId} delante de ${change.passed}`).join(", ")})`),
@@ -899,6 +956,122 @@ describe("auditoría del circuito con verdad conocida", () => {
               `${hallado.basisReads} lecturas críticas mientras tanto, ${hallado.behind.length} detrás`,
       };
     },
+    "noche-medida-aparte": () => {
+      const defect = scenario.defects.find((d) => d.kind === "noche-medida-aparte");
+      if (bands === null || circuitState === null || defect === undefined) return { ok: false, detail: "sin anillo" };
+      const clean = new Set(scenario.cleanTags);
+      const declaredRing = scenario.declaredRing;
+      const nextOf = (tag: string): string => declaredRing[(declaredRing.indexOf(tag) + 1) % declaredRing.length] as string;
+      // La horquilla de producción de un tramo limpio, para comparar.
+      const cleanP95 = declaredRing
+        .filter((tag) => clean.has(tag) && clean.has(nextOf(tag)))
+        .map((tag) => bands.pairs.get(pairKey(tag, nextOf(tag)))?.produccion?.p95Ms)
+        .filter((value): value is number => value !== undefined)
+        .sort((a, b) => a - b);
+      const typicalP95 = cleanP95[Math.floor(cleanP95.length / 2)] ?? 0;
+      const rows = defect.tags.map((tag) => {
+        const pair = bands.pairs.get(pairKey(tag, nextOf(tag)));
+        return { tag, produccion: pair?.produccion ?? null, noche: pair?.noche ?? null };
+      });
+      const tags = new Set(defect.tags);
+      const nightStops = circuitState.unexplained.noche.filter((stop) => tags.has(stop.fromTagId)).length;
+      const dayStops = circuitState.unexplained.produccion.filter((stop) => tags.has(stop.fromTagId)).length;
+      const ok =
+        rows.every(
+          (row) =>
+            row.produccion !== null &&
+            row.noche !== null &&
+            row.produccion.p95Ms <= 1.25 * typicalP95 &&
+            row.noche.p50Ms >= 2 * row.produccion.p50Ms,
+        ) &&
+        nightStops === 0 &&
+        dayStops === 0;
+      return {
+        ok,
+        detail:
+          rows
+            .map(
+              (row) =>
+                `${row.tag}: producción ${((row.produccion?.p50Ms ?? 0) / 1000).toFixed(0)}/${((row.produccion?.p95Ms ?? 0) / 1000).toFixed(0)} s, ` +
+                `noche ${((row.noche?.p50Ms ?? 0) / 1000).toFixed(0)} s`,
+            )
+            .join("; ") +
+          ` (p95 de un tramo limpio: ${(typicalP95 / 1000).toFixed(0)} s); paradas sin explicación ahí: ${nightStops} de noche, ${dayStops} de día`,
+      };
+    },
+    "parada-sin-explicacion-aislada": () => {
+      const defect = scenario.defects.find((d) => d.kind === "parada-sin-explicacion-aislada");
+      const hallada = circuitState?.unexplained.produccion.find(
+        (stop) => stop.agvId === defect?.vehicles[0] && stop.fromTagId === defect?.tags[0],
+      );
+      return {
+        ok: hallada !== undefined && hallada.aheadEvidence !== null,
+        detail:
+          hallada === undefined
+            ? `sin parada de ${defect?.vehicles[0]} en ${defect?.tags[0]}`
+            : `${hallada.agvId} en ${hallada.fromTagId}: ${(hallada.excessMs / 1000).toFixed(0)} s de más sobre ${(hallada.usualMs / 1000).toFixed(0)} s; ` +
+              (hallada.aheadEvidence === null
+                ? "sin nadie delante"
+                : `${hallada.aheadEvidence.agvId} iba ${hallada.aheadEvidence.distanceAtStart} tags delante y avanzó ${hallada.aheadEvidence.tagsAdvanced ?? "?"}`),
+      };
+    },
+    "punto-conflictivo": () => {
+      const defect = scenario.defects.find((d) => d.kind === "punto-conflictivo");
+      const punto = circuitState?.conflictPoints.find((point) => (defect?.tags ?? []).every((tag) => point.tags.includes(tag)));
+      const bloqueos = flow.blockages.filter((blockage) => (defect?.tags ?? []).includes(blockage.tagId)).length;
+      return {
+        ok: punto !== undefined && punto.ofOneVehicle === null && punto.vehicles.length >= 8 && bloqueos === 0,
+        detail:
+          punto === undefined
+            ? `ningún punto con ${defect?.tags.join(" y ")}; puntos: ${circuitState?.conflictPoints.map((point) => point.tags.join("+")).join(", ") || "ninguno"}`
+            : `${punto.tags.join("+")}: ${punto.stops} paradas sin explicación (el azar daría ${punto.expected.toFixed(2)}), ${punto.vehicles.length} AGV, ${bloqueos} bloqueos`,
+      };
+    },
+    "cuello-de-botella": () => {
+      const defect = scenario.defects.find((d) => d.kind === "cuello-de-botella");
+      const tag = defect?.tags[0] as string;
+      const declaredRing = scenario.declaredRing;
+      const antes = declaredRing[(declaredRing.indexOf(tag) - 1 + declaredRing.length) % declaredRing.length];
+      const cuello = circuitState?.bottlenecks.find((entry) => entry.tagId === tag);
+      const detras = circuitState?.unexplained.produccion.filter((stop) => stop.fromTagId === antes).length ?? 0;
+      return {
+        ok: cuello !== undefined && cuello.blockages === 0 && detras === 0,
+        detail:
+          cuello === undefined
+            ? `sin cuello en ${tag}; cuellos: ${circuitState?.bottlenecks.map((entry) => entry.tagId).join(", ") || "ninguno"}`
+            : `${tag}: ${cuello.retentions} retenciones (el azar daría ${cuello.expected.toFixed(1)}), ${cuello.episodes} colas, la más larga de ${cuello.longestQueue}, ${cuello.blockages} bloqueos; ${detras} sin explicación detrás`,
+      };
+    },
+    "zona-oscura": () => {
+      const defect = scenario.defects.find((d) => d.kind === "zona-oscura");
+      const zona = circuitState?.darkZones.find((zone) => (defect?.tags ?? []).some((tag) => zone.tags.includes(tag)));
+      return {
+        ok: zona !== undefined && zona.cause === "salta-tag",
+        detail:
+          zona === undefined
+            ? "ninguna zona con los tags poco leídos"
+            : `${zona.tags[0]}…${zona.tags[zona.tags.length - 1]}: ${(zona.gapMs / 1000).toFixed(0)} s sin leer frente a ${(zona.typicalMs / 1000).toFixed(0)} s típicos, ${zona.cause} (${(zona.skipShare * 100).toFixed(0)} % salta)`,
+      };
+    },
+  };
+
+  /** Resumen del estado normal medido, para leerlo en el informe junto a las clases. */
+  const describeState = (): string => {
+    if (circuitState === null || bands === null) return "  sin anillo: no se mide";
+    const s = circuitState;
+    const pos = (tagId: string): string => `${tagId}@${bands.positionOf.get(tagId) ?? "—"}`;
+    return [
+      `  horquillas: ${[...bands.pairs.values()].filter((pair) => pair.produccion !== null).length} con producción, ` +
+        `${[...bands.pairs.values()].filter((pair) => pair.noche !== null).length} con noche; resolución ${bands.resolutionMs} ms`,
+      `  cuellos de botella: ${s.bottlenecks.map((b) => `${pos(b.tagId)} (${b.retentions} vs ${b.expected.toFixed(1)}, ${b.episodes} ep., cola ${b.longestQueue}, ${b.blockages} bloq.)`).join("; ") || "ninguno"}`,
+      `  puntos conflictivos: ${s.conflictPoints.map((c) => `${c.tags.map(pos).join("+")} (${c.stops} vs ${c.expected.toFixed(2)}, ${c.vehicles.length} AGV${c.ofOneVehicle === null ? "" : `, solo ${c.ofOneVehicle}`})`).join("; ") || "ninguno"}`,
+      `  zonas oscuras (típico ${((s.typicalGapMs ?? 0) / 1000).toFixed(1)} s): ${s.darkZones.map((z) => `${pos(z.tags[0] as string)}…${pos(z.tags[z.tags.length - 1] as string)} ${(z.gapMs / 1000).toFixed(0)} s ${z.cause} (${(z.skipShare * 100).toFixed(0)} % salta)`).join("; ") || "ninguna"}`,
+      `  explicadas por parada precisa o semáforo: ${s.explainedSlow.map((e) => `${pos(e.tagId)} ${e.function}`).join(", ") || "ninguna"}`,
+      `  sin explicación, producción: ${s.unexplained.produccion.length} (${s.unexplained.produccion.slice(0, 6).map((u) => `${u.agvId} ${pos(u.fromTagId)} +${(u.excessMs / 1000).toFixed(0)} s`).join(", ")})`,
+      `  sin explicación, noche: ${s.unexplained.noche.length} (${s.unexplained.noche.slice(0, 6).map((u) => `${u.agvId} ${pos(u.fromTagId)} +${(u.excessMs / 1000).toFixed(0)} s`).join(", ")})`,
+      `  noche frente a producción: ${s.night.slice(0, 5).map((n) => `${pos(n.from)} ${(n.produccionP50Ms / 1000).toFixed(0)}→${(n.nocheP50Ms / 1000).toFixed(0)} s`).join(", ")}`,
+      `  retenciones de producción: ${flow.retentions.filter((r) => r.regime === "produccion").length}; paradas: ${flow.stops.length}`,
+    ].join("\n");
   };
 
   it("publica el informe por clase", () => {
@@ -915,6 +1088,8 @@ describe("auditoría del circuito con verdad conocida", () => {
         `Anillo reconstruido: ${ring.length} tags de ${scenario.declaredRing.length} declarados. ` +
         `Fuera del anillo: ${offRing.length}.\n` +
         lineas.join("\n") +
+        `\n--- Estado normal del circuito (R-TIM-009) ---\n` +
+        describeState() +
         `\n=================\n`,
     );
     expect(ring.length).toBeGreaterThan(0);
@@ -980,6 +1155,35 @@ describe("auditoría del circuito con verdad conocida", () => {
     }
     expect(antes, "el lector degradado debería tener lecturas en la primera mitad").toBeGreaterThan(0);
     expect(despues, "y bastantes menos en la segunda").toBeLessThan(antes * 0.8);
+  }, PLAZO);
+
+  it("el estado normal no señala nada limpio: cuellos, conflictos, zonas oscuras y paradas sin explicación (R-TIM-009)", () => {
+    const clean = new Set(scenario.cleanTags);
+    const declaredRing = scenario.declaredRing;
+    expect(circuitState).not.toBeNull();
+    const state = circuitState as CircuitState;
+    expect(state.bottlenecks.filter((entry) => clean.has(entry.tagId)).map((entry) => entry.tagId)).toEqual([]);
+    expect(state.conflictPoints.flatMap((point) => point.tags).filter((tag) => clean.has(tag))).toEqual([]);
+    // Una zona oscura tiene que tocar algo plantado entre su primer y su último tag.
+    const limpias = state.darkZones.filter((zone) => {
+      const first = declaredRing.indexOf(zone.tags[0] as string);
+      const last = declaredRing.indexOf(zone.tags[zone.tags.length - 1] as string);
+      const span = (last - first + declaredRing.length) % declaredRing.length;
+      return Array.from({ length: span + 1 }, (_, step) => declaredRing[(first + step) % declaredRing.length] as string).every(
+        (tag) => clean.has(tag),
+      );
+    });
+    expect(limpias.map((zone) => zone.tags.join("…"))).toEqual([]);
+    // Las paradas sin explicación son las plantadas, y ninguna de noche.
+    const plantadas = new Set(
+      scenario.defects
+        .filter((d) => d.kind === "parada-sin-explicacion-aislada" || d.kind === "punto-conflictivo")
+        .flatMap((d) => d.vehicles),
+    );
+    expect(
+      state.unexplained.produccion.filter((stop) => !plantadas.has(stop.agvId)).map((stop) => `${stop.agvId}@${stop.fromTagId}`),
+    ).toEqual([]);
+    expect(state.unexplained.noche.map((stop) => `${stop.agvId}@${stop.fromTagId}`)).toEqual([]);
   }, PLAZO);
 
   it("no señala ningún tag sano: cero falsos positivos", () => {

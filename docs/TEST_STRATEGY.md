@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.31.0
+version: 0.32.0
 status: baseline-candidate
-last_updated: 2026-09-24
+last_updated: 2026-09-25
 ---
 
 # Estrategia de pruebas y evaluación
@@ -229,7 +229,12 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-178 | Auditoría con tres paradas de la producción plantadas (reloj congelado tras generar) | Las tres detectadas y ninguna más, la de las 10:00 repetida; todos por su sitio; cada hueco dentro, justificado; el AGV retrasado, el único bloqueo; ningún hueco «desconexión»; las clases anteriores intactas | Una parada inventada, un bloqueo dentro de una franja, o una clase anterior perdida |
 | TC-179 | Navegador con el circuito de auditoría | «Flota en el circuito» con los dos peores momentos; tarjeta de las tres paradas de la producción con la repetida; tarjeta del primero de la cola; leyenda con explicado, sin explicar y bloqueo | Volver a contar un silencio como fuera del circuito |
 | TC-174 | Auditoría y navegador con el circuito de auditoría | El AGV que espera 20 min tras un tag y sigue por el siguiente sale parado, con el tag siguiente y lo habitual; ningún otro hueco en todo el escenario; la leyenda nombra las clases y su tabla da el porcentaje parado | Un hueco espurio en un AGV sano |
-
+| TC-180 | Régimen y horquilla (`regimeReader`, `buildSegmentBands`, `bandFor`, `regimeExposure`) | La noche de 22 a 05 en hora local cruza la medianoche; el 80 % en 17 s y el resto hasta 30 s dan una valla de 60 s (80 s entra, 45 s no); la noche no toca la horquilla de producción; sin 20 muestras no hay horquilla y un salto usa la suma del anillo; las esperas de un semáforo quedan dentro; el tiempo cargado se reparte entre producción, noche y paradas | Una constante fija de parada; la noche mezclada con el día |
+| TC-181 | Paradas contra la horquilla (`flowStops`) | 80 s donde se tarda 20, sin nadie que retenga y con el de delante avanzando → sin explicación con quién iba delante y cuánto avanzó; detrás de uno lento pero dentro de su horquilla → en cola, no sin explicación; de noche se mide contra la horquilla de noche; las nueve pruebas de la Parte 46 siguen igual | Dejar sin explicación a quien espera en un cuello de botella; llamar parada a la noche |
+| TC-182 | Mediciones estándar (`buildCircuitState`) sobre un anillo de 20 tags | Paradas de varios AGV en tags vecinos → un punto que une los tags; todas de un AGV → es de ese AGV; repartidas o de noche → ningún punto; un bloqueo no se repite como parada suelta; retenciones concentradas → cuello en la cabeza de la cola, con la cola encadenada; un tag que se salta → zona oscura «salta el tag»; un tramo largo → «el tramo tarda», salvo parada precisa | Un punto conflictivo por azar; una cola atribuida al último de la fila |
+| TC-183 | Cambio de horquilla entre periodos (`compareBands`, `bandChangesBetweenPeriods`) y CSV (`bandsCsv`) | Más lento, más rápido e igual dentro del mismo régimen; con un solo tramo de cobertura, nada; CSV con `;`, coma decimal y una fila por tramo y régimen | Comparar medias o regímenes distintos |
+| TC-184 | Auditoría con noche lenta, parada aislada, punto conflictivo y cuello de botella plantados | Los cinco nuevos detectados (con la zona oscura de los tags poco leídos); ningún cuello, punto, zona oscura ni parada sin explicación sobre tramos limpios ni de noche; las 31 clases anteriores intactas | Un hallazgo del estado normal en un tramo sano |
+| TC-185 | Navegador con una sola exportación y las listas | Sección «Estado normal del circuito»: la horquilla dibujada sin un rótulo por marca y con su tabla; tarjetas de cuello de botella («la cola fluye»), punto conflictivo (8 AGV), zona oscura y parada aislada sin causa; la noche aparte; el CSV se descarga con su cabecera | Nombrar una causa; perder la horquilla al cerrar la pestaña sin poder guardarla |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda

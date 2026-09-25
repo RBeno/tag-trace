@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.11.0
+version: 0.12.0
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-25
 ---
 
 # Configuración de circuito
@@ -41,6 +41,18 @@ El repositorio solo contiene ejemplos sintéticos.
 Turnos, pausas, descansos, paradas planificadas y excepciones por fecha. Cada entrada con vigencia.
 Alimenta R-TIM-003, R-TIM-004 y R-TIM-006: un periodo se compara con lo esperado para su horario,
 nunca con una media que mezcle producción y parada.
+
+**Regímenes** (R-TIM-009). La ventana de noche separa el estado normal del circuito del de la noche,
+que se mide aparte:
+
+```text
+regimes : { night_from_hour, night_to_hour }   # hora local; puede cruzar la medianoche
+```
+
+Hoy vale 22:00–05:00 para todos los circuitos, por decisión del propietario, en la configuración
+provisional (`src/domain/config.ts`, `draft`), como los turnos. Cuando exista el calendario del
+circuito (OQ-108) pasa a él, con vigencia. Los descansos no se declaran: salen del dato como paradas
+de la producción (R-AGV-018).
 
 ### 3.3 Ritmo
 
@@ -221,6 +233,10 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `min_support` | Soporte mínimo por contexto antes de crear un perfil esperado. |
 | `gap_policy` | Cuándo un hueco es censurable frente a reconstruible (R-OPP-004, R-OPP-005). |
 | `cancel_grace_ms` | Plazo de cortesía antes de `terminate()` (WP-004). |
+| `min_band_samples` | R-FLO-007: muestras mínimas de un tramo en un régimen para su horquilla. |
+| `min_stop_excess_ms` | R-FLO-007: margen mínimo de la valla sobre el p95 de un tramo. |
+| `dark_zone_factor` | R-GRA-014: cuántas veces el hueco típico del circuito hace oscuro un tramo. |
+| `max_false_points` | R-FLO-008, R-FLO-009: puntos marcados por azar que se aceptan en todo el circuito. |
 
 ### 3.6 Cohortes
 

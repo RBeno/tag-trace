@@ -1,8 +1,8 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.19.0
+version: 0.20.0
 status: baseline-candidate
-last_updated: 2026-09-24
+last_updated: 2026-09-25
 ---
 
 # Glosario controlado
@@ -22,7 +22,14 @@ last_updated: 2026-09-24
 | Flota asignada | Vehículos que el historial de flota (DS-012) asigna al circuito en un instante dado: los que tienen un periodo `[desde, hasta)` que lo contiene. Es la M del recuento «N de M». Sin historial cargado no se conoce, y se sustituye por los vehículos vistos en las lecturas diciéndolo (R-AGV-014). |
 | En el circuito | Un vehículo asignado que, en un instante dentro de la cobertura, lee, carga, o está parado o circulando sin leer: ningún AGV cambia de circuito. Es la N del recuento, y aparte se dice cuántos leen. Solo quedan fuera mantenimiento y una hora o más sin leer que nada explica; leer sin estar asignado se cuenta aparte, nunca en N (R-AGV-014, R-AGV-015, R-AGV-018). Sustituye a «en funcionamiento», que dejaba fuera a cada AGV parado. |
 | Parada de la producción | Tramo sin ninguna lectura en los tags críticos declarados, largo e improbable por azar con el ritmo de ese turno (sin críticos declarados, de toda la flota). Explica las paradas de los AGV que caen dentro. Sale de los datos, no se declara (R-AGV-018). |
-| Cola | AGV parados uno detrás de otro, a dos tags o menos, porque el de delante tampoco avanza. Una cola que avanza cada poco es saturación o un pulmón (R-AGV-018). |
+| Cola | AGV parados uno detrás de otro, a dos tags o menos, porque el de delante no se va: ya iba delante al empezar, sigue ahí a mitad y va él también más lento de lo normal. Quien retiene no tiene por qué estar parado él: en un cuello de botella tarda lo normal de ese sitio. Una cola que avanza cada poco es saturación o un pulmón (R-AGV-018). |
+| Régimen | Estado de funcionamiento por la hora local: **producción** o **noche** (hoy de 22:00 a 05:00). Lo que cruza una parada de la producción no entra en ninguno. Las mediciones estándar usan solo producción; la noche se mide aparte (R-TIM-009). |
+| Horquilla de tiempos | Lo que tarda un tramo —de un tag a otro— en un régimen: p50, p80 y p95 de sus propias transiciones. Es el estado normal de ese tramo, y se compara entre periodos (R-FLO-007, R-TIM-010). No confundir con un tag donde el recorrido se divide (bifurcación). |
+| Valla | Límite de la horquilla de un tramo: p95 + max(p95 − p50, margen mínimo, resolución). Por encima, una transición es una parada candidata (R-FLO-007). |
+| Retención | Transición lenta —por encima del p95 de su tramo, con al menos el margen de espera— con un AGV delante que no se iba (R-FLO-008). |
+| Cuello de botella | Tag donde se concentran las retenciones más de lo que da el azar por el tiempo que los AGV pasan ahí: donde se forma cola. Si fluye, no es una avería (R-FLO-008). |
+| Punto conflictivo | Tags vecinos con más paradas sin explicación, de varios AGV, de las que da el azar por sus pasadas. Dice dónde, no por qué (R-FLO-009). |
+| Zona oscura | Tramo donde el hueco entre dos lecturas es mucho mayor que el típico del circuito, porque un tag se salta o porque el tramo tarda: ahí una parada se ve tarde (R-GRA-014). |
 | Primero de la cola (bloqueo) | La parada de una cola sin nadie parado delante. Si pasa dos minutos de lo habitual con la producción en marcha, es un bloqueo: se dice dónde, cuánto, cuántos quedaron detrás y cuántas lecturas críticas hubo mientras tanto. Sin causa (R-AGV-018, R-EVI-006). |
 | Periodo de inactividad | Intervalo dentro de la cobertura en el que un objeto no produce lecturas. Como un AGV detenido no emite, la inactividad no se distingue del fallo de comunicación por la ausencia en sí, sino por el contexto colectivo, el punto de la última lectura y el calendario. |
 | Instante de cambio | Última lectura antes de un silencio o de un cambio sostenido de comportamiento. Es `inferred`: marca el último momento con evidencia, no el instante real en que el objeto dejó de funcionar. |

@@ -20,10 +20,14 @@
  *    críticos declarados, largos y **no explicables por azar** dado su ritmo en ese turno. Sin tags
  *    críticos declarados se usa el ritmo de toda la flota, y se dice. Las franjas de descanso no se
  *    declaran: salen de los datos, y se marca cuáles se repiten a la misma hora otro día.
- * 2. `flowStops`: cada parada de un AGV —una transición que dura más de lo habitual para ese par de
- *    tags en ese turno— con su justificación: `produccion`, `cola` (el de delante también parado) o
- *    `sin-explicacion`. Las colas se encadenan hasta su cabeza, y una cabeza sin justificación que
- *    se pasa de lo habitual en `headStallMs` o más es un **bloqueo**, con cuántos quedaron detrás.
+ * 2. `flowStops`: cada parada de un AGV —una transición que se sale de la horquilla de su tramo en
+ *    su régimen (R-FLO-007)— con su justificación: `produccion`, `cola` (había un AGV delante que no
+ *    se iba) o `sin-explicacion`. Las colas se encadenan hasta su cabeza, y una parada sin
+ *    justificación que se pasa de lo habitual en `headStallMs` o más es un **bloqueo**, con cuántos
+ *    quedaron detrás. Una sin explicación lleva la evidencia del propietario: quién iba delante y
+ *    cuánto avanzó mientras tanto —«el resto avanza y se separa»—. Y las transiciones lentas con
+ *    alguien delante que no se iba son **retenciones**: no son paradas, pero dicen dónde se forman
+ *    colas (R-FLO-008).
  *
  * Nada de esto nombra causas (R-EVI-006): «producción parada» es lo que dicen los tags críticos, y un
  * bloqueo es un hecho con su evidencia, no una avería.
@@ -33,19 +37,25 @@ import { mergeIntervals, type Interval } from "./coverage.js";
 import type { Transition } from "./graph.js";
 import type { Reading } from "./reading.js";
 import {
-  localHourReader,
-  ringUsualMs,
-  shiftIndexOfHour,
-  type StopJustification,
-  type UsualTimes,
-} from "./silence-kind.js";
+  bandFor,
+  measurableTransitions,
+  pairKey,
+  transitionRegime,
+  type BandFor,
+  type Regime,
+  type SegmentBands,
+} from "./segment-bands.js";
+import { localHourReader, shiftIndexOfHour, type StopJustification } from "./silence-kind.js";
 
 export interface FlowStopThresholds {
   /** Exceso sobre lo habitual a partir del cual el primero de la cola sin justificar es un bloqueo. */
   readonly headStallMs: number;
   /** Duración mínima de un tramo sin lecturas críticas para llamarlo parada de la producción. */
   readonly minProductionStopMs: number;
-  /** Exceso sobre lo habitual a partir del cual una transición es una parada del AGV. */
+  /**
+   * Margen mínimo de la valla sobre el p95 de un tramo (R-FLO-007): un tramo muy regular no convierte
+   * en parada un par de segundos de más.
+   */
   readonly minStopExcessMs: number;
   /** Hasta cuántos tags por delante cuenta un AGV como «el de delante». */
   readonly reachTags: number;
@@ -53,7 +63,11 @@ export interface FlowStopThresholds {
   readonly maxFalseStops: number;
   /** Margen de hora local para decir que una parada se repite otro día. */
   readonly sameTimeToleranceMs: number;
-  /** Muestras mínimas de un par de tags, en un turno o en toda la ventana, para usar su mediana. */
+  /**
+   * Veces que tiene que darse un paso de un tag a otro, fuera de las paradas de la producción, para
+   * que salir por él de una parada cuente como «por su sitio»: saltarse un tag que se lee poco es un
+   * paso habitual aunque no tenga horquilla propia.
+   */
   readonly minPairSamples: number;
 }
 
@@ -80,15 +94,49 @@ export interface VehicleStop {
   readonly toTagId: string;
   readonly fromUtcMs: number;
   readonly toUtcMs: number;
+  /** Lo habitual del tramo: el p50 de su horquilla en su régimen. */
   readonly usualMs: number;
   readonly excessMs: number;
+  readonly regime: Regime;
   readonly justification: StopJustification;
-  /** En cola: el AGV de delante, también parado. */
+  /** En cola: el AGV de delante que no se iba. */
   readonly aheadAgvId: string | null;
-  /** En cola: la cabeza de la cadena. */
+  /** En cola: la cabeza de la cadena, esté parada o solo retenga. */
   readonly headAgvId: string | null;
   /** Solo en las cabezas: cuántas paradas quedaron detrás, encadenadas. */
   readonly behind: number;
+  /** Solo sin explicación: quién iba delante y cuánto avanzó mientras tanto. */
+  readonly aheadEvidence: AheadEvidence | null;
+}
+
+/** El AGV más cercano por delante al empezar una parada sin explicación, hasta media vuelta. */
+export interface AheadEvidence {
+  readonly agvId: string;
+  /** Tags por delante al empezar. */
+  readonly distanceAtStart: number;
+  /** Tags que avanzó mientras el otro no se movía; `null` si salió del anillo. */
+  readonly tagsAdvanced: number | null;
+}
+
+/**
+ * Una transición en la que alguien delante no se iba: una parada en cola, o una transición lenta
+ * —por encima del p95 de su tramo y al menos `minStopExcessMs` sobre su p50, sin llegar a la valla—
+ * con el de delante a `reachTags` o menos, y más lento de lo normal él también.
+ */
+export interface Retention {
+  readonly agvId: string;
+  readonly fromTagId: string;
+  readonly toTagId: string;
+  readonly fromUtcMs: number;
+  readonly toUtcMs: number;
+  /** Lo que tardó de más sobre el p50 del tramo. */
+  readonly waitMs: number;
+  readonly holderAgvId: string;
+  /** Dónde estaba quien retenía: el sitio donde se forma la cola. */
+  readonly holderTagId: string;
+  readonly regime: Regime;
+  /** Si además se salió de la valla (parada en cola). */
+  readonly stop: boolean;
 }
 
 export interface Blockage {
@@ -127,16 +175,8 @@ export interface ProductionStopFlow {
 export interface FlowReport {
   readonly stops: readonly VehicleStop[];
   readonly blockages: readonly Blockage[];
+  readonly retentions: readonly Retention[];
   readonly productionFlow: readonly ProductionStopFlow[];
-}
-
-function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  values.sort((a, b) => a - b);
-  const middle = Math.floor(values.length / 2);
-  return values.length % 2 === 1
-    ? (values[middle] as number)
-    : ((values[middle - 1] as number) + (values[middle] as number)) / 2;
 }
 
 const QUARTER_MS = 15 * 60_000;
@@ -273,6 +313,7 @@ export function outsideProductionStops<T extends Pick<Transition, "fromTime" | "
   );
 }
 
+
 export interface FlowInput {
   readonly transitions: readonly Transition[];
   /**
@@ -280,70 +321,31 @@ export interface FlowInput {
    * tramo: una que salta el hueco entre dos exportaciones no es una parada de nadie (R-DAT-007).
    */
   readonly coverage: readonly Interval[];
-  /** Lo habitual del anillo del cohorte, para los pares con pocas muestras. `null` sin anillo. */
-  readonly usual: UsualTimes | null;
+  /** La horquilla de cada tramo del cohorte, por régimen (R-FLO-007). `null` sin anillo. */
+  readonly bands: SegmentBands | null;
+  /** El régimen de un instante: una transición de noche se mide contra la horquilla de noche. */
+  readonly regimeOf: (utcMs: number) => Regime;
   readonly production: ProductionStopReport;
   /** Tags de las calles de carga: sus transiciones son carga, no paradas (R-CO-006). */
   readonly laneTags: ReadonlySet<string>;
   /** Función declarada de cada tag crítico. */
   readonly functionOf: ReadonlyMap<string, string>;
-  readonly zone: string;
-  readonly shiftStartHours: readonly number[];
 }
 
 /**
  * Las paradas de cada AGV de un cohorte, con su justificación, las colas encadenadas hasta su cabeza,
- * los bloqueos, y cómo salió cada AGV de cada parada de la producción.
+ * los bloqueos, las retenciones, y cómo salió cada AGV de cada parada de la producción.
+ *
+ * Una parada es una transición que **se sale de la horquilla de su tramo en su régimen** (R-FLO-007).
+ * Está en cola si había un AGV delante que no se iba: al empezar y a mitad de la parada, a
+ * `reachTags` tags o menos (R-AGV-018). Quien retiene no tiene por qué estar parado él: en un cuello
+ * de botella tarda lo que suele tardar ese sitio, y aun así el de detrás espera.
  */
 export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): FlowReport {
-  const { transitions, usual, production } = input;
-  const hourOf = localHourReader(input.zone);
-  const shiftOf = (utcMs: number): number => shiftIndexOfHour(hourOf(utcMs), input.shiftStartHours);
-  const spans = mergeIntervals([...input.coverage]);
-  const insideOneSpan = (from: number, to: number): boolean =>
-    spans.length === 0 || spans.some((span) => span.from <= from && to <= span.to);
-  const measurable = transitions.filter(
-    (transition) =>
-      !transition.sameInstant &&
-      !input.laneTags.has(transition.from) &&
-      !input.laneTags.has(transition.to) &&
-      insideOneSpan(transition.fromTime, transition.toTime),
-  );
-
-  // Lo habitual de cada par de tags, por turno y en toda la ventana, sin las paradas de la producción.
-  const pairKey = (from: string, to: string): string => `${from}\u0000${to}`;
-  const byPair = new Map<string, { overall: number[]; byShift: Map<number, number[]> }>();
-  for (const transition of outsideProductionStops(measurable, production.stops)) {
-    const key = pairKey(transition.from, transition.to);
-    let entry = byPair.get(key);
-    if (entry === undefined) {
-      entry = { overall: [], byShift: new Map() };
-      byPair.set(key, entry);
-    }
-    const duration = transition.toTime - transition.fromTime;
-    entry.overall.push(duration);
-    const shift = shiftOf(transition.fromTime);
-    entry.byShift.set(shift, [...(entry.byShift.get(shift) ?? []), duration]);
-  }
-  const pairUsual = new Map<string, { overall: number | null; byShift: Map<number, number | null> }>();
-  for (const [key, entry] of byPair) {
-    pairUsual.set(key, {
-      overall: entry.overall.length >= thresholds.minPairSamples ? median([...entry.overall]) : null,
-      byShift: new Map(
-        [...entry.byShift].map(([shift, values]) => [
-          shift,
-          values.length >= thresholds.minPairSamples ? median([...values]) : null,
-        ]),
-      ),
-    });
-  }
-  const usualOf = (transition: Transition): number | null => {
-    const own = pairUsual.get(pairKey(transition.from, transition.to));
-    const shifted = own?.byShift.get(shiftOf(transition.fromTime)) ?? null;
-    if (shifted !== null) return shifted;
-    if (own?.overall !== null && own?.overall !== undefined) return own.overall;
-    return usual === null ? null : ringUsualMs(usual, transition.from, transition.to, transition.fromTime);
-  };
+  const { transitions, bands, production, regimeOf } = input;
+  const measurable = measurableTransitions(transitions, input.coverage, input.laneTags);
+  const bandOfTransition = (transition: Transition): BandFor | null =>
+    bands === null ? null : bandFor(bands, transition.from, transition.to, transitionRegime(transition, regimeOf));
 
   // Dónde estaba cada AGV en cada momento: su último tag leído.
   const track = new Map<string, { times: number[]; tags: string[] }>();
@@ -362,9 +364,9 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
     own.times.push(transition.toTime);
     own.tags.push(transition.to);
   }
-  const lastAt = (agvId: string, utcMs: number): { time: number; tag: string } | null => {
+  const indexAt = (agvId: string, utcMs: number): number => {
     const own = track.get(agvId);
-    if (own === undefined) return null;
+    if (own === undefined) return -1;
     let lo = 0;
     let hi = own.times.length;
     while (lo < hi) {
@@ -372,79 +374,169 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
       if ((own.times[mid] as number) <= utcMs) lo = mid + 1;
       else hi = mid;
     }
-    if (lo === 0) return null;
-    return { time: own.times[lo - 1] as number, tag: own.tags[lo - 1] as string };
+    return lo - 1;
+  };
+  const lastAt = (agvId: string, utcMs: number): { time: number; tag: string } | null => {
+    const index = indexAt(agvId, utcMs);
+    const own = track.get(agvId);
+    if (own === undefined || index < 0) return null;
+    return { time: own.times[index] as number, tag: own.tags[index] as string };
+  };
+  /**
+   * ¿Iba más lento de lo normal en `utcMs`? Su transición de ese momento supera el p80 de su tramo.
+   * Sin horquilla con que compararla, no se afirma.
+   */
+  const lingering = (agvId: string, utcMs: number): boolean => {
+    const own = track.get(agvId);
+    const index = indexAt(agvId, utcMs);
+    if (own === undefined || index < 0 || index + 1 >= own.times.length || bands === null) return false;
+    const fromTime = own.times[index] as number;
+    const toTime = own.times[index + 1] as number;
+    const band = bandFor(bands, own.tags[index] as string, own.tags[index + 1] as string, regimeOf((fromTime + toTime) / 2));
+    return band !== null && toTime - fromTime > band.p80Ms;
   };
 
-  // Las paradas: transiciones que duran más de lo habitual.
+  const ring = bands?.ring ?? [];
+  const positionOf = bands?.positionOf ?? new Map<string, number>();
+  const vehicles = [...track.keys()];
+
+  /**
+   * Los AGV por delante de `tagId` en `at`, a `maxDistance` tags o menos, del más cercano al más
+   * lejano. En el mismo tag solo cuenta quien lo leyó antes de `readBefore`: si lo leyó después, viene
+   * detrás.
+   */
+  const aheadOf = (
+    agvId: string,
+    tagId: string,
+    at: number,
+    maxDistance: number,
+    readBefore: number,
+  ): { agvId: string; tagId: string; distance: number }[] => {
+    const position = positionOf.get(tagId);
+    if (position === undefined || ring.length < 2) return [];
+    const found: { agvId: string; tagId: string; distance: number; time: number }[] = [];
+    for (const other of vehicles) {
+      if (other === agvId) continue;
+      const last = lastAt(other, at);
+      if (last === null) continue;
+      const theirs = positionOf.get(last.tag);
+      if (theirs === undefined) continue;
+      const distance = (theirs - position + ring.length) % ring.length;
+      if (distance > maxDistance) continue;
+      if (distance === 0 && last.time >= readBefore) continue;
+      found.push({ agvId: other, tagId: last.tag, distance, time: last.time });
+    }
+    return found
+      .sort((a, b) => a.distance - b.distance || b.time - a.time)
+      .map(({ agvId: other, tagId: tag, distance }) => ({ agvId: other, tagId: tag, distance }));
+  };
+  /**
+   * Quién retenía a un AGV en `transition`: uno que ya iba delante al empezar, que a mitad seguía a
+   * `reachTags` o menos, y que en ese momento iba más lento de lo normal él también. Tiene que ser
+   * **el mismo**: uno que llega por detrás y lo adelanta no lo retiene, y uno que se aleja tampoco —
+   * es justo lo que el propietario llama «el resto avanza y se separa»—. Y tiene que estar retenido o
+   * parado de verdad: donde un tag se lee poco, o el tramo es largo, el último tag leído de un AGV
+   * que circula normal se queda atrás de donde está, y sin esta condición parecería una cola.
+   */
+  const holderOf = (transition: Transition): { agvId: string; tagId: string } | null => {
+    const start = aheadOf(transition.agvId, transition.from, transition.fromTime, thresholds.reachTags, transition.fromTime);
+    if (start.length === 0) return null;
+    const middle = (transition.fromTime + transition.toTime) / 2;
+    const position = positionOf.get(transition.from) as number;
+    for (const candidate of start) {
+      const last = lastAt(candidate.agvId, middle);
+      const theirs = last === null ? undefined : positionOf.get(last.tag);
+      if (last === null || theirs === undefined) continue;
+      const distance = (theirs - position + ring.length) % ring.length;
+      if (distance <= thresholds.reachTags && lingering(candidate.agvId, middle)) {
+        return { agvId: candidate.agvId, tagId: last.tag };
+      }
+    }
+    return null;
+  };
+  /** El más cercano por delante, hasta media vuelta, y cuánto avanzó mientras el otro no se movía. */
+  const aheadEvidenceOf = (transition: Transition): AheadEvidence | null => {
+    const ahead = aheadOf(
+      transition.agvId,
+      transition.from,
+      transition.fromTime,
+      Math.floor(ring.length / 2),
+      transition.fromTime,
+    )[0];
+    if (ahead === undefined) return null;
+    const end = lastAt(ahead.agvId, transition.toTime);
+    const startPosition = positionOf.get(ahead.tagId);
+    const endPosition = end === null ? undefined : positionOf.get(end.tag);
+    const tagsAdvanced =
+      startPosition === undefined || endPosition === undefined
+        ? null
+        : (endPosition - startPosition + ring.length) % ring.length;
+    return { agvId: ahead.agvId, distanceAtStart: ahead.distance, tagsAdvanced };
+  };
+
+  // Las paradas se salen de la valla; entre el p95 y la valla, una transición lenta puede ser una
+  // retención si alguien delante no se iba y la espera llega al menos a `minStopExcessMs` —el paso de
+  // una cola que fluye—. Unos segundos por encima del p95 los tiene cualquier tramo por puro vaivén, y
+  // coinciden por azar con otro AGV lento cerca: no basta para decir que alguien lo retuvo.
   interface Raw {
     readonly transition: Transition;
     readonly usualMs: number;
     readonly excessMs: number;
+    readonly regime: Regime;
   }
   const raw: Raw[] = [];
+  const slow: { transition: Transition; usualMs: number; regime: Regime }[] = [];
   for (const transition of measurable) {
-    const usualMs = usualOf(transition);
-    if (usualMs === null) continue;
-    const excessMs = transition.toTime - transition.fromTime - usualMs;
-    if (excessMs >= thresholds.minStopExcessMs) raw.push({ transition, usualMs, excessMs });
+    const band = bandOfTransition(transition);
+    if (band === null) continue;
+    const duration = transition.toTime - transition.fromTime;
+    const regime = transitionRegime(transition, regimeOf);
+    if (duration > band.fenceMs) raw.push({ transition, usualMs: band.p50Ms, excessMs: duration - band.p50Ms, regime });
+    else if (duration > band.p95Ms && duration - band.p50Ms >= thresholds.minStopExcessMs) {
+      slow.push({ transition, usualMs: band.p50Ms, regime });
+    }
+  }
+  // Pasos habituales: pares que se dan a menudo fuera de las paradas de la producción.
+  const pairCount = new Map<string, number>();
+  for (const transition of outsideProductionStops(measurable, production.stops)) {
+    const key = pairKey(transition.from, transition.to);
+    pairCount.set(key, (pairCount.get(key) ?? 0) + 1);
   }
   const stopsOf = new Map<string, Raw[]>();
   for (const stop of raw) stopsOf.set(stop.transition.agvId, [...(stopsOf.get(stop.transition.agvId) ?? []), stop]);
   const stoppedAt = (agvId: string, utcMs: number): Raw | undefined =>
     stopsOf.get(agvId)?.find((stop) => stop.transition.fromTime <= utcMs && utcMs <= stop.transition.toTime);
 
-  const ring = usual?.ring ?? [];
-  const positionOf = usual?.positionOf ?? new Map<string, number>();
-  const vehicles = [...track.keys()];
-  const productionOf = (stop: Raw): number =>
+  const overlapsProduction = (from: number, to: number, minOverlap: number): number =>
     production.stops.findIndex(
-      (entry) =>
-        overlapMs({ from: stop.transition.fromTime, to: stop.transition.toTime }, { from: entry.fromUtcMs, to: entry.toUtcMs }) >=
-        0.5 * stop.excessMs,
+      (entry) => overlapMs({ from, to }, { from: entry.fromUtcMs, to: entry.toUtcMs }) >= minOverlap,
     );
+  const productionOf = (stop: Raw): number =>
+    overlapsProduction(stop.transition.fromTime, stop.transition.toTime, 0.5 * stop.excessMs);
 
-  /** El AGV más cercano por delante al empezar la parada, dentro de `reachTags`. */
-  const aheadOf = (stop: Raw): string | null => {
-    const position = positionOf.get(stop.transition.from);
-    if (position === undefined || ring.length < 2) return null;
-    const at = stop.transition.fromTime;
-    let best: { agvId: string; distance: number; time: number } | null = null;
-    for (const other of vehicles) {
-      if (other === stop.transition.agvId) continue;
-      const last = lastAt(other, at);
-      if (last === null) continue;
-      const theirs = positionOf.get(last.tag);
-      if (theirs === undefined) continue;
-      const distance = (theirs - position + ring.length) % ring.length;
-      if (distance > thresholds.reachTags) continue;
-      if (distance === 0 && last.time >= at) continue; // En el mismo tag, solo si pasó antes.
-      if (best === null || distance < best.distance || (distance === best.distance && last.time > best.time)) {
-        best = { agvId: other, distance, time: last.time };
-      }
-    }
-    return best?.agvId ?? null;
-  };
-
-  const justified = new Map<Raw, { justification: StopJustification; ahead: Raw | null; aheadAgvId: string | null }>();
+  interface Verdict {
+    readonly justification: StopJustification;
+    readonly ahead: Raw | null;
+    readonly holder: { agvId: string; tagId: string } | null;
+  }
+  const justified = new Map<Raw, Verdict>();
   for (const stop of raw) {
     if (productionOf(stop) >= 0) {
-      justified.set(stop, { justification: "produccion", ahead: null, aheadAgvId: null });
+      justified.set(stop, { justification: "produccion", ahead: null, holder: null });
       continue;
     }
-    const ahead = aheadOf(stop);
+    const holder = holderOf(stop.transition);
     const middle = (stop.transition.fromTime + stop.transition.toTime) / 2;
-    const aheadStop = ahead === null ? undefined : stoppedAt(ahead, middle);
     justified.set(
       stop,
-      aheadStop === undefined
-        ? { justification: "sin-explicacion", ahead: null, aheadAgvId: null }
-        : { justification: "cola", ahead: aheadStop, aheadAgvId: ahead },
+      holder === null
+        ? { justification: "sin-explicacion", ahead: null, holder: null }
+        : { justification: "cola", ahead: stoppedAt(holder.agvId, middle) ?? null, holder },
     );
   }
 
   // Cada cola hasta su cabeza, y cuántas paradas tiene detrás cada cabeza.
-  const headOf = (stop: Raw): Raw => {
+  const lastOfChain = (stop: Raw): Raw => {
     let current = stop;
     const seen = new Set<Raw>([stop]);
     for (;;) {
@@ -455,16 +547,18 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
     }
   };
   const behindOf = new Map<Raw, string[]>();
-  const heads = new Map<Raw, Raw>();
+  const headAgv = new Map<Raw, string>();
   for (const stop of raw) {
     if (justified.get(stop)?.justification !== "cola") continue;
-    const head = headOf(stop);
-    heads.set(stop, head);
-    behindOf.set(head, [...(behindOf.get(head) ?? []), stop.transition.agvId]);
+    const last = lastOfChain(stop);
+    const verdict = justified.get(last);
+    // La cabeza es el último parado de la cadena, o quien lo retenía si ese no estaba parado.
+    headAgv.set(stop, verdict?.justification === "cola" && verdict.ahead === null ? (verdict.holder?.agvId ?? last.transition.agvId) : last.transition.agvId);
+    if (last !== stop) behindOf.set(last, [...(behindOf.get(last) ?? []), stop.transition.agvId]);
   }
 
   const stops: VehicleStop[] = raw.map((stop) => {
-    const verdict = justified.get(stop) as { justification: StopJustification; aheadAgvId: string | null };
+    const verdict = justified.get(stop) as Verdict;
     return {
       agvId: stop.transition.agvId,
       fromTagId: stop.transition.from,
@@ -473,10 +567,12 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
       toUtcMs: stop.transition.toTime,
       usualMs: stop.usualMs,
       excessMs: stop.excessMs,
+      regime: stop.regime,
       justification: verdict.justification,
-      aheadAgvId: verdict.aheadAgvId,
-      headAgvId: heads.get(stop)?.transition.agvId ?? null,
+      aheadAgvId: verdict.holder?.agvId ?? null,
+      headAgvId: headAgv.get(stop) ?? null,
       behind: behindOf.get(stop)?.length ?? 0,
+      aheadEvidence: verdict.justification === "sin-explicacion" ? aheadEvidenceOf(stop.transition) : null,
     };
   });
 
@@ -495,6 +591,44 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
       functionAtTag: input.functionOf.get(stop.transition.from) ?? null,
     }))
     .sort((a, b) => b.behind.length - a.behind.length || b.excessMs - a.excessMs);
+
+  // Retenciones: las paradas en cola, y las transiciones lentas —por encima del p95, sin llegar a la
+  // valla— con alguien delante que no se iba. Fuera de las paradas de la producción.
+  const retentions: Retention[] = [];
+  for (const stop of raw) {
+    const verdict = justified.get(stop) as Verdict;
+    if (verdict.justification !== "cola" || verdict.holder === null) continue;
+    retentions.push({
+      agvId: stop.transition.agvId,
+      fromTagId: stop.transition.from,
+      toTagId: stop.transition.to,
+      fromUtcMs: stop.transition.fromTime,
+      toUtcMs: stop.transition.toTime,
+      waitMs: stop.excessMs,
+      holderAgvId: verdict.holder.agvId,
+      holderTagId: verdict.holder.tagId,
+      regime: stop.regime,
+      stop: true,
+    });
+  }
+  for (const entry of slow) {
+    const { transition } = entry;
+    if (overlapsProduction(transition.fromTime, transition.toTime, 1) >= 0) continue;
+    const holder = holderOf(transition);
+    if (holder === null) continue;
+    retentions.push({
+      agvId: transition.agvId,
+      fromTagId: transition.from,
+      toTagId: transition.to,
+      fromUtcMs: transition.fromTime,
+      toUtcMs: transition.toTime,
+      waitMs: transition.toTime - transition.fromTime - entry.usualMs,
+      holderAgvId: holder.agvId,
+      holderTagId: holder.tagId,
+      regime: entry.regime,
+      stop: false,
+    });
+  }
 
   // Cómo salió cada AGV de cada parada de la producción: por su sitio y en el mismo orden.
   const productionFlow: ProductionStopFlow[] = production.stops.map((entry, stopIndex) => {
@@ -515,9 +649,9 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
           : transition.from === transition.to
             ? 0
             : (to - from - 1 + ring.length) % ring.length;
-      // Por su sitio: el mismo tag, uno más allá en el anillo, o un paso que se da a menudo (una rama o
-      // una calle tienen su propio siguiente, fuera del anillo).
-      const usualStep = (pairUsual.get(pairKey(transition.from, transition.to))?.overall ?? null) !== null;
+      // Por su sitio: el mismo tag, uno más allá en el anillo, o un paso que se da a menudo (una rama
+      // o una calle tienen su propio siguiente, fuera del anillo; un tag que se lee poco se salta).
+      const usualStep = (pairCount.get(pairKey(transition.from, transition.to)) ?? 0) >= thresholds.minPairSamples;
       const inPlace = transition.from === transition.to || (skipped !== null && skipped <= 1) || usualStep;
       if (!inPlace) {
         notInPlace.push({ agvId: transition.agvId, fromTagId: transition.from, toTagId: transition.to, skipped });
@@ -553,5 +687,5 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
     };
   });
 
-  return { stops, blockages, productionFlow };
+  return { stops, blockages, retentions, productionFlow };
 }

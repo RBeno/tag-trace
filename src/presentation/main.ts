@@ -39,7 +39,9 @@ import {
   laneOccupancyChart,
   readMatrixHeatmap,
   ringChart,
+  segmentBandChart,
   trendMultiplesChart,
+  type BandRow,
   type DwellRow,
   type ForkData,
   type Formats,
@@ -48,6 +50,7 @@ import {
   type TrendPanel,
 } from "./diagnostic-charts.js";
 import { PROVISIONAL_CONFIG } from "../domain/config.js";
+import { bandsCsv } from "../domain/segment-bands.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
@@ -1060,6 +1063,7 @@ function renderViews(views: CircuitViews): void {
   viewsPanel.append(element("h3", undefined, "Composición del circuito"));
   viewsPanel.append(element("p", "muted", cohortLine));
   renderShapes(views);
+  renderCircuitState(views);
   renderCriticalPoints(views);
   renderCharging(views);
   renderFifo(views);
@@ -1211,7 +1215,7 @@ function renderFlowStops(fleet: CircuitViews["fleet"]): void {
         `${blockage.agvId}: el primero de la cola, sin avanzar ${duration(blockage.toUtcMs - blockage.fromUtcMs)}`,
         `En ${where}, de ${formatTick(blockage.fromUtcMs)} a ${formatTick(blockage.toUtcMs)}; lo habitual hasta ` +
           `${blockage.nextTagId}: ${duration(blockage.usualMs)}`,
-        `Nadie parado delante y la producción en marcha: ${blockage.basisReads} lecturas ` +
+        `Nadie delante que lo retuviera y la producción en marcha: ${blockage.basisReads} lecturas ` +
           `${production.basis === "criticos" ? "en los tags críticos" : "de la flota"} mientras tanto. ` +
           (blockage.behind.length === 0
             ? "Nadie quedó detrás."
@@ -1238,6 +1242,228 @@ function renderFlowStops(fleet: CircuitViews["fleet"]): void {
         ),
       ),
     );
+  }
+}
+
+/**
+ * El estado normal del circuito (R-TIM-009): lo que se mide con la horquilla de cada tramo en
+ * producción —cuellos de botella, puntos conflictivos, zonas oscuras y paradas sin explicación—, la
+ * noche aparte, y el cambio de la horquilla entre el primer y el último periodo cargados. Nada de
+ * esto nombra causas (R-EVI-006).
+ */
+function renderCircuitState(views: CircuitViews): void {
+  const { circuitState } = views;
+  if (circuitState.cohorts.length === 0) return;
+  const pad = (hour: number): string => String(hour).padStart(2, "0");
+  const nightLabel = `de ${pad(circuitState.night.fromHour)}:00 a ${pad(circuitState.night.toHour)}:00`;
+  const hours = (ms: number): string => `${(ms / 3_600_000).toFixed(1).replace(".", ",")} h`;
+  const exposure = circuitState.exposure;
+  viewsPanel.append(element("h3", undefined, "Estado normal del circuito"));
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      `Tiempo cargado: ${hours(exposure.produccionMs)} de producción, ${hours(exposure.nocheMs)} de noche ` +
+        `(${nightLabel}) y ${hours(exposure.paradaMs)} con la producción parada. Las horquillas y los ` +
+        "hallazgos de esta sección usan solo producción: la noche se mide aparte y las paradas no miden nada.",
+    ),
+  );
+  const few = (ids: readonly string[]): string => (ids.length > 4 ? `${ids.slice(0, 4).join(", ")}…` : ids.join(", "));
+  const chance = (expected: number): string =>
+    expected < 0.1 ? "menos de 0,1" : expected.toFixed(1).replace(".", ",");
+
+  for (const cohort of circuitState.cohorts) {
+    const shape = views.shapes.find((entry) => entry.cohortId === cohort.cohortId);
+    const measured = cohort.state;
+    if (circuitState.cohorts.length > 1) viewsPanel.append(element("p", "muted", `Circuito ${cohort.cohortId}:`));
+
+    for (const bottleneck of measured.bottlenecks.slice(0, PER_KIND)) {
+      viewsPanel.append(
+        finding(
+          `Cuello de botella en ${bottleneck.tagId}`,
+          `${bottleneck.retentions} esperas detrás de un AGV que no avanzaba, en ${bottleneck.episodes} colas ` +
+            `(la más larga, de ${bottleneck.longestQueue}); ${duration(bottleneck.waitMs)} de espera en total`,
+          `El azar daría ${chance(bottleneck.expected)} con el tiempo que los AGV pasan ahí. ` +
+            (bottleneck.blockages === 0
+              ? "La cola fluye: el primero siempre acaba avanzando. "
+              : `${bottleneck.blockages} veces el primero no avanzó en dos minutos o más. `) +
+            "Una cola que fluye es saturación o un pulmón, no una avería.",
+          ["cuello-de-botella", bottleneck.tagId],
+        ),
+      );
+    }
+    for (const point of measured.conflictPoints.slice(0, PER_KIND)) {
+      const where = point.tags.join(" y ");
+      viewsPanel.append(
+        finding(
+          point.ofOneVehicle === null ? `Punto conflictivo en ${where}` : `${point.ofOneVehicle} para una y otra vez en ${where}`,
+          `${point.stops} paradas sin explicación` +
+            (point.ofOneVehicle === null ? ` de ${point.vehicles.length} AGV (${few(point.vehicles)})` : ", todas del mismo AGV"),
+          `El azar daría ${chance(point.expected)} con las pasadas de ese sitio. En cada una, ` +
+            "nadie delante lo retenía y la producción seguía. " +
+            (point.ofOneVehicle === null
+              ? "Dice dónde, no por qué."
+              : "Siendo de un solo AGV, es de ese AGV y no del sitio."),
+          ["punto-conflictivo", point.tags.join("+")],
+        ),
+      );
+    }
+    for (const zone of measured.darkZones.slice(0, PER_KIND)) {
+      const first = zone.tags[0] ?? "—";
+      const last = zone.tags[zone.tags.length - 1] ?? "—";
+      viewsPanel.append(
+        finding(
+          `Zona oscura de ${first} a ${last}`,
+          `${duration(zone.gapMs)} entre dos lecturas al pasar por ahí; lo típico del circuito, ${duration(zone.typicalMs)}`,
+          (zone.cause === "salta-tag"
+            ? `El ${Math.round(zone.skipShare * 100)} % de las pasadas se salta algún tag de la zona: falta información ` +
+              "porque esos tags se leen poco. "
+            : "Los tags se leen, pero el tramo tarda: ahí un AGV pasa mucho tiempo sin dar señal. ") +
+            "Una parada en esta zona se ve tarde.",
+          ["zona-oscura", first],
+        ),
+      );
+    }
+    if (measured.explainedSlow.length > 0) {
+      viewsPanel.append(
+        element(
+          "p",
+          "muted",
+          "No cuentan como zona oscura, porque su espera la explica una parada precisa o un semáforo: " +
+            measured.explainedSlow.map((entry) => `${entry.tagId} (${criticalFunctionLabel(entry.function)})`).join(", ") +
+            ".",
+        ),
+      );
+    }
+
+    // Las paradas sin explicación, una a una: el ejemplo del propietario. Las de un punto conflictivo
+    // ya tienen su tarjeta; aquí van las sueltas.
+    const inPoints = new Set(measured.conflictPoints.flatMap((point) => point.tags));
+    const unexplained = measured.unexplained.produccion.filter((stop) => !inPoints.has(stop.fromTagId));
+    for (const stop of unexplained.slice(0, PER_KIND)) {
+      const ahead = stop.aheadEvidence;
+      viewsPanel.append(
+        finding(
+          `${stop.agvId}: ${duration(stop.excessMs)} de más en ${stop.fromTagId}`,
+          `De ${formatTick(stop.fromUtcMs)} a ${formatTick(stop.toUtcMs)}, hasta ${stop.toTagId}; lo normal en ese tramo, ` +
+            `${duration(stop.usualMs)}`,
+          (ahead === null
+            ? "Nadie delante en medio circuito. "
+            : `Nadie delante que lo retuviera: ${ahead.agvId} iba ${ahead.distanceAtStart} tags por delante` +
+              (ahead.tagsAdvanced === null ? " y siguió. " : ` y avanzó ${ahead.tagsAdvanced} mientras tanto. `)) +
+            "La producción seguía. Qué lo paró no lo dice el dato.",
+          ["parada-sin-explicacion", `${stop.agvId} ${stop.fromTagId} ${stop.fromUtcMs}`],
+        ),
+      );
+    }
+    const allUnexplained = [...measured.unexplained.produccion, ...measured.unexplained.noche];
+    if (allUnexplained.length > PER_KIND) {
+      viewsPanel.append(
+        lazyDetails(`Ver las ${allUnexplained.length} paradas sin explicación`, () =>
+          plainTable(
+            ["AGV", "Tramo", "Desde", "Hasta", "Lo normal", "De más", "Régimen"],
+            allUnexplained.map((stop) => [
+              stop.agvId,
+              `${stop.fromTagId} → ${stop.toTagId}`,
+              formatTick(stop.fromUtcMs),
+              formatTick(stop.toUtcMs),
+              duration(stop.usualMs),
+              duration(stop.excessMs),
+              stop.regime === "noche" ? "noche" : "producción",
+            ]),
+          ),
+        ),
+      );
+    }
+
+    // La noche, medida aparte.
+    const nightDiffers = measured.night.filter(
+      (entry) => Math.abs(Math.log(entry.nocheP50Ms / Math.max(1, entry.produccionP50Ms))) >= Math.log(1.5),
+    );
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        `De noche (${nightLabel}): ` +
+          (nightDiffers.length === 0
+            ? "ningún tramo cambia la mitad o más respecto a producción. "
+            : `${nightDiffers.length} tramos cambian la mitad o más respecto a producción (` +
+              nightDiffers
+                .slice(0, 4)
+                .map((entry) => `${entry.from} → ${entry.to}: de ${duration(entry.produccionP50Ms)} a ${duration(entry.nocheP50Ms)}`)
+                .join("; ") +
+              `${nightDiffers.length > 4 ? "…" : ""}). `) +
+          `${measured.unexplained.noche.length} paradas sin explicación, medidas contra la horquilla de noche.`,
+      ),
+    );
+
+    // La horquilla de cada tramo del anillo, dibujada, y en CSV para guardarla.
+    if (shape !== undefined) {
+      const marksOf = new Map<string, string[]>();
+      const mark = (tagId: string, label: string): void => {
+        marksOf.set(tagId, [...(marksOf.get(tagId) ?? []), label]);
+      };
+      for (const entry of measured.bottlenecks) mark(entry.tagId, "cuello de botella");
+      for (const entry of measured.conflictPoints) for (const tagId of entry.tags) mark(tagId, "punto conflictivo");
+      for (const entry of measured.darkZones) for (const tagId of entry.tags.slice(0, -1)) mark(tagId, "zona oscura");
+      const ringRows: BandRow[] = shape.tags.map((tagId, index) => {
+        const next = shape.tags[(index + 1) % shape.tags.length] as string;
+        const pair = cohort.bands.find((entry) => entry.from === tagId && entry.to === next);
+        return {
+          from: tagId,
+          to: next,
+          produccion: pair?.produccion ?? null,
+          noche: pair?.noche ?? null,
+          marks: marksOf.get(tagId) ?? [],
+        };
+      });
+      viewsPanel.append(segmentBandChart(ringRows, nightLabel));
+    }
+    const download = element("button", undefined, "Descargar horquillas (CSV)");
+    download.setAttribute("type", "button");
+    download.addEventListener("click", () => {
+      // Con BOM y `;`: lo abre una hoja de cálculo en español sin preguntar ni romper tildes.
+      const csv = `\ufeff${bandsCsv(cohort.bands)}`;
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `horquillas-${state.circuitId ?? "circuito"}-${cohort.cohortId}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+    viewsPanel.append(
+      download,
+      element(
+        "p",
+        "muted",
+        `Resolución de la fuente: ${cohort.resolutionMs >= 60_000 ? "un minuto" : "un segundo"}; la valla nunca queda a ` +
+          `menos de ${duration(cohort.marginMs)} del 95 %. Guardar una horquilla como referencia y compararla con las ` +
+          "siguientes es la memoria del circuito (F4): hoy se compara el primer periodo cargado con el último.",
+      ),
+    );
+
+    // El cambio de la horquilla entre el primer y el último periodo (R-TIM-010).
+    if (cohort.changes !== null) {
+      const { earlyPeriod, latePeriod, changes } = cohort.changes;
+      const periods = `${formatTick(earlyPeriod.from)}–${formatTick(earlyPeriod.to)} frente a ${formatTick(latePeriod.from)}–${formatTick(latePeriod.to)}`;
+      if (changes.length === 0) {
+        viewsPanel.append(element("p", "muted", `Entre ${periods}, ningún tramo se sale de su horquilla.`));
+      }
+      for (const change of changes.slice(0, PER_KIND)) {
+        viewsPanel.append(
+          finding(
+            `${change.from} → ${change.to}, ${change.kind === "mas-lento" ? "más lento" : "más rápido"}` +
+              (change.regime === "noche" ? " de noche" : ""),
+            `La mitad de las pasadas tardaba ${duration(change.early.p50Ms)} y ahora ${duration(change.late.p50Ms)}`,
+            `Comparado dentro del mismo régimen, ${periods}. ` +
+              (change.kind === "mas-lento"
+                ? "La mitad de las pasadas de ahora tarda más que el 80 % de las de antes."
+                : "El 80 % de las pasadas de ahora tarda menos que la mitad de las de antes."),
+            ["cambio-de-horquilla", `${change.from} ${change.to} ${change.regime}`],
+          ),
+        );
+      }
+    }
   }
 }
 

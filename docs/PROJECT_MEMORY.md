@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.11.0
+version: 0.12.0
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-25
 ---
 
 # Memoria compacta del proyecto
@@ -192,3 +192,13 @@ seguir. Decisiones: cuatro estados por hallazgo (pendiente, confirmado, descarta
 botones solo en las tarjetas de hallazgo, guardado automático en el dispositivo y exportación a CSV
 (R-EVI-007, `UX_SPEC.md` §4.3). **Solo la revisión**, que es F3: la consolidación es F4 y espera a
 `CONTINÚA FASE 4`. Cuando llegue, lo pospuesto no bloquea: pasa al periodo siguiente con su motivo.
+
+## El estado normal del circuito (2026-09-25)
+
+Decisiones del propietario: las paradas, los descansos y la noche (22:00–05:00) no alteran las
+mediciones estándar; la noche se mide aparte. Los umbrales salen de los datos de cada tramo: su
+horquilla (p50, p80, p95) y su valla, no una constante (R-TIM-009, R-FLO-007). Con ella se buscan
+cuellos de botella, zonas oscuras y puntos conflictivos, sin causa. La cola es física: retiene quien
+iba delante y no se iba. **La horquilla se descarga en CSV y se compara el primer periodo cargado con
+el último, que es F3**; guardarla como referencia consolidada y compararla mes a mes es F4 y espera a
+`CONTINÚA FASE 4` (OQ-130).

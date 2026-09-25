@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.16.0
+version: 0.17.0
 status: baseline-candidate
-last_updated: 2026-09-24
+last_updated: 2026-09-25
 ---
 
 # Especificación de experiencia de usuario
@@ -385,6 +385,32 @@ Lo que más se va a ver en planta, destacado dentro de su sección y sin bloque 
 
 Ninguna tarjeta nombra una causa (memoria, lector, colocación): la diferencia medida basta para ir a
 mirarlo, y la causa la pone quien lo mira (R-EVI-006, R-AGV-016).
+
+## 5.6 Estado normal del circuito (Parte 47)
+
+Después de la composición del circuito, con su propio título. Arriba, una línea con cuánto tiempo
+cargado es producción, cuánto noche y cuánto con la producción parada, y la advertencia de que todo
+lo de la sección usa solo producción (R-TIM-009). Después, destacados primero:
+
+- **Cuello de botella en X**: esperas detrás de un AGV que no avanzaba, en cuántas colas, la más
+  larga, y si fluye o hubo bloqueos. Una cola que fluye no es una avería.
+- **Punto conflictivo en X y Y**: paradas sin explicación de cuántos AGV, frente a lo que daría el
+  azar. Si son de un solo AGV, el título lo dice así.
+- **Zona oscura de X a Y**: el hueco entre lecturas frente al típico, y si falta información porque un
+  tag se salta o porque el tramo tarda. Aparte, en una línea, los tramos lentos que explica una parada
+  precisa o un semáforo.
+- **AGV: tanto de más en X**: las paradas sin explicación que no son de un punto conflictivo, con
+  quién iba delante y cuánto avanzó. «Qué lo paró no lo dice el dato.» Todas, en tabla plegada.
+- **La noche**, en una línea: qué tramos cambian la mitad o más y cuántas paradas sin explicación hubo
+  medidas contra la horquilla de noche.
+- **Horquilla de tiempos de cada tramo**: una barra por tramo del anillo, en su orden (no es
+  distancia), de la mitad de las pasadas al 95 %, con una raya en la valla, una barra gris más fina
+  para la noche y un punto de acento en los tramos con hallazgo; eje logarítmico. Lectura al tocar
+  con p50, p80, p95, valla y noche; tabla plegada con los mismos datos.
+- **Descargar horquillas (CSV)**: `desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s`, con BOM.
+  Es la forma en que se guarda hoy; consolidarla como referencia es F4.
+- **Cambios de la horquilla** entre el primer y el último periodo cargados, cuando hay dos: más lento
+  o más rápido, con la mitad de antes y la de ahora, siempre en el mismo régimen (R-TIM-010).
 
 ## 6. Consolidación
 

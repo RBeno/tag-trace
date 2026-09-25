@@ -203,5 +203,34 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     const desigual = of("lectura-desigual-en-pocos-tags")?.vehicles[0] ?? "";
     await expect(page.locator(".finding", { hasText: `AGV ${desigual} · lee poco en 2 tags` })).toContainText("%");
     await expect(page.locator(".finding", { hasText: /memoria|lector|colocación/i })).toHaveCount(0);
+
+    // El estado normal del circuito (R-TIM-009): la horquilla de cada tramo dibujada, con su tabla y
+    // sin un rótulo por marca, y los hallazgos medidos con ella, sin causa.
+    await expect(page.getByRole("heading", { name: "Estado normal del circuito" })).toBeVisible();
+    const bandsFigure = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Horquilla de tiempos de cada tramo" }) });
+    await expect(bandsFigure).toBeVisible();
+    expect(await bandsFigure.locator("svg title").count()).toBe(0);
+    await expect(bandsFigure.getByText(/Ver la horquilla de los \d+ tramos/)).toBeVisible();
+    const cuello = of("cuello-de-botella")?.tags[0] ?? "";
+    await expect(page.locator(".finding", { hasText: `Cuello de botella en ${cuello}` })).toContainText("La cola fluye");
+    const [conflictoA, conflictoB] = of("punto-conflictivo")?.tags ?? [];
+    await expect(page.locator(".finding", { hasText: `Punto conflictivo en ${conflictoA} y ${conflictoB}` })).toContainText("de 8 AGV");
+    await expect(page.locator(".finding", { hasText: "Zona oscura de" }).first()).toContainText("se salta algún tag");
+    const aislada = of("parada-sin-explicacion-aislada");
+    await expect(
+      page.locator(".finding", { hasText: `${aislada?.vehicles[0] ?? ""}:` }).filter({ hasText: `de más en ${aislada?.tags[0] ?? ""}` }),
+    ).toContainText("Qué lo paró no lo dice el dato");
+    await expect(page.getByText(/De noche \(de 22:00 a 05:00\): \d+ tramos cambian/)).toBeVisible();
+
+    // La horquilla se descarga en CSV, una fila por tramo y régimen.
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Descargar horquillas (CSV)" }).first().click(),
+    ]);
+    const path = await download.path();
+    const { readFileSync } = await import("node:fs");
+    const csv = readFileSync(path, "utf8").replace(/^\ufeff/, "");
+    expect(csv.split("\r\n")[0]).toBe("desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s");
+    expect(csv).toContain(";noche;");
   });
 });

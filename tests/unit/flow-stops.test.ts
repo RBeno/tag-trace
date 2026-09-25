@@ -21,9 +21,10 @@ import {
   productionStops,
   type FlowStopThresholds,
 } from "../../src/domain/flow-stops.js";
+import type { Interval } from "../../src/domain/coverage.js";
 import type { Transition } from "../../src/domain/graph.js";
 import type { Reading } from "../../src/domain/reading.js";
-import { usualSegmentTimes } from "../../src/domain/silence-kind.js";
+import { buildSegmentBands, measurableTransitions, type Regime } from "../../src/domain/segment-bands.js";
 
 const THRESHOLDS: FlowStopThresholds = {
   headStallMs: 2 * 60_000,
@@ -34,6 +35,8 @@ const THRESHOLDS: FlowStopThresholds = {
   sameTimeToleranceMs: 15 * 60_000,
   minPairSamples: 4,
 };
+/** Todo en producción: la noche se prueba aparte. */
+const DAY = (): Regime => "produccion";
 const SHIFTS = [6, 14, 22];
 const ZONE = "UTC";
 const RING = Array.from({ length: 40 }, (_, index) => `T${index}`);
@@ -75,13 +78,30 @@ function drive(plans: readonly Plan[], steps = 180): { readings: Reading[]; tran
   return { readings, transitions };
 }
 
-function analyse(plans: readonly Plan[], critical: ReadonlySet<string> = CRITICAL, laneTags: ReadonlySet<string> = new Set()) {
-  const { readings, transitions } = drive(plans);
+/** La horquilla de cada tramo, como la construye el Worker: sin paradas de la producción. */
+function bandsOf(
+  transitions: readonly Transition[],
+  stops: ReturnType<typeof productionStops>["stops"],
+  coverage: readonly Interval[],
+  laneTags: ReadonlySet<string> = new Set(),
+  regimeOf: (utcMs: number) => Regime = DAY,
+) {
+  const timed = measurableTransitions(outsideProductionStops(transitions, stops), coverage, laneTags);
+  return buildSegmentBands(timed, RING, regimeOf, { minBandSamples: 20 }, THRESHOLDS.minStopExcessMs);
+}
+
+function analyse(
+  plans: readonly Plan[],
+  critical: ReadonlySet<string> = CRITICAL,
+  laneTags: ReadonlySet<string> = new Set(),
+  steps = 180,
+) {
+  const { readings, transitions } = drive(plans, steps);
   const coverage = [{ from: 0, to: Math.max(...readings.map((reading) => reading.time.utcMs)) }];
   const production = productionStops(readings, critical, coverage, ZONE, SHIFTS, THRESHOLDS);
-  const usual = usualSegmentTimes(outsideProductionStops(transitions, production.stops), RING, ZONE, SHIFTS);
+  const bands = bandsOf(transitions, production.stops, coverage, laneTags);
   const flow = flowStops(
-    { transitions, coverage, usual, production, laneTags, functionOf: new Map([["T10", "semaforo"]]), zone: ZONE, shiftStartHours: SHIFTS },
+    { transitions, coverage, bands, regimeOf: DAY, production, laneTags, functionOf: new Map([["T10", "semaforo"]]) },
     THRESHOLDS,
   );
   return { production, flow };
@@ -145,9 +165,9 @@ describe("paradas contra el flujo", () => {
     );
     const coverage = [{ from: 0, to: Math.max(...readings.map((reading) => reading.time.utcMs)) }];
     const production = productionStops(readings, CRITICAL, coverage, ZONE, SHIFTS, THRESHOLDS);
-    const usual = usualSegmentTimes(outsideProductionStops(jumped, production.stops), RING, ZONE, SHIFTS);
+    const bands = bandsOf(jumped, production.stops, coverage);
     const flow = flowStops(
-      { transitions: jumped, coverage, usual, production, laneTags: new Set(), functionOf: new Map(), zone: ZONE, shiftStartHours: SHIFTS },
+      { transitions: jumped, coverage, bands, regimeOf: DAY, production, laneTags: new Set(), functionOf: new Map() },
       THRESHOLDS,
     );
     expect(flow.productionFlow[0]?.orderKept).toBe(false);
@@ -196,9 +216,9 @@ describe("paradas contra el flujo", () => {
       { from: 2_090_000, to: end },
     ];
     const production = productionStops(readings, CRITICAL, coverage, ZONE, SHIFTS, THRESHOLDS);
-    const usual = usualSegmentTimes(transitions, RING, ZONE, SHIFTS);
+    const bands = bandsOf(transitions, [], coverage);
     const flow = flowStops(
-      { transitions, coverage, usual, production, laneTags: new Set(), functionOf: new Map(), zone: ZONE, shiftStartHours: SHIFTS },
+      { transitions, coverage, bands, regimeOf: DAY, production, laneTags: new Set(), functionOf: new Map() },
       THRESHOLDS,
     );
     expect(flow.blockages).toEqual([]);
@@ -207,5 +227,59 @@ describe("paradas contra el flujo", () => {
   it("una transición de calle de carga no es una parada", () => {
     const { flow } = analyse(queue(5 * 60_000), CRITICAL, new Set(["T10", "T11"]));
     expect(flow.stops.some((stop) => stop.fromTagId === "T10" || stop.toTagId === "T11")).toBe(false);
+  });
+});
+
+describe("paradas contra la horquilla (R-FLO-007)", () => {
+  it("80 s donde se tarda 20, sin nadie que lo retenga y con el de delante avanzando: parada sin explicación", () => {
+    // Cuatro AGV repartidos por el anillo; A se para 60 s de más una vez.
+    const plans: Plan[] = [
+      { agvId: "A", startTag: 0, offsetMs: 0, pauses: new Map([[90, 60_000]]) },
+      { agvId: "B", startTag: 10, offsetMs: 0 },
+      { agvId: "C", startTag: 20, offsetMs: 0 },
+      { agvId: "D", startTag: 30, offsetMs: 0 },
+    ];
+    const { flow } = analyse(plans, CRITICAL, new Set(), 400);
+    const stop = flow.stops.find((entry) => entry.agvId === "A");
+    expect(stop).toMatchObject({ justification: "sin-explicacion", fromTagId: "T10", regime: "produccion" });
+    expect(stop?.aheadEvidence).toMatchObject({ agvId: "B", distanceAtStart: 10 });
+    expect(stop?.aheadEvidence?.tagsAdvanced).toBeGreaterThanOrEqual(3);
+    // No llega a bloqueo: un minuto de más no son dos.
+    expect(flow.blockages).toEqual([]);
+  });
+
+  it("detrás de uno que va lento pero dentro de lo normal, el que espera está en cola, no sin explicación", () => {
+    // H tarda 48 s en T10→T11: por encima del p80 (20 s) y por debajo de la valla (50 s), no es
+    // parada. F1, un tag detrás, espera 60 s de más: esa sí es parada, y la explica H.
+    const plans: Plan[] = [
+      { agvId: "H", startTag: 0, offsetMs: 0, pauses: new Map([[90, 28_000]]) },
+      { agvId: "F1", startTag: RING.length - 1, offsetMs: 5_000, pauses: new Map([[90, 60_000]]) },
+      { agvId: "O", startTag: 20, offsetMs: 0 },
+    ];
+    const { flow } = analyse(plans, CRITICAL, new Set(), 400);
+    expect(flow.stops.some((entry) => entry.agvId === "H")).toBe(false);
+    const follower = flow.stops.find((entry) => entry.agvId === "F1");
+    expect(follower).toMatchObject({ justification: "cola", aheadAgvId: "H", headAgvId: "H" });
+    expect(flow.retentions).toContainEqual(expect.objectContaining({ agvId: "F1", holderAgvId: "H", holderTagId: "T10", stop: true }));
+  });
+
+  it("de noche se mide contra la horquilla de noche: su lentitud no es una parada", () => {
+    // Todos van 40 s más lentos en cada paso a partir del paso 200, que es «de noche».
+    const slow = new Map(Array.from({ length: 200 }, (_, index) => [200 + index, 40_000] as const));
+    const plans: Plan[] = queue(0).map((plan) => ({ ...plan, pauses: slow }));
+    const { readings, transitions } = drive(plans, 400);
+    const coverage = [{ from: 0, to: Math.max(...readings.map((reading) => reading.time.utcMs)) }];
+    const nightFrom = 200 * STEP + 60_000;
+    const regimeOf = (utcMs: number): Regime => (utcMs >= nightFrom ? "noche" : "produccion");
+    const production = productionStops(readings, new Set(), coverage, ZONE, SHIFTS, THRESHOLDS);
+    const bands = bandsOf(transitions, production.stops, coverage, new Set(), regimeOf);
+    const flow = flowStops(
+      { transitions, coverage, bands, regimeOf, production, laneTags: new Set(), functionOf: new Map() },
+      THRESHOLDS,
+    );
+    expect(flow.stops.filter((stop) => stop.regime === "noche")).toEqual([]);
+    const pair = bands.pairs.get("T10\u0000T11");
+    expect(pair?.produccion?.p95Ms).toBe(20_000);
+    expect(pair?.noche?.p50Ms).toBe(60_000);
   });
 });

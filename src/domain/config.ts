@@ -14,6 +14,8 @@
  */
 
 import type { AffinityThresholds } from "./affinity.js";
+import type { CircuitStateThresholds } from "./circuit-state.js";
+import type { BandThresholds, RegimeThresholds } from "./segment-bands.js";
 import type { BlindnessThresholds } from "./inventory.js";
 import type { ChargingThresholds } from "./charging.js";
 import type { CriticalPointThresholds } from "./critical-points.js";
@@ -60,6 +62,9 @@ export interface AnalysisConfig {
   readonly tagChanges: TagChangeThresholds;
   readonly silenceKind: SilenceKindThresholds;
   readonly flowStops: FlowStopThresholds;
+  readonly regimes: RegimeThresholds;
+  readonly bands: BandThresholds;
+  readonly circuitState: CircuitStateThresholds;
 }
 
 /**
@@ -158,7 +163,17 @@ export interface AnalysisConfig {
  *   hasta dónde cuenta como «el de delante»: en cola, los AGV se quedan en el mismo tag o en el de al
  *   lado. Una centésima de parada falsa por turno es el margen de azar: con dos tags críticos, un hueco
  *   de tres minutos sale decenas de veces en 30 h por pura casualidad. Quince minutos de margen para
- *   decir que una parada se repite a la misma hora. Cuatro muestras de un par, como en las calles.
+ *   decir que una parada se repite a la misma hora. Cuatro veces un paso, como las cuatro estancias de
+ *   las calles, para darlo por habitual al salir de una parada de la producción.
+ * - **Estado normal del circuito (R-TIM-009, R-FLO-007/008/009, R-GRA-014).** La noche de 22:00 a
+ *   05:00 es del propietario (2026-09-24), como los turnos, y se cambia aquí hasta que el calendario
+ *   del circuito exista (OQ-108). Veinte muestras para una horquilla, la misma razón que
+ *   `trend.minPassesForTrend`: con menos, un p95 es una anécdota. `flowStops.minStopExcessMs` pasa a
+ *   ser el margen mínimo de la valla sobre el p95: un tramo muy regular no convierte en parada un par
+ *   de segundos de más, y con él el ejemplo del propietario (17 s y hasta 30 s) da una valla de 60 s.
+ *   Zona oscura a 1,5 veces el hueco típico del circuito: perder un tag alarga el hueco un 100 %, y el
+ *   jitter normal de un tramo ronda el 16 %; 1,5 queda entre los dos. Una centésima de punto marcado
+ *   por azar en todo el circuito, la misma idea que `flowStops.maxFalseStops`.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -204,6 +219,9 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     sameTimeToleranceMs: 15 * 60_000,
     minPairSamples: 4,
   },
+  regimes: { nightFromHour: 22, nightToHour: 5 },
+  bands: { minBandSamples: 20 },
+  circuitState: { darkZoneFactor: 1.5, maxFalsePoints: 0.01 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

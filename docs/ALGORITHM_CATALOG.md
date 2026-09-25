@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.19.0
+version: 0.20.0
 status: baseline-candidate
-last_updated: 2026-09-24
+last_updated: 2026-09-25
 ---
 
 # Catálogo de algoritmos
@@ -465,13 +465,16 @@ hora local, ±`sameTimeToleranceMs`, otro día.
 parada antes de `usualSegmentTimes` y de las firmas de parada precisa y semáforo.
 
 **Paradas de cada AGV** (`flowStops`). Solo transiciones con las dos lecturas en el mismo tramo de
-cobertura, que no toquen una calle de carga ni sean del mismo instante. Lo habitual es la mediana del
-par (desde, hasta) en ese turno, o en toda la ventana, con `minPairSamples`; si no, la suma de las
-medianas del anillo. Una parada es un exceso sobre lo habitual de `minStopExcessMs` o más. El de
-delante es el AGV más cercano aguas abajo, a `reachTags` o menos según su último tag leído (en el
-mismo tag, solo si lo pasó antes). Justificación, en orden: la parada solapa una de la producción en
-la mitad de su exceso o más → `produccion`; el de delante tiene una parada que cubre el punto medio
-de esta → `cola`; si no, `sin-explicacion`. Las colas se siguen hasta su cabeza; una cabeza sin
+cobertura, que no toquen una calle de carga ni sean del mismo instante. Desde la Parte 47, una
+parada es una transición que **pasa de la valla de su tramo en su régimen** (§6.7); lo habitual que
+se enseña es el p50 de esa horquilla. El de delante es un AGV aguas abajo, a `reachTags` o menos según
+su último tag leído (en el mismo tag, solo si lo pasó antes). Justificación, en orden: la parada
+solapa una de la producción en la mitad de su exceso o más → `produccion`; uno que ya iba delante al
+empezar **sigue** a `reachTags` o menos en el punto medio y en ese momento va más lento que el p80 de
+su propio tramo → `cola`, con él como quien retiene; si no, `sin-explicacion`, con el más cercano por
+delante (hasta media vuelta) y cuántos tags avanzó mientras tanto. Hasta la Parte 46, `cola` exigía
+que el de delante tuviera él mismo una parada: detrás de un cuello de botella, donde el de delante
+tarda lo normal de ese sitio, el que esperaba salía sin explicación. Las colas se siguen hasta su cabeza; una cabeza sin
 justificar con exceso de `headStallMs` o más es un bloqueo, con las paradas encadenadas detrás y las
 lecturas de la base durante el bloqueo.
 
@@ -484,6 +487,59 @@ se nombra. En el mismo tag no hay orden que comparar.
 `produccion` si cae en una parada de la producción en su mitad o más. Un borde sin lecturas dentro de
 una parada de la producción es parado y justificado. N cuenta todos los asignados salvo
 mantenimiento y una hora o más sin leer sin justificar (R-AGV-014).
+
+## 6.7 Estado normal del circuito, implementado (R-TIM-009, R-FLO-007/008/009, R-GRA-014, R-TIM-010)
+
+`src/domain/segment-bands.ts` y `src/domain/circuit-state.ts`, por cohorte, después de las paradas de
+la producción.
+
+**Régimen** (`regimeReader`). La hora local del punto medio de cada transición: `noche` si cae en
+`[nightFromHour, nightToHour)` —la ventana puede cruzar la medianoche—, `produccion` si no. Las que
+cruzan una parada de la producción ya se han quitado.
+
+**Horquilla** (`buildSegmentBands`). Por par (desde, hasta) y régimen, con al menos `minBandSamples`
+muestras medibles: p50, p80 y p95 por rango, y la valla `p95 + max(p95 − p50, margen)`, donde el
+margen es el mayor entre `minStopExcessMs` y la resolución de la fuente (un minuto si ningún intervalo
+baja del minuto). `bandFor` da la del par o, si no la tiene y los dos tags están en el anillo, la
+suma de p50, p80 y p95 de los tramos que recorre, con su propia valla.
+
+**Retenciones** (`flowStops`). Una transición entre el p95 y la valla, con al menos `minStopExcessMs`
+sobre el p50 y un AGV delante que retenía según el criterio de `cola`, o una parada en `cola`. Por
+debajo del p95, o con menos espera, coincidir con otro AGV lento cerca es cosa del vaivén de
+cualquier tramo: probado en el escenario de auditoría, donde a partir del p80 salían «colas» en los
+tramos de dos saltos y detrás de cada deuda de reloj del generador.
+
+**Cuello de botella.** Cada retención de producción se atribuye a la cabeza de su cola —si quien
+retenía también estaba retenido en ese momento, se sigue hacia delante— y se cuentan por el tag de
+esa cabeza. La exposición de cada tag es el tiempo que los AGV pasan con él como último leído (la suma
+de las duraciones de las transiciones que salen de él): un AGV retiene mientras está ahí, y en un
+tramo largo o con tags que se leen poco se queda más tiempo como último leído sin estar parado. Lo
+esperado es `(total − propio + 1) × exposición / exposición total`: el ritmo del **resto** del
+circuito, con una más repartida para que dos casos solos no parezcan un patrón. Se marca el tag si
+`tags × P(Poisson(esperado) ≥ recuento) ≤ maxFalsePoints`. Episodios: retenciones que se solapan en
+el tiempo; cola más larga: el máximo simultáneo.
+
+**Punto conflictivo.** Las paradas sin explicación de producción por tag de salida, en ventanas de
+`2 × reachTags + 1` tags del anillo, con las pasadas de la ventana como exposición y la misma prueba.
+Los tags con paradas de las ventanas marcadas se agrupan si distan `reachTags` o menos (dando la
+vuelta al anillo). Con menos de `minVehiclesForContrast` AGV distintos, el punto es de ese AGV.
+
+**Zona oscura.** Para cada tramo del anillo, las duraciones de todas las transiciones de producción
+que lo recorren —directas o saltándose tags, hasta media vuelta—; su mediana es el hueco de
+información del tramo, y lo típico del circuito es la mediana de esas medianas. Un tramo con
+`darkZoneFactor` veces lo típico o más es oscuro, salvo que su tag de salida sea parada precisa o
+semáforo, declarados o candidatos (`explainedSlow`). Los tramos oscuros seguidos forman una zona; la
+causa es `salta-tag` si la mitad o más de las transiciones que la recorren se saltan algún tag.
+
+**Noche y cambios.** La noche se compara tramo a tramo con producción por el p50. Entre el primer y
+el último tramo de cobertura, separados al menos `drift.minGapMs`, se construyen dos horquillas y
+`compareBands` marca `mas-lento` (p50 nuevo > p80 viejo) o `mas-rapido` (p80 nuevo < p50 viejo),
+siempre en el mismo régimen.
+
+**Límite conocido.** En el escenario de auditoría los vehículos no se bloquean entre sí: la cola del
+cuello de botella se planta a mano, y la deuda de reloj con que el generador devuelve el tiempo
+añadido acorta los pasos siguientes. La deuda de la noche se devuelve a un segundo por paso para no
+aplastar la horquilla de noche.
 
 ## 7. Segmentación de vueltas y huecos
 

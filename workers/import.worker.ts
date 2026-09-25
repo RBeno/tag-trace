@@ -54,6 +54,15 @@ import { compareDistantPeriods } from "../src/domain/drift.js";
 import { buildFleetTimeline, mergeFleetPeriods } from "../src/domain/fleet.js";
 import { classifySilence, usualSegmentTimes, type UsualTimes } from "../src/domain/silence-kind.js";
 import {
+  bandChangesBetweenPeriods,
+  buildSegmentBands,
+  measurableTransitions,
+  regimeExposure,
+  regimeReader,
+  transitionRegime,
+} from "../src/domain/segment-bands.js";
+import { buildCircuitState } from "../src/domain/circuit-state.js";
+import {
   flowStops,
   outsideProductionStops,
   productionStops,
@@ -304,6 +313,9 @@ async function buildViews(
   );
   const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
   const flowReports: FlowReport[] = [];
+  // Régimen de cada instante (R-TIM-009): la noche se mide aparte y no altera el estado normal.
+  const regimeOf = regimeReader(zone, PROVISIONAL_CONFIG.regimes);
+  const circuitStateCohorts: CircuitViews["circuitState"]["cohorts"][number][] = [];
 
   for (const cohort of cohortAssignment.cohorts) {
     const vehicleSet = new Set(cohort.vehicles);
@@ -340,21 +352,28 @@ async function buildViews(
       PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
     );
     for (const agvId of cohort.vehicles) usualByVehicle.set(agvId, usual);
-    flowReports.push(
-      flowStops(
-        {
-          transitions: cohortTransitions,
-          coverage,
-          usual,
-          production,
-          laneTags,
-          functionOf: criticalPointsConfig.funcionOf,
-          zone,
-          shiftStartHours: PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
-        },
-        PROVISIONAL_CONFIG.flowStops,
-      ),
+    // La horquilla de cada tramo, por régimen (R-FLO-007): solo con transiciones que miden algo.
+    const measuredTimed = measurableTransitions(timedTransitions, coverage, laneTags);
+    const bands = buildSegmentBands(
+      measuredTimed,
+      effective.cycle,
+      regimeOf,
+      PROVISIONAL_CONFIG.bands,
+      PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
     );
+    const flow = flowStops(
+      {
+        transitions: cohortTransitions,
+        coverage,
+        bands,
+        regimeOf,
+        production,
+        laneTags,
+        functionOf: criticalPointsConfig.funcionOf,
+      },
+      PROVISIONAL_CONFIG.flowStops,
+    );
+    flowReports.push(flow);
 
     const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
     laps.push(...segmentLaps(cohortReadings, direction, coverage, effective.tagId, anchorTruth));
@@ -432,13 +451,14 @@ async function buildViews(
     // anillo — restringir a `anchor.cycle` escondería justo la rama fuera de él que la firma busca.
     const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
     const conCruces = classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce);
-    // Las firmas de tiempo, sin las paradas de la producción: un descanso de 15 min rompería el
-    // coeficiente de variación de una parada precisa (R-AGV-018).
-    const paradas = findPrecisePauseCandidates(timedTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa);
-    const semaforos = findTrafficLightCandidates(timedTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo);
+    // Las firmas de tiempo, solo en producción: un descanso de 15 min rompería el coeficiente de
+    // variación de una parada precisa (R-AGV-018), y la noche tiene su propio ritmo (R-TIM-009).
+    const productionTimed = timedTransitions.filter((transition) => transitionRegime(transition, regimeOf) === "produccion");
+    const paradas = findPrecisePauseCandidates(productionTimed, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa);
+    const semaforos = findTrafficLightCandidates(productionTimed, PROVISIONAL_CONFIG.criticalPoints.semaforo);
     // Para dibujar la distribución que la firma resume: las duraciones de cada candidato de tiempo y
     // una muestra de referencia con todas las del cohorte (sin pares del mismo instante, R-DAT-013).
-    const durations = transitionDurationsByTag(timedTransitions);
+    const durations = transitionDurationsByTag(productionTimed);
     const allDurations = [...durations.values()].flat();
     criticalPointCohorts.push({
       cohortId: cohort.id,
@@ -451,6 +471,52 @@ async function buildViews(
       ],
       referenceDurationsMs: strideSample(allDurations, DURATION_SAMPLE_MAX),
       referenceTotal: allDurations.length,
+    });
+
+    // El estado normal del circuito (R-TIM-009): una parada precisa o un semáforo, declarados o
+    // candidatos, explican su espera y no son zona oscura.
+    const timeCritical = new Map<string, string>();
+    for (const [tagId, functionName] of criticalPointsConfig.funcionOf) {
+      if (functionName === "parada-precisa" || functionName === "semaforo") timeCritical.set(tagId, functionName);
+    }
+    for (const candidate of [...paradas, ...semaforos]) {
+      if (!timeCritical.has(candidate.tagId)) timeCritical.set(candidate.tagId, candidate.kind);
+    }
+    const size = effective.cycle.length;
+    circuitStateCohorts.push({
+      cohortId: cohort.id,
+      resolutionMs: bands.resolutionMs,
+      marginMs: bands.marginMs,
+      bands: [...bands.pairs.values()]
+        .filter((pair) => pair.produccion !== null || pair.noche !== null)
+        .map((pair) => {
+          const at = bands.positionOf.get(pair.from);
+          const onRing = at !== undefined && size > 1 && effective.cycle[(at + 1) % size] === pair.to;
+          return { ...pair, position: onRing ? (at as number) : null };
+        })
+        .sort((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity) || a.from.localeCompare(b.from)),
+      state: buildCircuitState(
+        {
+          bands,
+          transitions: measuredTimed,
+          regimeOf,
+          flow,
+          timeCritical,
+          reachTags: PROVISIONAL_CONFIG.flowStops.reachTags,
+          minVehicles: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
+          headStallMs: PROVISIONAL_CONFIG.flowStops.headStallMs,
+        },
+        PROVISIONAL_CONFIG.circuitState,
+      ),
+      changes: bandChangesBetweenPeriods(
+        measuredTimed,
+        coverage,
+        effective.cycle,
+        regimeOf,
+        PROVISIONAL_CONFIG.bands,
+        PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+        PROVISIONAL_CONFIG.drift.minGapMs,
+      ),
     });
   }
 
@@ -614,6 +680,14 @@ async function buildViews(
     ...(fifoCohorts.length === 0 ? {} : { fifo: fifoCohorts }),
     orderWithheld: matrices.reduce((total, matrix) => total + matrix.orderWithheld, 0),
     criticalPoints: criticalPointCohorts,
+    circuitState: {
+      exposure: regimeExposure(dossierCoverage, productionIntervals, regimeOf),
+      night: {
+        fromHour: PROVISIONAL_CONFIG.regimes.nightFromHour,
+        toHour: PROVISIONAL_CONFIG.regimes.nightToHour,
+      },
+      cohorts: circuitStateCohorts,
+    },
     ...(lapAnchorsConfig.problems.length === 0 && lapAnchorProblems.length === 0
       ? {}
       : { lapAnchorProblems: [...lapAnchorsConfig.problems, ...lapAnchorProblems] }),

@@ -16,6 +16,8 @@
 import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
 import type { FleetTimeline } from "../domain/fleet.js";
 import type { Blockage, ProductionStop } from "../domain/flow-stops.js";
+import type { CircuitState } from "../domain/circuit-state.js";
+import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
 import type { ReadMatrix } from "../domain/read-matrix.js";
@@ -449,6 +451,30 @@ export interface CircuitViews {
     };
     /** El primero de una cola sin avanzar, sin nada que lo explique (R-AGV-018). */
     readonly blockages: readonly Blockage[];
+  };
+  /**
+   * El estado normal del circuito (R-TIM-009): la horquilla de cada tramo por régimen y lo que se
+   * mide con ella en producción —cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin
+   * explicación—, la noche aparte y el cambio de la horquilla entre el primer y el último periodo.
+   */
+  readonly circuitState: {
+    readonly exposure: RegimeExposure;
+    readonly night: { readonly fromHour: number; readonly toHour: number };
+    readonly cohorts: readonly {
+      readonly cohortId: number;
+      readonly resolutionMs: number;
+      readonly marginMs: number;
+      /** Cada par con horquilla; `position` es su sitio en el anillo si es un tramo del anillo. */
+      readonly bands: readonly {
+        readonly from: string;
+        readonly to: string;
+        readonly position: number | null;
+        readonly produccion: Band | null;
+        readonly noche: Band | null;
+      }[];
+      readonly state: CircuitState;
+      readonly changes: PeriodBandChanges | null;
+    }[];
   };
   /**
    * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando

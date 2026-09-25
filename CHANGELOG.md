@@ -2,6 +2,81 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.25.0] - 2026-09-25
+
+El estado normal del circuito: lo que pasa en las paradas, los descansos y la noche no altera las
+mediciones estándar. Pedido por el propietario: la noche (22:00–05:00) tiene otro comportamiento y
+también se puede medir; con esas mediciones se detectan cuellos de botella, zonas oscuras y puntos
+conflictivos; los umbrales salen de los datos de cada tramo, y un grafo con una horquilla de tiempos
+se compara con las mediciones futuras para ver derivas o mejoras.
+
+### Añadido
+
+- **Horquilla de tiempos por tramo y régimen** (`src/domain/segment-bands.ts`, R-FLO-007, R-TIM-009).
+  - Régimen por la hora local: producción o noche. Lo que cruza una parada de la producción no entra.
+  - Por par de tags y régimen: p50, p80, p95 y la **valla**, p95 + max(p95 − p50, 30 s, resolución).
+    Con el ejemplo del propietario (el 80 % en 17 s, el resto hasta 30 s), 60 s: 80 s es parada
+    candidata.
+  - Las esperas frecuentes de un semáforo o una parada precisa quedan dentro: son su normal.
+- **Mediciones estándar**, solo en producción (`src/domain/circuit-state.ts`):
+  - **cuello de botella** (R-FLO-008): retenciones —esperas detrás de un AGV que no se iba—
+    concentradas en la cabeza de la cola, contra el tiempo que los AGV pasan ahí;
+  - **punto conflictivo** (R-FLO-009): paradas sin explicación de varios AGV en tags vecinos, contra
+    sus pasadas; si son de un solo AGV, se dice que es de ese AGV;
+  - **zona oscura** (R-GRA-014): el hueco entre lecturas al pasar por un tramo, 1,5 veces el típico
+    o más, con su causa (se salta el tag o el tramo tarda); una parada precisa o un semáforo lo
+    explican y se dicen aparte;
+  - **paradas sin explicación** una a una, con quién iba delante y cuánto avanzó mientras tanto: el
+    ejemplo del propietario;
+  - **la noche**, medida aparte, con sus propias paradas contra su propia horquilla.
+- **Cambio de horquilla entre el primer y el último periodo** (R-TIM-010): más lento si la mitad de
+  ahora tarda más que el 80 % de antes; más rápido si el 80 % de ahora tarda menos que la mitad de
+  antes; siempre en el mismo régimen.
+- **Vista** «Estado normal del circuito»: tarjetas de cada hallazgo, el gráfico de la horquilla de
+  cada tramo (barra de p50 a p95, raya en la valla, barra gris de noche, eje logarítmico, lectura al
+  tocar y tabla) y **Descargar horquillas (CSV)**.
+- Configuración provisional `regimes`, `bands` y `circuitState`, con su justificación (OQ-129).
+- TC-180–185: `tests/unit/segment-bands.test.ts` (10), `tests/unit/circuit-state.test.ts` (10), tres
+  casos nuevos en `flow-stops.test.ts`, auditoría y navegador.
+- Auditoría `auditoria/13` con cinco clases nuevas —noche lenta, parada aislada, punto conflictivo,
+  cuello de botella y zona oscura— y una prueba de que el estado normal no señala nada limpio. Las 36
+  clases, DETECTA.
+
+### Cambiado
+
+- **Una parada de un AGV se juzga contra la horquilla de su tramo en su régimen**, no contra
+  «mediana + 30 s». Las nueve pruebas de paradas de la Parte 46 pasan sin tocar lo que esperan.
+- **La cola es física** (R-AGV-018). Antes, «cola» exigía que el de delante también estuviera parado;
+  detrás de un cuello de botella, donde el de delante tarda lo normal de ese sitio, el que esperaba
+  salía sin explicación. Ahora está en cola si un AGV que ya iba delante sigue a dos tags o menos a
+  mitad de la parada y va él también más lento que su p80. Tiene que ser el mismo: en la auditoría,
+  el AGV retrasado 20 min salía «en cola» porque otros lo adelantaban y quedaban delante.
+- Las firmas de parada precisa y semáforo usan solo producción.
+- «Por su sitio» al salir de una parada de la producción sigue siendo un paso que se da cuatro veces o
+  más fuera de las paradas (`minPairSamples`): la horquilla de 20 muestras era demasiado exigente
+  para saltarse un tag que se lee poco.
+- En la tarjeta de bloqueo, «nadie parado delante» pasa a «nadie delante que lo retuviera».
+
+### Corregido, antes de publicarse
+
+Probado contra el escenario de auditoría antes de que llegara a la vista. Tres cosas que salían y no
+eran ciertas:
+- **Colas donde solo hay tags mal leídos.** Donde un tag se lee poco, el último leído de un AGV que
+  circula se queda atrás de donde está y parece que retiene a los de detrás. Quien retiene tiene que
+  ir él mismo más lento que su p80.
+- **Cuellos de botella en tramos largos.** Un AGV retiene más cuanto más tiempo pasa como último
+  leído; el azar se mide contra ese tiempo, no contra las pasadas.
+- **Retenciones por vaivén.** Coincidir con otro AGV lento cerca pasa en cualquier tramo; una
+  retención exige pasar del p95 y esperar al menos 30 s.
+- Además, un grupo de paradas subía el ritmo con que se le comparaba y se escondía a sí mismo: el
+  azar se estima con el resto del circuito.
+
+### Pendiente, y por qué
+
+- **Guardar la horquilla como referencia consolidada y compararla mes a mes es F4** (OQ-130): pide
+  `CONTINÚA FASE 4` y confirmación humana. Hoy se descarga en CSV, con la forma que esa consolidación
+  usaría, y se compara el primer periodo cargado con el último.
+
 ## [3.24.0] - 2026-09-24
 
 Un AGV sin lecturas sigue en el circuito: cada parada se lee contra lo que hacía el resto. Pedido

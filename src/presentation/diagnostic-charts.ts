@@ -2227,3 +2227,174 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
   );
   return wrapper;
 }
+
+// --- 12. Horquilla de tiempos de cada tramo (Parte 47) ---------------------
+
+export interface BandView {
+  readonly samples: number;
+  readonly p50Ms: number;
+  readonly p80Ms: number;
+  readonly p95Ms: number;
+  readonly fenceMs: number;
+}
+
+export interface BandRow {
+  readonly from: string;
+  readonly to: string;
+  readonly produccion: BandView | null;
+  readonly noche: BandView | null;
+  /** Hallazgos en ese tramo, en palabras: «cuello de botella», «zona oscura»… */
+  readonly marks: readonly string[];
+}
+
+const BAND_TICKS_S = [2, 5, 10, 15, 30, 60, 120, 300, 600, 1200];
+
+function describeBand(band: BandView): string {
+  return (
+    `la mitad en ${seconds(band.p50Ms)}, el 80 % en ${seconds(band.p80Ms)}, el 95 % en ${seconds(band.p95Ms)}; ` +
+    `más de ${seconds(band.fenceMs)} es parada candidata (${band.samples} pasadas)`
+  );
+}
+
+/**
+ * La horquilla de cada tramo del anillo, en su orden (no es distancia): la barra va de la mitad de
+ * las pasadas al 95 %, la raya es la valla —por encima, parada candidata—, y la barra fina de al lado
+ * es la noche, medida aparte. El eje es logarítmico para que un tramo de 15 s y uno de 5 min quepan
+ * los dos.
+ */
+export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): HTMLElement {
+  const wrapper = figure(
+    "Horquilla de tiempos de cada tramo",
+    "Cuánto tarda cada tramo del anillo en producción: la barra va de la mitad de las pasadas al 95 %, " +
+      `y la raya marca la valla. La barra gris es la noche (${nightLabel}), medida aparte. El orden es el ` +
+      "del anillo, no la distancia.",
+  );
+  const area = host();
+  const line = readout("Toca o pasa el puntero por un tramo para leer su horquilla.");
+  const values = rows.flatMap((row) => [row.produccion, row.noche].filter((band): band is BandView => band !== null));
+  const minMs = Math.max(1_000, Math.min(...values.map((band) => band.p50Ms), 60_000) * 0.7);
+  const maxMs = Math.min(20 * 60_000, Math.max(...values.map((band) => band.fenceMs), 30_000) * 1.1);
+
+  responsive(area, (width) => {
+    area.replaceChildren();
+    const left = 40;
+    const top = 16;
+    const plotHeight = 180;
+    const height = top + plotHeight + 22;
+    const plotWidth = Math.max(10, width - left - 4);
+    const step = plotWidth / Math.max(1, rows.length);
+    const logMin = Math.log(minMs);
+    const logSpan = Math.max(0.001, Math.log(maxMs) - logMin);
+    const y = (ms: number): number =>
+      top + plotHeight * (1 - (Math.log(Math.min(maxMs, Math.max(minMs, ms))) - logMin) / logSpan);
+    const canvas = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Horquilla de tiempos por tramo" });
+    canvas.append(hatchPattern());
+    for (const tick of BAND_TICKS_S) {
+      const ms = tick * 1000;
+      if (ms < minMs || ms > maxMs) continue;
+      canvas.append(svg("line", { x1: left, x2: width, y1: y(ms), y2: y(ms), stroke: "var(--viz-grid)" }));
+      canvas.append(text(left - 4, y(ms) + 3, tick >= 60 ? `${tick / 60} min` : `${tick} s`, "axis", { "text-anchor": "end" }));
+    }
+    rows.forEach((row, index) => {
+      const x0 = left + index * step;
+      const day = row.produccion;
+      if (day === null) {
+        canvas.append(svg("rect", { x: x0, y: top + plotHeight - 4, width: Math.max(1, step * 0.6), height: 4, fill: HATCH_FILL }));
+      } else {
+        canvas.append(
+          svg("rect", {
+            x: x0 + step * 0.05,
+            y: y(day.p95Ms),
+            width: Math.max(1, step * 0.55),
+            height: Math.max(1.5, y(day.p50Ms) - y(day.p95Ms)),
+            fill: "var(--viz-series)",
+          }),
+        );
+        canvas.append(
+          svg("line", {
+            x1: x0,
+            x2: x0 + Math.max(1.5, step * 0.65),
+            y1: y(day.fenceMs),
+            y2: y(day.fenceMs),
+            stroke: "var(--ink)",
+            "stroke-width": 1,
+            opacity: 0.7,
+          }),
+        );
+      }
+      const night = row.noche;
+      if (night !== null) {
+        canvas.append(
+          svg("rect", {
+            x: x0 + step * 0.62,
+            y: y(night.p95Ms),
+            width: Math.max(1, step * 0.28),
+            height: Math.max(1.5, y(night.p50Ms) - y(night.p95Ms)),
+            fill: "var(--viz-neutral)",
+          }),
+        );
+      }
+      if (row.marks.length > 0) {
+        canvas.append(svg("circle", { cx: x0 + step / 2, cy: 7, r: Math.min(4, Math.max(2, step / 2)), fill: "var(--viz-accent)" }));
+      }
+    });
+    // Rótulos del eje: la posición en el anillo, las que quepan.
+    const every = Math.max(1, Math.ceil(rows.length / Math.max(2, Math.floor(plotWidth / 40))));
+    for (let index = 0; index < rows.length; index += every) {
+      canvas.append(text(left + index * step + step / 2, height - 6, String(index + 1), "axis", { "text-anchor": "middle" }));
+    }
+    // Una sola capa para leer, por columnas: ningún rótulo por marca.
+    rows.forEach((_, index) => {
+      canvas.append(svg("rect", { x: left + index * step, y: 0, width: step, height: top + plotHeight, fill: "transparent", "data-k": String(index) }));
+    });
+    inspect(
+      canvas,
+      (point) => {
+        const key = point === null ? null : (point.target as SVGElement).getAttribute("data-k");
+        const row = key === null ? undefined : rows[Number(key)];
+        if (row === undefined) {
+          line.show(null);
+          return;
+        }
+        const parts = [
+          `${Number(key) + 1}. ${row.from} → ${row.to}`,
+          row.produccion === null ? "producción: sin pasadas suficientes" : `producción: ${describeBand(row.produccion)}`,
+          row.noche === null ? "noche: sin pasadas suficientes" : `noche: la mitad en ${seconds(row.noche.p50Ms)}, el 95 % en ${seconds(row.noche.p95Ms)}`,
+          ...(row.marks.length === 0 ? [] : [row.marks.join(", ")]),
+        ];
+        line.show(parts.join(" · "));
+      },
+      { snap: "[data-k]" },
+    );
+    area.append(canvas);
+  });
+
+  wrapper.append(
+    legendList([
+      ["var(--viz-series)", "producción: de la mitad de las pasadas al 95 %"],
+      ["linear-gradient(var(--panel) 45%, var(--ink) 45% 60%, var(--panel) 60%)", "valla: por encima, parada candidata"],
+      ["var(--viz-neutral)", `noche (${nightLabel})`],
+      ["var(--viz-accent)", "hallazgo en ese tramo"],
+      [HATCH_SWATCH, "sin pasadas suficientes para una horquilla"],
+    ]),
+    area,
+    line.node,
+    lazyDetails(`Ver la horquilla de los ${rows.length} tramos`, () =>
+      plainTable(
+        ["Posición", "Tramo", "Pasadas", "Mitad", "80 %", "95 %", "Valla", "Noche (mitad)", "Hallazgo"],
+        rows.map((row, index) => [
+          String(index + 1),
+          `${row.from} → ${row.to}`,
+          String(row.produccion?.samples ?? 0),
+          row.produccion === null ? "—" : seconds(row.produccion.p50Ms),
+          row.produccion === null ? "—" : seconds(row.produccion.p80Ms),
+          row.produccion === null ? "—" : seconds(row.produccion.p95Ms),
+          row.produccion === null ? "—" : seconds(row.produccion.fenceMs),
+          row.noche === null ? "—" : seconds(row.noche.p50Ms),
+          row.marks.join(", ") || "—",
+        ]),
+      ),
+    ),
+  );
+  return wrapper;
+}

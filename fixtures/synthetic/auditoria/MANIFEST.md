@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/12`
+- Dataset ID/version: `auditoria/13`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -75,7 +75,11 @@ fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual q
 | `lectura-desigual-en-pocos-tags` | 1 AGV que lee 2 tags del anillo en la mitad de sus pasadas (uno sí y uno no, sin `random()`) | el AGV sale como «lee poco» en esos dos tags, en pocos tags, con su porcentaje (R-AGV-016) | una causa (lector, memoria o colocación), ni que los dos tags fallen para el resto |
 | `parada-de-produccion` | toda la flota congelada 15 min a las 10:00 y a las 18:00 del día 1 y a las 10:00 del día 2: después de generar, cada fila posterior a una franja se desplaza su duración (sin `random()`), y los dos tags críticos declarados se quedan sin lecturas | tres paradas de la producción y ninguna más, la de las 10:00 repetida; todos siguen por su sitio; cada hueco dentro, justificado (R-AGV-018). El orden no es verdad plantada: el generador deja que un AGV adelante a otro al circular, y se informa | que algún AGV se desconectara o saliera del circuito, o un bloqueo dentro de una franja |
 | `bloqueo-sin-justificar` | el mismo AGV que se retrasa 20 min en la zona cargada | el único bloqueo: el primero de su cola, sin avanzar y con la producción en marcha, con sus lecturas críticas | una causa, o justificarlo con una parada de la producción que no hubo |
-
+| `noche-medida-aparte` | 4 tramos seguidos (54→58) van 45 s más lentos en cada pasada de noche, con la transición entera entre 22:10 y 04:50; la deuda de reloj se devuelve a 1 s por paso | la horquilla de producción de esos tramos como la de uno limpio, la de noche con el doble o más, ninguna parada de noche por esa lentitud | mezclar la noche con el día, o llamar parada a lo que de noche es lo normal |
+| `parada-sin-explicacion-aislada` | un AGV sin otro papel, 63 s de más una sola vez en 86→87, de día | una parada sin explicación con quién iba delante y cuánto avanzó | una causa, un bloqueo o un punto conflictivo |
+| `punto-conflictivo` | 8 AGV sin otro papel, 70 s de más una vez en 72→73 y otra en 73→74, de día (≈2 % de las pasadas, por debajo del p95) | un punto que une los dos tags, con los 8 AGV y sin bloqueos | que sea de un solo AGV, o un bloqueo |
+| `cuello-de-botella` | de 19:30 a 21:00, cada AGV espera 40 s en 116 y quien llega mientras otro ya generado lo ocupa espera a que salga (una sola espera, no una cadena) | un cuello de botella en 116, que fluye, sin paradas sin explicación detrás | una avería, o dejar sin explicación a quien espera |
+| `zona-oscura` | nada nuevo: la serie de tags poco leídos (40–43) | una zona oscura que los incluye, con la causa «se salta el tag» | que el tramo sea largo, o una zona sobre tramos limpios |
 ## Resultados prohibidos
 
 Además de lo que dice la tabla, hay dos cosas que esta auditoría vigila por encima de todo:
