@@ -139,7 +139,8 @@ export interface AnalysisConfig {
  *   se supone. `minAdoptionShare` (sustitución candidata y adopción de tag nuevo, R-DAT-017) es
  *   deliberadamente el mismo número que `readRate.highRate`: la misma idea de «lo lee casi todo el
  *   mundo», aplicada aquí a cuántos vehículos adoptan un tag en vez de a cuántas veces se lee.
- * - **Lectura por AGV (R-AGV-016).** Ocho pasadas sin leer para decir «nunca» o «desde tal hora»:
+ * - **Lectura por AGV (R-AGV-016).** Ocho pasadas sin leer para decir «desde tal hora» («nunca» ya no
+ *   las exige desde la Parte 48: cero lecturas cuenta en cuanto no es casualidad frente al resto):
  *   que un AGV que lee un tag la mitad de las veces falle ocho seguidas por azar es un 0,4 %. Un tag
  *   cuenta contra un AGV solo si tres de cada cuatro del resto lo leen bien. «Muchos tags» es el 10 %
  *   de los que recorre y como mínimo cinco, decisión del propietario (2026-09-24). «Lee poco» exige

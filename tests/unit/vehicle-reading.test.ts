@@ -1,7 +1,8 @@
 /**
  * Lectura por AGV sobre los tags que el resto lee bien (R-AGV-016).
  *
- * Lo que se fija: «nunca» exige pasadas de sobra; «desde tal hora» exige que antes lo leyera bien;
+ * Lo que se fija: «nunca» es cero lecturas que no son casualidad, con sus pasadas, y nunca un «poco»
+ * con un 0 %; «desde tal hora» exige que antes lo leyera bien;
  * un tag que lee mal casi toda la flota no cuenta contra ningún AGV; y «muchos» frente a «pocos» es
  * el 10 % de sus tags con un mínimo de cinco. Ninguna salida nombra causa.
  */
@@ -61,7 +62,7 @@ describe("lectura por AGV", () => {
     expect(of("P")?.weak).toEqual([{ tagId: "T3", hits: 20, passes: 40 }]);
     expect(report.vehicles.map((vehicle) => vehicle.agvId)).toEqual(["N", "D", "P"]);
     expect(report.tags).toEqual([
-      { tagId: "T1", never: ["N"], stopped: [], weak: [], good: 4 },
+      { tagId: "T1", never: [{ agvId: "N", passes: 40 }], stopped: [], weak: [], good: 4 },
       { tagId: "T2", never: [], stopped: ["D"], weak: [], good: 4 },
       { tagId: "T3", never: [], stopped: [], weak: [{ agvId: "P", hits: 20, passes: 40 }], good: 4 },
     ]);
@@ -78,11 +79,26 @@ describe("lectura por AGV", () => {
     expect(report.vehicles).toEqual([]);
   });
 
-  it("con pocas pasadas y ninguna lectura no se dice «nunca»: se da la cifra", () => {
+  it("con pocas pasadas y ninguna lectura es «nunca», con su cifra; nunca un «poco» con un 0 %", () => {
+    // Hasta la Parte 48 esto salía como «lee poco: 0 %». El propietario lo vio con datos de taller: un
+    // 0 % no es poco, es no leerlo nunca. La regla cambia (R-AGV-016), no la prueba para que pase.
     const report = describeVehicleReading(matrix({ T1: [cell("X", 0, 5)] }), READ_RATE, THRESHOLDS);
     const vehicle = report.vehicles[0];
-    expect(vehicle?.never).toEqual([]);
-    expect(vehicle?.weak).toEqual([{ tagId: "T1", hits: 0, passes: 5 }]);
+    expect(vehicle?.never).toEqual([{ tagId: "T1", passes: 5 }]);
+    expect(vehicle?.weak).toEqual([]);
+    expect(report.tags[0]?.never).toEqual([{ agvId: "X", passes: 5 }]);
+  });
+
+  it("cero lecturas en pocas pasadas no se dice si el azar lo explica frente a lo que lee el resto", () => {
+    // El resto lo lee al 85 %: fallar tres seguidas por azar es un 0,3 %, por encima del 0,1 %; cuatro,
+    // un 0,05 %, ya no.
+    const flock = ["G1", "G2", "G3", "G4"].map((agvId) => cell(agvId, 34, 40));
+    const tags = (extra: PairReadRate) =>
+      ({ tags: [{ tagId: "T1", isAnchor: false, byVehicle: [...flock, extra] }] }) as unknown as Pick<ReadMatrix, "tags">;
+    expect(describeVehicleReading(tags(cell("X", 0, 3)), READ_RATE, THRESHOLDS).vehicles).toEqual([]);
+    expect(describeVehicleReading(tags(cell("X", 0, 4)), READ_RATE, THRESHOLDS).vehicles[0]?.never).toEqual([
+      { tagId: "T1", passes: 4 },
+    ]);
   });
 
   it("dejar de leer exige haberlo leído bien antes", () => {

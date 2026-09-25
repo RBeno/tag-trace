@@ -2503,22 +2503,32 @@ function explain(tag: TagRow, readers: VehicleReadingView["tags"][number] | unde
   } else if (readers === undefined) {
     base = `${tag.lowReaders.length} AGV casi nunca lo leen (${few(tag.lowReaders)}) y ${tag.highReaders.length} casi siempre`;
   } else {
-    // Quién no lo lee nunca, quién dejó de leerlo y quién lo lee poco: la diferencia, sin causa.
+    // Quién no lo lee nunca, quién dejó de leerlo y quién lo lee poco: la diferencia, sin causa. «Nunca»
+    // lleva sus pasadas —0 de 5 no pesa lo mismo que 0 de 41—, y el verbo concuerda con uno o varios.
+    const verb = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
     const parts: string[] = [];
-    if (readers.never.length > 0) parts.push(`${readers.never.length} AGV no lo leen nunca (${few(readers.never)})`);
-    if (readers.stopped.length > 0) parts.push(`${readers.stopped.length} dejaron de leerlo (${few(readers.stopped)})`);
+    if (readers.never.length > 0) {
+      const never = [...readers.never].sort((a, b) => b.passes - a.passes);
+      const shown = never.slice(0, 3).map((entry) => `${entry.agvId}: 0 de ${entry.passes}`);
+      parts.push(
+        `${verb(readers.never.length, "AGV no lo lee nunca", "AGV no lo leen nunca")} (${shown.join(", ")}${never.length > 3 ? "…" : ""})`,
+      );
+    }
+    if (readers.stopped.length > 0) {
+      parts.push(`${verb(readers.stopped.length, "dejó de leerlo", "dejaron de leerlo")} (${few(readers.stopped)})`);
+    }
     if (readers.weak.length > 0) {
       const weak = [...readers.weak].sort((a, b) => a.hits / a.passes - b.hits / b.passes);
       const shown = weak.slice(0, 3).map((entry) => `${entry.agvId}: ${percent(entry.hits / entry.passes)}`);
-      parts.push(`${readers.weak.length} lo leen poco (${shown.join(", ")}${weak.length > 3 ? "…" : ""})`);
+      parts.push(`${verb(readers.weak.length, "lo lee poco", "lo leen poco")} (${shown.join(", ")}${weak.length > 3 ? "…" : ""})`);
     }
-    parts.push(`${readers.good} lo leen bien`);
+    parts.push(verb(readers.good, "lo lee bien", "lo leen bien"));
     base = parts.join("; ");
   }
   // Cómo se probó el paso importa tanto como el porcentaje: una tasa sostenida por tiempo es más
   // débil que una sostenida por los vecinos, y el usuario tiene que poder verlo sin preguntar.
   const vias: string[] = [];
-  if (tag.byTime > 0) vias.push(`${tag.byTime} se deducen por el tiempo`);
+  if (tag.byTime > 0) vias.push(`${tag.byTime} ${tag.byTime === 1 ? "se deduce" : "se deducen"} por el tiempo`);
   if (tag.byOrder > 0) vias.push(`${tag.byOrder} por el orden de los AGV`);
   if (tag.unproven > 0) vias.push(`${tag.unproven} sin confirmar`);
   return vias.length === 0 ? base : `${base}. De las pasadas, ${vias.join(", ")}.`;

@@ -2,6 +2,23 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.25.1] - 2026-09-25
+
+### Corregido
+
+- **«Lee poco» con un 0 % pasa a «no lo lee nunca»** (R-AGV-016). El propietario lo vio probando con
+  datos de taller: «2 lo leen poco (2049: 0 %, 2083: 0 %)».
+  - La causa: «nunca» exigía además ocho pasadas, y con menos el AGV caía en «poco».
+  - Ahora cero lecturas es «nunca» en cuanto no es casualidad frente a lo que lee el resto (la misma
+    prueba de azar que «poco»), siempre con sus pasadas: «2 AGV no lo leen nunca (2049: 0 de 5,
+    2083: 0 de 6)».
+  - Con pocas pasadas solo sale si el resto lo lee casi siempre; si el azar lo explica, no se dice.
+  - Las ocho pasadas siguen siendo el umbral de «dejó de leerlo desde tal hora».
+  - La prueba de la Parte 43 que fijaba el comportamiento anterior cambia con el motivo escrito
+    (TC-186).
+- **Concordancia en singular** en la tarjeta de tag: «1 AGV no lo lee nunca», «1 dejó de leerlo»,
+  «1 lo lee poco», «1 lo lee bien», «1 se deduce por el tiempo».
+
 ## [3.25.0] - 2026-09-25
 
 El estado normal del circuito: lo que pasa en las paradas, los descansos y la noche no altera las

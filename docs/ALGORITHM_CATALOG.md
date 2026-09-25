@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.20.0
+version: 0.20.1
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -414,7 +414,9 @@ pareja.
 
 `src/domain/vehicle-reading.ts`, sobre la matriz ya medida dentro de la vida de cada tag. Cuenta un
 tag contra un AGV solo si, entre los demás con pasadas suficientes, al menos `fleetReadsWellShare` lo
-leen a `highRate` o más. Cada celda es **nunca** (0 aciertos con `minPassesForNever` pasadas),
+leen a `highRate` o más. Cada celda es **nunca** (0 aciertos, con cola binomial ≤ `maxChance` frente a la tasa del resto en
+ese tag, tenga las pasadas que tenga; hasta la Parte 48 exigía además `minPassesForNever` y con menos
+salía como «poco» con un 0 %),
 **desde una hora** (racha final de `minPassesForNever` tras leerlo a `highRate` o más) o **poco**
 (por debajo de `highRate` y con cola binomial inferior ≤ `maxChance` frente a la tasa del resto en ese
 tag). «Muchos» es `manyTagsShare` de los tags comparados con un mínimo de `minManyTags`. La salida son
