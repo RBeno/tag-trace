@@ -35,6 +35,10 @@ del importador. Todo lo que ese análisis pidió, y los defectos que encontró.
   veces y contradiciéndose: «se lee fuera del recorrido» y «no declarado». Ahora sale una vez,
   `otro-orden`, con su sitio en Vsystem y en el recorrido. En el circuito real eran dos tags vecinos
   cambiados de orden.
+- **Inventario, «declarado, no en memoria».** La acción decía «nadie puede leerlo», pero la clase
+  también recoge un tag declarado que la flota sí lee y la lista de memoria no tiene: ahí la lista va
+  por detrás. Ahora dice «la lista de memoria no lo tiene», que vale en los dos casos, y la tabla de
+  `DATA_CONTRACTS.md` §3.5 recoge el segundo caso, que el código ya aplicaba.
 - «Nadie delante que lo retuviera: … iba 1 tags por delante» → «1 tag»; con 0, «en su mismo tag».
 
 ### Con el circuito real, sin datos de planta en el repositorio

@@ -229,7 +229,7 @@ vueltas ni de ninguna constante industrial. Es pertenencia a conjuntos y recuent
 | `obsoleto-candidato` | indiferente | sí | **por nadie, nunca** | está en la lista y probablemente no en el suelo → `unknown` |
 | `ciego-parcial` | sí | sí | unos siempre, otros nunca | bimodal: memoria desactualizada en esos vehículos → `inferred` |
 | `no-declarado-leido` | **no** | indiferente | sí | existe y nadie lo declaró: la lista del circuito está desactualizada |
-| `declarado-sin-memoria` | sí | **no** | no | nadie puede leerlo aunque exista: punto ciego de configuración |
+| `declarado-sin-memoria` | sí | **no** | indiferente | la lista de memoria no lo tiene: sin lecturas, nadie puede leerlo aunque exista (punto ciego de configuración); con lecturas, alguna memoria real lo tiene y la lista va por detrás |
 | `especial` | — | sí | ocasional | mantenimiento o sustitución de emergencia: fuera del circuito y de toda tasa |
 
 Dos límites que se muestran junto a la tabla y no en una nota al pie:
