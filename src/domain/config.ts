@@ -14,6 +14,7 @@
  */
 
 import type { AffinityThresholds } from "./affinity.js";
+import type { AnchorSumThresholds } from "./anchor-sums.js";
 import type { CircuitStateThresholds } from "./circuit-state.js";
 import type { BandThresholds, RegimeThresholds } from "./segment-bands.js";
 import type { BlindnessThresholds } from "./inventory.js";
@@ -69,6 +70,7 @@ export interface AnalysisConfig {
   readonly circuitState: CircuitStateThresholds;
   readonly groupedDelivery: GroupedDeliveryThresholds;
   readonly franjas: FranjaThresholds;
+  readonly anchorSums: AnchorSumThresholds;
 }
 
 /**
@@ -189,6 +191,11 @@ export interface AnalysisConfig {
  *   decide un solo vehículo. Es menos que las veinte de una horquilla a propósito: una mediana se
  *   sostiene con pocas muestras y un p95 no, y un fichero corto, justo después de cambiar un tag, tiene
  *   que poder situarlo. Para saltar un tag sin medir se reutiliza `tagChanges.maxReadsBetween`.
+ * - **Suma entre anclas (R-DAT-021).** Cinco pasadas en cada lado para comparar la suma entre dos
+ *   anclas: una más que las cuatro de una mediana, porque aquí se compara además el 80 %. La ausencia
+ *   de un tag no necesita ese mínimo —se prueba con el mismo 0,1 % de azar que los cambios de tag
+ *   (`tagChanges.maxChance`)—, y así un fichero corto justo después de un mantenimiento ya enseña qué
+ *   tags cambiaron, aunque diga que la suma todavía no se puede medir.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -239,6 +246,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   circuitState: { darkZoneFactor: 1.5, maxFalsePoints: 0.01 },
   groupedDelivery: { minFastSteps: 2 },
   franjas: { minPositionSamples: 4 },
+  anchorSums: { minAnchorPasses: 5 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

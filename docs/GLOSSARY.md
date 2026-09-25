@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.22.0
+version: 0.23.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -27,6 +27,7 @@ last_updated: 2026-09-25
 | Horquilla de tiempos | Lo que tarda un tramo —de un tag a otro— en un régimen: p50, p80 y p95 de sus propias transiciones. Es el estado normal de ese tramo, y se compara entre periodos (R-FLO-007, R-TIM-010). No confundir con un tag donde el recorrido se divide (bifurcación). |
 | Lecturas que llegaron juntas | Varias lecturas de un AGV que el servidor recibe casi a la vez tras un hueco: un volcado al recuperar la comunicación, porque la hora del fichero es la de llegada. Con la suma del recorrido normal, el AGV no paró (R-DAT-020). También «entrega agrupada». |
 | Franja | Un fichero de lecturas cargado, medido por separado en su ventana completa (R-TIM-011). Dos exportaciones que se solapan son dos franjas; un fichero repetido, una sola. |
+| Suma entre anclas | El tiempo entre dos tags que siguen en su sitio a los dos lados de un cambio (las anclas). Es del recorrido: si entre ellas se pone, se quita o se cambia un tag y la suma sigue igual, solo cambió lo de en medio (R-DAT-021). |
 | Posición en tiempo | Los segundos de recorrido desde el ancla hasta un tag, sumando la mitad de las pasadas de cada paso. Es tiempo, nunca distancia; un tag que no se puede situar no se interpola (R-TIM-011). |
 | Valla | Límite de la horquilla de un tramo: p95 + max(p95 − p50, margen mínimo, resolución). Por encima, una transición es una parada candidata (R-FLO-007). |
 | Retención | Transición lenta —por encima del p95 de su tramo, con al menos el margen de espera— con un AGV delante que no se iba (R-FLO-008). |
@@ -40,7 +41,7 @@ last_updated: 2026-09-25
 | Lectura | Evento observado procedente de una fuente: instante, AGV, tag y procedencia. |
 | Oportunidad | Paso contextualmente sustentado en el que un tag podría haber sido leído. No equivale a inventar una lectura. |
 | Vuelta | Recorrido segmentado de un AGV a través de una secuencia/ciclo del circuito, con confianza explícita. |
-| Ancla | Tag por el que se corta una vuelta. Sin ninguna declarada, es el ciclo dominante que el propio grafo revela y la vuelta nunca es `observed`. Declarada y presente en el ciclo reconstruido (`lap_anchors`, R-GRA-009), solo rota dónde se corta ese mismo ciclo —nunca qué tags lo forman— y una vuelta `completa` cortada por ella sí puede ser `observed`; una `parcial` no, porque uno de sus extremos es siempre un corte de los datos. |
+| Ancla | Tag por el que se corta una vuelta. Sin ninguna declarada, es el ciclo dominante que el propio grafo revela y la vuelta nunca es `observed`. Declarada y presente en el ciclo reconstruido (`lap_anchors`, R-GRA-009), solo rota dónde se corta ese mismo ciclo —nunca qué tags lo forman— y una vuelta `completa` cortada por ella sí puede ser `observed`; una `parcial` no, porque uno de sus extremos es siempre un corte de los datos. En la suma entre anclas (R-DAT-021) la palabra se usa en plural y es otra cosa: cualquier tag que sigue en su sitio a los dos lados de un cambio. |
 | Tramo | Relación topológica entre dos nodos/tags o puntos funcionales consecutivos. |
 | Grafo teórico | Topología procedente de plano, inventario o configuración. |
 | Grafo observado | Transiciones contenidas directamente en las lecturas normalizadas. |

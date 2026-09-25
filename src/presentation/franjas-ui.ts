@@ -9,6 +9,7 @@
  */
 
 import type { CircuitViews } from "../application/protocol.js";
+import type { AnchorGapChange, StructureChange } from "../domain/anchor-sums.js";
 import { franjaCsv, type HistoryKind } from "../domain/franjas.js";
 import { plainTable, scrollBox } from "./charts.js";
 import { ringTimeChart, segmentHistoryChart, type RingTimeRow, type SegmentHistoryPanel } from "./diagnostic-charts.js";
@@ -38,6 +39,92 @@ const KIND_TEXT: Readonly<Record<HistoryKind, string>> = {
   deriva: "Sin un salto entre dos ficheros seguidos, pero moviéndose siempre hacia el mismo lado: se va alargando o acortando poco a poco.",
   cambio: "Con dos ficheros no se distingue un escalón de una deriva: hace falta un tercero.",
 };
+
+/** Tarjetas de cambio de estructura entre ficheros, de entrada. Parámetro de pantalla. */
+const STRUCTURE_CARDS = 5;
+
+/** Qué es cada cambio, con la tabla aprobada por el propietario (R-DAT-021). Nunca una causa. */
+function changeLabel(change: StructureChange, gap: AnchorGapChange): string {
+  const summed = gap.sum === "mas-lento" || gap.sum === "mas-rapido";
+  switch (change.kind) {
+    case "insertado":
+      return summed ? "tag nuevo que cambia el recorrido: revisar su configuración" : "tag nuevo en la línea";
+    case "retirado":
+      return `ya no se lee entre ${gap.fromAnchor} y ${gap.toAnchor}`;
+    case "sustituido":
+      if (change.placement === "otro-punto") return summed ? "se lee en otro punto, y el tramo tiene otro comportamiento" : "se lee en otro punto";
+      return summed ? "sustituido, con otro comportamiento del tramo" : "sustituido en su sitio";
+  }
+}
+
+/** La suma entre las dos anclas, antes y después. */
+export function sumLine(gap: AnchorGapChange, duration: (ms: number | null) => string): string {
+  const between = `entre ${gap.fromAnchor} y ${gap.toAnchor}`;
+  const when = gap.regime === "noche" ? ", de noche" : "";
+  switch (gap.sum) {
+    case "igual":
+      return `La suma ${between} sigue igual${when} (${duration(gap.before.p50Ms)} → ${duration(gap.after.p50Ms)}).`;
+    case "mas-lento":
+      return `La suma ${between} pasa de ${duration(gap.before.p50Ms)} a ${duration(gap.after.p50Ms)}${when}: tarda más.`;
+    case "mas-rapido":
+      return `La suma ${between} pasa de ${duration(gap.before.p50Ms)} a ${duration(gap.after.p50Ms)}${when}: tarda menos.`;
+    case "sin-medir":
+      return (
+        `La suma ${between} todavía no se puede comparar: hay ${gap.before.passes} pasadas antes y ${gap.after.passes} ` +
+        "después, pero no bastantes del mismo régimen —producción o noche— a los dos lados. Qué tags cambiaron " +
+        "ya se ve; si el tramo tarda lo mismo, con unas pasadas más."
+      );
+  }
+}
+
+/** Un cambio en una frase, con su desfase desde la primera ancla. */
+function changeText(change: StructureChange, gap: AnchorGapChange, duration: (ms: number | null) => string): string {
+  if (change.kind === "sustituido") {
+    return (
+      `${change.oldTagId} → ${change.newTagId}: ${changeLabel(change, gap)} (${change.oldTagId} a ${duration(change.oldOffsetMs)} de ` +
+      `${gap.fromAnchor}; ${change.newTagId} a ${duration(change.newOffsetMs)})`
+    );
+  }
+  return `${change.tagId}: ${changeLabel(change, gap)} (a ${duration(change.offsetMs)} de ${gap.fromAnchor})`;
+}
+
+/**
+ * La línea que se añade a una tarjeta que ya existe —un tag que empieza o deja de leerse, un cambio de
+ * tag, una deriva entre periodos— cuando la suma entre anclas lo sitúa.
+ */
+export function gapLineFor(tagId: string, gap: AnchorGapChange, duration: (ms: number | null) => string): string {
+  const change = gap.changes.find((entry) =>
+    entry.kind === "sustituido" ? entry.oldTagId === tagId || entry.newTagId === tagId : entry.tagId === tagId,
+  );
+  if (change === undefined) return "";
+  return ` Entre anclas: ${changeText(change, gap, duration)}. ${sumLine(gap, duration)}`;
+}
+
+/** Una tarjeta para un tramo entre anclas con sus cambios. */
+export function describeGap(
+  gap: AnchorGapChange,
+  duration: (ms: number | null) => string,
+): { readonly title: string; readonly figure: string; readonly evidence: string } {
+  const count = (predicate: (change: StructureChange) => boolean): number => gap.changes.filter(predicate).length;
+  const inPlace = count((change) => change.kind === "sustituido" && change.placement === "mismo-sitio");
+  const elsewhere = count((change) => change.kind === "sustituido" && change.placement === "otro-punto");
+  const added = count((change) => change.kind === "insertado");
+  const retired = count((change) => change.kind === "retirado");
+  const parts = [
+    inPlace === 0 ? "" : `${inPlace} ${inPlace === 1 ? "sustituido" : "sustituidos"} en su sitio`,
+    elsewhere === 0 ? "" : `${elsewhere} ${elsewhere === 1 ? "sustituido que se lee" : "sustituidos que se leen"} en otro punto`,
+    added === 0 ? "" : `${added} ${added === 1 ? "tag nuevo" : "tags nuevos"}`,
+    retired === 0 ? "" : `${retired} ${retired === 1 ? "que ya no se lee" : "que ya no se leen"}`,
+  ].filter((part) => part !== "");
+  return {
+    title: `Entre ${gap.fromAnchor} y ${gap.toAnchor}: ${parts.join(", ")}`,
+    figure: sumLine(gap, duration),
+    evidence:
+      `${gap.changes.map((change) => changeText(change, gap, duration)).join("; ")}. ` +
+      `${gap.fromAnchor} y ${gap.toAnchor} siguen en su sitio a los dos lados: son las anclas, y el tiempo entre ellas se ` +
+      "conserva si solo cambia lo de en medio (R-DAT-021).",
+  };
+}
 
 function download(fileName: string, csv: string): void {
   // Con BOM y `;`: lo abre una hoja de cálculo en español sin preguntar ni romper tildes.
@@ -117,14 +204,58 @@ export function renderFranjas(panel: HTMLElement, views: CircuitViews, deps: Fra
     }
     panel.append(buttons);
 
+    // Lo que cambia de un fichero al siguiente se marca en los dos: lo nuevo en el de después y lo que
+    // ya no se lee en el de antes. Lo que cambia dentro de un fichero, en ese mismo fichero, con la hora
+    // (R-DAT-021); su tarjeta está en «Cambios de tag».
+    const between = cohort.structure.filter((set) => set.source === "entre-ficheros");
+    const marks = new Map<string, { mark: "nuevo" | "retirado" | "sustituido"; note: string }>();
+    for (const set of cohort.structure) {
+      const inside =
+        set.source === "dentro-del-fichero"
+          ? (measured.find((source) => source.from <= set.atUtcMs && set.atUtcMs <= source.to)?.sourceId ?? null)
+          : null;
+      const beforeId = inside ?? set.beforeSourceId;
+      const afterId = inside ?? set.afterSourceId;
+      const when = inside === null ? "" : ` (${deps.formatInstant(set.atUtcMs)})`;
+      for (const gap of set.gaps) {
+        for (const change of gap.changes) {
+          if (change.kind === "sustituido") {
+            marks.set(`${afterId}\u0000${change.newTagId}`, { mark: "sustituido", note: `sustituye a ${change.oldTagId}${when}` });
+            marks.set(`${beforeId}\u0000${change.oldTagId}`, { mark: "retirado", note: `sustituido por ${change.newTagId}${when}` });
+          } else if (change.kind === "insertado") {
+            marks.set(`${afterId}\u0000${change.tagId}`, { mark: "nuevo", note: `${changeLabel(change, gap)}${when}` });
+          } else {
+            marks.set(`${beforeId}\u0000${change.tagId}`, { mark: "retirado", note: `${changeLabel(change, gap)}${when}` });
+          }
+        }
+      }
+    }
     const rows: RingTimeRow[] = cohort.measures
       .filter((measure) => measure.ring.length > 0)
       .map((measure) => ({
         label: labelOf.get(measure.sourceId) ?? measure.sourceId,
         lapMs: measure.lapMs,
-        tags: measure.positions.map((position) => ({ tagId: position.tagId, offsetMs: position.offsetMs })),
+        tags: measure.positions.map((position) => {
+          const marked = marks.get(`${measure.sourceId}\u0000${position.tagId}`);
+          return marked === undefined
+            ? { tagId: position.tagId, offsetMs: position.offsetMs }
+            : { tagId: position.tagId, offsetMs: position.offsetMs, mark: marked.mark, note: marked.note };
+        }),
       }));
     if (rows.length > 0) panel.append(ringTimeChart(rows));
+    const gapCards = between.flatMap((set) =>
+      set.gaps.map((gap) => {
+        const text = describeGap(gap, deps.duration);
+        const at = `de «${labelOf.get(set.beforeSourceId ?? "") ?? "—"}» a «${labelOf.get(set.afterSourceId ?? "") ?? "—"}»`;
+        return deps.finding(`${text.title} (${at})`, text.figure, text.evidence, ["estructura-entre-ficheros", gap.fromAnchor, gap.toAnchor]);
+      }),
+    );
+    for (const card of gapCards.slice(0, STRUCTURE_CARDS)) panel.append(card);
+    if (gapCards.length > STRUCTURE_CARDS) {
+      panel.append(
+        node("p", "muted", `Se enseñan ${STRUCTURE_CARDS} tramos de ${gapCards.length} con cambios; el resto, marcados en el anillo.`),
+      );
+    }
     const unshared = cohort.measures.filter((measure) => measure.ring.length > 0 && !measure.anchorShared);
     if (unshared.length > 0) {
       panel.append(

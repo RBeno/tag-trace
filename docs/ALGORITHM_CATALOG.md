@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.22.0
+version: 0.23.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -608,6 +608,49 @@ el primero y el último desplazados y la mediana monótona, es `deriva`; con dos
 salto que vuelve atrás no es nada.
 
 **CSV** (`franjaCsv`): `desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s;primera;ultima;posicion_desde_s`.
+
+## 6.10 Cambios de estructura por la suma entre anclas, implementado (R-DAT-021)
+
+`src/domain/anchor-sums.ts`. Compara dos ventanas —antes y después— sobre las secuencias de cada AGV,
+preparadas una vez (`anchorSequences`): sin repeticiones inmediatas y con el tramo de cobertura de
+cada lectura.
+
+**Anclas** (`stableAnchors`). El anillo dominante de cada ventana (`findDominantCycle`, solo con pasos
+dentro de un mismo tramo de cobertura) y la subsecuencia común más larga de los dos, tras rotarlos a un
+tag común. Un tag cambiado solo está en un lado, así que nunca es ancla: por eso un bloque de tres
+cambiados a la vez queda situado entero entre las dos anclas que lo rodean.
+
+**Pasadas** (`passesBetween`). P y la siguiente ancla Q en la secuencia de un AGV, sin otra ancla en
+medio y en el mismo tramo de cobertura. Una lectura de calle corta la pasada; no cuentan las que
+cruzan una parada de la producción ni las que contienen lecturas que llegaron juntas (R-DAT-020). De
+cada una: el régimen de su punto medio, T y el desfase del primer paso por cada tag de en medio.
+
+**Cambio de estructura.** Con **todas** las pasadas de cada lado (qué tags hay no depende de la hora):
+un tag del anillo de antes que no aparece después, o uno del anillo de después que no aparecía antes,
+con (1 − su tasa en su lado)^pasadas del otro lado ≤ `tagChanges.maxChance`. Ser del anillo deja fuera
+un tag de mantenimiento leído alguna vez.
+
+**Emparejamiento** (`pairInOrder`). Programación dinámica que conserva el orden y minimiza la suma de
+|desfase relativo viejo − nuevo| (desfase / p50 de T en su lado); se emparejan todos los del grupo
+pequeño. Sin parámetros.
+
+**Suma.** En producción si los dos lados tienen `anchorSums.minAnchorPasses` pasadas de producción; si
+no, de noche con el mismo mínimo; si no, `sin-medir`. `bandShift` entre los dos lados: `igual`,
+`mas-lento`, `mas-rapido`. Un sustituido está `mismo-sitio` si |Δdesfase| ≤ max(resolución, p80 − p50
+de T después), en el régimen de la suma; si no, `otro-punto`.
+
+**Dónde se mira.**
+
+- Entre ficheros seguidos, con la ventana completa de cada uno.
+- Dentro de cada tramo de cobertura, alrededor de cada grupo de instantes (`windowsAroundChanges`,
+  agrupados si distan menos de `tagChanges.maxOverlapMs`). Los instantes son los cambios de tag por su
+  sitio (R-DAT-019) y los **bordes de lectura** (`structureBoundaries`): la primera lectura de un tag
+  que empieza a leerse, o la última de uno que deja de leerse, a más de `tagChanges.maxOverlapMs` de
+  los extremos del tramo. Antes y después van hasta el grupo vecino, no hasta el final del tramo:
+  otro cambio a medias en un lado mezclaría la suma.
+
+Un mismo cambio se enseña una vez: primero los de dentro de un fichero, que dicen la hora; entre
+ficheros, solo lo que no esté ya dicho.
 
 ## 7. Segmentación de vueltas y huecos
 

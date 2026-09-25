@@ -65,6 +65,16 @@ import { buildCircuitState } from "../src/domain/circuit-state.js";
 import { collapseGroupedDeliveries, summarizeDeliveries } from "../src/domain/grouped-delivery.js";
 import { franjaWindows, measureFranjaCohort, segmentHistories } from "../src/domain/franjas.js";
 import {
+  anchorSequences,
+  changedTags,
+  compareAnchorGaps,
+  structureBoundaries,
+  windowsAroundChanges,
+  type AnchorGapChange,
+  type AnchorSumContext,
+  type StructureSet,
+} from "../src/domain/anchor-sums.js";
+import {
   flowStops,
   outsideProductionStops,
   productionStops,
@@ -337,6 +347,20 @@ async function buildViews(
       : [{ ...importedSource, complete: sourceCoverage(imported).complete }],
   );
   const measuredWindows = windows.filter((entry) => entry.duplicateOf === null);
+  // Los tramos de cobertura donde se buscan cambios de estructura, y los instantes de los cambios de
+  // tag que los agrupan (R-DAT-021). Sin almacén, el tramo es el del fichero importado.
+  const structureSpans =
+    coverage.length > 0
+      ? mergeIntervals([...coverage])
+      : [
+          readings.reduce(
+            (span, reading) => ({ from: Math.min(span.from, reading.time.utcMs), to: Math.max(span.to, reading.time.utcMs) }),
+            { from: Infinity, to: -Infinity },
+          ),
+        ];
+  const changeTimes = tagChanges.changes.flatMap((change) =>
+    change.kind === "cambio" ? [change.oldLastUtcMs, change.newFirstUtcMs] : [change.kind === "deja" ? change.lastUtcMs : change.firstUtcMs],
+  );
   const franjaCohorts: CircuitViews["franjas"]["cohorts"][number][] = [];
 
   for (const cohort of cohortAssignment.cohorts) {
@@ -537,7 +561,60 @@ async function buildViews(
         PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
       ),
     }));
-    franjaCohorts.push({ cohortId: cohort.id, measures, histories: segmentHistories(measures) });
+    // Tags insertados y sustituidos, por la suma entre anclas (R-DAT-021): entre ficheros seguidos, y
+    // alrededor de cada grupo de cambios de tag dentro de un tramo de cobertura. Un mismo conjunto de
+    // tags cambiados se enseña una sola vez.
+    const anchorContext: AnchorSumContext = {
+      direction,
+      coverage: structureSpans,
+      laneTags,
+      productionStops: production.stops.map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs })),
+      regimeOf,
+      deliveries: grouped.deliveries.map((delivery) => ({
+        agvId: delivery.agvId,
+        fromUtcMs: delivery.fromUtcMs,
+        toUtcMs: delivery.toUtcMs,
+      })),
+      maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
+      resolutionMs: preliminaryBands.resolutionMs,
+    };
+    // Las secuencias se preparan una vez. Dentro de un tramo de cobertura se mira alrededor de los
+    // cambios de tag por su sitio (R-DAT-019) y de donde un tag empieza o deja de leerse: un bloque de
+    // tags seguidos cambiado a la vez no tiene sitio que comparar, porque sus vecinos también cambiaron.
+    const sequences = anchorSequences(cohortReadings, direction, structureSpans);
+    const boundaries = structureBoundaries(sequences, structureSpans, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs);
+    // Un mismo cambio se enseña una vez. Primero dentro de cada fichero, que dice a qué hora; entre
+    // ficheros solo lo que no esté ya dicho: los mismos tags, o menos, de un cambio ya enseñado.
+    const structure: StructureSet[] = [];
+    const shown: (readonly string[])[] = [];
+    const keep = (gaps: readonly AnchorGapChange[]): AnchorGapChange[] =>
+      gaps.filter((gap) => {
+        const tags = changedTags(gap);
+        if (shown.some((earlier) => tags.every((tagId) => earlier.includes(tagId)))) return false;
+        shown.push(tags);
+        return true;
+      });
+    for (const around of windowsAroundChanges([...changeTimes, ...boundaries], structureSpans, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs)) {
+      const gaps = keep(compareAnchorGaps(sequences, around.before, around.after, anchorContext, PROVISIONAL_CONFIG.anchorSums));
+      if (gaps.length > 0) {
+        structure.push({ source: "dentro-del-fichero", beforeSourceId: null, afterSourceId: null, atUtcMs: around.atUtcMs, gaps });
+      }
+    }
+    for (let index = 1; index < measuredWindows.length; index += 1) {
+      const early = measuredWindows[index - 1] as (typeof measuredWindows)[number];
+      const late = measuredWindows[index] as (typeof measuredWindows)[number];
+      const gaps = keep(compareAnchorGaps(sequences, early.window, late.window, anchorContext, PROVISIONAL_CONFIG.anchorSums));
+      if (gaps.length > 0) {
+        structure.push({
+          source: "entre-ficheros",
+          beforeSourceId: early.source.sourceId,
+          afterSourceId: late.source.sourceId,
+          atUtcMs: late.window.from,
+          gaps,
+        });
+      }
+    }
+    franjaCohorts.push({ cohortId: cohort.id, measures, histories: segmentHistories(measures), structure });
 
     const size = effective.cycle.length;
     circuitStateCohorts.push({

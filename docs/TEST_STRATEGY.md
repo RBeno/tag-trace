@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.34.0
+version: 0.35.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -244,6 +244,11 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-192 | Ficheros y medición por fichero (`franjaWindows`, `measureFranjaCohort`, `franjaCsv`) | En orden de inicio; sin ventana completa no se mide; un repetido se marca; el anillo se rota al ancla del circuito, y si no está se dice; solo cuenta lo de su ventana; CSV con `;`, coma decimal, primera y última vez y posición | Medir dos veces el mismo fichero |
 | TC-193 | Historia de un tramo entre ficheros (`segmentHistories`) | Con dos ficheros, cambio sin distinguir; un salto que se mantiene, escalón en su fichero; sin saltos pero hacia el mismo lado, deriva; un salto que vuelve atrás o la variación normal, nada | Llamar escalón a una fluctuación |
 | TC-194 | Auditoría con dos ficheros y navegador con dos exportaciones | Posiciones crecientes en cada fichero, los nunca leídos sin situar y el siguiente situado, el tag nuevo entre sus vecinos solo en el de después; en el navegador, «Mediciones por fichero» con los dos, el anillo en tiempo sin un rótulo por marca y con su tabla, y el CSV de cada fichero con su cabecera | Una posición inventada; perder la medición al cerrar sin poder descargarla |
+| TC-195 | Suma entre anclas (`compareAnchorGaps`) | Tres tags seguidos cambiados a la vez: tres sustituciones en su sitio, incluido el del medio, con la suma igual; un tag nuevo que no cambia la suma, en la línea; uno que la alarga de 20 s a 26 s, más lento; un sustituido con otro desfase, en otro punto; dos viejos y tres nuevos, dos sustituidos y uno insertado | Dejar suelto el del medio de un bloque |
+| TC-196 | Lo que no es un cambio de estructura | Un tag leído a medias en los dos lados, o de vez en cuando fuera del anillo (mantenimiento), no sale; sin cambios, nada; las anclas son la subsecuencia común de los dos anillos en orden cíclico | Llamar «tag nuevo en la línea» a un tag de mantenimiento |
+| TC-197 | Pocas pasadas y otro régimen | Con tres pasadas después, la estructura sale y la suma queda sin medir; con el después de noche, la estructura sale igual y la suma se compara de noche si hay bastante a los dos lados, o no se compara | Esperar a tener muchas pasadas para decir qué tags cambiaron; comparar una suma de día con una de noche |
+| TC-198 | Dónde se mira dentro de un fichero (`structureBoundaries`, `windowsAroundChanges`) | Los bordes de lectura caen donde se cambió el bloque aunque sus vecinos también cambiaran; cada grupo se compara con lo que hay hasta el grupo vecino, no con el resto del tramo | Medir la suma de un cambio con otro cambio a medias en uno de los lados |
+| TC-199 | Auditoría (`tres-sustituidos-seguidos`, `insertado-misma-suma`) y navegador | Entre los dos ficheros y dentro de la ventana entera, el bloque de tres sustituido en su sitio con el del medio emparejado y la suma igual, el insertado en la línea, 98001 alargando el tramo, 60438 → 99001 en otro punto y los rotos como que ya no se leen; ningún tag sano en un cambio de estructura; en el navegador, una sola tarjeta del bloque, la línea «Entre anclas» en la tarjeta del tag nuevo, y marcas con forma en el anillo en tiempo | El mismo cambio enseñado dos veces |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda

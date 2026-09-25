@@ -2,6 +2,59 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.28.0] - 2026-09-25
+
+Tercera entrega sobre los tiempos por fichero: los tags insertados y sustituidos se leen por la suma
+entre anclas, también cuando se cambian dos o tres seguidos.
+
+### Añadido
+
+- **Suma entre anclas** (R-DAT-021, `src/domain/anchor-sums.ts`). Los tags que siguen en su sitio a
+  los dos lados de un cambio son las anclas: la subsecuencia común de los dos anillos. Un tag cambiado
+  nunca es ancla, así que un bloque de tres cambiados a la vez queda situado entero entre las dos que lo
+  rodean, **incluido el del medio**, que el vecino compartido (R-DAT-017, R-DAT-019) dejaba suelto.
+  - Cambio de estructura: un tag del anillo de un lado que falta en el otro, con la ausencia
+    improbable por azar. Los que faltan y los que aparecen se emparejan en orden por su desfase; lo
+    que sobra es insertado o retirado.
+  - Lectura con la tabla del propietario: «tag nuevo en la línea», «tag nuevo que cambia el recorrido:
+    revisar su configuración», «sustituido en su sitio», «se lee en otro punto», «ya no se lee entre P
+    y Q». Sin causas.
+  - La estructura se lee con todas las pasadas; la suma, en un solo régimen. Con pocas pasadas del
+    mismo régimen a los dos lados, la suma queda sin medir y se dice; los tags cambiados ya se ven.
+- Dónde se mira: entre ficheros seguidos y, dentro de cada tramo de cobertura, alrededor de los
+  cambios de tag y de los **bordes de lectura** (donde un tag empieza o deja de leerse), con el antes y
+  el después hasta el cambio vecino. El mismo cambio se enseña una vez, primero el de dentro del
+  fichero, que dice la hora.
+- Vistas: en «Cambios de tag», un bloque sin tarjetas propias sale como **una sola tarjeta** («Entre P
+  y Q: 3 sustituidos en su sitio») y las tarjetas que ya existían ganan una línea «Entre anclas». En
+  «Mediciones por fichero», las tarjetas de los cambios entre ficheros y las **marcas con forma** en el
+  anillo en tiempo. La comparación entre dos periodos gana la misma línea.
+- Configuración `anchorSums` (draft): cinco pasadas del mismo régimen a cada lado para la suma.
+- Auditoría `auditoria/16`: `tres-sustituidos-seguidos` e `insertado-misma-suma`, plantados tras
+  generar, sin `random()`. **38 de 38 clases detectadas.** Entre los dos ficheros y dentro de la ventana
+  entera sale además lo que ya estaba plantado: 98001 alarga su tramo de 16 s a 28 s (el «20 s → 26 s»
+  del propietario), 60438 → 99001 se lee en otro punto y los dos rotos ya no se leen. Ningún tag sano en
+  un cambio de estructura.
+
+### Corregido antes de publicar
+
+- La primera versión comparaba cada cambio dentro del fichero con **todo** el resto del tramo, y otro
+  cambio quedaba a medias en uno de los lados: el tag nuevo que alarga su tramo salía con la suma
+  igual, y una sustitución como un tag que ya no se lee. Ahora el antes y el después van hasta el
+  cambio vecino.
+- Un tag de mantenimiento leído unas pocas veces salía como «tag nuevo en la línea». Un cambio de
+  estructura tiene que ser del anillo de su lado.
+- Con el mantenimiento a las diez de la noche, el después era todo de noche y, como solo se usaban
+  pasadas de producción, no salía nada. Qué tags hay no depende de la hora: la estructura se lee con
+  todas y la suma se compara en un solo régimen. Lo encontró la prueba de navegador con dos
+  exportaciones.
+- Las entradas [3.25.0], [3.26.0] y [3.27.0] contaban dos clases de auditoría de más (36, 37 y 38): el
+  generador tenía 34, 35 y 36. Las clases y su detección no cambian; la cifra estaba mal escrita y se
+  corrige en su sitio, marcada.
+- La prueba «con una sola exportación» esperaba que solo empezara a leerse el tag nuevo suelto; el
+  tag insertado de la auditoría nueva también empieza a leerse a la hora del corte, y es verdad
+  plantada. El bloque de tres no sale ahí —sus vecinos también cambiaron— y lo ve la suma entre anclas.
+
 ## [3.27.0] - 2026-09-25
 
 Segunda entrega sobre los tiempos por fichero: cada fichero se mide por separado y cada tag tiene su
@@ -26,8 +79,8 @@ posición en tiempo.
   CSV por fichero (`…;primera;ultima;posicion_desde_s`), **el anillo en tiempo** fichero a fichero, y
   las tarjetas y la **historia** de los tramos que cambian.
 - Configuración `franjas` (draft): cuatro pasos para la mediana de un paso.
-- Auditoría `auditoria/15`: la clase de contexto `posicion-en-tiempo`, con dos ficheros. **38 de 38
-  clases detectadas.**
+- Auditoría `auditoria/15`: la clase de contexto `posicion-en-tiempo`, con dos ficheros. **36 de 36
+  clases detectadas** (decía 38; corregido en [3.28.0]).
 
 ## [3.26.0] - 2026-09-25
 
@@ -60,7 +113,7 @@ lecturas que llegaron juntas al servidor dejan de parecer paradas (punto 9).
 - Configuración `groupedDelivery` (draft): dos pasos casi seguidos como mínimo. «Imposible de rápido»
   reutiliza `readRate.minTimeRatio`.
 - Escenario de auditoría `auditoria/14`: la clase `entrega-agrupada`, cuatro ráfagas de 7121 plantadas
-  tras generar, sin `random()` y con el recorrido igual. Informe: **37 de 37 clases detectadas**.
+  tras generar, sin `random()` y con el recorrido igual. Informe: **35 de 35 clases detectadas** (decía 37; corregido en [3.28.0]).
 - OQ-131: cómo vuelca un AGV lo que guardó sin comunicación.
 
 ### Corregido antes de publicarse
@@ -128,8 +181,8 @@ se compara con las mediciones futuras para ver derivas o mejoras.
 - TC-180–185: `tests/unit/segment-bands.test.ts` (10), `tests/unit/circuit-state.test.ts` (10), tres
   casos nuevos en `flow-stops.test.ts`, auditoría y navegador.
 - Auditoría `auditoria/13` con cinco clases nuevas —noche lenta, parada aislada, punto conflictivo,
-  cuello de botella y zona oscura— y una prueba de que el estado normal no señala nada limpio. Las 36
-  clases, DETECTA.
+  cuello de botella y zona oscura— y una prueba de que el estado normal no señala nada limpio. Las 34
+  clases, DETECTA (decía 36; corregido en [3.28.0]).
 
 ### Cambiado
 

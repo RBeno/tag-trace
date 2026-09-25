@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/15`
+- Dataset ID/version: `auditoria/16`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -82,6 +82,8 @@ fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual q
 | `zona-oscura` | nada nuevo: la serie de tags poco leídos (40–43) | una zona oscura que los incluye, con la causa «se salta el tag» | que el tramo sea largo, o una zona sobre tramos limpios |
 | `entrega-agrupada` | un AGV sin otro papel (7121), cuatro veces de día: tras generar y congelar, sus tres lecturas anteriores a una lectura Y pasan a Y−3 s, Y−2 s e Y−1 s, en cinco tags seguidos del anillo lejos de calles, ramas y puntos críticos de tiempo; sin `random()` y con el recorrido entero igual | las cuatro como lecturas que llegaron juntas, sin parada; el AGV concentrado; ninguna parada suya en esos tramos (sin el colapso eran cuatro) | una parada en el hueco, o una ráfaga de otro AGV |
 | `posicion-en-tiempo` | contexto, nada nuevo en las lecturas: la auditoría mide dos ficheros, el temprano y el tardío, a una hora del corte | en cada fichero posiciones crecientes desde el ancla; los tres tags nunca leídos sin posición y el siguiente situado; el tag nuevo (98001) entre sus dos vecinos solo en el fichero de después | interpolar una posición, o situar el tag nuevo en el fichero de antes |
+| `tres-sustituidos-seguidos` | mantenimiento a mitad de ventana: desde el corte, tras generar y congelar, las lecturas de tres tags seguidos del anillo (96–98) llevan el nombre de otros tres (97001–97003), en el mismo instante; sin `random()` | entre los dos ficheros y dentro de la ventana entera, tres sustituciones en su sitio entre las dos anclas que los rodean, **incluido el del medio**, con la suma igual | tres cambios sueltos, o el del medio como un tag que deja de leerse y otro que empieza |
+| `insertado-misma-suma` | desde el corte, un tag nuevo (97101) en el punto medio de cada paso de 36 a 37, redondeado al segundo, sin mover el reloj | un tag nuevo en la línea entre sus dos vecinos, con la suma igual | que cambie el recorrido |
 ## Resultados prohibidos
 
 Además de lo que dice la tabla, hay dos cosas que esta auditoría vigila por encima de todo:

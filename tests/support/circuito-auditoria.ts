@@ -91,7 +91,11 @@ export type DefectClass =
   /** Tras un hueco, varias lecturas llegan casi a la vez al servidor, con la suma normal (R-DAT-020). */
   | "entrega-agrupada"
   /** Contexto: la posición en tiempo de cada tag en cada fichero (R-TIM-011). */
-  | "posicion-en-tiempo";
+  | "posicion-en-tiempo"
+  /** Mantenimiento: tres tags seguidos cambiados a la vez, en su sitio (R-DAT-021). */
+  | "tres-sustituidos-seguidos"
+  /** Un tag nuevo entre dos que no cambia el recorrido (R-DAT-021). */
+  | "insertado-misma-suma";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -850,6 +854,35 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     }
   }
 
+  // Mantenimiento a mitad de ventana (Parte 50, R-DAT-021), después de generar y de congelar, sin
+  // `random()`. Tres tags seguidos se cambian a la vez: desde el corte, sus lecturas llevan el nombre
+  // del nuevo, en el mismo instante. Y un tag nuevo aparece entre dos, en el punto medio de cada paso,
+  // sin mover el reloj: el recorrido entre los dos tarda lo mismo.
+  const corte = congelar(periodSplit);
+  const bloqueViejo = [96, 97, 98].map((index) => ring[index] as string);
+  const bloqueNuevo = ["97001", "97002", "97003"];
+  for (let index = 0; index < filas.length; index += 1) {
+    const fila = filas[index] as (typeof filas)[number];
+    const at = bloqueViejo.indexOf(fila.tag);
+    if (at >= 0 && fila.t >= corte) filas[index] = { ...fila, tag: bloqueNuevo[at] as string };
+  }
+  const antesDelNuevo = ring[36] as string;
+  const despuesDelNuevo = ring[37] as string;
+  const tagInsertado = "97101";
+  const porVehiculo = new Map<string, (typeof filas)[number][]>();
+  for (const fila of filas) porVehiculo.set(fila.v, [...(porVehiculo.get(fila.v) ?? []), fila]);
+  const insertadas: (typeof filas)[number][] = [];
+  for (const [vehicle, propias] of porVehiculo) {
+    propias.sort((a, b) => a.t - b.t);
+    for (let index = 1; index < propias.length; index += 1) {
+      const a = propias[index - 1] as (typeof filas)[number];
+      const b = propias[index] as (typeof filas)[number];
+      if (a.tag !== antesDelNuevo || b.tag !== despuesDelNuevo || a.t < corte || b.t - a.t < 4_000) continue;
+      insertadas.push({ t: Math.floor((a.t + b.t) / 2000) * 1000, v: vehicle, tag: tagInsertado });
+    }
+  }
+  filas.push(...insertadas);
+
   filas.sort((a, b) => b.t - a.t); // Pila: lo más reciente primero, como la fuente real.
 
   const readingsCsv = ["Fecha;AGV;Tag"]
@@ -905,6 +938,8 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     ring[cuelloPosicion - 1] as string,
     ring[cuelloPosicion] as string,
     ring[cuelloPosicion + 1] as string,
+    // Parte 50: el bloque de tres cambiado en su sitio.
+    ...bloqueViejo,
   ]);
 
   const defects: PlantedDefect[] = [
@@ -1182,6 +1217,24 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         "cada ráfaga como lecturas que llegaron juntas con la suma normal (no paró), el AGV concentrado, y " +
         "ninguna parada suya en esos tramos",
       mustNotSay: "una parada en el hueco, ni lecturas agrupadas de otro AGV",
+    },
+    {
+      kind: "tres-sustituidos-seguidos",
+      tags: [...bloqueViejo, ...bloqueNuevo],
+      vehicles: [],
+      atUtcMs: toRealUtc(corte),
+      expect:
+        "tres sustituciones en su sitio entre las dos anclas que los rodean, con la suma igual, incluido el " +
+        "del medio, que el vecino compartido no empareja",
+      mustNotSay: "tres cambios sueltos sin relación, ni el del medio como un tag que deja de leerse y otro que empieza",
+    },
+    {
+      kind: "insertado-misma-suma",
+      tags: [antesDelNuevo, tagInsertado, despuesDelNuevo],
+      vehicles: [],
+      atUtcMs: toRealUtc(corte),
+      expect: "un tag nuevo en la línea entre sus dos vecinos, con la suma igual",
+      mustNotSay: "que cambie el recorrido",
     },
     {
       kind: "posicion-en-tiempo",

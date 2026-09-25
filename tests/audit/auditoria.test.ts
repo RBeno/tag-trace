@@ -65,6 +65,15 @@ import {
 } from "../../src/domain/segment-bands.js";
 import { buildCircuitState, type CircuitState } from "../../src/domain/circuit-state.js";
 import { measureFranjaCohort, type FranjaCohort } from "../../src/domain/franjas.js";
+import type { Interval } from "../../src/domain/coverage.js";
+import {
+  anchorSequences,
+  compareAnchorGaps,
+  structureBoundaries,
+  windowsAroundChanges,
+  type AnchorGapChange,
+  type AnchorSumContext,
+} from "../../src/domain/anchor-sums.js";
 import {
   collapseGroupedDeliveries,
   summarizeDeliveries,
@@ -148,6 +157,14 @@ interface Analysis {
    * hubieran exportado por separado. Mismas transiciones limpias que el Worker.
    */
   readonly franjas: readonly (FranjaCohort & { readonly sourceId: string })[];
+  /**
+   * Cambios de estructura por la suma entre anclas (R-DAT-021): entre los dos ficheros, y dentro de la
+   * ventana entera como una sola exportación, alrededor de cada cambio de tag y de cada borde de lectura.
+   */
+  readonly structure: {
+    readonly entreFicheros: readonly AnchorGapChange[];
+    readonly dentroDelFichero: readonly AnchorGapChange[];
+  };
   /** Lecturas que llegaron juntas al servidor, y dónde se concentran (R-DAT-020). */
   readonly groupedDelivery: GroupedDeliveryReport;
   readonly deliverySummary: DeliverySummary;
@@ -486,6 +503,29 @@ function analyse(
           ),
         }));
 
+  // Cambios de estructura (R-DAT-021), con el mismo contexto que el Worker: ni calles, ni paradas de la
+  // producción, ni noche, ni lecturas que llegaron juntas.
+  const anchorContext: AnchorSumContext = {
+    direction,
+    coverage: window,
+    laneTags,
+    productionStops: production.stops.map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs })),
+    regimeOf,
+    deliveries: groupedDelivery.deliveries,
+    maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
+    resolutionMs: preliminaryBands?.resolutionMs ?? 1000,
+  };
+  const sequences = anchorSequences(cohortReadings, direction, window);
+  const [ficheroTemprano, ficheroTardio] = driftCoverage as [Interval, Interval];
+  const entreFicheros = compareAnchorGaps(sequences, ficheroTemprano, ficheroTardio, anchorContext, PROVISIONAL_CONFIG.anchorSums);
+  const changeTimes = tagChanges.changes.flatMap((change) =>
+    change.kind === "cambio" ? [change.oldLastUtcMs, change.newFirstUtcMs] : [change.kind === "deja" ? change.lastUtcMs : change.firstUtcMs],
+  );
+  const boundaries = structureBoundaries(sequences, window, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs);
+  const dentroDelFichero = windowsAroundChanges([...changeTimes, ...boundaries], window, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs).flatMap(
+    (around) => compareAnchorGaps(sequences, around.before, around.after, anchorContext, PROVISIONAL_CONFIG.anchorSums),
+  );
+
   return {
     matrix,
     ring,
@@ -512,6 +552,7 @@ function analyse(
     groupedDelivery,
     deliverySummary,
     franjas,
+    structure: { entreFicheros, dentroDelFichero },
     readings: readings.length,
   };
 }
@@ -544,6 +585,7 @@ describe("auditoría del circuito con verdad conocida", () => {
     groupedDelivery,
     deliverySummary,
     franjas,
+    structure,
     readings,
   } = analysis;
 
@@ -1151,6 +1193,41 @@ describe("auditoría del circuito con verdad conocida", () => {
               `${nuevo} a ${((n ?? 0) / 1000).toFixed(0)} s, entre ${((a ?? 0) / 1000).toFixed(0)} y ${((b ?? 0) / 1000).toFixed(0)} s`,
       };
     },
+    "tres-sustituidos-seguidos": () => {
+      const defect = scenario.defects.find((d) => d.kind === "tres-sustituidos-seguidos");
+      const viejos = (defect?.tags ?? []).slice(0, 3);
+      const nuevos = (defect?.tags ?? []).slice(3);
+      const esperado = viejos.map((tag, index) => `${tag}>${nuevos[index]}`).join(" ");
+      const lee = (gaps: readonly AnchorGapChange[]): { ok: boolean; detail: string } => {
+        const gap = gaps.find((entry) => entry.changes.some((change) => change.kind === "sustituido" && viejos.includes(change.oldTagId)));
+        if (gap === undefined) return { ok: false, detail: "ningún tramo entre anclas con el bloque" };
+        const pares = gap.changes
+          .map((change) => (change.kind === "sustituido" ? `${change.oldTagId}>${change.newTagId}${change.placement === "mismo-sitio" ? "" : "*"}` : `${change.kind}:${change.tagId}`))
+          .join(" ");
+        return {
+          ok: pares === esperado && gap.sum === "igual",
+          detail: `${gap.fromAnchor}→${gap.toAnchor}: ${pares}, suma ${gap.sum} (${gap.before.passes}/${gap.after.passes} pasadas)`,
+        };
+      };
+      const entre = lee(structure.entreFicheros);
+      const dentro = lee(structure.dentroDelFichero);
+      return { ok: entre.ok && dentro.ok, detail: `entre ficheros ${entre.detail}; dentro ${dentro.detail}` };
+    },
+    "insertado-misma-suma": () => {
+      const defect = scenario.defects.find((d) => d.kind === "insertado-misma-suma");
+      const [antes, nuevo, despues] = defect?.tags ?? [];
+      const lee = (gaps: readonly AnchorGapChange[]): { ok: boolean; detail: string } => {
+        const gap = gaps.find((entry) => entry.changes.some((change) => change.kind === "insertado" && change.tagId === nuevo));
+        if (gap === undefined) return { ok: false, detail: `${nuevo} no sale como insertado` };
+        return {
+          ok: gap.fromAnchor === antes && gap.toAnchor === despues && gap.changes.length === 1 && gap.sum === "igual",
+          detail: `${gap.fromAnchor}→${gap.toAnchor}: ${gap.changes.length} cambio(s), suma ${gap.sum}`,
+        };
+      };
+      const entre = lee(structure.entreFicheros);
+      const dentro = lee(structure.dentroDelFichero);
+      return { ok: entre.ok && dentro.ok, detail: `entre ficheros ${entre.detail}; dentro ${dentro.detail}` };
+    },
     "entrega-agrupada": () => {
       const defect = scenario.defects.find((d) => d.kind === "entrega-agrupada");
       const agv = defect?.vehicles[0] as string;
@@ -1191,6 +1268,23 @@ describe("auditoría del circuito con verdad conocida", () => {
     ].join("\n");
   };
 
+  /** Todos los cambios de estructura, para leerlos en el informe. */
+  const describeStructure = (): string => {
+    const line = (gap: AnchorGapChange): string =>
+      `${gap.fromAnchor}→${gap.toAnchor} [${gap.sum}, ${((gap.before.p50Ms ?? 0) / 1000).toFixed(0)}→${((gap.after.p50Ms ?? 0) / 1000).toFixed(0)} s]: ` +
+      gap.changes
+        .map((change) =>
+          change.kind === "sustituido"
+            ? `${change.oldTagId}>${change.newTagId} ${change.placement}`
+            : `${change.kind} ${change.tagId} a ${(change.offsetMs / 1000).toFixed(0)} s`,
+        )
+        .join(", ");
+    return [
+      `  entre ficheros: ${structure.entreFicheros.map(line).join("; ") || "nada"}`,
+      `  dentro del fichero: ${structure.dentroDelFichero.map(line).join("; ") || "nada"}`,
+    ].join("\n");
+  };
+
   it("publica el informe por clase", () => {
     const lineas: string[] = [];
     for (const defect of scenario.defects) {
@@ -1207,6 +1301,8 @@ describe("auditoría del circuito con verdad conocida", () => {
         lineas.join("\n") +
         `\n--- Estado normal del circuito (R-TIM-009) ---\n` +
         describeState() +
+        `\n--- Cambios de estructura (R-DAT-021) ---\n` +
+        describeStructure() +
         `\n=================\n`,
     );
     expect(ring.length).toBeGreaterThan(0);
@@ -1388,8 +1484,13 @@ describe("auditoría del circuito con verdad conocida", () => {
     ]);
     const dejan = tagChanges.changes.filter((change) => change.kind === "deja").map((change) => change.tagId).sort();
     expect(dejan).toEqual([...(of("rotura-subita")?.tags ?? [])].sort());
-    const empiezan = tagChanges.changes.filter((change) => change.kind === "empieza").map((change) => change.tagId);
-    expect(empiezan).toEqual(of("tag-nuevo-a-mitad-de-ventana")?.tags ?? []);
+    // Empiezan a leerse el tag nuevo suelto y el insertado entre dos (Parte 50): los dos se plantaron a la
+    // hora del corte. El bloque de tres sustituidos seguidos no sale aquí —sus vecinos también cambiaron,
+    // no tienen sitio que comparar—: lo ve la suma entre anclas (R-DAT-021).
+    const empiezan = tagChanges.changes.filter((change) => change.kind === "empieza").map((change) => change.tagId).sort();
+    expect(empiezan).toEqual(
+      [...(of("tag-nuevo-a-mitad-de-ventana")?.tags ?? []), (of("insertado-misma-suma")?.tags ?? [])[1] as string].sort(),
+    );
 
     // Frente al tag nuevo, solo el AGV plantado, y con «nunca».
     const noActualizado = of("memoria-no-actualizada");
@@ -1420,6 +1521,16 @@ describe("auditoría del circuito con verdad conocida", () => {
     );
     const cambiosSobreSanos = scenario.cleanTags.filter((tag) => tocados.has(tag));
     expect(cambiosSobreSanos, `cambios espurios: ${cambiosSobreSanos.join(", ")}`).toHaveLength(0);
+
+    // Ningún tag sano en un cambio de estructura por la suma entre anclas (R-DAT-021), ni entre ficheros
+    // ni dentro de la ventana entera.
+    const estructura = new Set(
+      [...structure.entreFicheros, ...structure.dentroDelFichero].flatMap((gap) =>
+        gap.changes.flatMap((change) => (change.kind === "sustituido" ? [change.oldTagId, change.newTagId] : [change.tagId])),
+      ),
+    );
+    const estructuraSobreSanos = scenario.cleanTags.filter((tag) => estructura.has(tag));
+    expect(estructuraSobreSanos, `cambios de estructura espurios: ${estructuraSobreSanos.join(", ")}`).toHaveLength(0);
 
     // «Nunca» y «dejó de leer» solo en los AGV plantados para eso; «poco» solo en los que tienen una
     // lectura desigual plantada (el de la tanda de tags saltados, el lector degradado y el nuevo caso).

@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.35.0
+version: 0.36.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -108,6 +108,7 @@ regla exista: la matriz no es una lista de intenciones.
 | R-TIM-009 / R-TIM-010 / R-FLO-007–009 / R-GRA-014 / R-AGV-018 (cola física) / TC-180–185 estado normal del circuito | `src/domain/segment-bands.ts`, `src/domain/circuit-state.ts`, `src/domain/flow-stops.ts` (valla, cola, retenciones, `aheadEvidence`), `src/domain/graph.ts` (`quantile`), `src/domain/config.ts` (`regimes`, `bands`, `circuitState`), `workers/import.worker.ts`, `src/application/protocol.ts` (`circuitState`), `src/presentation/diagnostic-charts.ts` (`segmentBandChart`), `src/presentation/main.ts` (`renderCircuitState`) | `tests/unit/segment-bands.test.ts`, `tests/unit/flow-stops.test.ts`, `tests/unit/circuit-state.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 | R-DAT-020 / TC-187–190 lecturas que llegaron juntas al servidor | `src/domain/grouped-delivery.ts`, `src/domain/circuit-state.ts` (`concentrated`), `src/domain/config.ts` (`groupedDelivery`), `workers/import.worker.ts` (colapso antes de medir tiempos), `src/application/protocol.ts` (`circuitState.cohorts[].groupedDelivery`), `src/presentation/main.ts` (`renderCircuitState`) | `tests/unit/grouped-delivery.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 | R-TIM-011 / R-TIM-010 (entre ficheros) / TC-191–194 medición por fichero y posición en tiempo | `src/domain/franjas.ts`, `src/domain/segment-bands.ts` (`bandShift`), `src/domain/config.ts` (`franjas`), `workers/import.worker.ts`, `src/application/protocol.ts` (`franjas`), `src/presentation/franjas-ui.ts`, `src/presentation/diagnostic-charts.ts` (`ringTimeChart`, `segmentHistoryChart`) | `tests/unit/franjas.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
+| R-DAT-021 / TC-195–199 cambios de estructura por la suma entre anclas | `src/domain/anchor-sums.ts`, `src/domain/config.ts` (`anchorSums`), `workers/import.worker.ts` (dentro de cada fichero y entre ficheros), `src/application/protocol.ts` (`franjas.cohorts[].structure`), `src/presentation/franjas-ui.ts` (`describeGap`, `gapLineFor`, marcas del anillo en tiempo), `src/presentation/main.ts` (`renderTagChanges`, `renderDrift`) | `tests/unit/anchor-sums.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 | R-AGV-017 / TC-171–174 cómo reaparece un AGV tras un hueco | `src/domain/silence-kind.ts`, `src/domain/fleet.ts`, `src/domain/config.ts` (`silenceKind`), `workers/import.worker.ts`, `src/presentation/diagnostic-charts.ts` (`fleetLifelineChart`), `src/presentation/styles.css` | `tests/unit/silence-kind.test.ts`, `tests/unit/fleet.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de

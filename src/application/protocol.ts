@@ -19,6 +19,7 @@ import type { Blockage, ProductionStop } from "../domain/flow-stops.js";
 import type { CircuitState } from "../domain/circuit-state.js";
 import type { DeliveryConcentration, GroupedDelivery } from "../domain/grouped-delivery.js";
 import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
+import type { StructureSet } from "../domain/anchor-sums.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
@@ -509,6 +510,11 @@ export interface CircuitViews {
       readonly cohortId: number;
       readonly measures: readonly (FranjaCohort & { readonly sourceId: string })[];
       readonly histories: readonly SegmentHistory[];
+      /**
+       * Tags insertados, retirados y sustituidos, por la suma entre anclas (R-DAT-021): entre ficheros
+       * seguidos, y alrededor de cada grupo de cambios de tag dentro de un tramo de cobertura.
+       */
+      readonly structure: readonly StructureSet[];
     }[];
   };
   /**

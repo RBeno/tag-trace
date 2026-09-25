@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.19.0
+version: 0.20.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -378,6 +378,13 @@ Lo que más se va a ver en planta, destacado dentro de su sección y sin bloque 
   la matriz con su gráfico. Bajo cada tag nuevo, los AGV que no lo leen como el resto con su cifra:
   «nunca (0 de 19 pasadas)», «desde las 17:40, 0 de 12», «empezó a leerlo a las 18:10, tras 9
   pasadas», «45 % (9 de 20)».
+  Con la suma entre anclas (R-DAT-021): si el tramo entre dos anclas trae tags sin tarjeta propia —un
+  bloque de dos o tres cambiados en mantenimiento, cuyos vecinos también cambiaron— o una sustitución
+  que el sitio no emparejó, sale **una sola tarjeta** con la hora, «Entre P y Q: 3 sustituidos en su
+  sitio», y quita las de esos tags. Si no, la tarjeta que ya existe gana una línea «Entre anclas: …»
+  con qué es el tag y la suma antes y después. Con pocas pasadas del mismo régimen a los dos lados, la
+  línea dice que la suma todavía no se puede comparar; los tags cambiados ya se ven. Las tarjetas de
+  «Comparación entre dos periodos» ganan la misma línea, sin tarjeta nueva.
 - **Lo que hay que mirar**: las tarjetas de tag separan quién no lo lee nunca, quién dejó de leerlo y
   quién lo lee poco, con porcentajes; las de AGV van por tipo —nunca, dejó de leer, poco en muchos
   tags, poco en pocos—, hasta cinco de cada uno y el resto en tabla.
@@ -429,7 +436,14 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
 - **El anillo en tiempo, fichero a fichero**: una fila por fichero, cada tag como una raya en los
   segundos de recorrido desde el ancla; una línea gris es la vuelta entera. El pie dice que es tiempo
   y no distancia. Lectura al tocar con la posición del tag en cada fichero; tabla plegada con todas.
-  Los cambios de estructura (R-DAT-021) se marcan con forma además de color.
+  Los cambios de estructura (R-DAT-021) se marcan con forma además de color: un triángulo para un tag
+  nuevo, un rombo para el que sustituye y un aspa para el que ya no se lee. Entre ficheros, en la fila
+  de antes y en la de después; dentro de un fichero, en su fila, con la hora en la lectura.
+- **Tarjetas de los cambios de estructura entre ficheros**: «Entre P y Q: 3 sustituidos en su sitio (de
+  «a» a «b»)», con la suma entre las dos anclas antes y después y, por tag, qué es y a cuántos segundos
+  de P. Se dice con las palabras de la tabla del propietario: «tag nuevo en la línea», «tag nuevo que
+  cambia el recorrido: revisar su configuración», «sustituido en su sitio», «se lee en otro punto»,
+  «ya no se lee entre P y Q». Sin causas.
 - Con dos ficheros o más, las **tarjetas de los tramos que cambian** en producción (escalón desde un
   fichero, deriva, o cambio sin distinguir con dos) y la **historia de esos tramos** en pequeños
   múltiplos: el punto es la mitad de las pasadas y la barra del 80 % al 95 %, con acento en el fichero

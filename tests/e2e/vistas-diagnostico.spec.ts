@@ -175,6 +175,12 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     const franjaText = readFileSync(await franjaCsv.path(), "utf8").replace(/^﻿/, "");
     expect(franjaText.split("\r\n")[0]).toBe("desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s;primera;ultima;posicion_desde_s");
 
+    // Los cambios de estructura por la suma entre anclas (R-DAT-021). Aquí el mantenimiento cae dentro del
+    // segundo fichero, a las diez de la noche: el bloque de tres sale sustituido en su sitio con su hora,
+    // una sola vez, y marcado en la fila de ese fichero con su forma.
+    await expect(page.locator(".finding", { hasText: "3 sustituidos en su sitio" })).toHaveCount(1);
+    expect(await ringTime.locator("path[data-k]").count()).toBeGreaterThan(0);
+
     // El expediente de un vehículo, en un solo eje de tiempo.
     await page.locator("#dossier-search").fill("7112");
     const timeline = figureOf("Expediente de 7112 en el tiempo");
@@ -212,6 +218,15 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     const cambio = page.locator(".finding", { hasText: `${viejo} → ${nuevo}` }).first();
     await expect(cambio).toBeVisible();
     await expect(cambio).toContainText(`${sinActualizar}, nunca (0 de`);
+
+    // Dentro del mismo fichero, la suma entre anclas (R-DAT-021): el bloque de tres cambiados a la vez
+    // sale en una sola tarjeta, aunque el sitio no los viera; y el tag nuevo que alarga el tramo lleva
+    // su línea.
+    await expect(page.locator(".finding", { hasText: "3 sustituidos en su sitio" }).first()).toContainText("sigue igual");
+    const tagNuevo = of("tag-nuevo-a-mitad-de-ventana")?.tags[0] ?? "";
+    await expect(page.locator(".finding", { hasText: `Tag ${tagNuevo}: empezó a leerse` })).toContainText(
+      "tag nuevo que cambia el recorrido",
+    );
 
     // La lectura por AGV: «nunca» con su cifra, y «poco» en pocos tags con su porcentaje. Sin causa.
     const ciego = of("omision-por-memoria")?.vehicles[0] ?? "";

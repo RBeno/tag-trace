@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.13.0
+version: 0.14.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -212,3 +212,6 @@ lecturas guardadas en cada importación y se descargan en CSV; guardar una copia
 espera a F4. Por mantenimiento se cambian a veces 2 o 3 tags seguidos, y eso tiene que detectarse
 bien desde las primeras mediciones. Orden aprobado: lecturas agrupadas, medición por fichero y
 posición en tiempo, cambios de estructura por la suma entre anclas, y ritmo por AGV y quién retiene.
+Un tag cambiado nunca es ancla: por eso un bloque de tres cambiados a la vez queda situado entero entre
+las dos anclas que lo rodean, cuando el vecino compartido (R-DAT-017, R-DAT-019) deja suelto el del
+medio. Qué tags hay no depende de la hora; la suma sí, y se compara en un solo régimen (R-DAT-021).

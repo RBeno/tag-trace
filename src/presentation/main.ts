@@ -51,7 +51,8 @@ import {
 } from "./diagnostic-charts.js";
 import { PROVISIONAL_CONFIG } from "../domain/config.js";
 import { bandsCsv } from "../domain/segment-bands.js";
-import { renderFranjas } from "./franjas-ui.js";
+import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
+import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
@@ -1934,22 +1935,42 @@ function renderVehicleTrends(matrix: Matrix): void {
  * pone una persona (R-EVI-006).
  */
 function renderTagChanges(views: CircuitViews): void {
-  const { changes, adoption } = views.tagChanges;
-  const explained = new Set<string>();
-  for (const change of changes) {
-    if (change.kind === "cambio") {
-      explained.add(change.oldTagId);
-      explained.add(change.newTagId);
-    } else {
-      explained.add(change.tagId);
-    }
-  }
+  const { adoption } = views.tagChanges;
+  const tagsOfChange = (change: CircuitViews["tagChanges"]["changes"][number]): readonly string[] =>
+    change.kind === "cambio" ? [change.oldTagId, change.newTagId] : [change.tagId];
+  const carded = new Set(views.tagChanges.changes.flatMap(tagsOfChange));
+  const pairs = new Set(
+    views.tagChanges.changes.flatMap((change) => (change.kind === "cambio" ? [`${change.oldTagId}>${change.newTagId}`] : [])),
+  );
+
+  // Cambios de estructura dentro del fichero, por la suma entre anclas (R-DAT-021). Un tramo con tags
+  // que no tienen tarjeta —un bloque cambiado en mantenimiento, cuyos vecinos también cambiaron— o con
+  // una sustitución que el sitio no emparejó sale como una sola tarjeta y quita las de sus tags. Si no,
+  // la suma se añade como una línea a la tarjeta que ya existe.
+  const within = views.franjas.cohorts.flatMap((cohort) =>
+    cohort.structure
+      .filter((set) => set.source === "dentro-del-fichero")
+      .flatMap((set) => set.gaps.map((gap) => ({ gap, atUtcMs: set.atUtcMs }))),
+  );
+  const absorbs = (gap: AnchorGapChange): boolean =>
+    gap.changes.some((change) =>
+      change.kind === "sustituido" ? !pairs.has(`${change.oldTagId}>${change.newTagId}`) : !carded.has(change.tagId),
+    );
+  const absorbed = within.filter((entry) => absorbs(entry.gap));
+  const absorbedTags = new Set(absorbed.flatMap((entry) => changedTags(entry.gap)));
+  const lineFor = (tagId: string): string => {
+    const entry = within.find((candidate) => !absorbs(candidate.gap) && changedTags(candidate.gap).includes(tagId));
+    return entry === undefined ? "" : gapLineFor(tagId, entry.gap, duration);
+  };
+  const changes = views.tagChanges.changes.filter((change) => !tagsOfChange(change).every((tagId) => absorbedTags.has(tagId)));
+
+  const explained = new Set<string>([...carded, ...within.flatMap((entry) => changedTags(entry.gap))]);
   const trendTags = views.readMatrices.flatMap((matrix) =>
     matrix.tags.filter(
       (tag) => !explained.has(tag.tagId) && (tag.changedAtUtcMs !== undefined || tag.trend === "bajando"),
     ),
   );
-  if (changes.length === 0 && trendTags.length === 0) return;
+  if (changes.length === 0 && absorbed.length === 0 && trendTags.length === 0) return;
 
   viewsPanel.append(element("h3", undefined, "Cambios de tag"));
   viewsPanel.append(
@@ -1980,7 +2001,14 @@ function renderTagChanges(views: CircuitViews): void {
       : ` AGV que no lo leen como el resto: ${tagList(issues.map((issue) => `${issue.agvId}, ${factText(issue.fact)}`))}.`;
   };
 
-  const cards: HTMLElement[] = [];
+  const cards: HTMLElement[] = absorbed.map(({ gap, atUtcMs }) => {
+    const text = describeGap(gap, duration);
+    return finding(`${text.title}, ${formatInstant(atUtcMs)}`, text.figure, text.evidence, [
+      "estructura",
+      gap.fromAnchor,
+      gap.toAnchor,
+    ]);
+  });
   for (const change of changes) {
     if (change.kind === "cambio") {
       cards.push(
@@ -1989,7 +2017,7 @@ function renderTagChanges(views: CircuitViews): void {
           `${change.oldTagId} dejó de leerse ${formatInstant(change.oldLastUtcMs)}; ${change.newTagId} empezó ` +
             formatInstant(change.newFirstUtcMs),
           `En el mismo sitio (mismo ${change.neighborSide}, ${change.sharedNeighbor}). Después, la flota pasó ` +
-            `${change.passesAfterOld} veces sin leer ${change.oldTagId}.${adoptionLine(change.newTagId)}`,
+            `${change.passesAfterOld} veces sin leer ${change.oldTagId}.${adoptionLine(change.newTagId)}${lineFor(change.newTagId)}`,
           ["cambio-tag", change.oldTagId, change.newTagId],
         ),
       );
@@ -1998,7 +2026,7 @@ function renderTagChanges(views: CircuitViews): void {
         finding(
           `Tag ${change.tagId}: dejó de leerse`,
           `última lectura ${formatInstant(change.lastUtcMs)}`,
-          `Después, la flota pasó ${change.passesAfter} veces por su sitio sin leerlo.`,
+          `Después, la flota pasó ${change.passesAfter} veces por su sitio sin leerlo.${lineFor(change.tagId)}`,
           ["tag-deja", change.tagId],
         ),
       );
@@ -2007,19 +2035,27 @@ function renderTagChanges(views: CircuitViews): void {
         finding(
           `Tag ${change.tagId}: empezó a leerse`,
           `primera lectura ${formatInstant(change.firstUtcMs)}`,
-          `Antes, la flota pasó ${change.passesBefore} veces por su sitio sin leerlo.${adoptionLine(change.tagId)}`,
+          `Antes, la flota pasó ${change.passesBefore} veces por su sitio sin leerlo.${adoptionLine(change.tagId)}${lineFor(change.tagId)}`,
           ["tag-empieza", change.tagId],
         ),
       );
     }
   }
   for (const card of cards.slice(0, HIGHLIGHTS)) viewsPanel.append(card);
-  if (changes.length > 0) {
+  const total = absorbed.length + changes.length;
+  if (total > 0) {
     viewsPanel.append(
-      lazyDetails(`Ver los ${changes.length} cambios dentro del periodo`, () =>
-        plainTable(
-          ["Tag", "Qué pasó", "Hora", "AGV que no lo leen como el resto"],
-          changes.map((change) => {
+      lazyDetails(`Ver los ${total} cambios dentro del periodo`, () =>
+        plainTable(["Tag", "Qué pasó", "Hora", "AGV que no lo leen como el resto"], [
+          ...absorbed.map(({ gap, atUtcMs }) => [
+            gap.changes
+              .map((change) => (change.kind === "sustituido" ? `${change.oldTagId} → ${change.newTagId}` : change.tagId))
+              .join(", "),
+            describeGap(gap, duration).title,
+            formatInstant(atUtcMs),
+            "—",
+          ]),
+          ...changes.map((change) => {
             const tagId = change.kind === "cambio" ? `${change.oldTagId} → ${change.newTagId}` : change.tagId;
             const what = change.kind === "cambio" ? "cambio de tag" : change.kind === "deja" ? "dejó de leerse" : "empezó a leerse";
             const at =
@@ -2030,7 +2066,7 @@ function renderTagChanges(views: CircuitViews): void {
             const issues = newTag === null ? [] : adoption.filter((issue) => issue.tagId === newTag);
             return [tagId, what, at, issues.length === 0 ? "—" : issues.map((issue) => issue.agvId).join(", ")];
           }),
-        ),
+        ]),
       ),
     );
   }
@@ -2269,10 +2305,18 @@ function renderDrift(views: CircuitViews): void {
   );
   if (drift.tagDrifts.length > 0) viewsPanel.append(driftChart(drift));
 
+  // La suma entre anclas sitúa cada cambio (R-DAT-021): se añade como una línea, sin otra tarjeta.
+  const gaps = views.franjas.cohorts.flatMap((cohort) =>
+    [...cohort.structure].sort((a, b) => (a.source === b.source ? 0 : a.source === "entre-ficheros" ? -1 : 1)).flatMap((set) => set.gaps),
+  );
+  const gapLine = (tagId: string): string => {
+    const gap = gaps.find((candidate) => changedTags(candidate).includes(tagId));
+    return gap === undefined ? "" : gapLineFor(tagId, gap, duration);
+  };
   const sortedTags = [...drift.tagDrifts].sort((a, b) => a.tagId.localeCompare(b.tagId));
   for (const entry of sortedTags.slice(0, 5)) {
     viewsPanel.append(
-      finding(`${entry.tagId}: ${kindLabel[entry.kind]}`, detailOf(entry), evidenceOf(entry), [
+      finding(`${entry.tagId}: ${kindLabel[entry.kind]}`, detailOf(entry), `${evidenceOf(entry)}${gapLine(entry.kind === "sustitucion-candidata" ? (entry.nuevoTagId ?? entry.tagId) : entry.tagId)}`, [
         "deriva",
         entry.kind,
         entry.tagId,
