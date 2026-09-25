@@ -24,6 +24,7 @@ import type { PaceReport } from "../domain/vehicle-pace.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { UndeclaredTag } from "../domain/undeclared-tags.js";
+import type { CircuitOrder } from "../domain/circuit-order.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
 import type { ReadMatrix } from "../domain/read-matrix.js";
 import type { TagChangeReport } from "../domain/tag-changes.js";
@@ -300,6 +301,8 @@ export interface CircuitViews {
   readonly vsystemContrast?: readonly VsystemComparisonRow[];
   /** Tags que se leen y no están en la lista `circuito`: dónde y cuándo se leen (R-DAT-022). */
   readonly undeclaredTags?: readonly UndeclaredTag[];
+  /** El orden del circuito según las lecturas, contrastado tag a tag con la lista (R-GRA-015). */
+  readonly circuitOrder?: CircuitOrder;
   /** Fotogramas del replay, en fracción temporal — nunca posición física (`PERFORMANCE_BUDGET.md` §6). */
   readonly replay: readonly SerializedReplayFrame[];
   /**

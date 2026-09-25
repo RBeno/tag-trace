@@ -2,6 +2,52 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.32.0] - 2026-09-25
+
+La posición de un tag la dan las lecturas, no la lista (R-GRA-015). El propietario: la lista del
+circuito puede tener erratas al transcribir o un orden distinto al real, y las lecturas de los AGV son
+las que dictan la posición real de cada tag.
+
+### Añadido
+
+- **Orden del circuito según las lecturas** (`src/domain/circuit-order.ts`). Debajo del contraste con
+  Vsystem:
+  - una línea con cuántos tags están en el orden de la lista, cuántos en otro sitio, cuántos sin
+    lecturas (con la posición solo de la lista), cuántos leídos que la lista no tiene y cuántos fuera
+    del recorrido;
+  - la tabla tag a tag, con su posición en cada lado.
+
+  El anillo va en el orden en que se lee. Lo leído fuera de él va detrás de su predecesor leído, y lo
+  que nadie lee, donde lo pone la lista, y así se dice.
+- `dominantNeighbours` (`undeclared-tags.ts`): el sitio leído de cualquier tag, compartido con los
+  tags fuera de la lista.
+- Auditoría: `lista-con-otro-orden` y `lista-con-numero-mal-escrito` (`auditoria/19`). Las erratas
+  van solo en la lista y las lecturas no cambian. Las 43 clases salen DETECTA. Los tags cambiados de
+  orden siguen limpios en todas las sondas: una errata de la lista no mueve nada de lo leído.
+
+### Cambiado
+
+- **El contraste habla de la lista, no del circuito.** La cabecera dice que manda lo leído. Cada caso
+  se llama ahora así:
+  - «la lista lo pone en otro sitio», con su sitio según las lecturas y según la lista;
+  - «posible sustitución o número mal escrito»: un tag declarado que no se lee, en el sitio donde se
+    lee otro que la lista no tiene;
+  - «su sitio solo lo da la lista»: un tag declarado sin lecturas.
+- Un tag fuera de la lista se sitúa por sus vecinos leídos, sin el orden de la lista. Su tarjeta dice
+  su posición según las lecturas.
+- La auditoría llama `physicalRing` al anillo verdadero, que antes se llamaba `declaredRing`, y
+  guarda aparte la lista tal como se escribe (`declaredList`).
+
+### Medido, y por eso no se hace
+
+No hay detector de erratas por parecido de número. Los tags vienen en familias de números seguidos:
+en un circuito real, de 75 tags declarados sin lecturas, 53 tienen un tag leído a un solo dígito.
+Un número parecido no prueba nada; el sitio, sí.
+
+### Corregido
+
+- En `[3.31.0]` decía que la auditoría tenía 40 clases; eran 41.
+
 ## [3.31.0] - 2026-09-25
 
 La exportación de un circuito real en Excel, con la lista del propietario convertida a las listas
@@ -22,7 +68,7 @@ del importador. Todo lo que ese análisis pidió, y los defectos que encontró.
 - **Tags leídos fuera de la lista del circuito** (R-DAT-022, `src/domain/undeclared-tags.ts`). De
   cada uno, su sitio, sus lecturas de día y de noche y las pasadas por su sitio en cada régimen:
   candidato a una posición, tag de noche o posiblemente de noche.
-- Auditoría: clase `tag-de-noche` (`auditoria/18`). Las 40 clases salen DETECTA.
+- Auditoría: clase `tag-de-noche` (`auditoria/18`). Las 41 clases salen DETECTA.
 
 ### Corregido
 

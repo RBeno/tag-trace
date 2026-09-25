@@ -58,7 +58,15 @@ import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
 import { isAvailable, loadCircuit, loadReviews } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
-import { criticalFunctionLabel, patternLabel, truthLabel, verdictLabel, zoneLabel } from "./labels.js";
+import {
+  criticalFunctionLabel,
+  orderChangeLabel,
+  orderReadingLabel,
+  patternLabel,
+  truthLabel,
+  verdictLabel,
+  zoneLabel,
+} from "./labels.js";
 
 /** Zona horaria del piloto. Es configuración: vivirá en el circuito cuando exista (F1b). */
 const ZONE = "Europe/Madrid";
@@ -1078,8 +1086,10 @@ function renderViews(views: CircuitViews): void {
       element(
         "p",
         "muted",
-        "Lo declarado en Vsystem frente al anillo observado. Solo se listan las diferencias; una " +
-          "«posible sustitución» es una hipótesis que hay que comprobar.",
+        "La lista del circuito frente al orden en que leen los AGV. Manda lo leído: la lista puede " +
+          "tener erratas al transcribir o un orden distinto al real, así que una diferencia es algo que " +
+          "corregir en la lista, no un fallo del circuito. Solo se listan las diferencias; una «posible " +
+          "sustitución o número mal escrito» se comprueba en planta.",
       ),
     );
     viewsPanel.append(
@@ -1097,8 +1107,48 @@ function renderViews(views: CircuitViews): void {
       ),
     );
   }
+  renderCircuitOrder(views);
   renderUndeclaredTags(views);
   reviewSession?.refresh();
+}
+
+/**
+ * El orden del circuito según las lecturas, tag a tag contra la lista (R-GRA-015). Es la lista que
+ * dictan los AGV: lo leído en su sitio leído, y lo que no se lee donde lo pone la lista, dicho así.
+ */
+function renderCircuitOrder(views: CircuitViews): void {
+  const order = views.circuitOrder;
+  if (order === undefined) return;
+  const s = order.summary;
+  const count = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
+  viewsPanel.append(
+    element(
+      "p",
+      undefined,
+      `Según las lecturas: ${count(s.igual, "tag en el orden de la lista", "tags en el orden de la lista")}, ` +
+        `${count(s["otro-sitio"], "que la lista pone en otro sitio", "que la lista pone en otro sitio")}, ` +
+        `${count(s["sin-lecturas"], "sin lecturas", "sin lecturas")} (su posición es solo la de la lista), ` +
+        `${count(s["no-en-la-lista"], "leído que la lista no tiene", "leídos que la lista no tiene")} y ` +
+        `${count(s["fuera-del-recorrido"], "leído fuera del recorrido principal", "leídos fuera del recorrido principal")}.`,
+    ),
+  );
+  viewsPanel.append(
+    lazyDetails(`Ver el orden del circuito según las lecturas (${order.rows.length} tags)`, () =>
+      plainTable(
+        ["Posición", "Tag", "Lectura", "En la lista", "Diferencia", "Según las lecturas", "Según la lista", "Declarado en planta"],
+        order.rows.map((row) => [
+          String(row.position),
+          row.tagId,
+          orderReadingLabel(row.reading),
+          row.listPosition === null ? "—" : String(row.listPosition),
+          orderChangeLabel(row.change),
+          row.readBetween ?? "—",
+          row.listBetween ?? "—",
+          currentTagInfo[row.tagId] ?? "",
+        ]),
+      ),
+    ),
+  );
 }
 
 /**
@@ -1119,11 +1169,15 @@ function renderUndeclaredTags(views: CircuitViews): void {
     ),
   );
   const cards = element("div", "findings");
+  // Su sitio en el orden que dictan las lecturas, no en el de la lista (R-GRA-015).
+  const positionOf = new Map((views.circuitOrder?.rows ?? []).map((row) => [row.tagId, row.position]));
   for (const tag of tags.slice(0, HIGHLIGHTS)) {
+    const position = positionOf.get(tag.tagId);
     cards.append(
       finding(
         `${tag.tagId}: ${label[tag.verdict]}`,
-        `${(tag.dayReadings + tag.nightReadings).toLocaleString("es-ES")} lecturas`,
+        `${(tag.dayReadings + tag.nightReadings).toLocaleString("es-ES")} lecturas` +
+          (position === undefined ? "" : ` · posición ${position} según las lecturas`),
         tag.evidence,
         ["tag-fuera-del-circuito", tag.tagId],
       ),

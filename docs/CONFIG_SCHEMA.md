@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.14.0
+version: 0.15.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -291,6 +291,10 @@ tag_lists:
   maintenance : { tags[], extracted_at, valid_from, valid_to }
   emergency   : { tags[], extracted_at, valid_from, valid_to }
 ```
+
+`ordered` dice que la lista trae un orden, y ese orden es `expected`: puede tener erratas al
+transcribir o ser distinto al real. La posición de cada tag la dan las lecturas; donde difieren, la
+aplicación enseña el orden leído y la corrección de la lista (R-GRA-015).
 
 `scope` no es un detalle de formato: decide el estado de verdad de todo lo que se derive.
 

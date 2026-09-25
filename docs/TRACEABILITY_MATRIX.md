@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.39.0
+version: 0.40.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -119,6 +119,7 @@ regla exista: la matriz no es una lista de intenciones.
 | R-GRA-007 / TC-213 lo declarado en planta junto a cada incidencia | `src/domain/tag-info.ts`, `workers/import.worker.ts` (`tagInfo`), `src/presentation/main.ts` (`finding`, expediente) | `tests/unit/tag-info.test.ts` |
 | R-DAT-022 / R-DAT-019 / TC-214–215 tags fuera de la lista del circuito, de día y de noche | `src/domain/undeclared-tags.ts`, `src/domain/tag-changes.ts` (`withoutTags`), `src/domain/anchor-sums.ts` (`structureBoundaries`), `workers/import.worker.ts`, `src/presentation/main.ts` (`renderUndeclaredTags`) | `tests/unit/undeclared-tags.test.ts`, `tests/unit/tag-changes.test.ts`, `tests/audit/auditoria.test.ts` |
 | R-GRA-001 / TC-216 declarado en el anillo en otro punto del orden | `src/domain/vsystem.ts` (`otro-orden`), `src/presentation/labels.ts` | `tests/unit/vsystem.test.ts` |
+| R-GRA-015 / TC-217–219 la posición de un tag la dan las lecturas | `src/domain/circuit-order.ts`, `src/domain/undeclared-tags.ts` (`dominantNeighbours`), `src/domain/vsystem.ts`, `workers/import.worker.ts` (`circuitOrder`), `src/presentation/main.ts` (`renderCircuitOrder`), `src/presentation/labels.ts` | `tests/unit/circuit-order.test.ts`, `tests/unit/vsystem.test.ts`, `tests/unit/undeclared-tags.test.ts`, `tests/audit/auditoria.test.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` —, y el tercer

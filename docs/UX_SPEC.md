@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.23.0
+version: 0.24.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -480,8 +480,17 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
   tarjeta por tag, de las más leídas a las menos: «candidato a una posición», «tag de noche» o
   «posiblemente de noche», con su sitio (entre qué tags y en qué orden de la lista), sus lecturas de
   día y de noche y las pasadas por su sitio en cada régimen. Sin lista del circuito no aparece.
-- En el contraste con Vsystem, un tag declarado que está en el anillo en otro punto del orden sale
-  una sola vez, «en otro punto del orden», con su sitio en Vsystem y en el recorrido.
+- En el contraste con Vsystem **manda lo leído** (R-GRA-015): la cabecera lo dice, y cada diferencia
+  se lee como algo que corregir en la lista, no como un fallo del circuito. Un tag que la lista pone
+  en otro sitio sale una sola vez, «la lista lo pone en otro sitio», con su sitio en cada lado; un
+  declarado que no se lee donde se lee otro que la lista no tiene, «posible sustitución o número mal
+  escrito».
+- **Orden del circuito según las lecturas**, debajo del contraste: una línea con cuántos tags están en
+  el orden de la lista, cuántos en otro sitio, cuántos sin lecturas (posición solo de la lista),
+  cuántos leídos que la lista no tiene y cuántos fuera del recorrido; y, plegada, la tabla tag a tag
+  con su posición en cada lado y lo declarado en planta. No hay descarga: la lista corregida se
+  entrega como fichero.
+- La tarjeta de un tag fuera de la lista dice su posición según las lecturas.
 
 ## 6. Consolidación
 

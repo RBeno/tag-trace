@@ -35,10 +35,10 @@ const TAG_CLASS: Readonly<Record<string, string>> = {
 
 const VERDICT: Readonly<Record<string, string>> = {
   coincide: "coincide",
-  "sustituido-candidato": "posible sustitución",
+  "sustituido-candidato": "posible sustitución o número mal escrito",
   "no-observado": "sin lecturas",
   "fuera-del-anillo": "se lee fuera del recorrido",
-  "otro-orden": "en otro punto del orden",
+  "otro-orden": "la lista lo pone en otro sitio",
   "no-declarado": "no declarado",
 };
 
@@ -56,6 +56,20 @@ const CRITICAL_FUNCTION: Readonly<Record<string, string>> = {
   desvinculacion: "desvinculación",
 };
 
+const ORDER_CHANGE: Readonly<Record<string, string>> = {
+  igual: "en su sitio",
+  "otro-sitio": "la lista lo pone en otro sitio",
+  "no-en-la-lista": "no está en la lista",
+  "fuera-del-recorrido": "fuera del recorrido principal",
+  "sin-lecturas": "sin lecturas: posición según la lista",
+};
+
+const ORDER_READING: Readonly<Record<string, string>> = {
+  leido: "leído",
+  "fuera-del-recorrido": "leído fuera del recorrido",
+  "sin-lecturas": "sin lecturas",
+};
+
 const pick = (map: Readonly<Record<string, string>>) => (value: string): string => map[value] ?? value;
 
 export const truthLabel = pick(TRUTH);
@@ -64,3 +78,5 @@ export const tagClassLabel = pick(TAG_CLASS);
 export const verdictLabel = pick(VERDICT);
 export const zoneLabel = pick(ZONE);
 export const criticalFunctionLabel = pick(CRITICAL_FUNCTION);
+export const orderChangeLabel = pick(ORDER_CHANGE);
+export const orderReadingLabel = pick(ORDER_READING);

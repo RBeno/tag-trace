@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Reading } from "../../src/domain/reading.js";
-import { locateUndeclaredTags, type UndeclaredTagThresholds } from "../../src/domain/undeclared-tags.js";
+import { dominantNeighbours, locateUndeclaredTags, type UndeclaredTagThresholds } from "../../src/domain/undeclared-tags.js";
 
 const THRESHOLDS: UndeclaredTagThresholds = { minSlotPasses: 10, maxChance: 0.001, maxReadsBetween: 2 };
 const HOUR = 3_600_000;
@@ -48,6 +48,7 @@ describe("tags leídos fuera de la lista del circuito", () => {
     const x = report.tags.find((tag) => tag.tagId === "X");
     expect(x).toMatchObject({ verdict: "posicion", predecessor: "02", successor: "03", predecessorOrder: 2, successorOrder: 4 });
     expect(x?.declaredWithoutReadings).toEqual(["0Z"]);
+    expect(x?.evidence).toContain("la lista pone ahí 0Z, que no se lee: o se sustituyó, o el número está mal escrito en la lista");
     expect(x?.dayReadings).toBeGreaterThan(0);
     expect(x?.nightReadings).toBeGreaterThan(0);
   });
@@ -75,5 +76,13 @@ describe("tags leídos fuera de la lista del circuito", () => {
     const sinLista = locateUndeclaredTags(readings, [], new Set(), regimeOf, THRESHOLDS);
     expect(sinLista.evaluated).toBe(false);
     expect(sinLista.reason).not.toBeNull();
+  });
+
+  it("el sitio de cualquier tag lo dan sus vecinos leídos, y un tag sin lecturas no tiene sitio", () => {
+    const readings = day(() => ["01", "02", "X", "03", "04", "05"]);
+    const places = dominantNeighbours(readings, new Set(["X", "04", "0Z"]));
+    expect(places.get("X")).toEqual({ predecessor: "02", successor: "03" });
+    expect(places.get("04")).toEqual({ predecessor: "03", successor: "05" });
+    expect(places.has("0Z")).toBe(false);
   });
 });

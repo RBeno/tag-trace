@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.38.0
+version: 0.39.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -266,6 +266,9 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-214 | Tags fuera de la lista del circuito (`locateUndeclaredTags`, R-DAT-022) | De día en su sitio: candidato a esa posición, nombrando el declarado sin lecturas del mismo sitio; solo de noche con pasadas de día sin leerlo: tag de noche; sin pasadas de día: posiblemente de noche; sin lista del circuito no se evalúa | Llamar «tag de noche» a uno que de día no se ha podido comprobar |
 | TC-215 | Auditoría (`tag-de-noche`) y cambios de tag (`withoutTags`, `structureBoundaries`) | Solo el tag plantado sale como de noche; un tag de noche no es un cambio de tag ni parte la ventana de la suma entre anclas, y un cambio emparejado con él se queda en el otro lado | Contar cada noche como un tag que empieza y deja de leerse |
 | TC-216 | Contraste con Vsystem (`compareAgainstVsystem`) | Un declarado que está en el anillo en otro punto del orden sale una sola vez, `otro-orden`, con su sitio en cada lado | Decir a la vez «se lee fuera del recorrido» y «no declarado» del mismo tag |
+| TC-217 | Orden del circuito según las lecturas (`reconcileCircuitOrder`) | Dos vecinos cambiados en la lista y uno movido lejos salen donde los leen los AGV, marcados `otro-sitio` con su sitio en cada lado; un declarado sin lecturas va donde lo pone la lista y se dice que es solo eso; lo leído fuera del anillo, detrás de su predecesor leído; un número mal escrito queda junto al tag de verdad; sin lista no se evalúa | Ordenar lo leído por la lista, o dar por leída la posición de un tag que nadie lee |
+| TC-218 | Contraste con Vsystem y tags fuera de la lista (`compareAgainstVsystem`, `locateUndeclaredTags`, `dominantNeighbours`) | La diferencia se dice como corrección de la lista: «manda lo leído»; un declarado sin lecturas donde se lee otro que la lista no tiene es «sustitución o número mal escrito»; un tag fuera de la lista se sitúa por sus vecinos leídos, sin el orden de la lista | Llamar fallo del circuito a una errata de la lista, o decidir por el número |
+| TC-219 | Auditoría (`lista-con-otro-orden`, `lista-con-numero-mal-escrito`) | Con erratas solo en la lista, lo leído no cambia: los tags cambiados de orden siguen limpios en todas las demás sondas y salen donde se leen; el número mal escrito sale junto al de verdad, que es candidato a esa posición | Que una errata de la lista mueva cualquier hallazgo sobre lo leído |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda

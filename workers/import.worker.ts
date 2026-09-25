@@ -25,7 +25,8 @@ import {
 import { decodeSource } from "../src/ingestion/decode.js";
 import { rowsToDelimitedText } from "../src/ingestion/xlsx-readings.js";
 import { declaredTagInfo } from "../src/domain/tag-info.js";
-import { locateUndeclaredTags } from "../src/domain/undeclared-tags.js";
+import { dominantNeighbours, locateUndeclaredTags } from "../src/domain/undeclared-tags.js";
+import { reconcileCircuitOrder } from "../src/domain/circuit-order.js";
 import { CatalogFailure, EXPECTED_STRUCTURE, importCatalog, importCatalogRows } from "../src/ingestion/catalog.js";
 import { looksLikeZip, readXlsxRows, XlsxError } from "../src/persistence/xlsx.js";
 import { unionReadings } from "../src/ingestion/union.js";
@@ -946,16 +947,31 @@ async function buildViews(
   }
 
   let vsystemContrast: CircuitViews["vsystemContrast"];
+  let circuitOrder: CircuitViews["circuitOrder"];
   const mainCohort = cohortAssignment.cohorts[0];
   if (declaredOrder.length > 0 && mainCohort !== undefined) {
     // El anillo observado con el que se contrasta: el ciclo dominante del cohorte mayor, que es el
     // que tiene más soporte y por tanto la reconstrucción más fiable. Ya se calculó arriba.
     const anchor = anchors.get(mainCohort.id);
     if (anchor !== undefined) {
-      vsystemContrast = compareAgainstVsystem(
+      const readTags = new Set(readings.map((entry) => entry.tagId));
+      vsystemContrast = compareAgainstVsystem(declaredOrder, anchor.cycle, readTags);
+      // El orden del circuito según las lecturas (R-GRA-015): el anillo, lo leído fuera de él en su
+      // sitio leído, y lo declarado sin lecturas donde lo pone la lista.
+      const inRing = new Set(anchor.cycle);
+      const mainVehicles = new Set(mainCohort.vehicles);
+      const toPlace = new Set([
+        ...declaredOrder.filter((tagId) => readTags.has(tagId) && !inRing.has(tagId)),
+        ...undeclared.tags.map((tag) => tag.tagId).filter((tagId) => !inRing.has(tagId)),
+      ]);
+      circuitOrder = reconcileCircuitOrder(
         declaredOrder,
         anchor.cycle,
-        new Set(readings.map((entry) => entry.tagId)),
+        readTags,
+        dominantNeighbours(
+          readings.filter((entry) => mainVehicles.has(entry.agvId)),
+          toPlace,
+        ),
       );
     }
   }
@@ -973,6 +989,7 @@ async function buildViews(
       listsLoaded: lists.map((entry) => entry.list),
     },
     ...(vsystemContrast === undefined ? {} : { vsystemContrast }),
+    ...(circuitOrder === undefined || !circuitOrder.evaluated ? {} : { circuitOrder }),
     ...(criticalPointsConfig.problems.length === 0
       ? {}
       : { criticalPointsProblems: criticalPointsConfig.problems }),

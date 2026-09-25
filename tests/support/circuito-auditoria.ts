@@ -99,7 +99,11 @@ export type DefectClass =
   | "ritmo-mas-lento-en-un-fichero"
   | "retiene-a-otros"
   /** Un tag fuera de la lista que solo se lee de noche; de día se pasa por su sitio sin leerlo (R-DAT-022). */
-  | "tag-de-noche";
+  | "tag-de-noche"
+  /** La lista pone dos vecinos cambiados de sitio y otro lejos del suyo; las lecturas no cambian (R-GRA-015). */
+  | "lista-con-otro-orden"
+  /** La lista escribe un tag con un dígito cambiado; en su sitio se lee el de verdad (R-GRA-015). */
+  | "lista-con-numero-mal-escrito";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -121,8 +125,10 @@ export interface AuditScenario {
   readonly defects: readonly PlantedDefect[];
   /** Tags sin nada plantado. Señalar uno de estos es un falso positivo. */
   readonly cleanTags: readonly string[];
-  /** Todos los tags declarados en el circuito virtual, en orden. */
-  readonly declaredRing: readonly string[];
+  /** El anillo físico, en el orden en que lo recorren los AGV: la verdad del escenario. */
+  readonly physicalRing: readonly string[];
+  /** La lista `circuito` tal como se escribe, con sus erratas plantadas (R-GRA-015). */
+  readonly declaredList: readonly string[];
   readonly vehicles: readonly string[];
   readonly fromUtcMs: number;
   readonly toUtcMs: number;
@@ -957,9 +963,21 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
 
   // Las listas llevan ya las columnas de configuración: sin `funcion` y `grupo` una calle es un
   // conjunto de tres tags sin orden ni papeles, y R-CO-006 no se puede evaluar sobre eso.
+  // Erratas en la lista (Parte 53, R-GRA-015), solo aquí: las lecturas no cambian. Dos vecinos
+  // escritos al revés, uno escrito lejos de su sitio y otro con un dígito cambiado, que no existe.
+  const listaCambiados = [ring[7], ring[8]] as string[];
+  const listaMovido = ring[113] as string;
+  const listaMalEscritoReal = ring[88] as string;
+  const listaMalEscrito = `${listaMalEscritoReal.slice(0, -1)}${(Number(listaMalEscritoReal.slice(-1)) + 1) % 10}`;
+  if (ring.includes(listaMalEscrito)) throw new Error("el número mal escrito coincide con un tag del anillo");
+  const listaOrden = ring.filter((tag) => tag !== listaMovido);
+  listaOrden.splice(listaOrden.indexOf(ring[52] as string) + 1, 0, listaMovido);
+  listaOrden.splice(listaOrden.indexOf(ring[7] as string), 2, ring[8] as string, ring[7] as string);
+  const declaredList = listaOrden.map((tag) => (tag === listaMalEscritoReal ? listaMalEscrito : tag));
+
   const listsCsv = ["lista;tag;orden;funcion;grupo;capacidad"]
     .concat(
-      ring.map((tag, index) =>
+      declaredList.map((tag, index) =>
         // Vinculación (Parte 36) se declara aquí, en la propia columna `funcion` del circuito
         // virtual — la vía alternativa a la lista `critico`, para ejercitar las dos fuentes.
         `circuito;${tag};${index + 1};${tag === vinculacionTag ? "vinculacion" : ""};;`,
@@ -1009,6 +1027,9 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     // Parte 52: los dos vecinos del tag de noche, cuyo paso cambia de noche.
     ring[84] as string,
     ring[85] as string,
+    // Parte 53: el tag de verdad del número mal escrito, que la lista no tiene. Los cambiados de
+    // orden siguen limpios: una errata de la lista no puede decir nada de un tag leído.
+    listaMalEscritoReal,
   ]);
 
   const defects: PlantedDefect[] = [
@@ -1313,6 +1334,24 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       mustNotSay: "que sea candidato a una posición del circuito, ni que otro tag sea de noche",
     },
     {
+      kind: "lista-con-otro-orden",
+      tags: [...listaCambiados, listaMovido, ring[52] as string],
+      vehicles: [],
+      expect:
+        "en el orden según las lecturas, los tres donde los leen los AGV; el contraste dice que la lista " +
+        "los pone en otro sitio, con su sitio en cada lado",
+      mustNotSay: "ningún otro hallazgo sobre esos tags: la errata es de la lista, no del circuito",
+    },
+    {
+      kind: "lista-con-numero-mal-escrito",
+      tags: [listaMalEscritoReal, listaMalEscrito],
+      vehicles: [],
+      expect:
+        "el número mal escrito, sin lecturas, junto al tag de verdad en el orden según las lecturas; el " +
+        "contraste, «posible sustitución o número mal escrito»; y el de verdad, candidato a esa posición",
+      mustNotSay: "decidir por el número si es errata o sustitución",
+    },
+    {
       kind: "ritmo-mas-lento-en-un-fichero",
       tags: [],
       vehicles: [ritmoLento],
@@ -1361,7 +1400,8 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     fleetLeavesMidway,
     defects,
     cleanTags: ring.filter((tag) => !plantados.has(tag)),
-    declaredRing: ring,
+    physicalRing: ring,
+    declaredList,
     vehicles,
     fromUtcMs: toRealUtc(from),
     toUtcMs: toRealUtc(to),

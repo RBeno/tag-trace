@@ -22,7 +22,9 @@ import { buildAuditScenario, toRealUtc, type DefectClass } from "../support/circ
 import { importReadings } from "../../src/ingestion/importer.js";
 import { buildTransitions } from "../../src/domain/graph.js";
 import { assignCohorts } from "../../src/domain/cohort.js";
-import { locateUndeclaredTags, type UndeclaredTagReport } from "../../src/domain/undeclared-tags.js";
+import { dominantNeighbours, locateUndeclaredTags, type UndeclaredTagReport } from "../../src/domain/undeclared-tags.js";
+import { reconcileCircuitOrder, type CircuitOrder } from "../../src/domain/circuit-order.js";
+import { compareAgainstVsystem, type VsystemComparisonRow } from "../../src/domain/vsystem.js";
 import { findDominantCycle, resolveDeclaredAnchor, segmentLaps, type Lap } from "../../src/domain/laps.js";
 import { buildReadMatrix, type ReadMatrix } from "../../src/domain/read-matrix.js";
 import { buildTagInventory } from "../../src/domain/inventory.js";
@@ -117,6 +119,9 @@ function parseStamp(value: string): number {
 }
 
 interface Analysis {
+  /** Contraste con la lista y el orden según las lecturas (R-GRA-001, R-GRA-015). */
+  readonly contrast: readonly VsystemComparisonRow[];
+  readonly circuitOrder: CircuitOrder;
   readonly matrix: ReadMatrix | undefined;
   readonly ring: readonly string[];
   readonly offRing: readonly string[];
@@ -377,7 +382,8 @@ function analyse(
     (tagId) => !inRing.has(tagId),
   );
 
-  const declared = new Set(scenario.declaredRing);
+  // La lista tal como se escribe, con sus erratas: es lo que carga el Worker (R-GRA-015).
+  const declared = new Set(scenario.declaredList);
   const laneTagsOf = (predicate: (laneId: string) => boolean): Set<string> =>
     new Set(
       laneConfig.lanes.filter((lane) => predicate(lane.laneId)).flatMap((lane) => [...lane.tags]),
@@ -570,7 +576,19 @@ function analyse(
     (around) => compareAnchorGaps(sequences, around.before, around.after, anchorContext, PROVISIONAL_CONFIG.anchorSums),
   );
 
+  // El contraste y el orden según las lecturas, como en el Worker (R-GRA-015).
+  const declaredOrder = entriesOf("circuito").map((entry) => entry.tagId);
+  const readTags = new Set(readings.map((entry) => entry.tagId));
+  const contrast = compareAgainstVsystem(declaredOrder, ring, readTags);
+  const toPlace = new Set([
+    ...declaredOrder.filter((tagId) => readTags.has(tagId) && !inRing.has(tagId)),
+    ...undeclared.tags.map((tag) => tag.tagId).filter((tagId) => !inRing.has(tagId)),
+  ]);
+  const circuitOrder = reconcileCircuitOrder(declaredOrder, ring, readTags, dominantNeighbours(cohortReadings, toPlace));
+
   return {
+    contrast,
+    circuitOrder,
     undeclared,
     matrix,
     ring,
@@ -637,6 +655,8 @@ describe("auditoría del circuito con verdad conocida", () => {
     franjaPace,
     readings,
     undeclared,
+    contrast,
+    circuitOrder,
   } = analysis;
 
   /**
@@ -1116,10 +1136,10 @@ describe("auditoría del circuito con verdad conocida", () => {
       const defect = scenario.defects.find((d) => d.kind === "noche-medida-aparte");
       if (bands === null || circuitState === null || defect === undefined) return { ok: false, detail: "sin anillo" };
       const clean = new Set(scenario.cleanTags);
-      const declaredRing = scenario.declaredRing;
-      const nextOf = (tag: string): string => declaredRing[(declaredRing.indexOf(tag) + 1) % declaredRing.length] as string;
+      const physicalRing = scenario.physicalRing;
+      const nextOf = (tag: string): string => physicalRing[(physicalRing.indexOf(tag) + 1) % physicalRing.length] as string;
       // La horquilla de producción de un tramo limpio, para comparar.
-      const cleanP95 = declaredRing
+      const cleanP95 = physicalRing
         .filter((tag) => clean.has(tag) && clean.has(nextOf(tag)))
         .map((tag) => bands.pairs.get(pairKey(tag, nextOf(tag)))?.produccion?.p95Ms)
         .filter((value): value is number => value !== undefined)
@@ -1186,8 +1206,8 @@ describe("auditoría del circuito con verdad conocida", () => {
     "cuello-de-botella": () => {
       const defect = scenario.defects.find((d) => d.kind === "cuello-de-botella");
       const tag = defect?.tags[0] as string;
-      const declaredRing = scenario.declaredRing;
-      const antes = declaredRing[(declaredRing.indexOf(tag) - 1 + declaredRing.length) % declaredRing.length];
+      const physicalRing = scenario.physicalRing;
+      const antes = physicalRing[(physicalRing.indexOf(tag) - 1 + physicalRing.length) % physicalRing.length];
       const cuello = circuitState?.bottlenecks.find((entry) => entry.tagId === tag);
       const detras = circuitState?.unexplained.produccion.filter((stop) => stop.fromTagId === antes).length ?? 0;
       return {
@@ -1210,7 +1230,7 @@ describe("auditoría del circuito con verdad conocida", () => {
       };
     },
     "posicion-en-tiempo": () => {
-      const declared = scenario.declaredRing;
+      const declared = scenario.physicalRing;
       const nunca = scenario.defects.find((d) => d.kind === "declarado-sin-lecturas")?.tags ?? [];
       const nuevo = scenario.defects.find((d) => d.kind === "tag-nuevo-a-mitad-de-ventana")?.tags[0] ?? "";
       const problems: string[] = [];
@@ -1287,6 +1307,50 @@ describe("auditoría del circuito con verdad conocida", () => {
         detail:
           `${nocturno}: ${tag.verdict}, entre ${tag.predecessor} y ${tag.successor}; ${tag.nightReadings} lecturas de noche; ` +
           `de día ${tag.dayPasses} pasadas por su sitio y ${tag.dayHits} lecturas`,
+      };
+    },
+    "lista-con-otro-orden": () => {
+      const [a, b, movido] = scenario.defects.find((d) => d.kind === "lista-con-otro-orden")?.tags ?? [];
+      const rows = circuitOrder.rows;
+      const at = (tag: string | undefined): number => rows.findIndex((row) => row.tagId === tag);
+      const change = (tag: string | undefined) => rows[at(tag)]?.change;
+      const physical = scenario.physicalRing;
+      const i = physical.indexOf(movido as string);
+      const enOrdenLeido = at(a) < at(b) && at(physical[i - 1]) < at(movido) && at(movido) < at(physical[i + 1]);
+      const cambiados = [change(a), change(b)].filter((value) => value === "otro-sitio").length;
+      const otros = rows.filter((row) => row.change === "otro-sitio" && ![a, b, movido].includes(row.tagId)).map((row) => row.tagId);
+      const enContraste = contrast.filter((row) => row.verdict === "otro-orden").map((row) => row.declaredTag);
+      const movidoFila = rows[at(movido)];
+      return {
+        ok:
+          enOrdenLeido &&
+          cambiados === 1 &&
+          change(movido) === "otro-sitio" &&
+          otros.length === 0 &&
+          enContraste.includes(movido as string) &&
+          (enContraste.includes(a as string) || enContraste.includes(b as string)),
+        detail:
+          `${a} y ${b} en orden leído: ${at(a) < at(b) ? "sí" : "no"}, ${cambiados} marcado como otro sitio; ` +
+          `${movido}: ${change(movido)}, según las lecturas ${movidoFila?.readBetween}, según la lista ${movidoFila?.listBetween}; ` +
+          `otros en otro sitio: ${otros.length === 0 ? "ninguno" : otros.join(", ")}`,
+      };
+    },
+    "lista-con-numero-mal-escrito": () => {
+      const [real, escrito] = scenario.defects.find((d) => d.kind === "lista-con-numero-mal-escrito")?.tags ?? [];
+      const fila = contrast.find((row) => row.declaredTag === escrito);
+      const fuera = undeclared.tags.find((tag) => tag.tagId === real);
+      const ids = circuitOrder.rows.map((row) => row.tagId);
+      const juntos = Math.abs(ids.indexOf(real as string) - ids.indexOf(escrito as string)) === 1;
+      return {
+        ok:
+          fila?.verdict === "sustituido-candidato" &&
+          fila.observedTag === real &&
+          fuera?.verdict === "posicion" &&
+          fuera.declaredWithoutReadings.includes(escrito as string) &&
+          juntos,
+        detail:
+          `${escrito} → ${fila?.verdict ?? "sin fila"} con ${fila?.observedTag ?? "—"}; ${real}: ${fuera?.verdict ?? "no sale fuera de la lista"}` +
+          `${fuera === undefined ? "" : `, la lista pone ahí ${fuera.declaredWithoutReadings.join(", ") || "nada"}`}; juntos en el orden leído: ${juntos ? "sí" : "no"}`,
       };
     },
     "ritmo-mas-lento-en-un-fichero": () => {
@@ -1391,7 +1455,7 @@ describe("auditoría del circuito con verdad conocida", () => {
     console.log(
       `\n=== AUDITORÍA ===\n` +
         `${readings.toLocaleString("es-ES")} lecturas, ${scenario.vehicles.length} vehículos. ` +
-        `Anillo reconstruido: ${ring.length} tags de ${scenario.declaredRing.length} declarados. ` +
+        `Anillo reconstruido: ${ring.length} tags de ${scenario.physicalRing.length} declarados. ` +
         `Fuera del anillo: ${offRing.length}.\n` +
         lineas.join("\n") +
         `\n--- Estado normal del circuito (R-TIM-009) ---\n` +
@@ -1467,17 +1531,17 @@ describe("auditoría del circuito con verdad conocida", () => {
 
   it("el estado normal no señala nada limpio: cuellos, conflictos, zonas oscuras y paradas sin explicación (R-TIM-009)", () => {
     const clean = new Set(scenario.cleanTags);
-    const declaredRing = scenario.declaredRing;
+    const physicalRing = scenario.physicalRing;
     expect(circuitState).not.toBeNull();
     const state = circuitState as CircuitState;
     expect(state.bottlenecks.filter((entry) => clean.has(entry.tagId)).map((entry) => entry.tagId)).toEqual([]);
     expect(state.conflictPoints.flatMap((point) => point.tags).filter((tag) => clean.has(tag))).toEqual([]);
     // Una zona oscura tiene que tocar algo plantado entre su primer y su último tag.
     const limpias = state.darkZones.filter((zone) => {
-      const first = declaredRing.indexOf(zone.tags[0] as string);
-      const last = declaredRing.indexOf(zone.tags[zone.tags.length - 1] as string);
-      const span = (last - first + declaredRing.length) % declaredRing.length;
-      return Array.from({ length: span + 1 }, (_, step) => declaredRing[(first + step) % declaredRing.length] as string).every(
+      const first = physicalRing.indexOf(zone.tags[0] as string);
+      const last = physicalRing.indexOf(zone.tags[zone.tags.length - 1] as string);
+      const span = (last - first + physicalRing.length) % physicalRing.length;
+      return Array.from({ length: span + 1 }, (_, step) => physicalRing[(first + step) % physicalRing.length] as string).every(
         (tag) => clean.has(tag),
       );
     });
@@ -1708,7 +1772,7 @@ describe("auditoría del circuito con verdad conocida", () => {
     const deNoche = undeclared.tags.filter((tag) => tag.verdict !== "posicion").map((tag) => tag.tagId);
     expect(deNoche).toEqual([nocturno]);
     // Y ningún tag de la lista sale como leído fuera de ella.
-    const declarados = new Set(scenario.declaredRing);
+    const declarados = new Set(scenario.declaredList);
     expect(undeclared.tags.filter((tag) => declarados.has(tag.tagId))).toEqual([]);
   });
 

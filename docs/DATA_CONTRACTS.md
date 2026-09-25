@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.15.0
+version: 0.16.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -27,6 +27,9 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-010 | Proyecto anterior | `.agvproj` con manifiesto y versión | Persistencia local |
 | DS-011 | Informe ampliado de Vsystem | Tipo, fecha con segundos, AGV, circuito y, según el tipo, tag o uso | Enriquecida, opcional |
 | DS-012 | Historial de flota | AGV y fecha de alta; circuito, fecha de baja y nota opcionales | Configuración, incremental (§3.6) |
+
+El **orden** de la lista del circuito es lo declarado: puede tener erratas al transcribir o un orden
+distinto al real, y la posición de un tag la dan las lecturas (R-GRA-015).
 
 Las listas (DS-002, DS-004 a DS-008) y el historial (DS-012) entran en CSV o en un libro de Excel
 (`.xlsx`) con la plantilla que da el programa (§3.7). Las lecturas (DS-001 y DS-011) también pueden

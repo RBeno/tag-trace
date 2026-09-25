@@ -15,7 +15,11 @@ import type { TruthState } from "./truth.js";
 export type VsystemVerdict =
   /** El tag declarado está donde Vsystem dice, con el mismo vecindario observado. */
   | "coincide"
-  /** El tag declarado no tiene ninguna lectura, y en su hueco hay un tag no declarado consistente. */
+  /**
+   * El tag declarado no tiene ninguna lectura, y donde la lista lo pone se lee otro que la lista no
+   * tiene: o se sustituyó, o el número está mal escrito en la lista (R-GRA-015). El número no decide
+   * cuál: los tags vienen en familias de números seguidos.
+   */
   | "sustituido-candidato"
   /** El tag declarado no tiene ninguna lectura, y nada ocupa su posición: el tramo se salta. */
   | "no-observado"
@@ -25,9 +29,9 @@ export type VsystemVerdict =
    */
   | "fuera-del-anillo"
   /**
-   * El tag está declarado y está en el anillo, pero en otro punto del orden. Sin esto salía dos veces
-   * y contradiciéndose: «se lee fuera del recorrido» por el lado declarado y «no declarado» por el
-   * observado (CHANGELOG [3.31.0]).
+   * El tag está declarado y está en el anillo, pero la lista lo pone en otro sitio. Manda lo leído: es
+   * la lista la que se corrige (R-GRA-015). Sin esto salía dos veces y contradiciéndose: «se lee fuera
+   * del recorrido» por el lado declarado y «no declarado» por el observado (CHANGELOG [3.31.0]).
    */
   | "otro-orden"
   /** El tag se observa en el anillo y Vsystem no lo declara. */
@@ -104,7 +108,7 @@ interface GapContext {
 }
 
 /** «entre A y B» de cada tag de una secuencia; en el anillo, el primero y el último son vecinos. */
-function neighbours(sequence: readonly string[], cyclic: boolean): ReadonlyMap<string, string> {
+export function neighbours(sequence: readonly string[], cyclic: boolean): ReadonlyMap<string, string> {
   const result = new Map<string, string>();
   sequence.forEach((tag, index) => {
     const before = index > 0 ? sequence[index - 1] : cyclic ? sequence[sequence.length - 1] : undefined;
@@ -144,9 +148,9 @@ function classifyGap(
       observedTag: declared,
       verdict: "otro-orden",
       truth: "observed",
-      evidence: `«${declared}» está en el recorrido, en otro punto del orden: Vsystem lo declara ${
+      evidence: `Las lecturas lo sitúan ${context.ringNeighbours.get(declared) ?? "sin vecinos"}; la lista, ${
         context.declaredNeighbours.get(declared) ?? "sin vecinos"
-      }; los AGV lo leen ${context.ringNeighbours.get(declared) ?? "sin vecinos"}.`,
+      }. Manda lo leído: es la lista la que hay que corregir.`,
     });
   }
   const declaredGap = declaredHole.filter((tag) => !context.ring.has(tag));
@@ -173,7 +177,9 @@ function classifyGap(
         observedTag: observed,
         verdict: "sustituido-candidato",
         truth: "inferred",
-        evidence: `«${declared}» no se lee nunca y en su sitio se lee «${observed}».`,
+        evidence: `«${declared}» no se lee nunca, y donde la lista lo pone (${
+          context.declaredNeighbours.get(declared) ?? "sin vecinos"
+        }) se lee «${observed}», que la lista no tiene: o se sustituyó, o el número está mal escrito en la lista.`,
       });
     }
   }
@@ -193,7 +199,9 @@ function classifyGap(
             observedTag: null,
             verdict: "no-observado",
             truth: "unknown",
-            evidence: "Declarado y sin lecturas, y ningún otro tag en su sitio.",
+            evidence: `Declarado y sin lecturas: su sitio solo lo da la lista (${
+              context.declaredNeighbours.get(declared) ?? "sin vecinos"
+            }), y ahí no se lee ningún otro tag.`,
           },
     );
   }
@@ -203,7 +211,7 @@ function classifyGap(
       observedTag: observedGap[index] as string,
       verdict: "no-declarado",
       truth: "observed",
-      evidence: "Se lee en el recorrido y no está declarado.",
+      evidence: `Se lee en el recorrido, ${context.ringNeighbours.get(observedGap[index] as string) ?? "sin vecinos"}, y la lista no lo tiene.`,
     });
   }
   return rows;
@@ -218,7 +226,7 @@ function classifyGap(
  * de por dónde entró el ancla. Sin ningún tag en común, el anillo se deja como está: no hay alrededor
  * de qué rotar.
  */
-function rotateToDeclaredStart(
+export function rotateToDeclaredStart(
   ring: readonly string[],
   declaredOrder: readonly string[],
 ): readonly string[] {
@@ -231,7 +239,7 @@ function rotateToDeclaredStart(
 }
 
 /** Subsecuencia común más larga, por programación dinámica clásica. O(n·m); ~200 tags es trivial. */
-function longestCommonSubsequence(a: readonly string[], b: readonly string[]): readonly string[] {
+export function longestCommonSubsequence(a: readonly string[], b: readonly string[]): readonly string[] {
   const table: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
   for (let i = a.length - 1; i >= 0; i -= 1) {
     for (let j = b.length - 1; j >= 0; j -= 1) {

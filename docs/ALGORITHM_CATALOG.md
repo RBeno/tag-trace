@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.25.0
+version: 0.26.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -698,6 +698,27 @@ Sin umbrales propios: son los de los cambios de tag (R-DAT-019), que miden lo mi
 por un sitio—. Un tag `noche` se quita de los cambios de tag (`withoutTags`) y de los límites de
 estructura (`structureBoundaries`), porque su horario no es un cambio. `noche-probable` no se quita:
 es una hipótesis y no se usa como hecho.
+
+## 6.13 Orden del circuito según las lecturas, implementado (R-GRA-015)
+
+`src/domain/circuit-order.ts`, `reconcileCircuitOrder(lista, anillo, leídos, sitioDe)`. Manda lo
+leído; la lista solo coloca lo que nadie lee.
+
+1. **El anillo observado**, rotado al primer tag de la lista que aparece en él, en el orden en que lo
+   leen los AGV. Con la subsecuencia común más larga contra la lista (la misma de `vsystem.ts`): un tag
+   de la subsecuencia está `igual`; uno declarado fuera de ella, en `otro-sitio`; uno que la lista no
+   tiene, `no-en-la-lista`.
+2. **Lo leído fuera del anillo** que se pida (los declarados leídos fuera del recorrido y los tags
+   fuera de la lista de R-DAT-022), detrás de su predecesor dominante leído (`dominantNeighbours`), en
+   cadena hasta que no avance; lo que no se puede colocar, al final, «sin un sitio fijo».
+3. **Lo declarado que falta**, detrás del tag anterior de la lista que ya esté colocado, conservando
+   el orden de la lista entre varios seguidos. Sin lecturas, `sin-lecturas`: su posición es la de la
+   lista y se dice así.
+
+Cada fila lleva su posición en el orden leído, su posición en la lista y el «entre A y B» de cada
+lado. Un número mal escrito queda junto al tag de verdad, porque los dos ocupan el mismo sitio: el
+sitio lo prueba, el número no (los tags vienen en familias de números seguidos). Sin lista no se
+evalúa.
 
 ## 7. Segmentación de vueltas y huecos
 

@@ -30,6 +30,9 @@ describe("contraste contra Vsystem", () => {
     const sustitucion = rows.find((row) => row.verdict === "sustituido-candidato");
     expect(sustitucion?.declaredTag).toBe("0200");
     expect(sustitucion?.observedTag).toBe("0999");
+    // El sitio lo prueba; el número no decide si es sustitución o errata al escribirlo (R-GRA-015).
+    expect(sustitucion?.evidence).toContain("donde la lista lo pone (entre 0100 y 0300)");
+    expect(sustitucion?.evidence).toContain("o el número está mal escrito en la lista");
   });
 
   it("un declarado sin lecturas y sin sustituto sale no-observado, nunca se inventa un sustituto", () => {
@@ -106,7 +109,7 @@ describe("contraste contra Vsystem", () => {
     expect(rows.every((row) => row.verdict !== "coincide")).toBe(true);
   });
 
-  it("un declarado que está en el anillo en otro punto del orden sale una vez, como «otro-orden»", () => {
+  it("un declarado que la lista pone en otro sitio sale una vez, como «otro-orden», y manda lo leído", () => {
     // 0400 está declarado al final y los AGV lo leen entre 0100 y 0200. Antes salía dos veces y
     // contradiciéndose: «se lee fuera del recorrido» y «no declarado» (CHANGELOG [3.31.0]).
     const declarado = ["0100", "0200", "0300", "0400"];
@@ -116,7 +119,8 @@ describe("contraste contra Vsystem", () => {
     const delTag = rows.filter((row) => row.declaredTag === "0400" || row.observedTag === "0400");
     expect(delTag).toHaveLength(1);
     expect(delTag[0]?.verdict).toBe("otro-orden");
-    expect(delTag[0]?.evidence).toContain("entre 0100 y 0200");
+    expect(delTag[0]?.evidence).toContain("Las lecturas lo sitúan entre 0100 y 0200; la lista, después de 0300");
+    expect(delTag[0]?.evidence).toContain("es la lista la que hay que corregir");
     expect(rows.some((row) => row.verdict === "no-declarado" || row.verdict === "fuera-del-anillo")).toBe(false);
   });
 });

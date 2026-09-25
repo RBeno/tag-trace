@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.16.0
+version: 0.17.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -236,3 +236,14 @@ diagnóstico, pero no cambia ningún cálculo (R-GRA-007). Un tag que se lee y n
 sitúa y se clasifica por día y noche (R-DAT-022): de día en el mismo sitio es candidato a esa
 posición; solo de noche, con pasadas de día sin leerlo, es un tag de noche. Las lecturas también
 entran en `.xlsx`, tal como las exporta Vsystem.
+
+## La posición de un tag la dan las lecturas (2026-09-25)
+
+El propietario: «el orden de tags del circuito no tiene por qué ser del todo correcto: puede contener
+erratas al transcribir o un orden diferente al real. Al final las lecturas de los AGV son las que
+dictan la posición real de los tags, y por eso existe este proyecto». La lista del circuito es lo
+declarado; donde difiere de lo leído, manda lo leído y la diferencia es una corrección de la lista,
+no un fallo del circuito (R-GRA-015). La aplicación enseña el orden del circuito según las lecturas
+contra la lista, tag a tag; la lista corregida se entrega como fichero, y declarar un tag nuevo lo
+decide el propietario. Un número parecido no prueba una errata: los tags vienen en familias de
+números seguidos; lo que la prueba es el sitio.
