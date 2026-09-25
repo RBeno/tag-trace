@@ -479,13 +479,21 @@ export function windowsAroundChanges(
  * más de `marginMs` después del inicio del tramo, y la última de cada uno que deja de leerse más de
  * `marginMs` antes del final. No depende de los cambios de tag por su sitio (R-DAT-019), que no ven un
  * bloque de tags seguidos cambiado a la vez: ahí el sitio de cada uno es otro que también cambió.
+ *
+ * `ignore` son los tags que empiezan y dejan de leerse por su horario, como un tag de noche
+ * (R-DAT-022): no son un cambio de estructura y no parten el tramo.
  */
-export function structureBoundaries(sequences: AnchorSequences, spans: readonly Interval[], marginMs: number): readonly number[] {
+export function structureBoundaries(
+  sequences: AnchorSequences,
+  spans: readonly Interval[],
+  marginMs: number,
+  ignore: ReadonlySet<string>,
+): readonly number[] {
   const first = new Map<string, number>();
   const last = new Map<string, number>();
   for (const steps of sequences.values()) {
     for (const step of steps) {
-      if (step.span < 0) continue;
+      if (step.span < 0 || ignore.has(step.tagId)) continue;
       const key = `${step.span}\u0000${step.tagId}`;
       if (!first.has(key) || step.utcMs < (first.get(key) as number)) first.set(key, step.utcMs);
       if (!last.has(key) || step.utcMs > (last.get(key) as number)) last.set(key, step.utcMs);

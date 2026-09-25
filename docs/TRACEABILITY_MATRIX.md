@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.38.2
+version: 0.39.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -114,6 +114,11 @@ regla exista: la matriz no es una lista de intenciones.
 | R-GRA-001 / TC-208 declarado de Vsystem que se lee fuera del recorrido dominante | `src/domain/vsystem.ts` (`fuera-del-anillo`), `src/presentation/labels.ts` | `tests/unit/vsystem.test.ts` |
 | R-GRA-007 / TC-209 sin firmas de tiempo con la hora al minuto | `src/domain/critical-points.ts` (`timeSignaturesMeasurable`), `workers/import.worker.ts`, `src/application/protocol.ts` (`criticalPoints[].timeSignatures`), `src/presentation/main.ts` (`renderCriticalPoints`) | `tests/unit/critical-points.test.ts` |
 | R-AGV-017 / TC-171–174 cómo reaparece un AGV tras un hueco | `src/domain/silence-kind.ts`, `src/domain/fleet.ts`, `src/domain/config.ts` (`silenceKind`), `workers/import.worker.ts`, `src/presentation/diagnostic-charts.ts` (`fleetLifelineChart`), `src/presentation/styles.css` | `tests/unit/silence-kind.test.ts`, `tests/unit/fleet.test.ts`, `tests/audit/auditoria.test.ts`, `tests/e2e/vistas-diagnostico.spec.ts` |
+| DATA_CONTRACTS §3.8 / TC-210–211 lecturas en Excel | `src/ingestion/xlsx-readings.ts` (`rowsToDelimitedText`), `src/ingestion/importer.ts` (`HEADER_ALIASES`), `workers/import.worker.ts` (`runImport`), `src/presentation/main.ts` (selector) | `tests/unit/xlsx-readings.test.ts`, `tests/e2e/acumulacion.spec.ts` |
+| R-CO-002 / TC-212 calle que empieza en su parada precisa | `src/domain/circuit-config.ts` (`readCoLanes`), `src/domain/charging.ts`, `src/domain/dossier.ts` (`laneSignatures`) | `tests/unit/charging.test.ts`, `tests/unit/dossier.test.ts` |
+| R-GRA-007 / TC-213 lo declarado en planta junto a cada incidencia | `src/domain/tag-info.ts`, `workers/import.worker.ts` (`tagInfo`), `src/presentation/main.ts` (`finding`, expediente) | `tests/unit/tag-info.test.ts` |
+| R-DAT-022 / R-DAT-019 / TC-214–215 tags fuera de la lista del circuito, de día y de noche | `src/domain/undeclared-tags.ts`, `src/domain/tag-changes.ts` (`withoutTags`), `src/domain/anchor-sums.ts` (`structureBoundaries`), `workers/import.worker.ts`, `src/presentation/main.ts` (`renderUndeclaredTags`) | `tests/unit/undeclared-tags.test.ts`, `tests/unit/tag-changes.test.ts`, `tests/audit/auditoria.test.ts` |
+| R-GRA-001 / TC-216 declarado en el anillo en otro punto del orden | `src/domain/vsystem.ts` (`otro-orden`), `src/presentation/labels.ts` | `tests/unit/vsystem.test.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` —, y el tercer

@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.22.1
+version: 0.23.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -460,12 +460,28 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
 
 ## 5.8 Libros de Excel para rellenar e importar
 
+- El selector de lecturas acepta la exportación de Vsystem en `.xlsx`, además del CSV, con el aviso
+  «Leyendo el libro de Excel» mientras la abre (`DATA_CONTRACTS.md` §3.8).
 - Los dos selectores de «Listas del circuito» —listas de tags e historial de flota— aceptan el
   `.xlsx` tal cual, además del CSV. Un libro que no se puede leer se rechaza con su motivo y la salida:
   guardarlo de nuevo en Excel o exportarlo como CSV.
 - **La aplicación no descarga libros.** Las plantillas y el circuito de cada análisis se entregan como
   ficheros (`DATA_CONTRACTS.md` §3.7); en la interfaz no hay botones de descarga de Excel
   (propietario, 2026-09-25).
+
+## 5.9 Lo declarado en planta y los tags fuera de la lista (Parte 52)
+
+- **Declarado en planta.** Cada tarjeta que nombra un tag concreto —lectura por tag, cambios de tag,
+  deriva, puntos críticos, cuellos de botella, zonas oscuras, puntos conflictivos, paradas y el
+  expediente del tag— añade una línea «Declarado en planta: …» con lo que las listas dicen de él: su
+  nota tal cual, su función y su calle, sin repetir piezas. Es información para el diagnóstico y no
+  cambia ningún cálculo (R-GRA-007).
+- **Tags leídos fuera de la lista del circuito** (R-DAT-022), junto al contraste con Vsystem. Una
+  tarjeta por tag, de las más leídas a las menos: «candidato a una posición», «tag de noche» o
+  «posiblemente de noche», con su sitio (entre qué tags y en qué orden de la lista), sus lecturas de
+  día y de noche y las pasadas por su sitio en cada régimen. Sin lista del circuito no aparece.
+- En el contraste con Vsystem, un tag declarado que está en el anillo en otro punto del orden sale
+  una sola vez, «en otro punto del orden», con su sitio en Vsystem y en el recorrido.
 
 ## 6. Consolidación
 

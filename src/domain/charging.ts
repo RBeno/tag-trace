@@ -132,7 +132,8 @@ function roleIndex(lanes: readonly CoLane[]): ReadonlyMap<string, { lane: CoLane
   const index = new Map<string, { lane: CoLane; role: LaneRole }>();
   for (const lane of lanes) {
     index.set(lane.entryTagId, { lane, role: "entrada" });
-    index.set(lane.stopTagId, { lane, role: "parada" });
+    // Una calle que empieza en su parada: leerla es entrar y pararse a la vez.
+    if (lane.stopTagId !== lane.entryTagId) index.set(lane.stopTagId, { lane, role: "parada" });
     index.set(lane.exitTagId, { lane, role: "salida" });
   }
   return index;
@@ -164,6 +165,9 @@ function staysOf(
 
   for (const [index, hit] of hits.entries()) {
     if (hit.role === "entrada") {
+      const startsAtStop = hit.lane.stopTagId === hit.lane.entryTagId;
+      // Volver a leer la parada de la calle en la que ya está no es otra entrada.
+      if (startsAtStop && open !== null && open.lane.laneId === hit.lane.laneId) continue;
       if (open !== null) {
         stays.push({
           laneId: open.lane.laneId,
@@ -176,7 +180,7 @@ function staysOf(
           evidence: `entró en «${open.lane.laneId}» y la siguiente lectura de calle es otra entrada`,
         });
       }
-      open = { lane: hit.lane, enteredUtcMs: hit.utcMs, stoppedUtcMs: null };
+      open = { lane: hit.lane, enteredUtcMs: hit.utcMs, stoppedUtcMs: startsAtStop ? hit.utcMs : null };
       continue;
     }
 
@@ -199,7 +203,9 @@ function staysOf(
         evidence:
           open.stoppedUtcMs === null
             ? `entró y salió de «${hit.lane.laneId}» sin leer la parada precisa`
-            : `entrada, parada precisa y salida de «${hit.lane.laneId}» en orden`,
+            : hit.lane.stopTagId === hit.lane.entryTagId
+              ? `parada precisa y salida de «${hit.lane.laneId}» en orden`
+              : `entrada, parada precisa y salida de «${hit.lane.laneId}» en orden`,
       });
       open = null;
       continue;

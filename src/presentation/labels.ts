@@ -38,6 +38,7 @@ const VERDICT: Readonly<Record<string, string>> = {
   "sustituido-candidato": "posible sustitución",
   "no-observado": "sin lecturas",
   "fuera-del-anillo": "se lee fuera del recorrido",
+  "otro-orden": "en otro punto del orden",
   "no-declarado": "no declarado",
 };
 

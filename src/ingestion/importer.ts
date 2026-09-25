@@ -135,7 +135,7 @@ function excerpt(text: string): string {
 }
 
 /** Nombres de columna admitidos para cada campo del contrato mínimo. */
-const HEADER_ALIASES = {
+export const HEADER_ALIASES = {
   time: ["fecha", "fecha/hora", "date", "timestamp", "instante"],
   agv: ["agv", "vehiculo", "vehículo", "carro"],
   tag: ["tag", "punto", "baliza"],
@@ -147,7 +147,7 @@ interface ColumnMap {
   readonly tag: number;
 }
 
-function normaliseHeaderCell(cell: string): string {
+export function normaliseHeaderCell(cell: string): string {
   return cell
     .trim()
     .toLowerCase()

@@ -24,6 +24,12 @@ export type VsystemVerdict =
    * más frecuente lo salta. No es «sin lecturas» (CHANGELOG [3.30.1]).
    */
   | "fuera-del-anillo"
+  /**
+   * El tag está declarado y está en el anillo, pero en otro punto del orden. Sin esto salía dos veces
+   * y contradiciéndose: «se lee fuera del recorrido» por el lado declarado y «no declarado» por el
+   * observado (CHANGELOG [3.31.0]).
+   */
+  | "otro-orden"
   /** El tag se observa en el anillo y Vsystem no lo declara. */
   | "no-declarado";
 
@@ -49,6 +55,13 @@ export function compareAgainstVsystem(
   const aligned = rotateToDeclaredStart(observedRing, declaredOrder);
   const common = longestCommonSubsequence(declaredOrder, aligned);
   const rows: VsystemComparisonRow[] = [];
+  const context: GapContext = {
+    readTags,
+    declared: new Set(declaredOrder),
+    ring: new Set(aligned),
+    declaredNeighbours: neighbours(declaredOrder, false),
+    ringNeighbours: neighbours(aligned, true),
+  };
 
   let declaredIndex = 0;
   let observedIndex = 0;
@@ -64,7 +77,7 @@ export function compareAgainstVsystem(
       observedIndex += 1;
     }
 
-    rows.push(...classifyGap(declaredGap, observedGap, readTags));
+    rows.push(...classifyGap(declaredGap, observedGap, context));
 
     if (anchor !== null) {
       rows.push({
@@ -82,17 +95,62 @@ export function compareAgainstVsystem(
   return rows;
 }
 
+interface GapContext {
+  readonly readTags: ReadonlySet<string>;
+  readonly declared: ReadonlySet<string>;
+  readonly ring: ReadonlySet<string>;
+  readonly declaredNeighbours: ReadonlyMap<string, string>;
+  readonly ringNeighbours: ReadonlyMap<string, string>;
+}
+
+/** «entre A y B» de cada tag de una secuencia; en el anillo, el primero y el último son vecinos. */
+function neighbours(sequence: readonly string[], cyclic: boolean): ReadonlyMap<string, string> {
+  const result = new Map<string, string>();
+  sequence.forEach((tag, index) => {
+    const before = index > 0 ? sequence[index - 1] : cyclic ? sequence[sequence.length - 1] : undefined;
+    const after = index < sequence.length - 1 ? sequence[index + 1] : cyclic ? sequence[0] : undefined;
+    result.set(
+      tag,
+      before !== undefined && after !== undefined
+        ? `entre ${before} y ${after}`
+        : before !== undefined
+          ? `después de ${before}`
+          : after !== undefined
+            ? `antes de ${after}`
+            : "sola",
+    );
+  });
+  return result;
+}
+
 /**
  * Un hueco entre dos anclas comunes: lo que Vsystem declara y nadie observó, frente a lo que se
  * observó y Vsystem no declaró, en el mismo tramo. Emparejar uno a uno por posición es la hipótesis
  * de sustitución; lo que sobra de cada lado sale por separado.
  */
 function classifyGap(
-  declaredGap: readonly string[],
-  observedGap: readonly string[],
-  readTags: ReadonlySet<string>,
+  declaredHole: readonly string[],
+  observedHole: readonly string[],
+  context: GapContext,
 ): readonly VsystemComparisonRow[] {
   const rows: VsystemComparisonRow[] = [];
+  const readTags = context.readTags;
+  // Un declarado que está en el anillo, fuera del orden común, se dice una vez y como lo que es: su
+  // sitio en el anillo es otro. Su aparición por el lado observado no es «no declarado».
+  for (const declared of declaredHole) {
+    if (!context.ring.has(declared)) continue;
+    rows.push({
+      declaredTag: declared,
+      observedTag: declared,
+      verdict: "otro-orden",
+      truth: "observed",
+      evidence: `«${declared}» está en el recorrido, en otro punto del orden: Vsystem lo declara ${
+        context.declaredNeighbours.get(declared) ?? "sin vecinos"
+      }; los AGV lo leen ${context.ringNeighbours.get(declared) ?? "sin vecinos"}.`,
+    });
+  }
+  const declaredGap = declaredHole.filter((tag) => !context.ring.has(tag));
+  const observedGap = observedHole.filter((tag) => !context.declared.has(tag));
   const pairs = Math.min(declaredGap.length, observedGap.length);
 
   for (let index = 0; index < pairs; index += 1) {

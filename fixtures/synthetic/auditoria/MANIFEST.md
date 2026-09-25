@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/17`
+- Dataset ID/version: `auditoria/18`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -86,6 +86,7 @@ fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual q
 | `insertado-misma-suma` | desde el corte, un tag nuevo (97101) en el punto medio de cada paso de 36 a 37, redondeado al segundo, sin mover el reloj | un tag nuevo en la línea entre sus dos vecinos, con la suma igual | que cambie el recorrido |
 | `ritmo-mas-lento-en-un-fichero` | un AGV sin otro papel (7122): tras generar y antes de congelar, sus lecturas desde la mañana del segundo día, ya pasada la noche, se estiran un 10 % respecto a esa hora; sin `random()` y donde ninguna otra plantación depende de su reloj | en el fichero de después, un 10 % más lento que la flota contra la horquilla de ese fichero, en toda la línea; en el de antes, a su paso | una causa, o cualquier otro AGV señalado |
 | `retiene-a-otros` | un AGV sin otro papel (7107) se queda 105 s en el semáforo en cada pasada de día, dentro de la horquilla del semáforo, y quien llega detrás —ya lo tenía delante al leer el tag anterior— espera a que salga; con la deuda de reloj, sin `random()` | ese AGV retiene a varios AGV distintos más de lo que da el azar por sus pasadas, sin pararse él | otro retenedor, o paradas sin explicación de quien espera |
+| `tag-de-noche` | un tag fuera de la lista del circuito (97201) entre los tags 84 y 85 del anillo, solo de noche: tras generar, tras generar y congelar, en el punto medio de cada paso de 84 a 85 que cae entre las 22:00 y las 05:00; sin `random()` y sin mover el reloj | tag de noche, con su sitio entre 84 y 85 y cero lecturas de día en las pasadas por su sitio; no sale como cambio de tag ni parte la ventana de la suma entre anclas | que sea candidato a una posición, o que cada noche empiece y deje de leerse |
 ## Resultados prohibidos
 
 Además de lo que dice la tabla, hay dos cosas que esta auditoría vigila por encima de todo:

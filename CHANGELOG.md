@@ -2,6 +2,51 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.31.0] - 2026-09-25
+
+La exportación de un circuito real en Excel, con la lista del propietario convertida a las listas
+del importador. Todo lo que ese análisis pidió, y los defectos que encontró.
+
+### Añadido
+
+- **Lecturas en `.xlsx`** (`src/ingestion/xlsx-readings.ts`, `DATA_CONTRACTS.md` §3.8). La exportación
+  de Vsystem se carga tal cual por el selector de lecturas. Cada fila pasa a texto con un separador
+  que no esté en ninguna celda y se importa como un CSV. Excel no guarda las celdas vacías del final:
+  la fila se completa hasta el ancho de la cabecera. La procedencia apunta a la fila del libro.
+- **Una calle de carga puede empezar en su parada precisa** (R-CO-002, `readCoLanes`). `entrada` es
+  opcional y un tag de la calle sin función es un paso intermedio. En el circuito real, el primer tag
+  de cada calle es el último que se lee antes de una espera de muchos minutos.
+- **Lo declarado en planta junto a cada incidencia** (`src/domain/tag-info.ts`). Las tarjetas que
+  nombran un tag añaden «Declarado en planta: …» con su nota, su función y su calle, sin repetir
+  piezas. Es información: no cambia ningún cálculo (R-GRA-007).
+- **Tags leídos fuera de la lista del circuito** (R-DAT-022, `src/domain/undeclared-tags.ts`). De
+  cada uno, su sitio, sus lecturas de día y de noche y las pasadas por su sitio en cada régimen:
+  candidato a una posición, tag de noche o posiblemente de noche.
+- Auditoría: clase `tag-de-noche` (`auditoria/18`). Las 40 clases salen DETECTA.
+
+### Corregido
+
+- **Un tag de noche no es un cambio de tag.** Empezaba a leerse cada noche y dejaba de leerse cada
+  mañana, así que salía en los cambios de tag (R-DAT-019) y partía la ventana de la suma entre anclas
+  (R-DAT-021): dos clases de la auditoría pasaban a «suma sin medir». Ahora el tag de noche
+  comprobado se quita de los dos (`withoutTags`, `structureBoundaries`). «Posiblemente de noche» no se
+  quita: es una hipótesis.
+- **Contraste con Vsystem.** Un tag declarado que está en el anillo en otro punto del orden salía dos
+  veces y contradiciéndose: «se lee fuera del recorrido» y «no declarado». Ahora sale una vez,
+  `otro-orden`, con su sitio en Vsystem y en el recorrido. En el circuito real eran dos tags vecinos
+  cambiados de orden.
+- «Nadie delante que lo retuviera: … iba 1 tags por delante» → «1 tag»; con 0, «en su mismo tag».
+
+### Con el circuito real, sin datos de planta en el repositorio
+
+- 105.154 lecturas de 141.063 filas y 29 h; la importación del libro con las listas tarda unos 13 s
+  en el navegador.
+- Las 5 calles se montan y dan 98 estancias, con una estancia habitual de entre 63 y 96 min según la
+  calle.
+- De dos tags fuera de la lista, uno sale candidato a la posición de un declarado sin lecturas y otro
+  sale tag de noche: de día se pasa por su sitio más de 800 veces y se lee una.
+- La parada de la producción en la frontera de las 05:00 aparece también aquí (OQ-114).
+
 ## [3.30.2] - 2026-09-25
 
 Los tres defectos encontrados con las exportaciones reales, corregidos.

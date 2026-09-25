@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.14.2
+version: 0.15.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -29,7 +29,8 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-012 | Historial de flota | AGV y fecha de alta; circuito, fecha de baja y nota opcionales | Configuración, incremental (§3.6) |
 
 Las listas (DS-002, DS-004 a DS-008) y el historial (DS-012) entran en CSV o en un libro de Excel
-(`.xlsx`) con la plantilla que da el programa (§3.7).
+(`.xlsx`) con la plantilla que da el programa (§3.7). Las lecturas (DS-001 y DS-011) también pueden
+llegar en `.xlsx`, tal como las exporta Vsystem (§3.8).
 
 ## 3. Contrato mínimo de lecturas
 
@@ -307,6 +308,25 @@ con columnas de más (la diferencia con Vsystem, las lecturas y el origen de cad
 importador ignora. Es un borrador: la lista `circuito` es lo que Vsystem declara, así que se corrige
 contra Vsystem antes de cargarla (R-GRA-001). La función de un punto crítico no se rellena sola
 (R-GRA-007).
+
+### 3.8 Lecturas en Excel
+
+Vsystem también exporta las lecturas en `.xlsx`. El libro se importa tal cual, con las mismas reglas
+que el texto:
+
+- Se lee **solo la primera hoja**. Cada fila pasa a una línea de texto con un separador que no
+  aparezca en ninguna celda (`;`, o tabulador si alguna celda lleva `;`), y después se importa como un
+  CSV: separador, orden de fecha, sentido de la pila, cuarentena y filas que no son lecturas.
+- Excel no guarda las celdas vacías del final de una fila: la fila se completa hasta el ancho de la
+  cabecera. Así una fila `Uso` sin tag sigue siendo «no es una lectura» y no una fila con campos de
+  menos.
+- Un AGV con ceros a la izquierda llega como texto y se conserva (R-DAT-001).
+- Una fecha que Excel guardó **como número** se lee como la hora de pared que se escribió, en la zona
+  del circuito.
+- La procedencia apunta a la fila del libro, igual que a la línea del CSV. La codificación se declara
+  `xlsx`.
+- Un libro que no se puede leer se rechaza entero, con el motivo y la salida: guardarlo de nuevo en
+  Excel o exportarlo como CSV.
 
 ## 4. Proceso de importación
 

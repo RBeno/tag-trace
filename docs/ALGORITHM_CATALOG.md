@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.24.1
+version: 0.25.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -677,6 +677,27 @@ menos `readRate.minVehiclesForContrast` retenidos distintos.
 **Por fichero** (`paceInWindow`). Las transiciones de la ventana, con una horquilla hecha solo con
 ellas y el anillo de ese fichero; paradas y retenciones del análisis entero recortadas a la ventana.
 **CSV** (`paceCsv`): `agv;muestras;ritmo;veredicto;retenciones;min_retenidos`.
+
+## 6.12 Tags leídos fuera de la lista del circuito, implementado (R-DAT-022)
+
+`src/domain/undeclared-tags.ts`, `locateUndeclaredTags`. Entra la lista `circuito` en su orden; los
+tags de calles, mantenimiento y emergencia se excluyen porque su sitio ya lo da su lista.
+
+- **Sitio.** Por cada tag leído que no está en ninguna de esas listas, su predecesor y su sucesor
+  dominantes en la secuencia de cada AGV (`dominant`, de `drift.ts`), con su posición en la lista.
+- **Cuándo.** Lecturas por régimen (`regimeReader`, la ventana de noche de R-TIM-009).
+- **Pasadas por su sitio.** Un AGV lee el predecesor y, como mucho `tagChanges.maxReadsBetween`
+  lecturas después, el sucesor: es una pasada, de día o de noche según la hora del predecesor, y un
+  acierto si el tag se leyó entre medias.
+- **Veredicto.** Con lecturas de día, `posicion`: candidato a esa posición, nombrando los declarados
+  del mismo sitio sin ninguna lectura. Solo de noche: `noche` si las pasadas de día llegan a
+  `tagChanges.minSlotPasses` y no leerlo en ninguna es improbable por azar dada su tasa de noche,
+  `(1 − tasa)^pasadas ≤ tagChanges.maxChance`; si no, `noche-probable`.
+
+Sin umbrales propios: son los de los cambios de tag (R-DAT-019), que miden lo mismo —rachas sin leer
+por un sitio—. Un tag `noche` se quita de los cambios de tag (`withoutTags`) y de los límites de
+estructura (`structureBoundaries`), porque su horario no es un cambio. `noche-probable` no se quita:
+es una hipótesis y no se usa como hecho.
 
 ## 7. Segmentación de vueltas y huecos
 

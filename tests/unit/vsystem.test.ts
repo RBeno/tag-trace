@@ -105,4 +105,18 @@ describe("contraste contra Vsystem", () => {
 
     expect(rows.every((row) => row.verdict !== "coincide")).toBe(true);
   });
+
+  it("un declarado que está en el anillo en otro punto del orden sale una vez, como «otro-orden»", () => {
+    // 0400 está declarado al final y los AGV lo leen entre 0100 y 0200. Antes salía dos veces y
+    // contradiciéndose: «se lee fuera del recorrido» y «no declarado» (CHANGELOG [3.31.0]).
+    const declarado = ["0100", "0200", "0300", "0400"];
+    const observado = ["0100", "0400", "0200", "0300"];
+    const rows = compareAgainstVsystem(declarado, observado, new Set(declarado));
+
+    const delTag = rows.filter((row) => row.declaredTag === "0400" || row.observedTag === "0400");
+    expect(delTag).toHaveLength(1);
+    expect(delTag[0]?.verdict).toBe("otro-orden");
+    expect(delTag[0]?.evidence).toContain("entre 0100 y 0200");
+    expect(rows.some((row) => row.verdict === "no-declarado" || row.verdict === "fuera-del-anillo")).toBe(false);
+  });
 });

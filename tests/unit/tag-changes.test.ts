@@ -6,7 +6,8 @@
  * tags seguidos sustituidos a la vez salen los dos; un tag que se lee poco no «deja de leerse» por su
  * racha final; un cambio en el borde de la cobertura no sale aquí (es de la comparación entre
  * periodos); una pareja ambigua no se fuerza; y frente al tag nuevo se enseñan los cuatro hechos
- * —nunca, desde una hora, más tarde, poco— sin nombrar causa.
+ * —nunca, desde una hora, más tarde, poco— sin nombrar causa. Un tag de noche (R-DAT-022) se quita:
+ * empieza y deja de leerse por su horario, y un cambio emparejado con él se queda en el otro lado.
  */
 
 import { describe, expect, it } from "vitest";
@@ -14,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import type { Reading } from "../../src/domain/reading.js";
 import {
   detectTagChanges,
+  withoutTags,
   type AdoptionThresholds,
   type TagChangeThresholds,
 } from "../../src/domain/tag-changes.js";
@@ -179,5 +181,27 @@ describe("cambios de tag dentro de un periodo", () => {
     expect(report.changes.some((change) => change.kind === "cambio")).toBe(false);
     // Los dos extremos sí se ven; lo que no se hace es emparejarlos.
     expect(report.changes.map((change) => change.kind).sort()).toEqual(["deja", "empieza"]);
+  });
+
+  it("sin los tags de noche: el cambio emparejado con uno se queda en el otro lado", () => {
+    const report = {
+      changes: [
+        { kind: "cambio" as const, oldTagId: "A", newTagId: "N", oldLastUtcMs: 20, newFirstUtcMs: 21, sharedNeighbor: "P", neighborSide: "predecesor" as const, passesAfterOld: 12, passesBeforeNew: 11 },
+        { kind: "empieza" as const, tagId: "N2", firstUtcMs: 5, passesBefore: 30 },
+      ],
+      adoption: [
+        { agvId: "7", tagId: "N", fact: { kind: "nunca" as const, passes: 9 } },
+        { agvId: "8", tagId: "B", fact: { kind: "nunca" as const, passes: 9 } },
+      ],
+      lives: new Map([
+        ["A", { from: null, to: 20 }],
+        ["N", { from: 21, to: null }],
+      ]),
+    };
+    const filtered = withoutTags(report, new Set(["N", "N2"]));
+    expect(filtered.changes).toEqual([{ kind: "deja", tagId: "A", lastUtcMs: 20, passesAfter: 12 }]);
+    expect(filtered.adoption.map((issue) => issue.tagId)).toEqual(["B"]);
+    expect([...filtered.lives.keys()]).toEqual(["A"]);
+    expect(withoutTags(report, new Set())).toBe(report);
   });
 });

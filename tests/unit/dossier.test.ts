@@ -138,6 +138,20 @@ describe("expediente de AGV", () => {
     expect(sinCalles.inactivity[0]?.laneId).toBeUndefined();
   });
 
+  it("en una calle que empieza en su parada, la espera hasta el paso intermedio también es carga", () => {
+    // Así termina la espera en un circuito real: parada, un paso intermedio al segundo, y la salida.
+    const { lanes } = readCoLanes([
+      { tagId: "7100", order: 1, funcion: "parada-precisa", grupo: "calle-1", capacidad: null },
+      { tagId: "7101", order: 2, funcion: "", grupo: "calle-1", capacidad: null },
+      { tagId: "7102", order: 3, funcion: "salida", grupo: "calle-1", capacidad: null },
+    ]);
+    const cargando = [reading(0, "A", "7100"), reading(3_600_000, "A", "7101"), reading(3_601_000, "A", "7102")];
+    const dossier = buildAgvDossier("A", cargando, LOOKUP, [], [{ from: 0, to: 3_601_000 }], 30_000, lanes);
+    expect(dossier.inactivity).toHaveLength(1);
+    expect(dossier.inactivity[0]?.cause).toBe("carga-online");
+    expect(dossier.inactivity[0]?.laneId).toBe("calle-1");
+  });
+
   it("parar en una calle y salir por otra no es una carga", () => {
     // La firma exige la **misma** calle. Con una clave por tag suelto, esto habría pasado por una
     // carga normal cuando es justo lo contrario: algo que hay que mirar.

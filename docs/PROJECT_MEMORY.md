@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.15.1
+version: 0.16.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -223,3 +223,16 @@ R-AGV-020).
 Los libros de Excel se entregan como ficheros; la aplicación solo los importa (propietario,
 2026-09-25): las plantillas de listas y flota y el circuito de cada análisis se generan fuera del
 programa, y en la interfaz no hay descargas de Excel.
+
+## Lista del circuito de planta y exportación en Excel (2026-09-25)
+
+Decisiones del propietario al convertir su lista de un circuito real al formato del importador: una
+zona LLENO es `cargado` y VACIO o SIN CARRO es `vacio`; la columna de todos los tags es la memoria;
+el primer tag de cada calle de carga es su parada precisa —es el último que se lee antes de una
+espera de muchos minutos—, así que una calle puede empezar en su parada (R-CO-002); una situación
+CRUCE es un crítico `cruce`; y de la función, solo lo que dice PRECISA es parada precisa. **El resto
+del texto de planta se guarda y se enseña junto a cada incidencia del tag**, porque ayuda al
+diagnóstico, pero no cambia ningún cálculo (R-GRA-007). Un tag que se lee y no está en la lista se
+sitúa y se clasifica por día y noche (R-DAT-022): de día en el mismo sitio es candidato a esa
+posición; solo de noche, con pasadas de día sin leerlo, es un tag de noche. Las lecturas también
+entran en `.xlsx`, tal como las exporta Vsystem.

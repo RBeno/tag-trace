@@ -97,7 +97,9 @@ export type DefectClass =
   /** Un tag nuevo entre dos que no cambia el recorrido (R-DAT-021). */
   | "insertado-misma-suma"
   | "ritmo-mas-lento-en-un-fichero"
-  | "retiene-a-otros";
+  | "retiene-a-otros"
+  /** Un tag fuera de la lista que solo se lee de noche; de día se pasa por su sitio sin leerlo (R-DAT-022). */
+  | "tag-de-noche";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -929,6 +931,24 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   }
   filas.push(...insertadas);
 
+  // Un tag de noche (Parte 52, R-DAT-022), después de generar y de congelar, sin `random()`: entre dos
+  // tags del anillo, solo de 22:00 a 05:00 (la hora de los dígitos es la hora local), en el punto medio
+  // de cada paso. De día se sigue pasando por ahí sin leerlo. No está en ninguna lista.
+  const antesDeNoche = ring[84] as string;
+  const despuesDeNoche = ring[85] as string;
+  const tagDeNoche = "97201";
+  const deNoche = (t: number): boolean => new Date(t).getUTCHours() >= 22 || new Date(t).getUTCHours() < 5;
+  const nocturnas: (typeof filas)[number][] = [];
+  for (const [vehicle, propias] of porVehiculo) {
+    for (let index = 1; index < propias.length; index += 1) {
+      const a = propias[index - 1] as (typeof filas)[number];
+      const b = propias[index] as (typeof filas)[number];
+      if (a.tag !== antesDeNoche || b.tag !== despuesDeNoche || !deNoche(a.t) || b.t - a.t < 4_000) continue;
+      nocturnas.push({ t: Math.floor((a.t + b.t) / 2000) * 1000, v: vehicle, tag: tagDeNoche });
+    }
+  }
+  filas.push(...nocturnas);
+
   filas.sort((a, b) => b.t - a.t); // Pila: lo más reciente primero, como la fuente real.
 
   const readingsCsv = ["Fecha;AGV;Tag"]
@@ -986,6 +1006,9 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     ring[cuelloPosicion + 1] as string,
     // Parte 50: el bloque de tres cambiado en su sitio.
     ...bloqueViejo,
+    // Parte 52: los dos vecinos del tag de noche, cuyo paso cambia de noche.
+    ring[84] as string,
+    ring[85] as string,
   ]);
 
   const defects: PlantedDefect[] = [
@@ -1281,6 +1304,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       atUtcMs: toRealUtc(corte),
       expect: "un tag nuevo en la línea entre sus dos vecinos, con la suma igual",
       mustNotSay: "que cambie el recorrido",
+    },
+    {
+      kind: "tag-de-noche",
+      tags: [antesDeNoche, tagDeNoche, despuesDeNoche],
+      vehicles: [],
+      expect: "el tag como de noche, entre sus dos vecinos, con las pasadas de día por su sitio sin leerlo",
+      mustNotSay: "que sea candidato a una posición del circuito, ni que otro tag sea de noche",
     },
     {
       kind: "ritmo-mas-lento-en-un-fichero",

@@ -22,6 +22,7 @@ import { buildAuditScenario, toRealUtc, type DefectClass } from "../support/circ
 import { importReadings } from "../../src/ingestion/importer.js";
 import { buildTransitions } from "../../src/domain/graph.js";
 import { assignCohorts } from "../../src/domain/cohort.js";
+import { locateUndeclaredTags, type UndeclaredTagReport } from "../../src/domain/undeclared-tags.js";
 import { findDominantCycle, resolveDeclaredAnchor, segmentLaps, type Lap } from "../../src/domain/laps.js";
 import { buildReadMatrix, type ReadMatrix } from "../../src/domain/read-matrix.js";
 import { buildTagInventory } from "../../src/domain/inventory.js";
@@ -36,7 +37,7 @@ import {
   type CriticalPointCandidate,
 } from "../../src/domain/critical-points.js";
 import { compareDistantPeriods, type DriftComparison } from "../../src/domain/drift.js";
-import { detectTagChanges, type TagChangeReport } from "../../src/domain/tag-changes.js";
+import { detectTagChanges, withoutTags, type TagChangeReport } from "../../src/domain/tag-changes.js";
 import { describeVehicleReading, type VehicleReadingReport } from "../../src/domain/vehicle-reading.js";
 import { classifySilence, usualSegmentTimes, type SilenceClass } from "../../src/domain/silence-kind.js";
 import {
@@ -174,6 +175,8 @@ interface Analysis {
   readonly deliverySummary: DeliverySummary;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
+  /** Tags leídos fuera de la lista del circuito, con su sitio y si de noche (R-DAT-022). */
+  readonly undeclared: UndeclaredTagReport;
 }
 
 /**
@@ -245,18 +248,37 @@ function analyse(
 
   const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
 
+  // Mismo encadenado que el Worker: la lista del circuito en su orden, sin los de calles ni
+  // mantenimiento (R-DAT-022). Va antes que los cambios de tag: un tag de noche no es un cambio.
+  const regimeOf = regimeReader("Europe/Madrid", PROVISIONAL_CONFIG.regimes);
+  const undeclared = locateUndeclaredTags(
+    readings,
+    entriesOf("circuito").map((entry) => entry.tagId),
+    new Set([...entriesOf("carga-online"), ...entriesOf("mantenimiento"), ...entriesOf("emergencia")].map((entry) => entry.tagId)),
+    regimeOf,
+    {
+      minSlotPasses: PROVISIONAL_CONFIG.tagChanges.minSlotPasses,
+      maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
+      maxReadsBetween: PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
+    },
+  );
+
   // Cambios de tag dentro de un solo periodo (R-DAT-019), con la ventana entera como cobertura —el
   // caso de una sola exportación—, antes que la matriz: su vida es lo que la matriz mide (R-OPP-016).
-  const tagChanges = detectTagChanges(
-    readings,
-    direction,
-    [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
-    PROVISIONAL_CONFIG.tagChanges,
-    {
-      minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
-      highRate: PROVISIONAL_CONFIG.readRate.highRate,
-      minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
-    },
+  const nightTags = new Set(undeclared.tags.filter((tag) => tag.verdict === "noche").map((tag) => tag.tagId));
+  const tagChanges = withoutTags(
+    detectTagChanges(
+      readings,
+      direction,
+      [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
+      PROVISIONAL_CONFIG.tagChanges,
+      {
+        minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
+        highRate: PROVISIONAL_CONFIG.readRate.highRate,
+        minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
+      },
+    ),
+    nightTags,
   );
 
   const laps: Lap[] =
@@ -311,8 +333,6 @@ function analyse(
     PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
     PROVISIONAL_CONFIG.flowStops,
   );
-  // Régimen de cada instante (R-TIM-009): las firmas de tiempo, solo en producción.
-  const regimeOf = regimeReader("Europe/Madrid", PROVISIONAL_CONFIG.regimes);
   const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
   const window = [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }];
   // Mismo encadenado que el Worker (R-DAT-020): las lecturas que llegaron juntas se colapsan en un solo
@@ -545,12 +565,13 @@ function analyse(
   const changeTimes = tagChanges.changes.flatMap((change) =>
     change.kind === "cambio" ? [change.oldLastUtcMs, change.newFirstUtcMs] : [change.kind === "deja" ? change.lastUtcMs : change.firstUtcMs],
   );
-  const boundaries = structureBoundaries(sequences, window, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs);
+  const boundaries = structureBoundaries(sequences, window, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs, nightTags);
   const dentroDelFichero = windowsAroundChanges([...changeTimes, ...boundaries], window, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs).flatMap(
     (around) => compareAnchorGaps(sequences, around.before, around.after, anchorContext, PROVISIONAL_CONFIG.anchorSums),
   );
 
   return {
+    undeclared,
     matrix,
     ring,
     offRing,
@@ -615,6 +636,7 @@ describe("auditoría del circuito con verdad conocida", () => {
     pace,
     franjaPace,
     readings,
+    undeclared,
   } = analysis;
 
   /**
@@ -1256,6 +1278,17 @@ describe("auditoría del circuito con verdad conocida", () => {
       const dentro = lee(structure.dentroDelFichero);
       return { ok: entre.ok && dentro.ok, detail: `entre ficheros ${entre.detail}; dentro ${dentro.detail}` };
     },
+    "tag-de-noche": () => {
+      const [antes, nocturno, despues] = scenario.defects.find((d) => d.kind === "tag-de-noche")?.tags ?? [];
+      const tag = undeclared.tags.find((entry) => entry.tagId === nocturno);
+      if (tag === undefined) return { ok: false, detail: `${nocturno} no sale entre los tags fuera de la lista` };
+      return {
+        ok: tag.verdict === "noche" && tag.predecessor === antes && tag.successor === despues && tag.dayReadings === 0 && tag.dayHits === 0,
+        detail:
+          `${nocturno}: ${tag.verdict}, entre ${tag.predecessor} y ${tag.successor}; ${tag.nightReadings} lecturas de noche; ` +
+          `de día ${tag.dayPasses} pasadas por su sitio y ${tag.dayHits} lecturas`,
+      };
+    },
     "ritmo-mas-lento-en-un-fichero": () => {
       const agv = scenario.defects.find((d) => d.kind === "ritmo-mas-lento-en-un-fichero")?.vehicles[0] ?? "";
       const [temprano, tardio] = franjaPace;
@@ -1669,6 +1702,15 @@ describe("auditoría del circuito con verdad conocida", () => {
     // Y el único bloqueo es el plantado.
     expect(flow.blockages.map((blockage) => blockage.agvId)).toEqual([adelantado]);
   }, PLAZO);
+
+  it("fuera de la lista del circuito, solo el tag plantado sale como de noche (R-DAT-022)", () => {
+    const nocturno = scenario.defects.find((d) => d.kind === "tag-de-noche")?.tags[1];
+    const deNoche = undeclared.tags.filter((tag) => tag.verdict !== "posicion").map((tag) => tag.tagId);
+    expect(deNoche).toEqual([nocturno]);
+    // Y ningún tag de la lista sale como leído fuera de ella.
+    const declarados = new Set(scenario.declaredRing);
+    expect(undeclared.tags.filter((tag) => declarados.has(tag.tagId))).toEqual([]);
+  });
 
   it("detecta las clases que ya sabe detectar, y sigue haciéndolo", () => {
     const fallos: string[] = [];
