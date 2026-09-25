@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/14`
+- Dataset ID/version: `auditoria/15`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -81,6 +81,7 @@ fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual q
 | `cuello-de-botella` | de 19:30 a 21:00, cada AGV espera 40 s en 116 y quien llega mientras otro ya generado lo ocupa espera a que salga (una sola espera, no una cadena) | un cuello de botella en 116, que fluye, sin paradas sin explicación detrás | una avería, o dejar sin explicación a quien espera |
 | `zona-oscura` | nada nuevo: la serie de tags poco leídos (40–43) | una zona oscura que los incluye, con la causa «se salta el tag» | que el tramo sea largo, o una zona sobre tramos limpios |
 | `entrega-agrupada` | un AGV sin otro papel (7121), cuatro veces de día: tras generar y congelar, sus tres lecturas anteriores a una lectura Y pasan a Y−3 s, Y−2 s e Y−1 s, en cinco tags seguidos del anillo lejos de calles, ramas y puntos críticos de tiempo; sin `random()` y con el recorrido entero igual | las cuatro como lecturas que llegaron juntas, sin parada; el AGV concentrado; ninguna parada suya en esos tramos (sin el colapso eran cuatro) | una parada en el hueco, o una ráfaga de otro AGV |
+| `posicion-en-tiempo` | contexto, nada nuevo en las lecturas: la auditoría mide dos ficheros, el temprano y el tardío, a una hora del corte | en cada fichero posiciones crecientes desde el ancla; los tres tags nunca leídos sin posición y el siguiente situado; el tag nuevo (98001) entre sus dos vecinos solo en el fichero de después | interpolar una posición, o situar el tag nuevo en el fichero de antes |
 ## Resultados prohibidos
 
 Además de lo que dice la tabla, hay dos cosas que esta auditoría vigila por encima de todo:

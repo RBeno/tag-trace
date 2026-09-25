@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.18.0
+version: 0.19.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -416,6 +416,24 @@ lo de la sección usa solo producción (R-TIM-009). Después, destacados primero
   Es la forma en que se guarda hoy; consolidarla como referencia es F4.
 - **Cambios de la horquilla** entre el primer y el último periodo cargados, cuando hay dos: más lento
   o más rápido, con la mitad de antes y la de ahora, siempre en el mismo régimen (R-TIM-010).
+
+## 5.7 Mediciones por fichero (Parte 50)
+
+Después de «Estado normal del circuito», con su propio título. Una franja es un fichero (R-TIM-011).
+
+- Una línea con cuántos ficheros se miden y que las mediciones se rehacen en cada importación y se
+  descargan en CSV; guardarlas como referencia es F4. Los repetidos, en una línea aparte.
+- **Tabla de ficheros**, en una caja con desplazamiento: fichero, ventana, horas de producción y de
+  noche, tags del anillo, vuelta y tramos medidos. Debajo, un botón **«Descargar «fichero» (CSV)»** por
+  cada uno, con `desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s;primera;ultima;posicion_desde_s`.
+- **El anillo en tiempo, fichero a fichero**: una fila por fichero, cada tag como una raya en los
+  segundos de recorrido desde el ancla; una línea gris es la vuelta entera. El pie dice que es tiempo
+  y no distancia. Lectura al tocar con la posición del tag en cada fichero; tabla plegada con todas.
+  Los cambios de estructura (R-DAT-021) se marcan con forma además de color.
+- Con dos ficheros o más, las **tarjetas de los tramos que cambian** en producción (escalón desde un
+  fichero, deriva, o cambio sin distinguir con dos) y la **historia de esos tramos** en pequeños
+  múltiplos: el punto es la mitad de las pasadas y la barra del 80 % al 95 %, con acento en el fichero
+  donde empieza el cambio. Con uno solo, una línea que dice que comparar necesita dos.
 
 ## 6. Consolidación
 

@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.33.0
+version: 0.34.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -240,6 +240,10 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-188 | Dónde se concentran (`summarizeDeliveries`) | Un AGV con varias ráfagas frente a una flota sin ninguna → concentrado; repartidas por sitios → ningún sitio | Señalar un AGV o un sitio por una ráfaga suelta |
 | TC-189 | Auditoría con cuatro ráfagas plantadas de un AGV (tres lecturas movidas a los tres segundos antes de la siguiente, tras generar) | Las cuatro halladas sin parada y el AGV concentrado; sin el colapso eran cuatro paradas sin explicación suyas, con él ninguna; ninguna ráfaga de otro AGV (ni por la deuda de reloj del generador ni al empezar la noche); las 36 clases anteriores intactas | Una ráfaga de un AGV sano; perder una clase anterior |
 | TC-190 | Navegador con una sola exportación y las listas | Tarjeta «le llegan lecturas juntas» del AGV plantado, con la última ráfaga y «no paró» | Nombrar una causa |
+| TC-191 | Posición en tiempo (`timePositions`) | Suma de medianas desde el ancla; un tag sin leer se salta con el salto directo; sin salto permitido o con pocos pasos, lo de detrás queda sin situar; los pares del mismo instante no miden | Interpolar la posición de un tag sin lecturas |
+| TC-192 | Ficheros y medición por fichero (`franjaWindows`, `measureFranjaCohort`, `franjaCsv`) | En orden de inicio; sin ventana completa no se mide; un repetido se marca; el anillo se rota al ancla del circuito, y si no está se dice; solo cuenta lo de su ventana; CSV con `;`, coma decimal, primera y última vez y posición | Medir dos veces el mismo fichero |
+| TC-193 | Historia de un tramo entre ficheros (`segmentHistories`) | Con dos ficheros, cambio sin distinguir; un salto que se mantiene, escalón en su fichero; sin saltos pero hacia el mismo lado, deriva; un salto que vuelve atrás o la variación normal, nada | Llamar escalón a una fluctuación |
+| TC-194 | Auditoría con dos ficheros y navegador con dos exportaciones | Posiciones crecientes en cada fichero, los nunca leídos sin situar y el siguiente situado, el tag nuevo entre sus vecinos solo en el de después; en el navegador, «Mediciones por fichero» con los dos, el anillo en tiempo sin un rótulo por marca y con su tabla, y el CSV de cada fichero con su cabecera | Una posición inventada; perder la medición al cerrar sin poder descargarla |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda

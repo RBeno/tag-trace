@@ -22,6 +22,7 @@ import type { CriticalPointThresholds } from "./critical-points.js";
 import type { DriftThresholds } from "./drift.js";
 import type { FifoThresholds } from "./fifo.js";
 import type { FlowStopThresholds } from "./flow-stops.js";
+import type { FranjaThresholds } from "./franjas.js";
 import type { GraphThresholds } from "./graph.js";
 import type { GroupedDeliveryThresholds } from "./grouped-delivery.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
@@ -67,6 +68,7 @@ export interface AnalysisConfig {
   readonly bands: BandThresholds;
   readonly circuitState: CircuitStateThresholds;
   readonly groupedDelivery: GroupedDeliveryThresholds;
+  readonly franjas: FranjaThresholds;
 }
 
 /**
@@ -182,6 +184,11 @@ export interface AnalysisConfig {
  *   ráfaga: con uno solo, un tag muy cerca del siguiente tras una espera real ya lo imitaría. Lo que es
  *   «imposible de rápido» no es un número nuevo: es `readRate.minTimeRatio`, el mismo 0,6 que ya dice
  *   que un tramo recorrido en menos de ese tanto de lo normal no se recorrió circulando.
+ * - **Medición por fichero y posición en tiempo (R-TIM-011).** Cuatro pasos para dar la mediana de un
+ *   paso al situar un tag, la misma razón que las cuatro estancias de carga: con menos, la mediana la
+ *   decide un solo vehículo. Es menos que las veinte de una horquilla a propósito: una mediana se
+ *   sostiene con pocas muestras y un p95 no, y un fichero corto, justo después de cambiar un tag, tiene
+ *   que poder situarlo. Para saltar un tag sin medir se reutiliza `tagChanges.maxReadsBetween`.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -231,6 +238,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   bands: { minBandSamples: 20 },
   circuitState: { darkZoneFactor: 1.5, maxFalsePoints: 0.01 },
   groupedDelivery: { minFastSteps: 2 },
+  franjas: { minPositionSamples: 4 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

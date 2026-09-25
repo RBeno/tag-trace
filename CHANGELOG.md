@@ -2,6 +2,33 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.27.0] - 2026-09-25
+
+Segunda entrega sobre los tiempos por fichero: cada fichero se mide por separado y cada tag tiene su
+posición en tiempo.
+
+### Añadido
+
+- **Medición por fichero** (R-TIM-011, `src/domain/franjas.ts`). Una franja es un fichero: cada uno se
+  mide en su ventana completa, con las transiciones ya limpias. Mide:
+  - la horquilla de cada tramo por régimen, con la primera y la última vez que se vio;
+  - el anillo de ese fichero, rotado al ancla del circuito;
+  - la **posición en tiempo** de cada tag: los segundos de recorrido desde el ancla, sumando la mitad
+    de las pasadas de cada paso. Un tag sin medir se salta con el salto directo; si no, queda sin
+    situar, nunca interpolado. Es tiempo, no distancia.
+
+  Un fichero repetido se mide una vez. No se guarda ninguna copia fija: se rehace en cada importación.
+- **Historia de cada tramo entre ficheros** (R-TIM-010 ampliada): un único salto que se mantiene es un
+  escalón en ese fichero; moverse siempre hacia el mismo lado sin saltos es una deriva; con dos
+  ficheros no se distinguen, y se dice. Misma regla de la horquilla (`bandShift`, ahora compartida con
+  `compareBands`).
+- Sección **«Mediciones por fichero»** (`src/presentation/franjas-ui.ts`): tabla de ficheros con un
+  CSV por fichero (`…;primera;ultima;posicion_desde_s`), **el anillo en tiempo** fichero a fichero, y
+  las tarjetas y la **historia** de los tramos que cambian.
+- Configuración `franjas` (draft): cuatro pasos para la mediana de un paso.
+- Auditoría `auditoria/15`: la clase de contexto `posicion-en-tiempo`, con dos ficheros. **38 de 38
+  clases detectadas.**
+
 ## [3.26.0] - 2026-09-25
 
 Primera de las cuatro entregas aprobadas por el propietario sobre los tiempos por fichero: las

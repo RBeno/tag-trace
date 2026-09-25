@@ -18,6 +18,7 @@ import type { FleetTimeline } from "../domain/fleet.js";
 import type { Blockage, ProductionStop } from "../domain/flow-stops.js";
 import type { CircuitState } from "../domain/circuit-state.js";
 import type { DeliveryConcentration, GroupedDelivery } from "../domain/grouped-delivery.js";
+import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
@@ -487,6 +488,27 @@ export interface CircuitViews {
         readonly sites: readonly DeliveryConcentration[];
       };
       readonly changes: PeriodBandChanges | null;
+    }[];
+  };
+  /**
+   * La medición de cada fichero (R-TIM-011): una franja es un fichero. Por circuito, la horquilla de
+   * cada tramo, el anillo y la posición en tiempo de cada tag en cada fichero, y los tramos que cambian
+   * de un fichero a otro. Se rehace en cada importación; no se guarda una copia fija (eso es F4).
+   */
+  readonly franjas: {
+    readonly sources: readonly {
+      readonly sourceId: string;
+      readonly fileName: string;
+      readonly from: number;
+      readonly to: number;
+      /** El fichero anterior idéntico, si lo hay: no se mide dos veces. */
+      readonly duplicateOf: string | null;
+      readonly exposure: RegimeExposure;
+    }[];
+    readonly cohorts: readonly {
+      readonly cohortId: number;
+      readonly measures: readonly (FranjaCohort & { readonly sourceId: string })[];
+      readonly histories: readonly SegmentHistory[];
     }[];
   };
   /**

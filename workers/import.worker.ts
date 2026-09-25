@@ -63,6 +63,7 @@ import {
 } from "../src/domain/segment-bands.js";
 import { buildCircuitState } from "../src/domain/circuit-state.js";
 import { collapseGroupedDeliveries, summarizeDeliveries } from "../src/domain/grouped-delivery.js";
+import { franjaWindows, measureFranjaCohort, segmentHistories } from "../src/domain/franjas.js";
 import {
   flowStops,
   outsideProductionStops,
@@ -243,6 +244,7 @@ async function buildViews(
   imported: readonly Reading[],
   zone: string,
   direction: SourceDirection,
+  importedSource: { readonly sourceId: string; readonly sourceHash: string; readonly fileName: string },
 ): Promise<CircuitViews | undefined> {
   const stored =
     circuitId !== undefined && accumulation?.accumulated === true && isAvailable()
@@ -323,6 +325,19 @@ async function buildViews(
   // Régimen de cada instante (R-TIM-009): la noche se mide aparte y no altera el estado normal.
   const regimeOf = regimeReader(zone, PROVISIONAL_CONFIG.regimes);
   const circuitStateCohorts: CircuitViews["circuitState"]["cohorts"][number][] = [];
+  // Una franja es un fichero (R-TIM-011): su ventana completa. Sin almacén, la del fichero importado.
+  const windows = franjaWindows(
+    stored !== undefined
+      ? stored.sources.map((source) => ({
+          sourceId: source.sourceId,
+          sourceHash: source.sourceHash,
+          fileName: source.fileName,
+          complete: source.complete,
+        }))
+      : [{ ...importedSource, complete: sourceCoverage(imported).complete }],
+  );
+  const measuredWindows = windows.filter((entry) => entry.duplicateOf === null);
+  const franjaCohorts: CircuitViews["franjas"]["cohorts"][number][] = [];
 
   for (const cohort of cohortAssignment.cohorts) {
     const vehicleSet = new Set(cohort.vehicles);
@@ -509,6 +524,21 @@ async function buildViews(
     for (const candidate of [...paradas, ...semaforos]) {
       if (!timeCritical.has(candidate.tagId)) timeCritical.set(candidate.tagId, candidate.kind);
     }
+    // La medición de cada fichero (R-TIM-011), con las mismas transiciones limpias.
+    const measures = measuredWindows.map((entry) => ({
+      sourceId: entry.source.sourceId,
+      ...measureFranjaCohort(
+        { cohortId: cohort.id, transitions: cohortTimeline, measured: measuredTimed, anchorTagId: effective.tagId },
+        entry.window,
+        regimeOf,
+        PROVISIONAL_CONFIG.bands,
+        PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+        PROVISIONAL_CONFIG.franjas,
+        PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
+      ),
+    }));
+    franjaCohorts.push({ cohortId: cohort.id, measures, histories: segmentHistories(measures) });
+
     const size = effective.cycle.length;
     circuitStateCohorts.push({
       cohortId: cohort.id,
@@ -671,6 +701,17 @@ async function buildViews(
     tagDossiers,
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
     fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null, production: productionView, blockages },
+    franjas: {
+      sources: windows.map((entry) => ({
+        sourceId: entry.source.sourceId,
+        fileName: entry.source.fileName,
+        from: entry.window.from,
+        to: entry.window.to,
+        duplicateOf: entry.duplicateOf,
+        exposure: regimeExposure([entry.window], productionIntervals, regimeOf),
+      })),
+      cohorts: franjaCohorts,
+    },
     ...(laneConfig.lanes.length === 0 && laneConfig.problems.length === 0
       ? {}
       : {
@@ -894,7 +935,7 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
     // acumuló, y solo esta fuente si no. Calcularlas siempre sobre el circuito sería mentir cuando
     // la afinidad ha impedido acumular, porque el usuario estaría viendo un conjunto que no
     // incluye el fichero que acaba de cargar.
-    const views = await buildViews(message.circuitId, accumulation, result.readings, zone, result.summary.direction);
+    const views = await buildViews(message.circuitId, accumulation, result.readings, zone, result.summary.direction, result.summary);
 
     emit(
       {

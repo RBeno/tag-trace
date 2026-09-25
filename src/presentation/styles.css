@@ -112,6 +112,9 @@ tr.flagged { background: var(--flag); }
 #show-more { margin-top: 12px; }
 /* La salida de una fuente de fecha ambigua: el usuario elige, el programa no adivina. */
 .chooser { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
+/* Una descarga por fichero (R-TIM-011): se parten en varias líneas en el móvil en vez de desbordar. */
+.button-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.button-row button { overflow-wrap: anywhere; text-align: left; }
 .chooser select { font: inherit; padding: 6px 10px; min-height: 24px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
 /* --- Vistas ---------------------------------------------------------------

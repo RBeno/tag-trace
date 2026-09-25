@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.21.0
+version: 0.22.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -26,6 +26,8 @@ last_updated: 2026-09-25
 | Régimen | Estado de funcionamiento por la hora local: **producción** o **noche** (hoy de 22:00 a 05:00). Lo que cruza una parada de la producción no entra en ninguno. Las mediciones estándar usan solo producción; la noche se mide aparte (R-TIM-009). |
 | Horquilla de tiempos | Lo que tarda un tramo —de un tag a otro— en un régimen: p50, p80 y p95 de sus propias transiciones. Es el estado normal de ese tramo, y se compara entre periodos (R-FLO-007, R-TIM-010). No confundir con un tag donde el recorrido se divide (bifurcación). |
 | Lecturas que llegaron juntas | Varias lecturas de un AGV que el servidor recibe casi a la vez tras un hueco: un volcado al recuperar la comunicación, porque la hora del fichero es la de llegada. Con la suma del recorrido normal, el AGV no paró (R-DAT-020). También «entrega agrupada». |
+| Franja | Un fichero de lecturas cargado, medido por separado en su ventana completa (R-TIM-011). Dos exportaciones que se solapan son dos franjas; un fichero repetido, una sola. |
+| Posición en tiempo | Los segundos de recorrido desde el ancla hasta un tag, sumando la mitad de las pasadas de cada paso. Es tiempo, nunca distancia; un tag que no se puede situar no se interpola (R-TIM-011). |
 | Valla | Límite de la horquilla de un tramo: p95 + max(p95 − p50, margen mínimo, resolución). Por encima, una transición es una parada candidata (R-FLO-007). |
 | Retención | Transición lenta —por encima del p95 de su tramo, con al menos el margen de espera— con un AGV delante que no se iba (R-FLO-008). |
 | Cuello de botella | Tag donde se concentran las retenciones más de lo que da el azar por el tiempo que los AGV pasan ahí: donde se forma cola. Si fluye, no es una avería (R-FLO-008). |

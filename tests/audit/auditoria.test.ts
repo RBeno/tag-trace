@@ -64,6 +64,7 @@ import {
   type SegmentBands,
 } from "../../src/domain/segment-bands.js";
 import { buildCircuitState, type CircuitState } from "../../src/domain/circuit-state.js";
+import { measureFranjaCohort, type FranjaCohort } from "../../src/domain/franjas.js";
 import {
   collapseGroupedDeliveries,
   summarizeDeliveries,
@@ -142,6 +143,11 @@ interface Analysis {
       readonly justification: "produccion" | "cola" | "sin-explicacion" | null;
     })[]
   >;
+  /**
+   * La medición de dos ficheros (R-TIM-011): el temprano y el tardío, a una hora del corte, como si se
+   * hubieran exportado por separado. Mismas transiciones limpias que el Worker.
+   */
+  readonly franjas: readonly (FranjaCohort & { readonly sourceId: string })[];
   /** Lecturas que llegaron juntas al servidor, y dónde se concentran (R-DAT-020). */
   readonly groupedDelivery: GroupedDeliveryReport;
   readonly deliverySummary: DeliverySummary;
@@ -463,6 +469,23 @@ function analyse(
   ]);
   const drift = compareDistantPeriods(readings, driftCoverage, knownTags, PROVISIONAL_CONFIG.drift);
 
+  // Dos ficheros (R-TIM-011), con las mismas ventanas que la comparación entre periodos.
+  const franjas =
+    anchor === null
+      ? []
+      : driftCoverage.map((window, index) => ({
+          sourceId: `f${index + 1}`,
+          ...measureFranjaCohort(
+            { cohortId: main.id, transitions: cohortTimeline, measured: measuredTimed, anchorTagId: anchor.tagId },
+            window,
+            regimeOf,
+            PROVISIONAL_CONFIG.bands,
+            PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+            PROVISIONAL_CONFIG.franjas,
+            PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
+          ),
+        }));
+
   return {
     matrix,
     ring,
@@ -488,6 +511,7 @@ function analyse(
     vehicleReading,
     groupedDelivery,
     deliverySummary,
+    franjas,
     readings: readings.length,
   };
 }
@@ -519,6 +543,7 @@ describe("auditoría del circuito con verdad conocida", () => {
     vehicleReading,
     groupedDelivery,
     deliverySummary,
+    franjas,
     readings,
   } = analysis;
 
@@ -1090,6 +1115,40 @@ describe("auditoría del circuito con verdad conocida", () => {
           zona === undefined
             ? "ninguna zona con los tags poco leídos"
             : `${zona.tags[0]}…${zona.tags[zona.tags.length - 1]}: ${(zona.gapMs / 1000).toFixed(0)} s sin leer frente a ${(zona.typicalMs / 1000).toFixed(0)} s típicos, ${zona.cause} (${(zona.skipShare * 100).toFixed(0)} % salta)`,
+      };
+    },
+    "posicion-en-tiempo": () => {
+      const declared = scenario.declaredRing;
+      const nunca = scenario.defects.find((d) => d.kind === "declarado-sin-lecturas")?.tags ?? [];
+      const nuevo = scenario.defects.find((d) => d.kind === "tag-nuevo-a-mitad-de-ventana")?.tags[0] ?? "";
+      const problems: string[] = [];
+      for (const franja of franjas) {
+        const known = franja.positions.filter((entry) => entry.offsetMs !== null);
+        const increasing = known.every((entry, index) => index === 0 || (entry.offsetMs as number) > ((known[index - 1] as typeof entry).offsetMs as number));
+        if (!increasing) problems.push(`${franja.sourceId}: posiciones no crecientes`);
+        const offsetOf = new Map(franja.positions.map((entry) => [entry.tagId, entry.offsetMs]));
+        for (const tag of nunca) {
+          if (offsetOf.get(tag) !== undefined && offsetOf.get(tag) !== null) problems.push(`${franja.sourceId}: ${tag} situado`);
+          const next = declared[(declared.indexOf(tag) + 1) % declared.length] as string;
+          if ((offsetOf.get(next) ?? null) === null) problems.push(`${franja.sourceId}: ${next} sin situar`);
+        }
+      }
+      const [temprana, tardia] = franjas;
+      const antes = declared[135] as string;
+      const despues = declared[136] as string;
+      const tardiaOffset = new Map((tardia?.positions ?? []).map((entry) => [entry.tagId, entry.offsetMs ?? null]));
+      const n = tardiaOffset.get(nuevo) ?? null;
+      const a = tardiaOffset.get(antes) ?? null;
+      const b = tardiaOffset.get(despues) ?? null;
+      if (temprana?.positions.some((entry) => entry.tagId === nuevo)) problems.push(`${nuevo} en el fichero de antes`);
+      if (n === null || a === null || b === null || !(a < n && n < b)) problems.push(`${nuevo} no queda entre ${antes} y ${despues}`);
+      return {
+        ok: franjas.length === 2 && problems.length === 0,
+        detail:
+          problems.length > 0
+            ? problems.slice(0, 4).join("; ")
+            : `vuelta ${franjas.map((franja) => `${franja.sourceId} ${((franja.lapMs ?? 0) / 60_000).toFixed(1)} min`).join(", ")}; ` +
+              `${nuevo} a ${((n ?? 0) / 1000).toFixed(0)} s, entre ${((a ?? 0) / 1000).toFixed(0)} y ${((b ?? 0) / 1000).toFixed(0)} s`,
       };
     },
     "entrega-agrupada": () => {

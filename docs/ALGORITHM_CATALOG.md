@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.21.0
+version: 0.22.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -580,6 +580,34 @@ ahora de P a Q.
 P, con sus pasadas; la misma prueba de Poisson que los cuellos de botella (`concentrated`).
 
 **Sin evaluar** con resolución de minuto (`resolutionMs` > 1 s), y se dice.
+
+## 6.9 Medición por fichero y posición en tiempo, implementado (R-TIM-011, R-TIM-010)
+
+`src/domain/franjas.ts`, por circuito y fichero, con las transiciones ya limpias (lecturas agrupadas
+colapsadas, fuera de las paradas de la producción, medibles).
+
+**Ventanas** (`franjaWindows`). La ventana completa de cada `StoredSource`, en orden de inicio; sin
+ventana completa no se mide, y un fichero con el mismo hash que otro anterior se marca como repetido y
+se mide una sola vez. Sin almacén, la ventana del fichero importado.
+
+**Medición** (`measureFranjaCohort`). Dentro de la ventana, las dos lecturas de cada transición:
+
+- el anillo de la franja con `findDominantCycle`, rotado con `resolveDeclaredAnchor` al ancla efectiva
+  del circuito; si el ancla no está en el anillo de esa franja, `anchorShared` es falso y sus
+  posiciones no se comparan con las demás;
+- la horquilla por tramo y régimen (`buildSegmentBands`), con la primera y la última vez del tramo;
+- la **posición en tiempo** (`timePositions`): el ancla en 0; cada tag, la posición del tag anterior
+  situado más la mediana de producción del paso entre los dos, con al menos `minPositionSamples`
+  pasos; si falta, se prueba desde hasta `tagChanges.maxReadsBetween` tags antes con la mediana del
+  salto directo; si tampoco, sin situar. La vuelta es la del último tag situado al ancla.
+
+**Historia** (`segmentHistories`). Por par y régimen, los ficheros con horquilla en orden, y
+`bandShift` —la regla de R-TIM-010— entre cada dos seguidos: un solo salto que se mantiene frente al
+fichero de antes en todos los siguientes es `escalon`; ningún salto, o varios hacia el mismo lado, con
+el primero y el último desplazados y la mediana monótona, es `deriva`; con dos ficheros, `cambio`. Un
+salto que vuelve atrás no es nada.
+
+**CSV** (`franjaCsv`): `desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s;primera;ultima;posicion_desde_s`.
 
 ## 7. Segmentación de vueltas y huecos
 

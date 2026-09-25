@@ -2398,3 +2398,270 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
   );
   return wrapper;
 }
+
+/** Una fila del anillo en tiempo: un fichero, con cada tag en su segundo desde el ancla. */
+export interface RingTimeRow {
+  /** El fichero, como se enseña. */
+  readonly label: string;
+  readonly lapMs: number | null;
+  readonly tags: readonly {
+    readonly tagId: string;
+    readonly offsetMs: number | null;
+    /** Cambio de estructura respecto al fichero anterior, si lo hay (R-DAT-021). */
+    readonly mark?: "nuevo" | "retirado" | "sustituido";
+    readonly note?: string;
+  }[];
+}
+
+const TIME_POSITION_STEPS_S = [30, 60, 120, 300, 600, 900, 1800, 3600];
+
+function clockSpan(ms: number): string {
+  const total = Math.round(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return minutes === 0 ? `${rest} s` : `${minutes} min ${String(rest).padStart(2, "0")} s`;
+}
+
+const MARK_SHAPES: Readonly<Record<"nuevo" | "retirado" | "sustituido", string>> = {
+  nuevo: "tag nuevo (triángulo)",
+  retirado: "ya no se lee (aspa)",
+  sustituido: "sustituido (rombo)",
+};
+
+/**
+ * El anillo en tiempo: una fila por fichero, cada tag en los segundos de recorrido que lo separan del
+ * ancla (R-TIM-011). **Es tiempo, nunca distancia**: dos tags muy juntos en el dibujo son dos tags que
+ * se leen muy seguidos, no dos tags cerca en el suelo. Lo que cambia de un fichero a otro va marcado
+ * con su forma, además del color.
+ */
+export function ringTimeChart(rows: readonly RingTimeRow[]): HTMLElement {
+  const wrapper = figure(
+    "El anillo en tiempo, fichero a fichero",
+    "Cada raya es un tag, a los segundos de recorrido que lo separan del ancla (la mitad de las pasadas de " +
+      "cada paso, sumadas). Es tiempo de recorrido, no distancia. Un tag que no se puede situar no se dibuja.",
+  );
+  const area = host();
+  const line = readout("Toca o pasa el puntero por un tag para leer su posición en cada fichero.");
+  const maxMs = Math.max(
+    60_000,
+    ...rows.map((row) => row.lapMs ?? 0),
+    ...rows.flatMap((row) => row.tags.map((tag) => tag.offsetMs ?? 0)),
+  );
+  const offsetsOf = new Map<string, string[]>();
+  for (const row of rows) {
+    for (const tag of row.tags) {
+      if (tag.offsetMs === null) continue;
+      offsetsOf.set(tag.tagId, [...(offsetsOf.get(tag.tagId) ?? []), `«${row.label}», ${clockSpan(tag.offsetMs)}`]);
+    }
+  }
+
+  responsive(area, (width) => {
+    area.replaceChildren();
+    const left = 8;
+    const right = 8;
+    const rowHeight = 34;
+    const top = 4;
+    const height = top + rows.length * rowHeight + 22;
+    const plotWidth = Math.max(10, width - left - right);
+    const x = (ms: number): number => left + (plotWidth * ms) / maxMs;
+    const canvas = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "El anillo en tiempo" });
+    const stepS =
+      TIME_POSITION_STEPS_S.find((candidate) => maxMs / 1000 / candidate <= Math.max(3, Math.floor(plotWidth / 80))) ?? 3600;
+    for (let tick = 0; tick * 1000 <= maxMs; tick += stepS) {
+      const px = x(tick * 1000);
+      canvas.append(svg("line", { x1: px, x2: px, y1: top, y2: height - 20, stroke: "var(--viz-grid)" }));
+      const anchor = px < 30 ? "start" : px > width - 30 ? "end" : "middle";
+      canvas.append(text(px, height - 6, tick < 60 ? `${tick} s` : `${tick / 60} min`, "axis", { "text-anchor": anchor }));
+    }
+    rows.forEach((row, rowIndex) => {
+      const y0 = top + rowIndex * rowHeight;
+      canvas.append(text(left, y0 + 10, row.label, "axis"));
+      const base = y0 + 14;
+      if (row.lapMs !== null) {
+        canvas.append(svg("line", { x1: x(0), x2: x(row.lapMs), y1: base + 8, y2: base + 8, stroke: "var(--viz-grid)", "stroke-width": 2 }));
+      }
+      row.tags.forEach((tag, tagIndex) => {
+        if (tag.offsetMs === null) return;
+        const px = x(tag.offsetMs);
+        const key = `${rowIndex}:${tagIndex}`;
+        if (tag.mark === undefined) {
+          canvas.append(svg("line", { x1: px, x2: px, y1: base + 2, y2: base + 14, stroke: "var(--viz-series)", "stroke-width": 1.5, "data-k": key }));
+          return;
+        }
+        const size = 6;
+        const shape =
+          tag.mark === "nuevo"
+            ? `M${px} ${base + 2}L${px + size} ${base + 14}L${px - size} ${base + 14}Z`
+            : tag.mark === "sustituido"
+              ? `M${px} ${base + 1}L${px + size} ${base + 8}L${px} ${base + 15}L${px - size} ${base + 8}Z`
+              : `M${px - size} ${base + 2}L${px + size} ${base + 14}M${px + size} ${base + 2}L${px - size} ${base + 14}`;
+        canvas.append(
+          svg("path", {
+            d: shape,
+            fill: tag.mark === "retirado" ? "none" : "var(--viz-accent)",
+            stroke: "var(--viz-accent)",
+            "stroke-width": 2,
+            "data-k": key,
+          }),
+        );
+      });
+    });
+    inspect(
+      canvas,
+      (point) => {
+        const key = point === null ? null : (point.target as SVGElement).getAttribute("data-k");
+        if (key === null) {
+          line.show(null);
+          return;
+        }
+        const [rowIndex, tagIndex] = key.split(":").map(Number) as [number, number];
+        const tag = rows[rowIndex]?.tags[tagIndex];
+        if (tag === undefined) {
+          line.show(null);
+          return;
+        }
+        line.show(
+          `${tag.tagId} · ${(offsetsOf.get(tag.tagId) ?? []).join("; ")}` +
+            (tag.mark === undefined ? "" : ` · ${MARK_SHAPES[tag.mark].replace(/ \(.*\)/, "")}`) +
+            (tag.note === undefined ? "" : ` · ${tag.note}`),
+        );
+      },
+      { snap: "[data-k]" },
+    );
+    area.append(canvas);
+  });
+
+  const marked = rows.some((row) => row.tags.some((tag) => tag.mark !== undefined));
+  const allTags = [...new Set(rows.flatMap((row) => row.tags.map((tag) => tag.tagId)))];
+  wrapper.append(
+    legendList([
+      ["var(--viz-series)", "tag, en su segundo desde el ancla"],
+      ["var(--viz-grid)", "una vuelta entera"],
+      ...(marked
+        ? (Object.values(MARK_SHAPES).map((label) => ["var(--viz-accent)", label]) as [string, string][])
+        : []),
+    ]),
+    area,
+    line.node,
+    lazyDetails(`Ver la posición de los ${allTags.length} tags en cada fichero`, () =>
+      plainTable(
+        ["Tag", ...rows.map((row) => row.label)],
+        allTags.map((tagId) => [
+          tagId,
+          ...rows.map((row) => {
+            const tag = row.tags.find((entry) => entry.tagId === tagId);
+            return tag === undefined || tag.offsetMs === null ? "—" : clockSpan(tag.offsetMs);
+          }),
+        ]),
+      ),
+    ),
+  );
+  return wrapper;
+}
+
+/** La historia de un tramo: su horquilla en cada fichero, en el mismo régimen. */
+export interface SegmentHistoryPanel {
+  readonly title: string;
+  /** El fichero donde empieza el escalón o el cambio, si lo hay. */
+  readonly atLabel: string | null;
+  readonly points: readonly { readonly label: string; readonly p50Ms: number; readonly p80Ms: number; readonly p95Ms: number; readonly samples: number }[];
+}
+
+/**
+ * Pequeños múltiplos: un panel por tramo que cambia entre ficheros. El punto es la mitad de las
+ * pasadas en cada fichero; la barra, del 80 % al 95 %. El fichero donde empieza el escalón va con
+ * acento. Mismo eje en todos para poder comparar, empezando en cero.
+ */
+export function segmentHistoryChart(panels: readonly SegmentHistoryPanel[]): HTMLElement {
+  const wrapper = figure(
+    "Historia de los tramos que cambian",
+    "Cada panel es un tramo en producción: el punto es la mitad de las pasadas en cada fichero y la barra, " +
+      "del 80 % al 95 %. Con acento, el fichero donde empieza el cambio.",
+  );
+  const area = host();
+  const line = readout("Toca o pasa el puntero por un fichero de un panel para leer su horquilla.");
+  const maxMs = Math.max(10_000, ...panels.flatMap((panel) => panel.points.map((point) => point.p95Ms))) * 1.1;
+
+  responsive(area, (width) => {
+    area.replaceChildren();
+    const columns = width < 480 ? 1 : width < 900 ? 2 : 3;
+    const gap = 12;
+    const panelWidth = (width - gap * (columns - 1)) / columns;
+    const panelHeight = 110;
+    const rowsCount = Math.ceil(panels.length / columns);
+    const height = rowsCount * (panelHeight + gap);
+    const canvas = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Historia de los tramos" });
+    panels.forEach((panel, panelIndex) => {
+      const px0 = (panelIndex % columns) * (panelWidth + gap);
+      const py0 = Math.floor(panelIndex / columns) * (panelHeight + gap);
+      const plotTop = py0 + 18;
+      const plotBottom = py0 + panelHeight - 14;
+      const y = (ms: number): number => plotBottom - ((plotBottom - plotTop) * ms) / maxMs;
+      const step = (panelWidth - 24) / Math.max(1, panel.points.length);
+      const xAt = (index: number): number => px0 + 12 + step * (index + 0.5);
+      canvas.append(text(px0, py0 + 11, panel.title, "axis"));
+      canvas.append(svg("line", { x1: px0, x2: px0 + panelWidth, y1: plotBottom, y2: plotBottom, stroke: "var(--viz-grid)" }));
+      const path = panel.points.map((point, index) => `${index === 0 ? "M" : "L"}${xAt(index).toFixed(1)} ${y(point.p50Ms).toFixed(1)}`).join("");
+      canvas.append(svg("path", { d: path, fill: "none", stroke: "var(--viz-series)", "stroke-width": 1.5 }));
+      panel.points.forEach((point, index) => {
+        const accent = point.label === panel.atLabel;
+        const color = accent ? "var(--viz-accent)" : "var(--viz-series)";
+        canvas.append(svg("rect", { x: xAt(index) - 3, y: y(point.p95Ms), width: 6, height: Math.max(1.5, y(point.p80Ms) - y(point.p95Ms)), fill: color, opacity: 0.45 }));
+        canvas.append(svg("circle", { cx: xAt(index), cy: y(point.p50Ms), r: accent ? 4.5 : 3.5, fill: color }));
+        canvas.append(text(xAt(index), py0 + panelHeight - 2, String(index + 1), "axis", { "text-anchor": "middle" }));
+        canvas.append(
+          svg("rect", { x: xAt(index) - step / 2, y: plotTop, width: step, height: plotBottom - plotTop, fill: "transparent", "data-k": `${panelIndex}:${index}` }),
+        );
+      });
+    });
+    inspect(
+      canvas,
+      (point) => {
+        const key = point === null ? null : (point.target as SVGElement).getAttribute("data-k");
+        if (key === null) {
+          line.show(null);
+          return;
+        }
+        const [panelIndex, index] = key.split(":").map(Number) as [number, number];
+        const panel = panels[panelIndex];
+        const entry = panel?.points[index];
+        if (panel === undefined || entry === undefined) {
+          line.show(null);
+          return;
+        }
+        line.show(
+          `${panel.title} · «${entry.label}»: la mitad en ${seconds(entry.p50Ms)}, el 80 % en ${seconds(entry.p80Ms)}, ` +
+            `el 95 % en ${seconds(entry.p95Ms)} (${entry.samples} pasadas)` +
+            (entry.label === panel.atLabel ? " · aquí empieza el cambio" : ""),
+        );
+      },
+      { snap: "[data-k]" },
+    );
+    area.append(canvas);
+  });
+
+  wrapper.append(
+    legendList([
+      ["var(--viz-series)", "la mitad de las pasadas (punto) y del 80 % al 95 % (barra)"],
+      ["var(--viz-accent)", "el fichero donde empieza el cambio"],
+    ]),
+    area,
+    line.node,
+    lazyDetails(`Ver los ${panels.length} tramos en tabla`, () =>
+      plainTable(
+        ["Tramo", "Fichero", "Mitad", "80 %", "95 %", "Pasadas"],
+        panels.flatMap((panel) =>
+          panel.points.map((point) => [
+            panel.title,
+            point.label,
+            seconds(point.p50Ms),
+            seconds(point.p80Ms),
+            seconds(point.p95Ms),
+            String(point.samples),
+          ]),
+        ),
+      ),
+    ),
+  );
+  return wrapper;
+}

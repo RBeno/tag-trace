@@ -51,6 +51,7 @@ import {
 } from "./diagnostic-charts.js";
 import { PROVISIONAL_CONFIG } from "../domain/config.js";
 import { bandsCsv } from "../domain/segment-bands.js";
+import { renderFranjas } from "./franjas-ui.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
@@ -1064,6 +1065,7 @@ function renderViews(views: CircuitViews): void {
   viewsPanel.append(element("p", "muted", cohortLine));
   renderShapes(views);
   renderCircuitState(views);
+  renderFranjas(viewsPanel, views, { finding, formatInstant, formatTick, duration, circuitId: state.circuitId });
   renderCriticalPoints(views);
   renderCharging(views);
   renderFifo(views);

@@ -159,6 +159,22 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(page.locator(".finding", { hasText: "asignado no leyó nada" })).toContainText(scenario.fleetNeverRead);
     await expect(page.locator(".finding", { hasText: "sin estar asignado" })).toContainText(scenario.fleetLeavesMidway);
 
+    // Mediciones por fichero (R-TIM-011): los dos ficheros, el anillo en tiempo sin un rótulo por marca
+    // y con su tabla, y el CSV de cada fichero con su cabecera.
+    await expect(page.getByRole("heading", { name: "Mediciones por fichero" })).toBeVisible();
+    await expect(page.getByText("2 ficheros medidos", { exact: false })).toBeVisible();
+    const ringTime = figureOf("El anillo en tiempo, fichero a fichero");
+    await expect(ringTime).toBeVisible();
+    expect(await ringTime.locator("svg title").count()).toBe(0);
+    await expect(ringTime.getByText(/Ver la posición de los \d+ tags en cada fichero/)).toBeVisible();
+    const [franjaCsv] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Descargar «tardio.csv» (CSV)" }).click(),
+    ]);
+    const { readFileSync } = await import("node:fs");
+    const franjaText = readFileSync(await franjaCsv.path(), "utf8").replace(/^﻿/, "");
+    expect(franjaText.split("\r\n")[0]).toBe("desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s;primera;ultima;posicion_desde_s");
+
     // El expediente de un vehículo, en un solo eje de tiempo.
     await page.locator("#dossier-search").fill("7112");
     const timeline = figureOf("Expediente de 7112 en el tiempo");

@@ -261,11 +261,25 @@ export function compareBands(early: SegmentBands, late: SegmentBands): readonly 
       const a = before[regime];
       const b = after[regime];
       if (a === null || b === null) continue;
-      if (b.p50Ms > a.p80Ms) changes.push({ from: before.from, to: before.to, regime, kind: "mas-lento", early: a, late: b });
-      else if (b.p80Ms < a.p50Ms) changes.push({ from: before.from, to: before.to, regime, kind: "mas-rapido", early: a, late: b });
+      const kind = bandShift(a, b);
+      if (kind !== null) changes.push({ from: before.from, to: before.to, regime, kind, early: a, late: b });
     }
   }
   return changes.sort((a, b) => Math.abs(b.late.p50Ms / b.early.p50Ms - 1) - Math.abs(a.late.p50Ms / a.early.p50Ms - 1));
+}
+
+/**
+ * Si una horquilla se ha movido respecto a otra (R-TIM-010): más lenta si la mitad de las pasadas de
+ * la segunda tarda más que el 80 % de la primera; más rápida si el 80 % de la segunda tarda menos que
+ * la mitad de la primera; si no, cabe en la variación normal del tramo.
+ */
+export function bandShift(
+  before: Pick<Band, "p50Ms" | "p80Ms">,
+  after: Pick<Band, "p50Ms" | "p80Ms">,
+): "mas-lento" | "mas-rapido" | null {
+  if (after.p50Ms > before.p80Ms) return "mas-lento";
+  if (after.p80Ms < before.p50Ms) return "mas-rapido";
+  return null;
 }
 
 export interface PeriodBandChanges {

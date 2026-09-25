@@ -89,7 +89,9 @@ export type DefectClass =
   /** Un tramo donde falta información: tags que se saltan (R-GRA-014). */
   | "zona-oscura"
   /** Tras un hueco, varias lecturas llegan casi a la vez al servidor, con la suma normal (R-DAT-020). */
-  | "entrega-agrupada";
+  | "entrega-agrupada"
+  /** Contexto: la posición en tiempo de cada tag en cada fichero (R-TIM-011). */
+  | "posicion-en-tiempo";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -1180,6 +1182,15 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         "cada ráfaga como lecturas que llegaron juntas con la suma normal (no paró), el AGV concentrado, y " +
         "ninguna parada suya en esos tramos",
       mustNotSay: "una parada en el hueco, ni lecturas agrupadas de otro AGV",
+    },
+    {
+      kind: "posicion-en-tiempo",
+      tags: [...nuncaLeidos, tagNuevo],
+      vehicles: [],
+      expect:
+        "en cada fichero, posiciones crecientes desde el ancla; los tags nunca leídos sin posición y el siguiente " +
+        "situado igual; el tag nuevo situado entre sus dos vecinos en el fichero de después",
+      mustNotSay: "una posición interpolada para un tag sin lecturas, ni el tag nuevo en el fichero de antes",
     },
   ];
 
