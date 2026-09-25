@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.21.0
+version: 0.22.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -457,6 +457,20 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
   fichero, deriva, o cambio sin distinguir con dos) y la **historia de esos tramos** en pequeños
   múltiplos: el punto es la mitad de las pasadas y la barra del 80 % al 95 %, con acento en el fichero
   donde empieza el cambio. Con uno solo, una línea que dice que comparar necesita dos.
+
+## 5.8 Libros de Excel para rellenar e importar
+
+- En «Listas del circuito», junto a cada selector de fichero, **«Descargar plantilla de listas
+  (Excel)»** y **«Descargar plantilla de flota (Excel)»**: la primera hoja con la cabecera en su sitio,
+  en formato texto (los ceros a la izquierda se conservan), la cabecera fija, desplegables en `lista`
+  y `funcion` que avisan pero no prohíben, una hoja de instrucciones y otra de ejemplo. Los dos
+  selectores aceptan el `.xlsx` tal cual, además del CSV.
+- En la composición del circuito, bajo el anillo de cada cohorte, **«Descargar el circuito en Excel
+  (borrador de la lista «circuito»)»**: el recorrido observado en su orden, con la columna `vsystem`
+  diciendo en cada fila dónde difiere de Vsystem, los tags de Vsystem que faltan en su sitio y sin
+  orden, el ancla y los posibles puntos críticos en `nota`, y lo que se lee fuera del anillo en otra
+  hoja. Las instrucciones del libro dicen que es un borrador que se corrige contra Vsystem antes de
+  importarlo.
 
 ## 6. Consolidación
 

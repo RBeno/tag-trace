@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.13.0
+version: 0.14.0
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-25
 ---
 
 # Contratos de datos y procedencia
@@ -27,6 +27,9 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-010 | Proyecto anterior | `.agvproj` con manifiesto y versión | Persistencia local |
 | DS-011 | Informe ampliado de Vsystem | Tipo, fecha con segundos, AGV, circuito y, según el tipo, tag o uso | Enriquecida, opcional |
 | DS-012 | Historial de flota | AGV y fecha de alta; circuito, fecha de baja y nota opcionales | Configuración, incremental (§3.6) |
+
+Las listas (DS-002, DS-004 a DS-008) y el historial (DS-012) entran en CSV o en un libro de Excel
+(`.xlsx`) con la plantilla que da el programa (§3.7).
 
 ## 3. Contrato mínimo de lecturas
 
@@ -272,6 +275,38 @@ historial **se fusiona** con lo guardado por la clave (AGV, `desde`). Una fila c
 sustituye a la anterior —así se cierra un periodo: se vuelve a subir su fila con `hasta`— y las demás
 se conservan. Para registrar un cambio basta subir esa fila. Borrar un periodo subiendo filas no se
 puede: queda como límite declarado.
+
+### 3.7 Listas e historial en Excel
+
+Las listas de tags (DS-002, DS-004 a DS-008) y el historial de flota (DS-012) se escriben a mano, y se
+escriben en Excel. Un CSV abierto en Excel pierde justo lo que importa: convierte `0712` en `712` —otro
+AGV (R-DAT-001)— y las fechas en números, y al guardarlo hay que acertar con separador y codificación.
+Por eso:
+
+- **El programa da la plantilla**, un `.xlsx` hecho en el navegador —el repositorio no guarda
+  ninguno—: la primera hoja con la cabecera en su sitio (`lista;tag;orden;funcion;grupo;capacidad;nota`
+  o `circuito;agv;desde;hasta;nota`), las columnas en **formato texto**, la cabecera fija, desplegables
+  que avisan pero admiten otros valores (`lista` y `funcion`), una hoja de instrucciones y otra de
+  ejemplo.
+- **El `.xlsx` se importa tal cual**, sin convertirlo. Se lee **solo la primera hoja**; la cabecera se
+  busca por nombre, como en el texto, y una celda que falta al final de una fila es una celda vacía.
+  Se toma el valor de cada celda tal como Excel lo guardó; una fórmula no se evalúa, se toma su último
+  resultado. Las columnas que el importador no conoce se ignoran.
+- En el historial de flota, una fecha que Excel guardó **como número** (la celda no estaba en texto) se
+  lee como la fecha de pared que se escribió —días desde el 30/12/1899— en la zona del circuito. Solo en
+  un libro de Excel: en un texto, un número suelto en una columna de fecha no es una fecha.
+- Un libro que no se puede leer se rechaza entero, con el motivo: los límites del contenedor son los
+  del zip de `.agvproj` (§9, TH-005), y un XML con declaración de tipo de documento se rechaza.
+- El CSV sigue valiendo, con las mismas reglas de §4 y §5.
+
+**Borrador del circuito.** Desde el anillo de un análisis el programa descarga, en el mismo formato,
+un borrador de la lista `circuito`: el recorrido observado en su orden —el de Vsystem si hay lista
+cargada con la que contrastarlo (R-GRA-001)—, con cada diferencia en su fila (columna `vsystem`), las
+lecturas y el origen de cada fila, y los tags de Vsystem que no están en el recorrido en su sitio y sin
+`orden`. El ancla y los posibles puntos críticos van en `nota`, nunca en `funcion` (R-GRA-007). Se
+importa tal cual, pero **es un borrador**: la lista `circuito` es lo que Vsystem declara, así que se
+corrige contra Vsystem antes de cargarla. Lo que se lee fuera del anillo va en otra hoja, que no se
+importa.
 
 ## 4. Proceso de importación
 

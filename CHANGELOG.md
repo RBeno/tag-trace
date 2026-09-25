@@ -2,6 +2,39 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.30.0] - 2026-09-25
+
+Libros de Excel para rellenar e importar, y el circuito de cada análisis como borrador de la lista
+«circuito» con sus diferencias con Vsystem.
+
+### Añadido
+
+- **Plantillas de Excel** de las listas del circuito y del historial de flota, hechas en el navegador
+  (el repositorio no guarda ningún `.xlsx`). La primera hoja lleva la cabecera en el orden y con los
+  nombres que el importador busca, las columnas en formato texto —`0712` sigue siendo `0712`—, la
+  cabecera fija y desplegables en `lista` y `funcion` que avisan pero admiten otros valores; una hoja de
+  instrucciones y otra de ejemplo.
+- **Importar el `.xlsx` tal cual** en listas y flota (`src/persistence/xlsx.ts`, primera hoja): sin
+  pasar por CSV, que es donde se pierden los ceros, el separador y la codificación. Una fecha que Excel
+  guardó como número se lee como la que se escribió. Un libro ilegible se rechaza con su motivo, con los
+  límites del zip de `.agvproj`, sin evaluar fórmulas y sin declaraciones de tipo de documento.
+- **Borrador del circuito** (`circuitDraft`): bajo el anillo de cada cohorte, «Descargar el circuito en
+  Excel». El recorrido observado en su orden —el de Vsystem si hay lista cargada—, con la columna
+  `vsystem` diciendo en cada fila dónde difiere, los tags de Vsystem que faltan en su sitio y sin orden,
+  el ancla y los posibles puntos críticos en `nota` (nunca en `funcion`), y lo que se lee fuera del
+  anillo en otra hoja. Se vuelve a importar tal cual; se corrige contra Vsystem antes, porque la lista
+  `circuito` es lo que Vsystem declara (R-GRA-001).
+- El contraste con Vsystem dice ahora de qué cohorte es (`vsystemCohortId`), para que el borrador de
+  cada cohorte use el suyo.
+- Documentación: `DATA_CONTRACTS.md` §3.7, `CONFIG_SCHEMA.md`, `UX_SPEC.md` §5.8, TH-005 en
+  `SECURITY_PRIVACY.md`, glosario, TC-204–206.
+
+### Comprobado y sin comprobar
+
+- Los libros generados se leen con una librería independiente (openpyxl): formato texto, cabecera fija
+  y desplegables como se pretende. **No se han abierto en Excel** en este entorno; el formato es el
+  mínimo que Excel documenta, pero la prueba en Excel queda para el propietario.
+
 ## [3.29.0] - 2026-09-25
 
 Cuarta y última entrega sobre los tiempos por fichero: el ritmo de cada AGV y quién retiene a otros.

@@ -23,7 +23,8 @@ import {
   importReadings,
 } from "../src/ingestion/importer.js";
 import { decodeSource } from "../src/ingestion/decode.js";
-import { CatalogFailure, EXPECTED_STRUCTURE, importCatalog } from "../src/ingestion/catalog.js";
+import { CatalogFailure, EXPECTED_STRUCTURE, importCatalog, importCatalogRows } from "../src/ingestion/catalog.js";
+import { looksLikeZip, readXlsxRows, XlsxError } from "../src/persistence/xlsx.js";
 import { unionReadings } from "../src/ingestion/union.js";
 import { mergeIntervals, sourceCoverage, type Interval } from "../src/domain/coverage.js";
 import { assessAffinity, tagsOf } from "../src/domain/affinity.js";
@@ -82,7 +83,7 @@ import {
   type FlowReport,
   type VehicleStop,
 } from "../src/domain/flow-stops.js";
-import { FLEET_STRUCTURE, FleetFailure, importFleetHistory } from "../src/ingestion/fleet-history.js";
+import { FLEET_STRUCTURE, FleetFailure, importFleetHistory, importFleetRows } from "../src/ingestion/fleet-history.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -946,7 +947,7 @@ async function buildViews(
       })),
       listsLoaded: lists.map((entry) => entry.list),
     },
-    ...(vsystemContrast === undefined ? {} : { vsystemContrast }),
+    ...(vsystemContrast === undefined || mainCohort === undefined ? {} : { vsystemContrast, vsystemCohortId: mainCohort.id }),
     ...(criticalPointsConfig.problems.length === 0
       ? {}
       : { criticalPointsProblems: criticalPointsConfig.problems }),
@@ -1103,8 +1104,9 @@ async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<
   }
 
   try {
-    const { text } = decodeSource(await file.arrayBuffer());
-    const result = importCatalog(text);
+    // Un libro de Excel se lee directamente, primera hoja; si no, es texto (R-DAT-001: tal cual).
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const result = looksLikeZip(bytes) ? importCatalogRows(await readXlsxRows(bytes)) : importCatalog(decodeSource(bytes.buffer).text);
     const existing = await loadCircuit(circuitId);
     if (existing === undefined) {
       emit(
@@ -1159,7 +1161,12 @@ async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<
       jobId,
     );
   } catch (error) {
-    const failure = error instanceof CatalogFailure ? error : null;
+    const failure =
+      error instanceof CatalogFailure
+        ? error
+        : error instanceof XlsxError
+          ? { reason: error.reason, recovery: "Guarda el libro de nuevo en Excel (.xlsx) o expórtalo como CSV." }
+          : null;
     emit(
       {
         type: "error",
@@ -1203,8 +1210,10 @@ async function runFleet(message: Extract<ToWorker, { type: "fleet" }>): Promise<
       );
       return;
     }
-    const { text } = decodeSource(await file.arrayBuffer());
-    const result = importFleetHistory(text, existing.zone);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const result = looksLikeZip(bytes)
+      ? importFleetRows(await readXlsxRows(bytes), existing.zone)
+      : importFleetHistory(decodeSource(bytes.buffer).text, existing.zone);
 
     let circuitName: string | null = null;
     if (result.circuits.length > 1) {
@@ -1253,7 +1262,12 @@ async function runFleet(message: Extract<ToWorker, { type: "fleet" }>): Promise<
       jobId,
     );
   } catch (error) {
-    const failure = error instanceof FleetFailure ? error : null;
+    const failure =
+      error instanceof FleetFailure
+        ? error
+        : error instanceof XlsxError
+          ? { reason: error.reason, recovery: "Guarda el libro de nuevo en Excel (.xlsx) o expórtalo como CSV." }
+          : null;
     emit(
       {
         type: "error",

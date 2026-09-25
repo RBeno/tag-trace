@@ -53,7 +53,8 @@ export interface CatalogRejectedRow {
 }
 
 export interface CatalogImport {
-  readonly delimiter: Delimiter;
+  /** El separador del texto; `null` si vino de una hoja de Excel, que no tiene. */
+  readonly delimiter: Delimiter | null;
   /** Cada lista con sus tags, en el orden en que el fichero los trae. */
   readonly lists: ReadonlyMap<string, readonly CatalogEntry[]>;
   readonly accepted: number;
@@ -102,25 +103,48 @@ export function normaliseListName(raw: string): string {
   return (KNOWN_LISTS as readonly string[]).includes(singular) ? singular : base;
 }
 
+function tooShort(): CatalogFailure {
+  return new CatalogFailure(
+    "El fichero no tiene cabecera y al menos una fila.",
+    `Se espera «${EXPECTED_STRUCTURE.header.join(";")}» en la primera fila y una fila por tag.`,
+  );
+}
+
 /** Lee un fichero de listas ya decodificado a texto. */
 export function importCatalog(text: string): CatalogImport {
   const lines = text.split(/\r\n|\n|\r/).filter((line) => line.trim() !== "");
-  if (lines.length < 2) {
-    throw new CatalogFailure(
-      "El fichero no tiene cabecera y al menos una fila.",
-      `Se espera «${EXPECTED_STRUCTURE.header.join(";")}» en la primera fila y una fila por tag.`,
-    );
-  }
+  if (lines.length < 2) throw tooShort();
+  const delimiter = detectDelimiter(lines.slice(0, 50)).delimiter;
+  return importCatalogTable(
+    lines.map((line) => line.split(delimiter)),
+    delimiter,
+  );
+}
 
-  const sample = lines.slice(0, 50);
-  const delimiter = detectDelimiter(sample).delimiter;
-  const header = (lines[0] ?? "").split(delimiter).map((field) => field.trim().toLowerCase());
+/**
+ * Lee las filas de la primera hoja de un libro de Excel. Misma forma y mismas reglas que el texto: la
+ * cabecera se busca por nombre y cada celda se toma tal cual —en formato texto, `0712` sigue siendo
+ * `0712`—. Una celda que falta al final de la fila es una celda vacía, no un campo de menos.
+ */
+export function importCatalogRows(rows: readonly (readonly string[])[]): CatalogImport {
+  const filled = rows.filter((row) => row.some((cell) => cell.trim() !== ""));
+  if (filled.length < 2) throw tooShort();
+  const width = (filled[0] ?? []).length;
+  return importCatalogTable(
+    filled.map((row) => Array.from({ length: Math.max(width, row.length) }, (_, index) => row[index] ?? "")),
+    null,
+  );
+}
+
+function importCatalogTable(table: readonly (readonly string[])[], delimiter: Delimiter | null): CatalogImport {
+  const separator = delimiter ?? ";";
+  const header = (table[0] ?? []).map((field) => field.trim().toLowerCase());
 
   const listColumn = header.indexOf("lista");
   const tagColumn = header.indexOf("tag");
   if (listColumn === -1 || tagColumn === -1) {
     throw new CatalogFailure(
-      `La cabecera es «${header.join(delimiter)}» y faltan las columnas obligatorias.`,
+      `La cabecera es «${header.join(separator)}» y faltan las columnas obligatorias.`,
       `Se esperan «lista» y «tag»; «${EXPECTED_STRUCTURE.optional.join("» y «")}» son opcionales.`,
     );
   }
@@ -145,10 +169,10 @@ export function importCatalog(text: string): CatalogImport {
   const unknown = new Set<string>();
   let accepted = 0;
 
-  for (let index = 1; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
+  for (let index = 1; index < table.length; index += 1) {
+    const fields = table[index] ?? [];
+    const line = fields.join(separator);
     const sourceRow = index + 1;
-    const fields = line.split(delimiter);
     if (fields.length <= Math.max(listColumn, tagColumn)) {
       rejected.push({ sourceRow, reason: "CAMPOS_INSUFICIENTES", excerpt: excerpt(line) });
       continue;

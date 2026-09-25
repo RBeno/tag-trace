@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.12.0
+version: 0.13.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -173,7 +173,8 @@ opcionalmente, `orden`.
 
 #### 3.4.3 Cómo entra esta configuración: las listas de tags
 
-Los bloques de §3.4 no se editan en ningún formulario: **entran como CSV**, por el mismo camino que
+Los bloques de §3.4 no se editan en ningún formulario: **entran como CSV o como libro de Excel**
+(`.xlsx`, con la plantilla que da el programa: `DATA_CONTRACTS.md` §3.7), por el mismo camino que
 la lista del circuito virtual y la de memoria (§3.8, DS-002/DS-005/DS-006/DS-008). No hay forma de
 descargarlos de planta, se escriben a mano, y por eso la estructura se enseña en la pantalla antes
 de pedir el fichero en lugar de esperar a que quien lo escribe la adivine.
@@ -306,7 +307,7 @@ fleet_history:
   - { agv, valid_from, valid_to?, note? }   # periodo [valid_from, valid_to); valid_to vacío = vigente
 ```
 
-Se transporta en CSV como DS-012 (`DATA_CONTRACTS.md` §3.6): `circuito;agv;desde;hasta;nota`, con
+Se transporta en CSV o en Excel como DS-012 (`DATA_CONTRACTS.md` §3.6 y §3.7): `circuito;agv;desde;hasta;nota`, con
 `desde` → `valid_from` y `hasta` → `valid_to`. A diferencia de las listas de §3.8, **se fusiona** por
 (AGV, `valid_from`) en lugar de sustituirse entero, para que un alta o una baja se registren subiendo
 solo su fila. El valor elegido de la columna `circuito`, cuando el fichero trae varios, se guarda con

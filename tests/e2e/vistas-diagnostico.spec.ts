@@ -12,6 +12,8 @@
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { DRAFT_COLUMNS, LIST_COLUMNS } from "../../src/domain/list-templates.js";
+import { readXlsxRows, writeXlsx } from "../../src/persistence/xlsx.js";
 import { buildAuditScenario } from "../support/circuito-auditoria.js";
 
 async function freshPage(page: Page): Promise<void> {
@@ -279,5 +281,49 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     const csv = readFileSync(path, "utf8").replace(/^\ufeff/, "");
     expect(csv.split("\r\n")[0]).toBe("desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s");
     expect(csv).toContain(";noche;");
+
+    // Libros de Excel: la plantilla de listas con sus columnas, y el borrador del circuito, que va en
+    // el orden de Vsystem con las diferencias en su fila y se vuelve a importar tal cual.
+    const workbook = async (button: string): Promise<{ rows: readonly (readonly string[])[]; bytes: Buffer }> => {
+      const [file] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: button }).first().click()]);
+      const bytes = readFileSync(await file.path());
+      return { rows: await readXlsxRows(new Uint8Array(bytes)), bytes };
+    };
+    expect((await workbook("Descargar plantilla de listas (Excel)")).rows).toEqual([LIST_COLUMNS]);
+    const draft = await workbook("Descargar el circuito en Excel (borrador de la lista «circuito»)");
+    expect(draft.rows[0]).toEqual(DRAFT_COLUMNS);
+    const body = draft.rows.slice(1);
+    expect(body.filter((row) => row[7] === "coincide").length).toBeGreaterThan(100);
+    for (const tag of of("declarado-sin-lecturas")?.tags ?? []) {
+      const row = body.find((entry) => entry[1] === tag);
+      expect(row?.[2], `${tag} sin orden`).toBe("");
+      expect(row?.[7]).toContain("en Vsystem y sin lecturas");
+    }
+    await page.locator("#lists-file").setInputFiles({
+      name: "circuito.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: draft.bytes,
+    });
+    await expect(page.getByText(`${body.length} filas en 1 lista.`)).toBeVisible({ timeout: 30_000 });
+
+    // Un historial de flota en Excel, con los ceros del AGV y una fecha que Excel guardó como número.
+    const fleetBook = await writeXlsx([
+      {
+        name: "Flota",
+        rows: [
+          ["circuito", "agv", "desde", "hasta"],
+          ["SE-AUDITORIA", "0712", "46266.5", ""],
+        ],
+        header: true,
+        widths: [14, 10, 20, 20],
+      },
+    ]);
+    await page.locator("#fleet-file").setInputFiles({
+      name: "flota.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: Buffer.from(fleetBook),
+    });
+    await expect(page.getByText("Historial de flota cargado")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("1 filas: 1 periodos nuevos")).toBeVisible();
   });
 });
