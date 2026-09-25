@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.15.0
+version: 0.22.1
 status: baseline-candidate
-last_updated: 2026-09-24
+last_updated: 2026-09-25
 ---
 
 # Especificación de experiencia de usuario
@@ -326,7 +326,7 @@ un asignado que no lee nada solo aparece aquí.
 
 | Vista | Qué responde | Su límite, escrito al lado |
 |---|---|---|
-| **Flota en funcionamiento** | «de 12:05 a 13:10, 38 de 40», y el peor momento de la ventana | escalonada: cambia solo donde cambia un tramo; fuera de la cobertura no se cuenta (trama); sin historial, M son los vistos (R-AGV-014) |
+| **Flota en el circuito** | «de 10:00 a 10:15, 40 de 40 en el circuito, 2 leyendo», y los dos peores momentos: menos en el circuito y menos leyendo | tres escalonadas: asignados, en el circuito y, discontinua, leyendo; las paradas de la producción como bandas; fuera de la cobertura no se cuenta (trama); sin historial, M son los vistos (R-AGV-014, R-AGV-018) |
 | **Vida de cada AGV en el circuito** | cuándo leía, cargaba, callaba, faltaba o no estaba asignado cada vehículo | una fila por AGV en un único `canvas`; leer sin estar asignado es media barra, distinta también por la forma (R-AGV-015) |
 
 Cada tramo tiene su color y su leyenda. Los huecos sin carga se colorean por **cómo reapareció** el
@@ -334,7 +334,12 @@ AGV (R-AGV-017, Parte 45), con los colores que pidió el propietario:
 
 - **leyendo** (azul) y **carga** inferida (violeta) cuentan como en funcionamiento. Un hueco que ese
   tramo tiene a menudo en ese turno —hasta tres veces su mediana— se dibuja leyendo: no es un hueco;
-- **parado** (azul oscuro): vuelve por el tag siguiente, o por el mismo, más tarde de lo habitual;
+- **parado sin nada que lo explique** (azul oscuro liso): vuelve por el tag siguiente, o por el
+  mismo, más tarde de lo habitual, sin nadie parado delante y con la producción en marcha;
+- **parado, explicado** (el mismo azul con rayas del fondo): con la producción parada o en cola
+  detrás de otro parado (R-AGV-018). Se distingue por la textura, no por otro color —con diez clases
+  no quedan colores que separar a ojo—, y se aparta para que lo liso sea lo que hay que mirar;
+- **el primero de una cola que no avanza**: azul oscuro con contorno de acento;
 - **un tag más allá** (amarillo) y **dos o más** (naranja);
 - **una hora o más sin leer, o vuelve en otro punto** (rojo apagado): también el rato sin lecturas
   de una hora o más al principio o al final de los datos;
@@ -347,14 +352,20 @@ AGV (R-AGV-017, Parte 45), con los colores que pidió el propietario:
 - **leyendo sin asignar**: media barra, se cuenta aparte y nunca en N;
 - **sin datos**: fuera de la cobertura, con trama (R-DAT-007).
 
-Al tocar un tramo, la lectura da los hechos: «7108 — parado: volvió por 60213, el siguiente a 60210;
-de 10:05 a 10:48 (43 min; lo habitual en ese tramo, turno 06–14: 40 s)». Nunca «descanso» ni
+Una franja arriba marca cuándo estuvo parada la producción. Al tocar un tramo, la lectura da los
+hechos y qué hacía el resto: «7108 — parado: volvió por 60213, el siguiente a 60210; de 10:05 a 10:48
+(43 min; lo habitual en ese tramo, turno 06–14: 40 s); nadie parado delante y la producción en
+marcha», o «…; la producción estaba parada (ningún tag crítico leído)», o «…; en cola: el de delante
+también estaba parado». Nunca «descanso» ni
 «avería»: la causa la pone una persona (R-EVI-006). Los colores están validados para daltonismo en
 los dos temas; el azul oscuro y el amarillo salen a propósito de la banda de claridad y nunca van
 solos: siempre con la lectura y la tabla.
 
-Dos hallazgos se enseñan de entrada, sin causa: los asignados que no leyeron nada en toda la ventana
-y los que leen sin estar asignados. La tabla equivalente del recuento son sus intervalos; la de la
+Se enseñan de entrada, sin causa: **las paradas de la producción** (cuándo, cuáles se repiten a la
+misma hora otro día, si todos siguieron por su sitio y quién aparece delante de quien iba detrás),
+**el primero de cada cola sin avanzar** con la producción en marcha (dónde, cuánto de más, cuántos
+detrás y cuántas lecturas críticas mientras tanto), los asignados que no leyeron nada en toda la
+ventana y los que leen sin estar asignados. La tabla equivalente del recuento son sus intervalos; la de la
 vida de cada AGV, el porcentaje de su tiempo en cada estado y en cada clase de hueco, desplazable
 dentro de su caja.
 
@@ -367,6 +378,13 @@ Lo que más se va a ver en planta, destacado dentro de su sección y sin bloque 
   la matriz con su gráfico. Bajo cada tag nuevo, los AGV que no lo leen como el resto con su cifra:
   «nunca (0 de 19 pasadas)», «desde las 17:40, 0 de 12», «empezó a leerlo a las 18:10, tras 9
   pasadas», «45 % (9 de 20)».
+  Con la suma entre anclas (R-DAT-021): si el tramo entre dos anclas trae tags sin tarjeta propia —un
+  bloque de dos o tres cambiados en mantenimiento, cuyos vecinos también cambiaron— o una sustitución
+  que el sitio no emparejó, sale **una sola tarjeta** con la hora, «Entre P y Q: 3 sustituidos en su
+  sitio», y quita las de esos tags. Si no, la tarjeta que ya existe gana una línea «Entre anclas: …»
+  con qué es el tag y la suma antes y después. Con pocas pasadas del mismo régimen a los dos lados, la
+  línea dice que la suma todavía no se puede comparar; los tags cambiados ya se ven. Las tarjetas de
+  «Comparación entre dos periodos» ganan la misma línea, sin tarjeta nueva.
 - **Lo que hay que mirar**: las tarjetas de tag separan quién no lo lee nunca, quién dejó de leerlo y
   quién lo lee poco, con porcentajes; las de AGV van por tipo —nunca, dejó de leer, poco en muchos
   tags, poco en pocos—, hasta cinco de cada uno y el resto en tabla.
@@ -374,6 +392,80 @@ Lo que más se va a ver en planta, destacado dentro de su sección y sin bloque 
 
 Ninguna tarjeta nombra una causa (memoria, lector, colocación): la diferencia medida basta para ir a
 mirarlo, y la causa la pone quien lo mira (R-EVI-006, R-AGV-016).
+
+## 5.6 Estado normal del circuito (Parte 47)
+
+Después de la composición del circuito, con su propio título. Arriba, una línea con cuánto tiempo
+cargado es producción, cuánto noche y cuánto con la producción parada, y la advertencia de que todo
+lo de la sección usa solo producción (R-TIM-009). Después, destacados primero:
+
+- **Cuello de botella en X**: esperas detrás de un AGV que no avanzaba, en cuántas colas, la más
+  larga, y si fluye o hubo bloqueos. Una cola que fluye no es una avería.
+- **Punto conflictivo en X y Y**: paradas sin explicación de cuántos AGV, frente a lo que daría el
+  azar. Si son de un solo AGV, el título lo dice así.
+- **Zona oscura de X a Y**: el hueco entre lecturas frente al típico, y si falta información porque un
+  tag se salta o porque el tramo tarda. Aparte, en una línea, los tramos lentos que explica una parada
+  precisa o un semáforo.
+- **AGV: tanto de más en X**: las paradas sin explicación que no son de un punto conflictivo, con
+  quién iba delante y cuánto avanzó. «Qué lo paró no lo dice el dato.» Todas, en tabla plegada.
+- **Lecturas que llegaron juntas** (R-DAT-020): una línea que dice que la hora del fichero es la de
+  llegada al servidor y cuántas veces llegaron varias lecturas casi a la vez tras un hueco; después,
+  tarjetas **«AGV: le llegan lecturas juntas»** y **«Lecturas juntas al pasar por X»** para lo que se
+  concentra más de lo que da el azar, con la última ráfaga y si paró o no. Sin causa: «apunta a la
+  comunicación». Todas, en tabla plegada. Sin evaluar con resolución de minuto, y se dice.
+- **Ritmo de cada AGV** (R-AGV-019): «7122 va un 10 % más lento que la flota, en toda la línea» (o
+  «solo en la zona X»), con la mitad de sus tramos frente a la de la flota y cuántos tramos; y **quién
+  retiene a otros** (R-AGV-020): «7107 retiene a otros AGV», cuántas veces, a cuántos AGV distintos
+  frente al azar, la espera sumada detrás y dónde. Sin causa. Si no hay nada, una línea que lo dice. El
+  ritmo de todos, en tabla plegada.
+- **La noche**, en una línea: qué tramos cambian la mitad o más y cuántas paradas sin explicación hubo
+  medidas contra la horquilla de noche.
+- **Horquilla de tiempos de cada tramo**: una barra por tramo del anillo, en su orden (no es
+  distancia), de la mitad de las pasadas al 95 %, con una raya en la valla, una barra gris más fina
+  para la noche y un punto de acento en los tramos con hallazgo; eje logarítmico. Lectura al tocar
+  con p50, p80, p95, valla y noche; tabla plegada con los mismos datos.
+- **Descargar horquillas (CSV)**: `desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s`, con BOM.
+  Es la forma en que se guarda hoy; consolidarla como referencia es F4.
+- **Cambios de la horquilla** entre el primer y el último periodo cargados, cuando hay dos: más lento
+  o más rápido, con la mitad de antes y la de ahora, siempre en el mismo régimen (R-TIM-010).
+
+## 5.7 Mediciones por fichero (Parte 50)
+
+Después de «Estado normal del circuito», con su propio título. Una franja es un fichero (R-TIM-011).
+
+- Una línea con cuántos ficheros se miden y que las mediciones se rehacen en cada importación y se
+  descargan en CSV; guardarlas como referencia es F4. Los repetidos, en una línea aparte.
+- **Tabla de ficheros**, en una caja con desplazamiento: fichero, ventana, horas de producción y de
+  noche, tags del anillo, vuelta y tramos medidos. Debajo, un botón **«Descargar «fichero» (CSV)»** por
+  cada uno, con `desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s;primera;ultima;posicion_desde_s`.
+- **El anillo en tiempo, fichero a fichero**: una fila por fichero, cada tag como una raya en los
+  segundos de recorrido desde el ancla; una línea gris es la vuelta entera. El pie dice que es tiempo
+  y no distancia. Lectura al tocar con la posición del tag en cada fichero; tabla plegada con todas.
+  Los cambios de estructura (R-DAT-021) se marcan con forma además de color: un triángulo para un tag
+  nuevo, un rombo para el que sustituye y un aspa para el que ya no se lee. Entre ficheros, en la fila
+  de antes y en la de después; dentro de un fichero, en su fila, con la hora en la lectura.
+- **Tarjetas de los cambios de estructura entre ficheros**: «Entre P y Q: 3 sustituidos en su sitio (de
+  «a» a «b»)», con la suma entre las dos anclas antes y después y, por tag, qué es y a cuántos segundos
+  de P. Se dice con las palabras de la tabla del propietario: «tag nuevo en la línea», «tag nuevo que
+  cambia el recorrido: revisar su configuración», «sustituido en su sitio», «se lee en otro punto»,
+  «ya no se lee entre P y Q». Sin causas.
+- **Ritmo de cada AGV en cada fichero** (R-AGV-019, R-AGV-020): una tabla, en su caja con
+  desplazamiento, con los AGV que se apartan de la flota en algún fichero o retienen a otros, y su ritmo
+  en cada fichero contra la horquilla de ese fichero. Un segundo botón por fichero, **«Descargar ritmo
+  de «fichero» (CSV)»**, con `agv;muestras;ritmo;veredicto;retenciones;min_retenidos`.
+- Con dos ficheros o más, las **tarjetas de los tramos que cambian** en producción (escalón desde un
+  fichero, deriva, o cambio sin distinguir con dos) y la **historia de esos tramos** en pequeños
+  múltiplos: el punto es la mitad de las pasadas y la barra del 80 % al 95 %, con acento en el fichero
+  donde empieza el cambio. Con uno solo, una línea que dice que comparar necesita dos.
+
+## 5.8 Libros de Excel para rellenar e importar
+
+- Los dos selectores de «Listas del circuito» —listas de tags e historial de flota— aceptan el
+  `.xlsx` tal cual, además del CSV. Un libro que no se puede leer se rechaza con su motivo y la salida:
+  guardarlo de nuevo en Excel o exportarlo como CSV.
+- **La aplicación no descarga libros.** Las plantillas y el circuito de cada análisis se entregan como
+  ficheros (`DATA_CONTRACTS.md` §3.7); en la interfaz no hay botones de descarga de Excel
+  (propietario, 2026-09-25).
 
 ## 6. Consolidación
 

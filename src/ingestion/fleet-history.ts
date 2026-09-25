@@ -29,7 +29,8 @@ export interface FleetRow extends FleetPeriod {
 export type FleetRejection = "SIN_AGV" | "FECHA_INVALIDA" | "HASTA_ANTES_DE_DESDE" | "CAMPOS_INSUFICIENTES";
 
 export interface FleetImport {
-  readonly delimiter: Delimiter;
+  /** El separador del texto; `null` si vino de una hoja de Excel. */
+  readonly delimiter: Delimiter | null;
   readonly rows: readonly FleetRow[];
   readonly rejected: readonly { readonly sourceRow: number; readonly reason: FleetRejection; readonly excerpt: string }[];
   /** Los valores de la columna `circuito` y cuántas filas trae cada uno. Vacío si no hay columna. */
@@ -57,23 +58,70 @@ function parseDate(raw: string, zone: string): number | null {
   return result.ok ? result.time.utcMs : null;
 }
 
+/**
+ * Una fecha que Excel guardó como número de serie —días desde el 30/12/1899, con la hora en la parte
+ * decimal— cuando la celda no estaba en formato texto. Es la hora de pared tal como se escribió, así
+ * que se pasa a día/mes/año y se lee en la zona del circuito como cualquier otra. Solo en una hoja de
+ * Excel: en un texto, un número suelto en una columna de fecha no es una fecha.
+ */
+export function excelSerialToText(raw: string): string {
+  const text = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(text)) return raw;
+  const serial = Number(text);
+  // Entre 1950 y 2150: fuera de ahí no es una fecha de esta planta, y se deja para que se rechace.
+  if (serial < 18264 || serial > 91311) return raw;
+  const wall = new Date(Math.round((serial - 25569) * 86_400_000));
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return (
+    `${pad(wall.getUTCDate())}/${pad(wall.getUTCMonth() + 1)}/${wall.getUTCFullYear()} ` +
+    `${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}:${pad(wall.getUTCSeconds())}`
+  );
+}
+
+function tooShort(): FleetFailure {
+  return new FleetFailure(
+    "El fichero no tiene cabecera y al menos una fila.",
+    `Se espera «${FLEET_STRUCTURE.header.join(";")}» en la primera fila y una fila por AGV y periodo.`,
+  );
+}
+
 /** Lee un historial de flota ya decodificado a texto. */
 export function importFleetHistory(text: string, zone: string): FleetImport {
   const lines = text.split(/\r\n|\n|\r/).filter((line) => line.trim() !== "");
-  if (lines.length < 2) {
-    throw new FleetFailure(
-      "El fichero no tiene cabecera y al menos una fila.",
-      `Se espera «${FLEET_STRUCTURE.header.join(";")}» en la primera fila y una fila por AGV y periodo.`,
-    );
-  }
+  if (lines.length < 2) throw tooShort();
   const delimiter = detectDelimiter(lines.slice(0, 50)).delimiter;
-  const header = (lines[0] ?? "").split(delimiter).map((field) => field.trim().toLowerCase());
+  return importFleetTable(
+    lines.map((line) => line.split(delimiter)),
+    zone,
+    delimiter,
+  );
+}
+
+/**
+ * Lee las filas de la primera hoja de un libro de Excel, con las mismas reglas que el texto. Una fecha
+ * que Excel guardó como número se lee como la fecha que se escribió (`excelSerialToText`).
+ */
+export function importFleetRows(rows: readonly (readonly string[])[], zone: string): FleetImport {
+  const filled = rows.filter((row) => row.some((cell) => cell.trim() !== ""));
+  if (filled.length < 2) throw tooShort();
+  const width = (filled[0] ?? []).length;
+  return importFleetTable(
+    filled.map((row) => Array.from({ length: Math.max(width, row.length) }, (_, index) => row[index] ?? "")),
+    zone,
+    null,
+  );
+}
+
+function importFleetTable(table: readonly (readonly string[])[], zone: string, delimiter: Delimiter | null): FleetImport {
+  const separator = delimiter ?? ";";
+  const fromExcel = delimiter === null;
+  const header = (table[0] ?? []).map((field) => field.trim().toLowerCase());
   const column = (name: string): number => header.indexOf(name);
   const agvColumn = column("agv");
   const fromColumn = column("desde");
   if (agvColumn === -1 || fromColumn === -1) {
     throw new FleetFailure(
-      `La cabecera es «${header.join(delimiter)}» y faltan las columnas obligatorias.`,
+      `La cabecera es «${header.join(separator)}» y faltan las columnas obligatorias.`,
       `Se esperan «agv» y «desde»; «${FLEET_STRUCTURE.optional.join("», «")}» son opcionales.`,
     );
   }
@@ -84,10 +132,12 @@ export function importFleetHistory(text: string, zone: string): FleetImport {
 
   const rows: FleetRow[] = [];
   const rejected: { sourceRow: number; reason: FleetRejection; excerpt: string }[] = [];
-  for (let index = 1; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
+  const dateCell = (fields: readonly string[], index: number): string =>
+    fromExcel ? excelSerialToText(cell(fields, index)) : cell(fields, index);
+  for (let index = 1; index < table.length; index += 1) {
+    const fields = table[index] ?? [];
+    const line = fields.join(separator);
     const sourceRow = index + 1;
-    const fields = line.split(delimiter);
     if (fields.length <= Math.max(agvColumn, fromColumn)) {
       rejected.push({ sourceRow, reason: "CAMPOS_INSUFICIENTES", excerpt: excerpt(line) });
       continue;
@@ -98,8 +148,8 @@ export function importFleetHistory(text: string, zone: string): FleetImport {
       rejected.push({ sourceRow, reason: "SIN_AGV", excerpt: excerpt(line) });
       continue;
     }
-    const fromUtcMs = parseDate(cell(fields, fromColumn), zone);
-    const rawTo = cell(fields, toColumn);
+    const fromUtcMs = parseDate(dateCell(fields, fromColumn), zone);
+    const rawTo = dateCell(fields, toColumn);
     const toUtcMs = rawTo === "" ? null : parseDate(rawTo, zone);
     if (fromUtcMs === null || (rawTo !== "" && toUtcMs === null)) {
       rejected.push({ sourceRow, reason: "FECHA_INVALIDA", excerpt: excerpt(line) });

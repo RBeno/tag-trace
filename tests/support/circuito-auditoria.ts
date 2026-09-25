@@ -73,7 +73,31 @@ export type DefectClass =
   /** Función crítica declarada por la lista `critico`, la vía de siempre: contexto, no defecto. */
   | "desvinculacion-declarada"
   /** Un AGV que lee dos tags en la mitad de sus pasadas y el resto de tags con normalidad. */
-  | "lectura-desigual-en-pocos-tags";
+  | "lectura-desigual-en-pocos-tags"
+  /** Toda la flota parada a la vez en tres franjas; ningún tag crítico leído (R-AGV-018). */
+  | "parada-de-produccion"
+  /** Un AGV parado mucho más de lo habitual, sin nadie parado delante y con la producción en marcha. */
+  | "bloqueo-sin-justificar"
+  /** De noche un tramo va más lento; la horquilla de producción no se entera (R-TIM-009). */
+  | "noche-medida-aparte"
+  /** Una sola parada de un minuto de más, sin nadie delante que lo retenga (R-FLO-007). */
+  | "parada-sin-explicacion-aislada"
+  /** Varios AGV paran sin explicación en el mismo sitio (R-FLO-009). */
+  | "punto-conflictivo"
+  /** Se forma cola detrás de un sitio que solo admite uno a la vez, y fluye (R-FLO-008). */
+  | "cuello-de-botella"
+  /** Un tramo donde falta información: tags que se saltan (R-GRA-014). */
+  | "zona-oscura"
+  /** Tras un hueco, varias lecturas llegan casi a la vez al servidor, con la suma normal (R-DAT-020). */
+  | "entrega-agrupada"
+  /** Contexto: la posición en tiempo de cada tag en cada fichero (R-TIM-011). */
+  | "posicion-en-tiempo"
+  /** Mantenimiento: tres tags seguidos cambiados a la vez, en su sitio (R-DAT-021). */
+  | "tres-sustituidos-seguidos"
+  /** Un tag nuevo entre dos que no cambia el recorrido (R-DAT-021). */
+  | "insertado-misma-suma"
+  | "ritmo-mas-lento-en-un-fichero"
+  | "retiene-a-otros";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -116,6 +140,16 @@ export interface AuditScenario {
    * dos tramos a partir de este instante, igual que ya hace con la de `charging`.
    */
   readonly periodSplitUtcMs: number;
+  /**
+   * Las paradas de la producción plantadas (R-AGV-018, Parte 46): toda la flota congelada donde esté,
+   * a la vez, y por tanto sin ninguna lectura en los tags críticos.
+   */
+  readonly productionStopsUtcMs: readonly { readonly fromUtcMs: number; readonly toUtcMs: number }[];
+  /**
+   * Lecturas que llegaron juntas (R-DAT-020, Parte 50): el instante real de la última lectura antes
+   * de cada hueco plantado, una por ráfaga.
+   */
+  readonly groupedDeliveriesUtcMs: readonly number[];
   /**
    * Historial de flota (DS-012, Parte 39), en el formato que el importador declara. No cambia
    * ninguna lectura, así que la auditoría no cambia de resultado: los 40 vehículos asignados desde
@@ -343,6 +377,45 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const tagsDesiguales = [ring[80], ring[81]] as string[];
   const pasesDesiguales = new Map<string, number>();
 
+  // --- Estado normal del circuito (Parte 47, R-TIM-009) ---------------------------------------
+  //
+  // Todo con la deuda de reloj de la Parte 35 (`debtMs`): el tiempo que se añade se devuelve en los
+  // pasos siguientes sin dejar de sortear el jitter, así que ni cambia cuántas veces se llama a
+  // `random()` ni el reloj total de cada vehículo.
+  /**
+   * De noche, cuatro tramos seguidos van más lentos: 45 s de más en cada uno, en cada pasada. La
+   * horquilla de producción de esos tramos no tiene que enterarse, y la de noche tiene que medirlo.
+   */
+  const nocheLenta = [54, 55, 56, 57];
+  const NOCHE_EXTRA_MS = 45_000;
+  /**
+   * La deuda de la noche se devuelve a un segundo por paso, no a medio paso: devolverla deprisa
+   * dejaría media vuelta de noche con pasos de la mitad, y esa horquilla aplastada convertiría en
+   * parada a cualquier AGV que fuera a su ritmo. A un segundo por paso, ningún tramo se acorta más de
+   * un 6 %, y lo que quede al amanecer se devuelve igual de despacio.
+   */
+  const NOCHE_DEVOLUCION_MS = 1_000;
+  /** Una parada de un minuto de más, una sola vez, de un AGV sin otro papel (el ejemplo del propietario). */
+  const paradaAislada = { vehicle: vehicles[1] as string, position: 86, extraMs: 63_000 };
+  /** Ocho AGV sin otro papel paran sin explicación en el mismo sitio, dos veces cada uno. */
+  const conflicto = [2, 4, 6, 11, 14, 15, 18, 19].map((index) => vehicles[index] as string);
+  const conflictoPosiciones = [72, 73];
+  const CONFLICTO_EXTRA_MS = 70_000;
+  /** Un sitio que solo admite un AGV a la vez, durante hora y media: se forma cola y fluye. */
+  const cuelloPosicion = 116;
+  const CUELLO_ESPERA_MS = 40_000;
+  const ocupacionCuello: { from: number; to: number }[] = [];
+  /**
+   * Quién retiene a otros (Parte 50, R-AGV-020): un AGV sin otro papel se queda en el semáforo más que
+   * nadie, en cada pasada de día, y los que llegan detrás —ya lo tenían delante al leer el tag de
+   * antes— esperan a que salga. Su espera cabe en la horquilla del semáforo, así que él no para: retiene.
+   * Con la deuda de reloj, sin `random()`. El lector degradado no espera, por lo mismo que en el cuello.
+   */
+  const retenedor = vehicles[7] as string;
+  const RETENEDOR_ESPERA_MS = 105_000;
+  const semaforoPosicion = 105;
+  const ocupacionRetenedor: { from: number; to: number }[] = [];
+
   // --- Zonas (R-FLO-003: la carga online va dentro de la zona vacía) -------------------------
   //
   // Un tercio contiguo del anillo alrededor del empalme, más las quince tags de calle.
@@ -375,6 +448,25 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
    * dentro del hueco entre periodos, a un lado o al otro.
    */
   const periodSplit = rotura;
+  const PARADA_PRODUCCION_MS = 15 * 60_000;
+  /** Inicio de cada franja en el reloj **final** (10:00 y 18:00 del día 1, 10:00 del día 2). */
+  const franjas = [5, 13, 29].map((horas) => from + horas * 3_600_000);
+  /** El mismo inicio en el reloj con que se generó, antes de desplazar las franjas anteriores. */
+  const franjasOriginales = franjas.map((inicio, index) => inicio - index * PARADA_PRODUCCION_MS);
+  const congelar = (t: number): number =>
+    t + PARADA_PRODUCCION_MS * franjasOriginales.filter((inicio) => t >= inicio).length;
+  /**
+   * Horas de la Parte 47 en el reloj con que se genera. La noche (22:00–05:00 en el reloj final) cae
+   * después de dos franjas congeladas, así que en el de generación empieza media hora antes.
+   */
+  const HORA = 3_600_000;
+  const nocheDesde = from + 16.5 * HORA + 10 * 60_000;
+  const nocheHasta = from + 23.5 * HORA - 10 * 60_000;
+  const paradaAisladaDesde = from + 9 * HORA;
+  const conflictoDesde = [from + 2 * HORA, from + 7 * HORA];
+  /** De 19:30 a 21:00 en el reloj final: de día, lejos de las paradas y antes de la noche. */
+  const cuelloDesde = from + 14 * HORA;
+  const cuelloHasta = from + 15.5 * HORA;
 
   const filas: Array<{ t: number; v: string; tag: string }> = [];
 
@@ -407,6 +499,12 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
      * transcurrido por vehículo en toda la ventana no cambia.
      */
     let debtMs = 0;
+    let debtNocheMs = 0;
+    // Parte 47: cada plantación ocurre una vez por vehículo y posición.
+    const conflictoHecho = new Set<number>();
+    let paradaAisladaHecha = false;
+    let entradaCuello: number | null = null;
+    let ultimaLectura = -Infinity;
 
     if (enFrio) {
       // Ya estaba cargando antes de que empezara la ventana, así que **no tiene ninguna lectura
@@ -476,7 +574,48 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         if (!enPuntoCriticoDeTiempo) lee = roll;
       }
 
-      if (lee) filas.push({ t: now, v: vehicle, tag });
+      // Cuello de botella (Parte 47, R-FLO-008): quien llega mientras otro ocupa el sitio espera a
+      // que salga. Solo se conocen los vehículos ya generados, así que la cola se forma detrás de la
+      // mitad de ellos: basta para que se vea, y nunca se fabrica una espera que el reloj no pida.
+      //
+      // Se espera a **un** ocupante, no a una cadena: generando un vehículo detrás de otro, el último
+      // vería ocupado el sitio por los 39 anteriores y esperaría minutos, que ya no es una cola que
+      // fluye. El lector degradado queda fuera: su tendencia se mide sobre pasadas probadas por
+      // tiempo, y devolver la deuda con pasos cortos le quitaría justo esas pruebas.
+      const enVentanaCuello = now >= cuelloDesde && now < cuelloHasta && vehicle !== lectorDegradado;
+      if (position === cuelloPosicion && enVentanaCuello) {
+        const ocupado = ocupacionCuello.find((entry) => entry.from <= now && now < entry.to);
+        if (ocupado !== undefined) {
+          const extra = ocupado.to + 2_000 - now;
+          now += extra;
+          debtMs += extra;
+        }
+      }
+      if (position === cuelloPosicion + 1 && entradaCuello !== null) {
+        ocupacionCuello.push({ from: entradaCuello, to: now });
+        entradaCuello = null;
+      }
+
+      // Detrás del que retiene en el semáforo: solo quien ya lo tenía delante al leer el tag anterior.
+      if (position === semaforoPosicion && vehicle !== retenedor && vehicle !== lectorDegradado) {
+        const ocupado = ocupacionRetenedor.find((entry) => entry.from <= ultimaLectura && now < entry.to);
+        if (ocupado !== undefined) {
+          const extra = ocupado.to + 2_000 - now;
+          now += extra;
+          debtMs += extra;
+        }
+      }
+
+      if (lee) {
+        filas.push({ t: now, v: vehicle, tag });
+        ultimaLectura = now;
+      }
+
+      if (position === cuelloPosicion && enVentanaCuello) {
+        entradaCuello = now;
+        now += CUELLO_ESPERA_MS;
+        debtMs += CUELLO_ESPERA_MS;
+      }
 
       // Justo tras entrar en el tramo cargado (posición 50 es la entrada; aquí, la siguiente), se
       // demora 20 min: muy por encima de la desviación típica del tránsito por jitter de lectura
@@ -518,6 +657,39 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       // una, la deuda siempre llega a cero mucho antes de la siguiente.
       const margenSuficiente = to - now > 20 * 60_000;
 
+      // Noche más lenta (Parte 47): solo con la transición entera dentro de la noche, con diez
+      // minutos de margen a cada lado, para que ni una muestra lenta caiga en la horquilla de producción.
+      if (margenSuficiente && nocheLenta.includes(position) && now >= nocheDesde && now < nocheHasta) {
+        now += NOCHE_EXTRA_MS;
+        debtNocheMs += NOCHE_EXTRA_MS;
+      }
+      // Parada aislada (Parte 47): la primera pasada por su sitio pasada la hora fijada.
+      if (
+        margenSuficiente &&
+        vehicle === paradaAislada.vehicle &&
+        position === paradaAislada.position &&
+        !paradaAisladaHecha &&
+        now >= paradaAisladaDesde
+      ) {
+        now += paradaAislada.extraMs;
+        debtMs += paradaAislada.extraMs;
+        paradaAisladaHecha = true;
+      }
+      // Punto conflictivo (Parte 47): cada uno de los ocho, una vez en cada posición, a horas de día
+      // lejos de las paradas de la producción.
+      const conflictoHora = conflictoPosiciones.indexOf(position);
+      if (
+        margenSuficiente &&
+        conflictoHora >= 0 &&
+        conflicto.includes(vehicle) &&
+        !conflictoHecho.has(position) &&
+        now >= (conflictoDesde[conflictoHora] as number)
+      ) {
+        now += CONFLICTO_EXTRA_MS;
+        debtMs += CONFLICTO_EXTRA_MS;
+        conflictoHecho.add(position);
+      }
+
       if (margenSuficiente && position === 30) {
         bifurcacionSinConvergerPases += 1;
         if (bifurcacionSinConvergerPases % 5 < 2) {
@@ -545,7 +717,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       // (tránsito normal). Dos grupos claramente separados y compactos por separado. Mismo motivo de
       // exclusión del lector degradado que la parada precisa: un salto de varias posiciones aquí
       // fragmentaría justo el salto bimodal que este tag necesita mostrar.
-      if (margenSuficiente && position === 105) {
+      const deDia = now < nocheDesde - 20 * 60_000 || now >= nocheHasta + 20 * 60_000;
+      if (margenSuficiente && position === semaforoPosicion && vehicle === retenedor && deDia) {
+        semaforoPases += 1;
+        ocupacionRetenedor.push({ from: now, to: now + RETENEDOR_ESPERA_MS });
+        now += RETENEDOR_ESPERA_MS;
+        debtMs += RETENEDOR_ESPERA_MS;
+      } else if (margenSuficiente && position === semaforoPosicion) {
         semaforoPases += 1;
         if (semaforoPases % 3 === 0) {
           now += SEMAFORO_ROJO_MS;
@@ -594,7 +772,9 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       const nominal = (STEP_SECONDS + jitterRoll) * 1000;
       const payback = Math.min(debtMs, Math.floor(nominal / 2));
       debtMs -= payback;
-      now += nominal - payback;
+      const paybackNoche = Math.min(debtNocheMs, NOCHE_DEVOLUCION_MS, Math.floor(nominal / 2) - payback);
+      debtNocheMs -= paybackNoche;
+      now += nominal - payback - paybackNoche;
       position = (position + 1) % RING_SIZE;
 
       if (position === LANE_JUNCTION && now >= proximaCarga && now < to) {
@@ -655,6 +835,100 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     filas.push({ t, v: vehicle, tag: mantenimiento[index % mantenimiento.length] as string });
   }
 
+  // Paradas de la producción (Parte 46, R-AGV-018): la flota entera se congela donde esté durante
+  // 15 min a las 10:00 y a las 18:00 del primer día y a las 10:00 del segundo, las franjas de descanso
+  // que el propietario describe. Se hace **después** de generar, desplazando cada fila posterior a
+  // una franja: ni una llamada más a `random()` (sin cascada), el orden relativo de todos se conserva,
+  // y los tags críticos declarados se quedan sin lecturas en la franja. Lo que pasa de `to` se
+  // descarta. La verdad plantada con instante (`rotura`, `periodSplit`) pasa por la misma función.
+  // Con un bucle y no con `splice(…, ...congeladas)`: doscientos mil argumentos desbordan la pila.
+  // Un AGV más lento en el segundo fichero (Parte 50, R-AGV-019): desde la mañana del segundo día, ya
+  // pasada la noche, sus lecturas se estiran un 10 % respecto a esa hora, antes de congelar. Después de
+  // generar, sin `random()`, y donde ninguna otra plantación depende de su reloj: el corte, la rotura,
+  // el tag nuevo, la noche lenta y el cuello quedan antes.
+  const ritmoLento = vehicles[22] as string;
+  const RITMO_LENTO = 1.1;
+  const lentoDesde = from + 23.5 * HORA + 10 * 60_000;
+  for (let index = 0; index < filas.length; index += 1) {
+    const fila = filas[index] as (typeof filas)[number];
+    if (fila.v === ritmoLento && fila.t > lentoDesde) {
+      filas[index] = { ...fila, t: lentoDesde + Math.round(((fila.t - lentoDesde) * RITMO_LENTO) / 1000) * 1000 };
+    }
+  }
+
+  let quedan = 0;
+  for (const fila of filas) {
+    const t = congelar(fila.t);
+    if (t <= to) filas[quedan++] = { ...fila, t };
+  }
+  filas.length = quedan;
+
+  // Lecturas que llegaron juntas al servidor (Parte 50, R-DAT-020): cuatro veces, de día, tres lecturas
+  // de un AGV sin otro papel se reciben en los tres segundos antes de la siguiente, como un volcado
+  // tras perder la comunicación. Se hace **después** de generar y de congelar, moviendo solo la hora de
+  // esas tres filas: ni una llamada más a `random()`, y el recorrido entero, del tag de antes del hueco
+  // al último, tarda exactamente lo mismo. Fuera de las ráfagas quedan las calles, las ramas y los
+  // puntos críticos de tiempo, cuyas esperas son de otra clase plantada.
+  const entregaAgrupada = vehicles[21] as string;
+  const entregaDesde = [3, 8, 11, 26].map((horas) => from + horas * HORA);
+  const fueraDeRafaga = new Set([30, 70, 71, 105, 106, 116, 117, 120].map((index) => ring[index] as string));
+  const posicionDe = new Map(ring.map((tag, index) => [tag, index]));
+  const propias = filas
+    .map((fila, index) => ({ fila, index }))
+    .filter((entry) => entry.fila.v === entregaAgrupada)
+    .sort((a, b) => a.fila.t - b.fila.t);
+  const entregasPlantadas: number[] = [];
+  for (const desde of entregaDesde) {
+    for (let k = 0; k + 4 < propias.length; k += 1) {
+      const tramo = propias.slice(k, k + 5);
+      const primera = tramo[0] as (typeof propias)[number];
+      const ultima = tramo[4] as (typeof propias)[number];
+      if (primera.fila.t < desde) continue;
+      const posiciones = tramo.map((entry) => posicionDe.get(entry.fila.tag));
+      const seguidas = posiciones.every(
+        (posicion, i) =>
+          posicion !== undefined &&
+          !fueraDeRafaga.has((tramo[i] as (typeof propias)[number]).fila.tag) &&
+          (i === 0 || posicion === ((posiciones[i - 1] as number) + 1) % RING_SIZE),
+      );
+      if (!seguidas || ultima.fila.t - primera.fila.t >= 2 * 60_000) continue;
+      for (const [offset, entry] of tramo.slice(1, 4).entries()) {
+        filas[entry.index] = { ...entry.fila, t: ultima.fila.t - (3 - offset) * 1000 };
+      }
+      entregasPlantadas.push(primera.fila.t);
+      break;
+    }
+  }
+
+  // Mantenimiento a mitad de ventana (Parte 50, R-DAT-021), después de generar y de congelar, sin
+  // `random()`. Tres tags seguidos se cambian a la vez: desde el corte, sus lecturas llevan el nombre
+  // del nuevo, en el mismo instante. Y un tag nuevo aparece entre dos, en el punto medio de cada paso,
+  // sin mover el reloj: el recorrido entre los dos tarda lo mismo.
+  const corte = congelar(periodSplit);
+  const bloqueViejo = [96, 97, 98].map((index) => ring[index] as string);
+  const bloqueNuevo = ["97001", "97002", "97003"];
+  for (let index = 0; index < filas.length; index += 1) {
+    const fila = filas[index] as (typeof filas)[number];
+    const at = bloqueViejo.indexOf(fila.tag);
+    if (at >= 0 && fila.t >= corte) filas[index] = { ...fila, tag: bloqueNuevo[at] as string };
+  }
+  const antesDelNuevo = ring[36] as string;
+  const despuesDelNuevo = ring[37] as string;
+  const tagInsertado = "97101";
+  const porVehiculo = new Map<string, (typeof filas)[number][]>();
+  for (const fila of filas) porVehiculo.set(fila.v, [...(porVehiculo.get(fila.v) ?? []), fila]);
+  const insertadas: (typeof filas)[number][] = [];
+  for (const [vehicle, propias] of porVehiculo) {
+    propias.sort((a, b) => a.t - b.t);
+    for (let index = 1; index < propias.length; index += 1) {
+      const a = propias[index - 1] as (typeof filas)[number];
+      const b = propias[index] as (typeof filas)[number];
+      if (a.tag !== antesDelNuevo || b.tag !== despuesDelNuevo || a.t < corte || b.t - a.t < 4_000) continue;
+      insertadas.push({ t: Math.floor((a.t + b.t) / 2000) * 1000, v: vehicle, tag: tagInsertado });
+    }
+  }
+  filas.push(...insertadas);
+
   filas.sort((a, b) => b.t - a.t); // Pila: lo más reciente primero, como la fuente real.
 
   const readingsCsv = ["Fecha;AGV;Tag"]
@@ -702,6 +976,16 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     paradaPrecisaTag,
     semaforoTag,
     ...tagsDesiguales,
+    // Parte 47: los tramos plantados, con sus dos extremos.
+    ...[...nocheLenta, 58].map((index) => ring[index] as string),
+    ring[paradaAislada.position] as string,
+    ring[paradaAislada.position + 1] as string,
+    ...[...conflictoPosiciones, 74].map((index) => ring[index] as string),
+    ring[cuelloPosicion - 1] as string,
+    ring[cuelloPosicion] as string,
+    ring[cuelloPosicion + 1] as string,
+    // Parte 50: el bloque de tres cambiado en su sitio.
+    ...bloqueViejo,
   ]);
 
   const defects: PlantedDefect[] = [
@@ -744,7 +1028,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "rotura-subita",
       tags: rotos,
       vehicles: [],
-      atUtcMs: toRealUtc(rotura),
+      atUtcMs: toRealUtc(congelar(rotura)),
       expect: "un cambio con su instante: se leía y dejó de leerse",
       mustNotSay: "una tasa media que mezcle el antes y el después como si fuera un régimen",
     },
@@ -858,7 +1142,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "tag-nuevo-a-mitad-de-ventana",
       tags: [tagNuevo],
       vehicles: [],
-      atUtcMs: toRealUtc(periodSplit),
+      atUtcMs: toRealUtc(congelar(periodSplit)),
       expect: "tag nuevo: sin lecturas en el periodo temprano, con lecturas en el tardío (R-DAT-016)",
       mustNotSay: "que sea un tag obsoleto, o que existiera desde el principio de la ventana",
     },
@@ -866,7 +1150,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "memoria-actualizada-a-mitad-de-ventana",
       tags: tagsDejados,
       vehicles: [memoriaActualizada],
-      atUtcMs: toRealUtc(periodSplit),
+      atUtcMs: toRealUtc(congelar(periodSplit)),
       expect:
         "deriva de ese vehículo: dejó de leer un conjunto de tags que sí leía antes, mientras el " +
         "resto de la flota los sigue leyendo (R-AGV-013)",
@@ -876,7 +1160,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "sustitucion-candidata",
       tags: [sustitucionOriginal, sustitucionNueva],
       vehicles: [],
-      atUtcMs: toRealUtc(periodSplit),
+      atUtcMs: toRealUtc(congelar(periodSplit)),
       expect:
         "candidato a sustitución: el tag que desaparece y el que ocupa su mismo hueco en la " +
         "secuencia, correlacionados por vecino compartido y por tiempo (R-DAT-017)",
@@ -888,7 +1172,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "memoria-no-actualizada",
       tags: [sustitucionNueva],
       vehicles: [memoriaNoActualizada],
-      atUtcMs: toRealUtc(periodSplit),
+      atUtcMs: toRealUtc(congelar(periodSplit)),
       expect:
         "el vehículo señalado como candidato a memoria no actualizada: no registra el tag nuevo " +
         "mientras la mayoría de la flota ya lo hace (R-AGV-013)",
@@ -914,6 +1198,115 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       vehicles: [lecturaDesigual],
       expect: "el AGV sale como «lee poco» en esos dos tags, en pocos tags, con su porcentaje (R-AGV-016)",
       mustNotSay: "una causa (lector, memoria o colocación), ni que los dos tags fallen para el resto",
+    },
+    {
+      kind: "parada-de-produccion",
+      tags: [vinculacionTag, desvinculacionTag],
+      vehicles: [],
+      atUtcMs: toRealUtc(franjas[0] as number),
+      expect:
+        "tres paradas de la producción en las franjas plantadas, la de las 10:00 repetida al día " +
+        "siguiente; todas las paradas de AGV dentro, justificadas; todos siguen por su sitio. El orden " +
+        "no es verdad plantada: el generador deja adelantar al circular",
+      mustNotSay: "que algún AGV se desconectara o saliera del circuito, ni un bloqueo dentro de una franja",
+    },
+    {
+      kind: "bloqueo-sin-justificar",
+      tags: [],
+      vehicles: [elAdelantado],
+      expect: "el primero de su cola, sin avanzar y con la producción en marcha: un bloqueo con sus lecturas críticas",
+      mustNotSay: "una causa, ni justificarlo con una parada de la producción que no hubo",
+    },
+    {
+      kind: "noche-medida-aparte",
+      tags: nocheLenta.map((index) => ring[index] as string),
+      vehicles: [],
+      expect:
+        "la horquilla de producción de esos tramos como la de uno limpio, la de noche con el doble o " +
+        "más, y ninguna parada de noche por esa lentitud",
+      mustNotSay: "mezclar la noche con el día, ni llamar parada a lo que de noche es lo normal",
+    },
+    {
+      kind: "parada-sin-explicacion-aislada",
+      tags: [ring[paradaAislada.position] as string],
+      vehicles: [paradaAislada.vehicle],
+      expect: "una parada candidata sin explicación, con quién iba delante y cuánto avanzó mientras tanto",
+      mustNotSay: "una causa (batería, revisión, persona…), ni un bloqueo, ni un punto conflictivo",
+    },
+    {
+      kind: "punto-conflictivo",
+      tags: conflictoPosiciones.map((index) => ring[index] as string),
+      vehicles: conflicto,
+      expect: "un punto conflictivo que une los dos tags, con los ocho AGV",
+      mustNotSay: "que sea de un solo AGV, ni un bloqueo",
+    },
+    {
+      kind: "cuello-de-botella",
+      tags: [ring[cuelloPosicion] as string],
+      vehicles: [],
+      expect: "un cuello de botella en ese tag, con su cola y sin bloqueos: fluye",
+      mustNotSay: "una avería, ni paradas sin explicación de los que esperan detrás",
+    },
+    {
+      kind: "zona-oscura",
+      tags: lecturaMedia.slice(0, 4),
+      vehicles: [],
+      expect: "una zona oscura que incluye los tags poco leídos, con la causa «se salta el tag»",
+      mustNotSay: "que el tramo sea largo, ni una zona en tramos limpios",
+    },
+    {
+      kind: "entrega-agrupada",
+      tags: [],
+      vehicles: [entregaAgrupada],
+      atUtcMs: toRealUtc(entregasPlantadas[0] ?? from),
+      expect:
+        "cada ráfaga como lecturas que llegaron juntas con la suma normal (no paró), el AGV concentrado, y " +
+        "ninguna parada suya en esos tramos",
+      mustNotSay: "una parada en el hueco, ni lecturas agrupadas de otro AGV",
+    },
+    {
+      kind: "tres-sustituidos-seguidos",
+      tags: [...bloqueViejo, ...bloqueNuevo],
+      vehicles: [],
+      atUtcMs: toRealUtc(corte),
+      expect:
+        "tres sustituciones en su sitio entre las dos anclas que los rodean, con la suma igual, incluido el " +
+        "del medio, que el vecino compartido no empareja",
+      mustNotSay: "tres cambios sueltos sin relación, ni el del medio como un tag que deja de leerse y otro que empieza",
+    },
+    {
+      kind: "insertado-misma-suma",
+      tags: [antesDelNuevo, tagInsertado, despuesDelNuevo],
+      vehicles: [],
+      atUtcMs: toRealUtc(corte),
+      expect: "un tag nuevo en la línea entre sus dos vecinos, con la suma igual",
+      mustNotSay: "que cambie el recorrido",
+    },
+    {
+      kind: "ritmo-mas-lento-en-un-fichero",
+      tags: [],
+      vehicles: [ritmoLento],
+      atUtcMs: toRealUtc(congelar(lentoDesde)),
+      expect:
+        "en el fichero de después, un 10 % más lento que la flota contra la horquilla de ese fichero, en toda la línea; " +
+        "en el de antes, a su paso",
+      mustNotSay: "una causa, ni otro AGV más lento o más rápido",
+    },
+    {
+      kind: "retiene-a-otros",
+      tags: [ring[semaforoPosicion] as string],
+      vehicles: [retenedor],
+      expect: "quien retiene a varios AGV más de lo que da el azar por sus pasadas, en el semáforo, sin pararse él",
+      mustNotSay: "que retenga otro AGV, o una parada sin explicación de quien espera detrás",
+    },
+    {
+      kind: "posicion-en-tiempo",
+      tags: [...nuncaLeidos, tagNuevo],
+      vehicles: [],
+      expect:
+        "en cada fichero, posiciones crecientes desde el ancla; los tags nunca leídos sin posición y el siguiente " +
+        "situado igual; el tag nuevo situado entre sus dos vecinos en el fichero de después",
+      mustNotSay: "una posición interpolada para un tag sin lecturas, ni el tag nuevo en el fichero de antes",
     },
   ];
 
@@ -944,6 +1337,11 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     toUtcMs: toRealUtc(to),
     lanes,
     zoneOf,
-    periodSplitUtcMs: toRealUtc(periodSplit),
+    periodSplitUtcMs: toRealUtc(congelar(periodSplit)),
+    groupedDeliveriesUtcMs: entregasPlantadas.map(toRealUtc),
+    productionStopsUtcMs: franjas.map((inicio) => ({
+      fromUtcMs: toRealUtc(inicio),
+      toUtcMs: toRealUtc(inicio + PARADA_PRODUCCION_MS),
+    })),
   };
 }

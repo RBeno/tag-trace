@@ -1679,9 +1679,11 @@ const FLEET_STATE_LABEL: Readonly<Record<FleetStateName, string>> = {
 };
 
 /**
- * Cuántos de los asignados están en funcionamiento en cada momento — «38 de 40» —, como dos series
- * escalonadas: la flota asignada detrás y los que leen o cargan delante (R-AGV-014). Los que leen sin
- * estar asignados van aparte, en naranja, y nunca suman a N (R-AGV-015).
+ * Cuántos de los asignados están en el circuito en cada momento — «40 de 40» —, y cuántos de ellos
+ * leen (R-AGV-014). Un AGV parado sigue en el circuito: no tener lecturas no es no estar (R-AGV-018).
+ * Tres series escalonadas: la flota asignada, los que están en el circuito y, discontinua, los que
+ * leen. Las paradas de la producción van como bandas. Los que leen sin estar asignados van aparte, en
+ * naranja, y nunca suman a N (R-AGV-015).
  */
 export function fleetCountChart(
   fleet: FleetView,
@@ -1689,8 +1691,9 @@ export function fleetCountChart(
   formats: Formats,
 ): HTMLElement {
   const wrapper = figure(
-    "Flota en funcionamiento",
-    "AGV asignados que leen o están cargando, sobre el total asignado. Donde no hay datos no se cuenta.",
+    "Flota en el circuito",
+    "AGV asignados en el circuito —leyendo, cargando o parados en su sitio— sobre el total asignado, " +
+      "y cuántos de ellos leen. Las bandas son paradas de la producción. Donde no hay datos no se cuenta.",
   );
   const counts = fleet.counts;
   const area = host();
@@ -1700,26 +1703,30 @@ export function fleetCountChart(
     return wrapper;
   }
 
-  // El peor momento, que es lo que se busca al mirar esto: la menor proporción en funcionamiento.
+  // Los dos peores momentos: el de menos en el circuito, y el de menos leyendo.
   const withFleet = counts.filter((entry) => entry.assigned > 0);
-  const worst =
+  const lowest = (pick: (entry: (typeof counts)[number]) => number) =>
     withFleet.length === 0
       ? null
-      : withFleet.reduce((best, entry) =>
-          entry.inService / entry.assigned < best.inService / best.assigned ? entry : best,
-        );
+      : withFleet.reduce((best, entry) => (pick(entry) / entry.assigned < pick(best) / best.assigned ? entry : best));
+  const worst = lowest((entry) => entry.inCircuit);
+  const worstReading = lowest((entry) => entry.reading);
   const summary = document.createElement("p");
   summary.className = "muted";
   summary.textContent =
-    worst === null
+    worst === null || worstReading === null
       ? "Ningún AGV asignado dentro de la cobertura."
-      : `Menos en funcionamiento: ${worst.inService} de ${worst.assigned}, de ` +
-        `${formats.instant(worst.fromUtcMs)} a ${formats.instant(worst.toUtcMs)}.`;
-  const maxAssigned = Math.max(1, ...counts.map((entry) => Math.max(entry.assigned, entry.inService + entry.unassignedActive)));
-  const describe = (entry: (typeof counts)[number]): string =>
-    `de ${formats.instant(entry.fromUtcMs)} a ${formats.instant(entry.toUtcMs)} · ${entry.inService} de ` +
-    `${entry.assigned} en funcionamiento` +
-    (entry.unassignedActive > 0 ? ` (+${entry.unassignedActive} leyendo sin estar asignados)` : "");
+      : `Menos en el circuito: ${worst.inCircuit} de ${worst.assigned}, de ` +
+        `${formats.instant(worst.fromUtcMs)} a ${formats.instant(worst.toUtcMs)}. Menos leyendo: ` +
+        `${worstReading.reading} de ${worstReading.assigned}, de ${formats.instant(worstReading.fromUtcMs)} a ` +
+        `${formats.instant(worstReading.toUtcMs)}.`;
+  const maxAssigned = Math.max(1, ...counts.map((entry) => Math.max(entry.assigned, entry.inCircuit + entry.unassignedActive)));
+  const stopAt = (utcMs: number) => fleet.production.stops.find((stop) => utcMs >= stop.fromUtcMs && utcMs <= stop.toUtcMs);
+  const describe = (entry: (typeof counts)[number], at: number): string =>
+    `de ${formats.instant(entry.fromUtcMs)} a ${formats.instant(entry.toUtcMs)} · ${entry.inCircuit} de ` +
+    `${entry.assigned} en el circuito, ${entry.reading} leyendo` +
+    (entry.unassignedActive > 0 ? ` (+${entry.unassignedActive} leyendo sin estar asignados)` : "") +
+    (stopAt(at) === undefined ? "" : " · producción parada");
 
   responsive(area, (width) => {
     area.replaceChildren();
@@ -1745,6 +1752,18 @@ export function fleetCountChart(
       if (span.from > cursor) canvas.append(svg("rect", { x: x(cursor), y: top, width: x(span.from) - x(cursor), height: plotHeight, fill: HATCH_FILL }));
       cursor = Math.max(cursor, span.to);
     }
+    // Paradas de la producción: bandas suaves, detrás de las líneas.
+    for (const stop of fleet.production.stops) {
+      canvas.append(
+        svg("rect", {
+          x: x(stop.fromUtcMs),
+          y: top,
+          width: Math.max(1.5, x(stop.toUtcMs) - x(stop.fromUtcMs)),
+          height: plotHeight,
+          fill: "var(--viz-stop-band)",
+        }),
+      );
+    }
     timeAxis(canvas, x, fleet.fromUtcMs, fleet.toUtcMs, top, top + plotHeight, height - 6, width, formats.tick);
 
     const step = (pick: (entry: (typeof counts)[number]) => number): string[] => {
@@ -1768,8 +1787,11 @@ export function fleetCountChart(
     for (const d of step((entry) => entry.assigned)) {
       canvas.append(svg("path", { d, fill: "none", stroke: "var(--viz-neutral)", "stroke-width": 2 }));
     }
-    for (const d of step((entry) => entry.inService)) {
+    for (const d of step((entry) => entry.inCircuit)) {
       canvas.append(svg("path", { d, fill: "none", stroke: "var(--viz-series)", "stroke-width": 2 }));
+    }
+    for (const d of step((entry) => entry.reading)) {
+      canvas.append(svg("path", { d, fill: "none", stroke: "var(--viz-series)", "stroke-width": 1.5, "stroke-dasharray": "4 3" }));
     }
     if (counts.some((entry) => entry.unassignedActive > 0)) {
       for (const d of step((entry) => entry.unassignedActive)) {
@@ -1797,7 +1819,7 @@ export function fleetCountChart(
         cross.setAttribute("x1", String(x(at)));
         cross.setAttribute("x2", String(x(at)));
         cross.setAttribute("visibility", "visible");
-        line.show(describe(entry));
+        line.show(describe(entry, at));
       },
     );
     area.append(canvas);
@@ -1806,8 +1828,10 @@ export function fleetCountChart(
   wrapper.append(summary, area, line.node);
   wrapper.append(
     legendList([
-      ["var(--viz-series)", "en funcionamiento (N)"],
+      ["var(--viz-series)", "en el circuito (N)"],
+      ["repeating-linear-gradient(90deg, var(--viz-series) 0 4px, transparent 4px 7px)", "de ellos, leyendo (discontinua)"],
       ["var(--viz-neutral)", "asignados (M)"],
+      ["var(--viz-stop-band)", "producción parada"],
       ["var(--viz-accent)", "leyendo sin estar asignados"],
       [HATCH_SWATCH, "sin datos cargados"],
     ]),
@@ -1815,11 +1839,12 @@ export function fleetCountChart(
   wrapper.append(
     lazyDetails("Ver los mismos datos en tabla", () =>
       plainTable(
-        ["Desde", "Hasta", "En funcionamiento", "Asignados", "Leyendo sin asignar"],
+        ["Desde", "Hasta", "En el circuito", "Leyendo", "Asignados", "Leyendo sin asignar"],
         counts.map((entry) => [
           formats.instant(entry.fromUtcMs),
           formats.instant(entry.toUtcMs),
-          String(entry.inService),
+          String(entry.inCircuit),
+          String(entry.reading),
           String(entry.assigned),
           String(entry.unassignedActive),
         ]),
@@ -1838,7 +1863,7 @@ type GapKindName = NonNullable<FleetSegmentView["kind"]>;
  * además trama, porque frente al naranja cae en la franja en que el color solo no basta.
  */
 const GAP_KIND: Readonly<Record<GapKindName, { readonly token: string; readonly label: string }>> = {
-  parada: { token: "--viz-parada", label: "parado: vuelve por el tag siguiente" },
+  parada: { token: "--viz-parada", label: "parado sin nada que lo explique: vuelve por el tag siguiente" },
   "salta-uno": { token: "--viz-salta-uno", label: "vuelve un tag más allá" },
   "salta-varios": { token: "--viz-accent", label: "vuelve dos o más tags más allá" },
   desconexion: { token: "--viz-desconexion", label: "una hora o más sin leer, o vuelve en otro punto" },
@@ -1846,14 +1871,27 @@ const GAP_KIND: Readonly<Record<GapKindName, { readonly token: string; readonly 
   "sin-clasificar": { token: "--viz-empty", label: "falta de lecturas fuera del anillo inferido" },
 };
 
+/** Un contorno de `line` sobre `fill`, para la leyenda. */
+function outlineSwatch(line: string, fill: string, width = 1): string {
+  return [
+    `linear-gradient(${line} 0 0) top / 100% ${width}px no-repeat`,
+    `linear-gradient(${line} 0 0) bottom / 100% ${width}px no-repeat`,
+    `linear-gradient(${line} 0 0) left / ${width}px 100% no-repeat`,
+    `linear-gradient(${line} 0 0) right / ${width}px 100% no-repeat`,
+    fill,
+  ].join(", ");
+}
+
 /** Un contorno sin relleno, como se dibuja un hueco sin clasificar. */
-const OUTLINE_SWATCH = [
-  "linear-gradient(var(--viz-empty) 0 0) top / 100% 1px no-repeat",
-  "linear-gradient(var(--viz-empty) 0 0) bottom / 100% 1px no-repeat",
-  "linear-gradient(var(--viz-empty) 0 0) left / 1px 100% no-repeat",
-  "linear-gradient(var(--viz-empty) 0 0) right / 1px 100% no-repeat",
-  "var(--panel)",
-].join(", ");
+const OUTLINE_SWATCH = outlineSwatch("var(--viz-empty)", "var(--panel)");
+
+/**
+ * Una parada que explica el resto —producción parada o cola— es la misma parada, con rayas del fondo:
+ * se distingue por la textura y no por otro color, y se aparta para que lo que queda en azul oscuro
+ * liso sea lo que hay que mirar (R-AGV-018). Con diez clases ya no hay colores que separar a ojo.
+ */
+const EXPLAINED_SWATCH = "repeating-linear-gradient(135deg, var(--viz-parada) 0 2px, var(--panel) 2px 4.5px)";
+const BLOCKING_SWATCH = outlineSwatch("var(--viz-accent)", "var(--viz-parada)", 2);
 
 const MAINTENANCE_SWATCH = "repeating-linear-gradient(135deg, var(--viz-mantenimiento) 0 3px, var(--panel) 3px 4.5px)";
 
@@ -1862,8 +1900,8 @@ function duration(ms: number): string {
   return ms < 90_000 ? seconds(ms) : minutes(ms);
 }
 
-/** Relleno a rayas para el canvas: el color de base con líneas finas del fondo. */
-function canvasStripes(context: CanvasRenderingContext2D, base: string, gap: string): CanvasPattern | string {
+/** Relleno a rayas para el canvas: el color de base con líneas del fondo. */
+function canvasStripes(context: CanvasRenderingContext2D, base: string, gap: string, lineWidth = 1.2): CanvasPattern | string {
   const tile = document.createElement("canvas");
   tile.width = 5;
   tile.height = 5;
@@ -1872,7 +1910,7 @@ function canvasStripes(context: CanvasRenderingContext2D, base: string, gap: str
   pen.fillStyle = base;
   pen.fillRect(0, 0, 5, 5);
   pen.strokeStyle = gap;
-  pen.lineWidth = 1.2;
+  pen.lineWidth = lineWidth;
   pen.beginPath();
   pen.moveTo(0, 0);
   pen.lineTo(5, 5);
@@ -1884,8 +1922,34 @@ function canvasStripes(context: CanvasRenderingContext2D, base: string, gap: str
   return context.createPattern(tile, "repeat") ?? base;
 }
 
+/** Qué hacía el resto mientras tanto (R-AGV-018), como cola de la lectura de un tramo. */
+function describeJustification(segment: FleetSegmentView, basis: FleetView["production"]["basis"]): string {
+  switch (segment.justification) {
+    case "produccion":
+      return `; la producción estaba parada (${basis === "criticos" ? "ningún tag crítico leído" : "la flota sin leer"})`;
+    case "cola":
+      return "; en cola: el de delante también estaba parado";
+    case "sin-explicacion":
+      return (
+        "; nadie parado delante y la producción en marcha" +
+        (segment.blocking === undefined ? "" : `; ${segment.blocking} AGV quedaron detrás`)
+      );
+    default:
+      return "";
+  }
+}
+
 /** Lo que dice un tramo al tocarlo: la clase y los hechos que la sostienen, sin causa (R-EVI-006). */
-function describeLifeSegment(agvId: string, segment: FleetSegmentView, formats: Formats): string {
+function describeLifeSegment(
+  agvId: string,
+  segment: FleetSegmentView,
+  formats: Formats,
+  basis: FleetView["production"]["basis"],
+): string {
+  return describeLifeFacts(agvId, segment, formats) + describeJustification(segment, basis);
+}
+
+function describeLifeFacts(agvId: string, segment: FleetSegmentView, formats: Formats): string {
   const when =
     `de ${formats.instant(segment.fromUtcMs)} a ${formats.instant(segment.toUtcMs)} ` +
     `(${duration(segment.toUtcMs - segment.fromUtcMs)}`;
@@ -1900,6 +1964,9 @@ function describeLifeSegment(agvId: string, segment: FleetSegmentView, formats: 
       : `se fue por ${detail.lastTagBefore} y volvió por ${detail.firstTagAfter}`;
   switch (segment.kind) {
     case "parada": {
+      if (detail?.edge === "inicio") return `${agvId} — parado al principio de los datos, hasta su primera lectura en ${detail.firstTagAfter ?? "?"}; ${when})`;
+      if (detail?.edge === "fin") return `${agvId} — parado al final de los datos, desde su última lectura en ${detail.lastTagBefore ?? "?"}; ${when})`;
+      if (detail?.edge === "todo") return `${agvId} — parado, sin ninguna lectura en estos datos; ${when})`;
       const back =
         detail?.firstTagAfter === detail?.lastTagBefore
           ? `volvió por el mismo tag, ${detail?.firstTagAfter ?? ""}`
@@ -1941,13 +2008,18 @@ function describeLifeSegment(agvId: string, segment: FleetSegmentView, formats: 
  * Cada hueco sin carga se colorea por cómo reapareció el AGV (R-AGV-017): parado en su sitio, un tag
  * o varios más allá, una hora o más fuera, o por un tag de mantenimiento. Un hueco que ese tramo tiene
  * a menudo en ese turno se dibuja leyendo: no es un hueco.
+ *
+ * Y cada parada se lee contra el resto (R-AGV-018): con la producción parada o en cola detrás de otro
+ * parado va con rayas —explicada—; sin nada que la explique, en azul oscuro liso; y el primero de una
+ * cola que no avanza, además con contorno. Una franja arriba marca cuándo estuvo parada la producción.
  */
 export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElement {
   const wrapper = figure(
     "Vida de cada AGV en el circuito",
-    "Qué hacía cada AGV en cada momento, y cómo volvió tras cada hueco sin lecturas. Toca un tramo " +
-      "para leer por dónde se fue, por dónde volvió y lo que suele tardar ese tramo en ese turno. " +
-      "Media altura: lee sin estar asignado.",
+    "Qué hacía cada AGV en cada momento, cómo volvió tras cada hueco sin lecturas y qué hacía el resto " +
+      "mientras tanto. Toca un tramo para leer por dónde se fue, por dónde volvió, lo que suele tardar " +
+      "ese tramo en ese turno y si la producción o el de delante estaban parados. La franja de arriba " +
+      "marca cuándo estuvo parada la producción. Media altura: lee sin estar asignado.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por una fila para leer el tramo.");
@@ -1959,7 +2031,8 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
     const right = 6;
     const rowHeight = 11;
     const gap = 3;
-    const top = 4;
+    const strip = 6;
+    const top = 4 + strip + 4;
     const plotHeight = vehicles.length * (rowHeight + gap);
     const height = top + plotHeight + 22;
     const innerWidth = width - left - right;
@@ -1994,7 +2067,13 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
         : kind === "sin-clasificar"
           ? color("--panel")
           : color(GAP_KIND[kind].token);
-    const kindFills = new Map<GapKindName, string | CanvasPattern>();
+    const kindFills = new Map<string, string | CanvasPattern>();
+    const explained = canvasStripes(context, color("--viz-parada"), color("--panel"), 2.2);
+    // La franja de la producción parada, arriba, con la misma textura que una parada explicada.
+    for (const stop of fleet.production.stops) {
+      context.fillStyle = explained;
+      context.fillRect(x(stop.fromUtcMs), 4, Math.max(1.5, x(stop.toUtcMs) - x(stop.fromUtcMs)), strip);
+    }
     context.font = "10px ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
     vehicles.forEach((vehicle, row) => {
       const y = top + row * (rowHeight + gap);
@@ -2005,7 +2084,10 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
         const x0 = x(segment.fromUtcMs);
         const w = Math.max(0.8, x(segment.toUtcMs) - x0);
         let fill = fills[segment.state];
-        if (segment.kind !== undefined) {
+        const isExplained = segment.justification === "produccion" || segment.justification === "cola";
+        if ((segment.kind === "parada" || segment.kind === "sin-clasificar") && isExplained) {
+          fill = explained;
+        } else if (segment.kind !== undefined) {
           const known = kindFills.get(segment.kind);
           fill = known ?? kindFill(segment.kind);
           if (known === undefined) kindFills.set(segment.kind, fill);
@@ -2017,10 +2099,16 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
           context.fillRect(x0, y, w, rowHeight);
         }
         // Un hueco sin clasificar, o sin la configuración para clasificarlo, es solo un contorno.
-        if (segment.state === "silencio" && (segment.kind === undefined || segment.kind === "sin-clasificar")) {
+        if (segment.state === "silencio" && !isExplained && (segment.kind === undefined || segment.kind === "sin-clasificar")) {
           context.strokeStyle = color("--viz-empty");
           context.lineWidth = 1;
           context.strokeRect(x0 + 0.5, y + 0.5, Math.max(0, w - 1), rowHeight - 1);
+        }
+        // El primero de una cola que no avanza, sin nada que lo explique: contorno de acento.
+        if (segment.blocking !== undefined && segment.blocking > 0) {
+          context.strokeStyle = color("--viz-accent");
+          context.lineWidth = 2;
+          context.strokeRect(x0 + 1, y + 1, Math.max(0, w - 2), rowHeight - 2);
         }
       }
     });
@@ -2048,7 +2136,7 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
           line.show(null);
           return;
         }
-        line.show(describeLifeSegment(vehicle.agvId, segment, formats));
+        line.show(describeLifeSegment(vehicle.agvId, segment, formats, fleet.production.basis));
       },
     );
   });
@@ -2076,6 +2164,9 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
             : `var(${GAP_KIND[kind].token})`,
         GAP_KIND[kind].label,
       ]),
+      [EXPLAINED_SWATCH, "parado con la producción parada o en cola detrás de otro parado"],
+      [BLOCKING_SWATCH, "el primero de una cola, sin avanzar y sin nada que lo explique"],
+      [EXPLAINED_SWATCH, "franja de arriba: producción parada"],
       ["var(--viz-ausente)", "asignado y sin leer, menos de una hora"],
       ["var(--viz-grid)", FLEET_STATE_LABEL.fuera],
       ["linear-gradient(transparent 30%, var(--viz-series) 30% 70%, transparent 70%)", FLEET_STATE_LABEL["leyendo-sin-asignar"]],
@@ -2083,7 +2174,7 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
     ]),
   );
   wrapper.append(
-    // Trece columnas: se desplazan dentro de su caja en vez de romper la página en el móvil.
+    // Catorce columnas: se desplazan dentro de su caja en vez de romper la página en el móvil.
     lazyDetails("Ver los mismos datos en tabla", () =>
       scrollBox(plainTable(
         [
@@ -2092,7 +2183,8 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
           "Lecturas",
           "Leyendo",
           "En carga",
-          "Parado",
+          "Parado, explicado",
+          "Parado, sin explicar",
           "Un tag más allá",
           "Varios tags más allá",
           "Una hora o más",
@@ -2107,7 +2199,21 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
           vehicle.readings.toLocaleString("es-ES"),
           percent(share(vehicle, (segment) => segment.state === "leyendo")),
           percent(share(vehicle, (segment) => segment.state === "carga")),
-          ...(["parada", "salta-uno", "salta-varios", "desconexion", "mantenimiento"] as const).map((kind) =>
+          percent(
+            share(
+              vehicle,
+              (segment) =>
+                segment.kind === "parada" && (segment.justification === "produccion" || segment.justification === "cola"),
+            ),
+          ),
+          percent(
+            share(
+              vehicle,
+              (segment) =>
+                segment.kind === "parada" && segment.justification !== "produccion" && segment.justification !== "cola",
+            ),
+          ),
+          ...(["salta-uno", "salta-varios", "desconexion", "mantenimiento"] as const).map((kind) =>
             percent(share(vehicle, (segment) => segment.kind === kind)),
           ),
           percent(
@@ -2117,6 +2223,444 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
           vehicle.segments.some((segment) => segment.state === "leyendo-sin-asignar") ? "sí" : "no",
         ]),
       )),
+    ),
+  );
+  return wrapper;
+}
+
+// --- 12. Horquilla de tiempos de cada tramo (Parte 47) ---------------------
+
+export interface BandView {
+  readonly samples: number;
+  readonly p50Ms: number;
+  readonly p80Ms: number;
+  readonly p95Ms: number;
+  readonly fenceMs: number;
+}
+
+export interface BandRow {
+  readonly from: string;
+  readonly to: string;
+  readonly produccion: BandView | null;
+  readonly noche: BandView | null;
+  /** Hallazgos en ese tramo, en palabras: «cuello de botella», «zona oscura»… */
+  readonly marks: readonly string[];
+}
+
+const BAND_TICKS_S = [2, 5, 10, 15, 30, 60, 120, 300, 600, 1200];
+
+function describeBand(band: BandView): string {
+  return (
+    `la mitad en ${seconds(band.p50Ms)}, el 80 % en ${seconds(band.p80Ms)}, el 95 % en ${seconds(band.p95Ms)}; ` +
+    `más de ${seconds(band.fenceMs)} es parada candidata (${band.samples} pasadas)`
+  );
+}
+
+/**
+ * La horquilla de cada tramo del anillo, en su orden (no es distancia): la barra va de la mitad de
+ * las pasadas al 95 %, la raya es la valla —por encima, parada candidata—, y la barra fina de al lado
+ * es la noche, medida aparte. El eje es logarítmico para que un tramo de 15 s y uno de 5 min quepan
+ * los dos.
+ */
+export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): HTMLElement {
+  const wrapper = figure(
+    "Horquilla de tiempos de cada tramo",
+    "Cuánto tarda cada tramo del anillo en producción: la barra va de la mitad de las pasadas al 95 %, " +
+      `y la raya marca la valla. La barra gris es la noche (${nightLabel}), medida aparte. El orden es el ` +
+      "del anillo, no la distancia.",
+  );
+  const area = host();
+  const line = readout("Toca o pasa el puntero por un tramo para leer su horquilla.");
+  const values = rows.flatMap((row) => [row.produccion, row.noche].filter((band): band is BandView => band !== null));
+  const minMs = Math.max(1_000, Math.min(...values.map((band) => band.p50Ms), 60_000) * 0.7);
+  const maxMs = Math.min(20 * 60_000, Math.max(...values.map((band) => band.fenceMs), 30_000) * 1.1);
+
+  responsive(area, (width) => {
+    area.replaceChildren();
+    const left = 40;
+    const top = 16;
+    const plotHeight = 180;
+    const height = top + plotHeight + 22;
+    const plotWidth = Math.max(10, width - left - 4);
+    const step = plotWidth / Math.max(1, rows.length);
+    const logMin = Math.log(minMs);
+    const logSpan = Math.max(0.001, Math.log(maxMs) - logMin);
+    const y = (ms: number): number =>
+      top + plotHeight * (1 - (Math.log(Math.min(maxMs, Math.max(minMs, ms))) - logMin) / logSpan);
+    const canvas = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Horquilla de tiempos por tramo" });
+    canvas.append(hatchPattern());
+    for (const tick of BAND_TICKS_S) {
+      const ms = tick * 1000;
+      if (ms < minMs || ms > maxMs) continue;
+      canvas.append(svg("line", { x1: left, x2: width, y1: y(ms), y2: y(ms), stroke: "var(--viz-grid)" }));
+      canvas.append(text(left - 4, y(ms) + 3, tick >= 60 ? `${tick / 60} min` : `${tick} s`, "axis", { "text-anchor": "end" }));
+    }
+    rows.forEach((row, index) => {
+      const x0 = left + index * step;
+      const day = row.produccion;
+      if (day === null) {
+        canvas.append(svg("rect", { x: x0, y: top + plotHeight - 4, width: Math.max(1, step * 0.6), height: 4, fill: HATCH_FILL }));
+      } else {
+        canvas.append(
+          svg("rect", {
+            x: x0 + step * 0.05,
+            y: y(day.p95Ms),
+            width: Math.max(1, step * 0.55),
+            height: Math.max(1.5, y(day.p50Ms) - y(day.p95Ms)),
+            fill: "var(--viz-series)",
+          }),
+        );
+        canvas.append(
+          svg("line", {
+            x1: x0,
+            x2: x0 + Math.max(1.5, step * 0.65),
+            y1: y(day.fenceMs),
+            y2: y(day.fenceMs),
+            stroke: "var(--ink)",
+            "stroke-width": 1,
+            opacity: 0.7,
+          }),
+        );
+      }
+      const night = row.noche;
+      if (night !== null) {
+        canvas.append(
+          svg("rect", {
+            x: x0 + step * 0.62,
+            y: y(night.p95Ms),
+            width: Math.max(1, step * 0.28),
+            height: Math.max(1.5, y(night.p50Ms) - y(night.p95Ms)),
+            fill: "var(--viz-neutral)",
+          }),
+        );
+      }
+      if (row.marks.length > 0) {
+        canvas.append(svg("circle", { cx: x0 + step / 2, cy: 7, r: Math.min(4, Math.max(2, step / 2)), fill: "var(--viz-accent)" }));
+      }
+    });
+    // Rótulos del eje: la posición en el anillo, las que quepan.
+    const every = Math.max(1, Math.ceil(rows.length / Math.max(2, Math.floor(plotWidth / 40))));
+    for (let index = 0; index < rows.length; index += every) {
+      canvas.append(text(left + index * step + step / 2, height - 6, String(index + 1), "axis", { "text-anchor": "middle" }));
+    }
+    // Una sola capa para leer, por columnas: ningún rótulo por marca.
+    rows.forEach((_, index) => {
+      canvas.append(svg("rect", { x: left + index * step, y: 0, width: step, height: top + plotHeight, fill: "transparent", "data-k": String(index) }));
+    });
+    inspect(
+      canvas,
+      (point) => {
+        const key = point === null ? null : (point.target as SVGElement).getAttribute("data-k");
+        const row = key === null ? undefined : rows[Number(key)];
+        if (row === undefined) {
+          line.show(null);
+          return;
+        }
+        const parts = [
+          `${Number(key) + 1}. ${row.from} → ${row.to}`,
+          row.produccion === null ? "producción: sin pasadas suficientes" : `producción: ${describeBand(row.produccion)}`,
+          row.noche === null ? "noche: sin pasadas suficientes" : `noche: la mitad en ${seconds(row.noche.p50Ms)}, el 95 % en ${seconds(row.noche.p95Ms)}`,
+          ...(row.marks.length === 0 ? [] : [row.marks.join(", ")]),
+        ];
+        line.show(parts.join(" · "));
+      },
+      { snap: "[data-k]" },
+    );
+    area.append(canvas);
+  });
+
+  wrapper.append(
+    legendList([
+      ["var(--viz-series)", "producción: de la mitad de las pasadas al 95 %"],
+      ["linear-gradient(var(--panel) 45%, var(--ink) 45% 60%, var(--panel) 60%)", "valla: por encima, parada candidata"],
+      ["var(--viz-neutral)", `noche (${nightLabel})`],
+      ["var(--viz-accent)", "hallazgo en ese tramo"],
+      [HATCH_SWATCH, "sin pasadas suficientes para una horquilla"],
+    ]),
+    area,
+    line.node,
+    lazyDetails(`Ver la horquilla de los ${rows.length} tramos`, () =>
+      plainTable(
+        ["Posición", "Tramo", "Pasadas", "Mitad", "80 %", "95 %", "Valla", "Noche (mitad)", "Hallazgo"],
+        rows.map((row, index) => [
+          String(index + 1),
+          `${row.from} → ${row.to}`,
+          String(row.produccion?.samples ?? 0),
+          row.produccion === null ? "—" : seconds(row.produccion.p50Ms),
+          row.produccion === null ? "—" : seconds(row.produccion.p80Ms),
+          row.produccion === null ? "—" : seconds(row.produccion.p95Ms),
+          row.produccion === null ? "—" : seconds(row.produccion.fenceMs),
+          row.noche === null ? "—" : seconds(row.noche.p50Ms),
+          row.marks.join(", ") || "—",
+        ]),
+      ),
+    ),
+  );
+  return wrapper;
+}
+
+/** Una fila del anillo en tiempo: un fichero, con cada tag en su segundo desde el ancla. */
+export interface RingTimeRow {
+  /** El fichero, como se enseña. */
+  readonly label: string;
+  readonly lapMs: number | null;
+  readonly tags: readonly {
+    readonly tagId: string;
+    readonly offsetMs: number | null;
+    /** Cambio de estructura respecto al fichero anterior, si lo hay (R-DAT-021). */
+    readonly mark?: "nuevo" | "retirado" | "sustituido";
+    readonly note?: string;
+  }[];
+}
+
+const TIME_POSITION_STEPS_S = [30, 60, 120, 300, 600, 900, 1800, 3600];
+
+function clockSpan(ms: number): string {
+  const total = Math.round(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return minutes === 0 ? `${rest} s` : `${minutes} min ${String(rest).padStart(2, "0")} s`;
+}
+
+const MARK_SHAPES: Readonly<Record<"nuevo" | "retirado" | "sustituido", string>> = {
+  nuevo: "tag nuevo (triángulo)",
+  retirado: "ya no se lee (aspa)",
+  sustituido: "sustituido (rombo)",
+};
+
+/**
+ * El anillo en tiempo: una fila por fichero, cada tag en los segundos de recorrido que lo separan del
+ * ancla (R-TIM-011). **Es tiempo, nunca distancia**: dos tags muy juntos en el dibujo son dos tags que
+ * se leen muy seguidos, no dos tags cerca en el suelo. Lo que cambia de un fichero a otro va marcado
+ * con su forma, además del color.
+ */
+export function ringTimeChart(rows: readonly RingTimeRow[]): HTMLElement {
+  const wrapper = figure(
+    "El anillo en tiempo, fichero a fichero",
+    "Cada raya es un tag, a los segundos de recorrido que lo separan del ancla (la mitad de las pasadas de " +
+      "cada paso, sumadas). Es tiempo de recorrido, no distancia. Un tag que no se puede situar no se dibuja.",
+  );
+  const area = host();
+  const line = readout("Toca o pasa el puntero por un tag para leer su posición en cada fichero.");
+  const maxMs = Math.max(
+    60_000,
+    ...rows.map((row) => row.lapMs ?? 0),
+    ...rows.flatMap((row) => row.tags.map((tag) => tag.offsetMs ?? 0)),
+  );
+  const offsetsOf = new Map<string, string[]>();
+  for (const row of rows) {
+    for (const tag of row.tags) {
+      if (tag.offsetMs === null) continue;
+      offsetsOf.set(tag.tagId, [...(offsetsOf.get(tag.tagId) ?? []), `«${row.label}», ${clockSpan(tag.offsetMs)}`]);
+    }
+  }
+
+  responsive(area, (width) => {
+    area.replaceChildren();
+    const left = 8;
+    const right = 8;
+    const rowHeight = 34;
+    const top = 4;
+    const height = top + rows.length * rowHeight + 22;
+    const plotWidth = Math.max(10, width - left - right);
+    const x = (ms: number): number => left + (plotWidth * ms) / maxMs;
+    const canvas = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "El anillo en tiempo" });
+    const stepS =
+      TIME_POSITION_STEPS_S.find((candidate) => maxMs / 1000 / candidate <= Math.max(3, Math.floor(plotWidth / 80))) ?? 3600;
+    for (let tick = 0; tick * 1000 <= maxMs; tick += stepS) {
+      const px = x(tick * 1000);
+      canvas.append(svg("line", { x1: px, x2: px, y1: top, y2: height - 20, stroke: "var(--viz-grid)" }));
+      const anchor = px < 30 ? "start" : px > width - 30 ? "end" : "middle";
+      canvas.append(text(px, height - 6, tick < 60 ? `${tick} s` : `${tick / 60} min`, "axis", { "text-anchor": anchor }));
+    }
+    rows.forEach((row, rowIndex) => {
+      const y0 = top + rowIndex * rowHeight;
+      canvas.append(text(left, y0 + 10, row.label, "axis"));
+      const base = y0 + 14;
+      if (row.lapMs !== null) {
+        canvas.append(svg("line", { x1: x(0), x2: x(row.lapMs), y1: base + 8, y2: base + 8, stroke: "var(--viz-grid)", "stroke-width": 2 }));
+      }
+      row.tags.forEach((tag, tagIndex) => {
+        if (tag.offsetMs === null) return;
+        const px = x(tag.offsetMs);
+        const key = `${rowIndex}:${tagIndex}`;
+        if (tag.mark === undefined) {
+          canvas.append(svg("line", { x1: px, x2: px, y1: base + 2, y2: base + 14, stroke: "var(--viz-series)", "stroke-width": 1.5, "data-k": key }));
+          return;
+        }
+        const size = 6;
+        const shape =
+          tag.mark === "nuevo"
+            ? `M${px} ${base + 2}L${px + size} ${base + 14}L${px - size} ${base + 14}Z`
+            : tag.mark === "sustituido"
+              ? `M${px} ${base + 1}L${px + size} ${base + 8}L${px} ${base + 15}L${px - size} ${base + 8}Z`
+              : `M${px - size} ${base + 2}L${px + size} ${base + 14}M${px + size} ${base + 2}L${px - size} ${base + 14}`;
+        canvas.append(
+          svg("path", {
+            d: shape,
+            fill: tag.mark === "retirado" ? "none" : "var(--viz-accent)",
+            stroke: "var(--viz-accent)",
+            "stroke-width": 2,
+            "data-k": key,
+          }),
+        );
+      });
+    });
+    inspect(
+      canvas,
+      (point) => {
+        const key = point === null ? null : (point.target as SVGElement).getAttribute("data-k");
+        if (key === null) {
+          line.show(null);
+          return;
+        }
+        const [rowIndex, tagIndex] = key.split(":").map(Number) as [number, number];
+        const tag = rows[rowIndex]?.tags[tagIndex];
+        if (tag === undefined) {
+          line.show(null);
+          return;
+        }
+        line.show(
+          `${tag.tagId} · ${(offsetsOf.get(tag.tagId) ?? []).join("; ")}` +
+            (tag.mark === undefined ? "" : ` · ${MARK_SHAPES[tag.mark].replace(/ \(.*\)/, "")}`) +
+            (tag.note === undefined ? "" : ` · ${tag.note}`),
+        );
+      },
+      { snap: "[data-k]" },
+    );
+    area.append(canvas);
+  });
+
+  const marked = rows.some((row) => row.tags.some((tag) => tag.mark !== undefined));
+  const allTags = [...new Set(rows.flatMap((row) => row.tags.map((tag) => tag.tagId)))];
+  wrapper.append(
+    legendList([
+      ["var(--viz-series)", "tag, en su segundo desde el ancla"],
+      ["var(--viz-grid)", "una vuelta entera"],
+      ...(marked
+        ? (Object.values(MARK_SHAPES).map((label) => ["var(--viz-accent)", label]) as [string, string][])
+        : []),
+    ]),
+    area,
+    line.node,
+    lazyDetails(`Ver la posición de los ${allTags.length} tags en cada fichero`, () =>
+      plainTable(
+        ["Tag", ...rows.map((row) => row.label)],
+        allTags.map((tagId) => [
+          tagId,
+          ...rows.map((row) => {
+            const tag = row.tags.find((entry) => entry.tagId === tagId);
+            return tag === undefined || tag.offsetMs === null ? "—" : clockSpan(tag.offsetMs);
+          }),
+        ]),
+      ),
+    ),
+  );
+  return wrapper;
+}
+
+/** La historia de un tramo: su horquilla en cada fichero, en el mismo régimen. */
+export interface SegmentHistoryPanel {
+  readonly title: string;
+  /** El fichero donde empieza el escalón o el cambio, si lo hay. */
+  readonly atLabel: string | null;
+  readonly points: readonly { readonly label: string; readonly p50Ms: number; readonly p80Ms: number; readonly p95Ms: number; readonly samples: number }[];
+}
+
+/**
+ * Pequeños múltiplos: un panel por tramo que cambia entre ficheros. El punto es la mitad de las
+ * pasadas en cada fichero; la barra, del 80 % al 95 %. El fichero donde empieza el escalón va con
+ * acento. Mismo eje en todos para poder comparar, empezando en cero.
+ */
+export function segmentHistoryChart(panels: readonly SegmentHistoryPanel[]): HTMLElement {
+  const wrapper = figure(
+    "Historia de los tramos que cambian",
+    "Cada panel es un tramo en producción: el punto es la mitad de las pasadas en cada fichero y la barra, " +
+      "del 80 % al 95 %. Con acento, el fichero donde empieza el cambio.",
+  );
+  const area = host();
+  const line = readout("Toca o pasa el puntero por un fichero de un panel para leer su horquilla.");
+  const maxMs = Math.max(10_000, ...panels.flatMap((panel) => panel.points.map((point) => point.p95Ms))) * 1.1;
+
+  responsive(area, (width) => {
+    area.replaceChildren();
+    const columns = width < 480 ? 1 : width < 900 ? 2 : 3;
+    const gap = 12;
+    const panelWidth = (width - gap * (columns - 1)) / columns;
+    const panelHeight = 110;
+    const rowsCount = Math.ceil(panels.length / columns);
+    const height = rowsCount * (panelHeight + gap);
+    const canvas = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Historia de los tramos" });
+    panels.forEach((panel, panelIndex) => {
+      const px0 = (panelIndex % columns) * (panelWidth + gap);
+      const py0 = Math.floor(panelIndex / columns) * (panelHeight + gap);
+      const plotTop = py0 + 18;
+      const plotBottom = py0 + panelHeight - 14;
+      const y = (ms: number): number => plotBottom - ((plotBottom - plotTop) * ms) / maxMs;
+      const step = (panelWidth - 24) / Math.max(1, panel.points.length);
+      const xAt = (index: number): number => px0 + 12 + step * (index + 0.5);
+      canvas.append(text(px0, py0 + 11, panel.title, "axis"));
+      canvas.append(svg("line", { x1: px0, x2: px0 + panelWidth, y1: plotBottom, y2: plotBottom, stroke: "var(--viz-grid)" }));
+      const path = panel.points.map((point, index) => `${index === 0 ? "M" : "L"}${xAt(index).toFixed(1)} ${y(point.p50Ms).toFixed(1)}`).join("");
+      canvas.append(svg("path", { d: path, fill: "none", stroke: "var(--viz-series)", "stroke-width": 1.5 }));
+      panel.points.forEach((point, index) => {
+        const accent = point.label === panel.atLabel;
+        const color = accent ? "var(--viz-accent)" : "var(--viz-series)";
+        canvas.append(svg("rect", { x: xAt(index) - 3, y: y(point.p95Ms), width: 6, height: Math.max(1.5, y(point.p80Ms) - y(point.p95Ms)), fill: color, opacity: 0.45 }));
+        canvas.append(svg("circle", { cx: xAt(index), cy: y(point.p50Ms), r: accent ? 4.5 : 3.5, fill: color }));
+        canvas.append(text(xAt(index), py0 + panelHeight - 2, String(index + 1), "axis", { "text-anchor": "middle" }));
+        canvas.append(
+          svg("rect", { x: xAt(index) - step / 2, y: plotTop, width: step, height: plotBottom - plotTop, fill: "transparent", "data-k": `${panelIndex}:${index}` }),
+        );
+      });
+    });
+    inspect(
+      canvas,
+      (point) => {
+        const key = point === null ? null : (point.target as SVGElement).getAttribute("data-k");
+        if (key === null) {
+          line.show(null);
+          return;
+        }
+        const [panelIndex, index] = key.split(":").map(Number) as [number, number];
+        const panel = panels[panelIndex];
+        const entry = panel?.points[index];
+        if (panel === undefined || entry === undefined) {
+          line.show(null);
+          return;
+        }
+        line.show(
+          `${panel.title} · «${entry.label}»: la mitad en ${seconds(entry.p50Ms)}, el 80 % en ${seconds(entry.p80Ms)}, ` +
+            `el 95 % en ${seconds(entry.p95Ms)} (${entry.samples} pasadas)` +
+            (entry.label === panel.atLabel ? " · aquí empieza el cambio" : ""),
+        );
+      },
+      { snap: "[data-k]" },
+    );
+    area.append(canvas);
+  });
+
+  wrapper.append(
+    legendList([
+      ["var(--viz-series)", "la mitad de las pasadas (punto) y del 80 % al 95 % (barra)"],
+      ["var(--viz-accent)", "el fichero donde empieza el cambio"],
+    ]),
+    area,
+    line.node,
+    lazyDetails(`Ver los ${panels.length} tramos en tabla`, () =>
+      plainTable(
+        ["Tramo", "Fichero", "Mitad", "80 %", "95 %", "Pasadas"],
+        panels.flatMap((panel) =>
+          panel.points.map((point) => [
+            panel.title,
+            point.label,
+            seconds(point.p50Ms),
+            seconds(point.p80Ms),
+            seconds(point.p95Ms),
+            String(point.samples),
+          ]),
+        ),
+      ),
     ),
   );
   return wrapper;

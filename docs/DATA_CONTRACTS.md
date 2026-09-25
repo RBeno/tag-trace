@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.13.0
+version: 0.14.2
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-25
 ---
 
 # Contratos de datos y procedencia
@@ -27,6 +27,9 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-010 | Proyecto anterior | `.agvproj` con manifiesto y versión | Persistencia local |
 | DS-011 | Informe ampliado de Vsystem | Tipo, fecha con segundos, AGV, circuito y, según el tipo, tag o uso | Enriquecida, opcional |
 | DS-012 | Historial de flota | AGV y fecha de alta; circuito, fecha de baja y nota opcionales | Configuración, incremental (§3.6) |
+
+Las listas (DS-002, DS-004 a DS-008) y el historial (DS-012) entran en CSV o en un libro de Excel
+(`.xlsx`) con la plantilla que da el programa (§3.7).
 
 ## 3. Contrato mínimo de lecturas
 
@@ -90,13 +93,16 @@ Separarlos importa porque **el cohorte de comparación es el circuito**: compara
 otros que recorren un trazado distinto no mide su estado, mide el trazado. En esa exportación, un
 vehículo quedaba «en la mediana» de la flota entera y era **el último de los ocho** de su circuito.
 
-La separación se hace por **aristas exclusivas**: si un conjunto de vehículos recorre transiciones
-que ningún otro recorre jamás, están en circuitos distintos. El parecido entre conjuntos de tags
-agrupa, pero no decide: un vehículo que simplemente lee peor se separaría solo y acabaría siendo su
-propio cohorte, que es la forma más silenciosa de no comparar nada.
+El parecido entre conjuntos de tags agrupa, pero no decide. Un grupo es un circuito si tiene **lo
+suyo**: transiciones que solo recorren sus vehículos **y** tags que solo leen ellos. Compartir una
+transición no basta para juntarlos: los circuitos de esa exportación comparten tramo, y con ese
+criterio salían como uno solo. Y las transiciones solas no bastan para separar: un vehículo que se
+salta tags hace saltos que nadie más hace, y acabaría siendo su propio cohorte, que es la forma más
+silenciosa de no comparar nada. Un vehículo que lee peor, o que solo se vio en parte del recorrido,
+va al circuito que contiene sus tags.
 
-Un vehículo con muy pocas lecturas no se asigna a ningún circuito, y entonces **no se compara**: se
-declara que no hay evidencia y se para. Un informe de comparaciones contra un cohorte vacío es peor
+Un vehículo cuyos tags no contiene ningún circuito no se asigna a ninguno, y entonces **no se
+compara**: se declara que no hay evidencia y se para. Un informe de comparaciones contra un cohorte vacío es peor
 que no tener informe, porque parece un análisis.
 
 ### 3.3 Eventos que no son lecturas
@@ -272,6 +278,35 @@ historial **se fusiona** con lo guardado por la clave (AGV, `desde`). Una fila c
 sustituye a la anterior —así se cierra un periodo: se vuelve a subir su fila con `hasta`— y las demás
 se conservan. Para registrar un cambio basta subir esa fila. Borrar un periodo subiendo filas no se
 puede: queda como límite declarado.
+
+### 3.7 Listas e historial en Excel
+
+Las listas de tags (DS-002, DS-004 a DS-008) y el historial de flota (DS-012) se escriben a mano, y se
+escriben en Excel. Un CSV abierto en Excel pierde justo lo que importa: convierte `0712` en `712` —otro
+AGV (R-DAT-001)— y las fechas en números, y al guardarlo hay que acertar con separador y codificación.
+Por eso:
+
+- **La plantilla se entrega como fichero**, no la da el programa: un `.xlsx` hecho con
+  `scripts/generar-plantillas-excel.ts` —el repositorio no guarda ninguno—, con la primera hoja con la cabecera en su sitio (`lista;tag;orden;funcion;grupo;capacidad;nota`
+  o `circuito;agv;desde;hasta;nota`), las columnas en **formato texto**, la cabecera fija, desplegables
+  que avisan pero admiten otros valores (`lista` y `funcion`), una hoja de instrucciones y otra de
+  ejemplo.
+- **El `.xlsx` se importa tal cual**, sin convertirlo. Se lee **solo la primera hoja**; la cabecera se
+  busca por nombre, como en el texto, y una celda que falta al final de una fila es una celda vacía.
+  Se toma el valor de cada celda tal como Excel lo guardó; una fórmula no se evalúa, se toma su último
+  resultado. Las columnas que el importador no conoce se ignoran.
+- En el historial de flota, una fecha que Excel guardó **como número** (la celda no estaba en texto) se
+  lee como la fecha de pared que se escribió —días desde el 30/12/1899— en la zona del circuito. Solo en
+  un libro de Excel: en un texto, un número suelto en una columna de fecha no es una fecha.
+- Un libro que no se puede leer se rechaza entero, con el motivo: los límites del contenedor son los
+  del zip de `.agvproj` (§9, TH-005), y un XML con declaración de tipo de documento se rechaza.
+- El CSV sigue valiendo, con las mismas reglas de §4 y §5.
+
+El circuito de un análisis también se entrega en este formato, como borrador de la lista `circuito`,
+con columnas de más (la diferencia con Vsystem, las lecturas y el origen de cada fila) que el
+importador ignora. Es un borrador: la lista `circuito` es lo que Vsystem declara, así que se corrige
+contra Vsystem antes de cargarla (R-GRA-001). La función de un punto crítico no se rellena sola
+(R-GRA-007).
 
 ## 4. Proceso de importación
 

@@ -12,6 +12,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { writeXlsx } from "../support/xlsx-writer.js";
 import { buildAuditScenario } from "../support/circuito-auditoria.js";
 
 async function freshPage(page: Page): Promise<void> {
@@ -125,27 +126,74 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await heatmap.getByRole("button", { name: "Peor omisión primero" }).click();
     await expect(heatmap.getByRole("button", { name: "Peor omisión primero" })).toHaveAttribute("aria-pressed", "true");
 
-    // La flota: el recuento N de M, la vida de cada AGV en un único lienzo, el asignado que no lee
-    // nunca y el que sigue leyendo después de su baja.
+    // La flota: el recuento N de M —en el circuito, y cuántos leen—, la vida de cada AGV en un único
+    // lienzo, el asignado que no lee nunca y el que sigue leyendo después de su baja.
     await expect(page.getByRole("heading", { name: "Flota del circuito" })).toBeVisible();
-    const count = figureOf("Flota en funcionamiento");
-    await expect(count.getByText(/Menos en funcionamiento: \d+ de \d+/)).toBeVisible();
+    const count = figureOf("Flota en el circuito");
+    await expect(count.getByText(/Menos en el circuito: \d+ de \d+.*Menos leyendo: \d+ de \d+/)).toBeVisible();
     await expect(count.getByText("Ver los mismos datos en tabla")).toBeVisible();
     expect(await count.locator("svg title").count()).toBe(0);
     const lifeline = figureOf("Vida de cada AGV en el circuito");
     await expect(lifeline.locator("canvas")).toBeVisible();
     // Cómo volvió cada AGV tras cada hueco (R-AGV-017): la leyenda nombra las clases, y el AGV que se
     // retrasa 20 min en el tramo cargado y sigue por el tag siguiente sale parado.
-    for (const kind of ["parado: vuelve por el tag siguiente", "vuelve un tag más allá", "por un tag de mantenimiento"]) {
+    for (const kind of [
+      "parado sin nada que lo explique: vuelve por el tag siguiente",
+      "parado con la producción parada o en cola detrás de otro parado",
+      "el primero de una cola, sin avanzar y sin nada que lo explique",
+      "vuelve un tag más allá",
+      "por un tag de mantenimiento",
+    ]) {
       await expect(lifeline.getByText(kind), kind).toBeVisible();
     }
     const adelantado = scenario.defects.find((defect) => defect.kind === "adelantamiento-en-zona-cargada")?.vehicles[0] ?? "";
     await lifeline.getByText("Ver los mismos datos en tabla").click();
     const lifeRow = lifeline.locator("tr", { has: page.getByRole("cell", { name: adelantado, exact: true }) });
-    await expect(lifeline.locator("th").nth(5)).toHaveText("Parado");
-    await expect(lifeRow.locator("td").nth(5)).not.toHaveText("0 %");
+    await expect(lifeline.locator("th").nth(6)).toHaveText("Parado, sin explicar");
+    await expect(lifeRow.locator("td").nth(6)).not.toHaveText("0 %");
+    // Contra el flujo (R-AGV-018): las tres paradas de la producción plantadas, la de las 10:00
+    // repetida, y el mismo AGV como el primero de su cola sin avanzar con la producción en marcha.
+    await expect(page.locator(".finding", { hasText: "La producción se paró 3 veces" })).toContainText(
+      "se repite a esa hora otro día",
+    );
+    await expect(page.locator(".finding", { hasText: "el primero de la cola" }).first()).toContainText(adelantado);
     await expect(page.locator(".finding", { hasText: "asignado no leyó nada" })).toContainText(scenario.fleetNeverRead);
     await expect(page.locator(".finding", { hasText: "sin estar asignado" })).toContainText(scenario.fleetLeavesMidway);
+
+    // Mediciones por fichero (R-TIM-011): los dos ficheros, el anillo en tiempo sin un rótulo por marca
+    // y con su tabla, y el CSV de cada fichero con su cabecera.
+    await expect(page.getByRole("heading", { name: "Mediciones por fichero" })).toBeVisible();
+    await expect(page.getByText("2 ficheros medidos", { exact: false })).toBeVisible();
+    const ringTime = figureOf("El anillo en tiempo, fichero a fichero");
+    await expect(ringTime).toBeVisible();
+    expect(await ringTime.locator("svg title").count()).toBe(0);
+    await expect(ringTime.getByText(/Ver la posición de los \d+ tags en cada fichero/)).toBeVisible();
+    const [franjaCsv] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Descargar «tardio.csv» (CSV)" }).click(),
+    ]);
+    const { readFileSync } = await import("node:fs");
+    const franjaText = readFileSync(await franjaCsv.path(), "utf8").replace(/^﻿/, "");
+    expect(franjaText.split("\r\n")[0]).toBe("desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s;primera;ultima;posicion_desde_s");
+
+    // El ritmo de cada AGV y quién retiene (R-AGV-019, R-AGV-020): quien retiene, en el estado normal; el
+    // que se vuelve más lento, en la tabla de ficheros con su cifra; y el CSV de ritmo con su cabecera.
+    const retenedor = scenario.defects.find((defect) => defect.kind === "retiene-a-otros")?.vehicles[0] ?? "";
+    const lento = scenario.defects.find((defect) => defect.kind === "ritmo-mas-lento-en-un-fichero")?.vehicles[0] ?? "";
+    await expect(page.locator(".finding", { hasText: `${retenedor} retiene a otros AGV` })).toContainText("AGV distintos");
+    await expect(page.locator("tr", { hasText: lento }).filter({ hasText: "más lento" }).first()).toBeVisible();
+    const [paceCsvFile] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Descargar ritmo de «tardio.csv» (CSV)" }).click(),
+    ]);
+    const paceText = readFileSync(await paceCsvFile.path(), "utf8").replace(/^﻿/, "");
+    expect(paceText.split("\r\n")[0]).toBe("agv;muestras;ritmo;veredicto;retenciones;min_retenidos");
+
+    // Los cambios de estructura por la suma entre anclas (R-DAT-021). Aquí el mantenimiento cae dentro del
+    // segundo fichero, a las diez de la noche: el bloque de tres sale sustituido en su sitio con su hora,
+    // una sola vez, y marcado en la fila de ese fichero con su forma.
+    await expect(page.locator(".finding", { hasText: "3 sustituidos en su sitio" })).toHaveCount(1);
+    expect(await ringTime.locator("path[data-k]").count()).toBeGreaterThan(0);
 
     // El expediente de un vehículo, en un solo eje de tiempo.
     await page.locator("#dossier-search").fill("7112");
@@ -185,11 +233,92 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(cambio).toBeVisible();
     await expect(cambio).toContainText(`${sinActualizar}, nunca (0 de`);
 
+    // Dentro del mismo fichero, la suma entre anclas (R-DAT-021): el bloque de tres cambiados a la vez
+    // sale en una sola tarjeta, aunque el sitio no los viera; y el tag nuevo que alarga el tramo lleva
+    // su línea.
+    await expect(page.locator(".finding", { hasText: "3 sustituidos en su sitio" }).first()).toContainText("sigue igual");
+    const tagNuevo = of("tag-nuevo-a-mitad-de-ventana")?.tags[0] ?? "";
+    await expect(page.locator(".finding", { hasText: `Tag ${tagNuevo}: empezó a leerse` })).toContainText(
+      "tag nuevo que cambia el recorrido",
+    );
+
     // La lectura por AGV: «nunca» con su cifra, y «poco» en pocos tags con su porcentaje. Sin causa.
     const ciego = of("omision-por-memoria")?.vehicles[0] ?? "";
     await expect(page.locator(".finding", { hasText: `AGV ${ciego} · no lee nunca` })).toContainText(": 0 de ");
     const desigual = of("lectura-desigual-en-pocos-tags")?.vehicles[0] ?? "";
     await expect(page.locator(".finding", { hasText: `AGV ${desigual} · lee poco en 2 tags` })).toContainText("%");
     await expect(page.locator(".finding", { hasText: /memoria|lector|colocación/i })).toHaveCount(0);
+
+    // El estado normal del circuito (R-TIM-009): la horquilla de cada tramo dibujada, con su tabla y
+    // sin un rótulo por marca, y los hallazgos medidos con ella, sin causa.
+    await expect(page.getByRole("heading", { name: "Estado normal del circuito" })).toBeVisible();
+    const bandsFigure = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Horquilla de tiempos de cada tramo" }) });
+    await expect(bandsFigure).toBeVisible();
+    expect(await bandsFigure.locator("svg title").count()).toBe(0);
+    await expect(bandsFigure.getByText(/Ver la horquilla de los \d+ tramos/)).toBeVisible();
+    const cuello = of("cuello-de-botella")?.tags[0] ?? "";
+    await expect(page.locator(".finding", { hasText: `Cuello de botella en ${cuello}` })).toContainText("La cola fluye");
+    const [conflictoA, conflictoB] = of("punto-conflictivo")?.tags ?? [];
+    await expect(page.locator(".finding", { hasText: `Punto conflictivo en ${conflictoA} y ${conflictoB}` })).toContainText("de 8 AGV");
+    await expect(page.locator(".finding", { hasText: "Zona oscura de" }).first()).toContainText("se salta algún tag");
+    const aislada = of("parada-sin-explicacion-aislada");
+    await expect(
+      page.locator(".finding", { hasText: `${aislada?.vehicles[0] ?? ""}:` }).filter({ hasText: `de más en ${aislada?.tags[0] ?? ""}` }),
+    ).toContainText("Qué lo paró no lo dice el dato");
+    await expect(page.getByText(/De noche \(de 22:00 a 05:00\): \d+ tramos cambian/)).toBeVisible();
+    // Las lecturas que llegaron juntas al servidor (R-DAT-020): el AGV plantado, y el hueco no es parada.
+    const agrupado = of("entrega-agrupada")?.vehicles[0] ?? "";
+    await expect(page.locator(".finding", { hasText: `${agrupado}: le llegan lecturas juntas` })).toContainText("no paró");
+
+    // La horquilla se descarga en CSV, una fila por tramo y régimen.
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Descargar horquillas (CSV)" }).first().click(),
+    ]);
+    const path = await download.path();
+    const { readFileSync } = await import("node:fs");
+    const csv = readFileSync(path, "utf8").replace(/^\ufeff/, "");
+    expect(csv.split("\r\n")[0]).toBe("desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s");
+    expect(csv).toContain(";noche;");
+
+    // Las listas en Excel: se importan tal cual, primera hoja, con los ceros a la izquierda.
+    const listsBook = await writeXlsx([
+      {
+        name: "Listas",
+        rows: [
+          ["lista", "tag", "orden"],
+          ["mantenimiento", "0712", ""],
+        ],
+        header: true,
+        widths: [16, 12, 8],
+      },
+      { name: "Instrucciones", rows: [["no se importa"]], header: false, widths: [80] },
+    ]);
+    await page.locator("#lists-file").setInputFiles({
+      name: "listas.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: Buffer.from(listsBook),
+    });
+    await expect(page.getByText("1 filas en 1 lista.")).toBeVisible({ timeout: 30_000 });
+
+    // Un historial de flota en Excel, con los ceros del AGV y una fecha que Excel guardó como número.
+    const fleetBook = await writeXlsx([
+      {
+        name: "Flota",
+        rows: [
+          ["circuito", "agv", "desde", "hasta"],
+          ["SE-AUDITORIA", "0712", "46266.5", ""],
+        ],
+        header: true,
+        widths: [14, 10, 20, 20],
+      },
+    ]);
+    await page.locator("#fleet-file").setInputFiles({
+      name: "flota.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: Buffer.from(fleetBook),
+    });
+    await expect(page.getByText("Historial de flota cargado")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("1 filas: 1 periodos nuevos")).toBeVisible();
   });
 });

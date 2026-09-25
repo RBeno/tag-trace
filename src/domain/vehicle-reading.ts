@@ -13,13 +13,19 @@
  * que lee el resto en ese mismo tag (`maxChance`). Un tag que la flota lee al 85 % deja a varios AGV en
  * el 76 % por pura casualidad, y eso no es una diferencia.
  *
+ * «Nunca» es cero lecturas con la misma prueba de azar, se hayan dado las pasadas que se hayan dado, y
+ * siempre con su cifra —«0 de 5», «0 de 41»—. Hasta la Parte 48 exigía además `minPassesForNever`
+ * pasadas, y con menos el AGV salía como «lee poco» con un 0 %: un 0 % no es poco, es no leerlo nunca
+ * (propietario, 2026-09-25, probando con datos de taller). Con pocas pasadas solo sale cuando el resto
+ * lo lee casi siempre: si lo lee al 80 %, hacen falta cinco para que cero no sea casualidad.
+ *
  * `extent` dice si le pasa en **muchos** tags o en **pocos**. Ordena y agrupa; no es un diagnóstico.
  */
 
 import type { PairReadRate, ReadMatrix, ReadRateThresholds } from "./read-matrix.js";
 
 export interface VehicleReadingThresholds {
-  /** Pasadas mínimas para decir «nunca» o «desde tal hora, 0 lecturas». */
+  /** Pasadas mínimas sin leer para decir «desde tal hora, 0 lecturas». */
   readonly minPassesForNever: number;
   /** Cuota del resto de AGV que tiene que leer bien un tag para que cuente contra uno que no. */
   readonly fleetReadsWellShare: number;
@@ -45,7 +51,8 @@ export interface VehicleReading {
 /** Lo mismo visto desde el tag: quién no lo lee nunca, quién dejó de leerlo y quién lo lee poco. */
 export interface TagReaders {
   readonly tagId: string;
-  readonly never: readonly string[];
+  /** Con sus pasadas: «0 de 5» no pesa lo mismo que «0 de 41». */
+  readonly never: readonly { readonly agvId: string; readonly passes: number }[];
   readonly stopped: readonly string[];
   readonly weak: readonly { readonly agvId: string; readonly hits: number; readonly passes: number }[];
   readonly good: number;
@@ -67,7 +74,7 @@ export function describeVehicleReading(
 ): VehicleReadingReport {
   const kindOf = (cell: PairReadRate): CellKind => {
     const rate = cell.hits / cell.passes;
-    if (cell.hits === 0 && cell.passes >= thresholds.minPassesForNever) return "nunca";
+    if (cell.hits === 0) return "nunca";
     if (
       cell.hits > 0 &&
       cell.trailingMisses >= thresholds.minPassesForNever &&
@@ -110,7 +117,7 @@ export function describeVehicleReading(
     if (supported.length < readRate.minVehiclesForContrast + 1) continue;
     const good = supported.filter((cell) => cell.hits / cell.passes >= readRate.highRate).length;
 
-    const never: string[] = [];
+    const never: TagReaders["never"][number][] = [];
     const stopped: string[] = [];
     const weak: TagReaders["weak"][number][] = [];
     for (const cell of supported) {
@@ -123,8 +130,11 @@ export function describeVehicleReading(
       const own = entry(cell.agvId);
       own.considered += 1;
       if (kind === "nunca") {
+        // Cero lecturas, pero solo si no es casualidad frente a lo que lee el resto; si lo es, sigue
+        // contando como tag comparado y no se dice nada.
+        if (lowerTail(0, cell.passes, othersRate(supported, cell)) > thresholds.maxChance) continue;
         own.never.push({ tagId: row.tagId, passes: cell.passes });
-        never.push(cell.agvId);
+        never.push({ agvId: cell.agvId, passes: cell.passes });
       } else if (kind === "desde") {
         own.stopped.push({ tagId: row.tagId, sinceUtcMs: cell.lastHitUtcMs as number, passesSince: cell.trailingMisses });
         stopped.push(cell.agvId);

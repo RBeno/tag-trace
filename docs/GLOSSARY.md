@@ -1,8 +1,8 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.18.0
+version: 0.25.1
 status: baseline-candidate
-last_updated: 2026-09-24
+last_updated: 2026-09-25
 ---
 
 # Glosario controlado
@@ -20,14 +20,30 @@ last_updated: 2026-09-24
 | Sin datos cargados | Estado de un intervalo que queda fuera de la cobertura. Distinto de `unknown`: en `unknown` hubo evidencia y no basta para decidir; aquí nunca hubo evidencia. No es una parada ni un silencio. |
 | Muestra | Periodo acotado que se importa y analiza. El producto trabaja por muestras, no sobre un histórico continuo; dos muestras solo se comparan si su contexto de calendario es equivalente. |
 | Flota asignada | Vehículos que el historial de flota (DS-012) asigna al circuito en un instante dado: los que tienen un periodo `[desde, hasta)` que lo contiene. Es la M del recuento «N de M». Sin historial cargado no se conoce, y se sustituye por los vehículos vistos en las lecturas diciéndolo (R-AGV-014). |
-| En funcionamiento | Un vehículo asignado que, en un instante dentro de la cobertura, lee o está en carga inferida (R-CO-006, R-CO-007). Es la N del recuento. Un silencio sin carga que lo explique no cuenta, y leer sin estar asignado se cuenta aparte, nunca en N (R-AGV-014, R-AGV-015). |
+| En el circuito | Un vehículo asignado que, en un instante dentro de la cobertura, lee, carga, o está parado o circulando sin leer: ningún AGV cambia de circuito. Es la N del recuento, y aparte se dice cuántos leen. Solo quedan fuera mantenimiento y una hora o más sin leer que nada explica; leer sin estar asignado se cuenta aparte, nunca en N (R-AGV-014, R-AGV-015, R-AGV-018). Sustituye a «en funcionamiento», que dejaba fuera a cada AGV parado. |
+| Parada de la producción | Tramo sin ninguna lectura en los tags críticos declarados, largo e improbable por azar con el ritmo de ese turno (sin críticos declarados, de toda la flota). Explica las paradas de los AGV que caen dentro. Sale de los datos, no se declara (R-AGV-018). |
+| Cola | AGV parados uno detrás de otro, a dos tags o menos, porque el de delante no se va: ya iba delante al empezar, sigue ahí a mitad y va él también más lento de lo normal. Quien retiene no tiene por qué estar parado él: en un cuello de botella tarda lo normal de ese sitio. Una cola que avanza cada poco es saturación o un pulmón (R-AGV-018). |
+| Régimen | Estado de funcionamiento por la hora local: **producción** o **noche** (hoy de 22:00 a 05:00). Lo que cruza una parada de la producción no entra en ninguno. Las mediciones estándar usan solo producción; la noche se mide aparte (R-TIM-009). |
+| Horquilla de tiempos | Lo que tarda un tramo —de un tag a otro— en un régimen: p50, p80 y p95 de sus propias transiciones. Es el estado normal de ese tramo, y se compara entre periodos (R-FLO-007, R-TIM-010). No confundir con un tag donde el recorrido se divide (bifurcación). |
+| Lecturas que llegaron juntas | Varias lecturas de un AGV que el servidor recibe casi a la vez tras un hueco: un volcado al recuperar la comunicación, porque la hora del fichero es la de llegada. Con la suma del recorrido normal, el AGV no paró (R-DAT-020). También «entrega agrupada». |
+| Franja | Un fichero de lecturas cargado, medido por separado en su ventana completa (R-TIM-011). Dos exportaciones que se solapan son dos franjas; un fichero repetido, una sola. |
+| Ritmo de un AGV | La mitad de sus tramos, cada uno medido contra lo habitual de ese tramo, frente a lo mismo de toda la flota; sin paradas ni esperas detrás de otro. Un 1,10 es un 10 % más lento (R-AGV-019). |
+| Retener | Ir delante de otro AGV, más despacio de lo habitual en ese tramo, mientras el de detrás espera. Quien retiene no tiene por qué pararse (R-AGV-020). |
+| Suma entre anclas | El tiempo entre dos tags que siguen en su sitio a los dos lados de un cambio (las anclas). Es del recorrido: si entre ellas se pone, se quita o se cambia un tag y la suma sigue igual, solo cambió lo de en medio (R-DAT-021). |
+| Posición en tiempo | Los segundos de recorrido desde el ancla hasta un tag, sumando la mitad de las pasadas de cada paso. Es tiempo, nunca distancia; un tag que no se puede situar no se interpola (R-TIM-011). |
+| Valla | Límite de la horquilla de un tramo: p95 + max(p95 − p50, margen mínimo, resolución). Por encima, una transición es una parada candidata (R-FLO-007). |
+| Retención | Transición lenta —por encima del p95 de su tramo, con al menos el margen de espera— con un AGV delante que no se iba (R-FLO-008). |
+| Cuello de botella | Tag donde se concentran las retenciones más de lo que da el azar por el tiempo que los AGV pasan ahí: donde se forma cola. Si fluye, no es una avería (R-FLO-008). |
+| Punto conflictivo | Tags vecinos con más paradas sin explicación, de varios AGV, de las que da el azar por sus pasadas. Dice dónde, no por qué (R-FLO-009). |
+| Zona oscura | Tramo donde el hueco entre dos lecturas es mucho mayor que el típico del circuito, porque un tag se salta o porque el tramo tarda: ahí una parada se ve tarde (R-GRA-014). |
+| Primero de la cola (bloqueo) | La parada de una cola sin nadie parado delante. Si pasa dos minutos de lo habitual con la producción en marcha, es un bloqueo: se dice dónde, cuánto, cuántos quedaron detrás y cuántas lecturas críticas hubo mientras tanto. Sin causa (R-AGV-018, R-EVI-006). |
 | Periodo de inactividad | Intervalo dentro de la cobertura en el que un objeto no produce lecturas. Como un AGV detenido no emite, la inactividad no se distingue del fallo de comunicación por la ausencia en sí, sino por el contexto colectivo, el punto de la última lectura y el calendario. |
 | Instante de cambio | Última lectura antes de un silencio o de un cambio sostenido de comportamiento. Es `inferred`: marca el último momento con evidencia, no el instante real en que el objeto dejó de funcionar. |
 | Expediente de objeto | Vista que reúne todo lo conocido sobre un AGV o un tag concreto, con su contraste de cohorte, su inactividad y su evidencia navegable. No confundir con el expediente de incidencia. |
 | Lectura | Evento observado procedente de una fuente: instante, AGV, tag y procedencia. |
 | Oportunidad | Paso contextualmente sustentado en el que un tag podría haber sido leído. No equivale a inventar una lectura. |
 | Vuelta | Recorrido segmentado de un AGV a través de una secuencia/ciclo del circuito, con confianza explícita. |
-| Ancla | Tag por el que se corta una vuelta. Sin ninguna declarada, es el ciclo dominante que el propio grafo revela y la vuelta nunca es `observed`. Declarada y presente en el ciclo reconstruido (`lap_anchors`, R-GRA-009), solo rota dónde se corta ese mismo ciclo —nunca qué tags lo forman— y una vuelta `completa` cortada por ella sí puede ser `observed`; una `parcial` no, porque uno de sus extremos es siempre un corte de los datos. |
+| Ancla | Tag por el que se corta una vuelta. Sin ninguna declarada, es el ciclo dominante que el propio grafo revela y la vuelta nunca es `observed`. Declarada y presente en el ciclo reconstruido (`lap_anchors`, R-GRA-009), solo rota dónde se corta ese mismo ciclo —nunca qué tags lo forman— y una vuelta `completa` cortada por ella sí puede ser `observed`; una `parcial` no, porque uno de sus extremos es siempre un corte de los datos. En la suma entre anclas (R-DAT-021) la palabra se usa en plural y es otra cosa: cualquier tag que sigue en su sitio a los dos lados de un cambio. |
 | Tramo | Relación topológica entre dos nodos/tags o puntos funcionales consecutivos. |
 | Grafo teórico | Topología procedente de plano, inventario o configuración. |
 | Grafo observado | Transiciones contenidas directamente en las lecturas normalizadas. |

@@ -1,11 +1,18 @@
 ---
 document_id: TT-GOLD-023
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
-last_updated: 2026-09-16
+last_updated: 2026-09-25
 ---
 
 # TC-023 — Entrega diferida detectada por la monotonía
+
+> **Nota del 2026-09-25.** El propietario confirma que la hora del fichero es la de **recepción en el
+> servidor**. Con esa hora, una lectura que llega tarde no desordena la pila, así que la premisa de
+> este caso —la entrega diferida se ve como inversiones— no describe la fuente real. El caso se
+> conserva como comprobación de **integridad**: un fichero con inversiones se señala y sus filas se
+> conservan, sin rechazarlo. La entrega retrasada real se ve como lecturas que llegan juntas y la
+> cubre R-DAT-020 (TC-187 a TC-190).
 
 ## Propósito y reglas cubiertas
 

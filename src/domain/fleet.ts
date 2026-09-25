@@ -17,7 +17,13 @@
  *
  * Cada hueco sin carga lleva además **cómo reapareció** el AGV (R-AGV-017, `silence-kind.ts`):
  * parado en su sitio, un tag o varios más allá, una hora o más fuera, o por un tag de mantenimiento.
- * Un hueco que ese tramo tiene a menudo en ese turno no es un hueco: se dibuja leyendo.
+ * Un hueco que ese tramo tiene a menudo en ese turno no es un hueco: se dibuja leyendo. Y cada
+ * hueco lleva también **qué hacía el resto** (R-AGV-018, `flow-stops.ts`): producción parada, en cola
+ * detrás de otro parado, o nada que lo explique.
+ *
+ * Ningún AGV cambia de circuito, así que **no tener lecturas no es no estar**: N cuenta los AGV
+ * asignados **en el circuito** —leyendo, cargando, parados o circulando sin leer—, y aparte cuántos
+ * están leyendo. Quedan fuera solo mantenimiento y una hora o más sin leer que nada del resto explica.
  *
  * Nada de esto decide por qué un vehículo está ausente, en silencio o leyendo sin estar asignado:
  * lo enseña con sus tramos (R-EVI-006).
@@ -25,7 +31,7 @@
 
 import { mergeIntervals, type Interval } from "./coverage.js";
 import type { Reading } from "./reading.js";
-import type { SilenceDetail, SilenceKind } from "./silence-kind.js";
+import type { SilenceDetail, SilenceKind, StopJustification } from "./silence-kind.js";
 
 /** Un periodo de asignación de un AGV al circuito: `[desde, hasta)`. `hasta` nulo = sigue asignado. */
 export interface FleetPeriod {
@@ -122,6 +128,10 @@ export interface FleetSegment {
   /** Solo en `silencio` y `ausente`: cómo reapareció (R-AGV-017). Sin él, un ausente corto. */
   readonly kind?: GapKind;
   readonly detail?: SilenceDetail;
+  /** Qué hacía el resto mientras tanto (R-AGV-018). */
+  readonly justification?: StopJustification;
+  /** Solo en un bloqueo: cuántos AGV quedaron detrás en cola. */
+  readonly blocking?: number;
 }
 
 /** Un hueco del expediente, con su causa y, si se clasificó, cómo reapareció el AGV. */
@@ -131,6 +141,8 @@ export interface FleetGap {
   readonly cause: "silencio" | "carga-online";
   readonly kind?: SilenceKind;
   readonly detail?: SilenceDetail;
+  readonly justification?: StopJustification | null;
+  readonly blocking?: number;
 }
 
 export interface FleetVehicle {
@@ -145,8 +157,10 @@ export interface FleetVehicle {
 export interface FleetCount {
   readonly fromUtcMs: number;
   readonly toUtcMs: number;
-  /** N: asignados que leen o cargan. */
-  readonly inService: number;
+  /** N: asignados en el circuito —leyendo, cargando, o parados o sin leer entre dos lecturas—. */
+  readonly inCircuit: number;
+  /** De esos, los que están leyendo. */
+  readonly reading: number;
   /** M: asignados en ese momento. */
   readonly assigned: number;
   /** Los que leen o cargan sin estar asignados. Nunca suman a N. */
@@ -182,9 +196,22 @@ export interface FleetInput {
    * de cobertura— es desconexión y no un ausente corto (R-AGV-017). Sin valor por defecto.
    */
   readonly longAbsenceMs: number;
+  /**
+   * Cuándo estuvo parada la producción (R-AGV-018). Un borde sin lecturas que cae dentro no es una
+   * ausencia: el AGV esperaba con el resto.
+   */
+  readonly productionStops: readonly Interval[];
 }
 
-type Piece = [number, number, FleetState, (GapKind | undefined)?, (SilenceDetail | undefined)?];
+/** Lo que acompaña a un tramo sin lecturas. Se compara por referencia al fusionar tramos. */
+interface Mark {
+  readonly kind?: GapKind;
+  readonly detail?: SilenceDetail;
+  readonly justification?: StopJustification;
+  readonly blocking?: number;
+}
+
+type Piece = [number, number, FleetState, (Mark | undefined)?];
 
 /** Parte `pieces` por los bordes de `spans` y aplica `inside`/`outside` a cada trozo. */
 function splitBy(
@@ -193,12 +220,12 @@ function splitBy(
   relabel: (state: FleetState, inside: boolean) => FleetState,
 ): Piece[] {
   const out: Piece[] = [];
-  for (const [from, to, state, kind, detail] of pieces) {
+  for (const [from, to, state, mark] of pieces) {
     let cursor = from;
     // Un tramo que cambia de estado pierde su clase: «fuera» o «sin datos» no reaparecen de ningún sitio.
     const piece = (a: number, b: number, inside: boolean): Piece => {
       const next = relabel(state, inside);
-      return next === state ? [a, b, state, kind, detail] : [a, b, next];
+      return next === state ? [a, b, state, mark] : [a, b, next];
     };
     for (const span of spans) {
       if (span.to <= cursor || span.from >= to) continue;
@@ -214,13 +241,18 @@ function splitBy(
 
 function mergeAdjacent(pieces: readonly Piece[]): FleetSegment[] {
   const out: FleetSegment[] = [];
-  for (const [from, to, state, kind, detail] of pieces) {
+  const marks = new WeakMap<FleetSegment, Mark | undefined>();
+  for (const [from, to, state, mark] of pieces) {
     if (to <= from) continue;
     const last = out[out.length - 1];
-    if (last !== undefined && last.state === state && last.toUtcMs === from && last.kind === kind && last.detail === detail) {
-      out[out.length - 1] = { ...last, toUtcMs: to };
+    if (last !== undefined && last.state === state && last.toUtcMs === from && marks.get(last) === mark) {
+      const merged = { ...last, toUtcMs: to };
+      marks.set(merged, mark);
+      out[out.length - 1] = merged;
     } else {
-      out.push({ fromUtcMs: from, toUtcMs: to, state, ...(kind === undefined ? {} : { kind }), ...(detail === undefined ? {} : { detail }) });
+      const segment: FleetSegment = { fromUtcMs: from, toUtcMs: to, state, ...(mark ?? {}) };
+      marks.set(segment, mark);
+      out.push(segment);
     }
   }
   return out;
@@ -228,6 +260,19 @@ function mergeAdjacent(pieces: readonly Piece[]): FleetSegment[] {
 
 const IN_SERVICE: ReadonlySet<FleetState> = new Set(["leyendo", "carga"]);
 const ASSIGNED: ReadonlySet<FleetState> = new Set(["leyendo", "carga", "silencio", "ausente"]);
+
+/**
+ * En el circuito, salvo prueba en contra: ningún AGV cambia de circuito, así que un asignado sin
+ * lecturas sigue ahí (R-AGV-018). Quedan fuera solo el que se fue o volvió por mantenimiento y el que
+ * lleva una hora o más sin leer sin que nada del resto lo explique: de esos no hay con qué decir dónde
+ * estaban.
+ */
+function inCircuit(segment: FleetSegment): boolean {
+  if (!ASSIGNED.has(segment.state)) return false;
+  if (segment.kind === "mantenimiento") return false;
+  const explained = segment.justification === "produccion" || segment.justification === "cola";
+  return !(segment.kind === "desconexion" && !explained);
+}
 
 /** La vida de cada AGV en tramos continuos, y el recuento N de M a lo largo de la ventana. */
 export function buildFleetTimeline(input: FleetInput): FleetTimeline {
@@ -295,12 +340,20 @@ export function buildFleetTimeline(input: FleetInput): FleetTimeline {
     // Antes de la primera lectura o después de la última, un hueco más corto que el umbral de
     // silencio es el ritmo normal de lectura; más largo, el AGV no estaba (o no se sabe si estaba), y
     // a partir de `longAbsenceMs` es desconexión (R-AGV-017).
-    const edge = (from: number, to: number, detail: SilenceDetail): Piece =>
-      to - from < input.minGapMs
-        ? [from, to, "leyendo"]
-        : to - from >= input.longAbsenceMs
-          ? [from, to, "ausente", "desconexion", detail]
-          : [from, to, "ausente"];
+    // Un borde que cae en una parada de la producción es esperar con el resto: parado, justificado.
+    const edge = (from: number, to: number, detail: SilenceDetail): Piece => {
+      if (to - from < input.minGapMs) return [from, to, "leyendo"];
+      const stopped = input.productionStops.reduce(
+        (sum, stop) => sum + Math.max(0, Math.min(to, stop.to) - Math.max(from, stop.from)),
+        0,
+      );
+      if (stopped >= 0.5 * (to - from)) {
+        return [from, to, "silencio", { kind: "parada", detail, justification: "produccion" }];
+      }
+      return to - from >= input.longAbsenceMs
+        ? [from, to, "ausente", { kind: "desconexion", detail }]
+        : [from, to, "ausente"];
+    };
     const edgeDetail = (
       edgeKind: "inicio" | "fin" | "todo",
       lastTagBefore: string | null,
@@ -336,7 +389,15 @@ export function buildFleetTimeline(input: FleetInput): FleetTimeline {
           if (gap.cause === "carga-online") pieces0.push([gap.fromUtcMs, gap.toUtcMs, "carga"]);
           // Lo que ese tramo tarda a menudo en ese turno no es un hueco (R-AGV-017).
           else if (gap.kind === "habitual") pieces0.push([gap.fromUtcMs, gap.toUtcMs, "leyendo"]);
-          else pieces0.push([gap.fromUtcMs, gap.toUtcMs, "silencio", gap.kind, gap.detail]);
+          else {
+            const mark: Mark = {
+              ...(gap.kind === undefined ? {} : { kind: gap.kind }),
+              ...(gap.detail === undefined ? {} : { detail: gap.detail }),
+              ...(gap.justification === undefined || gap.justification === null ? {} : { justification: gap.justification }),
+              ...(gap.blocking === undefined || gap.blocking === 0 ? {} : { blocking: gap.blocking }),
+            };
+            pieces0.push([gap.fromUtcMs, gap.toUtcMs, "silencio", mark]);
+          }
           cursor = Math.max(cursor, gap.toUtcMs);
         }
         if (last > cursor) pieces0.push([cursor, last, "leyendo"]);
@@ -398,7 +459,8 @@ function countOverTime(vehicles: readonly FleetVehicle[], coverage: readonly Int
     const to = sorted[index] as number;
     const middle = (from + to) / 2;
     if (!coverage.some((span) => middle >= span.from && middle <= span.to)) continue;
-    let inService = 0;
+    let circuit = 0;
+    let reading = 0;
     let assigned = 0;
     let unassignedActive = 0;
     vehicles.forEach((vehicle, v) => {
@@ -408,20 +470,22 @@ function countOverTime(vehicles: readonly FleetVehicle[], coverage: readonly Int
       const segment = vehicle.segments[pointer];
       if (segment === undefined || segment.fromUtcMs > middle) return;
       if (ASSIGNED.has(segment.state)) assigned += 1;
-      if (IN_SERVICE.has(segment.state)) inService += 1;
+      if (inCircuit(segment)) circuit += 1;
+      if (segment.state === "leyendo") reading += 1;
       if (segment.state === "leyendo-sin-asignar") unassignedActive += 1;
     });
     const last = counts[counts.length - 1];
     if (
       last !== undefined &&
       last.toUtcMs === from &&
-      last.inService === inService &&
+      last.inCircuit === circuit &&
+      last.reading === reading &&
       last.assigned === assigned &&
       last.unassignedActive === unassignedActive
     ) {
       counts[counts.length - 1] = { ...last, toUtcMs: to };
     } else {
-      counts.push({ fromUtcMs: from, toUtcMs: to, inService, assigned, unassignedActive });
+      counts.push({ fromUtcMs: from, toUtcMs: to, inCircuit: circuit, reading, assigned, unassignedActive });
     }
   }
   return counts;

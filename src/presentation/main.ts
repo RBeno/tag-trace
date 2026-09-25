@@ -39,7 +39,9 @@ import {
   laneOccupancyChart,
   readMatrixHeatmap,
   ringChart,
+  segmentBandChart,
   trendMultiplesChart,
+  type BandRow,
   type DwellRow,
   type ForkData,
   type Formats,
@@ -48,6 +50,9 @@ import {
   type TrendPanel,
 } from "./diagnostic-charts.js";
 import { PROVISIONAL_CONFIG } from "../domain/config.js";
+import { bandsCsv } from "../domain/segment-bands.js";
+import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
+import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
@@ -201,7 +206,7 @@ summaryPanel.hidden = true;
 const listsPanel = element("section", "panel");
 const listsInput = element("input");
 listsInput.type = "file";
-listsInput.accept = ".csv,.txt,text/csv,text/plain";
+listsInput.accept = ".xlsx,.csv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 listsInput.id = "lists-file";
 const listsLabel = element("label", undefined, "Listas de tags");
 listsLabel.htmlFor = "lists-file";
@@ -214,7 +219,7 @@ const listsNote = element("p", "muted", "");
  */
 const fleetInput = element("input");
 fleetInput.type = "file";
-fleetInput.accept = ".csv,.txt,text/csv,text/plain";
+fleetInput.accept = ".xlsx,.csv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 fleetInput.id = "fleet-file";
 const fleetLabel = element("label", undefined, "Historial de flota");
 fleetLabel.htmlFor = "fleet-file";
@@ -1060,6 +1065,8 @@ function renderViews(views: CircuitViews): void {
   viewsPanel.append(element("h3", undefined, "Composición del circuito"));
   viewsPanel.append(element("p", "muted", cohortLine));
   renderShapes(views);
+  renderCircuitState(views);
+  renderFranjas(viewsPanel, views, { finding, formatInstant, formatTick, duration, circuitId: state.circuitId });
   renderCriticalPoints(views);
   renderCharging(views);
   renderFifo(views);
@@ -1115,6 +1122,7 @@ function renderFleet(views: CircuitViews): void {
     ),
   );
   viewsPanel.append(fleetCountChart(fleet, state.coverage, FORMATS));
+  renderFlowStops(fleet);
 
   if (fleet.historyLoaded) {
     const neverRead = assigned.filter((vehicle) => vehicle.readings === 0).map((vehicle) => vehicle.agvId);
@@ -1141,14 +1149,451 @@ function renderFleet(views: CircuitViews): void {
             ? "1 AGV lee en el circuito sin estar asignado"
             : `${unassigned.length} AGV leen en el circuito sin estar asignados`,
           unassigned.join(", "),
-          "No cuentan como en funcionamiento. O el historial no recoge un cambio, o vienen de otro " +
-            "circuito.",
+          "No cuentan en el circuito. O el historial no recoge un cambio, o vienen de otro circuito.",
           ["flota-sin-asignar", "circuito"],
         ),
       );
     }
   }
   viewsPanel.append(fleetLifelineChart(fleet, FORMATS));
+}
+
+/**
+ * Las paradas leídas contra el flujo (R-AGV-018): cuándo estuvo parada la producción y si todos
+ * siguieron después por su sitio y en orden, y los primeros de cola que no avanzaron sin nada que lo
+ * explique. Hechos con su evidencia; la causa la pone una persona (R-EVI-006).
+ */
+function renderFlowStops(fleet: CircuitViews["fleet"]): void {
+  const { production, blockages } = fleet;
+  const basisText =
+    production.basis === "criticos"
+      ? `ninguna lectura en los ${production.basisTags} tags críticos`
+      : "ninguna lectura de toda la flota: no hay tags críticos declarados con que contrastarlo";
+  if (production.stops.length > 0) {
+    const when = production.stops.map(
+      (stop) =>
+        `${formatTick(stop.fromUtcMs)} a ${formatTick(stop.toUtcMs)}` +
+        (stop.sameTimeOn.length > 0 ? " (se repite a esa hora otro día)" : ""),
+    );
+    const exceptions = production.stops.flatMap((stop) => stop.notInPlace);
+    const orderBroken = production.stops.filter((stop) => stop.orderKept === false);
+    const vehicles = Math.max(...production.stops.map((stop) => stop.vehicles));
+    const resumed =
+      exceptions.length === 0 && orderBroken.length === 0
+        ? `En todas, los AGV parados siguieron por su tag y en el mismo orden (hasta ${vehicles} a la vez): ` +
+          "no salieron del circuito."
+        : [
+            exceptions.length === 0
+              ? ""
+              : `No siguieron por su sitio: ${exceptions
+                  .slice(0, 5)
+                  .map((entry) => `${entry.agvId} (de ${entry.fromTagId} a ${entry.toTagId})`)
+                  .join(", ")}${exceptions.length > 5 ? "…" : ""}.`,
+            orderBroken.length === 0
+              ? ""
+              : `El orden cambió: ${orderBroken
+                  .flatMap((stop) => stop.orderChanges)
+                  .slice(0, 4)
+                  .map((change) => `${change.agvId} aparece delante de ${change.passed}`)
+                  .join(", ")}.`,
+          ]
+            .filter((part) => part !== "")
+            .join(" ");
+    viewsPanel.append(
+      finding(
+        production.stops.length === 1
+          ? "La producción se paró 1 vez"
+          : `La producción se paró ${production.stops.length} veces`,
+        when.join(" · "),
+        `Tramos con ${basisText}, más largos de lo que el azar explica en ese turno. ${resumed}`.trim(),
+        ["produccion-parada", "circuito"],
+      ),
+    );
+  }
+  const shown = blockages.slice(0, PER_KIND);
+  for (const blockage of shown) {
+    const where = blockage.functionAtTag === null ? blockage.tagId : `${blockage.tagId} (${blockage.functionAtTag})`;
+    viewsPanel.append(
+      finding(
+        `${blockage.agvId}: el primero de la cola, sin avanzar ${duration(blockage.toUtcMs - blockage.fromUtcMs)}`,
+        `En ${where}, de ${formatTick(blockage.fromUtcMs)} a ${formatTick(blockage.toUtcMs)}; lo habitual hasta ` +
+          `${blockage.nextTagId}: ${duration(blockage.usualMs)}`,
+        `Nadie delante que lo retuviera y la producción en marcha: ${blockage.basisReads} lecturas ` +
+          `${production.basis === "criticos" ? "en los tags críticos" : "de la flota"} mientras tanto. ` +
+          (blockage.behind.length === 0
+            ? "Nadie quedó detrás."
+            : `${blockage.behind.length} AGV quedaron detrás: ${blockage.behind.slice(0, 6).join(", ")}` +
+              `${blockage.behind.length > 6 ? "…" : ""}.`),
+        ["bloqueo", `${blockage.agvId} ${blockage.tagId} ${blockage.fromUtcMs}`],
+      ),
+    );
+  }
+  if (blockages.length > shown.length) {
+    viewsPanel.append(
+      lazyDetails(`Ver los ${blockages.length} primeros de cola sin avanzar`, () =>
+        plainTable(
+          ["AGV", "Tag", "Desde", "Hasta", "Lo habitual", "Detrás", "Lecturas mientras tanto"],
+          blockages.map((blockage) => [
+            blockage.agvId,
+            blockage.tagId,
+            formatTick(blockage.fromUtcMs),
+            formatTick(blockage.toUtcMs),
+            duration(blockage.usualMs),
+            String(blockage.behind.length),
+            String(blockage.basisReads),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/**
+ * El estado normal del circuito (R-TIM-009): lo que se mide con la horquilla de cada tramo en
+ * producción —cuellos de botella, puntos conflictivos, zonas oscuras y paradas sin explicación—, la
+ * noche aparte, y el cambio de la horquilla entre el primer y el último periodo cargados. Nada de
+ * esto nombra causas (R-EVI-006).
+ */
+function renderCircuitState(views: CircuitViews): void {
+  const { circuitState } = views;
+  if (circuitState.cohorts.length === 0) return;
+  const pad = (hour: number): string => String(hour).padStart(2, "0");
+  const nightLabel = `de ${pad(circuitState.night.fromHour)}:00 a ${pad(circuitState.night.toHour)}:00`;
+  const hours = (ms: number): string => `${(ms / 3_600_000).toFixed(1).replace(".", ",")} h`;
+  const exposure = circuitState.exposure;
+  viewsPanel.append(element("h3", undefined, "Estado normal del circuito"));
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      `Tiempo cargado: ${hours(exposure.produccionMs)} de producción, ${hours(exposure.nocheMs)} de noche ` +
+        `(${nightLabel}) y ${hours(exposure.paradaMs)} con la producción parada. Las horquillas y los ` +
+        "hallazgos de esta sección usan solo producción: la noche se mide aparte y las paradas no miden nada.",
+    ),
+  );
+  const few = (ids: readonly string[]): string => (ids.length > 4 ? `${ids.slice(0, 4).join(", ")}…` : ids.join(", "));
+  const chance = (expected: number): string =>
+    expected < 0.1 ? "menos de 0,1" : expected.toFixed(1).replace(".", ",");
+
+  for (const cohort of circuitState.cohorts) {
+    const shape = views.shapes.find((entry) => entry.cohortId === cohort.cohortId);
+    const measured = cohort.state;
+    if (circuitState.cohorts.length > 1) viewsPanel.append(element("p", "muted", `Circuito ${cohort.cohortId}:`));
+
+    for (const bottleneck of measured.bottlenecks.slice(0, PER_KIND)) {
+      viewsPanel.append(
+        finding(
+          `Cuello de botella en ${bottleneck.tagId}`,
+          `${bottleneck.retentions} esperas detrás de un AGV que no avanzaba, en ${bottleneck.episodes} colas ` +
+            `(la más larga, de ${bottleneck.longestQueue}); ${duration(bottleneck.waitMs)} de espera en total`,
+          `El azar daría ${chance(bottleneck.expected)} con el tiempo que los AGV pasan ahí. ` +
+            (bottleneck.blockages === 0
+              ? "La cola fluye: el primero siempre acaba avanzando. "
+              : `${bottleneck.blockages} veces el primero no avanzó en dos minutos o más. `) +
+            "Una cola que fluye es saturación o un pulmón, no una avería.",
+          ["cuello-de-botella", bottleneck.tagId],
+        ),
+      );
+    }
+    for (const point of measured.conflictPoints.slice(0, PER_KIND)) {
+      const where = point.tags.join(" y ");
+      viewsPanel.append(
+        finding(
+          point.ofOneVehicle === null ? `Punto conflictivo en ${where}` : `${point.ofOneVehicle} para una y otra vez en ${where}`,
+          `${point.stops} paradas sin explicación` +
+            (point.ofOneVehicle === null ? ` de ${point.vehicles.length} AGV (${few(point.vehicles)})` : ", todas del mismo AGV"),
+          `El azar daría ${chance(point.expected)} con las pasadas de ese sitio. En cada una, ` +
+            "nadie delante lo retenía y la producción seguía. " +
+            (point.ofOneVehicle === null
+              ? "Dice dónde, no por qué."
+              : "Siendo de un solo AGV, es de ese AGV y no del sitio."),
+          ["punto-conflictivo", point.tags.join("+")],
+        ),
+      );
+    }
+    for (const zone of measured.darkZones.slice(0, PER_KIND)) {
+      const first = zone.tags[0] ?? "—";
+      const last = zone.tags[zone.tags.length - 1] ?? "—";
+      viewsPanel.append(
+        finding(
+          `Zona oscura de ${first} a ${last}`,
+          `${duration(zone.gapMs)} entre dos lecturas al pasar por ahí; lo típico del circuito, ${duration(zone.typicalMs)}`,
+          (zone.cause === "salta-tag"
+            ? `El ${Math.round(zone.skipShare * 100)} % de las pasadas se salta algún tag de la zona: falta información ` +
+              "porque esos tags se leen poco. "
+            : "Los tags se leen, pero el tramo tarda: ahí un AGV pasa mucho tiempo sin dar señal. ") +
+            "Una parada en esta zona se ve tarde.",
+          ["zona-oscura", first],
+        ),
+      );
+    }
+    if (measured.explainedSlow.length > 0) {
+      viewsPanel.append(
+        element(
+          "p",
+          "muted",
+          "No cuentan como zona oscura, porque su espera la explica una parada precisa o un semáforo: " +
+            measured.explainedSlow.map((entry) => `${entry.tagId} (${criticalFunctionLabel(entry.function)})`).join(", ") +
+            ".",
+        ),
+      );
+    }
+
+    // Las paradas sin explicación, una a una: el ejemplo del propietario. Las de un punto conflictivo
+    // ya tienen su tarjeta; aquí van las sueltas.
+    const inPoints = new Set(measured.conflictPoints.flatMap((point) => point.tags));
+    const unexplained = measured.unexplained.produccion.filter((stop) => !inPoints.has(stop.fromTagId));
+    for (const stop of unexplained.slice(0, PER_KIND)) {
+      const ahead = stop.aheadEvidence;
+      viewsPanel.append(
+        finding(
+          `${stop.agvId}: ${duration(stop.excessMs)} de más en ${stop.fromTagId}`,
+          `De ${formatTick(stop.fromUtcMs)} a ${formatTick(stop.toUtcMs)}, hasta ${stop.toTagId}; lo normal en ese tramo, ` +
+            `${duration(stop.usualMs)}`,
+          (ahead === null
+            ? "Nadie delante en medio circuito. "
+            : `Nadie delante que lo retuviera: ${ahead.agvId} iba ${ahead.distanceAtStart} tags por delante` +
+              (ahead.tagsAdvanced === null ? " y siguió. " : ` y avanzó ${ahead.tagsAdvanced} mientras tanto. `)) +
+            "La producción seguía. Qué lo paró no lo dice el dato.",
+          ["parada-sin-explicacion", `${stop.agvId} ${stop.fromTagId} ${stop.fromUtcMs}`],
+        ),
+      );
+    }
+    const allUnexplained = [...measured.unexplained.produccion, ...measured.unexplained.noche];
+    if (allUnexplained.length > PER_KIND) {
+      viewsPanel.append(
+        lazyDetails(`Ver las ${allUnexplained.length} paradas sin explicación`, () =>
+          plainTable(
+            ["AGV", "Tramo", "Desde", "Hasta", "Lo normal", "De más", "Régimen"],
+            allUnexplained.map((stop) => [
+              stop.agvId,
+              `${stop.fromTagId} → ${stop.toTagId}`,
+              formatTick(stop.fromUtcMs),
+              formatTick(stop.toUtcMs),
+              duration(stop.usualMs),
+              duration(stop.excessMs),
+              stop.regime === "noche" ? "noche" : "producción",
+            ]),
+          ),
+        ),
+      );
+    }
+
+    // Lecturas que llegaron juntas al servidor (R-DAT-020): primero dónde se concentran, lo demás plegado.
+    const grouped = cohort.groupedDelivery;
+    const deliveryText = (delivery: (typeof grouped.deliveries)[number]): string =>
+      `de ${delivery.fromTagId} a ${delivery.tags[delivery.tags.length - 1] ?? "—"} (${formatTick(delivery.fromUtcMs)}): ` +
+      `tras ${duration(delivery.gapMs)} sin nada, ${delivery.tags.length} lecturas en ${duration(delivery.spreadMs)}; ` +
+      `el recorrido entero tardó ${duration(delivery.totalMs)}, lo normal ${duration(delivery.usualMs)}: ` +
+      (delivery.kind === "sin-parada" ? "no paró" : "hubo una espera en algún punto de ese tramo, sin poder situarla");
+    if (!grouped.evaluated) {
+      viewsPanel.append(element("p", "muted", `Lecturas que llegaron juntas al servidor: sin evaluar (${grouped.reason ?? "—"}).`));
+    } else if (grouped.total > 0) {
+      viewsPanel.append(
+        element(
+          "p",
+          "muted",
+          `La hora del fichero es la de llegada al servidor. ${grouped.total} ${grouped.total === 1 ? "vez" : "veces"} un AGV ` +
+            "pasó un rato sin dar señal y después llegaron varias lecturas casi a la vez: se hicieron antes y llegaron " +
+            "juntas. Para medir tiempos se toma el recorrido entero, del tag de antes del hueco al último que llegó; el " +
+            "hueco no cuenta como parada.",
+        ),
+      );
+      for (const vehicle of grouped.vehicles.slice(0, PER_KIND)) {
+        const latest = [...grouped.deliveries].reverse().find((delivery) => delivery.agvId === vehicle.id);
+        viewsPanel.append(
+          finding(
+            `${vehicle.id}: le llegan lecturas juntas`,
+            `${vehicle.count} veces, cuando el azar daría ${chance(vehicle.expected)} con los tramos que recorre`,
+            (latest === undefined ? "" : `La última, ${deliveryText(latest)}. `) +
+              "Apunta a la comunicación de ese AGV; la causa no la dice el dato.",
+            ["entrega-agrupada-agv", vehicle.id],
+          ),
+        );
+      }
+      for (const site of grouped.sites.slice(0, PER_KIND)) {
+        const vehicles = [...new Set(grouped.deliveries.filter((delivery) => delivery.fromTagId === site.id).map((delivery) => delivery.agvId))];
+        viewsPanel.append(
+          finding(
+            `Lecturas juntas al pasar por ${site.id}`,
+            `${site.count} veces, de ${vehicles.length} AGV (${few(vehicles)}), cuando el azar daría ${chance(site.expected)} ` +
+              "con las pasadas de ese sitio",
+            "Apunta a la comunicación en ese punto del circuito; la causa no la dice el dato.",
+            ["entrega-agrupada-sitio", site.id],
+          ),
+        );
+      }
+      viewsPanel.append(
+        lazyDetails(
+          `Ver las ${grouped.total} veces que llegaron lecturas juntas` +
+            (grouped.deliveries.length < grouped.total ? ` (las ${grouped.deliveries.length} más recientes)` : ""),
+          () =>
+            plainTable(
+              ["AGV", "Desde", "Llegaron juntas", "Hueco", "En", "Recorrido", "Lo normal", "Lectura"],
+              grouped.deliveries.map((delivery) => [
+                delivery.agvId,
+                `${delivery.fromTagId} (${formatTick(delivery.fromUtcMs)})`,
+                delivery.tags.join(" → "),
+                duration(delivery.gapMs),
+                duration(delivery.spreadMs),
+                duration(delivery.totalMs),
+                duration(delivery.usualMs),
+                delivery.kind === "sin-parada" ? "no paró" : "espera sin situar",
+              ]),
+            ),
+        ),
+      );
+    }
+
+    // Ritmo de cada AGV y quién retiene a otros (R-AGV-019, R-AGV-020): hechos con su cifra, sin causa.
+    const pace = cohort.pace;
+    const whereText = (where: (typeof pace.vehicles)[number]["where"]): string =>
+      where === null || where === "toda-la-linea" ? "en toda la línea" : `solo en la zona ${where.map((zone) => `«${zone}»`).join(" y ")}`;
+    const paced = pace.vehicles.filter((vehicle) => vehicle.verdict !== null);
+    for (const vehicle of paced.slice(0, PER_KIND)) {
+      const shift = Math.abs(vehicle.ratio / vehicle.fleetRatio - 1);
+      viewsPanel.append(
+        finding(
+          `${vehicle.agvId} va un ${Math.round(shift * 100)} % más ${vehicle.verdict === "mas-lento" ? "lento" : "rápido"} que la flota, ${whereText(vehicle.where)}`,
+          `La mitad de sus tramos tarda ${vehicle.ratio.toFixed(2).replace(".", ",")} veces lo habitual del tramo; la de la flota, ` +
+            `${vehicle.fleetRatio.toFixed(2).replace(".", ",")} (${vehicle.samples} tramos)`,
+          "Contra la horquilla de cada tramo, en producción y sin contar paradas ni esperas detrás de otro. Con tantos " +
+            "tramos una diferencia pequeña ya sale por encima del azar: solo se enseña desde un 5 %. La causa no la dice " +
+            "el dato.",
+          ["ritmo-agv", vehicle.agvId],
+        ),
+      );
+    }
+    const holding = pace.holders.filter((holder) => holder.expected !== null);
+    for (const holder of holding.slice(0, PER_KIND)) {
+      viewsPanel.append(
+        finding(
+          `${holder.agvId} retiene a otros AGV`,
+          `${holder.retentions} veces, a ${holder.retained.length} AGV distintos (${few(holder.retained)}), cuando el azar daría ` +
+            `${chance(holder.expected as number)} con sus pasadas`,
+          `Iba delante, más despacio de lo habitual en ese tramo, y los de detrás esperaron ${duration(holder.waitMs)} en total, ` +
+            `en ${few(holder.sites)}. Quien retiene no tiene por qué pararse: basta con que tarde más donde otros vienen ` +
+            "detrás. La causa no la dice el dato.",
+          ["retiene-agv", holder.agvId],
+        ),
+      );
+    }
+    if (pace.vehicles.length > 0) {
+      if (paced.length === 0 && holding.length === 0) {
+        viewsPanel.append(
+          element("p", "muted", "Ningún AGV va un 5 % o más lento o más rápido que la flota, y nadie retiene a otros más de lo que da el azar."),
+        );
+      }
+      const holderOf = new Map(pace.holders.map((holder) => [holder.agvId, holder]));
+      viewsPanel.append(
+        lazyDetails(`Ver el ritmo de los ${pace.vehicles.length} AGV`, () =>
+          plainTable(
+            ["AGV", "Tramos", "Ritmo frente a la flota", "Lectura", "Retenciones", "Esperas detrás"],
+            pace.vehicles.map((vehicle) => {
+              const holder = holderOf.get(vehicle.agvId);
+              return [
+                vehicle.agvId,
+                String(vehicle.samples),
+                percent(vehicle.ratio / vehicle.fleetRatio),
+                vehicle.verdict === null ? "a su paso" : `${vehicle.verdict === "mas-lento" ? "más lento" : "más rápido"}, ${whereText(vehicle.where)}`,
+                String(holder?.retentions ?? 0),
+                holder === undefined ? "—" : duration(holder.waitMs),
+              ];
+            }),
+          ),
+        ),
+      );
+    }
+
+    // La noche, medida aparte.
+    const nightDiffers = measured.night.filter(
+      (entry) => Math.abs(Math.log(entry.nocheP50Ms / Math.max(1, entry.produccionP50Ms))) >= Math.log(1.5),
+    );
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        `De noche (${nightLabel}): ` +
+          (nightDiffers.length === 0
+            ? "ningún tramo cambia la mitad o más respecto a producción. "
+            : `${nightDiffers.length} tramos cambian la mitad o más respecto a producción (` +
+              nightDiffers
+                .slice(0, 4)
+                .map((entry) => `${entry.from} → ${entry.to}: de ${duration(entry.produccionP50Ms)} a ${duration(entry.nocheP50Ms)}`)
+                .join("; ") +
+              `${nightDiffers.length > 4 ? "…" : ""}). `) +
+          `${measured.unexplained.noche.length} paradas sin explicación, medidas contra la horquilla de noche.`,
+      ),
+    );
+
+    // La horquilla de cada tramo del anillo, dibujada, y en CSV para guardarla.
+    if (shape !== undefined) {
+      const marksOf = new Map<string, string[]>();
+      const mark = (tagId: string, label: string): void => {
+        marksOf.set(tagId, [...(marksOf.get(tagId) ?? []), label]);
+      };
+      for (const entry of measured.bottlenecks) mark(entry.tagId, "cuello de botella");
+      for (const entry of measured.conflictPoints) for (const tagId of entry.tags) mark(tagId, "punto conflictivo");
+      for (const entry of measured.darkZones) for (const tagId of entry.tags.slice(0, -1)) mark(tagId, "zona oscura");
+      const ringRows: BandRow[] = shape.tags.map((tagId, index) => {
+        const next = shape.tags[(index + 1) % shape.tags.length] as string;
+        const pair = cohort.bands.find((entry) => entry.from === tagId && entry.to === next);
+        return {
+          from: tagId,
+          to: next,
+          produccion: pair?.produccion ?? null,
+          noche: pair?.noche ?? null,
+          marks: marksOf.get(tagId) ?? [],
+        };
+      });
+      viewsPanel.append(segmentBandChart(ringRows, nightLabel));
+    }
+    const download = element("button", undefined, "Descargar horquillas (CSV)");
+    download.setAttribute("type", "button");
+    download.addEventListener("click", () => {
+      // Con BOM y `;`: lo abre una hoja de cálculo en español sin preguntar ni romper tildes.
+      const csv = `\ufeff${bandsCsv(cohort.bands)}`;
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `horquillas-${state.circuitId ?? "circuito"}-${cohort.cohortId}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+    viewsPanel.append(
+      download,
+      element(
+        "p",
+        "muted",
+        `Resolución de la fuente: ${cohort.resolutionMs >= 60_000 ? "un minuto" : "un segundo"}; la valla nunca queda a ` +
+          `menos de ${duration(cohort.marginMs)} del 95 %. Guardar una horquilla como referencia y compararla con las ` +
+          "siguientes es la memoria del circuito (F4): hoy se compara el primer periodo cargado con el último.",
+      ),
+    );
+
+    // El cambio de la horquilla entre el primer y el último periodo (R-TIM-010).
+    if (cohort.changes !== null) {
+      const { earlyPeriod, latePeriod, changes } = cohort.changes;
+      const periods = `${formatTick(earlyPeriod.from)}–${formatTick(earlyPeriod.to)} frente a ${formatTick(latePeriod.from)}–${formatTick(latePeriod.to)}`;
+      if (changes.length === 0) {
+        viewsPanel.append(element("p", "muted", `Entre ${periods}, ningún tramo se sale de su horquilla.`));
+      }
+      for (const change of changes.slice(0, PER_KIND)) {
+        viewsPanel.append(
+          finding(
+            `${change.from} → ${change.to}, ${change.kind === "mas-lento" ? "más lento" : "más rápido"}` +
+              (change.regime === "noche" ? " de noche" : ""),
+            `La mitad de las pasadas tardaba ${duration(change.early.p50Ms)} y ahora ${duration(change.late.p50Ms)}`,
+            `Comparado dentro del mismo régimen, ${periods}. ` +
+              (change.kind === "mas-lento"
+                ? "La mitad de las pasadas de ahora tarda más que el 80 % de las de antes."
+                : "El 80 % de las pasadas de ahora tarda menos que la mitad de las de antes."),
+            ["cambio-de-horquilla", `${change.from} ${change.to} ${change.regime}`],
+          ),
+        );
+      }
+    }
+  }
 }
 
 type Matrix = CircuitViews["readMatrices"][number];
@@ -1550,22 +1995,42 @@ function renderVehicleTrends(matrix: Matrix): void {
  * pone una persona (R-EVI-006).
  */
 function renderTagChanges(views: CircuitViews): void {
-  const { changes, adoption } = views.tagChanges;
-  const explained = new Set<string>();
-  for (const change of changes) {
-    if (change.kind === "cambio") {
-      explained.add(change.oldTagId);
-      explained.add(change.newTagId);
-    } else {
-      explained.add(change.tagId);
-    }
-  }
+  const { adoption } = views.tagChanges;
+  const tagsOfChange = (change: CircuitViews["tagChanges"]["changes"][number]): readonly string[] =>
+    change.kind === "cambio" ? [change.oldTagId, change.newTagId] : [change.tagId];
+  const carded = new Set(views.tagChanges.changes.flatMap(tagsOfChange));
+  const pairs = new Set(
+    views.tagChanges.changes.flatMap((change) => (change.kind === "cambio" ? [`${change.oldTagId}>${change.newTagId}`] : [])),
+  );
+
+  // Cambios de estructura dentro del fichero, por la suma entre anclas (R-DAT-021). Un tramo con tags
+  // que no tienen tarjeta —un bloque cambiado en mantenimiento, cuyos vecinos también cambiaron— o con
+  // una sustitución que el sitio no emparejó sale como una sola tarjeta y quita las de sus tags. Si no,
+  // la suma se añade como una línea a la tarjeta que ya existe.
+  const within = views.franjas.cohorts.flatMap((cohort) =>
+    cohort.structure
+      .filter((set) => set.source === "dentro-del-fichero")
+      .flatMap((set) => set.gaps.map((gap) => ({ gap, atUtcMs: set.atUtcMs }))),
+  );
+  const absorbs = (gap: AnchorGapChange): boolean =>
+    gap.changes.some((change) =>
+      change.kind === "sustituido" ? !pairs.has(`${change.oldTagId}>${change.newTagId}`) : !carded.has(change.tagId),
+    );
+  const absorbed = within.filter((entry) => absorbs(entry.gap));
+  const absorbedTags = new Set(absorbed.flatMap((entry) => changedTags(entry.gap)));
+  const lineFor = (tagId: string): string => {
+    const entry = within.find((candidate) => !absorbs(candidate.gap) && changedTags(candidate.gap).includes(tagId));
+    return entry === undefined ? "" : gapLineFor(tagId, entry.gap, duration);
+  };
+  const changes = views.tagChanges.changes.filter((change) => !tagsOfChange(change).every((tagId) => absorbedTags.has(tagId)));
+
+  const explained = new Set<string>([...carded, ...within.flatMap((entry) => changedTags(entry.gap))]);
   const trendTags = views.readMatrices.flatMap((matrix) =>
     matrix.tags.filter(
       (tag) => !explained.has(tag.tagId) && (tag.changedAtUtcMs !== undefined || tag.trend === "bajando"),
     ),
   );
-  if (changes.length === 0 && trendTags.length === 0) return;
+  if (changes.length === 0 && absorbed.length === 0 && trendTags.length === 0) return;
 
   viewsPanel.append(element("h3", undefined, "Cambios de tag"));
   viewsPanel.append(
@@ -1596,7 +2061,14 @@ function renderTagChanges(views: CircuitViews): void {
       : ` AGV que no lo leen como el resto: ${tagList(issues.map((issue) => `${issue.agvId}, ${factText(issue.fact)}`))}.`;
   };
 
-  const cards: HTMLElement[] = [];
+  const cards: HTMLElement[] = absorbed.map(({ gap, atUtcMs }) => {
+    const text = describeGap(gap, duration);
+    return finding(`${text.title}, ${formatInstant(atUtcMs)}`, text.figure, text.evidence, [
+      "estructura",
+      gap.fromAnchor,
+      gap.toAnchor,
+    ]);
+  });
   for (const change of changes) {
     if (change.kind === "cambio") {
       cards.push(
@@ -1605,7 +2077,7 @@ function renderTagChanges(views: CircuitViews): void {
           `${change.oldTagId} dejó de leerse ${formatInstant(change.oldLastUtcMs)}; ${change.newTagId} empezó ` +
             formatInstant(change.newFirstUtcMs),
           `En el mismo sitio (mismo ${change.neighborSide}, ${change.sharedNeighbor}). Después, la flota pasó ` +
-            `${change.passesAfterOld} veces sin leer ${change.oldTagId}.${adoptionLine(change.newTagId)}`,
+            `${change.passesAfterOld} veces sin leer ${change.oldTagId}.${adoptionLine(change.newTagId)}${lineFor(change.newTagId)}`,
           ["cambio-tag", change.oldTagId, change.newTagId],
         ),
       );
@@ -1614,7 +2086,7 @@ function renderTagChanges(views: CircuitViews): void {
         finding(
           `Tag ${change.tagId}: dejó de leerse`,
           `última lectura ${formatInstant(change.lastUtcMs)}`,
-          `Después, la flota pasó ${change.passesAfter} veces por su sitio sin leerlo.`,
+          `Después, la flota pasó ${change.passesAfter} veces por su sitio sin leerlo.${lineFor(change.tagId)}`,
           ["tag-deja", change.tagId],
         ),
       );
@@ -1623,19 +2095,27 @@ function renderTagChanges(views: CircuitViews): void {
         finding(
           `Tag ${change.tagId}: empezó a leerse`,
           `primera lectura ${formatInstant(change.firstUtcMs)}`,
-          `Antes, la flota pasó ${change.passesBefore} veces por su sitio sin leerlo.${adoptionLine(change.tagId)}`,
+          `Antes, la flota pasó ${change.passesBefore} veces por su sitio sin leerlo.${adoptionLine(change.tagId)}${lineFor(change.tagId)}`,
           ["tag-empieza", change.tagId],
         ),
       );
     }
   }
   for (const card of cards.slice(0, HIGHLIGHTS)) viewsPanel.append(card);
-  if (changes.length > 0) {
+  const total = absorbed.length + changes.length;
+  if (total > 0) {
     viewsPanel.append(
-      lazyDetails(`Ver los ${changes.length} cambios dentro del periodo`, () =>
-        plainTable(
-          ["Tag", "Qué pasó", "Hora", "AGV que no lo leen como el resto"],
-          changes.map((change) => {
+      lazyDetails(`Ver los ${total} cambios dentro del periodo`, () =>
+        plainTable(["Tag", "Qué pasó", "Hora", "AGV que no lo leen como el resto"], [
+          ...absorbed.map(({ gap, atUtcMs }) => [
+            gap.changes
+              .map((change) => (change.kind === "sustituido" ? `${change.oldTagId} → ${change.newTagId}` : change.tagId))
+              .join(", "),
+            describeGap(gap, duration).title,
+            formatInstant(atUtcMs),
+            "—",
+          ]),
+          ...changes.map((change) => {
             const tagId = change.kind === "cambio" ? `${change.oldTagId} → ${change.newTagId}` : change.tagId;
             const what = change.kind === "cambio" ? "cambio de tag" : change.kind === "deja" ? "dejó de leerse" : "empezó a leerse";
             const at =
@@ -1646,7 +2126,7 @@ function renderTagChanges(views: CircuitViews): void {
             const issues = newTag === null ? [] : adoption.filter((issue) => issue.tagId === newTag);
             return [tagId, what, at, issues.length === 0 ? "—" : issues.map((issue) => issue.agvId).join(", ")];
           }),
-        ),
+        ]),
       ),
     );
   }
@@ -1885,10 +2365,18 @@ function renderDrift(views: CircuitViews): void {
   );
   if (drift.tagDrifts.length > 0) viewsPanel.append(driftChart(drift));
 
+  // La suma entre anclas sitúa cada cambio (R-DAT-021): se añade como una línea, sin otra tarjeta.
+  const gaps = views.franjas.cohorts.flatMap((cohort) =>
+    [...cohort.structure].sort((a, b) => (a.source === b.source ? 0 : a.source === "entre-ficheros" ? -1 : 1)).flatMap((set) => set.gaps),
+  );
+  const gapLine = (tagId: string): string => {
+    const gap = gaps.find((candidate) => changedTags(candidate).includes(tagId));
+    return gap === undefined ? "" : gapLineFor(tagId, gap, duration);
+  };
   const sortedTags = [...drift.tagDrifts].sort((a, b) => a.tagId.localeCompare(b.tagId));
   for (const entry of sortedTags.slice(0, 5)) {
     viewsPanel.append(
-      finding(`${entry.tagId}: ${kindLabel[entry.kind]}`, detailOf(entry), evidenceOf(entry), [
+      finding(`${entry.tagId}: ${kindLabel[entry.kind]}`, detailOf(entry), `${evidenceOf(entry)}${gapLine(entry.kind === "sustitucion-candidata" ? (entry.nuevoTagId ?? entry.tagId) : entry.tagId)}`, [
         "deriva",
         entry.kind,
         entry.tagId,
@@ -1966,7 +2454,8 @@ function renderDrift(views: CircuitViews): void {
 function renderCriticalPoints(views: CircuitViews): void {
   const problems = views.criticalPointsProblems ?? [];
   const candidates = views.criticalPoints.flatMap((cohort) => cohort.candidates);
-  if (candidates.length === 0 && problems.length === 0) return;
+  const atMinute = views.criticalPoints.some((cohort) => !cohort.timeSignatures);
+  if (candidates.length === 0 && problems.length === 0 && !atMinute) return;
 
   type Candidate = NonNullable<CircuitViews["criticalPoints"]>[number]["candidates"][number];
 
@@ -1993,6 +2482,16 @@ function renderCriticalPoints(views: CircuitViews): void {
         "o descartar en planta; la función real la da la lista de críticos.",
     ),
   );
+  if (atMinute) {
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        "La hora de esta fuente va al minuto: no se buscan paradas precisas ni semáforos, que se " +
+          "reconocen por cuánto dura la espera y eso, al minuto, no se puede medir.",
+      ),
+    );
+  }
 
   for (const problem of problems) {
     viewsPanel.append(finding("Punto crítico declarado que no se pudo usar", "—", problem));
@@ -2150,6 +2649,7 @@ function renderFifo(views: CircuitViews): void {
 /** Una duración en la unidad que se lee de un vistazo. `null` es «no se sabe», nunca cero. */
 function duration(ms: number | null): string {
   if (ms === null) return "—";
+  if (ms < 90_000) return `${Math.round(ms / 1000)} s`;
   const minutes = Math.round(ms / 60_000);
   if (minutes < 90) return `${minutes} min`;
   return `${(minutes / 60).toFixed(1)} h`;
@@ -2186,22 +2686,32 @@ function explain(tag: TagRow, readers: VehicleReadingView["tags"][number] | unde
   } else if (readers === undefined) {
     base = `${tag.lowReaders.length} AGV casi nunca lo leen (${few(tag.lowReaders)}) y ${tag.highReaders.length} casi siempre`;
   } else {
-    // Quién no lo lee nunca, quién dejó de leerlo y quién lo lee poco: la diferencia, sin causa.
+    // Quién no lo lee nunca, quién dejó de leerlo y quién lo lee poco: la diferencia, sin causa. «Nunca»
+    // lleva sus pasadas —0 de 5 no pesa lo mismo que 0 de 41—, y el verbo concuerda con uno o varios.
+    const verb = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
     const parts: string[] = [];
-    if (readers.never.length > 0) parts.push(`${readers.never.length} AGV no lo leen nunca (${few(readers.never)})`);
-    if (readers.stopped.length > 0) parts.push(`${readers.stopped.length} dejaron de leerlo (${few(readers.stopped)})`);
+    if (readers.never.length > 0) {
+      const never = [...readers.never].sort((a, b) => b.passes - a.passes);
+      const shown = never.slice(0, 3).map((entry) => `${entry.agvId}: 0 de ${entry.passes}`);
+      parts.push(
+        `${verb(readers.never.length, "AGV no lo lee nunca", "AGV no lo leen nunca")} (${shown.join(", ")}${never.length > 3 ? "…" : ""})`,
+      );
+    }
+    if (readers.stopped.length > 0) {
+      parts.push(`${verb(readers.stopped.length, "dejó de leerlo", "dejaron de leerlo")} (${few(readers.stopped)})`);
+    }
     if (readers.weak.length > 0) {
       const weak = [...readers.weak].sort((a, b) => a.hits / a.passes - b.hits / b.passes);
       const shown = weak.slice(0, 3).map((entry) => `${entry.agvId}: ${percent(entry.hits / entry.passes)}`);
-      parts.push(`${readers.weak.length} lo leen poco (${shown.join(", ")}${weak.length > 3 ? "…" : ""})`);
+      parts.push(`${verb(readers.weak.length, "lo lee poco", "lo leen poco")} (${shown.join(", ")}${weak.length > 3 ? "…" : ""})`);
     }
-    parts.push(`${readers.good} lo leen bien`);
+    parts.push(verb(readers.good, "lo lee bien", "lo leen bien"));
     base = parts.join("; ");
   }
   // Cómo se probó el paso importa tanto como el porcentaje: una tasa sostenida por tiempo es más
   // débil que una sostenida por los vecinos, y el usuario tiene que poder verlo sin preguntar.
   const vias: string[] = [];
-  if (tag.byTime > 0) vias.push(`${tag.byTime} se deducen por el tiempo`);
+  if (tag.byTime > 0) vias.push(`${tag.byTime} ${tag.byTime === 1 ? "se deduce" : "se deducen"} por el tiempo`);
   if (tag.byOrder > 0) vias.push(`${tag.byOrder} por el orden de los AGV`);
   if (tag.unproven > 0) vias.push(`${tag.unproven} sin confirmar`);
   return vias.length === 0 ? base : `${base}. De las pasadas, ${vias.join(", ")}.`;

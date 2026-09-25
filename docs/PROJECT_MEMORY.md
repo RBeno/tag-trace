@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.11.0
+version: 0.15.1
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-25
 ---
 
 # Memoria compacta del proyecto
@@ -192,3 +192,34 @@ seguir. Decisiones: cuatro estados por hallazgo (pendiente, confirmado, descarta
 botones solo en las tarjetas de hallazgo, guardado automático en el dispositivo y exportación a CSV
 (R-EVI-007, `UX_SPEC.md` §4.3). **Solo la revisión**, que es F3: la consolidación es F4 y espera a
 `CONTINÚA FASE 4`. Cuando llegue, lo pospuesto no bloquea: pasa al periodo siguiente con su motivo.
+
+## El estado normal del circuito (2026-09-25)
+
+Decisiones del propietario: las paradas, los descansos y la noche (22:00–05:00) no alteran las
+mediciones estándar; la noche se mide aparte. Los umbrales salen de los datos de cada tramo: su
+horquilla (p50, p80, p95) y su valla, no una constante (R-TIM-009, R-FLO-007). Con ella se buscan
+cuellos de botella, zonas oscuras y puntos conflictivos, sin causa. La cola es física: retiene quien
+iba delante y no se iba. **La horquilla se descarga en CSV y se compara el primer periodo cargado con
+el último, que es F3**; guardarla como referencia consolidada y compararla mes a mes es F4 y espera a
+`CONTINÚA FASE 4` (OQ-130).
+
+## Tiempos por fichero (2026-09-25)
+
+Decisiones del propietario: una franja es **un fichero**; la hora del fichero es la de **recepción
+en el servidor**, así que una entrega retrasada se ve como lecturas que llegan juntas y no desordena
+la pila (R-DAT-020, nota en ADR-0013 y TC-023). Las mediciones por fichero **se rehacen** desde las
+lecturas guardadas en cada importación y se descargan en CSV; guardar una copia fija es consolidar y
+espera a F4. Por mantenimiento se cambian a veces 2 o 3 tags seguidos, y eso tiene que detectarse
+bien desde las primeras mediciones. Orden aprobado: lecturas agrupadas, medición por fichero y
+posición en tiempo, cambios de estructura por la suma entre anclas, y ritmo por AGV y quién retiene.
+Un tag cambiado nunca es ancla: por eso un bloque de tres cambiados a la vez queda situado entero entre
+las dos anclas que lo rodean, cuando el vecino compartido (R-DAT-017, R-DAT-019) deja suelto el del
+medio. Qué tags hay no depende de la hora; la suma sí, y se compara en un solo régimen (R-DAT-021).
+El ritmo de un AGV se mide contra la horquilla de cada tramo y frente a la flota, sin paradas ni
+esperas, con prueba de signo y un efecto mínimo; por fichero, para ver si se vuelve más lento. Quién
+retiene es del AGV de delante, no del sitio: en un cuello cada uno retiene cuando le toca (R-AGV-019,
+R-AGV-020).
+
+Los libros de Excel se entregan como ficheros; la aplicación solo los importa (propietario,
+2026-09-25): las plantillas de listas y flota y el circuito de cada análisis se generan fuera del
+programa, y en la interfaz no hay descargas de Excel.

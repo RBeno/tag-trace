@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.18.0
+version: 0.24.1
 status: baseline-candidate
-last_updated: 2026-09-24
+last_updated: 2026-09-25
 ---
 
 # Catálogo de algoritmos
@@ -414,7 +414,9 @@ pareja.
 
 `src/domain/vehicle-reading.ts`, sobre la matriz ya medida dentro de la vida de cada tag. Cuenta un
 tag contra un AGV solo si, entre los demás con pasadas suficientes, al menos `fleetReadsWellShare` lo
-leen a `highRate` o más. Cada celda es **nunca** (0 aciertos con `minPassesForNever` pasadas),
+leen a `highRate` o más. Cada celda es **nunca** (0 aciertos, con cola binomial ≤ `maxChance` frente a la tasa del resto en
+ese tag, tenga las pasadas que tenga; hasta la Parte 48 exigía además `minPassesForNever` y con menos
+salía como «poco» con un 0 %),
 **desde una hora** (racha final de `minPassesForNever` tras leerlo a `highRate` o más) o **poco**
 (por debajo de `highRate` y con cola binomial inferior ≤ `maxChance` frente a la tasa del resto en ese
 tag). «Muchos» es `manyTagsShare` de los tags comparados con un mínimo de `minManyTags`. La salida son
@@ -448,6 +450,233 @@ lectura para que se compare a ojo.
 última de un tramo de cobertura es desconexión si dura `longAbsenceMs` o más; si no, un ausente sin
 clase (o leyendo, por debajo del umbral de silencio). Un hueco `habitual` se dibuja leyendo y cuenta
 como en funcionamiento (R-AGV-014).
+
+## 6.6 Paradas contra el flujo, implementado (R-AGV-018)
+
+`src/domain/flow-stops.ts`, antes que cualquier tiempo habitual.
+
+**Paradas de la producción** (`productionStops`). La base son las lecturas de los tags críticos
+declarados (sin ninguno, las de toda la flota, `basis: "flota"`). Su ritmo se mide **por turno**
+—lecturas entre tiempo cubierto—, leyendo la hora local una vez por cuarto de hora. Cada hueco entre
+lecturas de la base, dentro de un tramo de cobertura (y los bordes del tramo), es parada si dura al
+menos `minProductionStopMs` y si `huecos del turno × e^(−ritmo × duración) ≤ maxFalseStops`: el
+número esperado de huecos así de largos por azar. Una parada «se repite» si otra empieza a la misma
+hora local, ±`sameTimeToleranceMs`, otro día.
+
+**Los tiempos, sin las paradas.** `outsideProductionStops` quita las transiciones que cruzan una
+parada antes de `usualSegmentTimes` y de las firmas de parada precisa y semáforo.
+
+**Paradas de cada AGV** (`flowStops`). Solo transiciones con las dos lecturas en el mismo tramo de
+cobertura, que no toquen una calle de carga ni sean del mismo instante. Desde la Parte 47, una
+parada es una transición que **pasa de la valla de su tramo en su régimen** (§6.7); lo habitual que
+se enseña es el p50 de esa horquilla. El de delante es un AGV aguas abajo, a `reachTags` o menos según
+su último tag leído (en el mismo tag, solo si lo pasó antes). Justificación, en orden: la parada
+solapa una de la producción en la mitad de su exceso o más → `produccion`; uno que ya iba delante al
+empezar **sigue** a `reachTags` o menos en el punto medio y en ese momento va más lento que el p80 de
+su propio tramo → `cola`, con él como quien retiene; si no, `sin-explicacion`, con el más cercano por
+delante (hasta media vuelta) y cuántos tags avanzó mientras tanto. Hasta la Parte 46, `cola` exigía
+que el de delante tuviera él mismo una parada: detrás de un cuello de botella, donde el de delante
+tarda lo normal de ese sitio, el que esperaba salía sin explicación. Las colas se siguen hasta su cabeza; una cabeza sin
+justificar con exceso de `headStallMs` o más es un bloqueo, con las paradas encadenadas detrás y las
+lecturas de la base durante el bloqueo.
+
+**Cómo salen de una parada de la producción.** Por su sitio: el mismo tag, uno más allá en el anillo,
+o un paso que se da a menudo (una rama o una calle tienen su propio siguiente). El orden se compara
+solo entre AGV cercanos (hasta `reachTags + 1` tags): uno que iba detrás y aparece delante después
+se nombra. En el mismo tag no hay orden que comparar.
+
+**En la flota.** Cada hueco del expediente toma la justificación de la parada que empieza donde él, o
+`produccion` si cae en una parada de la producción en su mitad o más. Un borde sin lecturas dentro de
+una parada de la producción es parado y justificado. N cuenta todos los asignados salvo
+mantenimiento y una hora o más sin leer sin justificar (R-AGV-014).
+
+## 6.7 Estado normal del circuito, implementado (R-TIM-009, R-FLO-007/008/009, R-GRA-014, R-TIM-010)
+
+`src/domain/segment-bands.ts` y `src/domain/circuit-state.ts`, por cohorte, después de las paradas de
+la producción.
+
+**Régimen** (`regimeReader`). La hora local del punto medio de cada transición: `noche` si cae en
+`[nightFromHour, nightToHour)` —la ventana puede cruzar la medianoche—, `produccion` si no. Las que
+cruzan una parada de la producción ya se han quitado.
+
+**Horquilla** (`buildSegmentBands`). Por par (desde, hasta) y régimen, con al menos `minBandSamples`
+muestras medibles: p50, p80 y p95 por rango, y la valla `p95 + max(p95 − p50, margen)`, donde el
+margen es el mayor entre `minStopExcessMs` y la resolución de la fuente (un minuto si ningún intervalo
+baja del minuto). `bandFor` da la del par o, si no la tiene y los dos tags están en el anillo, la
+suma de p50, p80 y p95 de los tramos que recorre, con su propia valla.
+
+**Retenciones** (`flowStops`). Una transición entre el p95 y la valla, con al menos `minStopExcessMs`
+sobre el p50 y un AGV delante que retenía según el criterio de `cola`, o una parada en `cola`. Por
+debajo del p95, o con menos espera, coincidir con otro AGV lento cerca es cosa del vaivén de
+cualquier tramo: probado en el escenario de auditoría, donde a partir del p80 salían «colas» en los
+tramos de dos saltos y detrás de cada deuda de reloj del generador.
+
+**Cuello de botella.** Cada retención de producción se atribuye a la cabeza de su cola —si quien
+retenía también estaba retenido en ese momento, se sigue hacia delante— y se cuentan por el tag de
+esa cabeza. La exposición de cada tag es el tiempo que los AGV pasan con él como último leído (la suma
+de las duraciones de las transiciones que salen de él): un AGV retiene mientras está ahí, y en un
+tramo largo o con tags que se leen poco se queda más tiempo como último leído sin estar parado. Lo
+esperado es `(total − propio + 1) × exposición / exposición total`: el ritmo del **resto** del
+circuito, con una más repartida para que dos casos solos no parezcan un patrón. Se marca el tag si
+`tags × P(Poisson(esperado) ≥ recuento) ≤ maxFalsePoints`. Episodios: retenciones que se solapan en
+el tiempo; cola más larga: el máximo simultáneo.
+
+**Punto conflictivo.** Las paradas sin explicación de producción por tag de salida, en ventanas de
+`2 × reachTags + 1` tags del anillo, con las pasadas de la ventana como exposición y la misma prueba.
+Los tags con paradas de las ventanas marcadas se agrupan si distan `reachTags` o menos (dando la
+vuelta al anillo). Con menos de `minVehiclesForContrast` AGV distintos, el punto es de ese AGV.
+
+**Zona oscura.** Para cada tramo del anillo, las duraciones de todas las transiciones de producción
+que lo recorren —directas o saltándose tags, hasta media vuelta—; su mediana es el hueco de
+información del tramo, y lo típico del circuito es la mediana de esas medianas. Un tramo con
+`darkZoneFactor` veces lo típico o más es oscuro, salvo que su tag de salida sea parada precisa o
+semáforo, declarados o candidatos (`explainedSlow`). Los tramos oscuros seguidos forman una zona; la
+causa es `salta-tag` si la mitad o más de las transiciones que la recorren se saltan algún tag.
+
+**Noche y cambios.** La noche se compara tramo a tramo con producción por el p50. Entre el primer y
+el último tramo de cobertura, separados al menos `drift.minGapMs`, se construyen dos horquillas y
+`compareBands` marca `mas-lento` (p50 nuevo > p80 viejo) o `mas-rapido` (p80 nuevo < p50 viejo),
+siempre en el mismo régimen.
+
+**Límite conocido.** En el escenario de auditoría los vehículos no se bloquean entre sí: la cola del
+cuello de botella se planta a mano, y la deuda de reloj con que el generador devuelve el tiempo
+añadido acorta los pasos siguientes. La deuda de la noche se devuelve a un segundo por paso para no
+aplastar la horquilla de noche.
+
+## 6.8 Lecturas que llegaron juntas, implementado (R-DAT-020)
+
+`src/domain/grouped-delivery.ts`, por cohorte, **antes** de cualquier tiempo: lo habitual de cada
+tramo, las horquillas, las paradas y las firmas de tiempo usan ya la secuencia colapsada.
+
+**Por qué.** La hora del fichero es la de recepción en el servidor (propietario, 2026-09-25). Un AGV
+sin comunicación sigue leyendo y vuelca al reconectar: el servidor recibe varias lecturas casi a la
+vez y el hueco de antes parece una parada.
+
+**Horquilla previa.** La misma `buildSegmentBands` sobre las transiciones medibles fuera de las
+paradas de la producción, sin colapsar: una ráfaga es rara y apenas la mueve.
+
+**Firma** (`collapseGroupedDeliveries`), por AGV y en orden, sin tags de calle:
+
+1. el hueco: P → X1 por encima del p95 de su horquilla;
+2. una ráfaga de `minFastSteps` o más transiciones seguidas, cada una del mismo instante o por debajo
+   de `readRate.minTimeRatio × p50` de su tramo, y todas juntas en menos de `minTimeRatio` veces el
+   p50 más corto de ellas;
+3. el hueco se lleva al menos `minTimeRatio` del p50 de P a Q (la última de la ráfaga).
+
+La segunda condición, sobre la ráfaga entera, separa un volcado de un AGV que recupera el ritmo tras
+una espera: dos pasos de medio tramo son rápidos cada uno y juntos cuestan un tramo. La tercera
+separa un volcado de un AGV que va más deprisa que la horquilla de su régimen: se encontró en la
+propia auditoría al empezar la noche, cuando la horquilla ya es la lenta de noche y los AGV aún van a
+ritmo de día; ahí los pasos parecen imposibles de rápidos, pero el hueco es un tramo normal.
+
+**Suma.** Con `bandFor` de P a Q en el régimen del recorrido: dentro de la valla, `sin-parada`; por
+encima, `con-tiempo-de-mas`. Sin horquilla de P a Q no se toca nada.
+
+**Colapso.** La ráfaga se sustituye por una transición de P a Q en el sitio de la primera, y la salida
+conserva el orden de entrada. `flowStops` la juzga como cualquier otra: una espera real sigue saliendo,
+ahora de P a Q.
+
+**Concentración** (`summarizeDeliveries`). Por AGV, con sus transiciones como exposición, y por sitio
+P, con sus pasadas; la misma prueba de Poisson que los cuellos de botella (`concentrated`).
+
+**Sin evaluar** con resolución de minuto (`resolutionMs` > 1 s), y se dice.
+
+## 6.9 Medición por fichero y posición en tiempo, implementado (R-TIM-011, R-TIM-010)
+
+`src/domain/franjas.ts`, por circuito y fichero, con las transiciones ya limpias (lecturas agrupadas
+colapsadas, fuera de las paradas de la producción, medibles).
+
+**Ventanas** (`franjaWindows`). La ventana completa de cada `StoredSource`, en orden de inicio; sin
+ventana completa no se mide, y un fichero con el mismo hash que otro anterior se marca como repetido y
+se mide una sola vez. Sin almacén, la ventana del fichero importado.
+
+**Medición** (`measureFranjaCohort`). Dentro de la ventana, las dos lecturas de cada transición:
+
+- el anillo de la franja con `findDominantCycle`, rotado con `resolveDeclaredAnchor` al ancla efectiva
+  del circuito; si el ancla no está en el anillo de esa franja, `anchorShared` es falso y sus
+  posiciones no se comparan con las demás;
+- la horquilla por tramo y régimen (`buildSegmentBands`), con la primera y la última vez del tramo;
+- la **posición en tiempo** (`timePositions`): el ancla en 0; cada tag, la posición del tag anterior
+  situado más la mediana de producción del paso entre los dos, con al menos `minPositionSamples`
+  pasos; si falta, se prueba desde hasta `tagChanges.maxReadsBetween` tags antes con la mediana del
+  salto directo; si tampoco, sin situar. La vuelta es la del último tag situado al ancla.
+
+**Historia** (`segmentHistories`). Por par y régimen, los ficheros con horquilla en orden, y
+`bandShift` —la regla de R-TIM-010— entre cada dos seguidos: un solo salto que se mantiene frente al
+fichero de antes en todos los siguientes es `escalon`; ningún salto, o varios hacia el mismo lado, con
+el primero y el último desplazados y la mediana monótona, es `deriva`; con dos ficheros, `cambio`. Un
+salto que vuelve atrás no es nada.
+
+**CSV** (`franjaCsv`): `desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s;primera;ultima;posicion_desde_s`.
+
+## 6.10 Cambios de estructura por la suma entre anclas, implementado (R-DAT-021)
+
+`src/domain/anchor-sums.ts`. Compara dos ventanas —antes y después— sobre las secuencias de cada AGV,
+preparadas una vez (`anchorSequences`): sin repeticiones inmediatas y con el tramo de cobertura de
+cada lectura.
+
+**Anclas** (`stableAnchors`). El anillo dominante de cada ventana (`findDominantCycle`, solo con pasos
+dentro de un mismo tramo de cobertura) y la subsecuencia común más larga de los dos, tras rotarlos a un
+tag común. Un tag cambiado solo está en un lado, así que nunca es ancla: por eso un bloque de tres
+cambiados a la vez queda situado entero entre las dos anclas que lo rodean.
+
+**Pasadas** (`passesBetween`). P y la siguiente ancla Q en la secuencia de un AGV, sin otra ancla en
+medio y en el mismo tramo de cobertura. Una lectura de calle corta la pasada; no cuentan las que
+cruzan una parada de la producción ni las que contienen lecturas que llegaron juntas (R-DAT-020). De
+cada una: el régimen de su punto medio, T y el desfase del primer paso por cada tag de en medio.
+
+**Cambio de estructura.** Con **todas** las pasadas de cada lado (qué tags hay no depende de la hora):
+un tag del anillo de antes que no aparece después, o uno del anillo de después que no aparecía antes,
+con (1 − su tasa en su lado)^pasadas del otro lado ≤ `tagChanges.maxChance`. Ser del anillo deja fuera
+un tag de mantenimiento leído alguna vez.
+
+**Emparejamiento** (`pairInOrder`). Programación dinámica que conserva el orden y minimiza la suma de
+|desfase relativo viejo − nuevo| (desfase / p50 de T en su lado); se emparejan todos los del grupo
+pequeño. Sin parámetros.
+
+**Suma.** En producción si los dos lados tienen `anchorSums.minAnchorPasses` pasadas de producción; si
+no, de noche con el mismo mínimo; si no, `sin-medir`. `bandShift` entre los dos lados: `igual`,
+`mas-lento`, `mas-rapido`. Un sustituido está `mismo-sitio` si |Δdesfase| ≤ max(resolución, p80 − p50
+de T después), en el régimen de la suma; si no, `otro-punto`.
+
+**Dónde se mira.**
+
+- Entre ficheros seguidos, con la ventana completa de cada uno.
+- Dentro de cada tramo de cobertura, alrededor de cada grupo de instantes (`windowsAroundChanges`,
+  agrupados si distan menos de `tagChanges.maxOverlapMs`). Los instantes son los cambios de tag por su
+  sitio (R-DAT-019) y los **bordes de lectura** (`structureBoundaries`): la primera lectura de un tag
+  que empieza a leerse, o la última de uno que deja de leerse, a más de `tagChanges.maxOverlapMs` de
+  los extremos del tramo. Antes y después van hasta el grupo vecino, no hasta el final del tramo:
+  otro cambio a medias en un lado mezclaría la suma.
+
+Un mismo cambio se enseña una vez: primero los de dentro de un fichero, que dicen la hora; entre
+ficheros, solo lo que no esté ya dicho.
+
+## 6.11 Ritmo de cada AGV y quién retiene, implementado (R-AGV-019, R-AGV-020)
+
+`src/domain/vehicle-pace.ts`, por cohorte y por fichero.
+
+**Transiciones libres.** Las del cohorte ya limpias (lecturas agrupadas colapsadas, medibles, fuera de
+las paradas de la producción), de régimen producción, que no son una parada ni una retención de
+`flowStops`. Razón = duración / p50 de `bandFor` en producción (su par, o la suma de los tramos del
+anillo que recorre).
+
+**Ritmo** (`vehiclePace`). Por AGV con al menos `bands.minBandSamples` razones: la mediana. La de la
+flota, M, es la mediana de todas. Prueba de signo (`signTest`): razones por encima de M, los empates
+a mitad, aproximación normal de dos colas; multiplicada por los AGV mirados, ≤
+`circuitState.maxFalsePoints`. Y |ritmo / M − 1| ≥ `pace.minPaceShift`. Con zonas, lo mismo con las
+transiciones cuyos dos tags son de la misma zona, frente a la mediana de la flota en esa zona y con el
+azar multiplicado por AGV × zonas. `where`: `toda-la-linea` si ninguna zona con muestras queda por
+debajo del efecto mínimo en esa dirección; si no, las zonas que sí se apartan; si el conjunto no sale
+y una zona sí, esa zona.
+
+**Quién retiene.** Retenciones de producción por `holderAgvId`: veces, AGV retenidos distintos, espera
+sumada y sitios. `concentrated` con la exposición de cada AGV = sus transiciones de producción, y al
+menos `readRate.minVehiclesForContrast` retenidos distintos.
+
+**Por fichero** (`paceInWindow`). Las transiciones de la ventana, con una horquilla hecha solo con
+ellas y el anillo de ese fichero; paradas y retenciones del análisis entero recortadas a la ventana.
+**CSV** (`paceCsv`): `agv;muestras;ritmo;veredicto;retenciones;min_retenidos`.
 
 ## 7. Segmentación de vueltas y huecos
 
@@ -591,6 +820,13 @@ entre circuitos protegido por par de tags: las tres siguen sin firma disponible 
 dato de planta (OQ-121). Tampoco comprueba reconvergencia entre más de un par de ramas a la vez con
 4 o más ramas simultáneas. OQ-122 queda Parcial: responde a cuatro de las siete clases, no a las
 siete.
+
+**Con la hora al minuto, sin firmas de tiempo.** Parada precisa y semáforo se reconocen por la
+duración hasta la siguiente lectura. Si todas las duraciones son múltiplos de un minuto
+(`sourceResolutionMs`, la misma resolución que usa la horquilla), la varianza y los dos grupos salen
+del redondeo y no del vehículo: con dato real al minuto salían decenas de «paradas precisas». No se
+buscan, y la vista lo dice (`timeSignaturesMeasurable`). Bifurcación y cruce no dependen del reloj y
+se siguen buscando.
 
 ## 9. Punto crítico y análisis temporal
 

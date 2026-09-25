@@ -23,7 +23,8 @@ import {
   importReadings,
 } from "../src/ingestion/importer.js";
 import { decodeSource } from "../src/ingestion/decode.js";
-import { CatalogFailure, EXPECTED_STRUCTURE, importCatalog } from "../src/ingestion/catalog.js";
+import { CatalogFailure, EXPECTED_STRUCTURE, importCatalog, importCatalogRows } from "../src/ingestion/catalog.js";
+import { looksLikeZip, readXlsxRows, XlsxError } from "../src/persistence/xlsx.js";
 import { unionReadings } from "../src/ingestion/union.js";
 import { mergeIntervals, sourceCoverage, type Interval } from "../src/domain/coverage.js";
 import { assessAffinity, tagsOf } from "../src/domain/affinity.js";
@@ -48,12 +49,42 @@ import {
   findBifurcationCandidates,
   findPrecisePauseCandidates,
   findTrafficLightCandidates,
+  timeSignaturesMeasurable,
   transitionDurationsByTag,
 } from "../src/domain/critical-points.js";
 import { compareDistantPeriods } from "../src/domain/drift.js";
 import { buildFleetTimeline, mergeFleetPeriods } from "../src/domain/fleet.js";
 import { classifySilence, usualSegmentTimes, type UsualTimes } from "../src/domain/silence-kind.js";
-import { FLEET_STRUCTURE, FleetFailure, importFleetHistory } from "../src/ingestion/fleet-history.js";
+import {
+  bandChangesBetweenPeriods,
+  buildSegmentBands,
+  measurableTransitions,
+  regimeExposure,
+  regimeReader,
+  transitionRegime,
+} from "../src/domain/segment-bands.js";
+import { buildCircuitState } from "../src/domain/circuit-state.js";
+import { collapseGroupedDeliveries, summarizeDeliveries } from "../src/domain/grouped-delivery.js";
+import { franjaWindows, measureFranjaCohort, segmentHistories } from "../src/domain/franjas.js";
+import { paceInWindow, vehiclePace, type VehiclePaceThresholds } from "../src/domain/vehicle-pace.js";
+import {
+  anchorSequences,
+  changedTags,
+  compareAnchorGaps,
+  structureBoundaries,
+  windowsAroundChanges,
+  type AnchorGapChange,
+  type AnchorSumContext,
+  type StructureSet,
+} from "../src/domain/anchor-sums.js";
+import {
+  flowStops,
+  outsideProductionStops,
+  productionStops,
+  type FlowReport,
+  type VehicleStop,
+} from "../src/domain/flow-stops.js";
+import { FLEET_STRUCTURE, FleetFailure, importFleetHistory, importFleetRows } from "../src/ingestion/fleet-history.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -194,6 +225,12 @@ const REPLAY_FRAMES = 200;
  */
 const DURATION_SAMPLE_MAX = 1000;
 
+/**
+ * Lecturas agrupadas que viajan, como mucho, por cohorte: las más recientes. Parámetro técnico, igual
+ * que `DURATION_SAMPLE_MAX`; la vista dice cuántas hubo en total.
+ */
+const DELIVERY_LIST_MAX = 1000;
+
 /** Una muestra de paso fijo: determinista, sin azar, y declarada por quien la enseña. */
 function strideSample(values: readonly number[], max: number): number[] {
   if (values.length <= max) return [...values];
@@ -220,6 +257,7 @@ async function buildViews(
   imported: readonly Reading[],
   zone: string,
   direction: SourceDirection,
+  importedSource: { readonly sourceId: string; readonly sourceHash: string; readonly fileName: string },
 ): Promise<CircuitViews | undefined> {
   const stored =
     circuitId !== undefined && accumulation?.accumulated === true && isAvailable()
@@ -265,7 +303,7 @@ async function buildViews(
   // mezclados no comparten ancla, y buscar un ciclo dominante sobre los dos a la vez produciría un
   // ancla sin sentido para ninguno.
   const { transitions } = buildTransitions(readings, direction, coverage);
-  const cohortAssignment = assignCohorts(readings, transitions);
+  const cohortAssignment = assignCohorts(readings, transitions, PROVISIONAL_CONFIG.cohorts);
 
   const laps: Lap[] = [];
   const shapes: CircuitViews["shapes"][number][] = [];
@@ -285,6 +323,48 @@ async function buildViews(
   const lapAnchorProblems: string[] = [];
   /** Lo que suele tardar cada tramo del anillo, por turno, para el cohorte de cada AGV (R-AGV-017). */
   const usualByVehicle = new Map<string, UsualTimes>();
+  // Cuándo estuvo parada la producción (R-AGV-018): ningún tag crítico leído, y no por azar. Va antes
+  // que cualquier tiempo habitual, porque un descanso no mide un tramo.
+  const production = productionStops(
+    readings,
+    new Set(criticalPointsConfig.funcionOf.keys()),
+    coverage,
+    zone,
+    PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
+    PROVISIONAL_CONFIG.flowStops,
+  );
+  const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
+  const flowReports: FlowReport[] = [];
+  // Régimen de cada instante (R-TIM-009): la noche se mide aparte y no altera el estado normal.
+  const regimeOf = regimeReader(zone, PROVISIONAL_CONFIG.regimes);
+  const circuitStateCohorts: CircuitViews["circuitState"]["cohorts"][number][] = [];
+  // Una franja es un fichero (R-TIM-011): su ventana completa. Sin almacén, la del fichero importado.
+  const windows = franjaWindows(
+    stored !== undefined
+      ? stored.sources.map((source) => ({
+          sourceId: source.sourceId,
+          sourceHash: source.sourceHash,
+          fileName: source.fileName,
+          complete: source.complete,
+        }))
+      : [{ ...importedSource, complete: sourceCoverage(imported).complete }],
+  );
+  const measuredWindows = windows.filter((entry) => entry.duplicateOf === null);
+  // Los tramos de cobertura donde se buscan cambios de estructura, y los instantes de los cambios de
+  // tag que los agrupan (R-DAT-021). Sin almacén, el tramo es el del fichero importado.
+  const structureSpans =
+    coverage.length > 0
+      ? mergeIntervals([...coverage])
+      : [
+          readings.reduce(
+            (span, reading) => ({ from: Math.min(span.from, reading.time.utcMs), to: Math.max(span.to, reading.time.utcMs) }),
+            { from: Infinity, to: -Infinity },
+          ),
+        ];
+  const changeTimes = tagChanges.changes.flatMap((change) =>
+    change.kind === "cambio" ? [change.oldLastUtcMs, change.newFirstUtcMs] : [change.kind === "deja" ? change.lastUtcMs : change.firstUtcMs],
+  );
+  const franjaCohorts: CircuitViews["franjas"]["cohorts"][number][] = [];
 
   for (const cohort of cohortAssignment.cohorts) {
     const vehicleSet = new Set(cohort.vehicles);
@@ -312,13 +392,57 @@ async function buildViews(
     }
     anchors.set(cohort.id, effective);
 
-    const usual = usualSegmentTimes(
+    // Lecturas que llegaron juntas al servidor (R-DAT-020): la hora del fichero es la de llegada, así
+    // que un hueco seguido de una ráfaga no es una parada. Se juzga con una horquilla previa —una
+    // ráfaga es rara y apenas la mueve— y desde aquí todo lo de tiempos usa la ráfaga colapsada.
+    const preliminaryBands = buildSegmentBands(
+      measurableTransitions(outsideProductionStops(cohortTransitions, production.stops), coverage, laneTags),
+      effective.cycle,
+      regimeOf,
+      PROVISIONAL_CONFIG.bands,
+      PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+    );
+    const grouped = collapseGroupedDeliveries(
       cohortTransitions,
+      preliminaryBands,
+      regimeOf,
+      PROVISIONAL_CONFIG.readRate.minTimeRatio,
+      laneTags,
+      PROVISIONAL_CONFIG.groupedDelivery,
+    );
+    const cohortTimeline = grouped.transitions;
+
+    // Las transiciones que cruzan una parada de la producción no miden ningún tramo.
+    const timedTransitions = outsideProductionStops(cohortTimeline, production.stops);
+    const usual = usualSegmentTimes(
+      timedTransitions,
       effective.cycle,
       zone,
       PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
     );
     for (const agvId of cohort.vehicles) usualByVehicle.set(agvId, usual);
+    // La horquilla de cada tramo, por régimen (R-FLO-007): solo con transiciones que miden algo.
+    const measuredTimed = measurableTransitions(timedTransitions, coverage, laneTags);
+    const bands = buildSegmentBands(
+      measuredTimed,
+      effective.cycle,
+      regimeOf,
+      PROVISIONAL_CONFIG.bands,
+      PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+    );
+    const flow = flowStops(
+      {
+        transitions: cohortTimeline,
+        coverage,
+        bands,
+        regimeOf,
+        production,
+        laneTags,
+        functionOf: criticalPointsConfig.funcionOf,
+      },
+      PROVISIONAL_CONFIG.flowStops,
+    );
+    flowReports.push(flow);
 
     const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
     laps.push(...segmentLaps(cohortReadings, direction, coverage, effective.tagId, anchorTruth));
@@ -396,11 +520,14 @@ async function buildViews(
     // anillo — restringir a `anchor.cycle` escondería justo la rama fuera de él que la firma busca.
     const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
     const conCruces = classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce);
-    const paradas = findPrecisePauseCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa);
-    const semaforos = findTrafficLightCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.semaforo);
+    // Las firmas de tiempo, solo en producción: un descanso de 15 min rompería el coeficiente de
+    // variación de una parada precisa (R-AGV-018), y la noche tiene su propio ritmo (R-TIM-009).
+    const productionTimed = timedTransitions.filter((transition) => transitionRegime(transition, regimeOf) === "produccion");
+    const paradas = findPrecisePauseCandidates(productionTimed, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa);
+    const semaforos = findTrafficLightCandidates(productionTimed, PROVISIONAL_CONFIG.criticalPoints.semaforo);
     // Para dibujar la distribución que la firma resume: las duraciones de cada candidato de tiempo y
     // una muestra de referencia con todas las del cohorte (sin pares del mismo instante, R-DAT-013).
-    const durations = transitionDurationsByTag(cohortTransitions);
+    const durations = transitionDurationsByTag(productionTimed);
     const allDurations = [...durations.values()].flat();
     criticalPointCohorts.push({
       cohortId: cohort.id,
@@ -413,6 +540,152 @@ async function buildViews(
       ],
       referenceDurationsMs: strideSample(allDurations, DURATION_SAMPLE_MAX),
       referenceTotal: allDurations.length,
+      timeSignatures: timeSignaturesMeasurable(productionTimed),
+    });
+
+    // El estado normal del circuito (R-TIM-009): una parada precisa o un semáforo, declarados o
+    // candidatos, explican su espera y no son zona oscura.
+    const timeCritical = new Map<string, string>();
+    for (const [tagId, functionName] of criticalPointsConfig.funcionOf) {
+      if (functionName === "parada-precisa" || functionName === "semaforo") timeCritical.set(tagId, functionName);
+    }
+    for (const candidate of [...paradas, ...semaforos]) {
+      if (!timeCritical.has(candidate.tagId)) timeCritical.set(candidate.tagId, candidate.kind);
+    }
+    // El ritmo de cada AGV y quién retiene (R-AGV-019, R-AGV-020), en todo lo cargado y en cada fichero.
+    const paceThresholds: VehiclePaceThresholds = {
+      ...PROVISIONAL_CONFIG.pace,
+      minSamples: PROVISIONAL_CONFIG.bands.minBandSamples,
+      maxFalsePoints: PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
+      minVehiclesForContrast: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
+    };
+    const paceInput = { transitions: measuredTimed, regimeOf, flow, zoneOf: zoneConfig.zoneOf };
+    // La medición de cada fichero (R-TIM-011), con las mismas transiciones limpias.
+    const measures = measuredWindows.map((entry) => {
+      const measure = measureFranjaCohort(
+        { cohortId: cohort.id, transitions: cohortTimeline, measured: measuredTimed, anchorTagId: effective.tagId },
+        entry.window,
+        regimeOf,
+        PROVISIONAL_CONFIG.bands,
+        PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+        PROVISIONAL_CONFIG.franjas,
+        PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
+      );
+      return {
+        sourceId: entry.source.sourceId,
+        ...measure,
+        pace: paceInWindow(
+          paceInput,
+          entry.window,
+          measure.ring,
+          PROVISIONAL_CONFIG.bands,
+          PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+          paceThresholds,
+        ),
+      };
+    });
+    // Tags insertados y sustituidos, por la suma entre anclas (R-DAT-021): entre ficheros seguidos, y
+    // alrededor de cada grupo de cambios de tag dentro de un tramo de cobertura. Un mismo conjunto de
+    // tags cambiados se enseña una sola vez.
+    const anchorContext: AnchorSumContext = {
+      direction,
+      coverage: structureSpans,
+      laneTags,
+      productionStops: production.stops.map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs })),
+      regimeOf,
+      deliveries: grouped.deliveries.map((delivery) => ({
+        agvId: delivery.agvId,
+        fromUtcMs: delivery.fromUtcMs,
+        toUtcMs: delivery.toUtcMs,
+      })),
+      maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
+      resolutionMs: preliminaryBands.resolutionMs,
+    };
+    // Las secuencias se preparan una vez. Dentro de un tramo de cobertura se mira alrededor de los
+    // cambios de tag por su sitio (R-DAT-019) y de donde un tag empieza o deja de leerse: un bloque de
+    // tags seguidos cambiado a la vez no tiene sitio que comparar, porque sus vecinos también cambiaron.
+    const sequences = anchorSequences(cohortReadings, direction, structureSpans);
+    const boundaries = structureBoundaries(sequences, structureSpans, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs);
+    // Un mismo cambio se enseña una vez. Primero dentro de cada fichero, que dice a qué hora; entre
+    // ficheros solo lo que no esté ya dicho: los mismos tags, o menos, de un cambio ya enseñado.
+    const structure: StructureSet[] = [];
+    const shown: (readonly string[])[] = [];
+    const keep = (gaps: readonly AnchorGapChange[]): AnchorGapChange[] =>
+      gaps.filter((gap) => {
+        const tags = changedTags(gap);
+        if (shown.some((earlier) => tags.every((tagId) => earlier.includes(tagId)))) return false;
+        shown.push(tags);
+        return true;
+      });
+    for (const around of windowsAroundChanges([...changeTimes, ...boundaries], structureSpans, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs)) {
+      const gaps = keep(compareAnchorGaps(sequences, around.before, around.after, anchorContext, PROVISIONAL_CONFIG.anchorSums));
+      if (gaps.length > 0) {
+        structure.push({ source: "dentro-del-fichero", beforeSourceId: null, afterSourceId: null, atUtcMs: around.atUtcMs, gaps });
+      }
+    }
+    for (let index = 1; index < measuredWindows.length; index += 1) {
+      const early = measuredWindows[index - 1] as (typeof measuredWindows)[number];
+      const late = measuredWindows[index] as (typeof measuredWindows)[number];
+      const gaps = keep(compareAnchorGaps(sequences, early.window, late.window, anchorContext, PROVISIONAL_CONFIG.anchorSums));
+      if (gaps.length > 0) {
+        structure.push({
+          source: "entre-ficheros",
+          beforeSourceId: early.source.sourceId,
+          afterSourceId: late.source.sourceId,
+          atUtcMs: late.window.from,
+          gaps,
+        });
+      }
+    }
+    franjaCohorts.push({ cohortId: cohort.id, measures, histories: segmentHistories(measures), structure });
+
+    const size = effective.cycle.length;
+    circuitStateCohorts.push({
+      cohortId: cohort.id,
+      pace: vehiclePace({ ...paceInput, bands }, paceThresholds),
+      resolutionMs: bands.resolutionMs,
+      marginMs: bands.marginMs,
+      bands: [...bands.pairs.values()]
+        .filter((pair) => pair.produccion !== null || pair.noche !== null)
+        .map((pair) => {
+          const at = bands.positionOf.get(pair.from);
+          const onRing = at !== undefined && size > 1 && effective.cycle[(at + 1) % size] === pair.to;
+          return { ...pair, position: onRing ? (at as number) : null };
+        })
+        .sort((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity) || a.from.localeCompare(b.from)),
+      state: buildCircuitState(
+        {
+          bands,
+          transitions: measuredTimed,
+          regimeOf,
+          flow,
+          timeCritical,
+          reachTags: PROVISIONAL_CONFIG.flowStops.reachTags,
+          minVehicles: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
+          headStallMs: PROVISIONAL_CONFIG.flowStops.headStallMs,
+        },
+        PROVISIONAL_CONFIG.circuitState,
+      ),
+      groupedDelivery: {
+        evaluated: grouped.evaluated,
+        reason: grouped.reason,
+        total: grouped.deliveries.length,
+        deliveries: grouped.deliveries.slice(-DELIVERY_LIST_MAX),
+        ...summarizeDeliveries(
+          grouped.deliveries,
+          measurableTransitions(cohortTransitions, coverage, laneTags),
+          PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
+        ),
+      },
+      changes: bandChangesBetweenPeriods(
+        measuredTimed,
+        coverage,
+        effective.cycle,
+        regimeOf,
+        PROVISIONAL_CONFIG.bands,
+        PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+        PROVISIONAL_CONFIG.drift.minGapMs,
+      ),
     });
   }
 
@@ -441,6 +714,28 @@ async function buildViews(
   // carga lleva cómo reapareció el AGV (R-AGV-017): el expediente no cambia, esto solo alimenta la
   // vida de cada AGV.
   const maintenance = new Set(entriesOf("mantenimiento").map((entry) => entry.tagId));
+  // Qué hacía el resto durante cada hueco (R-AGV-018): la parada de ese AGV que empieza donde empieza
+  // el hueco, o, si no se pudo medir, si el hueco cae en una parada de la producción.
+  const stopOfGap = new Map<string, VehicleStop>();
+  for (const report of flowReports) {
+    for (const stop of report.stops) stopOfGap.set(`${stop.agvId}\u0000${stop.fromUtcMs}`, stop);
+  }
+  const blockageBehind = new Map<string, number>();
+  for (const report of flowReports) {
+    for (const blockage of report.blockages) {
+      if (blockage.behind.length > 0) blockageBehind.set(`${blockage.agvId}\u0000${blockage.fromUtcMs}`, blockage.behind.length);
+    }
+  }
+  const productionIntervals = production.stops.map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs }));
+  const justificationOf = (agvId: string, from: number, to: number) => {
+    const stop = stopOfGap.get(`${agvId}\u0000${from}`);
+    if (stop !== undefined) return stop.justification;
+    const stopped = productionIntervals.reduce(
+      (sum, stop) => sum + Math.max(0, Math.min(to, stop.to) - Math.max(from, stop.from)),
+      0,
+    );
+    return stopped >= 0.5 * (to - from) ? ("produccion" as const) : null;
+  };
   const fleet = buildFleetTimeline({
     readings,
     coverage,
@@ -448,18 +743,20 @@ async function buildViews(
     inactivity: new Map(
       agvDossiers.map((dossier) => [
         dossier.agvId,
-        dossier.inactivity.map((gap) =>
-          gap.cause === "carga-online"
-            ? gap
-            : {
-                ...gap,
-                ...classifySilence(
-                  gap,
-                  { usual: usualByVehicle.get(dossier.agvId) ?? null, maintenance },
-                  PROVISIONAL_CONFIG.silenceKind,
-                ),
-              },
-        ),
+        dossier.inactivity.map((gap) => {
+          if (gap.cause === "carga-online") return gap;
+          const justification = justificationOf(dossier.agvId, gap.fromUtcMs, gap.toUtcMs);
+          return {
+            ...gap,
+            justification,
+            blocking: blockageBehind.get(`${dossier.agvId}\u0000${gap.fromUtcMs}`) ?? 0,
+            ...classifySilence(
+              gap,
+              { usual: usualByVehicle.get(dossier.agvId) ?? null, maintenance, justification },
+              PROVISIONAL_CONFIG.silenceKind,
+            ),
+          };
+        }),
       ]),
     ),
     coldStarts: new Map(
@@ -469,7 +766,29 @@ async function buildViews(
     ),
     minGapMs: PROVISIONAL_CONFIG.silence.minGapMs,
     longAbsenceMs: PROVISIONAL_CONFIG.silenceKind.longAbsenceMs,
+    productionStops: productionIntervals,
   });
+
+  // Cómo salió cada AGV de cada parada de la producción, sumando los cohortes.
+  const productionView = {
+    basis: production.basis,
+    basisTags: production.basisTags,
+    stops: production.stops.map((stop, index) => {
+      const flows = flowReports.map((report) => report.productionFlow[index]).filter((flow) => flow !== undefined);
+      const orders = flows.map((flow) => flow.orderKept).filter((kept): kept is boolean => kept !== null);
+      return {
+        ...stop,
+        vehicles: flows.reduce((sum, flow) => sum + flow.vehicles, 0),
+        inPlace: flows.reduce((sum, flow) => sum + flow.inPlace, 0),
+        notInPlace: flows.flatMap((flow) => flow.notInPlace),
+        orderKept: orders.length === 0 ? null : orders.every(Boolean),
+        orderChanges: flows.flatMap((flow) => flow.orderChanges),
+      };
+    }),
+  };
+  const blockages = flowReports
+    .flatMap((report) => report.blockages)
+    .sort((a, b) => b.behind.length - a.behind.length || b.excessMs - a.excessMs);
 
   const views: CircuitViews = {
     hourly: hourlyProfile(readings, zone),
@@ -482,7 +801,18 @@ async function buildViews(
     agvDossiers,
     tagDossiers,
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
-    fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null },
+    fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null, production: productionView, blockages },
+    franjas: {
+      sources: windows.map((entry) => ({
+        sourceId: entry.source.sourceId,
+        fileName: entry.source.fileName,
+        from: entry.window.from,
+        to: entry.window.to,
+        duplicateOf: entry.duplicateOf,
+        exposure: regimeExposure([entry.window], productionIntervals, regimeOf),
+      })),
+      cohorts: franjaCohorts,
+    },
     ...(laneConfig.lanes.length === 0 && laneConfig.problems.length === 0
       ? {}
       : {
@@ -530,6 +860,14 @@ async function buildViews(
     ...(fifoCohorts.length === 0 ? {} : { fifo: fifoCohorts }),
     orderWithheld: matrices.reduce((total, matrix) => total + matrix.orderWithheld, 0),
     criticalPoints: criticalPointCohorts,
+    circuitState: {
+      exposure: regimeExposure(dossierCoverage, productionIntervals, regimeOf),
+      night: {
+        fromHour: PROVISIONAL_CONFIG.regimes.nightFromHour,
+        toHour: PROVISIONAL_CONFIG.regimes.nightToHour,
+      },
+      cohorts: circuitStateCohorts,
+    },
     ...(lapAnchorsConfig.problems.length === 0 && lapAnchorProblems.length === 0
       ? {}
       : { lapAnchorProblems: [...lapAnchorsConfig.problems, ...lapAnchorProblems] }),
@@ -698,7 +1036,7 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
     // acumuló, y solo esta fuente si no. Calcularlas siempre sobre el circuito sería mentir cuando
     // la afinidad ha impedido acumular, porque el usuario estaría viendo un conjunto que no
     // incluye el fichero que acaba de cargar.
-    const views = await buildViews(message.circuitId, accumulation, result.readings, zone, result.summary.direction);
+    const views = await buildViews(message.circuitId, accumulation, result.readings, zone, result.summary.direction, result.summary);
 
     emit(
       {
@@ -768,8 +1106,9 @@ async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<
   }
 
   try {
-    const { text } = decodeSource(await file.arrayBuffer());
-    const result = importCatalog(text);
+    // Un libro de Excel se lee directamente, primera hoja; si no, es texto (R-DAT-001: tal cual).
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const result = looksLikeZip(bytes) ? importCatalogRows(await readXlsxRows(bytes)) : importCatalog(decodeSource(bytes.buffer).text);
     const existing = await loadCircuit(circuitId);
     if (existing === undefined) {
       emit(
@@ -824,7 +1163,12 @@ async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<
       jobId,
     );
   } catch (error) {
-    const failure = error instanceof CatalogFailure ? error : null;
+    const failure =
+      error instanceof CatalogFailure
+        ? error
+        : error instanceof XlsxError
+          ? { reason: error.reason, recovery: "Guarda el libro de nuevo en Excel (.xlsx) o expórtalo como CSV." }
+          : null;
     emit(
       {
         type: "error",
@@ -868,8 +1212,10 @@ async function runFleet(message: Extract<ToWorker, { type: "fleet" }>): Promise<
       );
       return;
     }
-    const { text } = decodeSource(await file.arrayBuffer());
-    const result = importFleetHistory(text, existing.zone);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const result = looksLikeZip(bytes)
+      ? importFleetRows(await readXlsxRows(bytes), existing.zone)
+      : importFleetHistory(decodeSource(bytes.buffer).text, existing.zone);
 
     let circuitName: string | null = null;
     if (result.circuits.length > 1) {
@@ -918,7 +1264,12 @@ async function runFleet(message: Extract<ToWorker, { type: "fleet" }>): Promise<
       jobId,
     );
   } catch (error) {
-    const failure = error instanceof FleetFailure ? error : null;
+    const failure =
+      error instanceof FleetFailure
+        ? error
+        : error instanceof XlsxError
+          ? { reason: error.reason, recovery: "Guarda el libro de nuevo en Excel (.xlsx) o expórtalo como CSV." }
+          : null;
     emit(
       {
         type: "error",

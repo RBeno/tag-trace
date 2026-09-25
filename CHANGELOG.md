@@ -2,6 +2,445 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.30.2] - 2026-09-25
+
+Los tres defectos encontrados con las exportaciones reales, corregidos.
+
+### Corregido
+
+- **Circuitos que comparten tramo** (R-DAT-012, `src/domain/cohort.ts`). Dos AGV iban al mismo
+  circuito en cuanto compartían una sola transición, así que tres circuitos con un tramo común
+  salían como uno. El comentario del módulo decía que era el método validado a mano, y no lo era.
+  Ahora:
+  - los AGV se agrupan por el parecido de sus tags;
+  - un grupo es un circuito si tiene **aristas y tags propios** (cinco de cada, como mínimo);
+  - lo demás va al circuito que contiene sus tags, o queda aparte.
+
+  Con solo las aristas, que es como estaba el método a mano, un AGV que se salta tags salía como
+  circuito propio: 9 aristas suyas y ningún tag suyo.
+
+  Con las exportaciones reales:
+  - la de tres circuitos sale como tres, de 9, 3 y 3 AGV;
+  - las demás, como uno solo cada una: 54, 36 y 37 AGV.
+
+  Umbrales en `config.ts` (`cohorts`, draft).
+- **Contraste con Vsystem** (`vsystem.ts`). Un tag declarado que sobraba en un hueco salía como «sin
+  lecturas» aunque se leyera en otro sitio. Ahora sale `fuera-del-anillo`: «se lee fuera del
+  recorrido», `observed`.
+- **Hora al minuto** (R-GRA-007, `critical-points.ts`). Con todas las duraciones en minutos enteros
+  ya no se proponen paradas precisas ni semáforos, porque salían del redondeo: con dato real, decenas
+  de «paradas precisas». La vista dice por qué no hay. Bifurcación y cruce se siguen buscando.
+- Documentación:
+  - R-DAT-012 y R-GRA-007;
+  - `ALGORITHM_CATALOG.md` §8.2 y `DATA_CONTRACTS.md` (circuitos de una exportación);
+  - la nota de F7 en `ROADMAP.md`;
+  - TC-207–209 y la trazabilidad.
+
+## [3.30.1] - 2026-09-25
+
+Los libros de Excel se entregan como ficheros: la aplicación solo los importa.
+
+### Quitado
+
+- Los botones «Descargar plantilla de listas (Excel)», «Descargar plantilla de flota (Excel)» y
+  «Descargar el circuito en Excel», y con ellos `src/domain/list-templates.ts`,
+  `src/presentation/excel-ui.ts` y `vsystemCohortId`. El propietario pidió los ficheros, no
+  herramientas en la aplicación.
+
+### Cambiado
+
+- El escritor de `.xlsx` y las plantillas pasan a `tests/support/` (`xlsx-writer.ts`,
+  `plantillas-excel.ts`), y `scripts/generar-plantillas-excel.ts` las escribe en `local/`. Las pruebas
+  siguen comprobando que la primera hoja de cada plantilla se importa tal cual (TC-204–206).
+- Se conserva la importación del `.xlsx` en listas y flota: sin ella, los libros entregados habría que
+  convertirlos a CSV, que es donde se pierden los ceros a la izquierda.
+
+### Conocido, sin corregir aquí
+
+Encontrado al sacar el circuito de las exportaciones reales, que se entrega aparte (corregido en [3.30.2]):
+
+- Una exportación con **tres circuitos que comparten tramo** sale como un solo circuito: el
+  agrupamiento une dos AGV en cuanto comparten una transición (R-DAT-012). Separados por los AGV de
+  cada uno, salen los tres.
+- En el contraste con Vsystem, un tag declarado que sobra en un hueco sale como «sin lecturas» sin
+  mirar si se lee fuera del recorrido dominante (`classifyGap` en `vsystem.ts`).
+- Con la hora **al minuto** salen igualmente candidatos a parada precisa y semáforo, que se firman con
+  duraciones que esa resolución no da.
+
+## [3.30.0] - 2026-09-25
+
+Libros de Excel para rellenar e importar, y el circuito de cada análisis como borrador de la lista
+«circuito» con sus diferencias con Vsystem.
+
+### Añadido
+
+- **Plantillas de Excel** de las listas del circuito y del historial de flota, hechas en el navegador
+  (el repositorio no guarda ningún `.xlsx`). La primera hoja lleva la cabecera en el orden y con los
+  nombres que el importador busca, las columnas en formato texto —`0712` sigue siendo `0712`—, la
+  cabecera fija y desplegables en `lista` y `funcion` que avisan pero admiten otros valores; una hoja de
+  instrucciones y otra de ejemplo.
+- **Importar el `.xlsx` tal cual** en listas y flota (`src/persistence/xlsx.ts`, primera hoja): sin
+  pasar por CSV, que es donde se pierden los ceros, el separador y la codificación. Una fecha que Excel
+  guardó como número se lee como la que se escribió. Un libro ilegible se rechaza con su motivo, con los
+  límites del zip de `.agvproj`, sin evaluar fórmulas y sin declaraciones de tipo de documento.
+- **Borrador del circuito** (`circuitDraft`): bajo el anillo de cada cohorte, «Descargar el circuito en
+  Excel». El recorrido observado en su orden —el de Vsystem si hay lista cargada—, con la columna
+  `vsystem` diciendo en cada fila dónde difiere, los tags de Vsystem que faltan en su sitio y sin orden,
+  el ancla y los posibles puntos críticos en `nota` (nunca en `funcion`), y lo que se lee fuera del
+  anillo en otra hoja. Se vuelve a importar tal cual; se corrige contra Vsystem antes, porque la lista
+  `circuito` es lo que Vsystem declara (R-GRA-001).
+- El contraste con Vsystem dice ahora de qué cohorte es (`vsystemCohortId`), para que el borrador de
+  cada cohorte use el suyo.
+- Documentación: `DATA_CONTRACTS.md` §3.7, `CONFIG_SCHEMA.md`, `UX_SPEC.md` §5.8, TH-005 en
+  `SECURITY_PRIVACY.md`, glosario, TC-204–206.
+
+### Comprobado y sin comprobar
+
+- Los libros generados se leen con una librería independiente (openpyxl): formato texto, cabecera fija
+  y desplegables como se pretende. **No se han abierto en Excel** en este entorno; el formato es el
+  mínimo que Excel documenta, pero la prueba en Excel queda para el propietario.
+
+## [3.29.0] - 2026-09-25
+
+Cuarta y última entrega sobre los tiempos por fichero: el ritmo de cada AGV y quién retiene a otros.
+
+### Añadido
+
+- **Ritmo de cada AGV** (R-AGV-019, `src/domain/vehicle-pace.ts`). De cada tramo libre —de producción,
+  sin paradas ni esperas detrás de otro, con las lecturas que llegaron juntas colapsadas— lo que tardó
+  frente a la mitad de las pasadas de ese tramo; el ritmo es la mediana, frente a la de la flota. Se
+  señala con dos pruebas a la vez: la de signo, con el azar repartido entre todos los AGV, y un efecto
+  mínimo, porque con miles de tramos un 1 % ya es significativo. Con zonas, «en toda la línea» o «solo en
+  la zona X»; lo segundo solo si en las demás su diferencia no llega al mínimo.
+- **Quién retiene a otros** (R-AGV-020): las retenciones agrupadas por el AGV de delante, frente a lo que
+  da el azar por sus pasadas, a varios AGV distintos. Es del vehículo, no del sitio: en un cuello de
+  botella cada uno retiene cuando le toca.
+- **Por fichero**, contra la horquilla de ese fichero: una tabla en «Mediciones por fichero» con los AGV
+  que se apartan o retienen en alguno, y un segundo CSV por fichero
+  (`agv;muestras;ritmo;veredicto;retenciones;min_retenidos`). En «Estado normal del circuito», las
+  tarjetas «va un 10 % más lento que la flota» y «retiene a otros AGV», y el ritmo de todos plegado. Sin
+  causas.
+- Configuración `pace` (draft): un 5 % de diferencia como mínimo. El resto se reutiliza (muestras de una
+  horquilla, azar de los sitios, AGV de un contraste).
+- Auditoría `auditoria/17`: `ritmo-mas-lento-en-un-fichero` (7122 estirado un 10 % tras la noche, sin
+  `random()`) y `retiene-a-otros` (7107 se queda en el semáforo dentro de su horquilla y los de detrás
+  esperan, con la deuda de reloj). **40 de 40 clases detectadas**; nadie más con ritmo ni retenedor
+  señalado, ni en toda la ventana ni en ningún fichero. 7122 sale a 1,111 en el fichero de después y a su
+  paso en el de antes; en toda la ventana no llega al 5 %, porque solo va más lento en la última parte.
+
+### Corregido antes de publicar
+
+- La primera versión decía «solo en la zona cargada» de 7122, estirado en todas: en la zona vacía iba un
+  6,7 % más lento, pero con menos muestras su prueba no llegaba. Decir «solo aquí» afirma que en las demás
+  va a su paso, y eso lo dice su propia diferencia, no una prueba que no alcanza.
+
+### Cambiado frente al plan
+
+- El plan era que el AGV que retiene doblara su estancia en el cuello de botella; no se llegó a plantar
+  así, porque ahí cada ocupante retiene cuando le toca y no se distinguiría. Se planta en el semáforo, con
+  una espera que cabe en su horquilla, y solo esperan quienes ya lo tenían delante al leer el tag
+  anterior, que es lo que la regla de la cola exige. Y el AGV lento no se estira desde su primera lectura:
+  movería el corte, la rotura, el tag nuevo y la noche lenta de ese AGV; se estira desde la mañana del
+  segundo día, y por eso sale en el fichero de después y no en toda la ventana.
+
+## [3.28.0] - 2026-09-25
+
+Tercera entrega sobre los tiempos por fichero: los tags insertados y sustituidos se leen por la suma
+entre anclas, también cuando se cambian dos o tres seguidos.
+
+### Añadido
+
+- **Suma entre anclas** (R-DAT-021, `src/domain/anchor-sums.ts`). Los tags que siguen en su sitio a
+  los dos lados de un cambio son las anclas: la subsecuencia común de los dos anillos. Un tag cambiado
+  nunca es ancla, así que un bloque de tres cambiados a la vez queda situado entero entre las dos que lo
+  rodean, **incluido el del medio**, que el vecino compartido (R-DAT-017, R-DAT-019) dejaba suelto.
+  - Cambio de estructura: un tag del anillo de un lado que falta en el otro, con la ausencia
+    improbable por azar. Los que faltan y los que aparecen se emparejan en orden por su desfase; lo
+    que sobra es insertado o retirado.
+  - Lectura con la tabla del propietario: «tag nuevo en la línea», «tag nuevo que cambia el recorrido:
+    revisar su configuración», «sustituido en su sitio», «se lee en otro punto», «ya no se lee entre P
+    y Q». Sin causas.
+  - La estructura se lee con todas las pasadas; la suma, en un solo régimen. Con pocas pasadas del
+    mismo régimen a los dos lados, la suma queda sin medir y se dice; los tags cambiados ya se ven.
+- Dónde se mira: entre ficheros seguidos y, dentro de cada tramo de cobertura, alrededor de los
+  cambios de tag y de los **bordes de lectura** (donde un tag empieza o deja de leerse), con el antes y
+  el después hasta el cambio vecino. El mismo cambio se enseña una vez, primero el de dentro del
+  fichero, que dice la hora.
+- Vistas: en «Cambios de tag», un bloque sin tarjetas propias sale como **una sola tarjeta** («Entre P
+  y Q: 3 sustituidos en su sitio») y las tarjetas que ya existían ganan una línea «Entre anclas». En
+  «Mediciones por fichero», las tarjetas de los cambios entre ficheros y las **marcas con forma** en el
+  anillo en tiempo. La comparación entre dos periodos gana la misma línea.
+- Configuración `anchorSums` (draft): cinco pasadas del mismo régimen a cada lado para la suma.
+- Auditoría `auditoria/16`: `tres-sustituidos-seguidos` e `insertado-misma-suma`, plantados tras
+  generar, sin `random()`. **38 de 38 clases detectadas.** Entre los dos ficheros y dentro de la ventana
+  entera sale además lo que ya estaba plantado: 98001 alarga su tramo de 16 s a 28 s (el «20 s → 26 s»
+  del propietario), 60438 → 99001 se lee en otro punto y los dos rotos ya no se leen. Ningún tag sano en
+  un cambio de estructura.
+
+### Corregido antes de publicar
+
+- La primera versión comparaba cada cambio dentro del fichero con **todo** el resto del tramo, y otro
+  cambio quedaba a medias en uno de los lados: el tag nuevo que alarga su tramo salía con la suma
+  igual, y una sustitución como un tag que ya no se lee. Ahora el antes y el después van hasta el
+  cambio vecino.
+- Un tag de mantenimiento leído unas pocas veces salía como «tag nuevo en la línea». Un cambio de
+  estructura tiene que ser del anillo de su lado.
+- Con el mantenimiento a las diez de la noche, el después era todo de noche y, como solo se usaban
+  pasadas de producción, no salía nada. Qué tags hay no depende de la hora: la estructura se lee con
+  todas y la suma se compara en un solo régimen. Lo encontró la prueba de navegador con dos
+  exportaciones.
+- Las entradas [3.25.0], [3.26.0] y [3.27.0] contaban dos clases de auditoría de más (36, 37 y 38): el
+  generador tenía 34, 35 y 36. Las clases y su detección no cambian; la cifra estaba mal escrita y se
+  corrige en su sitio, marcada.
+- La prueba «con una sola exportación» esperaba que solo empezara a leerse el tag nuevo suelto; el
+  tag insertado de la auditoría nueva también empieza a leerse a la hora del corte, y es verdad
+  plantada. El bloque de tres no sale ahí —sus vecinos también cambiaron— y lo ve la suma entre anclas.
+
+## [3.27.0] - 2026-09-25
+
+Segunda entrega sobre los tiempos por fichero: cada fichero se mide por separado y cada tag tiene su
+posición en tiempo.
+
+### Añadido
+
+- **Medición por fichero** (R-TIM-011, `src/domain/franjas.ts`). Una franja es un fichero: cada uno se
+  mide en su ventana completa, con las transiciones ya limpias. Mide:
+  - la horquilla de cada tramo por régimen, con la primera y la última vez que se vio;
+  - el anillo de ese fichero, rotado al ancla del circuito;
+  - la **posición en tiempo** de cada tag: los segundos de recorrido desde el ancla, sumando la mitad
+    de las pasadas de cada paso. Un tag sin medir se salta con el salto directo; si no, queda sin
+    situar, nunca interpolado. Es tiempo, no distancia.
+
+  Un fichero repetido se mide una vez. No se guarda ninguna copia fija: se rehace en cada importación.
+- **Historia de cada tramo entre ficheros** (R-TIM-010 ampliada): un único salto que se mantiene es un
+  escalón en ese fichero; moverse siempre hacia el mismo lado sin saltos es una deriva; con dos
+  ficheros no se distinguen, y se dice. Misma regla de la horquilla (`bandShift`, ahora compartida con
+  `compareBands`).
+- Sección **«Mediciones por fichero»** (`src/presentation/franjas-ui.ts`): tabla de ficheros con un
+  CSV por fichero (`…;primera;ultima;posicion_desde_s`), **el anillo en tiempo** fichero a fichero, y
+  las tarjetas y la **historia** de los tramos que cambian.
+- Configuración `franjas` (draft): cuatro pasos para la mediana de un paso.
+- Auditoría `auditoria/15`: la clase de contexto `posicion-en-tiempo`, con dos ficheros. **36 de 36
+  clases detectadas** (decía 38; corregido en [3.28.0]).
+
+## [3.26.0] - 2026-09-25
+
+Primera de las cuatro entregas aprobadas por el propietario sobre los tiempos por fichero: las
+lecturas que llegaron juntas al servidor dejan de parecer paradas (punto 9).
+
+### Decidido
+
+- **La hora del fichero es la de recepción en el servidor** (propietario, 2026-09-25). Resuelve una
+  contradicción entre documentos: TC-023 y ADR-0013 suponían hora del AGV, y con ella una entrega
+  retrasada se veía como lecturas desordenadas. Con hora de servidor la pila no se desordena: la
+  entrega retrasada se ve como un hueco seguido de varias lecturas casi a la vez. Notas fechadas en
+  ADR-0013, TC-023 y R-DAT-008; la monotonía se sigue midiendo, como integridad de la fuente.
+- Una franja es un fichero, y sus mediciones se rehacen y se descargan en CSV: una copia fija es
+  consolidar (F4). Se aplica en las entregas siguientes.
+
+### Añadido
+
+- **Lecturas que llegaron juntas** (R-DAT-020, `src/domain/grouped-delivery.ts`). La firma, por AGV:
+  - un hueco por encima del p95 de su tramo;
+  - dos o más lecturas casi seguidas, todas juntas en menos de lo que cuesta un tramo;
+  - y el hueco llevándose el recorrido hasta la última que llegó.
+
+  Con la suma dentro de la valla, el AGV **no paró**; con la suma de más, hubo una espera en algún
+  punto de ese tramo, sin poder situarla. En los dos casos, todo el análisis de tiempos (horquillas,
+  paradas, lo habitual, firmas de tiempo) toma el recorrido entero como una sola transición. Con
+  resolución de minuto no se evalúa, y se dice.
+- Tarjetas en «Estado normal del circuito»: el AGV o el sitio donde se concentran, con el test de
+  azar, y la tabla completa plegada. Sin causa: «apunta a la comunicación de ese AGV».
+- Configuración `groupedDelivery` (draft): dos pasos casi seguidos como mínimo. «Imposible de rápido»
+  reutiliza `readRate.minTimeRatio`.
+- Escenario de auditoría `auditoria/14`: la clase `entrega-agrupada`, cuatro ráfagas de 7121 plantadas
+  tras generar, sin `random()` y con el recorrido igual. Informe: **35 de 35 clases detectadas** (decía 37; corregido en [3.28.0]).
+- OQ-131: cómo vuelca un AGV lo que guardó sin comunicación.
+
+### Corregido antes de publicarse
+
+- **Una ráfaga falsa al empezar la noche.** La primera versión de la firma encontró dos ráfagas en
+  AGV sanos a las 22:05: la horquilla de noche de esos tramos es lenta (plantada), y ellos aún iban a
+  ritmo de día, así que sus pasos normales parecían imposibles de rápidos. Faltaba la condición
+  física: en un volcado, el hueco se lleva casi todo el recorrido. Con ella, cero ráfagas falsas.
+
+### Verificado
+
+- Sin el colapso, las cuatro ráfagas eran cuatro paradas «sin explicación» de 7121; con él, ninguna.
+
+## [3.25.1] - 2026-09-25
+
+### Corregido
+
+- **«Lee poco» con un 0 % pasa a «no lo lee nunca»** (R-AGV-016). El propietario lo vio probando con
+  datos de taller: «2 lo leen poco (2049: 0 %, 2083: 0 %)».
+  - La causa: «nunca» exigía además ocho pasadas, y con menos el AGV caía en «poco».
+  - Ahora cero lecturas es «nunca» en cuanto no es casualidad frente a lo que lee el resto (la misma
+    prueba de azar que «poco»), siempre con sus pasadas: «2 AGV no lo leen nunca (2049: 0 de 5,
+    2083: 0 de 6)».
+  - Con pocas pasadas solo sale si el resto lo lee casi siempre; si el azar lo explica, no se dice.
+  - Las ocho pasadas siguen siendo el umbral de «dejó de leerlo desde tal hora».
+  - La prueba de la Parte 43 que fijaba el comportamiento anterior cambia con el motivo escrito
+    (TC-186).
+- **Concordancia en singular** en la tarjeta de tag: «1 AGV no lo lee nunca», «1 dejó de leerlo»,
+  «1 lo lee poco», «1 lo lee bien», «1 se deduce por el tiempo».
+
+## [3.25.0] - 2026-09-25
+
+El estado normal del circuito: lo que pasa en las paradas, los descansos y la noche no altera las
+mediciones estándar. Pedido por el propietario: la noche (22:00–05:00) tiene otro comportamiento y
+también se puede medir; con esas mediciones se detectan cuellos de botella, zonas oscuras y puntos
+conflictivos; los umbrales salen de los datos de cada tramo, y un grafo con una horquilla de tiempos
+se compara con las mediciones futuras para ver derivas o mejoras.
+
+### Añadido
+
+- **Horquilla de tiempos por tramo y régimen** (`src/domain/segment-bands.ts`, R-FLO-007, R-TIM-009).
+  - Régimen por la hora local: producción o noche. Lo que cruza una parada de la producción no entra.
+  - Por par de tags y régimen: p50, p80, p95 y la **valla**, p95 + max(p95 − p50, 30 s, resolución).
+    Con el ejemplo del propietario (el 80 % en 17 s, el resto hasta 30 s), 60 s: 80 s es parada
+    candidata.
+  - Las esperas frecuentes de un semáforo o una parada precisa quedan dentro: son su normal.
+- **Mediciones estándar**, solo en producción (`src/domain/circuit-state.ts`):
+  - **cuello de botella** (R-FLO-008): retenciones —esperas detrás de un AGV que no se iba—
+    concentradas en la cabeza de la cola, contra el tiempo que los AGV pasan ahí;
+  - **punto conflictivo** (R-FLO-009): paradas sin explicación de varios AGV en tags vecinos, contra
+    sus pasadas; si son de un solo AGV, se dice que es de ese AGV;
+  - **zona oscura** (R-GRA-014): el hueco entre lecturas al pasar por un tramo, 1,5 veces el típico
+    o más, con su causa (se salta el tag o el tramo tarda); una parada precisa o un semáforo lo
+    explican y se dicen aparte;
+  - **paradas sin explicación** una a una, con quién iba delante y cuánto avanzó mientras tanto: el
+    ejemplo del propietario;
+  - **la noche**, medida aparte, con sus propias paradas contra su propia horquilla.
+- **Cambio de horquilla entre el primer y el último periodo** (R-TIM-010): más lento si la mitad de
+  ahora tarda más que el 80 % de antes; más rápido si el 80 % de ahora tarda menos que la mitad de
+  antes; siempre en el mismo régimen.
+- **Vista** «Estado normal del circuito»: tarjetas de cada hallazgo, el gráfico de la horquilla de
+  cada tramo (barra de p50 a p95, raya en la valla, barra gris de noche, eje logarítmico, lectura al
+  tocar y tabla) y **Descargar horquillas (CSV)**.
+- Configuración provisional `regimes`, `bands` y `circuitState`, con su justificación (OQ-129).
+- TC-180–185: `tests/unit/segment-bands.test.ts` (10), `tests/unit/circuit-state.test.ts` (10), tres
+  casos nuevos en `flow-stops.test.ts`, auditoría y navegador.
+- Auditoría `auditoria/13` con cinco clases nuevas —noche lenta, parada aislada, punto conflictivo,
+  cuello de botella y zona oscura— y una prueba de que el estado normal no señala nada limpio. Las 34
+  clases, DETECTA (decía 36; corregido en [3.28.0]).
+
+### Cambiado
+
+- **Una parada de un AGV se juzga contra la horquilla de su tramo en su régimen**, no contra
+  «mediana + 30 s». Las nueve pruebas de paradas de la Parte 46 pasan sin tocar lo que esperan.
+- **La cola es física** (R-AGV-018). Antes, «cola» exigía que el de delante también estuviera parado;
+  detrás de un cuello de botella, donde el de delante tarda lo normal de ese sitio, el que esperaba
+  salía sin explicación. Ahora está en cola si un AGV que ya iba delante sigue a dos tags o menos a
+  mitad de la parada y va él también más lento que su p80. Tiene que ser el mismo: en la auditoría,
+  el AGV retrasado 20 min salía «en cola» porque otros lo adelantaban y quedaban delante.
+- Las firmas de parada precisa y semáforo usan solo producción.
+- «Por su sitio» al salir de una parada de la producción sigue siendo un paso que se da cuatro veces o
+  más fuera de las paradas (`minPairSamples`): la horquilla de 20 muestras era demasiado exigente
+  para saltarse un tag que se lee poco.
+- En la tarjeta de bloqueo, «nadie parado delante» pasa a «nadie delante que lo retuviera».
+
+### Corregido, antes de publicarse
+
+Probado contra el escenario de auditoría antes de que llegara a la vista. Tres cosas que salían y no
+eran ciertas:
+- **Colas donde solo hay tags mal leídos.** Donde un tag se lee poco, el último leído de un AGV que
+  circula se queda atrás de donde está y parece que retiene a los de detrás. Quien retiene tiene que
+  ir él mismo más lento que su p80.
+- **Cuellos de botella en tramos largos.** Un AGV retiene más cuanto más tiempo pasa como último
+  leído; el azar se mide contra ese tiempo, no contra las pasadas.
+- **Retenciones por vaivén.** Coincidir con otro AGV lento cerca pasa en cualquier tramo; una
+  retención exige pasar del p95 y esperar al menos 30 s.
+- Además, un grupo de paradas subía el ritmo con que se le comparaba y se escondía a sí mismo: el
+  azar se estima con el resto del circuito.
+
+### Pendiente, y por qué
+
+- **Guardar la horquilla como referencia consolidada y compararla mes a mes es F4** (OQ-130): pide
+  `CONTINÚA FASE 4` y confirmación humana. Hoy se descarga en CSV, con la forma que esa consolidación
+  usaría, y se compara el primer periodo cargado con el último.
+
+## [3.24.0] - 2026-09-24
+
+Un AGV sin lecturas sigue en el circuito: cada parada se lee contra lo que hacía el resto. Pedido
+por el propietario: «que no haya mediciones no quiere decir que no estén». Cómo funciona la planta,
+según él:
+- nadie para toda la línea;
+- los AGV siguen hasta encontrar un obstáculo, y las paradas se propagan en cola;
+- ninguno cambia de circuito;
+- el problema es el primero de la cola sin avanzar más de dos minutos mientras los tags críticos se
+  siguen leyendo.
+
+### Añadido
+
+- **Paradas de la producción** (`src/domain/flow-stops.ts`, R-AGV-018).
+  - Qué son: tramos sin ninguna lectura en los tags críticos declarados, largos e **improbables por
+    azar** con el ritmo de ese turno.
+  - Sin tags críticos declarados, se usa toda la flota, y se dice.
+  - Salen de los datos, sin declarar franjas, y se marca cuáles se repiten a la misma hora otro día.
+  - De cada una se dice si todos siguieron por su sitio y quién aparece delante de quien iba detrás.
+- **Colas y bloqueos.** Cada parada de un AGV —más de lo habitual para ese par de tags en ese
+  turno— se justifica, en este orden:
+  1. por la producción parada;
+  2. por el de delante, también parado (cola);
+  3. o queda sin explicación.
+
+  El primero de una cola sin justificar, con dos minutos o más de exceso, es un **bloqueo**. Se dice:
+  - dónde estaba;
+  - cuánto de más estuvo parado;
+  - cuántos quedaron detrás;
+  - cuántas lecturas críticas hubo mientras tanto.
+
+  Una cola que avanza cada poco no sale.
+- **Vistas:**
+  - En el **recuento**, N pasa a «en el circuito», con una línea discontinua de los que leen y las
+    paradas de la producción como bandas.
+  - En la **vida de cada AGV**:
+    - las paradas explicadas van con rayas;
+    - las paradas sin explicar, en azul oscuro liso;
+    - el primero de una cola que no avanza lleva contorno;
+    - una franja arriba marca la producción parada.
+  - **Tarjetas** de paradas de la producción y de bloqueos. La lectura al tocar dice qué hacía el
+    resto.
+- Configuración provisional `flowStops`. Los dos minutos (bloqueo y producción parada) son del
+  propietario; el resto de umbrales, con su justificación (OQ-129).
+- TC-175–179: `tests/unit/flow-stops.test.ts` (9), casos nuevos en `fleet.test.ts` y
+  `silence-kind.test.ts`, auditoría y navegador.
+- Auditoría `auditoria/12` con dos clases nuevas:
+  - **`parada-de-produccion`**: tres franjas de 15 min congelando el reloj **después** de generar,
+    sin `random()`. La verdad con instante pasa por la misma función.
+  - **`bloqueo-sin-justificar`**.
+
+### Cambiado
+
+- **R-AGV-014 reescrita (decisión del propietario).** N son los asignados **en el circuito**. Solo
+  quedan fuera mantenimiento y una hora o más sin leer que nada explica.
+  - Antes, cada silencio restaba de N.
+  - Las pruebas de flota que contaban un silencio o un borde corto como fuera de N cambian de cifra
+    por esta regla, con el motivo escrito en cada una.
+  - La figura pasa de «Flota en funcionamiento» a «Flota en el circuito».
+- **Con la producción parada o en cola, una hora sin leer ya no es «desconexión»** (R-AGV-017): la
+  justificación manda.
+- **Los tiempos habituales y las firmas de parada precisa y semáforo ya no usan las transiciones que
+  cruzan una parada de la producción.** Un descanso de 15 min rompería el coeficiente de variación
+  de una parada precisa.
+- En las tarjetas, las duraciones de menos de un minuto y medio se dan en segundos.
+
+### Corregido antes de publicar
+
+- **Un par de lecturas que saltaba el hueco entre dos exportaciones salía como bloqueo de 40 min.**
+  - Lo encontró la prueba de navegador con dos exportaciones.
+  - Causa: `buildTransitions` solo descarta el par si cruza el hueco entero, y la cobertura acaba en
+    el último minuto completo.
+  - Solución: las paradas exigen ahora las dos lecturas en el mismo tramo de cobertura, como el
+    expediente (Parte 41).
+- **El orden tras una parada.**
+  - La primera versión comparaba el orden de lectura dentro del mismo tag, donde no hay orden fiable.
+    Ahora solo cuenta que uno que iba detrás de otro cercano aparezca delante.
+  - En la auditoría sale un caso así (7105 delante de 7115). Es real en los datos, porque el
+    generador deja adelantar al circular, así que el orden se informa y no se exige.
+  - Lo fija una prueba unitaria.
+
 ## [3.23.0] - 2026-09-24
 
 «Vida de cada AGV en el circuito» distingue paradas, saltos, desconexiones y mantenimiento. Pedido por

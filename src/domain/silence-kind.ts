@@ -23,6 +23,11 @@
  * la hora local de la zona del circuito. Un par en el mismo instante no mide nada (R-DAT-013) y no
  * cuenta. Sin datos de ese turno se usa la mediana de toda la ventana, y sin ninguna, no se afirma lo
  * habitual.
+ *
+ * Antes que la forma de la reaparición va **qué hacía el resto** (R-AGV-008, R-AGV-018): si la
+ * producción estaba parada o el AGV de delante también, la duración del hueco está explicada, y una
+ * hora sin leer ya no es «desconexión» por sí sola. Eso lo decide `flow-stops.ts` y llega aquí como
+ * `justification`.
  */
 
 import type { Transition } from "./graph.js";
@@ -86,10 +91,18 @@ export interface SilenceGap {
   readonly firstTagAfter: string;
 }
 
+/**
+ * Qué explica una parada, mirando al resto del circuito (R-AGV-018): la producción parada (ningún
+ * tag crítico leído), una cola (el AGV de delante también parado), o nada de lo que el dato enseña.
+ */
+export type StopJustification = "produccion" | "cola" | "sin-explicacion";
+
 export interface SilenceContext {
   /** Lo habitual del cohorte del vehículo; `null` si su cohorte no tiene anillo. */
   readonly usual: UsualTimes | null;
   readonly maintenance: ReadonlySet<string>;
+  /** Qué hacía el resto mientras tanto; sin ella, el hueco se juzga solo. */
+  readonly justification?: StopJustification | null;
 }
 
 const QUARTER_MS = 15 * 60_000;
@@ -102,7 +115,7 @@ const QUARTER_MS = 15 * 60_000;
  */
 const hourReaders = new Map<string, (utcMs: number) => number>();
 
-function localHourReader(zone: string): (utcMs: number) => number {
+export function localHourReader(zone: string): (utcMs: number) => number {
   const known = hourReaders.get(zone);
   if (known !== undefined) return known;
   const formatter = new Intl.DateTimeFormat("en-US", { timeZone: zone, hour: "2-digit", hourCycle: "h23" });
@@ -183,6 +196,28 @@ export function usualSegmentTimes(
   };
 }
 
+/**
+ * Lo que suele tardar el recorrido del anillo de `fromTagId` a `toTagId` en el turno de `atUtcMs`: la
+ * suma de las medianas de sus tramos. `null` si alguno de los dos no está en el anillo, si es el mismo
+ * tag, o si algún tramo no tiene muestras.
+ */
+export function ringUsualMs(usual: UsualTimes, fromTagId: string, toTagId: string, atUtcMs: number): number | null {
+  const from = usual.positionOf.get(fromTagId);
+  const to = usual.positionOf.get(toTagId);
+  const size = usual.ring.length;
+  if (from === undefined || to === undefined || from === to || size < 2) return null;
+  const shiftIndex = shiftIndexOfHour(localHourReader(usual.zone)(atUtcMs), usual.shiftStartHours);
+  const skipped = (to - from - 1 + size) % size;
+  let total = 0;
+  for (let step = 0; step <= skipped; step += 1) {
+    const segment = (from + step) % size;
+    const time = usual.byShift[segment]?.[shiftIndex] ?? usual.overall[segment] ?? null;
+    if (time === null) return null;
+    total += time;
+  }
+  return total;
+}
+
 /** Clasifica un hueco sin carga que lo explique por cómo reaparece el AGV. */
 export function classifySilence(
   gap: SilenceGap,
@@ -202,19 +237,7 @@ export function classifySilence(
   let usualMs: number | null = null;
   if (usual !== null && from !== undefined && to !== undefined && size > 1) {
     skipped = sameTag ? 0 : (to - from - 1 + size) % size;
-    if (!sameTag) {
-      let total = 0;
-      for (let step = 0; step <= skipped; step += 1) {
-        const segment = (from + step) % size;
-        const time = usual.byShift[segment]?.[shiftIndex as number] ?? usual.overall[segment] ?? null;
-        if (time === null) {
-          total = Number.NaN;
-          break;
-        }
-        total += time;
-      }
-      usualMs = Number.isNaN(total) ? null : total;
-    }
+    usualMs = ringUsualMs(usual, gap.lastTagBefore, gap.firstTagAfter, gap.fromUtcMs);
   }
   const detail: SilenceDetail = {
     lastTagBefore: gap.lastTagBefore,
@@ -224,7 +247,9 @@ export function classifySilence(
     usualMs,
     shift: usual === null || shiftIndex === null ? null : shiftLabel(shiftIndex, usual.shiftStartHours),
   };
-  const long = duration >= thresholds.longAbsenceMs;
+  // Una hora sin leer solo dice algo por sí sola si nada del resto la explica (R-AGV-008).
+  const explained = context.justification === "produccion" || context.justification === "cola";
+  const long = duration >= thresholds.longAbsenceMs && !explained;
 
   if (context.maintenance.has(gap.lastTagBefore) || context.maintenance.has(gap.firstTagAfter)) {
     return { kind: "mantenimiento", detail };

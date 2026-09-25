@@ -15,6 +15,13 @@
 
 import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
 import type { FleetTimeline } from "../domain/fleet.js";
+import type { Blockage, ProductionStop } from "../domain/flow-stops.js";
+import type { CircuitState } from "../domain/circuit-state.js";
+import type { DeliveryConcentration, GroupedDelivery } from "../domain/grouped-delivery.js";
+import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
+import type { StructureSet } from "../domain/anchor-sums.js";
+import type { PaceReport } from "../domain/vehicle-pace.js";
+import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
 import type { ReadMatrix } from "../domain/read-matrix.js";
@@ -403,6 +410,8 @@ export interface CircuitViews {
       /** Presente en `parada-precisa` y `semaforo`: las duraciones que la firma resume, para dibujarlas. */
       readonly durationsMs?: readonly number[];
     }[];
+    /** `false` con la hora al minuto: no se buscan paradas precisas ni semáforos, y se dice. */
+    readonly timeSignatures: boolean;
     /**
      * Referencia para esas distribuciones: duraciones de todas las transiciones del cohorte, sin
      * pares del mismo instante (R-DAT-013), en muestra de paso fijo si pasan del tope.
@@ -424,7 +433,96 @@ export interface CircuitViews {
    * continuos y el recuento N de M. Sin historial cargado, M son los vehículos que aparecen en las
    * lecturas, y `historyLoaded` lo dice.
    */
-  readonly fleet: FleetTimeline & { readonly circuitName: string | null };
+  readonly fleet: FleetTimeline & {
+    readonly circuitName: string | null;
+    /**
+     * Cuándo estuvo parada la producción y cómo salió cada AGV de cada parada (R-AGV-018): cuántos
+     * siguieron por su sitio, quién no, y si se mantuvo el orden a lo largo del anillo.
+     */
+    readonly production: {
+      readonly basis: "criticos" | "flota";
+      readonly basisTags: number;
+      readonly stops: readonly (ProductionStop & {
+        readonly vehicles: number;
+        readonly inPlace: number;
+        readonly notInPlace: readonly {
+          readonly agvId: string;
+          readonly fromTagId: string;
+          readonly toTagId: string;
+          readonly skipped: number | null;
+        }[];
+        readonly orderKept: boolean | null;
+        readonly orderChanges: readonly { readonly agvId: string; readonly passed: string }[];
+      })[];
+    };
+    /** El primero de una cola sin avanzar, sin nada que lo explique (R-AGV-018). */
+    readonly blockages: readonly Blockage[];
+  };
+  /**
+   * El estado normal del circuito (R-TIM-009): la horquilla de cada tramo por régimen y lo que se
+   * mide con ella en producción —cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin
+   * explicación—, la noche aparte y el cambio de la horquilla entre el primer y el último periodo.
+   */
+  readonly circuitState: {
+    readonly exposure: RegimeExposure;
+    readonly night: { readonly fromHour: number; readonly toHour: number };
+    readonly cohorts: readonly {
+      readonly cohortId: number;
+      /** El ritmo de cada AGV frente a la flota y quién retiene a otros (R-AGV-019, R-AGV-020). */
+      readonly pace: PaceReport;
+      readonly resolutionMs: number;
+      readonly marginMs: number;
+      /** Cada par con horquilla; `position` es su sitio en el anillo si es un tramo del anillo. */
+      readonly bands: readonly {
+        readonly from: string;
+        readonly to: string;
+        readonly position: number | null;
+        readonly produccion: Band | null;
+        readonly noche: Band | null;
+      }[];
+      readonly state: CircuitState;
+      /**
+       * Lecturas que llegaron juntas al servidor (R-DAT-020): cada ráfaga, ya colapsada en todo lo
+       * de tiempos, y dónde se concentran. `deliveries` trae las más recientes; `total`, cuántas hubo.
+       */
+      readonly groupedDelivery: {
+        readonly evaluated: boolean;
+        readonly reason: string | null;
+        readonly total: number;
+        readonly deliveries: readonly GroupedDelivery[];
+        readonly vehicles: readonly DeliveryConcentration[];
+        readonly sites: readonly DeliveryConcentration[];
+      };
+      readonly changes: PeriodBandChanges | null;
+    }[];
+  };
+  /**
+   * La medición de cada fichero (R-TIM-011): una franja es un fichero. Por circuito, la horquilla de
+   * cada tramo, el anillo y la posición en tiempo de cada tag en cada fichero, y los tramos que cambian
+   * de un fichero a otro. Se rehace en cada importación; no se guarda una copia fija (eso es F4).
+   */
+  readonly franjas: {
+    readonly sources: readonly {
+      readonly sourceId: string;
+      readonly fileName: string;
+      readonly from: number;
+      readonly to: number;
+      /** El fichero anterior idéntico, si lo hay: no se mide dos veces. */
+      readonly duplicateOf: string | null;
+      readonly exposure: RegimeExposure;
+    }[];
+    readonly cohorts: readonly {
+      readonly cohortId: number;
+      /** Cada fichero, con el ritmo de cada AGV contra la horquilla de ese fichero (R-AGV-019). */
+      readonly measures: readonly (FranjaCohort & { readonly sourceId: string; readonly pace: PaceReport })[];
+      readonly histories: readonly SegmentHistory[];
+      /**
+       * Tags insertados, retirados y sustituidos, por la suma entre anclas (R-DAT-021): entre ficheros
+       * seguidos, y alrededor de cada grupo de cambios de tag dentro de un tramo de cobertura.
+       */
+      readonly structure: readonly StructureSet[];
+    }[];
+  };
   /**
    * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando
    * el circuito tiene listas de planta cargadas **y** al menos dos periodos distantes: con una sola
