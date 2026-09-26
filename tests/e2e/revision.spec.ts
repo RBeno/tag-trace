@@ -29,7 +29,8 @@ async function freshPage(page: Page): Promise<void> {
 }
 
 test.describe("revisión en campo", () => {
-  test.setTimeout(300_000);
+  // Diez minutos: la prueba importa dos veces el circuito de auditoría y el runner de CI es lento.
+  test.setTimeout(600_000);
 
   test("las marcas se guardan solas, sobreviven a recargar y reimportar, y salen en el CSV", async ({ page }) => {
     const scenario = buildAuditScenario();
@@ -81,8 +82,11 @@ test.describe("revisión en campo", () => {
     await page.reload();
     await page.locator("#circuit-name").fill("auditoria");
     await page.locator("#source-file").setInputFiles(readings);
+    // La segunda importación vuelve a analizar el cuarto de millón de filas: en el runner de la
+    // integración continua, con dos pruebas pesadas a la vez, tarda más que en un portátil.
+    await expect(page.getByText("Circuito «auditoria»")).toBeVisible({ timeout: 300_000 });
     const laneAgain = page.locator(".finding", { hasText: "Nadie entró en" }).first();
-    await expect(laneAgain).toHaveAttribute("data-review", "confirmado", { timeout: 180_000 });
+    await expect(laneAgain).toHaveAttribute("data-review", "confirmado", { timeout: 300_000 });
     await expect(laneAgain.getByRole("button", { name: /Revisión en campo/ })).toContainText("Confirmado");
     await laneAgain.getByRole("button", { name: /Revisión en campo/ }).click();
     await expect(laneAgain.getByRole("textbox")).toHaveValue("Calle cerrada por obra");
