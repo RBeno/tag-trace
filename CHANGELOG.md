@@ -2,6 +2,19 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.46.0] - 2026-09-26
+
+Decisiones del propietario sobre las preguntas abiertas de la revisión (OQ-136 a OQ-141).
+
+### Cambiado
+
+- **Deriva** (R-TIM-010, OQ-136): la mediana de un tramo que se mueve siempre hacia el mismo lado
+  entre el primer fichero y el último es una deriva, con saltos o sin ellos. Se corrige el texto de la
+  regla; el código ya lo hacía así.
+- **Constantes de planta en código** (OQ-140): no van a un bloque de configuración de planta. Son
+  provisionales hasta que la memoria del circuito (F4) las mida y consolide con confirmación humana,
+  y así queda dicho en `CONFIG_SCHEMA` §3.5.
+
 ## [3.45.0] - 2026-09-26
 
 ### Cambiado

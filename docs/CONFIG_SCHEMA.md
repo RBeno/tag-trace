@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.22.0
+version: 0.23.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -271,6 +271,14 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `max_false_points` | R-FLO-008, R-FLO-009: puntos marcados por azar que se aceptan en todo el circuito. |
 | `charging.long_stay_ratio`, `charging.min_stays_for_median` | R-CO-002: cuántas veces la estancia habitual hace larga una permanencia, y cuántas estancias completas hacen falta para tener una habitual. |
 | `charging.usage_max_chance`, `charging.usage_min_deviation` | R-CO-009: azar máximo y desviación mínima (fracción de la parte que le tocaría) para señalar una calle que se usa menos o más que las demás. Provisionales: 0,001 y 0,25. |
+
+Los valores que hoy viven en `PROVISIONAL_CONFIG` con aspecto de dato de planta —horas de arranque de
+turno, regímenes, la hora sin leer que hace una desconexión, los dos minutos del bloqueo, la
+tolerancia de mismo instante, el margen del FIFO, la duración mínima de una parada precisa y el hueco
+mínimo entre periodos distantes— **no se fijan como configuración de planta** (propietario,
+2026-09-26, OQ-140): «es información que tendría que salir del análisis y la consolidación continua».
+Son provisionales hasta que la memoria del circuito (F4) los mida y los consolide con confirmación
+humana (ADR-0010).
 
 ### 3.6 Cohortes
 
