@@ -20,6 +20,7 @@ import {
 import { EXPECTED_STRUCTURE, FUNCTION_MEANING, LIST_PURPOSE } from "../domain/tag-lists.js";
 import { listCleanupCsv } from "../domain/list-cleanup.js";
 import { lineStopsCsv } from "../domain/line-feed.js";
+import { incidentsCsv } from "../domain/incident-battery.js";
 import {
   activityChart,
   coverageChart,
@@ -1015,6 +1016,7 @@ function renderAffinity(report: AccumulationReport): void {
 /** Las cuatro vistas, en el orden en que responden preguntas: qué hay, cuándo, quién, y qué falta. */
 function renderViews(views: CircuitViews): void {
   currentTagInfo = views.tagInfo ?? {};
+  currentBatteries = views.incidents?.batteries ?? {};
   viewsPanel.replaceChildren();
   viewsPanel.hidden = false;
   viewsPanel.append(element("h2", undefined, "Análisis"));
@@ -1112,6 +1114,7 @@ function renderViews(views: CircuitViews): void {
   renderCircuitOrder(views);
   renderListCleanup(views);
   renderLineFeed(views);
+  renderAbandoned(views);
   renderUndeclaredTags(views);
   reviewSession?.refresh();
 }
@@ -1153,6 +1156,71 @@ function renderCircuitOrder(views: CircuitViews): void {
       ),
     ),
   );
+}
+
+/**
+ * AGV que dejan de leer antes del final de lo cargado (R-AGV-021), cada uno con su batería: dónde
+ * leyó por última vez, si la línea seguía, qué hicieron los de delante y los de detrás, y si empezó a
+ * leer otro AGV después (cambio de AGV).
+ */
+function renderAbandoned(views: CircuitViews): void {
+  const records = views.incidents?.records ?? [];
+  if (records.length > 0) {
+    viewsPanel.append(element("h3", undefined, "Incidencias y sus mediciones"));
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        `${records.length} incidencias —paradas sin explicación, primeros de cola sin avanzar y AGV que dejan de leer— con la ` +
+          "misma batería de mediciones: última lectura, la línea, el de delante, los de detrás y el cambio de AGV.",
+      ),
+    );
+    const download = element("button", undefined, "Descargar las incidencias con sus mediciones (CSV)");
+    download.setAttribute("type", "button");
+    download.addEventListener("click", () => {
+      const url = URL.createObjectURL(new Blob([`\ufeff${incidentsCsv(records, formatInstant)}`], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `incidencias-${state.circuitId ?? "circuito"}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+    viewsPanel.append(download);
+  }
+  const abandoned = views.incidents?.abandoned ?? [];
+  if (abandoned.length === 0) return;
+  viewsPanel.append(element("h3", undefined, "AGV que dejan de leer"));
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      `${abandoned.length} ${abandoned.length === 1 ? "AGV deja" : "AGV dejan"} de leer antes del final de lo cargado, más tiempo que su ` +
+        "propio hueco más largo del que sí volvió. De cada uno, las mismas mediciones.",
+    ),
+  );
+  const cards = element("div", "findings");
+  for (const { incident, battery } of abandoned.slice(0, HIGHLIGHTS)) {
+    const card = finding(
+      `${incident.agvId}: deja de leer en ${incident.fromTagId}`,
+      `Desde ${formatInstant(incident.fromUtcMs)}${battery.swap === null ? "" : ` · empieza ${battery.swap.agvId}`}`,
+      battery.reading === "adelantado"
+        ? "Los de detrás lo adelantaron: no se movía en la guía."
+        : battery.reading === "fuera-o-sin-registrar"
+        ? "Los de detrás pasaron su sitio y dieron vueltas enteras: salió de la guía o no registra lecturas."
+        : battery.reading === "no-registra"
+        ? "Los de detrás pasaron su sitio: seguía avanzando sin registrar lecturas."
+        : battery.reading === "parado-con-cola"
+          ? "Los de detrás no pasaron de su sitio: estaba parado de verdad."
+          : "Sin AGV detrás para saber si avanzaba.",
+      ["deja-de-leer", `${incident.agvId} ${incident.fromTagId} ${incident.fromUtcMs}`],
+    );
+    const list = document.createElement("ol");
+    list.className = "battery";
+    for (const text of battery.lines) list.append(element("li", undefined, text));
+    card.append(element("p", "finding-figure", "Mediciones"), list);
+    cards.append(card);
+  }
+  viewsPanel.append(cards);
 }
 
 /**
@@ -1524,6 +1592,8 @@ function renderFlowStops(fleet: CircuitViews["fleet"]): void {
         ["bloqueo", `${blockage.agvId} ${blockage.tagId} ${blockage.fromUtcMs}`],
       ),
     );
+    const blockCard = viewsPanel.lastElementChild;
+    if (blockCard instanceof HTMLElement) withBattery(blockCard, `${blockage.agvId} ${blockage.tagId} ${blockage.fromUtcMs}`);
   }
   if (blockages.length > shown.length) {
     viewsPanel.append(
@@ -1657,6 +1727,8 @@ function renderCircuitState(views: CircuitViews): void {
           ["parada-sin-explicacion", `${stop.agvId} ${stop.fromTagId} ${stop.fromUtcMs}`],
         ),
       );
+      const stopCard = viewsPanel.lastElementChild;
+      if (stopCard instanceof HTMLElement) withBattery(stopCard, `${stop.agvId} ${stop.fromTagId} ${stop.fromUtcMs}`);
     }
     const allUnexplained = [...measured.unexplained.produccion, ...measured.unexplained.noche];
     if (allUnexplained.length > PER_KIND) {
@@ -2969,6 +3041,19 @@ function duration(ms: number | null): string {
  */
 /** Lo que planta declara de cada tag del análisis que se está enseñando (`views.tagInfo`). */
 let currentTagInfo: Readonly<Record<string, string>> = {};
+/** La batería de mediciones de cada incidencia (R-AGV-021), por clave «AGV tag instante». */
+let currentBatteries: NonNullable<CircuitViews["incidents"]>["batteries"] = {};
+
+/** Añade a la tarjeta de una incidencia su batería de mediciones, en el orden de siempre. */
+function withBattery(card: HTMLElement, key: string): HTMLElement {
+  const battery = currentBatteries[key];
+  if (battery === undefined) return card;
+  const list = document.createElement("ol");
+  list.className = "battery";
+  for (const text of battery.lines) list.append(element("li", undefined, text));
+  card.append(element("p", "finding-figure", "Mediciones"), list);
+  return card;
+}
 
 /**
  * Qué tags nombra una tarjeta, por su tipo de revisión. Solo los tipos cuyo sujeto es un tag: en los

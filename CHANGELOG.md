@@ -2,6 +2,47 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.41.0] - 2026-09-26
+
+La batería de mediciones de cada incidencia, del propietario: documentar cada una con lo mismo medido,
+porque el hueco puede venir de cualquier punto anterior.
+
+### Añadido
+
+- **Batería de mediciones** (R-AGV-021, `src/domain/incident-battery.ts`). De cada parada sin
+  explicación, primero de cola sin avanzar y AGV que deja de leer, en el mismo orden:
+  - la última y la siguiente lectura, y la calle de carga si el último tag es de una;
+  - la línea: si siguió con su cadencia, y cuánto estuvo parada con AGV esperando. Si es más de la
+    mitad, es la cola de la línea parada;
+  - el de delante: cuántos tags avanzó y hasta dónde;
+  - los de detrás, en cuatro casos:
+    - si siguen avanzando y él reaparece por delante, avanzaba sin registrar lecturas (no lee o sin
+      wifi);
+    - si llegan antes que él a donde reaparece, lo adelantaron: no se movía en la guía;
+    - si se quedan, estaba parado de verdad;
+    - con una vuelta entera, no se afirma;
+  - el cambio de AGV candidato, si no vuelve a leer.
+- **AGV que dejan de leer**: su silencio final supera su propio hueco más largo.
+- En pantalla, «Mediciones» en cada tarjeta y la descarga en CSV de todas las incidencias.
+- `LineFeed` expone los pasos por la línea y la cadencia de noche.
+- OQ-133 cerrada: son descansos, y de 5 a 6 no suele haber producción.
+- Auditoría: clase `bateria-del-bloqueo` (`auditoria/26`). Las 50 clases salen DETECTA.
+
+### Medido, y por eso se hace así
+
+- La primera versión decía «avanzaba sin registrar» si los de detrás pasaban de su último tag. En la
+  auditoría, el AGV al que el resto adelanta salía así, y es al revés. Si los de detrás llegan a donde
+  él reaparece antes que él, lo adelantaron. Solo si reaparece por delante de ellos avanzaba.
+- Un umbral común para «deja de leer» no servía: los silencios normales van de 1 a 12 h según el
+  AGV. Ahora se compara a cada AGV consigo mismo.
+
+### Con el circuito real, sin datos de planta en el repositorio
+
+- 246 incidencias con su batería. 65 coinciden, en más de la mitad de su tiempo, con la línea
+  parada con AGV esperando: son su cola.
+- Dos AGV dejan de leer en la parada de una calle de carga, de madrugada.
+- A uno, parado 12 h, lo adelantaron 30 AGV: estaba fuera de la guía.
+
 ## [3.40.0] - 2026-09-26
 
 Del propietario: que ni el ritmo de la noche ni una parada de la línea contaminen la medición, y ver

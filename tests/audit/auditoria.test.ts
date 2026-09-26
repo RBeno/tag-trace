@@ -31,6 +31,7 @@ import { buildTagInventory } from "../../src/domain/inventory.js";
 import { reinforcementGroups, reinforcementPartners } from "../../src/domain/critical-reinforcement.js";
 import { buildListCleanup } from "../../src/domain/list-cleanup.js";
 import { lineStopExclusion, measureLineFeed, outsideLineStops, type LineFeed } from "../../src/domain/line-feed.js";
+import { buildIncidentContext, incidentBattery, type IncidentContext } from "../../src/domain/incident-battery.js";
 import { buildAllAgvDossiers, buildAllTagDossiers } from "../../src/domain/dossier.js";
 import { buildChargingReport, type ChargingReport } from "../../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans, type FifoReport } from "../../src/domain/fifo.js";
@@ -191,6 +192,8 @@ interface Analysis {
   readonly lineFeed: LineFeed;
   /** La misma medida con la entrada en un tramo limpio, para el pulmón. */
   readonly lineFeedPulmon: LineFeed;
+  /** Las lecturas de cada AGV, para la batería de cada incidencia (R-AGV-021). */
+  readonly incidentContext: IncidentContext;
   /** Funciones críticas declaradas y su grupo, para la limpieza de la lista (R-GRA-017). */
   readonly criticalPointsFuncionOf: ReadonlyMap<string, string>;
   readonly criticalPointsGroupOf: ReadonlyMap<string, string>;
@@ -647,6 +650,7 @@ function analyse(
     ),
     // El pulmón se mide aparte, con la entrada en un tramo limpio del anillo: con la línea declarada
     // en el 59 las paradas de la producción paran a la flota en sitios distintos y no marcan un pulmón.
+    incidentContext: buildIncidentContext(readings, [], () => null),
     lineFeedPulmon: measureLineFeed(
       readings,
       [scenario.physicalRing[136] as string],
@@ -732,6 +736,7 @@ describe("auditoría del circuito con verdad conocida", () => {
     undeclaredWithNightList,
     lineFeed,
     lineFeedPulmon,
+    incidentContext,
     criticalPointsFuncionOf,
     criticalPointsGroupOf,
     reinforcementPlaces,
@@ -1417,6 +1422,21 @@ describe("auditoría del circuito con verdad conocida", () => {
           `sin paso ${Math.round((day?.lostMs ?? 0) / 60_000)} min: con AGV esperando ${Math.round(withAgv / 60_000)} min, ` +
           `sin AGV ${Math.round((day?.lostWithoutAgvMs ?? 0) / 60_000)} min; paradas plantadas, ${Math.round(planted / 60_000)} min; ` +
           `ciclo entre ${Math.round((day?.cycleLowMs ?? 0) / 1000)} y ${Math.round((day?.cycleHighMs ?? 0) / 1000)} s`,
+      };
+    },
+    "bateria-del-bloqueo": () => {
+      const agv = scenario.defects.find((d) => d.kind === "bateria-del-bloqueo")?.vehicles[0];
+      const blockage = flow.blockages.find((entry) => entry.agvId === agv);
+      if (blockage === undefined) return { ok: false, detail: `sin bloqueo de ${agv ?? "?"}` };
+      const battery = incidentBattery(
+        incidentContext,
+        { agvId: blockage.agvId, fromTagId: blockage.tagId, fromUtcMs: blockage.fromUtcMs, toTagId: blockage.nextTagId, toUtcMs: blockage.toUtcMs },
+        scenario.toUtcMs,
+      );
+      return {
+        // El resto de la flota lo adelanta con su propio reloj (así se plantó): no se movía en la guía.
+        ok: battery.reading === "adelantado" && battery.behind.overtook.length > 0,
+        detail: battery.lines.join(" | "),
       };
     },
     "linea-tag-sin-leer": () => {

@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.33.0
+version: 0.34.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -784,6 +784,19 @@ sobre el cohorte mayor. Umbrales: los de siempre, `bands.minBandSamples` y `flow
    parada», salvo con `vinculacion`: hasta la racha siguiente de otro AGV, menos que `p5 − max(p50 −
    p5, margen)` de esos tiempos. Los demás pasos se cuentan por AGV; el que no lee un esperado en la
    mitad o más de los suyos se señala como lectura.
+
+## 6.17 Batería de mediciones de una incidencia, implementado (R-AGV-021)
+
+`src/domain/incident-battery.ts`, `incidentBattery(contexto, incidencia, finDeVentana)`, con las
+secuencias de cada AGV sin repeticiones seguidas, los pasos por la línea y su horquilla por régimen,
+las paradas de la línea con AGV esperando y la calle de cada tag de calle. La línea: pasos dentro de la
+incidencia y el hueco más largo entre ellos (con los bordes); con paso y ningún hueco por encima de la
+valla, siguió con su cadencia. El de delante: de los demás AGV, el que leyó el último tag de la
+incidencia más tarde antes de ella; sus lecturas durante ella. Los de detrás: los que leen ese tag
+dentro de la incidencia; tras él, si leen el tag donde reaparece, lo adelantaron; si leen otro, siguieron
+avanzando; si no, se quedaron; volver a leer el tag es una vuelta entera. El cambio de AGV: el AGV cuya
+primera lectura de todo lo cargado es la más cercana después. `abandonedReadings`: el silencio final de
+cada AGV contra su propio hueco más largo. `incidentsCsv`, una fila por incidencia.
 
 ## 7. Segmentación de vueltas y huecos
 

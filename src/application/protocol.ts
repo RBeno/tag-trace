@@ -26,6 +26,7 @@ import type { AffinityReport } from "../domain/affinity.js";
 import type { UndeclaredTag } from "../domain/undeclared-tags.js";
 import type { ListCleanup } from "../domain/list-cleanup.js";
 import type { LineFeed } from "../domain/line-feed.js";
+import type { Incident, IncidentBattery, IncidentRecord } from "../domain/incident-battery.js";
 import type { CircuitOrder } from "../domain/circuit-order.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
 import type { ReadMatrix } from "../domain/read-matrix.js";
@@ -317,6 +318,16 @@ export interface CircuitViews {
    * línea, con AGV esperando o sin ellos. Solo con la lista `linea` cargada.
    */
   readonly lineFeed?: LineFeed;
+  /**
+   * La batería de mediciones de cada incidencia (R-AGV-021), por clave «AGV tag instante»: paradas sin
+   * explicación y primeros de cola sin avanzar. Y los AGV que dejan de leer antes del final.
+   */
+  readonly incidents?: {
+    readonly batteries: Readonly<Record<string, IncidentBattery>>;
+    readonly abandoned: readonly { readonly incident: Incident; readonly battery: IncidentBattery }[];
+    /** Todas, en orden de tiempo, para descargarlas. */
+    readonly records: readonly IncidentRecord[];
+  };
   /** Fotogramas del replay, en fracción temporal — nunca posición física (`PERFORMANCE_BUDGET.md` §6). */
   readonly replay: readonly SerializedReplayFrame[];
   /**

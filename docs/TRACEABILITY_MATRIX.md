@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.48.0
+version: 0.49.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -130,6 +130,7 @@ regla exista: la matriz no es una lista de intenciones.
 | R-FLO-011 / TC-233–234 pasos por la línea | `src/domain/line-feed.ts` (`passages`), `workers/import.worker.ts`, `src/presentation/main.ts` (`renderLineFeed`) | `tests/unit/line-feed.test.ts`, `tests/audit/auditoria.test.ts` |
 | R-FLO-010 / TC-237 exclusión de las paradas de la línea | `src/domain/line-feed.ts` (`lineStopExclusion`, `outsideLineStops`), `workers/import.worker.ts` | `tests/unit/line-feed.test.ts`, `tests/audit/auditoria.test.ts` (mismo encadenado) |
 | R-GRA-018 / TC-238 tramos en las gráficas | `src/domain/tag-info.ts` (`tagSections`), `src/domain/tag-lists.ts` (`tramo`), `src/presentation/diagnostic-charts.ts`, `src/presentation/main.ts`, `src/presentation/franjas-ui.ts`, `src/presentation/styles.css` | `tests/unit/tag-info.test.ts` |
+| R-AGV-021 / TC-239–240 batería de mediciones de cada incidencia | `src/domain/incident-battery.ts`, `src/domain/line-feed.ts` (`passTimes`, `nightCadence`), `workers/import.worker.ts` (`incidents`), `src/application/protocol.ts`, `src/presentation/main.ts` (`withBattery`, `renderAbandoned`) | `tests/unit/incident-battery.test.ts`, `tests/audit/auditoria.test.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` —, y el tercer

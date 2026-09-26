@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.27.0
+version: 0.28.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -293,6 +293,13 @@ Decisiones del propietario al revisar la conversión de la lista de PC2:
   la línea se quita como un descanso (R-FLO-010).
 - **Tramos en las gráficas** (R-GRA-018): kitting, línea y cruces pintados en el anillo y en las
   horquillas, para leerlas mejor; la lista `tramo`, y si no, la línea y los cruces.
+- **Descansos**: las paradas largas de la línea en horas redondas son descansos, y de 5 a 6 no suele
+  haber producción (OQ-133 cerrada).
+- **Batería de mediciones por incidencia** (R-AGV-021): cada parada sin explicación, primero de cola
+  sin avanzar o AGV que deja de leer lleva lo mismo medido —última lectura, la línea, el de delante,
+  los de detrás, cambio de AGV— para documentarla, sin causa. En una guía no se adelanta: si los de
+  detrás llegan antes que él a donde reaparece, lo adelantaron; si él reaparece por delante, avanzaba
+  sin registrar.
 - **Pasos por la línea** (R-FLO-011): un AGV que no sigue tras la línea (el pin del carro), uno que
   pasó sin la parada (se fue con el carro) y uno que hace la parada sin leer un tag (su lector o su
   memoria). El propietario: nada específico de un circuito, porque casi todos tienen una línea
@@ -311,7 +318,7 @@ conversación siguiente.
   (ADR-0010). La última entrega es la posición de un tag según las lecturas (R-GRA-015,
   `CHANGELOG.md` `[3.32.0]`), publicada en `main` y en la web.
 - **Cómo se ha trabajado**: una entrega por petición del propietario, con su documentación, su clase
-  plantada en la auditoría sintética (`tests/audit/`, 49 clases) y un solo commit en la rama de
+  plantada en la auditoría sintética (`tests/audit/`, 50 clases) y un solo commit en la rama de
   trabajo; PR y fusión solo cuando él lo pide. Las decisiones de cada entrega están en las secciones
   de arriba y en el `CHANGELOG`.
 - **Pendiente de planta**, sin identificadores:

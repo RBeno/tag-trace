@@ -143,6 +143,10 @@ export interface LineFeed {
   readonly passes: number;
   /** Tiempo entre dos AGV seguidos en la entrada, de producción. */
   readonly cadence: Band | null;
+  /** Lo mismo de noche, si hay muestras. */
+  readonly nightCadence: Band | null;
+  /** Cada paso por la línea, ordenado: la batería de cada incidencia mira si la línea seguía. */
+  readonly passTimes: readonly number[];
   /** La zona del pulmón medida, o `null` si no hubo paradas bastantes para medirla. */
   readonly zone: {
     /** Donde esperan en las paradas largas; `typical` es lo habitual en ellas y `capacity`, lo más. */
@@ -224,6 +228,8 @@ export function measureLineFeed(
     entryTagId,
     passes,
     cadence,
+    nightCadence: null,
+    passTimes: [],
     zone: null,
     occupancy: [],
     stops: [],
@@ -669,6 +675,8 @@ export function measureLineFeed(
     entryTagId,
     passes: passes.length,
     cadence,
+    nightCadence,
+    passTimes: passes.map((pass) => pass.utcMs),
     zone,
     occupancy: [...counts].sort((a, b) => a[0] - b[0]).map(([agvs, minutes]) => ({ agvs, minutes })),
     stops: annotated,

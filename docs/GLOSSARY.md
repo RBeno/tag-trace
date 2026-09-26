@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.34.0
+version: 0.35.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -36,6 +36,8 @@ last_updated: 2026-09-26
 | Refuerzo comprobado | Refuerzo declarado cuyos tags se leen todos seguidos en el recorrido. Si falta uno es `incompleto`; si se leen lejos, `separado` (R-GRA-017). |
 | Pulmón | Los AGV que esperan antes de la entrada a la línea. No se declara: sale de dónde esperan cuando la línea para, y su capacidad es lo más que llegaron a esperar (R-FLO-010). |
 | Tramo | Parte del circuito con un nombre declarado en la lista `tramo` —kitting, línea, cruce…—. Se dibuja en las gráficas del anillo para leerlas mejor; no cambia ningún cálculo (R-GRA-018). |
+| Batería de mediciones | Lo que se mide de cada incidencia, siempre en el mismo orden: última lectura, la línea, el de delante, los de detrás y el cambio de AGV (R-AGV-021). |
+| Cambio de AGV | Un AGV deja de leer y otro empieza a leer por primera vez poco después: candidato a que uno sustituyó al otro (R-AGV-021). |
 | Línea sin paso | Un tiempo entre dos AGV en la entrada por encima de la valla de su cadencia: la línea parada. Con AGV esperando, o sin ellos, «le faltaron AGV» (R-FLO-010). |
 | Paso por la línea | Una racha de lecturas de tags de la lista `linea` de un AGV. Se revisa si lee los tags esperados, si sigue después y si hizo la parada (R-FLO-011). |
 | Cambio de MTC | Tag que cambia el número de MTC (multicircuito) del AGV —normal, 1, 2… 15— para hacer alguna configuración especial. En planta, «CAMBIO Nº MODO CIRCUITO». El número va en `grupo` (R-GRA-007). |

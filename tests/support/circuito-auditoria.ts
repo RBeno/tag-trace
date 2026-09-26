@@ -120,6 +120,11 @@ export type DefectClass =
    */
   | "linea-tag-sin-leer"
   /**
+   * Contexto: la batería de mediciones del AGV que se demora y al que el resto adelanta dice que lo
+   * adelantaron: no se movía en la guía (R-AGV-021).
+   */
+  | "bateria-del-bloqueo"
+  /**
    * Contexto: el tiempo sin paso de la línea se mide contra su ciclo local, y el de las paradas de la
    * producción plantadas cuenta como línea parada con AGV esperando (R-FLO-010).
    */
@@ -1394,6 +1399,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       vehicles: [],
       expect: "el tiempo sin paso con AGV esperando cubre casi entero el de las tres paradas de la producción plantadas",
       mustNotSay: "que en esas paradas le faltaran AGV a la línea",
+    },
+    {
+      kind: "bateria-del-bloqueo",
+      tags: [],
+      vehicles: [elAdelantado],
+      expect: "su última lectura, el de delante avanzando y los de detrás llegando a su siguiente tag antes que él: lo adelantaron",
+      mustNotSay: "que avanzaba sin registrar lecturas",
     },
     {
       kind: "linea-tag-sin-leer",

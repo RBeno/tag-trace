@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.30.0
+version: 0.31.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -480,6 +480,10 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
   tarjeta por tag, de las más leídas a las menos: «candidato a una posición», «tag de noche»,
   «tag de noche declarado» (en la lista `noche`) o «posiblemente de noche», con su sitio (entre qué tags y en qué orden de la lista), sus lecturas de
   día y de noche y las pasadas por su sitio en cada régimen. Sin lista del circuito no aparece.
+- **Batería de mediciones** (R-AGV-021): cada tarjeta de parada sin explicación y de primero de cola
+  sin avanzar lleva «Mediciones», una lista con la última lectura, la línea, el de delante, los de
+  detrás y la lectura final. Aparte, «Incidencias y sus mediciones» con la descarga en CSV de todas, y
+  «AGV que dejan de leer», una tarjeta por AGV con su batería y el cambio de AGV candidato.
 - **Tramos en las gráficas del anillo** (R-GRA-018): el anillo, la horquilla de cada tramo y el anillo
   en tiempo pintan el tramo de cada tag (kitting, línea, cruce…) en una banda con un color categórico
   propio (`--viz-tramo-1…4`), distinto de los azules de la omisión y del naranja de los hallazgos, con

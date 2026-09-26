@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.47.0
+version: 0.48.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -288,6 +288,8 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-236 | Auditoría (`linea-tiempo-sin-paso`) | El tiempo sin paso con AGV esperando cubre al menos el 90 % de las paradas de la producción plantadas | Que en ellas faltaran AGV | Auditoría |
 | TC-237 | Exclusión de las paradas de la línea (`lineStopExclusion`, `outsideLineStops`) | Una transición del pulmón durante una parada con AGV esperando se quita; una de otro tramo a la vez, o del pulmón después, no | Quitar las de los AGV que siguen moviéndose | Unitaria |
 | TC-238 | Tramos (`tagSections`) | La lista `tramo` manda; lo demás, la línea como «línea» y los críticos `cruce` como «cruce»; el tramo va junto a lo declarado del tag | Que cambie algún cálculo | Unitaria |
+| TC-239 | Batería de una incidencia (`incidentBattery`, `abandonedReadings`) | Con la línea en marcha y los de detrás avanzando mientras él reaparece por delante, «avanzaba sin registrar»; si llegan a donde reaparece antes que él, «lo adelantaron»; si se quedan, «parado con cola»; con una vuelta entera, no se afirma; la cola de la línea parada, la calle de carga y el cambio de AGV se dicen; deja de leer contra su propio hueco más largo | Decir «no registra» de un AGV al que adelantaron | Unitaria |
+| TC-240 | Auditoría (`bateria-del-bloqueo`) | El AGV que se demora una vez y al que el resto adelanta: «lo adelantaron», con los que llegan a su siguiente tag antes que él | Que avanzaba sin registrar | Auditoría |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda

@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/25`
+- Dataset ID/version: `auditoria/26`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -94,6 +94,7 @@ fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual q
 | `limpieza-de-la-lista` | contexto, nada nuevo: junta lo ya plantado | fuera del físico, el refuerzo sin lecturas (66) primero y después los nunca leídos (13, 77, 131) y el número mal escrito; en otra posición, el 113 y uno de los vecinos cambiados (7 u 8); el refuerzo 65+66, incompleto | otro tag fuera del físico o en otra posición, o un refuerzo comprobado |
 | `linea-parada-con-pulmon` | nada nuevo en las lecturas: la medida se hace una segunda vez con la entrada en el 136, un tramo limpio (la lista declara la línea en el 59 y el 60, donde las paradas de la producción paran a la flota en sitios distintos y no marcan un pulmón) | las tres paradas de la producción, paradas de la línea con AGV esperando; el pulmón medido | que a la línea le faltaron AGV en una parada de la producción |
 | `linea-tiempo-sin-paso` | nada nuevo: la misma medida con la entrada en el 136 | el tiempo sin paso con AGV esperando cubre al menos el 90 % de las tres paradas de la producción | que en ellas faltaran AGV |
+| `bateria-del-bloqueo` | nada nuevo: el AGV que se demora una vez al entrar en la zona cargada y al que el resto adelanta con su propio reloj | su batería dice que lo adelantaron: los de detrás llegan a su siguiente tag antes que él | que avanzaba sin registrar lecturas |
 | `linea-tag-sin-leer` | solo declaración: la lista `linea` con el 59 y el 60; los vehículos sin el 60 en memoria (`omision-por-memoria`) pasan leyendo solo el 59 | exactamente esos vehículos, sin el 60 en todos sus pasos, y el lector degradado; ningún paso «sin parada» ni «no sigue» en las paradas de la producción | que no hicieran la parada, u otro vehículo |
 ## Resultados prohibidos
 

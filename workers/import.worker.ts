@@ -28,6 +28,14 @@ import { declaredTagInfo, tagSections } from "../src/domain/tag-info.js";
 import { reinforcementGroups, reinforcementPartners } from "../src/domain/critical-reinforcement.js";
 import { buildListCleanup } from "../src/domain/list-cleanup.js";
 import { lineStopExclusion, measureLineFeed, outsideLineStops } from "../src/domain/line-feed.js";
+import {
+  abandonedReadings,
+  buildIncidentContext,
+  incidentBattery,
+  type Incident,
+  type IncidentKind,
+  type IncidentRecord,
+} from "../src/domain/incident-battery.js";
 import { dominantNeighbours, locateUndeclaredTags } from "../src/domain/undeclared-tags.js";
 import { reconcileCircuitOrder } from "../src/domain/circuit-order.js";
 import { CatalogFailure, EXPECTED_STRUCTURE, importCatalog, importCatalogRows } from "../src/ingestion/catalog.js";
@@ -1054,8 +1062,55 @@ async function buildViews(
           productionIntervals,
         );
 
+  // La batería de mediciones de cada incidencia (R-AGV-021): paradas sin explicación, primeros de cola
+  // sin avanzar y AGV que dejan de leer. Cada una, con lo mismo medido en el mismo orden.
+  const windowEnd = Math.max(0, ...coverage.map((span) => span.to));
+  const incidentContext = buildIncidentContext(
+    readings,
+    lineFeed?.passTimes ?? [],
+    (utcMs) => (lineFeed === undefined ? null : regimeOf(utcMs) === "produccion" ? lineFeed.cadence : lineFeed.nightCadence),
+    (lineFeed?.stops ?? []).filter((stop) => stop.kind === "con-pulmon").map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs })),
+    new Map(laneConfig.lanes.flatMap((lane) => lane.tags.map((tagId) => [tagId, lane.laneId] as const))),
+  );
+  const batteries: Record<string, ReturnType<typeof incidentBattery>> = {};
+  const records: IncidentRecord[] = [];
+  const addBattery = (kind: IncidentKind, incident: Incident): void => {
+    const battery = incidentBattery(incidentContext, incident, windowEnd);
+    batteries[`${incident.agvId} ${incident.fromTagId} ${incident.fromUtcMs}`] = battery;
+    records.push({ kind, incident, battery });
+  };
+  for (const cohort of circuitStateCohorts) {
+    for (const stop of [...cohort.state.unexplained.produccion, ...cohort.state.unexplained.noche]) {
+      addBattery("parada-sin-explicacion", {
+        agvId: stop.agvId,
+        fromTagId: stop.fromTagId,
+        fromUtcMs: stop.fromUtcMs,
+        toTagId: stop.toTagId,
+        toUtcMs: stop.toUtcMs,
+      });
+    }
+  }
+  for (const report of flowReports) {
+    for (const blockage of report.blockages) {
+      addBattery("bloqueo", {
+        agvId: blockage.agvId,
+        fromTagId: blockage.tagId,
+        fromUtcMs: blockage.fromUtcMs,
+        toTagId: blockage.nextTagId,
+        toUtcMs: blockage.toUtcMs,
+      });
+    }
+  }
+  const abandoned = abandonedReadings(incidentContext, windowEnd).map((incident) => {
+    const battery = incidentBattery(incidentContext, incident, windowEnd);
+    records.push({ kind: "deja-de-leer", incident, battery });
+    return { incident, battery };
+  });
+  records.sort((a, b) => a.incident.fromUtcMs - b.incident.fromUtcMs);
+
   return {
     ...views,
+    incidents: { batteries, abandoned, records },
     ...(lineFeed === undefined ? {} : { lineFeed }),
     ...(undeclared.evaluated ? { undeclaredTags: undeclared.tags } : {}),
     inventory: {
