@@ -83,6 +83,7 @@ function state(
   flow: Partial<FlowReport>,
   transitions: readonly Transition[] = laps(),
   timeCritical: ReadonlyMap<string, string> = new Map(),
+  extra: Partial<CircuitStateInput> = {},
 ) {
   const bands = buildSegmentBands(transitions, RING, DAY, { minBandSamples: 20 }, 30 * SECOND);
   const input: CircuitStateInput = {
@@ -94,6 +95,7 @@ function state(
     reachTags: 2,
     minVehicles: 2,
     headStallMs: 120 * SECOND,
+    ...extra,
   };
   return buildCircuitState(input, { darkZoneFactor: 1.5, maxFalsePoints: 0.01 });
 }
@@ -167,6 +169,16 @@ describe("zonas oscuras (R-GRA-014)", () => {
     const explained = state({}, laps({ long15: true }), new Map([["T15", "parada-precisa"]]));
     expect(explained.darkZones).toEqual([]);
     expect(explained.explainedSlow).toMatchObject([{ tagId: "T15", function: "parada-precisa" }]);
+  });
+
+  it("un tag declarado sin lecturas dentro de la zona es su causa, y se nombra", () => {
+    // La lista declara T15b entre T15 y T16, y nadie lo lee: la información que falta es la suya.
+    const declared = [...RING.slice(0, 16), "T15b", ...RING.slice(16)];
+    const missing = state({}, laps({ long15: true }), new Map(), { declaredOrder: declared, readTags: new Set(RING) });
+    expect(missing.darkZones).toMatchObject([{ tags: ["T15", "T16"], cause: "tag-sin-lecturas", missingTags: ["T15b"] }]);
+    // Si T15b sí se lee, la causa vuelve a ser el tramo.
+    const read = state({}, laps({ long15: true }), new Map(), { declaredOrder: declared, readTags: new Set([...RING, "T15b"]) });
+    expect(read.darkZones).toMatchObject([{ cause: "tramo-largo", missingTags: [] }]);
   });
 
   it("un circuito sin huecos no tiene zonas oscuras", () => {

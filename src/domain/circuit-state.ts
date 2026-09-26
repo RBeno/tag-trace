@@ -43,6 +43,9 @@ export interface CircuitStateInput {
   readonly flow: FlowReport;
   /** Tags cuya espera está explicada —parada precisa o semáforo, declarados o candidatos— y su clase. */
   readonly timeCritical: ReadonlyMap<string, string>;
+  /** La lista `circuito` en su orden y los tags con alguna lectura: un declarado sin lecturas dentro de una zona oscura es su causa. */
+  readonly declaredOrder?: readonly string[];
+  readonly readTags?: ReadonlySet<string>;
   readonly reachTags: number;
   /** AGV distintos que hacen falta para hablar de un sitio y no de un AGV. */
   readonly minVehicles: number;
@@ -85,7 +88,14 @@ export interface DarkZone {
   readonly typicalMs: number;
   /** Proporción de pasadas que se saltan algún tag de la zona. */
   readonly skipShare: number;
-  readonly cause: "salta-tag" | "tramo-largo";
+  /**
+   * `tag-sin-lecturas`: la lista `circuito` declara ahí un tag que nadie lee, y la información que
+   * falta es la suya. `salta-tag`: la mayoría de pasadas se salta algún tag. `tramo-largo`: se lee todo
+   * y el tramo tarda.
+   */
+  readonly cause: "tag-sin-lecturas" | "salta-tag" | "tramo-largo";
+  /** Con `tag-sin-lecturas`, los tags declarados sin lecturas dentro de la zona, en el orden de la lista. */
+  readonly missingTags: readonly string[];
 }
 
 export interface NightSegment {
@@ -366,6 +376,22 @@ export function buildCircuitState(input: CircuitStateInput, thresholds: CircuitS
       else darkSegments[index] = true;
     });
   }
+  // Los tags que la lista declara entre dos tags leídos y nadie lee: entre `from` y `to` en el orden
+  // de la lista, dando la vuelta, sin contar los extremos.
+  const declaredOrder = input.declaredOrder ?? [];
+  const readTags = input.readTags ?? new Set<string>();
+  const declaredWithoutReadings = (from: string, to: string): string[] => {
+    const start = declaredOrder.indexOf(from);
+    const end = declaredOrder.indexOf(to);
+    if (start < 0 || end < 0 || start === end) return [];
+    const between: string[] = [];
+    for (let at = (start + 1) % declaredOrder.length; at !== end; at = (at + 1) % declaredOrder.length) {
+      const tagId = declaredOrder[at] as string;
+      if (!readTags.has(tagId)) between.push(tagId);
+      if (between.length > declaredOrder.length) break;
+    }
+    return between;
+  };
   const darkZones: DarkZone[] = [];
   if (typicalGapMs !== null && darkSegments.some(Boolean) && !darkSegments.every(Boolean)) {
     // Se empieza justo después de un tramo claro para no partir en dos una zona que da la vuelta.
@@ -377,12 +403,14 @@ export function buildCircuitState(input: CircuitStateInput, thresholds: CircuitS
       const samples = current.reduce((sum, index) => sum + (gapsOf[index]?.length ?? 0), 0);
       const skips = current.reduce((sum, index) => sum + (skipsOf[index] ?? 0), 0);
       const skipShare = samples === 0 ? 0 : skips / samples;
+      const missingTags = declaredWithoutReadings(tags[0] as string, tags[tags.length - 1] as string);
       darkZones.push({
         tags,
         gapMs: Math.max(...current.map((index) => segmentGap[index] ?? 0)),
         typicalMs: typicalGapMs,
         skipShare,
-        cause: skipShare >= 0.5 ? "salta-tag" : "tramo-largo",
+        cause: missingTags.length > 0 ? "tag-sin-lecturas" : skipShare >= 0.5 ? "salta-tag" : "tramo-largo",
+        missingTags,
       });
       current = [];
     };

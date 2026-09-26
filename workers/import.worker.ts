@@ -336,6 +336,7 @@ async function buildViews(
   // El contraste contra Vsystem y la posición de un tag no declarado exigen un **orden**: el orden en
   // que el fichero trae las filas de la lista `circuito`, que el importador conserva.
   const declaredOrder = [...byName("circuito")];
+  const readTagSet = new Set(readings.map((entry) => entry.tagId));
   // Los refuerzos de cada punto crítico (R-GRA-016): seguidos en ese mismo orden declarado y con la
   // misma función. Una omisión en uno no pierde la función si el otro se lee.
   const declaredReinforcements = reinforcementGroups(
@@ -744,6 +745,8 @@ async function buildViews(
           regimeOf,
           flow,
           timeCritical,
+          declaredOrder,
+          readTags: readTagSet,
           reachTags: PROVISIONAL_CONFIG.flowStops.reachTags,
           minVehicles: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
           headStallMs: PROVISIONAL_CONFIG.flowStops.headStallMs,

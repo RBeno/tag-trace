@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.35.0
+version: 0.36.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -51,7 +51,7 @@ last_updated: 2026-09-26
 | Retención | Transición lenta —por encima del p95 de su tramo, con al menos el margen de espera— con un AGV delante que no se iba (R-FLO-008). |
 | Cuello de botella | Tag donde se concentran las retenciones más de lo que da el azar por el tiempo que los AGV pasan ahí: donde se forma cola. Si fluye, no es una avería (R-FLO-008). |
 | Punto conflictivo | Tags vecinos con más paradas sin explicación, de varios AGV, de las que da el azar por sus pasadas. Dice dónde, no por qué (R-FLO-009). |
-| Zona oscura | Tramo donde el hueco entre dos lecturas es mucho mayor que el típico del circuito, porque un tag se salta o porque el tramo tarda: ahí una parada se ve tarde (R-GRA-014). |
+| Zona oscura | Tramo donde el hueco entre dos lecturas es mucho mayor que el típico del circuito, porque un tag se salta o porque el tramo tarda: ahí una parada se ve tarde (R-GRA-014). Su causa es un tag declarado sin lecturas dentro de ella, que se salte algún tag o que el tramo tarde (R-GRA-014). |
 | Primero de la cola (bloqueo) | La parada de una cola sin nadie parado delante. Si pasa dos minutos de lo habitual con la producción en marcha, es un bloqueo: se dice dónde, cuánto, cuántos quedaron detrás y cuántas lecturas críticas hubo mientras tanto. Sin causa (R-AGV-018, R-EVI-006). |
 | Periodo de inactividad | Intervalo dentro de la cobertura en el que un objeto no produce lecturas. Como un AGV detenido no emite, la inactividad no se distingue del fallo de comunicación por la ausencia en sí, sino por el contexto colectivo, el punto de la última lectura y el calendario. |
 | Instante de cambio | Última lectura antes de un silencio o de un cambio sostenido de comportamiento. Es `inferred`: marca el último momento con evidencia, no el instante real en que el objeto dejó de funcionar. |

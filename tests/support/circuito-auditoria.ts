@@ -104,6 +104,12 @@ export type DefectClass =
   | "lista-con-otro-orden"
   /** La lista escribe un tag con un dígito cambiado; en su sitio se lee el de verdad (R-GRA-015). */
   | "lista-con-numero-mal-escrito"
+  /** Contexto: cada tag declarado que nadie lee hace oscura su zona, y la causa lo nombra (R-GRA-014). */
+  | "zona-oscura-por-tag-sin-lecturas"
+  /** Contexto: la batería del AGV que se salta tags dice que avanzaba sin registrar (R-AGV-021). */
+  | "bateria-del-que-salta"
+  /** Contexto: la batería de la parada aislada dice parado de verdad, con los de detrás sin pasar (R-AGV-021). */
+  | "bateria-de-la-parada-aislada"
   /**
    * Contexto: la limpieza de la lista junta lo que ya está plantado —los declarados que nadie lee, los
    * cambiados de orden y el refuerzo al que le falta un tag— sin plantar nada nuevo (R-GRA-017).
@@ -457,6 +463,8 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const cuelloPosicion = 116;
   const CUELLO_ESPERA_MS = 40_000;
   const ocupacionCuello: { from: number; to: number }[] = [];
+  /** Mientras dura la parada aislada, quien llega detrás a su sitio espera: en una guía no se adelanta (Parte 60). */
+  let ocupacionAislada: { from: number; to: number } | null = null;
   /**
    * Quién retiene a otros (Parte 50, R-AGV-020): un AGV sin otro papel se queda en el semáforo más que
    * nadie, en cada pasada de día, y los que llegan detrás —ya lo tenían delante al leer el tag de
@@ -727,9 +735,26 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         !paradaAisladaHecha &&
         now >= paradaAisladaDesde
       ) {
+        ocupacionAislada = { from: now, to: now + paradaAislada.extraMs };
         now += paradaAislada.extraMs;
         debtMs += paradaAislada.extraMs;
         paradaAisladaHecha = true;
+      }
+      // Los de detrás (Parte 60): quien lee el tag de la parada aislada mientras dura, espera a que el
+      // parado se vaya, como en el cuello. Solo los vehículos generados después la ven, y el lector
+      // degradado queda fuera por la misma razón que en el cuello.
+      if (
+        margenSuficiente &&
+        position === paradaAislada.position &&
+        vehicle !== paradaAislada.vehicle &&
+        vehicle !== lectorDegradado &&
+        ocupacionAislada !== null &&
+        ocupacionAislada.from <= now &&
+        now < ocupacionAislada.to
+      ) {
+        const extra = ocupacionAislada.to + 2_000 - now;
+        now += extra;
+        debtMs += extra;
       }
       // Punto conflictivo (Parte 47): cada uno de los ocho, una vez en cada posición, a horas de día
       // lejos de las paradas de la producción.
@@ -1327,8 +1352,29 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "parada-sin-explicacion-aislada",
       tags: [ring[paradaAislada.position] as string],
       vehicles: [paradaAislada.vehicle],
-      expect: "una parada candidata sin explicación, con quién iba delante y cuánto avanzó mientras tanto",
+      expect: "una parada candidata sin explicación, con quién iba delante y cuánto avanzó mientras tanto; los de detrás esperan",
       mustNotSay: "una causa (batería, revisión, persona…), ni un bloqueo, ni un punto conflictivo",
+    },
+    {
+      kind: "zona-oscura-por-tag-sin-lecturas",
+      tags: nuncaLeidos,
+      vehicles: [],
+      expect: "cada tag declarado sin lecturas dentro de una zona oscura cuya causa es «tag sin lecturas» y lo nombra",
+      mustNotSay: "«el tramo tarda» de un tramo al que le falta un tag declarado",
+    },
+    {
+      kind: "bateria-del-que-salta",
+      tags: tramoConvoy,
+      vehicles: [saltador],
+      expect: "en un hueco en que se salta el tramo: los de detrás siguen avanzando y él reaparece por delante, avanzaba sin registrar",
+      mustNotSay: "que lo adelantaran o que estuviera parado",
+    },
+    {
+      kind: "bateria-de-la-parada-aislada",
+      tags: [ring[paradaAislada.position] as string],
+      vehicles: [paradaAislada.vehicle],
+      expect: "los de detrás llegan a su tag y no pasan de ahí: parado de verdad, retenía la cola",
+      mustNotSay: "que avanzaba sin registrar ni que lo adelantaran",
     },
     {
       kind: "punto-conflictivo",

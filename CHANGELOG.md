@@ -2,6 +2,35 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.42.0] - 2026-09-26
+
+La auditoría, leída entera y no solo su línea de DETECTA: dos falsos positivos que ninguna sonda
+vigilaba, un escenario físicamente inconsistente, y tres sondas y dos invariantes nuevos.
+
+### Corregido
+
+- **Zona oscura «el tramo tarda» donde faltaba un tag declarado** (R-GRA-014). Cuatro zonas del
+  sintético salían con esa causa, y las cuatro eran exactamente los tags declarados que nadie lee.
+  Ahora la causa es `tag-sin-lecturas`, nombra los tags (`missingTags`) y remite a la limpieza de la
+  lista. La lista y los tags leídos llegan a `buildCircuitState`.
+- **«7105 delante de 7115» en una parada de la producción** (R-AGV-018): el AGV que salta tags salía
+  como si hubiera adelantado a un vecino al que nunca adelantó. En el orden solo entran los que
+  volvieron por el mismo tag, el siguiente o uno saltado como mucho; un salto habitual lo hace «por su
+  sitio», no fiable para el orden. **Cambia una prueba unitaria**: el caso en que F1 vuelve saltándose
+  tres tags ya no afirma que pasó a H —se dice «no siguió por su sitio»— y el caso positivo se
+  reescribe con F1 volviendo un tag más allá mientras H relee el suyo.
+
+### Añadido
+
+- **El generador retiene detrás de la parada aislada** (`ocupacionAislada`): quien llega a su tag
+  mientras dura espera, como en el cuello. Antes los de detrás la atravesaban, y la batería decía,
+  con razón sobre esos datos, «lo adelantaron».
+- Sondas: `zona-oscura-por-tag-sin-lecturas`, `bateria-del-que-salta` (avanzaba sin registrar) y
+  `bateria-de-la-parada-aislada` (parado de verdad). Invariantes: ningún hueco «sin clasificar» fuera
+  de una parada de la producción; ningún AGV «deja de leer». `auditoria/27`, 53 clases DETECTA.
+- Los seis huecos «sin clasificar» del informe son la parada de la producción pillada con el AGV en un
+  tag de rama o sustituido, sin tiempo habitual con que clasificarlos; todos justificados.
+
 ## [3.41.0] - 2026-09-26
 
 La batería de mediciones de cada incidencia, del propietario: documentar cada una con lo mismo medido,

@@ -153,25 +153,41 @@ describe("paradas contra el flujo", () => {
     expect(flow.productionFlow[0]).toMatchObject({ vehicles: 6, inPlace: 6, notInPlace: [], orderKept: true });
   });
 
-  it("si uno que iba detrás aparece delante tras la parada, se dice quién pasó a quién", () => {
-    // Todos parados 15 min; F1, que iba un tag detrás de H, vuelve cuatro tags más allá (se saltó la
-    // lectura de tres) y aparece delante de H, que vuelve por el siguiente.
+  /** La parada de 15 min, con la transición que la cruza de cada AGV cambiada a voluntad. */
+  function flowWith(remap: (agvId: string) => string | null) {
     const all = queue(0).map((plan) => ({ ...plan, pauses: new Map([[90, 15 * 60_000]]) }));
     const { readings, transitions } = drive(all);
-    const jumped = transitions.map((transition) =>
-      transition.agvId === "F1" && transition.fromTime > 1_800_000 && transition.toTime - transition.fromTime > 10 * 60_000
-        ? { ...transition, to: "T13" }
-        : transition,
-    );
+    // La transición que cruza la parada de cada AGV es la única de más de 10 min.
+    const changed = transitions.map((transition) => {
+      const to = transition.toTime - transition.fromTime > 10 * 60_000 ? remap(transition.agvId) : null;
+      return to === null ? transition : { ...transition, to };
+    });
     const coverage = [{ from: 0, to: Math.max(...readings.map((reading) => reading.time.utcMs)) }];
     const production = productionStops(readings, CRITICAL, coverage, ZONE, SHIFTS, THRESHOLDS);
-    const bands = bandsOf(jumped, production.stops, coverage);
-    const flow = flowStops(
-      { transitions: jumped, coverage, bands, regimeOf: DAY, production, laneTags: new Set(), functionOf: new Map() },
+    const bands = bandsOf(changed, production.stops, coverage);
+    return flowStops(
+      { transitions: changed, coverage, bands, regimeOf: DAY, production, laneTags: new Set(), functionOf: new Map() },
       THRESHOLDS,
     );
+  }
+
+  it("si uno que iba detrás aparece delante tras la parada, por su sitio, se dice quién pasó a quién", () => {
+    // Todos parados 15 min; F1, que iba un tag detrás de H (T9 frente a T10), vuelve por T11 (un tag
+    // saltado: por su sitio) mientras H vuelve a leer su mismo T10: F1 aparece delante de H.
+    const flow = flowWith((agvId) => (agvId === "F1" ? "T11" : agvId === "H" ? "T10" : null));
+    expect(flow.productionFlow[0]?.notInPlace).toEqual([]);
     expect(flow.productionFlow[0]?.orderKept).toBe(false);
     expect(flow.productionFlow[0]?.orderChanges).toContainEqual({ agvId: "F1", passed: "H" });
+  });
+
+  it("uno que vuelve saltándose tags no cuenta en el orden: se dice que no siguió por su sitio, no que adelantó", () => {
+    // F1 vuelve cuatro tags más allá (se saltó tres). Su posición no es fiable: la auditoría enseñó al
+    // AGV que salta tags como «delante de» un vecino al que nunca adelantó. Se dice lo que se ve —no
+    // siguió por su sitio— y nada más.
+    const flow = flowWith((agvId) => (agvId === "F1" ? "T13" : null));
+    expect(flow.productionFlow[0]?.notInPlace).toEqual([{ agvId: "F1", fromTagId: "T9", toTagId: "T13", skipped: 3 }]);
+    expect(flow.productionFlow[0]?.orderChanges).toEqual([]);
+    expect(flow.productionFlow[0]?.orderKept).toBe(true);
   });
 
   it("sin tags críticos declarados, la base es la flota entera, y se dice", () => {

@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/26`
+- Dataset ID/version: `auditoria/27`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -76,7 +76,7 @@ fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual q
 | `parada-de-produccion` | toda la flota congelada 15 min a las 10:00 y a las 18:00 del día 1 y a las 10:00 del día 2: después de generar, cada fila posterior a una franja se desplaza su duración (sin `random()`), y los dos tags críticos declarados se quedan sin lecturas | tres paradas de la producción y ninguna más, la de las 10:00 repetida; todos siguen por su sitio; cada hueco dentro, justificado (R-AGV-018). El orden no es verdad plantada: el generador deja que un AGV adelante a otro al circular, y se informa | que algún AGV se desconectara o saliera del circuito, o un bloqueo dentro de una franja |
 | `bloqueo-sin-justificar` | el mismo AGV que se retrasa 20 min en la zona cargada | el único bloqueo: el primero de su cola, sin avanzar y con la producción en marcha, con sus lecturas críticas | una causa, o justificarlo con una parada de la producción que no hubo |
 | `noche-medida-aparte` | 4 tramos seguidos (54→58) van 45 s más lentos en cada pasada de noche, con la transición entera entre 22:10 y 04:50; la deuda de reloj se devuelve a 1 s por paso | la horquilla de producción de esos tramos como la de uno limpio, la de noche con el doble o más, ninguna parada de noche por esa lentitud | mezclar la noche con el día, o llamar parada a lo que de noche es lo normal |
-| `parada-sin-explicacion-aislada` | un AGV sin otro papel, 63 s de más una sola vez en 86→87, de día | una parada sin explicación con quién iba delante y cuánto avanzó | una causa, un bloqueo o un punto conflictivo |
+| `parada-sin-explicacion-aislada` | un AGV sin otro papel, 63 s de más una sola vez en 86→87, de día; quien llega detrás a 86 mientras dura espera a que se vaya, como en el cuello (Parte 60: en una guía no se adelanta) | una parada sin explicación con quién iba delante y cuánto avanzó | una causa, un bloqueo o un punto conflictivo |
 | `punto-conflictivo` | 8 AGV sin otro papel, 70 s de más una vez en 72→73 y otra en 73→74, de día (≈2 % de las pasadas, por debajo del p95) | un punto que une los dos tags, con los 8 AGV y sin bloqueos | que sea de un solo AGV, o un bloqueo |
 | `cuello-de-botella` | de 19:30 a 21:00, cada AGV espera 40 s en 116 y quien llega mientras otro ya generado lo ocupa espera a que salga (una sola espera, no una cadena) | un cuello de botella en 116, que fluye, sin paradas sin explicación detrás | una avería, o dejar sin explicación a quien espera |
 | `zona-oscura` | nada nuevo: la serie de tags poco leídos (40–43) | una zona oscura que los incluye, con la causa «se salta el tag» | que el tramo sea largo, o una zona sobre tramos limpios |
@@ -95,6 +95,9 @@ fuente real: la auditoría construye esa cobertura de dos tramos a mano, igual q
 | `linea-parada-con-pulmon` | nada nuevo en las lecturas: la medida se hace una segunda vez con la entrada en el 136, un tramo limpio (la lista declara la línea en el 59 y el 60, donde las paradas de la producción paran a la flota en sitios distintos y no marcan un pulmón) | las tres paradas de la producción, paradas de la línea con AGV esperando; el pulmón medido | que a la línea le faltaron AGV en una parada de la producción |
 | `linea-tiempo-sin-paso` | nada nuevo: la misma medida con la entrada en el 136 | el tiempo sin paso con AGV esperando cubre al menos el 90 % de las tres paradas de la producción | que en ellas faltaran AGV |
 | `bateria-del-bloqueo` | nada nuevo: el AGV que se demora una vez al entrar en la zona cargada y al que el resto adelanta con su propio reloj | su batería dice que lo adelantaron: los de detrás llegan a su siguiente tag antes que él | que avanzaba sin registrar lecturas |
+| `zona-oscura-por-tag-sin-lecturas` | nada nuevo: los tres tags declarados que nadie lee (13, 77, 131) y el refuerzo sin lecturas (66) | cada uno dentro de una zona oscura con causa «tag sin lecturas» que lo nombra; ninguna zona «el tramo tarda» | «el tramo tarda» donde falta un tag declarado |
+| `bateria-del-que-salta` | nada nuevo: un hueco de producción en que el saltador (7105) se salta el tramo 90–94 entero | su batería: los de detrás siguen avanzando y él reaparece por delante, avanzaba sin registrar; nadie lo adelanta | que lo adelantaran o que estuviera parado |
+| `bateria-de-la-parada-aislada` | los AGV que llegan a 86 durante la parada aislada esperan a que el parado se vaya | su batería: los de detrás no pasan de su sitio, parado de verdad y retenía la cola | que avanzaba sin registrar o que lo adelantaran |
 | `linea-tag-sin-leer` | solo declaración: la lista `linea` con el 59 y el 60; los vehículos sin el 60 en memoria (`omision-por-memoria`) pasan leyendo solo el 59 | exactamente esos vehículos, sin el 60 en todos sus pasos, y el lector degradado; ningún paso «sin parada» ni «no sigue» en las paradas de la producción | que no hicieran la parada, u otro vehículo |
 ## Resultados prohibidos
 

@@ -1685,10 +1685,13 @@ function renderCircuitState(views: CircuitViews): void {
         finding(
           `Zona oscura de ${first} a ${last}`,
           `${duration(zone.gapMs)} entre dos lecturas al pasar por ahí; lo típico del circuito, ${duration(zone.typicalMs)}`,
-          (zone.cause === "salta-tag"
-            ? `El ${Math.round(zone.skipShare * 100)} % de las pasadas se salta algún tag de la zona: falta información ` +
-              "porque esos tags se leen poco. "
-            : "Los tags se leen, pero el tramo tarda: ahí un AGV pasa mucho tiempo sin dar señal. ") +
+          (zone.cause === "tag-sin-lecturas"
+            ? `La lista del circuito declara ahí ${zone.missingTags.join(", ")}, que nadie lee: la información que falta es la ` +
+              `${zone.missingTags.length === 1 ? "suya" : "de esos tags"} (ver la limpieza de la lista). `
+            : zone.cause === "salta-tag"
+              ? `El ${Math.round(zone.skipShare * 100)} % de las pasadas se salta algún tag de la zona: falta información ` +
+                "porque esos tags se leen poco. "
+              : "Los tags se leen, pero el tramo tarda: ahí un AGV pasa mucho tiempo sin dar señal. ") +
             "Una parada en esta zona se ve tarde.",
           ["zona-oscura", first],
         ),

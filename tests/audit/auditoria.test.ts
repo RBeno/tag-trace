@@ -31,7 +31,7 @@ import { buildTagInventory } from "../../src/domain/inventory.js";
 import { reinforcementGroups, reinforcementPartners } from "../../src/domain/critical-reinforcement.js";
 import { buildListCleanup } from "../../src/domain/list-cleanup.js";
 import { lineStopExclusion, measureLineFeed, outsideLineStops, type LineFeed } from "../../src/domain/line-feed.js";
-import { buildIncidentContext, incidentBattery, type IncidentContext } from "../../src/domain/incident-battery.js";
+import { abandonedReadings, buildIncidentContext, incidentBattery, type IncidentContext } from "../../src/domain/incident-battery.js";
 import { buildAllAgvDossiers, buildAllTagDossiers } from "../../src/domain/dossier.js";
 import { buildChargingReport, type ChargingReport } from "../../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans, type FifoReport } from "../../src/domain/fifo.js";
@@ -504,6 +504,8 @@ function analyse(
             regimeOf,
             flow,
             timeCritical,
+            declaredOrder: entriesOf("circuito").map((entry) => entry.tagId),
+            readTags: new Set(readings.map((entry) => entry.tagId)),
             reachTags: PROVISIONAL_CONFIG.flowStops.reachTags,
             minVehicles: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
             headStallMs: PROVISIONAL_CONFIG.flowStops.headStallMs,
@@ -1424,6 +1426,54 @@ describe("auditoría del circuito con verdad conocida", () => {
           `ciclo entre ${Math.round((day?.cycleLowMs ?? 0) / 1000)} y ${Math.round((day?.cycleHighMs ?? 0) / 1000)} s`,
       };
     },
+    "zona-oscura-por-tag-sin-lecturas": () => {
+      const tags = scenario.defects.find((d) => d.kind === "zona-oscura-por-tag-sin-lecturas")?.tags ?? [];
+      const zones = circuitState?.darkZones ?? [];
+      const found = tags.map((tag) => zones.find((zone) => zone.cause === "tag-sin-lecturas" && zone.missingTags.includes(tag)));
+      const spurious = zones.filter((zone) => zone.cause === "tramo-largo");
+      return {
+        ok: found.every((zone) => zone !== undefined) && spurious.length === 0,
+        detail:
+          tags.map((tag, index) => `${tag}: ${found[index] === undefined ? "sin zona" : `${found[index]?.tags[0]}…${found[index]?.tags.at(-1)}`}`).join(", ") +
+          `; «tramo tarda» sin tag declarado: ${spurious.length}`,
+      };
+    },
+    "bateria-del-que-salta": () => {
+      const defect = scenario.defects.find((d) => d.kind === "bateria-del-que-salta");
+      const agv = defect?.vehicles[0] ?? "";
+      const tramo = new Set(defect?.tags ?? []);
+      const steps = incidentContext.steps.get(agv) ?? [];
+      const physical = scenario.physicalRing;
+      const before = physical[physical.indexOf(defect?.tags[0] ?? "") - 1];
+      const afterTag = physical[physical.indexOf(defect?.tags.at(-1) ?? "") + 1];
+      // Un hueco de producción en que se saltó el tramo entero: del tag anterior al posterior.
+      const regime = regimeReader("Europe/Madrid", PROVISIONAL_CONFIG.regimes);
+      const index = steps.findIndex(
+        (step, at) => step.tagId === before && steps[at + 1]?.tagId === afterTag && regime(step.utcMs) === "produccion",
+      );
+      const from = steps[index];
+      const to = steps[index + 1];
+      if (from === undefined || to === undefined || tramo.size === 0) return { ok: false, detail: `${agv} no se salta el tramo entero` };
+      const battery = incidentBattery(incidentContext, { agvId: agv, fromTagId: from.tagId, fromUtcMs: from.utcMs, toTagId: to.tagId, toUtcMs: to.utcMs }, scenario.toUtcMs);
+      return {
+        ok: battery.reading === "no-registra" && battery.behind.overtook.length === 0,
+        detail: battery.lines.join(" | "),
+      };
+    },
+    "bateria-de-la-parada-aislada": () => {
+      const defect = scenario.defects.find((d) => d.kind === "bateria-de-la-parada-aislada");
+      const stop = flow.stops.find((entry) => entry.agvId === defect?.vehicles[0] && entry.fromTagId === defect?.tags[0]);
+      if (stop === undefined) return { ok: false, detail: "sin la parada aislada" };
+      const battery = incidentBattery(
+        incidentContext,
+        { agvId: stop.agvId, fromTagId: stop.fromTagId, fromUtcMs: stop.fromUtcMs, toTagId: stop.toTagId, toUtcMs: stop.toUtcMs },
+        scenario.toUtcMs,
+      );
+      return {
+        ok: battery.reading === "parado-con-cola" && battery.behind.held.length > 0 && battery.behind.overtook.length === 0,
+        detail: battery.lines.join(" | "),
+      };
+    },
     "bateria-del-bloqueo": () => {
       const agv = scenario.defects.find((d) => d.kind === "bateria-del-bloqueo")?.vehicles[0];
       const blockage = flow.blockages.find((entry) => entry.agvId === agv);
@@ -1864,6 +1914,11 @@ describe("auditoría del circuito con verdad conocida", () => {
       agrupadasEspurias.map((delivery) => `${delivery.agvId} ${delivery.fromTagId}`),
       "lecturas agrupadas sin plantar",
     ).toHaveLength(0);
+
+    // Ningún AGV «deja de leer» (R-AGV-021): todos leen hasta el final de lo cargado. Con el umbral de
+    // cada AGV contra sí mismo, un silencio normal —la noche, una carga— no puede salir como abandono.
+    const abandonados = abandonedReadings(incidentContext, scenario.toUtcMs).map((entry) => entry.agvId);
+    expect(abandonados, "AGV que dejan de leer sin plantar").toEqual([]);
   }, PLAZO);
 
   it("con una sola exportación, los cambios de tag y la lectura por AGV coinciden con lo plantado", () => {
@@ -1983,6 +2038,13 @@ describe("auditoría del circuito con verdad conocida", () => {
     expect([...silences.values()].flat().filter((entry) => entry.kind === "desconexion")).toEqual([]);
     // Y el único bloqueo es el plantado.
     expect(flow.blockages.map((blockage) => blockage.agvId)).toEqual([adelantado]);
+    // Un hueco que no se puede clasificar por su tramo (sin tiempo habitual: el AGV estaba en una rama o
+    // en un tag sustituido) solo ocurre dentro de una parada de la producción. Fuera de ellas, todo
+    // hueco tiene clase.
+    const sinClase = [...silences].flatMap(([agvId, list]) =>
+      list.filter((entry) => entry.kind === "sin-clasificar" && entry.justification !== "produccion").map((entry) => `${agvId} ${entry.detail.lastTagBefore}`),
+    );
+    expect(sinClase, "huecos sin clasificar fuera de una parada de la producción").toEqual([]);
   }, PLAZO);
 
   it("fuera de la lista del circuito, solo el tag plantado sale como de noche (R-DAT-022)", () => {

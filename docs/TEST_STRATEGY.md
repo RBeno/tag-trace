@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.48.0
+version: 0.49.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -290,6 +290,11 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-238 | Tramos (`tagSections`) | La lista `tramo` manda; lo demás, la línea como «línea» y los críticos `cruce` como «cruce»; el tramo va junto a lo declarado del tag | Que cambie algún cálculo | Unitaria |
 | TC-239 | Batería de una incidencia (`incidentBattery`, `abandonedReadings`) | Con la línea en marcha y los de detrás avanzando mientras él reaparece por delante, «avanzaba sin registrar»; si llegan a donde reaparece antes que él, «lo adelantaron»; si se quedan, «parado con cola»; con una vuelta entera, no se afirma; la cola de la línea parada, la calle de carga y el cambio de AGV se dicen; deja de leer contra su propio hueco más largo | Decir «no registra» de un AGV al que adelantaron | Unitaria |
 | TC-240 | Auditoría (`bateria-del-bloqueo`) | El AGV que se demora una vez y al que el resto adelanta: «lo adelantaron», con los que llegan a su siguiente tag antes que él | Que avanzaba sin registrar | Auditoría |
+| TC-241 | Zona oscura por tag sin lecturas (`buildCircuitState`, auditoría `zona-oscura-por-tag-sin-lecturas`) | Cada tag declarado que nadie lee cae en una zona oscura cuya causa es `tag-sin-lecturas` y lo nombra; ninguna zona sale como «el tramo tarda» habiendo un declarado sin lecturas dentro | «El tramo tarda» de un tramo al que le falta un tag declarado | Unitaria y auditoría |
+| TC-242 | Orden tras la parada de la producción (`flowStops`, `productionFlow`) | F1 que vuelve un tag más allá mientras H relee el suyo: F1 pasó a H; F1 que vuelve saltándose tres: «no siguió por su sitio» y ningún cambio de orden | Que un AGV que salta tags adelantó a alguien | Unitaria |
+| TC-243 | Auditoría (`bateria-del-que-salta`) | En un hueco en que el saltador se salta el tramo entero, su batería dice que avanzaba sin registrar: los de detrás siguen y él reaparece por delante; nadie lo adelanta | Que lo adelantaran o que estuviera parado | Auditoría |
+| TC-244 | Auditoría (`bateria-de-la-parada-aislada`) | El generador retiene a quien llega detrás mientras dura la parada aislada; su batería dice parado de verdad, con los de detrás sin pasar de su sitio | Que avanzaba sin registrar; que la retención mueva otra clase | Auditoría |
+| TC-245 | Auditoría, invariantes | Ningún hueco «sin clasificar» fuera de una parada de la producción; ningún AGV «deja de leer» en un escenario en que todos leen hasta el final | Un abandono espurio por un silencio normal (noche, carga) | Auditoría |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda

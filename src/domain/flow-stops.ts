@@ -656,7 +656,12 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
       if (!inPlace) {
         notInPlace.push({ agvId: transition.agvId, fromTagId: transition.from, toTagId: transition.to, skipped });
       }
-      if (from !== undefined && to !== undefined) {
+      // En el orden solo entran los que leyeron el tag siguiente, el mismo o uno saltado como mucho: un
+      // AGV que se saltó más tags no tiene una posición fiable, ni antes ni después, y comparado con un
+      // vecino parecía adelantarlo. Que el salto sea habitual (`usualStep`) lo hace «por su sitio»,
+      // no fiable para el orden.
+      const orderable = transition.from === transition.to || (skipped !== null && skipped <= 1);
+      if (from !== undefined && to !== undefined && orderable) {
         before.push({ agvId: transition.agvId, position: from, time: transition.fromTime });
         after.push({ agvId: transition.agvId, position: to, time: transition.toTime });
       }

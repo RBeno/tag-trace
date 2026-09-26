@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.34.0
+version: 0.35.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -531,7 +531,10 @@ que lo recorren —directas o saltándose tags, hasta media vuelta—; su median
 información del tramo, y lo típico del circuito es la mediana de esas medianas. Un tramo con
 `darkZoneFactor` veces lo típico o más es oscuro, salvo que su tag de salida sea parada precisa o
 semáforo, declarados o candidatos (`explainedSlow`). Los tramos oscuros seguidos forman una zona; la
-causa es `salta-tag` si la mitad o más de las transiciones que la recorren se saltan algún tag.
+causa es `tag-sin-lecturas` si la lista `circuito` declara entre los dos extremos de la zona (en el
+orden de la lista, dando la vuelta) algún tag sin ninguna lectura, y los nombra (`missingTags`);
+si no, `salta-tag` si la mitad o más de las transiciones que la recorren se saltan algún tag; si no,
+`tramo-largo`.
 
 **Noche y cambios.** La noche se compara tramo a tramo con producción por el p50. Entre el primer y
 el último tramo de cobertura, separados al menos `drift.minGapMs`, se construyen dos horquillas y
