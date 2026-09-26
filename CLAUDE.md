@@ -14,9 +14,9 @@ Antes de cualquier tarea, en este orden:
 
 ## Estado actual
 
-Fase **F0**. `implementationStarted: false`. **No se programa aplicación** hasta que
-`docs/project_state.json` registre la aprobación literal `CONTINÚA FASE 1` del propietario del
-producto. Cerrar documentación, gobierno y CI sí forma parte de F0.
+La fase vigente la dice `docs/project_state.json`, no este fichero. Al 2026-09-26: fase **F3**, en
+curso, con la aplicación en marcha; F4 espera `CONTINÚA FASE 4` del propietario. El relevo entre
+conversaciones está al final de `docs/PROJECT_MEMORY.md`.
 
 ## Límites que no se negocian
 

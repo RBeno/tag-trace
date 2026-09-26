@@ -2,6 +2,20 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.32.1] - 2026-09-26
+
+Relevo a una conversación nueva por el límite de contexto. Solo documentación.
+
+### Cambiado
+
+- `PROJECT_MEMORY.md`: sección «Estado al 2026-09-26», con la fase, cómo se ha trabajado, lo
+  pendiente de planta y lo que no está en el repositorio.
+- `CLAUDE.md` decía «Fase F0, `implementationStarted: false`» y que no se programa aplicación. Era de
+  F0 y nadie lo había actualizado; una conversación nueva lo lee primero. Ahora remite a
+  `project_state.json` y a la nota de relevo.
+- `README.md` decía lo mismo («Fase 0», «todavía no contiene la aplicación»). Ahora dice F3 y enlaza
+  la web publicada.
+
 ## [3.32.0] - 2026-09-25
 
 La posición de un tag la dan las lecturas, no la lista (R-GRA-015). El propietario: la lista del

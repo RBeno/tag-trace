@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.17.0
+version: 0.18.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Memoria compacta del proyecto
@@ -247,3 +247,28 @@ no un fallo del circuito (R-GRA-015). La aplicación enseña el orden del circui
 contra la lista, tag a tag; la lista corregida se entrega como fichero, y declarar un tag nuevo lo
 decide el propietario. Un número parecido no prueba una errata: los tags vienen en familias de
 números seguidos; lo que la prueba es el sitio.
+
+## Estado al 2026-09-26 (relevo a un chat nuevo)
+
+El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
+`project_state.json` y en `CHANGELOG.md`; lo que no esté escrito en el repositorio no existe para la
+conversación siguiente.
+
+- **Fase F3** (diagnóstico explicable), en curso. F4 espera `CONTINÚA FASE 4` del propietario
+  (ADR-0010). La última entrega es la posición de un tag según las lecturas (R-GRA-015,
+  `CHANGELOG.md` `[3.32.0]`), publicada en `main` y en la web.
+- **Cómo se ha trabajado**: una entrega por petición del propietario, con su documentación, su clase
+  plantada en la auditoría sintética (`tests/audit/`, 43 clases) y un solo commit en la rama de
+  trabajo; PR y fusión solo cuando él lo pide. Las decisiones de cada entrega están en las secciones
+  de arriba y en el `CHANGELOG`.
+- **Pendiente de planta**, sin identificadores:
+  1. Calibrar los umbrales provisionales (`draft`) con datos reales (OQ-129).
+  2. El propietario revisa la lista de un circuito corregida por las lecturas, que se le entregó
+     como fichero, y decide qué tags leídos que la lista no tiene se declaran.
+  3. En su lista de tags de noche hay un número que no está en la memoria y tiene un dígito de más:
+     probablemente una errata. No se cargó.
+  4. El resto de preguntas abiertas, en `OPEN_QUESTIONS.md`.
+- **Fuera del repositorio**: los scripts y las salidas de los análisis con datos de planta vivían en
+  `local/` (ignorado por git) y se le entregaron al propietario en un paquete. Para analizar datos
+  nuevos hay que volver a subir la exportación y, si hacen falta, las listas.
+
