@@ -7,6 +7,7 @@
  */
 
 import type { SourceDirection } from "../domain/order.js";
+import type { TimeFlag } from "../domain/time.js";
 
 export interface MonotonicityReport {
   readonly direction: SourceDirection;
@@ -27,6 +28,16 @@ export interface MonotonicityReport {
    * lecturas aceptadas y agrupadas por vehículo (`SourceSummary.sameInstantPairs`).
    */
   readonly tiedPairs: number;
+  /**
+   * Pares consecutivos en que alguna de las dos lecturas cae en una hora repetida o inexistente del
+   * cambio estacional (`flag !== "ok"`, ADR-0013).
+   *
+   * En la hora repetida de octubre las dos ocurrencias reciben el mismo instante calculado, así que
+   * un fichero perfectamente ordenado parece retroceder al pasar de una a otra. Contarlo como
+   * inversión acusaría de defecto de integridad a una fuente íntegra; estos pares no aportan evidencia
+   * de sentido en ningún sentido y se cuentan aparte.
+   */
+  readonly unreliablePairs: number;
 }
 
 /**
@@ -35,12 +46,20 @@ export interface MonotonicityReport {
  * Los instantes iguales no cuentan como evidencia de sentido: a resolución gruesa son la mayoría y
  * no dicen nada sobre cómo emite la fuente.
  */
-export function measureMonotonicity(utcMs: readonly number[]): MonotonicityReport {
+export function measureMonotonicity(
+  utcMs: readonly number[],
+  flags: readonly TimeFlag[] = [],
+): MonotonicityReport {
   let ascending = 0;
   let descending = 0;
   let tiedPairs = 0;
+  let unreliablePairs = 0;
 
   for (let index = 0; index + 1 < utcMs.length; index += 1) {
+    if ((flags[index] ?? "ok") !== "ok" || (flags[index + 1] ?? "ok") !== "ok") {
+      unreliablePairs += 1;
+      continue;
+    }
     const current = utcMs[index] as number;
     const next = utcMs[index + 1] as number;
     if (next > current) ascending += 1;
@@ -50,7 +69,7 @@ export function measureMonotonicity(utcMs: readonly number[]): MonotonicityRepor
 
   const comparedPairs = ascending + descending;
   if (comparedPairs === 0) {
-    return { direction: "unknown", inversions: 0, comparedPairs: 0, confidence: 0, tiedPairs };
+    return { direction: "unknown", inversions: 0, comparedPairs: 0, confidence: 0, tiedPairs, unreliablePairs };
   }
 
   const direction: SourceDirection = descending >= ascending ? "newest-first" : "oldest-first";
@@ -61,5 +80,6 @@ export function measureMonotonicity(utcMs: readonly number[]): MonotonicityRepor
     comparedPairs,
     confidence: (comparedPairs - inversions) / comparedPairs,
     tiedPairs,
+    unreliablePairs,
   };
 }

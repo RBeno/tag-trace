@@ -312,6 +312,34 @@ describe("máquina de estados de la calle (R-CO-002)", () => {
     expect(report.coverageStartUtcMs).toBe(0);
   });
 
+  it("una estancia que cruza el hueco entre dos exportaciones no se sabe cuánto duró: incompleta, y no acusa a nadie", () => {
+    // A entra en la primera exportación y su siguiente lectura es la salida, en la segunda, un día
+    // después. B, C, D y E cargan 30 min en la segunda. Darla por completa la hacía permanencia larga
+    // y «salida fuera de antigüedad» frente a los cuatro (R-DAT-007: el hueco es sin datos, no espera).
+    const twoExports = [
+      { from: 0, to: 60 * MINUTE },
+      { from: 25 * 60 * MINUTE, to: 26 * 60 * MINUTE },
+    ];
+    const readings = [
+      read("A", "700", 50 * MINUTE),
+      read("A", "701", 51 * MINUTE),
+      read("A", "702", 25 * 60 * MINUTE + 10 * MINUTE),
+      ...["B", "C", "D", "E"].flatMap((agvId, index) => [
+        read(agvId, "700", 25 * 60 * MINUTE + index * MINUTE),
+        read(agvId, "701", 25 * 60 * MINUTE + index * MINUTE + 10_000),
+        read(agvId, "702", 25 * 60 * MINUTE + index * MINUTE + 30 * MINUTE),
+      ]),
+    ];
+    const calle1 = buildChargingReport(readings, lanes, twoExports, THRESHOLDS).lanes.find((item) => item.laneId === "calle-1");
+    const a = calle1?.stays.find((stay) => stay.agvId === "A");
+    expect(a).toMatchObject({ state: "incompleta", truth: "unknown", durationMs: null, enteredUtcMs: 50 * MINUTE, leftUtcMs: 25 * 60 * MINUTE + 10 * MINUTE });
+    expect(a?.evidence).toContain("sin datos cargados");
+    expect(calle1?.longStays).toEqual([]);
+    expect(calle1?.outOfSeniority).toEqual([]);
+    // La mediana se hace con las cuatro completas.
+    expect(calle1?.medianStayMs).toBe(30 * MINUTE - 10_000);
+  });
+
   it("salir de una calle habiendo circulado antes no es arranque en frío", () => {
     const readings = [
       read("C", "999", 1 * MINUTE),

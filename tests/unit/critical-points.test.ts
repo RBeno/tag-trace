@@ -209,6 +209,47 @@ describe("cruce por reconvergencia (classifyCrossings)", () => {
     const [result] = classifyCrossings([paradaPrecisa], [], CRUCE);
     expect(result).toEqual(paradaPrecisa);
   });
+
+  it("una rama que está en el camino de la otra se propone con la duda dicha: cruce, o un tag que no siempre se lee", () => {
+    // Anillo X→B→C→D. B se lee el 60 % de las veces: X→B (60 %) y X→C (40 %) pasan las guardas de
+    // bifurcación, y C es justo el sucesor de B. Es la misma firma que el cruce físico que planta la
+    // auditoría (`cruce-real`: la rama se reincorpora un salto después), así que el dato no distingue
+    // un cruce de una omisión de B (R-GRA-008): el candidato sale, nombra a B y lo deja a su lectura.
+    const sigueB = spread("X", "B", 60, 0);
+    const saltaB = spread("X", "C", 40, 0);
+    // El anillo sigue por C→D→E→F→G→X: más largo que el margen de saltos, para que desde C no se vuelva a B.
+    const transitions = interleave(sigueB, saltaB).concat(
+      spread("B", "C", 60, 0),
+      spread("C", "D", 100, 0),
+      spread("D", "E", 100, 0),
+      spread("E", "F", 100, 0),
+      spread("F", "G", 100, 0),
+      spread("G", "X", 100, 0),
+    );
+    const bifurcaciones = findBifurcationCandidates(transitions, THRESHOLDS);
+    expect(bifurcaciones.map((candidate) => candidate.tagId)).toEqual(["X"]);
+    const [result] = classifyCrossings(bifurcaciones, transitions, CRUCE);
+    const cruce = asKind(result, "cruce");
+    expect(cruce.maybeSkipped).toEqual(["B"]);
+    expect(cruce.evidence).toContain("o un tag que no siempre se lee (B)");
+  });
+
+  it("dos ramas de verdad que reconvergen más adelante siguen siendo cruce: ninguna pasa por el arranque de la otra", () => {
+    const candidate = bifurcacion("A", [
+      { tagId: "B", support: 10, share: 0.6 },
+      { tagId: "C", support: 8, share: 0.4 },
+    ]);
+    const transitions = [
+      { from: "B", to: "B1" },
+      { from: "B1", to: "X" },
+      { from: "C", to: "C1" },
+      { from: "C1", to: "X" },
+    ];
+    const [result] = classifyCrossings([candidate], transitions, CRUCE);
+    expect(asKind(result, "cruce").hops).toBe(2);
+    expect(asKind(result, "cruce").maybeSkipped).toEqual([]);
+    expect(asKind(result, "cruce").evidence).not.toContain("no siempre se lee");
+  });
 });
 
 interface Dur {

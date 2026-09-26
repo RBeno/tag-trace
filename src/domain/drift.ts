@@ -37,6 +37,7 @@
  */
 
 import { mergeIntervals, type Interval } from "./coverage.js";
+import { compareReadings, type SourceDirection } from "./order.js";
 import type { Reading } from "./reading.js";
 
 export interface DriftThresholds {
@@ -63,10 +64,15 @@ export interface DriftThresholds {
 }
 
 export type TagDrift =
-  /** Se leía en el periodo temprano y no en el tardío: cambió, y el dato no dice por qué. */
-  | { readonly kind: "desaparecido"; readonly tagId: string; readonly readingsBefore: number }
+  /**
+   * Se leía en el periodo temprano y no en el tardío: cambió, y el dato no dice por qué. `weakSupport`
+   * cuando las lecturas de antes no llegan a `minReadingsPerVehicle`: un tag leído una o dos veces
+   * (mantenimiento, una lectura suelta) no sostiene un patrón que la ausencia después contradiga. El
+   * veredicto no cambia; se dice el soporte.
+   */
+  | { readonly kind: "desaparecido"; readonly tagId: string; readonly readingsBefore: number; readonly weakSupport: boolean }
   /** Sin lecturas en el periodo temprano y con lecturas en el tardío: sustitución o instalación. */
-  | { readonly kind: "nuevo"; readonly tagId: string; readonly readingsAfter: number }
+  | { readonly kind: "nuevo"; readonly tagId: string; readonly readingsAfter: number; readonly weakSupport: boolean }
   /** Sin ninguna lectura en los dos periodos: obsoleto consolidado, nunca confirmado por esto solo. */
   | { readonly kind: "obsoleto-consolidado"; readonly tagId: string }
   /**
@@ -168,8 +174,8 @@ function bump(target: Map<string, Map<string, number>>, key: string, neighbor: s
  * propósito). Una repetición inmediata del mismo tag no aporta vecino y se descarta, mismo criterio
  * que ya usa `read-matrix.ts` para pasos nulos.
  */
-function buildNeighborTally(readings: readonly Reading[], period: Interval): NeighborTally {
-  const byVehicle = new Map<string, Array<{ readonly tagId: string; readonly utcMs: number }>>();
+function buildNeighborTally(readings: readonly Reading[], period: Interval, direction: SourceDirection): NeighborTally {
+  const byVehicle = new Map<string, Reading[]>();
   for (const entry of readings) {
     const instant = entry.time.utcMs;
     if (instant < period.from || instant > period.to) continue;
@@ -178,16 +184,18 @@ function buildNeighborTally(readings: readonly Reading[], period: Interval): Nei
       seq = [];
       byVehicle.set(entry.agvId, seq);
     }
-    seq.push({ tagId: entry.tagId, utcMs: instant });
+    seq.push(entry);
   }
 
   const predecessors = new Map<string, Map<string, number>>();
   const successors = new Map<string, Map<string, number>>();
   for (const seq of byVehicle.values()) {
-    seq.sort((a, b) => a.utcMs - b.utcMs);
+    // Orden canónico (ADR-0013), como `tag-changes.ts`: dos lecturas del mismo instante se desempatan
+    // por fichero y fila, no por el orden de llegada al array.
+    seq.sort((a, b) => compareReadings(a, b, direction));
     for (let index = 1; index < seq.length; index += 1) {
-      const prev = seq[index - 1] as { readonly tagId: string; readonly utcMs: number };
-      const curr = seq[index] as { readonly tagId: string; readonly utcMs: number };
+      const prev = seq[index - 1] as Reading;
+      const curr = seq[index] as Reading;
       if (prev.tagId === curr.tagId) continue;
       bump(successors, prev.tagId, curr.tagId);
       bump(predecessors, curr.tagId, prev.tagId);
@@ -257,6 +265,8 @@ export function compareDistantPeriods(
   coverage: readonly Interval[],
   knownTags: ReadonlySet<string>,
   thresholds: DriftThresholds,
+  /** El orden de la fuente, para desempatar lecturas del mismo instante en la firma de vecinos. */
+  direction: SourceDirection = "oldest-first",
 ): DriftComparison {
   const merged = mergeIntervals(coverage);
   if (merged.length < 2) {
@@ -306,8 +316,8 @@ export function compareDistantPeriods(
   const absorbedNuevo = new Set<string>();
 
   if (disappearedCandidates.length > 0 && appearedCandidates.length > 0) {
-    const earlyTally = buildNeighborTally(readings, earlyPeriod);
-    const lateTally = buildNeighborTally(readings, latePeriod);
+    const earlyTally = buildNeighborTally(readings, earlyPeriod, direction);
+    const lateTally = buildNeighborTally(readings, latePeriod, direction);
 
     const matchesForD = new Map<string, Array<{ readonly nTag: string; readonly match: SharedNeighborMatch }>>();
     const matchesForN = new Map<string, string[]>();
@@ -340,7 +350,12 @@ export function compareDistantPeriods(
   for (const entry of disappeared) {
     const pair = paired.get(entry.tagId);
     if (pair === undefined) {
-      tagDrifts.push({ kind: "desaparecido", tagId: entry.tagId, readingsBefore: entry.readingsBefore });
+      tagDrifts.push({
+        kind: "desaparecido",
+        tagId: entry.tagId,
+        readingsBefore: entry.readingsBefore,
+        weakSupport: entry.readingsBefore < thresholds.minReadingsPerVehicle,
+      });
       continue;
     }
     tagDrifts.push({
@@ -355,7 +370,12 @@ export function compareDistantPeriods(
   }
   for (const entry of appeared) {
     if (absorbedNuevo.has(entry.tagId)) continue;
-    tagDrifts.push({ kind: "nuevo", tagId: entry.tagId, readingsAfter: entry.readingsAfter });
+    tagDrifts.push({
+      kind: "nuevo",
+      tagId: entry.tagId,
+      readingsAfter: entry.readingsAfter,
+      weakSupport: entry.readingsAfter < thresholds.minReadingsPerVehicle,
+    });
   }
   for (const tagId of consolidated) {
     tagDrifts.push({ kind: "obsoleto-consolidado", tagId });

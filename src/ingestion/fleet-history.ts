@@ -16,6 +16,7 @@
 import { FLEET_STRUCTURE, overlappingPeriods, type FleetPeriod } from "../domain/fleet.js";
 import { parseTimestamp } from "../domain/time.js";
 import { detectDelimiter, type Delimiter } from "./delimiter.js";
+import { normaliseHeaderCell, unquoteField } from "./importer.js";
 
 export { FLEET_STRUCTURE } from "../domain/fleet.js";
 
@@ -90,8 +91,9 @@ export function importFleetHistory(text: string, zone: string): FleetImport {
   const lines = text.split(/\r\n|\n|\r/).filter((line) => line.trim() !== "");
   if (lines.length < 2) throw tooShort();
   const delimiter = detectDelimiter(lines.slice(0, 50)).delimiter;
+  // Comillas envolventes fuera, como en las lecturas: `"0040"` es el AGV `0040`, no otro.
   return importFleetTable(
-    lines.map((line) => line.split(delimiter)),
+    lines.map((line) => line.split(delimiter).map(unquoteField)),
     zone,
     delimiter,
   );
@@ -115,7 +117,8 @@ export function importFleetRows(rows: readonly (readonly string[])[], zone: stri
 function importFleetTable(table: readonly (readonly string[])[], zone: string, delimiter: Delimiter | null): FleetImport {
   const separator = delimiter ?? ";";
   const fromExcel = delimiter === null;
-  const header = (table[0] ?? []).map((field) => field.trim().toLowerCase());
+  // La misma normalización que la cabecera de lecturas: sin BOM, sin acentos y en minúsculas.
+  const header = (table[0] ?? []).map(normaliseHeaderCell);
   const column = (name: string): number => header.indexOf(name);
   const agvColumn = column("agv");
   const fromColumn = column("desde");
@@ -172,6 +175,17 @@ function importFleetTable(table: readonly (readonly string[])[], zone: string, d
   const counts = new Map<string, number>();
   for (const row of rows) if (row.circuit !== "") counts.set(row.circuit, (counts.get(row.circuit) ?? 0) + 1);
   const warnings: string[] = [];
+  const unknownColumns = header.filter(
+    (name) => name !== "" && !(FLEET_STRUCTURE.header as readonly string[]).includes(name),
+  );
+  if (unknownColumns.length > 0) {
+    // Se ignoran, pero se dice: «fecha» por «desde» ya se rechaza por cabecera, pero «Hasta » con
+    // espacio o «baja» por «hasta» dejarían a todos los AGV sin fecha de baja y sin aviso.
+    warnings.push(
+      `Columnas que este importador no conoce y se ignoran: ${unknownColumns.join(", ")}. ` +
+        `Las reconocidas son ${FLEET_STRUCTURE.header.join(", ")}.`,
+    );
+  }
   const byCircuit = new Map<string, FleetRow[]>();
   for (const row of rows) byCircuit.set(row.circuit, [...(byCircuit.get(row.circuit) ?? []), row]);
   for (const [circuit, list] of byCircuit) {

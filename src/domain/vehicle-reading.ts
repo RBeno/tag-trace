@@ -2,7 +2,7 @@
  * Lectura de cada AGV sobre los tags que el resto de la flota lee bien (R-AGV-016).
  *
  * Separa lo que un AGV **no lee nunca** de lo que **lee poco**, y lo que **dejó de leer desde una
- * hora**. Enseña la diferencia medida —«0 de 41 pasadas», «el 51 %», «desde las 17:40, 0 de 12»— y no
+ * hora** (solo si el resto lo siguió leyendo después: si no, es el tag el que dejó de leerse). Enseña la diferencia medida —«0 de 41 pasadas», «el 51 %», «desde las 17:40, 0 de 12»— y no
  * nombra causa: memoria, lector o colocación los decide una persona (R-EVI-006).
  *
  * Solo cuentan los tags que el resto lee bien: si casi nadie lee un tag, el hallazgo es del tag y ya
@@ -136,7 +136,13 @@ export function describeVehicleReading(
         own.never.push({ tagId: row.tagId, passes: cell.passes });
         never.push({ agvId: cell.agvId, passes: cell.passes });
       } else if (kind === "desde") {
-        own.stopped.push({ tagId: row.tagId, sinceUtcMs: cell.lastHitUtcMs as number, passesSince: cell.trailingMisses });
+        // «Dejó de leer» es del AGV solo si el resto siguió leyendo el tag después de su última lectura.
+        // Si nadie lo leyó después, lo que dejó de leerse es el tag —una rotura tardía (R-OPP-015)— y
+        // decirlo de cada AGV sería repartir un hallazgo del tag entre toda la flota.
+        const since = cell.lastHitUtcMs as number;
+        const othersReadLater = supported.some((other) => other !== cell && other.lastHitUtcMs !== null && other.lastHitUtcMs > since);
+        if (!othersReadLater) continue;
+        own.stopped.push({ tagId: row.tagId, sinceUtcMs: since, passesSince: cell.trailingMisses });
         stopped.push(cell.agvId);
       } else if (kind === "poco") {
         // Sigue contando como tag comparado: lo lee dentro de lo que cabe esperar por azar.

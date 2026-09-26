@@ -239,3 +239,46 @@ describe("grafo observado", () => {
     )).toBeUndefined();
   });
 });
+
+describe("lo que el grafo no afirma · hora repetida y cola cortada", () => {
+  const ANILLO = ["0100", "0200", "0300", "0400"];
+
+  it("una lectura en hora repetida no forma transición con sus vecinas, y se cuenta aparte (ADR-0013)", () => {
+    // En la hora repetida de octubre las dos ocurrencias reciben el mismo instante calculado, así que
+    // el orden entre ellas no lo da el reloj. Emparejarlas fabricaba aristas hacia atrás.
+    const vuelta = laps("A", ANILLO, 1, 0);
+    const marcada = vuelta[2] as Reading;
+    const readings = [
+      ...vuelta.slice(0, 2),
+      { ...marcada, time: { ...marcada.time, flag: "dst_ambiguous" as const } },
+      ...vuelta.slice(3),
+    ];
+
+    const { transitions, discardedUnreliableTime } = buildTransitions(readings, "oldest-first", []);
+
+    // 0100→0200 sí; 0200→0300 y 0300→0400 tocan la lectura marcada y no se afirman.
+    expect(transitions.map((t) => `${t.from}>${t.to}`)).toEqual(["0100>0200"]);
+    expect(discardedUnreliableTime).toBe(2);
+  });
+
+  it("la cola cortada de una exportación no se empareja con la primera lectura de la siguiente (R-DAT-007)", () => {
+    // La cobertura de una fuente termina en su último instante completo; la lectura de la cola queda
+    // fuera. Con el criterio de «encerrar un hueco entero» esa lectura, al estar ya dentro del hueco,
+    // se emparejaba con la primera de la ventana siguiente: una arista con treinta días de tramo.
+    const primera = laps("A", ANILLO, 1, 0); // 0100..0400, la última (0400) es la cola cortada
+    const segunda = laps("A", ANILLO, 1, 30 * 24 * 3600 * SECOND);
+    const coverage: Interval[] = [
+      { from: 0, to: (primera[2] as Reading).time.utcMs },
+      { from: (segunda[0] as Reading).time.utcMs, to: (segunda[2] as Reading).time.utcMs },
+    ];
+
+    const { transitions, discardedAcrossGaps } = buildTransitions([...primera, ...segunda], "oldest-first", coverage);
+    const edges = transitions.map((t) => `${t.from}>${t.to}`);
+
+    expect(edges).not.toContain("0400>0100");
+    // Las dos transiciones que tocan una cola (0300→0400 en cada ventana) tampoco: fuera de la
+    // cobertura no se analiza, y la que cruza el hueco hace la tercera.
+    expect(discardedAcrossGaps).toBe(3);
+    expect(edges).toEqual(["0100>0200", "0200>0300", "0100>0200", "0200>0300"]);
+  });
+});

@@ -15,7 +15,8 @@
  * - **Cuánto le falta a cada AGV**: la mediana del tiempo desde cada tag hasta la entrada, en la misma
  *   vuelta, de producción. Con el último tag que leyó un AGV, lo que le falta es esa mediana menos lo
  *   que lleva desde entonces. Es tiempo de recorrido, nunca distancia (R-TIM-011).
- * - **El pulmón se mide**: a mitad de cada parada larga (la mitad más larga), los AGV que ya deberían
+ * - **El pulmón se mide**: a mitad de cada parada larga (la mitad más larga, sin las que cruzan una
+ *   parada de la producción: en un descanso la flota se queda donde esté), los AGV que ya deberían
  *   haber llegado y no han llegado están esperando. Los tags donde se les encuentra en la mitad de
  *   esas paradas o más son la
  *   zona del pulmón, desde el más alejado hasta la entrada; lo que se ve una sola vez es otra cosa (un
@@ -278,8 +279,10 @@ export function measureLineFeed(
     const from = passes[index - 1] as (typeof passes)[number];
     const to = passes[index] as (typeof passes)[number];
     // Cada tiempo entre pasos, en su régimen: la noche tiene otro ritmo y se mide aparte (R-TIM-009).
-    const regime = regimeOf(from.utcMs);
-    if (regimeOf(to.utcMs) === regime && covered(coverage, from.utcMs, to.utcMs)) gaps.push({ from, to, regime });
+    // El régimen es el de su punto medio, como el de cualquier transición (`transitionRegime`): un
+    // hueco que cruza el cambio de turno no se calla, va al régimen en que pasa la mayor parte.
+    const regime = regimeOf((from.utcMs + to.utcMs) / 2);
+    if (covered(coverage, from.utcMs, to.utcMs)) gaps.push({ from, to, regime });
   }
   const productionGaps = gaps.filter((gap) => gap.regime === "produccion");
   if (productionGaps.length < thresholds.minSamples) {
@@ -289,8 +292,9 @@ export function measureLineFeed(
     );
   }
   // La cadencia, sin los tiempos que cruzan una parada de la producción: un descanso no dice cada
-  // cuánto entra un AGV. Esos huecos siguen siendo paradas de la línea; solo no miden su ritmo.
-  const inProductionStop = (gap: (typeof gaps)[number]): boolean =>
+  // cuánto entra un AGV. Esos huecos siguen siendo paradas de la línea; solo no miden su ritmo ni,
+  // más abajo, dónde está el pulmón.
+  const inProductionStop = (gap: { readonly from: { readonly utcMs: number }; readonly to: { readonly utcMs: number } }): boolean =>
     productionStops.some((stop) => stop.from < gap.to.utcMs && gap.from.utcMs < stop.to);
   const cadenceGaps = productionGaps.filter((gap) => !inProductionStop(gap));
   const cadence = bandOf(
@@ -338,10 +342,15 @@ export function measureLineFeed(
   // El pulmón: los tags donde esperan, a mitad de cada parada, los AGV que ya deberían haber entrado.
   // Se mira en la mitad más larga de las paradas: en una corta los AGV no llegan a acumularse, y con
   // muchas paradas cortas el pulmón salía medido en los dos últimos tags.
-  const durations = stopGaps.map((gap) => gap.to.utcMs - gap.from.utcMs);
+  // Las paradas que cruzan una parada de la producción (R-AGV-018) no miden dónde está el pulmón: en
+  // un descanso toda la flota se queda donde esté, y a mitad de uno largo cualquier AGV del anillo
+  // tiene la llegada vencida, así que la zona salía siendo el anillo entero y la ocupación contaba a
+  // toda la flota. Esas paradas se siguen clasificando como las demás; solo no dibujan la zona.
+  const zoneStops = stopGaps.filter((gap) => !inProductionStop(gap));
+  const durations = zoneStops.map((gap) => gap.to.utcMs - gap.from.utcMs);
   const halfMs = durations.length === 0 ? 0 : median(durations);
   // El pulmón se mide con las paradas de producción: de noche el ritmo y la flota son otros.
-  const longStops = stopGaps.filter((gap) => gap.regime === "produccion" && gap.to.utcMs - gap.from.utcMs >= halfMs);
+  const longStops = zoneStops.filter((gap) => gap.regime === "produccion" && gap.to.utcMs - gap.from.utcMs >= halfMs);
   const overdueTags = new Map<string, number>();
   for (const gap of longStops) {
     const mid = (gap.from.utcMs + gap.to.utcMs) / 2;
@@ -484,7 +493,12 @@ export function measureLineFeed(
           const perStop = stops.filter((stop) => stop.kind === "con-pulmon").map((stop) => stop.waiting);
           // Lo habitual, en las paradas largas: en una corta el pulmón no llega a llenarse.
           const perLongStop = stops
-            .filter((stop) => stop.kind === "con-pulmon" && stop.durationMs >= halfMs)
+            .filter(
+              (stop) =>
+                stop.kind === "con-pulmon" &&
+                stop.durationMs >= halfMs &&
+                !inProductionStop({ from: { utcMs: stop.fromUtcMs }, to: { utcMs: stop.toUtcMs } }),
+            )
             .map((stop) => stop.waiting);
           return {
             tags: zoneTags,
@@ -671,7 +685,10 @@ export function measureLineFeed(
     passages,
     rhythm,
     evaluated: true,
-    reason: zone === null ? "Sin dos paradas de la línea o más no se puede medir dónde esperan los AGV: el pulmón queda sin medir." : null,
+    reason:
+      zone === null
+        ? "Sin dos paradas de la línea o más, fuera de las paradas de la producción, no se puede medir dónde esperan los AGV: el pulmón queda sin medir."
+        : null,
     entryTagId,
     passes: passes.length,
     cadence,

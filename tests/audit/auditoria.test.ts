@@ -1827,10 +1827,19 @@ describe("auditoría del circuito con verdad conocida", () => {
     const retiene = scenario.defects.find((d) => d.kind === "retiene-a-otros")?.vehicles[0];
     const ritmos = [pace, ...franjaPace].flatMap((report, index) =>
       (report?.vehicles ?? [])
-        .filter((vehicle) => vehicle.verdict !== null && vehicle.agvId !== lento)
+        .filter((vehicle) => vehicle.verdict !== null && vehicle.agvId !== lento && vehicle.agvId !== retiene)
         .map((vehicle) => `${index === 0 ? "todo" : `f${index}`} ${vehicle.agvId} ${vehicle.verdict}`),
     );
     expect(ritmos, "ritmos señalados sin plantar").toEqual([]);
+    // El retenedor devuelve su espera del semáforo a la mitad de cada paso siguiente (deuda de reloj
+    // del generador), así que en la zona cargada va de verdad más rápido. Si el ritmo lo señala, solo
+    // puede ser por eso: más rápido, y solo ahí.
+    for (const report of [pace, ...franjaPace]) {
+      const vehicle = report?.vehicles.find((entry) => entry.agvId === retiene);
+      if (vehicle === undefined || vehicle.verdict === null) continue;
+      expect(vehicle.verdict).toBe("mas-rapido");
+      expect(vehicle.where).toEqual(["cargado"]);
+    }
     const retenedores = [pace, ...franjaPace].flatMap((report, index) =>
       (report?.holders ?? [])
         .filter((holder) => holder.expected !== null && holder.agvId !== retiene)

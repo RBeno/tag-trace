@@ -56,8 +56,7 @@ export function compareAgainstVsystem(
   observedRing: readonly string[],
   readTags: ReadonlySet<string>,
 ): readonly VsystemComparisonRow[] {
-  const aligned = rotateToDeclaredStart(observedRing, declaredOrder);
-  const common = longestCommonSubsequence(declaredOrder, aligned);
+  const { aligned, common } = alignToDeclared(observedRing, declaredOrder);
   const rows: VsystemComparisonRow[] = [];
   const context: GapContext = {
     readTags,
@@ -215,6 +214,29 @@ function classifyGap(
     });
   }
   return rows;
+}
+
+/**
+ * La rotación del anillo que más orden comparte con la lista. Rotar solo al primer tag de la lista que
+ * aparece en el anillo (`rotateToDeclaredStart`) falla cuando ese tag es justo el que la lista tiene
+ * mal colocado: la subsecuencia común pierde media vuelta y los vecinos sanos salen como «otro sitio».
+ * Aquí se prueba la rotación en cada tag común y se conserva la de subsecuencia más larga; en empate,
+ * la que empieza por el tag más cercano al inicio de la lista (que es lo que hacía la rotación simple).
+ */
+export function alignToDeclared(
+  ring: readonly string[],
+  declaredOrder: readonly string[],
+): { readonly aligned: readonly string[]; readonly common: readonly string[] } {
+  const inRing = new Set(ring);
+  let best: { aligned: readonly string[]; common: readonly string[] } | null = null;
+  for (const tag of declaredOrder) {
+    if (!inRing.has(tag)) continue;
+    const index = ring.indexOf(tag);
+    const aligned = [...ring.slice(index), ...ring.slice(0, index)];
+    const common = longestCommonSubsequence(declaredOrder, aligned);
+    if (best === null || common.length > best.common.length) best = { aligned, common };
+  }
+  return best ?? { aligned: ring, common: longestCommonSubsequence(declaredOrder, ring) };
 }
 
 /**

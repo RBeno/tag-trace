@@ -112,6 +112,18 @@ describe("la horquilla de un tramo", () => {
     expect(bandFor(bands, "A", "B", "noche")).toBeNull();
   });
 
+  it("reaparecer por detrás no se mide: media vuelta o más de «saltos» no es un paso por esos tramos", () => {
+    // En un anillo de seis, de A a F (el tag anterior) serían cuatro saltados hacia delante: sumar esos
+    // tramos daría una horquilla enorme que nunca sería parada y una razón de ritmo cercana a cero.
+    const ring = ["A", "B", "C", "D", "E", "F"];
+    const transitions = ring.flatMap((from, index) => many(from, ring[(index + 1) % ring.length] as string, DAY_START, [20 * SECOND], 30));
+    const bands = buildSegmentBands(transitions, ring, DAY, { minBandSamples: 20 }, 30 * SECOND);
+    expect(bandFor(bands, "A", "F", "produccion")).toBeNull();
+    expect(bandFor(bands, "A", "E", "produccion")).toBeNull();
+    // Dos saltados (menos de media vuelta) sí se suman.
+    expect(bandFor(bands, "A", "D", "produccion")?.p50Ms).toBe(60 * SECOND);
+  });
+
   it("las esperas de un semáforo, una de cada tres, quedan dentro de la horquilla", () => {
     const bands = buildSegmentBands(
       many("S", "T", DAY_START, [16 * SECOND, 17 * SECOND, 106 * SECOND], 60),

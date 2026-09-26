@@ -170,7 +170,12 @@ export function concentrated(
   const tags = Math.max(1, exposure.size);
   for (const [tagId, count] of counts) {
     if (count < 2) continue;
-    const expected = expectedElsewhere(totalCount, count, exposure.get(tagId) ?? 0, totalExposure);
+    // Sin exposición no hay azar con que comparar: lo esperado sería 0 y cualquier recuento saldría
+    // señalado. Un cero sin oportunidad no es un cero (R-OPP-013): un retenedor cuyas pasadas quedan
+    // fuera de la ventana, o un tag sin salidas medibles, no se acusa por eso.
+    const own = exposure.get(tagId) ?? 0;
+    if (own <= 0) continue;
+    const expected = expectedElsewhere(totalCount, count, own, totalExposure);
     if (tags * poissonTail(count, expected) <= maxFalsePoints) flagged.set(tagId, expected);
   }
   return flagged;
@@ -376,21 +381,39 @@ export function buildCircuitState(input: CircuitStateInput, thresholds: CircuitS
       else darkSegments[index] = true;
     });
   }
-  // Los tags que la lista declara entre dos tags leídos y nadie lee: entre `from` y `to` en el orden
-  // de la lista, dando la vuelta, sin contar los extremos.
+  // Los tags que la lista declara entre los dos extremos de la zona y nadie lee. El recorrido por la
+  // lista está acotado: entre los extremos solo pueden aparecer los propios tags de la zona (los que
+  // se leen) y candidatos sin lecturas. Si la lista escribe los extremos en otro orden —dos vecinos
+  // cambiados de sitio (R-GRA-015)—, recorrerla hacia delante daría la vuelta entera y nombraría
+  // cualquier declarado sin lecturas de otro punto del circuito como causa de esta zona; por eso se
+  // prueba en los dos sentidos y se acepta el que cabe. Si ninguno cabe, la lista no dice nada de
+  // esta zona y la causa la dan las lecturas.
   const declaredOrder = input.declaredOrder ?? [];
   const readTags = input.readTags ?? new Set<string>();
-  const declaredWithoutReadings = (from: string, to: string): string[] => {
+  const declaredWithoutReadings = (zoneTags: readonly string[]): string[] => {
+    const from = zoneTags[0] as string;
+    const to = zoneTags[zoneTags.length - 1] as string;
     const start = declaredOrder.indexOf(from);
     const end = declaredOrder.indexOf(to);
+    const length = declaredOrder.length;
     if (start < 0 || end < 0 || start === end) return [];
-    const between: string[] = [];
-    for (let at = (start + 1) % declaredOrder.length; at !== end; at = (at + 1) % declaredOrder.length) {
-      const tagId = declaredOrder[at] as string;
-      if (!readTags.has(tagId)) between.push(tagId);
-      if (between.length > declaredOrder.length) break;
-    }
-    return between;
+    const inZone = new Set(zoneTags);
+    const walk = (direction: 1 | -1): string[] | null => {
+      const between: string[] = [];
+      let seenOfZone = 0;
+      for (let at = (start + direction + length) % length; at !== end; at = (at + direction + length) % length) {
+        const tagId = declaredOrder[at] as string;
+        if (!readTags.has(tagId)) between.push(tagId);
+        else if (inZone.has(tagId)) seenOfZone += 1;
+        else return null; // Un tag leído que no es de la zona: por aquí la lista no describe este tramo.
+        if (seenOfZone > zoneTags.length - 2) return null;
+      }
+      return between;
+    };
+    const forward = walk(1);
+    const backward = walk(-1);
+    if (forward !== null && backward !== null) return forward.length <= backward.length ? forward : backward;
+    return forward ?? backward ?? [];
   };
   const darkZones: DarkZone[] = [];
   if (typicalGapMs !== null && darkSegments.some(Boolean) && !darkSegments.every(Boolean)) {
@@ -403,7 +426,7 @@ export function buildCircuitState(input: CircuitStateInput, thresholds: CircuitS
       const samples = current.reduce((sum, index) => sum + (gapsOf[index]?.length ?? 0), 0);
       const skips = current.reduce((sum, index) => sum + (skipsOf[index] ?? 0), 0);
       const skipShare = samples === 0 ? 0 : skips / samples;
-      const missingTags = declaredWithoutReadings(tags[0] as string, tags[tags.length - 1] as string);
+      const missingTags = declaredWithoutReadings(tags);
       darkZones.push({
         tags,
         gapMs: Math.max(...current.map((index) => segmentGap[index] ?? 0)),

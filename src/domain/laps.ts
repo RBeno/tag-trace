@@ -16,7 +16,7 @@
  * es un corte de los datos, no el ancla.
  */
 
-import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
+import { mergeIntervals, sameSpan, type Interval } from "./coverage.js";
 import { sortReadings, type SourceDirection } from "./order.js";
 import type { Reading } from "./reading.js";
 import type { TruthState } from "./truth.js";
@@ -171,7 +171,7 @@ export function segmentLaps(
   anchorTruth: TruthState,
 ): readonly Lap[] {
   const ordered = sortReadings([...readings], direction);
-  const gaps = uncoveredGaps(mergeIntervals(coverage));
+  const spans = mergeIntervals(coverage);
   const byVehicle = new Map<string, Reading[]>();
   for (const entry of ordered) {
     let list = byVehicle.get(entry.agvId);
@@ -207,20 +207,20 @@ export function segmentLaps(
     const firstAnchor = anchorIndices[0] as number;
     if (firstAnchor > 0) {
       laps.push(
-        buildLap(agvId, entries.slice(0, firstAnchor + 1), "parcial", gaps, anchorTruth),
+        buildLap(agvId, entries.slice(0, firstAnchor + 1), "parcial", spans, anchorTruth),
       );
     }
 
     for (let index = 0; index < anchorIndices.length - 1; index += 1) {
       const from = anchorIndices[index] as number;
       const to = anchorIndices[index + 1] as number;
-      laps.push(buildLap(agvId, entries.slice(from, to + 1), "completa", gaps, anchorTruth));
+      laps.push(buildLap(agvId, entries.slice(from, to + 1), "completa", spans, anchorTruth));
     }
 
     // Tramo después del último paso por el ancla: parcial, la cobertura corta ahí, no el circuito.
     const lastAnchor = anchorIndices[anchorIndices.length - 1] as number;
     if (lastAnchor < entries.length - 1) {
-      laps.push(buildLap(agvId, entries.slice(lastAnchor), "parcial", gaps, anchorTruth));
+      laps.push(buildLap(agvId, entries.slice(lastAnchor), "parcial", spans, anchorTruth));
     }
   }
 
@@ -231,14 +231,15 @@ function buildLap(
   agvId: string,
   segment: readonly Reading[],
   completeness: LapCompleteness,
-  gaps: readonly Interval[],
+  spans: readonly Interval[],
   anchorTruth: TruthState,
 ): Lap {
   const start = (segment[0] as Reading).time.utcMs;
   const end = (segment[segment.length - 1] as Reading).time.utcMs;
-  // Una vuelta que cruza un hueco de cobertura no es una vuelta: lo que hay en medio es ausencia
-  // de datos, no circulación (R-DAT-007). Degrada a `parcial` en vez de fingir continuidad.
-  const crossesGap = gaps.some((gap) => start <= gap.from && end >= gap.to);
+  // Una vuelta cuyos extremos no caen en el mismo tramo de cobertura no es una vuelta: lo que hay en
+  // medio es ausencia de datos, no circulación (R-DAT-007). Vale también para la cola cortada de una
+  // exportación, que queda fuera de su tramo. Degrada a `parcial` en vez de fingir continuidad.
+  const crossesGap = !sameSpan(spans, start, end);
   const finalCompleteness = crossesGap ? "parcial" : completeness;
   return {
     agvId,

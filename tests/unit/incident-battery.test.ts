@@ -92,4 +92,67 @@ describe("batería de mediciones de una incidencia", () => {
     expect(battery.swap).toEqual({ agvId: "Y", tagId: "D", afterMs: 200 * S });
     expect(battery.lines.join(" ")).toContain("Cambio de AGV candidato: Y");
   });
+
+  it("una incidencia más corta que un ciclo de la línea sin paso dentro no se juzga: no le tocaba entrar a nadie", () => {
+    // 40 s entre dos pasos de la línea (a 90 y 145 s) con la valla en 90 s: decir «sin paso» sería
+    // afirmar una parada de la línea que el dato no sostiene.
+    const readings = [r("X", "C", 100 * S), r("X", "D", 140 * S), r("A", "C", 50 * S), r("A", "D", 60 * S)];
+    const battery = incidentBattery(
+      buildIncidentContext(readings, [90 * S, 145 * S, 200 * S], () => band),
+      { agvId: "X", fromTagId: "C", fromUtcMs: 100 * S, toTagId: "D", toUtcMs: 140 * S },
+      1_000 * S,
+    );
+    expect(battery.line).toEqual({ passes: 0, moving: null, cycleMs: 60_000 });
+    expect(battery.lines[1]).toBe("La incidencia (40 s) es más corta que un ciclo de la línea (hasta 90 s): no se puede juzgar si la línea seguía.");
+    expect(battery.lines.join(" ")).not.toContain("sin paso");
+    // Más larga que la valla y sin paso, sí es la línea sin paso.
+    const larga = incidentBattery(buildIncidentContext(readings, [50 * S, 500 * S], () => band), incident, 1_000 * S);
+    expect(larga.line?.moving).toBe(false);
+    expect(larga.lines[1]).toBe("La línea estuvo sin paso todo ese tiempo.");
+  });
+
+  it("si reaparece por su mismo tag, el que llegó a ese tag antes lo adelantó: no avanzaba por delante", () => {
+    // X lee C a los 100 s y otra vez C a los 400 s; B pasa por C a los 200 s y sigue a D. Cuando X vuelve
+    // a leer C está detrás de B, así que no «reapareció por delante» de nadie.
+    const readings = [r("X", "C", 100 * S), r("X", "C", 400 * S), r("X", "D", 410 * S), r("B", "B", 150 * S), r("B", "C", 200 * S), r("B", "D", 220 * S)];
+    const battery = incidentBattery(
+      buildIncidentContext(readings, [], () => null),
+      { agvId: "X", fromTagId: "C", fromUtcMs: 100 * S, toTagId: "C", toUtcMs: 400 * S },
+      1_000 * S,
+    );
+    expect(battery.behind.overtook).toEqual(["B"]);
+    expect(battery.reading).toBe("adelantado");
+  });
+
+  it("el de detrás solo cuenta como retenido si esperó en el tag más de lo habitual, y se da la cifra", () => {
+    // B llega a C 5 s antes de que X reaparezca y lee D 20 s después: no esperó nada. Con la valla del
+    // tramo en 60 s no se puede decir que retuviera a nadie.
+    const readings = [r("X", "B", 80 * S), r("X", "C", 100 * S), r("X", "D", 400 * S), r("B", "B", 380 * S), r("B", "C", 395 * S), r("B", "D", 415 * S)];
+    const usual = (tagId: string) => (tagId === "C" ? 60_000 : null);
+    const recien = incidentBattery(buildIncidentContext(readings, [], () => null, [], new Map(), usual), incident, 1_000 * S);
+    expect(recien.behind.held).toEqual([]);
+    expect(recien.behind.unsure).toEqual(["B"]);
+    expect(recien.reading).toBe("sin-datos");
+    expect(recien.lines.join(" ")).toContain("B estuvo 20 s (dentro de lo habitual ahí, hasta 60 s)");
+    expect(recien.lines.join(" ")).not.toContain("parado de verdad");
+    // El mismo B llegando a los 150 s y sin pasar de C hasta los 420 s: 270 s, muy por encima de la valla.
+    const espera = [r("X", "B", 80 * S), r("X", "C", 100 * S), r("X", "D", 400 * S), r("B", "C", 150 * S), r("B", "D", 420 * S)];
+    const retenido = incidentBattery(buildIncidentContext(espera, [], () => null, [], new Map(), usual), incident, 1_000 * S);
+    expect(retenido.behind.held).toEqual(["B"]);
+    expect(retenido.reading).toBe("parado-con-cola");
+    expect(retenido.lines.join(" ")).toContain("B estuvo 4,5 min (lo habitual ahí, hasta 60 s)");
+  });
+
+  it("sin horquilla del tramo, lo habitual es lo que el propio AGV tardó en llegar a ese tag; sin eso, no se afirma", () => {
+    // X tardó 20 s de B a C. B llega a C y lee D 20 s después: no más que ese paso → sin datos.
+    const justo = [r("X", "B", 80 * S), r("X", "C", 100 * S), r("X", "D", 400 * S), r("B", "C", 395 * S), r("B", "D", 415 * S)];
+    const sinDatos = incidentBattery(buildIncidentContext(justo, [], () => null), incident, 1_000 * S);
+    expect(sinDatos.behind.unsure).toEqual(["B"]);
+    expect(sinDatos.reading).toBe("sin-datos");
+    // Si X no tiene lectura anterior a C, no hay con qué comparar: tampoco se afirma, y se dice.
+    const sinPaso = [r("X", "C", 100 * S), r("X", "D", 400 * S), r("B", "C", 150 * S), r("B", "D", 420 * S)];
+    const sinReferencia = incidentBattery(buildIncidentContext(sinPaso, [], () => null), incident, 1_000 * S);
+    expect(sinReferencia.behind.unsure).toEqual(["B"]);
+    expect(sinReferencia.lines.join(" ")).toContain("sin nada con que comparar lo que se tarda ahí");
+  });
 });

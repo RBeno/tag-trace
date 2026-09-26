@@ -65,3 +65,14 @@ describe("el orden del circuito según las lecturas", () => {
     expect(result.rows).toEqual([]);
   });
 });
+
+describe("la rotación del anillo no acusa a los vecinos del tag mal colocado", () => {
+  it("si el primer tag de la lista es el mal colocado, solo él sale en otro sitio", () => {
+    // Antes se rotaba al primer tag de la lista que apareciera en el anillo; si era justo el mal colocado,
+    // la subsecuencia común perdía media vuelta y A, B y C salían como «otro sitio» siendo sanos.
+    const result = order(["G", "A", "B", "C", "D", "E", "F"], ["A", "B", "C", "G", "D", "E", "F"]);
+    expect(result.rows.filter((row) => row.change === "otro-sitio").map((row) => row.tagId)).toEqual(["G"]);
+    expect(result.summary.igual).toBe(6);
+    expect(result.rows.find((row) => row.tagId === "G")).toMatchObject({ readBetween: "entre C y D", listBetween: "antes de A" });
+  });
+});

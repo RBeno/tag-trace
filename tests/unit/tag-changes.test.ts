@@ -205,3 +205,32 @@ describe("cambios de tag dentro de un periodo", () => {
     expect(withoutTags(report, new Set())).toBe(report);
   });
 });
+
+describe("la racha de después empieza tras la pasada que contiene la última lectura", () => {
+  it("con una pasada menos que el mínimo sin leerlo, no «deja de leerse»", () => {
+    // Un AGV lee C diez vueltas y después pasa nueve veces sin leerlo: nueve es menos que minSlotPasses.
+    // Antes la pasada que contenía la última lectura se fechaba en su sucesor, posterior a esa lectura, y
+    // se contaba como el décimo fallo.
+    const readings: Reading[] = [];
+    for (let lap = 0; lap < 19; lap += 1) {
+      RING.forEach((tagId, index) => {
+        if (tagId === "C" && lap >= 10) return;
+        readings.push(reading("V0", tagId, lap * LAP_MS + index * 10_000));
+      });
+    }
+    const report = detectTagChanges(readings, "oldest-first", [{ from: 0, to: 19 * LAP_MS }], THRESHOLDS, ADOPTION);
+    expect(report.changes).toEqual([]);
+  });
+
+  it("con el mínimo justo de pasadas sin leerlo, sí, y la cuenta es la de verdad", () => {
+    const readings: Reading[] = [];
+    for (let lap = 0; lap < 20; lap += 1) {
+      RING.forEach((tagId, index) => {
+        if (tagId === "C" && lap >= 10) return;
+        readings.push(reading("V0", tagId, lap * LAP_MS + index * 10_000));
+      });
+    }
+    const report = detectTagChanges(readings, "oldest-first", [{ from: 0, to: 20 * LAP_MS }], THRESHOLDS, ADOPTION);
+    expect(report.changes).toEqual([{ kind: "deja", tagId: "C", lastUtcMs: 9 * LAP_MS + 20_000, passesAfter: 10 }]);
+  });
+});

@@ -99,3 +99,23 @@ describe("importador de listas", () => {
     expect(conComas.accepted).toBe(2);
   });
 });
+
+describe("cabecera y campos escritos a mano", () => {
+  it("la cabecera se reconoce con BOM, comillas y acentos, y las comillas no entran en el tag", () => {
+    // «Función» con acento se ignoraba en silencio: la columna existía y su contenido se perdía.
+    const result = importCatalog(['﻿"Lista";"Tag";"Función"', 'critico;"0040";Cruce', "circuito;0040;"].join("\n"));
+
+    expect(result.accepted).toBe(2);
+    expect([...tagSet(result, "critico")]).toEqual(["0040"]);
+    expect(result.lists.get("critico")?.[0]?.funcion).toBe("cruce");
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it("avisa de las columnas que no conoce en vez de ignorarlas en silencio", () => {
+    const result = importCatalog(["lista;tag;tipo;Orden ", "circuito;0100;x;1"].join("\n"));
+
+    expect(result.lists.get("circuito")?.[0]?.order).toBe(1);
+    // Solo «tipo» se ignora: «Orden » con espacio y mayúscula es la columna `orden`.
+    expect(result.warnings[0]).toMatch(/se ignoran: tipo\./);
+  });
+});

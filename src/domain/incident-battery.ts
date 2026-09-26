@@ -21,7 +21,9 @@
  *      lecturas** (no lee tags o no tiene wifi) y todo avanza con normalidad;
  *    - si llegan a donde él reaparece **antes que él**, lo adelantaron: no se movía en la guía (fuera de
  *      ella, una maniobra manual o una calle de carga);
- *    - si no pasan de su sitio, estaba **parado de verdad** y retenía la cola.
+ *    - si no pasan de su sitio y esperan ahí más de lo habitual del tramo, estaba **parado de verdad**
+ *      y retenía la cola; uno que acaba de llegar no prueba nada. Lo habitual es la valla del tramo
+ *      o, sin horquilla, lo que el propio AGV tardó en llegar a ese tag; sin ninguna, no se afirma.
  * 5. **Cambio de AGV**: si no vuelve a leer, el AGV que empieza a leer por primera vez después, y dónde.
  *
  * Hechos, con sus cifras. La lectura final (no registra / parado con cola / sin datos) se da como lo
@@ -49,6 +51,12 @@ export interface IncidentContext {
   readonly lineStops: readonly { readonly from: number; readonly to: number }[];
   /** La calle de carga de cada tag de calle: un AGV callado ahí puede estar cargando. */
   readonly laneOf: ReadonlyMap<string, string>;
+  /**
+   * Lo habitual desde un tag hasta la siguiente lectura en ese instante (la valla de su horquilla), o
+   * `null` sin horquilla. Con ella se juzga si un AGV que llegó al tag de la incidencia y no pasó de
+   * ahí esperó de verdad o simplemente acababa de llegar (sin ella, con el paso del propio AGV).
+   */
+  readonly usualDwellMs: (tagId: string, utcMs: number) => number | null;
 }
 
 export interface Incident {
@@ -64,7 +72,12 @@ export type IncidentReading = "no-registra" | "adelantado" | "fuera-o-sin-regist
 
 export interface IncidentBattery {
   readonly durationMs: number;
-  readonly line: { readonly passes: number; readonly moving: boolean; readonly cycleMs: number } | null;
+  /**
+   * `moving` es `true` con paso y ningún hueco por encima de la valla, `false` con un hueco por encima,
+   * y `null` cuando la incidencia es más corta que la valla y no entró nadie: no le tocaba entrar a
+   * ningún AGV, así que no se puede juzgar la línea.
+   */
+  readonly line: { readonly passes: number; readonly moving: boolean | null; readonly cycleMs: number } | null;
   readonly ahead: { readonly agvId: string; readonly tagsAdvanced: number; readonly lastTagId: string } | null;
   readonly behind: {
     readonly reached: readonly string[];
@@ -72,8 +85,13 @@ export interface IncidentBattery {
     readonly moved: readonly string[];
     /** Los que llegaron a donde él reaparece antes que él: lo adelantaron. */
     readonly overtook: readonly string[];
-    /** Los que llegaron y no pasaron de su sitio mientras tanto. */
+    /** Los que llegaron y no pasaron de su sitio mientras tanto, esperando más de lo habitual. */
     readonly held: readonly string[];
+    /**
+     * Los que llegaron y no pasaron de su sitio sin que se pueda decir que esperaran: acababan de
+     * llegar, o no hay horquilla con que medirlo.
+     */
+    readonly unsure: readonly string[];
   };
   readonly swap: { readonly agvId: string; readonly tagId: string; readonly afterMs: number } | null;
   /** La parte de la incidencia en que la línea estaba parada con AGV esperando. */
@@ -93,6 +111,7 @@ export function buildIncidentContext(
   lineBandAt: (utcMs: number) => Band | null,
   lineStops: readonly { readonly from: number; readonly to: number }[] = [],
   laneOf: ReadonlyMap<string, string> = new Map(),
+  usualDwellMs: (tagId: string, utcMs: number) => number | null = () => null,
 ): IncidentContext {
   const steps = new Map<string, Step[]>();
   for (const reading of readings) {
@@ -107,7 +126,7 @@ export function buildIncidentContext(
     steps.set(agvId, collapsed);
     if (collapsed[0] !== undefined) firstRead.set(agvId, collapsed[0]);
   }
-  return { steps, linePasses: [...linePasses].sort((a, b) => a - b), lineBandAt, firstRead, lineStops, laneOf };
+  return { steps, linePasses: [...linePasses].sort((a, b) => a - b), lineBandAt, firstRead, lineStops, laneOf, usualDwellMs };
 }
 
 /** Índice de la primera lectura con hora > `utcMs`. */
@@ -146,15 +165,19 @@ export function incidentBattery(context: IncidentContext, incident: Incident, wi
     const bounds = [incident.fromUtcMs, ...inside, end];
     let longest = 0;
     for (let index = 1; index < bounds.length; index += 1) longest = Math.max(longest, (bounds[index] as number) - (bounds[index - 1] as number));
-    const moving = inside.length > 0 && longest <= band.fenceMs;
+    // Sin ningún paso dentro y con la incidencia más corta que la valla, no le tocaba entrar a nadie:
+    // decir «sin paso» sería afirmar una parada de la línea que el dato no sostiene.
+    const moving: boolean | null = longest <= band.fenceMs ? (inside.length > 0 ? true : null) : false;
     line = { passes: inside.length, moving, cycleMs: band.p50Ms };
     const entered = `${inside.length === 1 ? "entró 1 AGV" : `entraron ${inside.length} AGV`}`;
     lines.push(
-      moving
+      moving === true
         ? `La línea siguió con su cadencia: ${entered}, lo habitual es uno cada ${duration(band.p50Ms)}.`
-        : inside.length === 0
-          ? "La línea estuvo sin paso todo ese tiempo."
-          : `La línea estuvo sin paso hasta ${duration(longest)} seguidos en ese tiempo; ${entered}.`,
+        : moving === null
+          ? `La incidencia (${duration(durationMs)}) es más corta que un ciclo de la línea (hasta ${duration(band.fenceMs)}): no se puede juzgar si la línea seguía.`
+          : inside.length === 0
+            ? "La línea estuvo sin paso todo ese tiempo."
+            : `La línea estuvo sin paso hasta ${duration(longest)} seguidos en ese tiempo; ${entered}.`,
     );
   }
 
@@ -199,7 +222,20 @@ export function incidentBattery(context: IncidentContext, incident: Incident, wi
   const moved: string[] = [];
   const overtook: string[] = [];
   const held: string[] = [];
+  const unsure: string[] = [];
+  const dwellText: string[] = [];
   let lapped = 0;
+  // Con qué se compara lo que espera el de detrás: la valla del tramo si hay horquilla; si no, lo que
+  // el propio AGV de la incidencia tardó en llegar a ese tag desde su lectura anterior, un paso
+  // circulando medido ahí mismo. Sin ninguna de las dos, no se afirma que nadie esperara.
+  const usualAt = (utcMs: number): number | null => {
+    const fromBand = context.usualDwellMs(incident.fromTagId, utcMs);
+    if (fromBand !== null) return fromBand;
+    const own = context.steps.get(incident.agvId) ?? [];
+    const index = after(own, incident.fromUtcMs) - 1;
+    const previous = index > 0 && (own[index] as Step).tagId === incident.fromTagId ? own[index - 1] : undefined;
+    return previous === undefined || incident.fromUtcMs <= previous.utcMs ? null : incident.fromUtcMs - previous.utcMs;
+  };
   for (const [agvId, list] of context.steps) {
     if (agvId === incident.agvId) continue;
     const start = after(list, incident.fromUtcMs);
@@ -212,22 +248,40 @@ export function incidentBattery(context: IncidentContext, incident: Incident, wi
     }
     if (arrived < 0) continue;
     reached.push(agvId);
+    const arrival = list[arrived] as Step;
     const beyond = list.slice(arrived + 1).filter((step) => step.utcMs <= end);
     // Pasar dos veces por su sitio es una vuelta entera: ya no se puede decir que él siguiera en la guía.
     if (beyond.some((step) => step.tagId === incident.fromTagId)) lapped += 1;
-    // Llegar a donde él reaparece antes que él es adelantarlo.
-    if (incident.toTagId !== null && beyond.some((step) => step.tagId === incident.toTagId)) overtook.push(agvId);
-    else if (beyond.length > 0) moved.push(agvId);
-    else held.push(agvId);
+    // Llegar a donde él reaparece antes que él es adelantarlo. Si reaparece por su mismo tag, llegar a
+    // ese tag ya es llegar a donde reaparece: el otro pasó por ahí y él volvió a leerlo detrás.
+    if (incident.toTagId !== null && (incident.toTagId === incident.fromTagId || beyond.some((step) => step.tagId === incident.toTagId))) {
+      overtook.push(agvId);
+    } else if (beyond.length > 0) moved.push(agvId);
+    else {
+      // No pasó de ahí. Solo cuenta como retenido si esperó en el tag más de lo habitual de ese tramo:
+      // uno que llegó justo antes de que él reapareciera no prueba ninguna cola. Lo que esperó va
+      // hasta su siguiente lectura, o hasta el final de la incidencia si no la hay: es un mínimo.
+      const next = list[arrived + 1];
+      const dwellMs = (next?.utcMs ?? end) - arrival.utcMs;
+      const usual = usualAt(arrival.utcMs);
+      const waited = usual !== null && dwellMs > usual;
+      (waited ? held : unsure).push(agvId);
+      dwellText.push(
+        `${agvId} ${next === undefined ? "seguía allí" : "estuvo"} ${duration(dwellMs)}${
+          usual === null ? " (sin nada con que comparar lo que se tarda ahí)" : waited ? ` (lo habitual ahí, hasta ${duration(usual)})` : ` (dentro de lo habitual ahí, hasta ${duration(usual)})`
+        }`,
+      );
+    }
   }
   if (reached.length === 0) lines.push("Ningún AGV llegó a su último tag mientras tanto.");
   else {
+    const stayed = held.length + unsure.length;
     const parts = [
       moved.length === 0 ? null : `${moved.length} ${moved.length === 1 ? "siguió avanzando" : "siguieron avanzando"}`,
       overtook.length === 0
         ? null
         : `${overtook.length} ${overtook.length === 1 ? "llegó" : "llegaron"} a ${incident.toTagId ?? "—"} antes que él`,
-      held.length === 0 ? null : `${held.length} no ${held.length === 1 ? "pasó" : "pasaron"} de ahí`,
+      stayed === 0 ? null : `${stayed} no ${stayed === 1 ? "pasó" : "pasaron"} de ahí (${dwellText.join("; ")})`,
     ].filter((part): part is string => part !== null);
     lines.push(
       `Detrás, ${reached.length} ${reached.length === 1 ? "AGV llegó" : "AGV llegaron"} a ${incident.fromTagId} mientras tanto: ${parts.join(", ")}.`,
@@ -261,6 +315,7 @@ export function incidentBattery(context: IncidentContext, incident: Incident, wi
         : held.length > 0
           ? "parado-con-cola"
           : "sin-datos";
+  const onlyUnsure = reading === "sin-datos" && unsure.length > 0;
   lines.push(
     reading === "adelantado"
       ? `Los de detrás llegaron a ${incident.toTagId ?? "—"} antes que ${incident.agvId}, y en una guía no se adelanta: ${incident.agvId} no se movía en la guía (fuera de ella, una maniobra manual o una calle de carga).`
@@ -269,11 +324,13 @@ export function incidentBattery(context: IncidentContext, incident: Incident, wi
         : reading === "no-registra"
           ? `Los de detrás siguieron avanzando y ${incident.agvId} reapareció por delante de ellos: avanzaba sin que se registraran sus lecturas. Probablemente no lee tags o no tiene wifi, y todo avanza con normalidad.`
           : reading === "parado-con-cola"
-            ? `Los que llegaron detrás no pasaron de su sitio: ${incident.agvId} estaba parado de verdad y retenía la cola.`
-            : "Sin AGV detrás en ese tiempo, el dato no dice si avanzaba sin registrar o estaba parado.",
+            ? `Los que llegaron detrás esperaron en su sitio más de lo habitual: ${incident.agvId} estaba parado de verdad y retenía la cola.`
+            : onlyUnsure
+              ? `Los que llegaron detrás no pasaron de su sitio, pero no esperaron más de lo habitual (o no hay con qué medirlo): el dato no dice si ${incident.agvId} avanzaba sin registrar o estaba parado.`
+              : "Sin AGV detrás en ese tiempo, el dato no dice si avanzaba sin registrar o estaba parado.",
   );
 
-  return { durationMs, line, ahead, behind: { reached, moved, overtook, held }, swap, lineStoppedMs, reading, lines };
+  return { durationMs, line, ahead, behind: { reached, moved, overtook, held, unsure }, swap, lineStoppedMs, reading, lines };
 }
 
 /**
@@ -336,14 +393,14 @@ export function incidentsCsv(records: readonly IncidentRecord[], formatTime: (ut
         incident.toUtcMs === null ? null : formatTime(incident.toUtcMs),
         (battery.durationMs / 60_000).toFixed(1).replace(".", ","),
         battery.line?.passes ?? null,
-        battery.line === null ? null : battery.line.moving ? "sí" : "no",
+        battery.line === null ? null : battery.line.moving === null ? "sin juzgar" : battery.line.moving ? "sí" : "no",
         (battery.lineStoppedMs / 60_000).toFixed(1).replace(".", ","),
         battery.ahead?.agvId ?? null,
         battery.ahead?.tagsAdvanced ?? null,
         battery.behind.reached.length,
         battery.behind.moved.length,
         battery.behind.overtook.length,
-        battery.behind.held.length,
+        battery.behind.held.length + battery.behind.unsure.length,
         battery.swap === null ? null : `${battery.swap.agvId} en ${battery.swap.tagId}`,
         READING_TEXT[battery.reading],
         battery.lines.join(" "),

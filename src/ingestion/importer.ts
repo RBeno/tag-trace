@@ -16,6 +16,7 @@ import {
   detectFieldOrder,
   parseTimestamp,
   type FieldOrder,
+  type TimeFlag,
   type TimeParseOptions,
 } from "../domain/time.js";
 import { sortReadings } from "../domain/order.js";
@@ -120,6 +121,13 @@ export interface ImportResult {
   readonly readings: Reading[];
   readonly quarantine: QuarantinedRow[];
   readonly warnings: string[];
+  /**
+   * Líneas vacías entre los datos. No son filas ni defectos, así que no están en ninguna cubeta, y
+   * se cuentan aparte para que `totalRows` sea exactamente la suma de lo aceptado, lo puesto en
+   * cuarentena y lo que no trae tag. Antes entraban en `totalRows` sin salir por ningún lado y el
+   * resumen no cuadraba.
+   */
+  readonly blankRows: number;
 }
 
 /** El alcance en palabras, para que el mensaje se lea como una frase y no como un volcado. */
@@ -148,12 +156,27 @@ interface ColumnMap {
 }
 
 export function normaliseHeaderCell(cell: string): string {
-  return cell
+  return unquoteField(cell)
     .trim()
     .toLowerCase()
     .replace(/^\ufeff/, "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Quita las comillas envolventes de un campo y deshace la comilla doblada (`""` → `"`).
+ *
+ * Excel y otros exportadores entrecomillan campos de texto. Sin esto, `"T01"` entraba como un tag
+ * distinto de `T01` —mismo tag como dos nodos— y una cabecera entrecomillada se rechazaba entera. Solo
+ * se toca un campo que empieza **y** termina con comilla; una comilla suelta dentro del texto se
+ * conserva tal cual, porque quitarla sería adivinar. Un separador dentro de un campo entrecomillado
+ * sigue sin admitirse: la fila sale por `FIELD_COUNT`, con su motivo.
+ */
+export function unquoteField(field: string): string {
+  const text = field.trim();
+  if (text.length < 2 || !text.startsWith('"') || !text.endsWith('"')) return field;
+  return text.slice(1, -1).replace(/""/g, '"');
 }
 
 /**
@@ -191,8 +214,8 @@ export function mapColumns(header: readonly string[]): ColumnMap {
 function splitLine(line: string, delimiter: Delimiter): string[] {
   const fields = line.split(delimiter);
   for (let index = 0; index < fields.length; index += 1) {
-    const field = fields[index] as string;
-    if (field.length > LIMITS.maxFieldChars) fields[index] = field.slice(0, LIMITS.maxFieldChars);
+    const field = unquoteField(fields[index] as string);
+    fields[index] = field.length > LIMITS.maxFieldChars ? field.slice(0, LIMITS.maxFieldChars) : field;
   }
   return fields;
 }
@@ -221,6 +244,9 @@ export function importReadings(
 
   const lines = text.split(/\r\n|\n|\r/);
   while (lines.length > 0 && (lines[lines.length - 1] as string).trim() === "") lines.pop();
+  // El BOM va delante de la primera celda, comillas incluidas: se quita aquí, antes de partir la
+  // cabecera, para que `\ufeff"Fecha"` se reconozca igual que `Fecha`.
+  if (lines.length > 0) lines[0] = (lines[0] as string).replace(/^\ufeff/, "");
 
   if (lines.length < 2) {
     throw new ImportFailure(
@@ -356,7 +382,9 @@ export function importReadings(
   const readings: Reading[] = [];
   const quarantine: QuarantinedRow[] = [];
   const utcSequence: number[] = [];
+  const flagSequence: TimeFlag[] = [];
   let dstFlagged = 0;
+  let blankRows = 0;
 
   const dataRows = lines.length - 1;
   for (let index = 1; index < lines.length; index += 1) {
@@ -368,7 +396,10 @@ export function importReadings(
     const line = lines[index] as string;
     // La fila 1 es la cabecera, así que la fila física de `lines[i]` es `i + 1`.
     const provenance: Provenance = { ...provenanceBase, sourceRow: index + 1 };
-    if (line.trim() === "") continue;
+    if (line.trim() === "") {
+      blankRows += 1;
+      continue;
+    }
 
     const fields = splitLine(line, detection.delimiter);
     const reject = (code: RejectionCode): void => {
@@ -405,6 +436,7 @@ export function importReadings(
 
     readings.push({ time: parsed.time, agvId, tagId, provenance });
     utcSequence.push(parsed.time.utcMs);
+    flagSequence.push(parsed.time.flag);
   }
 
   if (callbacks.isCancelled()) throw new ImportCancelled("parsing");
@@ -433,7 +465,9 @@ export function importReadings(
 
   // --- Sentido y orden ---
   callbacks.onProgress("ordering", 0, 1, "Midiendo el sentido de la fuente");
-  const monotonicity = measureMonotonicity(utcSequence);
+  // Los pares con hora repetida o inexistente no cuentan como inversión: en octubre las dos
+  // ocurrencias reciben el mismo instante y un fichero íntegro parecería retroceder (ADR-0013).
+  const monotonicity = measureMonotonicity(utcSequence, flagSequence);
   sortReadings(readings, monotonicity.direction);
   // Después de ordenar, no antes: dos lecturas «consecutivas» de un vehículo solo lo son una vez
   // la secuencia está en orden cronológico (R-DAT-013).
@@ -506,7 +540,8 @@ export function importReadings(
       direction: monotonicity.direction,
       sameInstantPairs: sameInstant.pairs,
       vehiclePairs: sameInstant.vehiclePairs,
-      totalRows: dataRows,
+      // Sin las líneas vacías, que no son filas: así `totalRows` es la suma exacta de las cubetas.
+      totalRows: dataRows - blankRows,
       acceptedRows: readings.length,
       quarantinedRows: defectiveRows,
       rowsWithoutTag,
@@ -519,5 +554,6 @@ export function importReadings(
     readings,
     quarantine,
     warnings,
+    blankRows,
   };
 }

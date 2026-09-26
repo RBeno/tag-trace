@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/27`
+- Dataset ID/version: `auditoria/28`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -116,4 +116,13 @@ unitarias propias, pero aquí **no llega a aplicarse**: casi todos los segmentos
 tiempo mediano medido, así que la decisión la toma la vía del tiempo y la del orden no se alcanza.
 La auditoría lo publica como `pasadas retiradas de la vía de orden: 0` en lugar de callarlo, porque
 una regla que no se ejercita no está validada por este escenario aunque esté escrita.
+
+## Revisión de la lógica (2026-09-26): `auditoria/28`
+
+El retenedor del semáforo pasa a ser el primer vehículo generado: los vehículos se generan uno tras
+otro y solo los posteriores ven sus esperas, así que con otro índice los anteriores lo atravesaban
+—imposible en una guía única— y el análisis, con razón, dejaba de tenerlo por retenedor. Los que
+hacen cola detrás siguen siendo solo los generados después de él. El retenedor devuelve su espera
+como deuda de reloj y sale de verdad más rápido en la zona cargada; la sonda del ritmo lo admite solo
+como «más rápido, solo ahí» y nada más. Todas las clases siguen DETECTA.
 

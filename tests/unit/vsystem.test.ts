@@ -124,3 +124,13 @@ describe("contraste contra Vsystem", () => {
     expect(rows.some((row) => row.verdict === "no-declarado" || row.verdict === "fuera-del-anillo")).toBe(false);
   });
 });
+
+describe("la rotación del anillo se elige por el orden que comparte con la lista", () => {
+  it("si el primer tag de la lista es el mal colocado, solo él sale en otro orden", () => {
+    const declarado = ["G", "A", "B", "C", "D", "E", "F"];
+    const observado = ["A", "B", "C", "G", "D", "E", "F"];
+    const rows = compareAgainstVsystem(declarado, observado, new Set(observado));
+    expect(rows.filter((row) => row.verdict === "otro-orden").map((row) => row.declaredTag)).toEqual(["G"]);
+    expect(rows.filter((row) => row.verdict === "coincide")).toHaveLength(6);
+  });
+});

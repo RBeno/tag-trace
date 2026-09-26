@@ -2,6 +2,65 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.44.0] - 2026-09-26
+
+Revisión de la lógica de medición y análisis, segunda entrega: cinco revisiones en paralelo sobre
+todos los módulos del dominio y de la ingesta, cada fallo reproducido en una prueba antes de tocarlo,
+y cada corrección con su prueba de regresión y su regla anotada («revisión de la lógica, 2026-09-26»
+en `RULE_CATALOG.md`; §6.18 de `ALGORITHM_CATALOG.md`; TC-246 a TC-261).
+
+### Corregido
+
+- **Falsas acusaciones a tags sanos.** La lista se alineaba con el anillo rotando al primer tag de
+  la lista: si ese era el mal colocado, media vuelta de tags sanos salía «en otro sitio» (R-GRA-015,
+  comparación con Vsystem, anclas de R-DAT-021). Ahora se prueba cada rotación y gana la subsecuencia
+  común más larga. Una ausencia entre anclas la sostienen al menos dos AGV. «Dejó de leer desde»
+  exige que el resto lo leyera después: una rotura del tag ya no acusa a toda la flota (R-AGV-016).
+  Un tag de noche con una lectura de día fuera de su sitio sigue siendo de noche (R-DAT-019).
+- **Huecos entre exportaciones que se medían.** La cola cortada de una exportación formaba
+  transición y «vuelta» con la primera lectura de la siguiente (aristas de 30 días); una estancia de
+  carga o una pasada FIFO con un extremo en cada exportación era permanencia larga y «adelantado por
+  todos». Solo valen las que caen en el mismo tramo de cobertura (R-DAT-007, R-CO-002, R-FLO-001).
+- **La hora repetida de octubre fabricaba orden**, contra ADR-0013: inversiones falsas, transiciones
+  hacia atrás. Las lecturas marcadas ya no afirman orden (R-DAT-013).
+- **Flujo.** Un AGV que callaba horas seguía «reteniendo» a todo el que parase detrás; ahora un
+  retenedor tiene que estar donde dice su último tag (R-FLO-008). Una parada vista como relectura del
+  mismo tag era invisible. Sin lo habitual del tramo se afirmaba «parado». Reaparecer por detrás se
+  leía como casi una vuelta hacia delante. Un sitio o un AGV sin ninguna pasada salía siempre como
+  concentración. La tercera causa de una zona oscura nombraba tags sin lecturas de otro punto del
+  circuito si la lista escribía los extremos al revés (R-GRA-014).
+- **Línea e incidencias.** Los descansos dibujaban el pulmón con toda la flota (R-FLO-010); un tiempo
+  entre pasos que cruzaba las 22:00 se callaba; una incidencia de 40 s decía «línea sin paso»; volver
+  por el mismo tag no contaba como adelantado; «parado de verdad» se sostenía con 5 s de espera de
+  otro (R-AGV-021). Un cruce cuya rama menor está en el camino de la otra se propone con la duda
+  dicha (R-GRA-007). El ritmo se compara con la mediana de los demás y no se afirma con menos de tres
+  AGV (R-AGV-019).
+- **Ingesta.** Comillas envolventes en campos y cabeceras; cabeceras de listas e historial sin
+  normalizar (acentos, BOM) y columnas desconocidas ignoradas en silencio; procedencia pisada al
+  encadenar tres cortes (R-DAT-005); `Map`/`Set`/`Date` hasheados como `{}`; líneas en blanco en
+  `totalRows`; empates de cohortes por locale. Un tag solo en la lista `critico` es
+  `critico-no-declarado`, no «declarado sin memoria» (R-DAT-016). La pasada que contiene la última
+  lectura ya no cuenta como pasada sin leer (R-DAT-019).
+
+### Cambiado
+
+- **Una prueba unitaria reescrita como cambio de regla**: las ventanas de antes y después de un
+  cambio de estructura dejan fuera el instante del corte (R-DAT-021); la prueba que fijaba los
+  límites inclusivos fijaba el fallo.
+- **Generador de la auditoría** (`auditoria/28`): el retenedor pasa a ser el primer vehículo
+  generado, porque los anteriores lo atravesaban en el semáforo y el análisis, con razón, dejaba de
+  tenerlo por retenedor. La sonda del ritmo admite del retenedor solo «más rápido, solo en la zona
+  cargada», que es lo que su deuda de reloj hace de verdad.
+- El Worker pasa el sentido de la fuente a la deriva entre periodos y la valla de cada tramo a la
+  batería de incidencias.
+
+### Pendiente
+
+- Se calculan y aún no se enseñan: `enoughVehicles`, `unconfirmed` (suma entre anclas),
+  `maybeSkipped`, `behind.unsure`, `blankRows`, `discardedUnreliableTime`. Contradicciones y
+  decisiones del propietario en OQ-135 a OQ-141; la cobertura simétrica (recorte de cabeza) queda
+  con la cola sola porque `DATA_CONTRACTS` §7 y una prueba existente lo fijan así.
+
 ## [3.43.0] - 2026-09-26
 
 Revisión de toda la lógica de medición y análisis, módulo a módulo, con cada fallo reproducido en

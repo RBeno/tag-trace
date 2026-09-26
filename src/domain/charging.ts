@@ -22,7 +22,7 @@
  */
 
 import type { CoLane } from "./circuit-config.js";
-import type { Interval } from "./coverage.js";
+import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
 import type { Reading } from "./reading.js";
 import type { TruthState } from "./truth.js";
 
@@ -158,6 +158,7 @@ function median(values: readonly number[]): number | null {
 function staysOf(
   agvId: string,
   hits: readonly LaneHit[],
+  straddlesGap: (fromUtcMs: number, toUtcMs: number) => boolean,
 ): { readonly stays: readonly LaneStay[]; readonly startedInside: LaneStay | null } {
   const stays: LaneStay[] = [];
   let startedInside: LaneStay | null = null;
@@ -192,6 +193,23 @@ function staysOf(
     // Salida.
     if (open !== null && open.lane.laneId === hit.lane.laneId) {
       const from = open.stoppedUtcMs ?? open.enteredUtcMs;
+      // Si entre la entrada y la salida hay un tramo entero sin datos cargados, lo que duró la estancia
+      // no se sabe: el hueco es «sin datos», no espera (R-DAT-007). Darla por completa la convertiría
+      // en permanencia larga y en una salida fuera de antigüedad frente a todo el que cargó después.
+      if (straddlesGap(open.enteredUtcMs, hit.utcMs)) {
+        stays.push({
+          laneId: hit.lane.laneId,
+          agvId,
+          enteredUtcMs: open.enteredUtcMs,
+          leftUtcMs: hit.utcMs,
+          durationMs: null,
+          state: "incompleta",
+          truth: "unknown",
+          evidence: `entró en «${hit.lane.laneId}» y salió tras un tramo sin datos cargados: no se sabe cuánto duró`,
+        });
+        open = null;
+        continue;
+      }
       stays.push({
         laneId: hit.lane.laneId,
         agvId,
@@ -291,7 +309,8 @@ function seniorityBreaches(stays: readonly LaneStay[]): readonly SeniorityBreach
  * Construye el informe de calles.
  *
  * `coverage` fija hasta cuándo hay datos: una estancia que no cierra dentro de la cobertura queda
- * abierta y **no** se cuenta como permanencia larga, porque no se sabe cuánto duró (R-DAT-007).
+ * abierta, y una que cruza un tramo entero sin datos queda `incompleta`; ninguna de las dos cuenta
+ * como permanencia larga ni en la antigüedad, porque no se sabe cuánto duró (R-DAT-007).
  */
 export function buildChargingReport(
   readings: readonly Reading[],
@@ -304,6 +323,9 @@ export function buildChargingReport(
   const index = roleIndex(lanes);
   const coverageStartUtcMs =
     coverage.length === 0 ? null : Math.min(...coverage.map((interval) => interval.from));
+  const gaps = uncoveredGaps(mergeIntervals([...coverage]));
+  const straddlesGap = (fromUtcMs: number, toUtcMs: number): boolean =>
+    gaps.some((gap) => fromUtcMs <= gap.from && toUtcMs >= gap.to);
 
   // Una pasada por las lecturas, agrupando por vehículo. El resto trabaja ya sobre lecturas de
   // calle, que son una fracción diminuta del total (WP-001: nada de recorrer el CSV varias veces).
@@ -336,7 +358,7 @@ export function buildChargingReport(
 
   for (const [agvId, hits] of byVehicle) {
     hits.sort((a, b) => a.utcMs - b.utcMs);
-    const result = staysOf(agvId, hits);
+    const result = staysOf(agvId, hits, straddlesGap);
     if (result.stays.length > 0) withStay.add(agvId);
     for (const stay of result.stays) staysByLane.get(stay.laneId)?.push(stay);
     // Solo cuenta como arranque en frío si esa salida es también la primera lectura **de todas**

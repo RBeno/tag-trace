@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+import { buildTransitions } from "../../src/domain/graph.js";
 import { decodeSource } from "../../src/ingestion/decode.js";
 import { detectDelimiter } from "../../src/ingestion/delimiter.js";
 import { measureMonotonicity } from "../../src/ingestion/monotonicity.js";
@@ -501,5 +502,75 @@ describe("delimitador", () => {
   it("no acepta un separador que produce recuentos irregulares", () => {
     const lines = ["a,b", "1,2,3,4", "x"];
     expect(detectDelimiter(lines).confidence).toBeLessThan(0.9);
+  });
+});
+
+describe("hora repetida de octubre · ADR-0013", () => {
+  it("los pares con una lectura marcada no cuentan como inversión y se cuentan aparte", () => {
+    // 900 está en hora repetida: su instante calculado no es medida del reloj y no puede acusar a
+    // la fuente de retroceder.
+    const report = measureMonotonicity([500, 400, 900, 300], ["ok", "ok", "dst_ambiguous", "ok"]);
+    expect(report.direction).toBe("newest-first");
+    expect(report.inversions).toBe(0);
+    expect(report.unreliablePairs).toBe(2);
+    expect(report.comparedPairs).toBe(1);
+  });
+
+  it("una pila íntegra que cruza la hora repetida no tiene inversiones ni fabrica transiciones", () => {
+    // 25/10/2026: 02:00–02:59 ocurre dos veces. Todas las filas van en orden de pila.
+    const text = [
+      "Fecha;AGV;Tag",
+      "25/10/2026 04:00:00;0040;G",
+      "25/10/2026 03:10:00;0040;F",
+      "25/10/2026 02:40:00;0040;E",
+      "25/10/2026 02:10:00;0040;D",
+      "25/10/2026 02:40:00;0040;C",
+      "25/10/2026 02:10:00;0040;B",
+      "25/10/2026 01:40:00;0040;A",
+      "25/10/2026 00:30:00;0040;Z",
+    ].join("\n");
+    const result = importReadings(text, { sourceId: "dst", fileName: "dst.csv", byteSize: text.length, zone: ZONE }, silent);
+
+    expect(result.summary.dstFlagged).toBe(4);
+    expect(result.summary.monotonicity.direction).toBe("newest-first");
+    // Antes salía una inversión: la segunda ocurrencia colapsa sobre la primera y el fichero
+    // parecía retroceder, con aviso de «entrega diferida» sobre una fuente íntegra.
+    expect(result.summary.monotonicity.inversions).toBe(0);
+    expect(result.summary.monotonicity.unreliablePairs).toBe(5);
+
+    const { transitions, discardedUnreliableTime } = buildTransitions(result.readings, result.summary.direction, []);
+    // Solo las transiciones cuyos dos extremos están fuera de la hora repetida.
+    expect(transitions.map((t) => `${t.from}>${t.to}`)).toEqual(["Z>A", "F>G"]);
+    expect(discardedUnreliableTime).toBe(5);
+  });
+});
+
+describe("comillas, BOM y líneas en blanco", () => {
+  it("las comillas envolventes no forman parte del identificador y la comilla doblada se deshace", () => {
+    const text = [
+      '﻿"Fecha";"AGV";"Tag"',
+      '"13/09/2026 10:00";"0040";"T01"',
+      '13/09/2026 10:01;0040;"di""jo"',
+      '13/09/2026 10:02;0040;T"03',
+    ].join("\n");
+    const result = importReadings(text, { sourceId: "q", fileName: "q.csv", byteSize: text.length, zone: ZONE }, silent);
+
+    expect(result.summary.header).toEqual(["Fecha", "AGV", "Tag"]);
+    expect(result.readings.map((entry) => entry.agvId)).toEqual(["0040", "0040", "0040"]);
+    // `"T01"` es el tag `T01`, no otro; `""` es una comilla; una comilla suelta se conserva.
+    expect(result.readings.map((entry) => entry.tagId)).toEqual(["T01", 'di"jo', 'T"03']);
+  });
+
+  it("las líneas en blanco se cuentan aparte y totalRows es la suma exacta de las cubetas", () => {
+    const text = ["Fecha;AGV;Tag", "13/09/2026 10:00;0040;T01", "", "13/09/2026 10:01;0040;", "   ", "13/09/2026 10:02;0040;T02"].join("\n");
+    const result = importReadings(text, { sourceId: "b", fileName: "b.csv", byteSize: text.length, zone: ZONE }, silent);
+
+    expect(result.blankRows).toBe(2);
+    expect(result.summary.totalRows).toBe(3);
+    expect(result.summary.totalRows).toBe(
+      result.summary.acceptedRows + result.summary.quarantinedRows + result.summary.rowsWithoutTag,
+    );
+    // La procedencia sigue siendo la fila física, con las líneas vacías contadas.
+    expect(result.readings[1]?.provenance.sourceRow).toBe(6);
   });
 });

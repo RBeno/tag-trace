@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.35.0
+version: 0.36.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -974,3 +974,38 @@ Solo tras disponer de etiquetas humanas y métricas de precisión se considerar�
 - aprendizaje de embeddings de incidencias.
 
 Todo modelo será candidato en sombra, comparado con el algoritmo estable, explicable en sus entradas y sin alterar históricos consolidados.
+
+## 6.18 Revisión de la lógica de medición y análisis (2026-09-26)
+
+Cinco revisiones en paralelo, módulo a módulo, con cada fallo reproducido en una prueba desechable
+antes de tocar el código. Lo que cambia en cada algoritmo está anotado en su regla (marcado
+«revisión de la lógica, 2026-09-26»); aquí, lo que no cabe en una regla:
+
+- **Alineación de dos anillos** (§6.10, §6.13, comparación con Vsystem): la rotación se prueba en
+  cada tag común y se elige la subsecuencia común más larga (`alignToDeclared`); O(n²·m), trivial con
+  cientos de tags. Empate → la rotación más cercana al inicio de la lista.
+- **Mismo tramo de cobertura** (`sameSpan`, `coverage.ts`): una transición, una vuelta, una estancia
+  de carga o una pasada FIFO valen solo si sus dos extremos caen en el mismo intervalo de cobertura.
+  Sustituye a «encierra un hueco entero», que dejaba pasar la cola cortada de una exportación.
+- **Lecturas con `t_flag` distinto de `ok`**: fuera de la monotonía (`unreliablePairs`), de las
+  transiciones (`discardedUnreliableTime`) y de las vueltas de la matriz.
+- **Retenedor fantasma** (`flowStops.holderOf`): un candidato a retenedor se descarta si un tercero
+  —ni él ni el parado— leyó su último tag y **siguió hacia delante** entre su última lectura y la mitad
+  de la parada. Leer solo el tag no basta: el candidato pudo seguir hasta un tag que no se lee (en el
+  sintético, dos tags sin lecturas delante del cuello).
+- **Exposición cero** (`concentrated`): sin pasadas, lo esperado es cero y cualquier recuento salía
+  como concentración; ahora no se señala.
+- **Ritmo contra los demás** (§6.11): mediana de los demás por AGV (`mediansExcludingOwner`); con
+  menos de `MIN_TESTED_VEHICLES = 3` probados no hay veredicto (`enoughVehicles`). Es un mínimo
+  estadístico, no una constante de planta.
+- **Cadencia de la parte de detrás en la batería** (§6.17): `usualDwellMs(tag, hora)` es la valla del
+  tramo que sale de ese tag en su régimen, que el Worker toma de las horquillas del cohorte.
+- **Generador de la auditoría**: el retenedor pasa a ser el primer vehículo generado, porque los
+  vehículos se generan uno tras otro y solo los posteriores ven sus esperas; con otro índice, los
+  anteriores lo atravesaban en el semáforo. Devuelve su espera como toda deuda de reloj y por eso es
+  de verdad más rápido en la zona cargada: la sonda del ritmo lo admite solo como «más rápido, solo
+  ahí». Repartir esa deuda en toda la vuelta mueve su sitio y descoloca otras clases plantadas.
+- **Pendiente de vista** (UX): `enoughVehicles`, `unconfirmed` de la suma entre anclas,
+  `maybeSkipped`, `behind.unsure`, `blankRows` y `discardedUnreliableTime` se calculan y no se enseñan
+  todavía.
+

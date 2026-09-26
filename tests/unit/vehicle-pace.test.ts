@@ -140,6 +140,26 @@ describe("el ritmo de cada AGV (R-AGV-019)", () => {
     expect(report.fleetRatio).toBeNull();
   });
 
+  it("cada AGV se compara con la mediana de los demás, no con una que lo incluye", () => {
+    // Con diez AGV y uno un 10 % más lento, la referencia del lento es la de los otros nueve y la de un
+    // sano incluye al lento: distintas, y la del lento es la menor.
+    const report = vehiclePace(input(laps((vehicle) => (vehicle === 3 ? 1.1 : 1))), THRESHOLDS);
+    const slow = report.vehicles.find((vehicle) => vehicle.agvId === "V3");
+    const sane = report.vehicles.find((vehicle) => vehicle.agvId === "V0");
+    expect(slow?.fleetRatio).toBeLessThan(sane?.fleetRatio ?? 0);
+    expect(report).toMatchObject({ testedVehicles: 10, enoughVehicles: true });
+  });
+
+  it("con menos de tres AGV probados no se afirma ningún ritmo, y se dice", () => {
+    // Dos AGV, uno un 20 % más lento: la referencia de cada uno es solo el otro, y el sano saldría
+    // «más rápido». Se enseñan las cifras, sin veredicto.
+    const report = vehiclePace(input(laps((vehicle) => (vehicle === 1 ? 1.2 : 1), 2)), THRESHOLDS);
+    expect(report).toMatchObject({ testedVehicles: 2, enoughVehicles: false });
+    expect(report.vehicles).toHaveLength(2);
+    expect(report.vehicles.filter((vehicle) => vehicle.verdict !== null)).toEqual([]);
+    expect(report.vehicles.find((vehicle) => vehicle.agvId === "V1")?.shift).toBeGreaterThan(0.1);
+  });
+
   it("la prueba de signo cuenta los empates a mitad", () => {
     expect(signTest([1, 1, 1, 1, 1, 1, 1, 1], 1)).toBeCloseTo(1, 6);
     expect(signTest([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], 1)).toBeLessThan(1e-4);
@@ -166,6 +186,14 @@ describe("quién retiene a otros (R-AGV-020)", () => {
     const retentions = Array.from({ length: 12 }, (_, index) => retention("V1", "V0", index));
     const report = vehiclePace(input(laps(), { flow: { stops: [], retentions } }), THRESHOLDS);
     expect(report.holders.filter((holder) => holder.expected !== null)).toEqual([]);
+  });
+
+  it("quien retiene sin ninguna pasada propia en la ventana no se señala: sin exposición no hay azar con que comparar", () => {
+    // Dos retenciones de AGV distintos atribuidas a «V99», que no tiene ninguna transición de producción
+    // aquí (sus pasadas quedaron fuera de la ventana). Antes salía señalado con esperado 0.
+    const retentions = [retention("V1", "V99", 1), retention("V2", "V99", 2)];
+    const report = vehiclePace(input(laps(), { flow: { stops: [], retentions } }), THRESHOLDS);
+    expect(report.holders.find((holder) => holder.agvId === "V99")).toMatchObject({ retentions: 2, passes: 0, expected: null });
   });
 
   it("el CSV de un fichero, con coma decimal", () => {

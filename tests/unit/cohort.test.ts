@@ -133,3 +133,18 @@ describe("agrupamiento por circuito", () => {
     expect(assignment.cohorts.map((cohort) => cohort.vehicles)).toEqual([["A1", "A2", "S"]]);
   });
 });
+
+describe("orden determinista · INV-010", () => {
+  it("los empates se ordenan por código de carácter, no por el locale del motor", () => {
+    // Con `localeCompare` sin locale, «b» y «B» se ordenaban según el entorno y dos navegadores
+    // podían numerar los cohortes al revés: mismo fichero, dos hashes.
+    const readings = [
+      ...laps("b", ["0100", "0200", "0300", "0400", "0500", "0600"], 4, 0),
+      ...laps("B", ["0900", "0910", "0920", "0930", "0940", "0950"], 4, 1_000_000),
+    ];
+    const { transitions } = buildTransitions(readings, "oldest-first", [{ from: 0, to: 2_000_000 }]);
+    const assignment = assignCohorts(readings, transitions, THRESHOLDS);
+
+    expect(assignment.cohorts.map((cohort) => cohort.vehicles)).toEqual([["B"], ["b"]]);
+  });
+});

@@ -104,3 +104,15 @@ describe("limpieza de la lista del circuito", () => {
     expect(csv.some((line) => line.startsWith("refuerzo;2 + 3;parada-precisa;"))).toBe(true);
   });
 });
+
+describe("un refuerzo al que le falta el vecino leído de algún tag", () => {
+  it("no sale separado por eso: se cae al criterio del anillo", () => {
+    const ring = order([["1", "igual", 1], ["2", "igual", 2], ["3", "igual", 3], ["4", "igual", 4]]);
+    // 2 se lee (está en el anillo) pero no tiene vecino leído en el cohorte con que se midió el sitio.
+    const placeOf = new Map([["3", { predecessor: "2", successor: "4" }]]);
+    const [check] = buildListCleanup(ring, new Map(), [{ funcion: "giro", tags: ["2", "3"] }], placeOf).reinforcements;
+    expect(check?.status).toBe("comprobado");
+    const [lejos] = buildListCleanup(ring, new Map(), [{ funcion: "giro", tags: ["1", "3"] }], placeOf).reinforcements;
+    expect(lejos?.status).toBe("separado");
+  });
+});

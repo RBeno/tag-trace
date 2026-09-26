@@ -13,14 +13,15 @@
  * | `salta-varios` | vuelve dos o más tags más allá |
  * | `desconexion` | una hora o más sin leer y vuelve en otro punto, o sin leer al principio o al final |
  * | `mantenimiento` | se fue o volvió por un tag de la lista de mantenimiento |
- * | `sin-clasificar` | uno de los dos extremos está fuera del anillo inferido: no hay posición que comparar |
+ * | `sin-clasificar` | un extremo fuera del anillo inferido, o reaparece **por detrás** (media vuelta o más de «saltos»: en una guía única no se retrocede), o vuelve por su sitio pero el tramo no tiene habitual con que compararlo |
  *
  * «Habitual» solo se aplica cuando no falta ningún tag entre medias: un tag saltado es un tag sin
  * leer aunque el tiempo sea normal, y callarlo escondería justo lo que el producto existe para
  * enseñar. Un tag saltado sale como tal, con lo que suele tardar ese tramo al lado.
  *
  * «Lo habitual» es la **mediana** de cada tramo del anillo —un tag y el siguiente— en cada turno, en
- * la hora local de la zona del circuito. Un par en el mismo instante no mide nada (R-DAT-013) y no
+ * la hora local de la zona del circuito. Volver por el mismo tag se compara con el tramo que sale de
+ * él: lo que se suele tardar en dejarlo. Un par en el mismo instante no mide nada (R-DAT-013) y no
  * cuenta. Sin datos de ese turno se usa la mediana de toda la ventana, y sin ninguna, no se afirma lo
  * habitual.
  *
@@ -236,8 +237,18 @@ export function classifySilence(
   let skipped: number | null = null;
   let usualMs: number | null = null;
   if (usual !== null && from !== undefined && to !== undefined && size > 1) {
-    skipped = sameTag ? 0 : (to - from - 1 + size) % size;
-    usualMs = ringUsualMs(usual, gap.lastTagBefore, gap.firstTagAfter, gap.fromUtcMs);
+    const ahead = sameTag ? 0 : (to - from - 1 + size) % size;
+    // Reaparecer por detrás —media vuelta o más de «saltos»— no es avanzar casi una vuelta: en una guía
+    // única no se retrocede, así que es un tag mal situado o una maniobra fuera de la guía. Sin
+    // posición fiable que comparar, se trata como un extremo fuera del anillo (misma guarda que
+    // `bandFor` y las zonas oscuras).
+    if (ahead < size / 2) {
+      skipped = ahead;
+      // Volver por el mismo tag es haberse quedado ahí: lo habitual con que se compara es lo que se
+      // suele tardar en dejar ese tag, el tramo hasta el siguiente del anillo.
+      const target = sameTag ? (usual.ring[(from + 1) % size] as string) : gap.firstTagAfter;
+      usualMs = ringUsualMs(usual, gap.lastTagBefore, target, gap.fromUtcMs);
+    }
   }
   const detail: SilenceDetail = {
     lastTagBefore: gap.lastTagBefore,
@@ -256,7 +267,10 @@ export function classifySilence(
   }
   if (skipped === null) return { kind: long ? "desconexion" : "sin-clasificar", detail };
   if (skipped === 0) {
-    const within = usualMs !== null && duration <= thresholds.factorOverUsual * usualMs;
+    // «Más tarde de lo habitual» exige un habitual: sin muestras del tramo no se afirma que estuvo
+    // parado, y el hueco queda sin clasificar, salvo que pase de una hora, que por sí sola ya dice algo.
+    if (usualMs === null) return { kind: long ? "desconexion" : "sin-clasificar", detail };
+    const within = duration <= thresholds.factorOverUsual * usualMs;
     return { kind: within ? "habitual" : "parada", detail };
   }
   if (long) return { kind: "desconexion", detail };

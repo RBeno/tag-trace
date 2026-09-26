@@ -155,3 +155,18 @@ describe("segmentación de vueltas", () => {
     expect(cruzaHueco?.truth).toBe("inferred");
   });
 });
+
+describe("vueltas y cola cortada · R-DAT-007", () => {
+  it("una vuelta que se cierra en la cola cortada de la exportación se degrada a parcial", () => {
+    const ANILLO = ["0100", "0200", "0300", "0400"];
+    const readings = [...laps("A", ANILLO, 1, 0), reading(50_000, "A", "0100")];
+    // El último instante completo es 40 000: el paso por el ancla de 50 000 queda fuera del tramo.
+    const coverage = [{ from: 0, to: 40_000 }];
+
+    const result = segmentLaps(readings, "oldest-first", coverage, "0100", "observed");
+
+    const vuelta = result.find((lap) => lap.startUtcMs === 10_000 && lap.endUtcMs === 50_000);
+    expect(vuelta?.completeness).toBe("parcial");
+    expect(vuelta?.truth).toBe("inferred");
+  });
+});

@@ -340,3 +340,48 @@ describe("adopción de tag nuevo (R-AGV-013 ampliada)", () => {
     expect(matches[0]?.notAdoptedTags).toEqual(["NEWTAG"]);
   });
 });
+
+describe("soporte débil de un desaparecido o un nuevo", () => {
+  it("un tag leído una vez antes y nunca después sale desaparecido, con el soporte débil dicho", () => {
+    const coverage = [
+      { from: 0, to: 1000 },
+      { from: 5000, to: 6000 },
+    ];
+    const readings = [
+      ...chain("A1", ["TA", "TB", "TC", "TA", "TB", "TC"], 0),
+      reading(200, "A1", "M"),
+      ...chain("A1", ["TA", "TB", "TC", "TA", "TB", "TC"], 5000),
+      reading(5200, "A1", "N"),
+      ...chain("A1", ["NX", "NX", "NX"], 5300),
+    ];
+    const result = compareDistantPeriods(readings, coverage, new Set(), THRESHOLDS);
+    expect(result.tagDrifts).toContainEqual({ kind: "desaparecido", tagId: "M", readingsBefore: 1, weakSupport: true });
+    expect(result.tagDrifts).toContainEqual({ kind: "nuevo", tagId: "N", readingsAfter: 1, weakSupport: true });
+    expect(result.tagDrifts).toContainEqual({ kind: "nuevo", tagId: "NX", readingsAfter: 3, weakSupport: false });
+  });
+
+  it("la firma de vecinos desempata dos lecturas del mismo instante por fichero y fila, no por el orden del array", () => {
+    // D desaparece, N aparece en su hueco; N y su sucesor TC caen en el mismo instante. Con las filas al
+    // revés en el array la pareja tiene que salir igual.
+    const early = [...chain("A1", ["TA", "D", "TC", "TA", "D", "TC", "TA", "D", "TC"], 0)];
+    const lateRows = [
+      reading(5000, "A1", "TA"),
+      reading(5010, "A1", "N"),
+      reading(5010, "A1", "TC"),
+      reading(5020, "A1", "TA"),
+      reading(5030, "A1", "N"),
+      reading(5030, "A1", "TC"),
+      reading(5040, "A1", "TA"),
+      reading(5050, "A1", "N"),
+      reading(5050, "A1", "TC"),
+    ];
+    const coverage = [
+      { from: 0, to: 1000 },
+      { from: 5000, to: 6000 },
+    ];
+    const straight = compareDistantPeriods([...early, ...lateRows], coverage, new Set(), THRESHOLDS);
+    const reversed = compareDistantPeriods([...early, ...lateRows.reverse()], coverage, new Set(), THRESHOLDS);
+    expect(straight.tagDrifts).toEqual(reversed.tagDrifts);
+    expect(straight.tagDrifts.find((entry) => entry.tagId === "D")?.kind).toBe("sustitucion-candidata");
+  });
+});

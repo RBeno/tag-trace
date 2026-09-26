@@ -471,7 +471,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
    * antes— esperan a que salga. Su espera cabe en la horquilla del semáforo, así que él no para: retiene.
    * Con la deuda de reloj, sin `random()`. El lector degradado no espera, por lo mismo que en el cuello.
    */
-  const retenedor = vehicles[7] as string;
+  // El primero de la flota: los vehículos se generan uno tras otro y solo los generados después de
+  // él ven sus esperas. Con otro índice, los anteriores lo atravesaban en el semáforo —imposible en una
+  // guía única— y el análisis, con razón, dejaba de tenerlo por retenedor (2026-09-26). Devuelve su
+  // espera a la mitad de cada paso siguiente, como toda deuda de reloj, y por eso es de verdad un 6 %
+  // más rápido en la zona cargada: la sonda del ritmo lo sabe (repartir la deuda en toda la vuelta
+  // mueve su sitio en el anillo y descoloca otras clases plantadas).
+  const retenedor = vehicles[0] as string;
   const RETENEDOR_ESPERA_MS = 105_000;
   const semaforoPosicion = 105;
   const ocupacionRetenedor: { from: number; to: number }[] = [];

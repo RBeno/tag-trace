@@ -41,6 +41,17 @@ export interface UnionResult {
   readonly disagreements: number;
 }
 
+/**
+ * Las procedencias que una lectura ya traía de uniones anteriores.
+ *
+ * La unión se encadena —cada exportación nueva se une al acumulado— y el acumulado ya es un
+ * `MergedReading`. Reconstruir `alsoFrom` desde cero en cada unión tiraba las procedencias de todas
+ * las exportaciones menos la última: con tres cortes solapados, la del segundo desaparecía.
+ */
+function inherited(entry: Reading): readonly Provenance[] {
+  return "alsoFrom" in entry ? (entry as MergedReading).alsoFrom : [];
+}
+
 function key(entry: Reading): string {
   return `${entry.time.utcMs}|${entry.agvId}|${entry.tagId}`;
 }
@@ -84,7 +95,7 @@ export function unionReadings(first: readonly Reading[], second: readonly Readin
 
   if (matchRange === null) {
     const readings = [...first, ...second]
-      .map((entry) => ({ ...entry, alsoFrom: [] as readonly Provenance[] }))
+      .map((entry) => ({ ...entry, alsoFrom: inherited(entry) }))
       .sort(compare);
     return { readings, overlap: null, shared: 0, disagreements: 0 };
   }
@@ -109,28 +120,31 @@ export function unionReadings(first: readonly Reading[], second: readonly Readin
 
   for (const entry of first) {
     if (!matchable(entry)) {
-      merged.push({ ...entry, alsoFrom: [] });
+      merged.push({ ...entry, alsoFrom: inherited(entry) });
       continue;
     }
     const twin = pending.get(key(entry))?.shift();
     if (twin === undefined) {
-      merged.push({ ...entry, alsoFrom: [] });
+      merged.push({ ...entry, alsoFrom: inherited(entry) });
       if (judgeable(entry)) disagreements += 1;
     } else {
       shared += 1;
-      merged.push({ ...entry, alsoFrom: [twin.provenance] });
+      merged.push({
+        ...entry,
+        alsoFrom: [...inherited(entry), twin.provenance, ...inherited(twin)],
+      });
     }
   }
 
   // Lo que sobra del tramo emparejable solo lo traía la segunda; su parte de fuera entra tal cual.
   for (const bucket of pending.values()) {
     for (const entry of bucket) {
-      merged.push({ ...entry, alsoFrom: [] });
+      merged.push({ ...entry, alsoFrom: inherited(entry) });
       if (judgeable(entry)) disagreements += 1;
     }
   }
   for (const entry of second) {
-    if (!matchable(entry)) merged.push({ ...entry, alsoFrom: [] });
+    if (!matchable(entry)) merged.push({ ...entry, alsoFrom: inherited(entry) });
   }
 
   merged.sort(compare);

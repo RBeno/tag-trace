@@ -414,3 +414,24 @@ describe("inventario contrastado", () => {
     expect(inventory.rows.find((row) => row.tagId === "7002")?.action).toBe("ninguna");
   });
 });
+
+describe("un tag que solo conoce la lista critico", () => {
+  it("sale critico-no-declarado con la acción de comprobar la lista, nunca «declarado sin memoria»", () => {
+    // Errata típica al transcribir: `0l00` por `0100`. Salía como `declarado-sin-memoria` con la
+    // acción «añadir a la memoria», que llevaba a cargar la errata en los vehículos.
+    const RUTA = ["0100", "0200"];
+    const inventory = buildTagInventory(
+      laps("A", RUTA, 5),
+      lists({ virtual: RUTA, memory: RUTA, critical: { "0l00": "cruce" } }),
+      THRESHOLDS,
+    );
+
+    expect(classOf(inventory, "0l00")).toBe("critico-no-declarado");
+    const row = inventory.rows.find((candidate) => candidate.tagId === "0l00");
+    expect(row?.action).toBe("comprobar-lista-critico");
+    expect(row?.inVirtual).toBe(false);
+    expect(row?.inMemory).toBe(false);
+    // El tag bien escrito no se ve afectado.
+    expect(classOf(inventory, "0100")).toBe("activo");
+  });
+});

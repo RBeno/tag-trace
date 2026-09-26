@@ -81,6 +81,26 @@ export function isCovered(coverage: readonly Interval[], utcMs: number): boolean
 }
 
 /**
+ * ¿Caen los dos instantes dentro del **mismo** tramo de cobertura?
+ *
+ * Es la condición para que dos lecturas consecutivas de un vehículo sean una transición o formen
+ * parte de una misma vuelta. Preguntar solo si «encierran un hueco entero» no basta: la cola
+ * cortada de una exportación queda fuera de su tramo `complete` y por tanto dentro del hueco, así
+ * que una lectura de esa cola emparejaba con la primera de la ventana siguiente y fabricaba una
+ * arista con semanas de tramo, justo lo que R-DAT-007 prohíbe. Con esta regla la cola no
+ * participa en ninguna transición: fuera de la cobertura no se analiza.
+ *
+ * Sin cobertura declarada (`coverage` vacío) no hay con qué juzgar y se admite todo: es el caso de
+ * una fuente suelta sin circuito todavía, no una excepción a la regla.
+ */
+export function sameSpan(coverage: readonly Interval[], a: number, b: number): boolean {
+  if (coverage.length === 0) return true;
+  return coverage.some(
+    (interval) => a >= interval.from && a <= interval.to && b >= interval.from && b <= interval.to,
+  );
+}
+
+/**
  * Los huecos entre intervalos cubiertos.
  *
  * Son `sin datos cargados`, y se devuelven para poder **dibujarlos distintos** de un silencio, no

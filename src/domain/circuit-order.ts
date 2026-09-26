@@ -5,8 +5,8 @@
  * contener erratas al transcribir o un orden diferente al real. Al final las lecturas de los AGV son
  * las que dictan la posición real de los tags». Así que aquí manda lo leído:
  *
- * 1. **Los tags del anillo**, en el orden en que los leen los AGV. El anillo se rota al primer tag de
- *    la lista que aparece en él, para que la posición 1 coincida con el comienzo de la lista. Un tag
+ * 1. **Los tags del anillo**, en el orden en que los leen los AGV. El anillo se rota al tag de la lista
+ *    con el que más orden comparte (`alignToDeclared`); en empate, al más cercano al comienzo de la lista. Un tag
  *    en la subsecuencia común con la lista está `igual`; uno declarado fuera de ella, en `otro-sitio`
  *    —la lista lo pone en otro sitio, y se corrige la lista—; uno que la lista no tiene,
  *    `no-en-la-lista`.
@@ -20,7 +20,7 @@
  */
 
 import type { TagPlace } from "./undeclared-tags.js";
-import { longestCommonSubsequence, neighbours, rotateToDeclaredStart } from "./vsystem.js";
+import { alignToDeclared, neighbours } from "./vsystem.js";
 
 export type OrderReading = "leido" | "fuera-del-recorrido" | "sin-lecturas";
 export type OrderChange = "igual" | "otro-sitio" | "no-en-la-lista" | "fuera-del-recorrido" | "sin-lecturas";
@@ -76,8 +76,10 @@ export function reconcileCircuitOrder(
   }
   const declared = new Set(declaredOrder);
   const listIndex = new Map(declaredOrder.map((tagId, index) => [tagId, index]));
-  const aligned = rotateToDeclaredStart(ring, declaredOrder);
-  const common = new Set(longestCommonSubsequence(declaredOrder, aligned));
+  // La rotación que más orden comparte con la lista: si se rotara al primer tag de la lista y fuera
+  // ese el mal colocado, sus vecinos sanos saldrían como «otro sitio» (R-GRA-015: no acusar a un tag sano).
+  const { aligned, common: commonList } = alignToDeclared(ring, declaredOrder);
+  const common = new Set(commonList);
   const ringBetween = neighbours(aligned, true);
 
   // 1. El anillo, en el orden en que se lee.

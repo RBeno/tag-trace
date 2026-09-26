@@ -74,3 +74,13 @@ describe("fusión incremental (mergeFleetPeriods)", () => {
     ]);
   });
 });
+
+describe("cabecera y campos escritos a mano", () => {
+  it("la cabecera se reconoce con BOM, comillas y mayúsculas; las comillas no entran en el AGV; y las columnas desconocidas se avisan", () => {
+    const result = importFleetHistory(['﻿"Circuito";AGV;"Desde";Hasta;Baja', 'SE2/4;"7101";01/09/2026;;x'].join("\n"), ZONE);
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({ agvId: "7101", fromUtcMs: SEP_1, toUtcMs: null, circuit: "SE2/4" });
+    expect(result.warnings.join(" ")).toContain("baja");
+  });
+});

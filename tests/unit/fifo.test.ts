@@ -205,6 +205,24 @@ describe("adelantamiento en un tramo (buildFifoReport, R-FLO-001)", () => {
     const report = buildFifoReport(1, [], [], THRESHOLDS);
     expect(report.spans).toEqual([]);
   });
+
+  it("una pasada que cruza el hueco entre dos exportaciones no es una pasada: nadie la adelanta", () => {
+    // A entra en la primera exportación y sale en la segunda, un día después; seis vehículos pasan el
+    // tramo en la segunda. Sin la cobertura, A salía adelantado por los seis (R-DAT-007).
+    const twoExports = [
+      { from: 0, to: 60 * MINUTE },
+      { from: 25 * 60 * MINUTE, to: 26 * 60 * MINUTE },
+    ];
+    const readings = [
+      ...pass("A", 50, 25 * 60 + 10),
+      ...Array.from({ length: 6 }, (_, index) => pass(`V${index}`, 25 * 60 + index, 25 * 60 + index + 5)).flat(),
+    ];
+    const span = buildFifoReport(1, readings, [SPAN], THRESHOLDS, twoExports).spans[0];
+    expect(span?.passes).toBe(6);
+    expect(span?.overtakes).toEqual([]);
+    // Sin cobertura declarada se comporta como antes: la lectura es la única verdad.
+    expect(buildFifoReport(1, readings, [SPAN], THRESHOLDS).spans[0]?.overtakes[0]?.overtaken).toBe("A");
+  });
 });
 
 describe("ventana que se dibuja alrededor del adelantamiento (SpanReport.focus)", () => {

@@ -34,7 +34,7 @@
  * OQ-B04 y la lista de memoria.
  */
 
-import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
+import { mergeIntervals, sameSpan, type Interval } from "./coverage.js";
 import { sortReadings, type SourceDirection } from "./order.js";
 import {
   binTimeline,
@@ -758,8 +758,15 @@ function classify(
  *
  * Solo las **cerradas entre dos pasos consecutivos por el ancla**: los tramos de los extremos están
  * cortados por el fin de los datos, así que un tag del final saldría como no leído cuando lo que
- * pasa es que la ventana se acabó. Y una vuelta que cruza un hueco de cobertura se descarta, porque
- * lo que hay en medio es ausencia de datos, no circulación (R-DAT-007).
+ * pasa es que la ventana se acabó. Y una vuelta cuyos dos pasos por el ancla no caen en el **mismo**
+ * tramo de cobertura se descarta, porque lo que hay en medio es ausencia de datos, no circulación
+ * (R-DAT-007); la cola cortada de una exportación está fuera de su tramo, así que una vuelta que
+ * empieza ahí tampoco cuenta.
+ *
+ * Una vuelta con alguna lectura en hora repetida o inexistente del cambio estacional tampoco se usa:
+ * dentro de esa hora el instante no separa las dos ocurrencias, así que ni el orden de los pasos ni
+ * el tiempo de los tramos son medida del reloj (ADR-0013). Sus lecturas siguen contando como
+ * lecturas; lo que no se afirma es la pasada.
  */
 function traceLaps(
   readings: readonly Reading[],
@@ -771,7 +778,7 @@ function traceLaps(
   size: number,
 ): ReadonlyMap<string, readonly (readonly Step[])[]> {
   const ordered = sortReadings([...readings], direction);
-  const gaps = uncoveredGaps(mergeIntervals(coverage));
+  const spans = mergeIntervals(coverage);
   const byVehicle = new Map<string, Reading[]>();
   for (const entry of ordered) {
     let list = byVehicle.get(entry.agvId);
@@ -794,7 +801,8 @@ function traceLaps(
       const to = anchors[index + 1] as number;
       const start = (entries[from] as Reading).time.utcMs;
       const end = (entries[to] as Reading).time.utcMs;
-      if (gaps.some((gap) => start <= gap.from && end >= gap.to)) continue;
+      if (!sameSpan(spans, start, end)) continue;
+      if (entries.slice(from, to + 1).some((entry) => entry.time.flag !== "ok")) continue;
 
       const steps: Step[] = [];
       let lastRel = -1;

@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.29.0
+version: 0.30.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -321,7 +321,10 @@ El trabajo sigue en otra conversación por el límite de contexto. Todo lo que d
 conversación siguiente.
 
 - **Fase F3** (diagnóstico explicable), en curso. F4 espera `CONTINÚA FASE 4` del propietario
-  (ADR-0010). La última entrega es la posición de un tag según las lecturas (R-GRA-015,
+  (ADR-0010). **Última entrega (2026-09-26): revisión de toda la lógica de medición y análisis**
+  (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
+  regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
+  (OQ-135 a OQ-141), dos de ellas contradicciones código↔documento que no se tocan hasta que decida. La última entrega es la posición de un tag según las lecturas (R-GRA-015,
   `CHANGELOG.md` `[3.32.0]`), publicada en `main` y en la web.
 - **Cómo se ha trabajado**: una entrega por petición del propietario, con su documentación, su clase
   plantada en la auditoría sintética (`tests/audit/`, 53 clases) y un solo commit en la rama de

@@ -190,6 +190,11 @@ export function bandFor(bands: SegmentBands, from: string, to: string, regime: R
   const size = bands.ring.length;
   if (start === undefined || end === undefined || from === to || size < 2) return null;
   const skipped = (end - start - 1 + size) % size;
+  // Reaparecer por detrás del último tag —media vuelta o más de «saltos»— no es un paso que recorra
+  // esos tramos: en una guía única no se retrocede, así que es un tag mal situado o una maniobra fuera
+  // de la guía. Sumar casi el anillo entero daría una horquilla enorme que nunca sería parada y una
+  // razón de ritmo cercana a cero. No se mide (misma guarda que las zonas oscuras).
+  if (skipped >= size / 2) return null;
   let p50Ms = 0;
   let p80Ms = 0;
   let p95Ms = 0;
