@@ -3943,11 +3943,11 @@ function finding(title: string, figure: string, evidence: string, review?: reado
  * Activa una pestaña y desplaza hasta el encabezado con ese texto (o hasta la figura con ese título),
  * dejándole el foco: es lo que hace cada tile y el enlace «El anillo está en Resumen».
  */
-function jumpTo(tab: TabId, heading: string, fallback?: string): void {
+function jumpTo(tab: TabId, heading: string, alternative?: string): void {
   activateTab(tab);
   const panel = tabPanels.get(tab);
   const headings = [...(panel?.querySelectorAll<HTMLElement>("h2, h3") ?? [])];
-  const target = headings.find((node) => node.textContent === heading) ?? headings.find((node) => node.textContent === fallback);
+  const target = headings.find((node) => node.textContent === heading) ?? headings.find((node) => node.textContent === alternative);
   const focusOn = target?.closest("figure") ?? target ?? panel;
   focusOn?.scrollIntoView({ block: "start" });
   if (focusOn instanceof HTMLElement) {
