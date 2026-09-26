@@ -24,11 +24,15 @@ export interface DeclaredList {
 }
 
 /**
- * Por tag, lo declarado en las listas, sin repetir: la nota tal cual, la función y la calle. Se
+ * Por tag, lo declarado en las listas, sin repetir: la nota tal cual, la función, la calle y con qué
+ * tags forma refuerzo (R-GRA-016). Se
  * compara pieza a pieza (lo separado por « · »): la misma palabra puede venir en la nota del circuito
  * y en la de la zona, y no se enseña dos veces.
  */
-export function declaredTagInfo(lists: readonly DeclaredList[]): ReadonlyMap<string, string> {
+export function declaredTagInfo(
+  lists: readonly DeclaredList[],
+  reinforcement: ReadonlyMap<string, readonly string[]> = new Map(),
+): ReadonlyMap<string, string> {
   const parts = new Map<string, string[]>();
   const add = (tagId: string, text: string): void => {
     for (const piece of text.split(" · ")) {
@@ -43,8 +47,35 @@ export function declaredTagInfo(lists: readonly DeclaredList[]): ReadonlyMap<str
     for (const entry of entries ?? []) {
       add(entry.tagId, entry.note);
       if (list === "carga-online") add(entry.tagId, `${entry.grupo}${entry.funcion === "" ? "" : ` (${entry.funcion})`}`);
-      else if ((list === "critico" || list === "circuito") && entry.funcion !== "") add(entry.tagId, entry.funcion);
+      else if ((list === "critico" || list === "circuito") && entry.funcion !== "")
+        add(entry.tagId, `${entry.funcion}${entry.grupo === "" ? "" : ` (${entry.grupo})`}`);
+      else if (list === "noche") add(entry.tagId, "tag de noche declarado");
+      else if (list === "tramo" && entry.grupo !== "") add(entry.tagId, `tramo ${entry.grupo}`);
     }
   }
+  // El refuerzo (R-GRA-016) va detrás de la función: una incidencia en un tag reforzado se lee
+  // distinta si el otro tag del refuerzo sigue leyéndose.
+  for (const [tagId, partners] of reinforcement) add(tagId, `refuerzo con ${partners.join(", ")}`);
   return new Map([...parts].map(([tagId, texts]) => [tagId, texts.join(" · ")]));
+}
+
+/**
+ * El tramo de cada tag para las gráficas (kitting, línea, cruce…): la lista `tramo` y, para lo que no
+ * declare, la lista `linea` como «línea» y los críticos `cruce` como «cruce». Solo se dibuja.
+ */
+export function tagSections(
+  lists: readonly DeclaredList[],
+  funcionOf: ReadonlyMap<string, string>,
+): ReadonlyMap<string, string> {
+  const sections = new Map<string, string>();
+  for (const { list, entries } of lists) {
+    if (list !== "tramo") continue;
+    for (const entry of entries ?? []) if (entry.grupo !== "" && !sections.has(entry.tagId)) sections.set(entry.tagId, entry.grupo);
+  }
+  for (const { list, entries } of lists) {
+    if (list !== "linea") continue;
+    for (const entry of entries ?? []) if (!sections.has(entry.tagId)) sections.set(entry.tagId, "línea");
+  }
+  for (const [tagId, funcion] of funcionOf) if (funcion === "cruce" && !sections.has(tagId)) sections.set(tagId, "cruce");
+  return sections;
 }

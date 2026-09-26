@@ -159,6 +159,22 @@ function omissionFill(omission: number): string {
   return (OMISSION_CLASSES.find(([limit]) => omission < limit) ?? OMISSION_CLASSES[4])?.[1] ?? "var(--viz-5)";
 }
 
+// --- Tramos declarados (lista `tramo`) ---------------------------------------
+
+/**
+ * Un color por tramo declarado —kitting, línea, cruce…—, en el orden en que aparecen. Solo se dibuja
+ * para leer mejor el resto: el tramo no cambia ningún cálculo. Colores categóricos propios, distintos de
+ * los azules de la omisión y del naranja de los hallazgos; pasados cuatro tramos, el resto en neutro.
+ */
+function sectionColors(labels: readonly (string | null | undefined)[]): ReadonlyMap<string, string> {
+  const names = [...new Set(labels.filter((label): label is string => label !== null && label !== undefined && label !== ""))];
+  return new Map(names.map((name, index) => [name, index < 4 ? `var(--viz-tramo-${index + 1})` : "var(--viz-neutral)"]));
+}
+
+function sectionLegend(colors: ReadonlyMap<string, string>, where: string): HTMLElement {
+  return legendList([...colors].map(([name, color]) => [color, `${where}: ${name}`] as const));
+}
+
 // --- 2. Anillo radial ------------------------------------------------------
 
 export interface RingTag {
@@ -169,6 +185,8 @@ export interface RingTag {
   readonly pattern: string;
   readonly zone: string | null;
   readonly isAnchor: boolean;
+  /** Tramo declarado (kitting, línea, cruce…), para dibujarlo. */
+  readonly section?: string | null;
 }
 
 export interface RingMark {
@@ -204,6 +222,7 @@ export function ringChart(data: RingData): HTMLElement {
   const line = readout("Toca o pasa el puntero por el anillo para leer un tag.");
   const hasZones = data.tags.some((tag) => tag.zone !== null);
   const zoneNames = [...new Set(data.tags.map((tag) => tag.zone).filter((zone): zone is string => zone !== null))];
+  const sections = sectionColors(data.tags.map((tag) => tag.section));
 
   const marks = data.marks.map((mark, index) => ({ ...mark, number: String(index + 1) }));
   const markByTag = new Map(marks.map((mark) => [mark.tagId, mark]));
@@ -246,6 +265,11 @@ export function ringChart(data: RingData): HTMLElement {
       }
       const fill = tag.isAnchor ? "var(--ink)" : tag.omission === null ? HATCH_FILL : omissionFill(tag.omission);
       canvas.append(svg("path", { d: arcPath(center, center, rIn, rOut, from, to), fill, "data-index": index }));
+      // El tramo declarado, en una banda fina por dentro del anillo.
+      const sectionFill = tag.section === null || tag.section === undefined ? undefined : sections.get(tag.section);
+      if (sectionFill !== undefined) {
+        canvas.append(svg("path", { d: arcPath(center, center, rIn - 7, rIn - 2, start + index * step, start + (index + 1) * step), fill: sectionFill }));
+      }
     });
 
     // Calles: un ramal hacia dentro por calle, desde el tag del que cuelga. Hueco si nadie entró.
@@ -258,10 +282,11 @@ export function ringChart(data: RingData): HTMLElement {
       lanes.forEach((lane, k) => {
         const spread = angle + (k - (lanes.length - 1) / 2) * 0.07;
         const length = small ? 18 : 26;
-        const x0 = center + (rIn - 3) * Math.cos(angle);
-        const y0 = center + (rIn - 3) * Math.sin(angle);
-        const x1 = center + (rIn - 3 - length) * Math.cos(spread);
-        const y1 = center + (rIn - 3 - length) * Math.sin(spread);
+        const inset = sections.size > 0 ? 9 : 3;
+        const x0 = center + (rIn - inset) * Math.cos(angle);
+        const y0 = center + (rIn - inset) * Math.sin(angle);
+        const x1 = center + (rIn - inset - length) * Math.cos(spread);
+        const y1 = center + (rIn - inset - length) * Math.sin(spread);
         canvas.append(svg("line", { x1: x0, y1: y0, x2: x1, y2: y1, stroke: "var(--muted)", "stroke-width": 1.5 }));
         canvas.append(
           svg("circle", {
@@ -327,7 +352,10 @@ export function ringChart(data: RingData): HTMLElement {
         if (index !== null) {
           const tag = data.tags[Number(index)];
           if (tag === undefined) return;
-          const where = `Tag ${tag.tagId} · posición ${Number(index) + 1} de ${count}` + (tag.zone === null ? "" : ` · zona ${tag.zone}`);
+          const where =
+            `Tag ${tag.tagId} · posición ${Number(index) + 1} de ${count}` +
+            (tag.zone === null ? "" : ` · zona ${tag.zone}`) +
+            (tag.section === null || tag.section === undefined ? "" : ` · tramo ${tag.section}`);
           line.show(
             tag.isAnchor
               ? `${where} — corte de vuelta (siempre se lee: no cuenta)`
@@ -368,6 +396,7 @@ export function ringChart(data: RingData): HTMLElement {
       legendList(zoneNames.map((zone) => [isEmptyZone(zone) ? HATCH_SWATCH : "var(--viz-neutral)", `banda exterior: zona ${zoneLabel(zone)}`] as const)),
     );
   }
+  if (sections.size > 0) wrapper.append(sectionLegend(sections, "banda interior"));
   if (marks.length > 0) {
     const list = document.createElement("ol");
     list.className = "ring-marks";
@@ -2245,6 +2274,8 @@ export interface BandRow {
   readonly noche: BandView | null;
   /** Hallazgos en ese tramo, en palabras: «cuello de botella», «zona oscura»… */
   readonly marks: readonly string[];
+  /** Tramo declarado del tag de salida (kitting, línea, cruce…). */
+  readonly section?: string | null;
 }
 
 const BAND_TICKS_S = [2, 5, 10, 15, 30, 60, 120, 300, 600, 1200];
@@ -2273,6 +2304,7 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
   const line = readout("Toca o pasa el puntero por un tramo para leer su horquilla.");
   const values = rows.flatMap((row) => [row.produccion, row.noche].filter((band): band is BandView => band !== null));
   const minMs = Math.max(1_000, Math.min(...values.map((band) => band.p50Ms), 60_000) * 0.7);
+  const sections = sectionColors(rows.map((row) => row.section));
   const maxMs = Math.min(20 * 60_000, Math.max(...values.map((band) => band.fenceMs), 30_000) * 1.1);
 
   responsive(area, (width) => {
@@ -2297,6 +2329,8 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
     }
     rows.forEach((row, index) => {
       const x0 = left + index * step;
+      const sectionFill = row.section === null || row.section === undefined ? undefined : sections.get(row.section);
+      if (sectionFill !== undefined) canvas.append(svg("rect", { x: x0, y: 2, width: step, height: 5, fill: sectionFill }));
       const day = row.produccion;
       if (day === null) {
         canvas.append(svg("rect", { x: x0, y: top + plotHeight - 4, width: Math.max(1, step * 0.6), height: 4, fill: HATCH_FILL }));
@@ -2361,6 +2395,7 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
           row.produccion === null ? "producción: sin pasadas suficientes" : `producción: ${describeBand(row.produccion)}`,
           row.noche === null ? "noche: sin pasadas suficientes" : `noche: la mitad en ${seconds(row.noche.p50Ms)}, el 95 % en ${seconds(row.noche.p95Ms)}`,
           ...(row.marks.length === 0 ? [] : [row.marks.join(", ")]),
+          ...(row.section === null || row.section === undefined ? [] : [`tramo ${row.section}`]),
         ];
         line.show(parts.join(" · "));
       },
@@ -2377,6 +2412,7 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
       ["var(--viz-accent)", "hallazgo en ese tramo"],
       [HATCH_SWATCH, "sin pasadas suficientes para una horquilla"],
     ]),
+    ...(sections.size > 0 ? [sectionLegend(sections, "franja de arriba")] : []),
     area,
     line.node,
     lazyDetails(`Ver la horquilla de los ${rows.length} tramos`, () =>
@@ -2410,6 +2446,8 @@ export interface RingTimeRow {
     /** Cambio de estructura respecto al fichero anterior, si lo hay (R-DAT-021). */
     readonly mark?: "nuevo" | "retirado" | "sustituido";
     readonly note?: string;
+    /** Tramo declarado (kitting, línea, cruce…). */
+    readonly section?: string | null;
   }[];
 }
 
@@ -2447,6 +2485,7 @@ export function ringTimeChart(rows: readonly RingTimeRow[]): HTMLElement {
     ...rows.map((row) => row.lapMs ?? 0),
     ...rows.flatMap((row) => row.tags.map((tag) => tag.offsetMs ?? 0)),
   );
+  const sections = sectionColors(rows.flatMap((row) => row.tags.map((tag) => tag.section)));
   const offsetsOf = new Map<string, string[]>();
   for (const row of rows) {
     for (const tag of row.tags) {
@@ -2479,6 +2518,18 @@ export function ringTimeChart(rows: readonly RingTimeRow[]): HTMLElement {
       const base = y0 + 14;
       if (row.lapMs !== null) {
         canvas.append(svg("line", { x1: x(0), x2: x(row.lapMs), y1: base + 8, y2: base + 8, stroke: "var(--viz-grid)", "stroke-width": 2 }));
+      }
+      // El tramo de cada tag, en una franja bajo la fila: desde el tag hasta el siguiente.
+      if (sections.size > 0) {
+        const placed = row.tags
+          .filter((tag): tag is typeof tag & { offsetMs: number } => tag.offsetMs !== null)
+          .sort((a, b) => a.offsetMs - b.offsetMs);
+        placed.forEach((tag, index) => {
+          const fill = tag.section === null || tag.section === undefined ? undefined : sections.get(tag.section);
+          if (fill === undefined) return;
+          const end = placed[index + 1]?.offsetMs ?? row.lapMs ?? tag.offsetMs;
+          canvas.append(svg("rect", { x: x(tag.offsetMs), y: base + 16, width: Math.max(1, x(end) - x(tag.offsetMs)), height: 3, fill }));
+        });
       }
       row.tags.forEach((tag, tagIndex) => {
         if (tag.offsetMs === null) return;
@@ -2522,6 +2573,7 @@ export function ringTimeChart(rows: readonly RingTimeRow[]): HTMLElement {
         }
         line.show(
           `${tag.tagId} · ${(offsetsOf.get(tag.tagId) ?? []).join("; ")}` +
+            (tag.section === null || tag.section === undefined ? "" : ` · tramo ${tag.section}`) +
             (tag.mark === undefined ? "" : ` · ${MARK_SHAPES[tag.mark].replace(/ \(.*\)/, "")}`) +
             (tag.note === undefined ? "" : ` · ${tag.note}`),
         );
@@ -2541,6 +2593,7 @@ export function ringTimeChart(rows: readonly RingTimeRow[]): HTMLElement {
         ? (Object.values(MARK_SHAPES).map((label) => ["var(--viz-accent)", label]) as [string, string][])
         : []),
     ]),
+    ...(sections.size > 0 ? [sectionLegend(sections, "franja bajo cada fichero")] : []),
     area,
     line.node,
     lazyDetails(`Ver la posición de los ${allTags.length} tags en cada fichero`, () =>

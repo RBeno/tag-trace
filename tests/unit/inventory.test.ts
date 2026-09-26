@@ -122,6 +122,61 @@ describe("inventario contrastado", () => {
     expect(describeAction(row?.action ?? "ninguna")).toContain("perdió su función");
   });
 
+  it("un crítico nunca leído cuyo refuerzo sí se lee es refuerzo-sin-lectura: la función sigue en pie (R-GRA-016)", () => {
+    const readings = [...laps("A", RUTA, 5), ...laps("B", RUTA, 5, 100_000)];
+    const inventory = buildTagInventory(
+      readings,
+      {
+        ...lists({
+          virtual: [...RUTA, "0999"],
+          memory: [...RUTA, "0999"],
+          critical: { "0999": "giro", "0300": "giro" },
+        }),
+        reinforcement: new Map([
+          ["0999", ["0300"]],
+          ["0300", ["0999"]],
+        ]),
+      },
+      THRESHOLDS,
+    );
+
+    const row = inventory.rows.find((candidate) => candidate.tagId === "0999");
+    expect(row?.tagClass).toBe("refuerzo-sin-lectura");
+    expect(row?.truth).toBe("unknown");
+    expect(row?.reinforcement).toEqual(["0300"]);
+    expect(row?.action).toBe("revisar-refuerzo-sin-redundancia");
+    expect(describeAction(row?.action ?? "ninguna")).toContain("sin redundancia");
+    expect(classOf(inventory, "0300")).toBe("activo");
+  });
+
+  it("si ningún tag del refuerzo se lee, la función sí se ha perdido: critico-sin-lectura", () => {
+    const readings = [...laps("A", RUTA, 5), ...laps("B", RUTA, 5, 100_000)];
+    const inventory = buildTagInventory(
+      readings,
+      {
+        ...lists({
+          virtual: [...RUTA, "0998", "0999"],
+          memory: [...RUTA, "0998", "0999"],
+          critical: { "0998": "giro", "0999": "giro" },
+        }),
+        reinforcement: new Map([
+          ["0998", ["0999"]],
+          ["0999", ["0998"]],
+        ]),
+      },
+      THRESHOLDS,
+    );
+    expect(classOf(inventory, "0998")).toBe("critico-sin-lectura");
+    expect(classOf(inventory, "0999")).toBe("critico-sin-lectura");
+  });
+
+  it("un tag de la lista de noche que se lee es especial, no «se lee y no está declarado»", () => {
+    const readings = [...laps("A", [...RUTA, "0777"], 5), ...laps("B", RUTA, 5, 100_000)];
+    const lista = lists({ virtual: RUTA, memory: [...RUTA, "0777"] });
+    expect(classOf(buildTagInventory(readings, lista, THRESHOLDS), "0777")).toBe("no-declarado-leido");
+    expect(classOf(buildTagInventory(readings, { ...lista, night: new Set(["0777"]) }, THRESHOLDS), "0777")).toBe("especial");
+  });
+
   it("un punto crítico sin memoria se queda declarado-sin-memoria, sin matiz (R-OPP-009 manda sobre R-GRA-008)", () => {
     const readings = [...laps("A", RUTA, 5), ...laps("B", RUTA, 5, 100_000)];
     const inventory = buildTagInventory(

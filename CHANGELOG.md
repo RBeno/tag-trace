@@ -2,6 +2,288 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.40.0] - 2026-09-26
+
+Del propietario: que ni el ritmo de la noche ni una parada de la línea contaminen la medición, y ver
+en las gráficas qué parte es kitting, qué parte línea y cuáles son los cruces.
+
+### Añadido
+
+- **Las paradas de la línea no contaminan los tiempos** (R-FLO-010):
+  - una parada de la línea con AGV esperando no la ve la parada de la producción, porque aguas abajo
+    se sigue leyendo. Se mide antes de las horquillas;
+  - la cola del pulmón durante esa parada se quita de las horquillas, las firmas y el ritmo, como un
+    descanso. Los AGV que siguen moviéndose fuera del pulmón sí cuentan;
+  - la cadencia de la línea no se calcula con los huecos que cruzan una parada de la producción.
+- **Tramos en las gráficas** (R-GRA-018):
+  - lista `tramo`, con el nombre en `grupo`; sin ella, la línea sale como «línea» y los críticos
+    `cruce` como «cruce»;
+  - el anillo, la horquilla de cada tramo y el anillo en tiempo pintan cada tramo con su color y su
+    leyenda;
+  - cuatro colores categóricos nuevos (`--viz-tramo-1…4`) en claro y en oscuro, porque la escala
+    `--viz-1…5` es de azules de intensidad y en el anillo se confundía con la omisión.
+
+### Sin clase nueva en la auditoría
+
+El escenario sintético no tiene una línea que marque el ritmo: con la línea declarada en el 59 y el 60
+no se mide pulmón, y la exclusión no quita nada. La auditoría sigue el mismo encadenado que el Worker,
+y la exclusión y los tramos los fijan sus pruebas unitarias.
+
+## [3.39.0] - 2026-09-26
+
+El ritmo de la línea, del propietario: «normalmente se fabrica un vehículo en 55 segundos, no es fijo:
+habrá periodos de 50 y otros de 60; por la noche es diferente, y la línea puede estar parada en
+varias ocasiones».
+
+### Añadido
+
+- **Ritmo de la línea por régimen** (R-FLO-010):
+  - el ciclo de mediana y entre qué valores anda según el periodo;
+  - el **tiempo sin paso**: lo que cada tiempo entre pasos se pasa de su ciclo local, sumado,
+    separado en con AGV esperando y sin AGV.
+- **La noche aparte**, con su cadencia y sus paradas.
+- Las paradas llevan su régimen, en pantalla y en el CSV.
+- Auditoría: clase `linea-tiempo-sin-paso` (`auditoria/25`). Las 49 clases salen DETECTA.
+
+### Medido, y por eso se hace así
+
+- Repartir el tiempo sin paso mirando solo cuando tocaba entrar el siguiente daba en PC2 111 min
+  «sin AGV» de producción: en un descanso, a los 55 s de la última entrada, los AGV que esperan aún no
+  llevan retraso. Un hueco que es una parada se reparte ahora como la parada, que mira a lo largo de
+  ella.
+- OQ-134, parcial: los 60 s no son un ajuste de la línea.
+
+### Con el circuito real, sin datos de planta en el repositorio
+
+- En producción, un AGV cada 54 s, con el ciclo local entre 54 y 57 s.
+- 183 min sin paso de 959 (19 %): 155 min con AGV esperando y 28 min sin AGV.
+- De noche, un AGV cada 2 min, con paradas de 11 a 20 min y el pulmón lleno.
+
+## [3.38.0] - 2026-09-26
+
+Cada paso por la línea, del propietario: si el AGV sigue tras la línea, si hizo la parada y si leyó
+sus tags. Nada específico de un circuito: casi todos tienen una línea parecida, menos los de
+vinculación, que siguen en paralelo.
+
+### Añadido
+
+- **Pasos por la línea** (R-FLO-011):
+  - «no sigue tras la línea»: de la última lectura en la línea a la siguiente, por encima de lo
+    habitual. Comprobar el pin del carro;
+  - «pasó sin la parada»: el siguiente AGV pasó antes de lo que la línea deja entre dos. Comprobar si
+    se fue con el carro. No se busca en una línea de vinculación;
+  - los AGV que hacen la parada con la cadencia normal pero no leen un tag de la línea: su lector o
+    su memoria;
+  - una parada de la línea que empieza con un AGV que no siguió lo dice;
+  - nada se señala durante una parada de la producción.
+- OQ-134: los 60 s en que para la línea y la acumulación detrás del pulmón lleno.
+- Auditoría: clase `linea-tag-sin-leer` (`auditoria/24`). Las 48 clases salen DETECTA.
+
+### Corregido
+
+- **Un paso por la línea es leer cualquiera de sus tags**, no solo la entrada. En PC2, dos AGV no leen
+  nunca la entrada; sus pasos no contaban y la cadencia veía huecos dobles: el 95 % daba 111 s en vez
+  de 81 s.
+- **El pulmón se mide en la mitad más larga de las paradas.** Con las paradas cortas que ahora se ven,
+  salía medido en los dos últimos tags: en una parada corta los AGV no llegan a acumularse.
+- **Sin pulmón medido, una parada es «sin medir»**, no «con AGV esperando».
+- En la auditoría, un AGV que pasó la línea justo antes de una parada de la producción salía como «no
+  sigue»: con toda la flota parada no dice nada de él.
+
+### Con el circuito real, sin datos de planta en el repositorio
+
+- Dos AGV hacen la parada con la cadencia normal y no leen nunca la entrada a la línea.
+- Uno se quedó casi 9 min tras la línea, y la línea paró 2 min detrás de él.
+- 29 paradas de la línea, 3 de ellas por falta de AGV; el pulmón, hasta 8 AGV.
+
+## [3.37.0] - 2026-09-26
+
+La alimentación de la línea, del propietario: si por la línea no pasan AGV está parada; el pulmón
+(«creo que entran 8 AGV») sale de las medidas; y cuánto se separa el AGV de delante cuando la entrada
+se queda sin AGV.
+
+### Añadido
+
+- **Lista `linea`**: los tags de la línea de producción, en orden; el primero es la entrada.
+- **Alimentación de la línea** (R-FLO-010, `src/domain/line-feed.ts`):
+  - la cadencia en la entrada, con su horquilla; por encima de la valla, la línea está sin paso;
+  - el pulmón medido: dónde esperan los AGV cuando la línea para, su capacidad y los minutos de
+    producción con cada número de AGV en él;
+  - cada parada de la línea, con AGV esperando o «le faltaron AGV». En ese caso se dice dónde estaba
+    el siguiente en entrar, dónde se abrió el hueco con el anterior —o que venía de la vuelta
+    anterior— y si el de detrás retiene a otros;
+  - CSV de las paradas.
+- `bandOf` exportado de `segment-bands.ts`: la misma horquilla para la cadencia.
+- OQ-133: paradas largas en horas redondas y de dónde viene el hueco.
+- Auditoría: clase `linea-parada-con-pulmon` (`auditoria/23`). Las 47 clases salen DETECTA.
+
+### Medido, y por eso se hace así
+
+- **Con PC2**, mirar el pulmón solo cuando tocaba entrar el siguiente llamaba «le faltaron AGV» a
+  paradas en que los AGV llegaban un momento después y esperaban. Ahora se mira a lo largo de la
+  parada.
+- Uno que llegaba a la puerta y no entraba era la línea parada, no falta de AGV.
+- «El más cercano» podía ir por otro camino y no llegar a la línea: ahora se dice dónde estaba el que
+  de verdad entró.
+- Un tag lejano con una mediana corta, porque a veces se lee por otro camino, entraba en el pulmón.
+  Ahora el pulmón son los tags que los AGV recorren de verdad hasta la entrada.
+- Un tag suelto con una separación enorme era un desvío, no el hueco. Ahora el hueco es el tramo
+  final en que la separación se mantiene.
+
+### Con el circuito real, sin datos de planta en el repositorio
+
+- 19 paradas de la línea en un día: 15 con AGV esperando y 4 en que le faltaron AGV.
+- El pulmón medido es de 7 AGV de mediana y hasta 8, lo que el propietario creía. Hubo 43 minutos
+  de producción con el pulmón vacío.
+
+## [3.36.1] - 2026-09-26
+
+La limpieza de la lista, pasada por la exportación real de PC2.
+
+### Corregido
+
+- **Un refuerzo en su sitio salía «separado».** Uno de sus tags se lee poco y queda fuera del anillo
+  dominante, aunque los AGV lo lean justo antes que su pareja. Ahora «seguidos» se mide con el vecino
+  leído de cada tag (`dominantNeighbours`), no con el anillo. La auditoría y una prueba unitaria lo
+  fijan.
+- `PROJECT_MEMORY.md` nombraba dos números de tag de un circuito real. Se quitan: los identificadores
+  de planta no van al repositorio.
+
+### Con el circuito real, sin datos de planta en el repositorio
+
+- 105.154 lecturas de 141.063 filas y 29 h. El análisis completo con las listas tarda unos 17 s en el
+  navegador.
+- 46 declarados no están en el físico, 13 de ellos críticos.
+- 2 declarados están en otra posición.
+- De 14 refuerzos declarados, 8 están comprobados y 6 incompletos.
+- Un declarado sin lecturas tiene en su sitio un tag que la lista no tiene: posible sustitución o
+  número mal escrito.
+- El tag de la lista de noche sale como tag de noche declarado: de día se pasa cientos de veces por su
+  sitio y se lee una.
+
+## [3.36.0] - 2026-09-26
+
+Limpieza de la lista del circuito, del propietario: marcar los tags que no están en el físico para
+comprobar su función —colocar una copia o eliminarlos de Vsystem—, los que no tienen la misma
+posición en la lista que en el físico, y «no puede haber tanto refuerzo».
+
+### Añadido
+
+- **Limpieza de la lista** (R-GRA-017, `src/domain/list-cleanup.ts`), detrás del orden según las
+  lecturas:
+  - los declarados que no están en el físico, los críticos primero con su función y su acción;
+  - los que están en otra posición, con las dos posiciones;
+  - los refuerzos declarados comprobados contra el recorrido: comprobado, incompleto o separado;
+  - todo descargable en CSV.
+- La acción de `refuerzo-sin-lectura` dice ahora «colocar una copia si falta, o eliminarlo de Vsystem
+  si sobra».
+- Auditoría: clase `limpieza-de-la-lista` (`auditoria/22`). Las 46 clases salen DETECTA.
+
+### Medido, y por eso se hace así
+
+- Un tag poco leído puede quedar fuera del anillo dominante sin estar cambiado de sitio, así que
+  «leído fuera del recorrido» no cuenta como otra posición. En la auditoría eran el 40, poco leído a
+  propósito, y nada más.
+- La contigüidad de un refuerzo se mide en el anillo leído solo. En el orden completo, un declarado
+  sin lecturas intercalado separaría a dos tags que los AGV leen uno detrás de otro.
+
+## [3.35.1] - 2026-09-26
+
+### Cambiado
+
+- **Cambio de MTC, confirmado por el propietario**: «CAMBIO Nº MODO CIRCUITO» cambia el número de
+  MTC del AGV, que puede ir de normal a 1, 2… 15. El significado lo dice así en el expediente y en la
+  plantilla, y el número al que cambia va en `grupo`: dos cambios seguidos a números distintos no son
+  un refuerzo. OQ-132 cerrada.
+
+## [3.35.0] - 2026-09-26
+
+Qué es cada función de planta, del propietario. Con esto, todas las funciones de la lista de PC2
+tienen su clase.
+
+### Añadido
+
+- Clases de función crítica `tramo-conflictivo` y `control-wifi` (R-GRA-007):
+  - un tramo conflictivo es, por ejemplo, una arqueta metálica bajo la guía magnética; seguido es
+    una zona, no un refuerzo (R-GRA-016);
+  - control wifi manda continuar a los AGV sin wifi para que no esperen indefinidamente al
+    servidor.
+- **Qué es cada función**, en palabras del propietario (`FUNCTION_MEANING`), junto al punto crítico
+  en el expediente del tag y en la hoja de instrucciones de la plantilla:
+  - la parada precisa espera al servidor, y la condicionada a un sensor, un pulsador o una radio;
+  - una parada es de seguridad y solo se reanuda a mano;
+  - los MTC de carga online son bifurcaciones hacia la calle asignada;
+  - pin arriba es recoger el carro y pin abajo, soltarlo.
+
+### Cambiado
+
+- OQ-132, casi cerrada: solo queda confirmar que «CAMBIO Nº MODO CIRCUITO» es el cambio de MTC.
+
+### Sin clase nueva en la auditoría
+
+Esta entrega no cambia cómo se lee ni cómo se calcula nada, salvo que un tramo conflictivo no forma
+refuerzo, y eso lo fija su prueba unitaria. Plantar un tramo conflictivo añadiría lecturas críticas.
+Esas lecturas son la base de la parada de la producción y moverían otras clases (`[3.33.0]`).
+
+## [3.34.0] - 2026-09-26
+
+La lista de tags de noche y el cambio de MTC, del propietario: la lista `noche` explica los tags que
+pueden aparecer de noche en el circuito, y un cambio de MTC cambia el multicircuito del AGV para hacer
+alguna configuración especial.
+
+### Añadido
+
+- **Lista `noche`** (R-DAT-022). Ya no es una lista desconocida.
+  - Un tag suyo que solo se lee de noche es «tag de noche declarado», sin necesitar pasadas de día que
+    lo comprueben. Se quita de los cambios de tag como un tag de noche comprobado.
+  - Si se lee de día, manda lo leído: sigue como candidato a una posición y se dice que la lista lo
+    declara de noche.
+  - En el inventario es `especial`, como mantenimiento y emergencia. Antes salía «se lee y no está
+    declarado: declararlo en Vsystem».
+- **`grupo` en la lista `critico`**: el destino de una función, como un cambio de MTC a cada calle.
+  Dos tags seguidos con la misma función y distinto `grupo` no son un refuerzo (R-GRA-016). La función
+  se enseña con su grupo junto a cada incidencia.
+- Qué es `parada` y `cambio-de-mtc`, en la hoja de instrucciones de la plantilla.
+- Auditoría: clase `tag-de-noche-declarado` (`auditoria/21`). Las 45 clases salen DETECTA.
+
+### Cambiado
+
+- OQ-132 queda parcial: el cambio de MTC está cerrado. Siguen abiertos «CAMBIO Nº MODO CIRCUITO» y
+  las demás funciones de planta sin clase.
+
+## [3.33.0] - 2026-09-26
+
+Funciones críticas y refuerzos, pedidos por el propietario al revisar la lista de PC2: toda función de
+planta es crítica, la situación no es una función, y dos tags seguidos con la misma función son un
+refuerzo por si falla una lectura.
+
+### Añadido
+
+- **Refuerzos de un punto crítico** (R-GRA-016, `src/domain/critical-reinforcement.ts`). Dos o más
+  tags seguidos en la lista `circuito` con la misma función. Un cruce seguido es una zona, no un
+  refuerzo; dos funciones distintas seguidas, tampoco. El anillo se cierra.
+- **Inventario, `refuerzo-sin-lectura`**: un crítico en memoria que nadie lee nunca, con otro tag de
+  su refuerzo que sí se lee. La función la sostiene el refuerzo; lo perdido es la redundancia. Antes
+  salía `critico-sin-lectura`, «se perdió su función», de una parada que los AGV siguen haciendo.
+- Junto a cada incidencia de un tag reforzado, «refuerzo con …».
+- Clases de función crítica `parada` (la que no es precisa), `giro` y `cambio-de-mtc`.
+- Auditoría: clase `refuerzo-sin-lectura` (`auditoria/20`). Las 44 clases salen DETECTA.
+
+### Cambiado
+
+- **Una función de planta fuera de la taxonomía cuenta como crítica** con su nombre (R-GRA-007), y
+  se avisa una vez por función, con sus tags, en vez de una vez por tag.
+- OQ-132: a qué clase corresponde cada texto de planta que no lo dice solo, y si una `parada` explica
+  su espera.
+
+### Medido, y por eso se planta así
+
+Un refuerzo plantado con dos tags nuevos movía tres clases de la auditoría, y no era un defecto del
+producto. Las lecturas de los tags críticos son la base de la parada de la producción (R-AGV-018), así
+que un crítico leído de más mueve las franjas. Y callar un tag antes del sorteo del lector degradado
+desplaza toda su secuencia. El refuerzo se apoya en la desvinculación, que ya se leía, y el tag sin
+lecturas se calla después de todos los sorteos.
+
 ## [3.32.1] - 2026-09-26
 
 Relevo a una conversación nueva por el límite de contexto. Solo documentación.

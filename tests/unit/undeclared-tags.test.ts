@@ -42,6 +42,27 @@ const isNight = (start: number) => regimeOf(start) === "noche";
 const declared = ["01", "02", "0Z", "03", "04", "05"];
 
 describe("tags leídos fuera de la lista del circuito", () => {
+  it("solo de noche y en la lista de noche: tag de noche declarado, sin hacer falta pasadas de día", () => {
+    // Solo de noche también sus vecinos: de día no hay pasadas por su sitio con las que comprobarlo.
+    const readings = day((start) => (isNight(start) ? ["01", "02", "03", "04", "N", "05"] : []));
+    const sinLista = locateUndeclaredTags(readings, declared, new Set(), regimeOf, THRESHOLDS).tags.find((tag) => tag.tagId === "N");
+    expect(sinLista?.verdict).toBe("noche-probable");
+    const n = locateUndeclaredTags(readings, declared, new Set(), regimeOf, THRESHOLDS, new Set(["N"])).tags.find(
+      (tag) => tag.tagId === "N",
+    );
+    expect(n).toMatchObject({ verdict: "noche-declarado", declaredNight: true });
+    expect(n?.evidence).toContain("tag de noche declarado");
+  });
+
+  it("en la lista de noche pero leído de día: manda lo leído, candidato a la posición, y se dice", () => {
+    const readings = day(() => ["01", "02", "X", "03", "04", "05"]);
+    const x = locateUndeclaredTags(readings, declared, new Set(), regimeOf, THRESHOLDS, new Set(["X"])).tags.find(
+      (tag) => tag.tagId === "X",
+    );
+    expect(x).toMatchObject({ verdict: "posicion", declaredNight: true });
+    expect(x?.evidence).toContain("La lista de tags de noche lo declara de noche, y se lee también de día.");
+  });
+
   it("de día en el mismo sitio: candidato a la posición, y se nombra el declarado sin lecturas", () => {
     const readings = day(() => ["01", "02", "X", "03", "04", "05"]);
     const report = locateUndeclaredTags(readings, declared, new Set(), regimeOf, THRESHOLDS);

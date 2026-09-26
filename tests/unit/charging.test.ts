@@ -145,7 +145,7 @@ describe("configuración de calles (R-CO-001)", () => {
     expect(problems.join(" ")).toContain("dos funciones");
   });
 
-  it("las nueve funciones de la taxonomía se aceptan sin aviso (Parte 36: vinculación/desvinculación)", () => {
+  it("las nueve funciones de la taxonomía original se aceptan sin aviso (Parte 36: vinculación/desvinculación)", () => {
     const { funcionOf, problems } = readCriticalPoints([
       entry("1", "parada-precisa", ""),
       entry("2", "cruce", ""),
@@ -160,6 +160,33 @@ describe("configuración de calles (R-CO-001)", () => {
     expect(funcionOf.get("8")).toBe("vinculacion");
     expect(funcionOf.get("9")).toBe("desvinculacion");
     expect(problems).toHaveLength(0);
+  });
+
+  it("parada, giro, cambio de MTC, tramo conflictivo y control wifi entran en la taxonomía sin aviso (propietario, 2026-09-26)", () => {
+    const { funcionOf, problems } = readCriticalPoints([
+      entry("1", "parada", ""),
+      entry("2", "giro", ""),
+      entry("3", "cambio-de-mtc", ""),
+      entry("6", "tramo-conflictivo", ""),
+      entry("7", "control-wifi", ""),
+    ]);
+    expect([...funcionOf.values()]).toEqual(["parada", "giro", "cambio-de-mtc", "tramo-conflictivo", "control-wifi"]);
+    expect(problems).toHaveLength(0);
+    const conGrupo = readCriticalPoints([entry("4", "cambio-de-mtc", "C.O.1"), entry("5", "giro", "")]);
+    expect([...conGrupo.groupOf]).toEqual([["4", "C.O.1"]]);
+  });
+
+  it("una función de planta fuera de la taxonomía cuenta como crítica y se avisa una vez por función", () => {
+    const { funcionOf, problems } = readCriticalPoints([
+      entry("1", "luz-de-aviso", ""),
+      entry("2", "pin-arriba", ""),
+      entry("3", "luz-de-aviso", ""),
+    ]);
+    expect(funcionOf.get("1")).toBe("luz-de-aviso");
+    expect(funcionOf.get("3")).toBe("luz-de-aviso");
+    expect(problems).toHaveLength(2);
+    expect(problems[0]).toContain("«luz-de-aviso» (tags 1, 3)");
+    expect(problems[0]).toContain("Cuenta como punto crítico");
   });
 
   it("la función crítica se lee igual venga de «critico» o del circuito virtual — es el llamador quien combina las fuentes, no esta función", () => {

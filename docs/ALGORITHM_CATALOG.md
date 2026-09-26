@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.26.0
+version: 0.33.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Catálogo de algoritmos
@@ -692,10 +692,12 @@ tags de calles, mantenimiento y emergencia se excluyen porque su sitio ya lo da 
 - **Veredicto.** Con lecturas de día, `posicion`: candidato a esa posición, nombrando los declarados
   del mismo sitio sin ninguna lectura. Solo de noche: `noche` si las pasadas de día llegan a
   `tagChanges.minSlotPasses` y no leerlo en ninguna es improbable por azar dada su tasa de noche,
-  `(1 − tasa)^pasadas ≤ tagChanges.maxChance`; si no, `noche-probable`.
+  `(1 − tasa)^pasadas ≤ tagChanges.maxChance`; si no, `noche-probable`. Antes que eso, un tag de la
+  lista `noche` que solo se lee de noche es `noche-declarado`, sin mirar las pasadas: lo explica la
+  lista. Con lecturas de día sigue siendo `posicion`, con la nota de que la lista lo declara de noche.
 
 Sin umbrales propios: son los de los cambios de tag (R-DAT-019), que miden lo mismo —rachas sin leer
-por un sitio—. Un tag `noche` se quita de los cambios de tag (`withoutTags`) y de los límites de
+por un sitio—. Un tag `noche` o `noche-declarado` se quita de los cambios de tag (`withoutTags`) y de los límites de
 estructura (`structureBoundaries`), porque su horario no es un cambio. `noche-probable` no se quita:
 es una hipótesis y no se usa como hecho.
 
@@ -719,6 +721,69 @@ Cada fila lleva su posición en el orden leído, su posición en la lista y el �
 lado. Un número mal escrito queda junto al tag de verdad, porque los dos ocupan el mismo sitio: el
 sitio lo prueba, el número no (los tags vienen en familias de números seguidos). Sin lista no se
 evalúa.
+
+## 6.14 Refuerzos de un punto crítico, implementado (R-GRA-016)
+
+`src/domain/critical-reinforcement.ts`, `reinforcementGroups(lista, funcionDe)`. Recorre la lista
+`circuito` en el orden del fichero, cada tag una vez, y junta los tags críticos seguidos con la misma
+función; un tag sin función o en `cruce` corta el grupo. Si el primer grupo empieza en el primer tag
+y el último acaba en el último, con la misma función, son uno solo: el anillo se cierra. Solo quedan
+los grupos de dos o más. El inventario usa el resultado en un único punto: un crítico en memoria y
+nunca leído es `refuerzo-sin-lectura` si algún otro tag de su grupo tiene lecturas, y
+`critico-sin-lectura` si no. La clave de un grupo es la función **y** el `grupo` de la lista
+`critico`: la misma función con distinto destino corta el grupo.
+
+## 6.15 Limpieza de la lista, implementado (R-GRA-017)
+
+`src/domain/list-cleanup.ts`, `buildListCleanup(orden, funcionDe, refuerzos)`. De las filas del orden
+del circuito con posición en la lista: `sin-lecturas` va a «no está en el físico», ordenado por tener
+función crítica y después por la lista; `otro-sitio` va a «otra posición». Cada refuerzo declarado se
+comprueba en el anillo leído solo —las filas `leido`, en su orden—, porque lo declarado sin lecturas
+intercalado no separa a dos tags que los AGV leen uno tras otro: `incompleto` si algún tag no se lee,
+`comprobado` si sus índices en el anillo forman un tramo seguido (dando la vuelta), y `separado` si
+no. Con las lecturas —siempre en el Worker—, «seguidos» se mide mejor con el vecino leído de cada tag
+(`dominantNeighbours` sobre el cohorte mayor): cada par consecutivo del refuerzo tiene que ser
+sucesor o predecesor dominante el uno del otro, en cualquier sentido. Un tag poco leído queda fuera
+del anillo dominante aunque los AGV lo lean justo antes que su pareja, y con el anillo solo salía
+`separado` un refuerzo que está en su sitio. `listCleanupCsv` lo escribe con `;`, una fila por tag o refuerzo.
+
+## 6.16 Alimentación de la línea, implementado (R-FLO-010)
+
+`src/domain/line-feed.ts`, `measureLineFeed(lecturas, linea, cobertura, regimen, umbrales, retienen)`,
+sobre el cohorte mayor. Umbrales: los de siempre, `bands.minBandSamples` y `flowStops.minStopExcessMs`.
+
+1. **Recorrido hasta la línea.** En la secuencia de cada AGV, sin repeticiones seguidas del mismo
+   tag, cada paso de producción por la línea (la primera lectura de una racha de tags de la lista
+   `linea`, sea o no la entrada) da, para cada tag leído desde el paso anterior, lo que
+   se tardó hasta ella. Con muestras bastantes, su mediana.
+2. **Cadencia.** Tiempos entre pasos seguidos por la entrada, los dos de producción y dentro de la
+   cobertura. Su horquilla (`bandOf`); por encima de la valla, parada de la línea.
+3. **Pulmón.** A mitad de cada parada de la mitad más larga (por duración), los AGV cuyo último tag tiene mediana y a los que ya les tocaba
+   haber llegado. Los tags donde están en la mitad de las paradas o más; el de mediana mayor es el
+   inicio. La zona son los tags que aparecen en la mitad o más de los recorridos de los AGV desde ese
+   inicio hasta la entrada.
+4. **Clasificación.** A paso de la cadencia, desde que tocaba entrar el siguiente (el paso anterior
+   más la mitad de la cadencia) más media cadencia, hasta que acaba la parada: el máximo de AGV en la
+   zona con la llegada vencida en más de media cadencia. Si es cero y el siguiente en entrar no estaba
+   en la zona cuando tocaba, le faltaron AGV.
+5. **Hueco.** En los tags que leyeron los dos en su vuelta, cuánto después pasó el de detrás. El
+   tramo final, hasta la entrada, en que esa separación supera la valla; su primer tag es donde se
+   abrió, o «venía de antes» si es el primero de la vuelta.
+6. **Ocupación.** Minuto a minuto de producción cubierta, los AGV cuyo último tag está en la zona.
+9. **Exclusión.** Antes de las horquillas, el Worker mide las paradas de la línea sin saber quién
+   retiene (no cambia las paradas) y quita las transiciones que salen de un tag del pulmón o de la línea
+   durante una parada con AGV esperando (`lineStopExclusion`, `outsideLineStops`). La cadencia se
+   calcula sin los huecos que cruzan una parada de la producción.
+8. **Ritmo.** Por régimen, cada tiempo entre pasos contra la mediana de los que lo rodean (una
+   ventana de `bands.minBandSamples`, centrada). El exceso, sumado, es el tiempo sin paso; se reparte
+   entre con AGV esperando y sin AGV como se ha dicho. El 10 % y el 90 % de los ciclos locales dicen
+   entre qué valores anda el ciclo.
+7. **Pasos (R-FLO-011).** Cada racha de tags de la línea de un AGV, de producción y fuera de las
+   paradas de la producción. Esperados: los tags leídos en la mitad de las rachas o más. «No sigue»:
+   de la última lectura de la racha a la siguiente, por encima de la valla de esos tiempos. «Sin
+   parada», salvo con `vinculacion`: hasta la racha siguiente de otro AGV, menos que `p5 − max(p50 −
+   p5, margen)` de esos tiempos. Los demás pasos se cuentan por AGV; el que no lee un esperado en la
+   mitad o más de los suyos se señala como lectura.
 
 ## 7. Segmentación de vueltas y huecos
 

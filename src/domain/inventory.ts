@@ -63,6 +63,16 @@ export interface TagLists {
    * (`critico-sin-lectura`, R-GRA-008), pero no participa en ninguna otra regla de este módulo.
    */
   readonly critical: ReadonlyMap<string, string>;
+  /**
+   * Por tag crítico, los demás tags de su refuerzo (R-GRA-016): seguidos en el circuito y con la
+   * misma función. Sin él, ningún tag tiene refuerzo.
+   */
+  readonly reinforcement?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * La lista `noche` de planta: tags que pueden aparecer de noche. Fuera del recorrido de día, como
+   * mantenimiento y emergencia, así que son `especial` y no «se lee y no está declarado».
+   */
+  readonly night?: ReadonlySet<string>;
 }
 
 /**
@@ -117,7 +127,16 @@ export type TagClass =
    * sola (R-GRA-008). Sigue sin ser avería: sin memoria, el tag cae en `declarado-sin-memoria` sin
    * matiz, porque R-OPP-009 ya explica el silencio del todo.
    */
-  | "critico-sin-lectura";
+  | "critico-sin-lectura"
+  /**
+   * Declarado crítico, en memoria, nadie lo ha leído jamás, **y otro tag de su refuerzo sí se lee**
+   * (R-GRA-016).
+   *
+   * La función no se ha perdido: la sostiene el refuerzo, que para eso está. Lo que se ha perdido es
+   * la redundancia, y la próxima lectura que falle en el refuerzo ya no tiene respaldo. Separarlo de
+   * `critico-sin-lectura` es no dar por perdida una parada que los AGV siguen ejecutando.
+   */
+  | "refuerzo-sin-lectura";
 
 /**
  * Qué tiene que **valorar una persona** en cada caso.
@@ -144,7 +163,9 @@ export type TagAction =
   /** Nadie entró en esa calle: antes de mirar el tag, hay que saber si la calle sigue en uso. */
   | "comprobar-si-la-calle-se-usa"
   /** Se perdió una función crítica, no solo una lectura: valorar con la urgencia de esa función. */
-  | "valorar-funcion-critica-perdida";
+  | "valorar-funcion-critica-perdida"
+  /** La función la sostiene su refuerzo, que se lee: el punto crítico se ha quedado sin redundancia. */
+  | "revisar-refuerzo-sin-redundancia";
 
 export interface TagInventoryRow {
   readonly tagId: string;
@@ -169,6 +190,8 @@ export interface TagInventoryRow {
   readonly blindVehicles: readonly string[];
   /** Función crítica declarada (R-GRA-007), o `null` si el tag no está en la lista `critico`. */
   readonly criticalFunction: string | null;
+  /** Los demás tags de su refuerzo (R-GRA-016), vacío si no tiene. */
+  readonly reinforcement: readonly string[];
 }
 
 export interface TagInventory {
@@ -241,6 +264,7 @@ export function buildTagInventory(
     ...lists.emergency,
     ...lists.charging,
     ...lists.critical.keys(),
+    ...(lists.night ?? []),
     ...readersByTag.keys(),
   ]);
 
@@ -249,7 +273,10 @@ export function buildTagInventory(
     const inVirtual = lists.virtual.has(tagId);
     const inMemory = lists.memory.has(tagId);
     const isSpecial =
-      lists.maintenance.has(tagId) || lists.emergency.has(tagId) || lists.charging.has(tagId);
+      lists.maintenance.has(tagId) ||
+      lists.emergency.has(tagId) ||
+      lists.charging.has(tagId) ||
+      (lists.night?.has(tagId) ?? false);
     const readers = readersByTag.get(tagId) ?? new Set<string>();
     const readingCount = readingsByTag.get(tagId) ?? 0;
 
@@ -259,6 +286,7 @@ export function buildTagInventory(
         : [];
 
     const criticalFunction = lists.critical.get(tagId) ?? null;
+    const reinforcement = lists.reinforcement?.get(tagId) ?? [];
     const { tagClass, truth } = classify({
       inVirtual,
       inMemory,
@@ -267,6 +295,7 @@ export function buildTagInventory(
       blindCount: blindVehicles.length,
       inUnservedLane: lists.unservedLaneTags.has(tagId),
       isCritical: criticalFunction !== null,
+      reinforcementRead: reinforcement.some((other) => (readersByTag.get(other)?.size ?? 0) > 0),
     });
 
     rows.push({
@@ -281,6 +310,7 @@ export function buildTagInventory(
       readingCount,
       blindVehicles,
       criticalFunction,
+      reinforcement,
     });
   }
 
@@ -300,6 +330,8 @@ interface ClassifyInput {
   readonly blindCount: number;
   readonly inUnservedLane: boolean;
   readonly isCritical: boolean;
+  /** Algún otro tag de su refuerzo se lee (R-GRA-016). */
+  readonly reinforcementRead: boolean;
 }
 
 /**
@@ -327,6 +359,8 @@ function classify(input: ClassifyInput): { tagClass: TagClass; truth: TruthState
       // Declarado crítico además: la omisión pierde una función, no solo una lectura (R-GRA-008).
       // Sigue subordinado a la memoria: si no estuviera en memoria, R-OPP-009 ya explicaría el
       // silencio del todo y no haría falta el matiz — por eso esta rama vive dentro de `inMemory`.
+      // Con un refuerzo que se lee, la función sigue en pie: lo perdido es la redundancia (R-GRA-016).
+      if (input.isCritical && input.reinforcementRead) return { tagClass: "refuerzo-sin-lectura", truth: "unknown" };
       if (input.isCritical) return { tagClass: "critico-sin-lectura", truth: "unknown" };
       return { tagClass: "obsoleto-candidato", truth: "unknown" };
     }
@@ -358,6 +392,8 @@ const ACTION_BY_CLASS: Readonly<Record<TagClass, TagAction>> = {
   "calle-sin-servicio": "comprobar-si-la-calle-se-usa",
   // No es un obsoleto más: se perdió una función (R-GRA-008), y la urgencia la marca esa función.
   "critico-sin-lectura": "valorar-funcion-critica-perdida",
+  // La función la sostiene el refuerzo (R-GRA-016): se valora la redundancia, no una función perdida.
+  "refuerzo-sin-lectura": "revisar-refuerzo-sin-redundancia",
 };
 
 /** La acción, en la frase que se le enseña a quien tiene que decidir. */
@@ -377,6 +413,8 @@ export function describeAction(action: TagAction): string {
       return "Ningún vehículo entró en esa calle: comprobar si sigue en servicio antes de mirar el tag";
     case "valorar-funcion-critica-perdida":
       return "Es un punto crítico declarado y nadie lo ha leído nunca: se perdió su función, no solo una lectura";
+    case "revisar-refuerzo-sin-redundancia":
+      return "Es el refuerzo de un punto crítico: nadie lo ha leído nunca, pero el otro tag del refuerzo sí se lee y sostiene la función, sin redundancia. Comprobar en planta si está: colocar una copia si falta, o eliminarlo de Vsystem si sobra";
   }
 }
 

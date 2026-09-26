@@ -9,7 +9,7 @@
  */
 
 import { FLEET_STRUCTURE } from "../../src/domain/fleet.js";
-import { EXPECTED_STRUCTURE, KNOWN_LISTS, LIST_FUNCTIONS, LIST_PURPOSE } from "../../src/domain/tag-lists.js";
+import { EXPECTED_STRUCTURE, FUNCTION_MEANING, KNOWN_LISTS, LIST_FUNCTIONS, LIST_PURPOSE } from "../../src/domain/tag-lists.js";
 
 import type { XlsxSheet } from "./xlsx-writer.js";
 
@@ -65,7 +65,9 @@ export function listsTemplate(): readonly XlsxSheet[] {
       ...KNOWN_LISTS.map((list) => `${list} — ${LIST_PURPOSE[list]}.`),
       "",
       `Valores de «funcion» en carga-online: ${LIST_FUNCTIONS["carga-online"].join(", ")}.`,
-      `Valores de «funcion» en critico: ${LIST_FUNCTIONS.critico.join(", ")}.`,
+      `Valores de «funcion» en critico: ${LIST_FUNCTIONS.critico.join(", ")}. Otra función de planta también vale: cuenta como crítica con su nombre.`,
+      ...Object.entries(FUNCTION_MEANING).map(([funcion, meaning]) => `${funcion} — ${meaning}.`),
+      "En «critico», «grupo» distingue la misma función con destino distinto (un cambio de MTC a cada calle). Dos tags seguidos con la misma función y el mismo grupo son un refuerzo.",
       `Valores de «grupo» en zona: ${LIST_FUNCTIONS.zona.join(", ")}.`,
       "",
       "La hoja «Ejemplo» enseña cómo queda; no se importa.",
