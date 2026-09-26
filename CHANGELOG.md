@@ -2,6 +2,49 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.47.0] - 2026-09-26
+
+Revisión de 110 capturas de la interfaz con el circuito sintético de auditoría, a 1.440 px en claro
+y oscuro y a 390 px. Ocho fallos de presentación, sin tocar el dominio ni las medidas; la siguiente
+entrega reorganiza la página.
+
+### Corregido
+
+- **Tabla «Tiempos por sección entre anclas»** (`renderAnchorSections`): la columna de tags listaba
+  decenas de identificadores y partía las cabeceras letra a letra; en el móvil quedaba destrozada.
+  Ahora dice «48 tags, de 60000 a 60147», la tabla va en su caja desplazable como las otras anchas, y
+  la lista completa de cada sección está en el detalle plegado junto al p50 por fichero.
+- **La barra de revisión fija tapaba el destino de un salto**: su altura medida se escribe en
+  `--review-bar-height` y encabezados, figuras, tarjetas y desplegables llevan ese
+  `scroll-margin-top`; un `scrollIntoView` de cualquier `h3` deja el título visible bajo la barra.
+- **La lectura pegajosa de cada gráfico se pintaba encima del dibujo**: tapaba las etiquetas del eje
+  del perfil horario y cortaba filas del mapa de omisión. Fondo opaco del panel y borde superior
+  fino, y el dibujo reserva debajo su misma altura (`--readout-height`), de modo que en reposo no
+  cubre nunca el eje ni las últimas filas; pegada, sigue abajo. El mapa de omisión deja de fijar el
+  alto de su contenedor, que recortaba esa reserva.
+- **Modo oscuro** (`styles.css`, tokens re-escalonados y validados con el comprobador de paleta
+  contra `#1c1f26`): «lecturas» y «en carga (inferido)» del expediente eran el mismo azul
+  (`--viz-series` = `--viz-3`); ahora ΔE 16,5 (rampa de un solo matiz, L monótona, saltos ≥ 0,06).
+  «Parado sin nada que lo explique» era un marino a 2,4:1 que apenas se veía; pasa a azul acero claro
+  y la carga a un violeta más firme (ΔE 15,1 entre ambos, 16,7 carga–serie). La media barra de «lee
+  sin estar asignado» se dibuja sobre el fondo de «fuera del circuito» —sola, la franja del panel a
+  cada lado se leía como una raya negra— y su muestra de leyenda la imita. El gris de «lo normal»
+  del anillo sube un punto (`--viz-grid`) sin dejar de fundirse con el fondo. El claro no cambia.
+- **Encabezado duplicado** «Rotura y degradación, en el tiempo»: `trendMultiplesChart` recibe el
+  título de quien lo llama; bajo «Cambios de tag» es «Rotura y degradación de cada tag, en el tiempo»
+  y bajo «Lo que hay que mirar», «Rotura y degradación de cada AGV, en el tiempo». **Cambia una
+  prueba de navegador** (`vistas-diagnostico.spec.ts`) que fijaba el texto antiguo.
+- **Selectores de fichero nativos** («Choose File» junto a botones en español): cada `input` va
+  dentro de un `.file-picker` con una etiqueta con aspecto de botón («Elegir fichero…») y el nombre
+  del fichero elegido al lado; el `input` queda fuera de la vista sin `display:none`, con foco visible
+  en el botón, 44 px con dedo y el mismo `id`, así que las pruebas que cargan ficheros siguen igual.
+- **Horquilla de tiempos** (`segmentBandChart`): la franja de tramos (ahora de 6 px, también en el
+  móvil) y los puntos de hallazgo van en dos filas con 4 px de aire, y hay 10 px entre la leyenda y
+  el dibujo; antes se tocaban.
+- **Barra de revisión en el móvil**: a 560 px o menos los cuatro botones de cada tarjeta enseñan
+  solo su icono, 44 px de ancho, en una fila; el nombre entero va en `aria-label` y `title`.
+  Provisional hasta el control compacto de la entrega siguiente.
+
 ## [3.46.0] - 2026-09-26
 
 Decisiones del propietario sobre las preguntas abiertas de la revisión (OQ-136 a OQ-141).

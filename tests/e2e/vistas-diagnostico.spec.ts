@@ -99,7 +99,8 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(page.getByText(/Ver los \d+ tags del anillo, en orden/).first()).toBeVisible();
 
     const withTable = [
-      "Rotura y degradación, en el tiempo",
+      // Dos vistas con este dibujo, una por tags y otra por AGV; desde 3.47.0 cada una con su nombre.
+      "Rotura y degradación de cada tag, en el tiempo",
       "Tiempo de parada en los posibles puntos críticos",
       "Tags donde el recorrido se divide",
       "Ocupación de las calles de carga",

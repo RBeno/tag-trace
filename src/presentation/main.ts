@@ -162,6 +162,26 @@ const subtitle = element(
 );
 header.append(title, subtitle);
 
+/**
+ * Un selector de fichero que parece un botón propio. El `input` nativo sigue existiendo con su
+ * `id` —es lo que usan las pruebas y los lectores de pantalla—, pero se saca de la vista y lo que
+ * se ve es su etiqueta con aspecto de botón y el nombre del fichero elegido. Sin esto, el navegador
+ * pinta «Choose File» en su idioma, al lado de botones en español.
+ */
+function filePicker(input: HTMLInputElement): HTMLElement {
+  const wrapper = element("span", "file-picker");
+  const button = element("label", "file-button", "Elegir fichero…");
+  button.htmlFor = input.id;
+  const name = element("span", "file-name", "Ningún fichero elegido");
+  const show = (): void => {
+    name.textContent = input.files?.[0]?.name ?? "Ningún fichero elegido";
+  };
+  input.addEventListener("change", show);
+  input.addEventListener("click", () => queueMicrotask(show));
+  wrapper.append(input, button, name);
+  return wrapper;
+}
+
 const picker = element("section", "panel");
 const fileInput = element("input");
 fileInput.type = "file";
@@ -190,9 +210,9 @@ projectLabel.htmlFor = "project-file";
 const cancelButton = element("button", "danger", "Cancelar");
 cancelButton.type = "button";
 cancelButton.hidden = true;
-picker.append(fileLabel, fileInput, circuitLabel, circuitInput, cancelButton);
+picker.append(fileLabel, filePicker(fileInput), circuitLabel, circuitInput, cancelButton);
 const projectPanel = element("section", "panel");
-projectPanel.append(element("h2", undefined, "Copia del circuito"), exportButton, projectLabel, projectInput);
+projectPanel.append(element("h2", undefined, "Copia del circuito"), exportButton, projectLabel, filePicker(projectInput));
 
 const progressPanel = element("section", "panel");
 progressPanel.hidden = true;
@@ -238,7 +258,7 @@ fleetLabel.htmlFor = "fleet-file";
 const fleetNote = element("p", "muted", "");
 
 {
-  listsPanel.append(element("h2", undefined, "Listas del circuito"), listsLabel, listsInput);
+  listsPanel.append(element("h2", undefined, "Listas del circuito"), listsLabel, filePicker(listsInput));
   const structure = element("details");
   structure.append(element("summary", undefined, "Qué forma tiene que tener el fichero"));
   structure.append(
@@ -283,7 +303,7 @@ const fleetNote = element("p", "muted", "");
   const fleetExample = element("pre", "mono raw", FLEET_STRUCTURE.example.join("\n"));
   fleetExample.style.overflowX = "auto";
   fleetStructure.append(fleetExample);
-  listsPanel.append(fleetLabel, fleetInput, fleetStructure, fleetNote);
+  listsPanel.append(fleetLabel, filePicker(fleetInput), fleetStructure, fleetNote);
 }
 
 const viewsPanel = element("section", "panel");
@@ -2017,6 +2037,11 @@ function renderAnchorSections(views: CircuitViews): void {
   );
   const rows: string[][] = [];
   const regimeLabel = { produccion: "producción", noche: "noche" } as const;
+  // En la tabla, solo cuántos tags tiene la sección y de cuál a cuál: la lista entera (decenas de
+  // identificadores por fila) partía las cabeceras letra a letra y en el móvil destrozaba la tabla.
+  // La lista completa va en el detalle plegado de abajo.
+  const tagSpan = (tags: readonly string[]): string =>
+    tags.length === 0 ? "—" : tags.length === 1 ? `1 tag, ${tags[0]}` : `${tags.length} tags, de ${tags[0]} a ${tags[tags.length - 1]}`;
   for (const section of sections) {
     const bands = [
       ["produccion", section.produccion],
@@ -2024,14 +2049,14 @@ function renderAnchorSections(views: CircuitViews): void {
     ] as const;
     const withBand = bands.filter(([, band]) => band !== null);
     if (withBand.length === 0) {
-      rows.push([section.name, section.tags.join(" "), "—", "sin muestras suficientes", "—", "—", "—", "—"]);
+      rows.push([section.name, tagSpan(section.tags), "—", "sin muestras suficientes", "—", "—", "—", "—"]);
       continue;
     }
     for (const [regime, band] of withBand) {
       if (band === null) continue;
       rows.push([
         section.name,
-        section.tags.join(" "),
+        tagSpan(section.tags),
         regimeLabel[regime],
         String(band.samples),
         duration(band.p50Ms),
@@ -2041,30 +2066,47 @@ function renderAnchorSections(views: CircuitViews): void {
       ]);
     }
   }
-  viewsPanel.append(plainTable(["Sección", "Tags", "Régimen", "Muestras", "p50", "p80", "p95", "Valla"], rows));
+  // En su caja desplazable, como las otras tablas anchas: las cabeceras cortas no se parten.
+  viewsPanel.append(scrollBox(plainTable(["Sección", "Tags", "Régimen", "Muestras", "p50", "p80", "p95", "Valla"], rows)));
 
-  // La tendencia: el p50 de producción de cada sección en cada fichero (R-TIM-011).
+  // La tendencia: el p50 de producción de cada sección en cada fichero (R-TIM-011). Delante, la
+  // lista completa de tags de cada sección, que la tabla de arriba ya no lleva.
   const fileNameOf = new Map(views.franjas.sources.map((source) => [source.sourceId, source.fileName]));
   const sourceIds = [...new Set(sections.flatMap((section) => section.bySource.map((entry) => entry.sourceId)))];
+  const sectionTags = (): HTMLElement => {
+    const list = element("dl", "facts");
+    for (const section of sections) {
+      list.append(element("dt", undefined, section.name), element("dd", "mono", section.tags.join(" ")));
+    }
+    return list;
+  };
   if (sourceIds.length > 0) {
     viewsPanel.append(
-      lazyDetails(`Ver el p50 de cada sección por fichero (${sourceIds.length} ficheros)`, () =>
-        plainTable(
-          ["Fichero", "Sección", "Muestras", "p50 (producción)"],
-          sourceIds.flatMap((sourceId) =>
-            sections.map((section) => {
-              const entry = section.bySource.find((item) => item.sourceId === sourceId);
-              return [
-                fileNameOf.get(sourceId) ?? sourceId,
-                section.name,
-                String(entry?.samples ?? 0),
-                entry === undefined || entry.p50Ms === null ? "—" : duration(entry.p50Ms),
-              ];
-            }),
+      lazyDetails(`Ver el p50 de cada sección por fichero (${sourceIds.length} ficheros) y los tags de cada sección`, () => {
+        const body = element("div");
+        body.append(
+          element("p", "muted", "Tags de cada sección, en el orden del anillo:"),
+          sectionTags(),
+          plainTable(
+            ["Fichero", "Sección", "Muestras", "p50 (producción)"],
+            sourceIds.flatMap((sourceId) =>
+              sections.map((section) => {
+                const entry = section.bySource.find((item) => item.sourceId === sourceId);
+                return [
+                  fileNameOf.get(sourceId) ?? sourceId,
+                  section.name,
+                  String(entry?.samples ?? 0),
+                  entry === undefined || entry.p50Ms === null ? "—" : duration(entry.p50Ms),
+                ];
+              }),
+            ),
           ),
-        ),
-      ),
+        );
+        return body;
+      }),
     );
+  } else {
+    viewsPanel.append(lazyDetails("Ver los tags de cada sección", sectionTags));
   }
   const download = element("button", undefined, "Descargar secciones (CSV)");
   download.setAttribute("type", "button");
@@ -2453,7 +2495,9 @@ function renderVehicleTrends(matrix: Matrix): void {
     .filter((panel): panel is { readonly panel: TrendPanel; readonly drop: number } => panel !== null)
     .sort((a, b) => b.drop - a.drop);
   if (panels.length > 0) {
-    viewsPanel.append(trendMultiplesChart(panels.slice(0, TREND_PANELS).map((entry) => entry.panel), FORMATS));
+    viewsPanel.append(
+      trendMultiplesChart(panels.slice(0, TREND_PANELS).map((entry) => entry.panel), FORMATS, "Rotura y degradación de cada AGV, en el tiempo"),
+    );
   }
   for (const vehicle of broken) {
     viewsPanel.append(
@@ -2637,7 +2681,9 @@ function renderTagTrends(tags: readonly TagRow[]): void {
     .filter((panel): panel is { readonly panel: TrendPanel; readonly drop: number } => panel !== null)
     .sort((a, b) => b.drop - a.drop);
   if (panels.length > 0) {
-    viewsPanel.append(trendMultiplesChart(panels.slice(0, TREND_PANELS).map((entry) => entry.panel), FORMATS));
+    viewsPanel.append(
+      trendMultiplesChart(panels.slice(0, TREND_PANELS).map((entry) => entry.panel), FORMATS, "Rotura y degradación de cada tag, en el tiempo"),
+    );
     if (panels.length > TREND_PANELS) {
       viewsPanel.append(
         element("p", "muted", `Se dibujan los ${TREND_PANELS} cambios más marcados de ${panels.length}; el resto, en las tarjetas.`),

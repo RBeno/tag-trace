@@ -137,6 +137,13 @@ export function createReviewSession(
   const barRow = node("div", "review-bar-row");
   barRow.append(heading, next);
   bar.append(barRow, progress);
+  // La barra es fija arriba y tapa lo que queda debajo. Su altura se escribe en una variable CSS
+  // para que encabezados, figuras y tarjetas dejen ese margen al ser destino de un salto
+  // (`scroll-margin-top` en styles.css); se mide, porque cambia con el dedo (44 px) y con el ancho.
+  const measure = (): void => {
+    document.documentElement.style.setProperty("--review-bar-height", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
+  };
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(measure).observe(bar);
   const actions = node("div", "review-actions");
   actions.append(exportButton);
   panel.append(counts, filters, actions, absent);
@@ -192,9 +199,14 @@ export function createReviewSession(
     const control: CardControl = { key, card, title, figure, buttons, note, changed };
 
     for (const state of REVIEW_STATES) {
-      const button = node("button", undefined, `${REVIEW_LABEL[state].icon} ${REVIEW_LABEL[state].text}`);
+      // Icono y texto en nodos aparte: en el móvil (≤ 560 px) el texto se esconde para que los
+      // cuatro quepan en una fila, y el nombre accesible y el `title` lo siguen diciendo entero.
+      const button = node("button");
       button.type = "button";
       button.dataset["state"] = state;
+      button.append(node("span", "review-icon", REVIEW_LABEL[state].icon), " ", node("span", "review-text", REVIEW_LABEL[state].text));
+      button.setAttribute("aria-label", REVIEW_LABEL[state].text);
+      button.title = REVIEW_LABEL[state].text;
       button.addEventListener("click", () => commit(control, state, note.value.trim()));
       buttons.set(state, button);
       group.append(button);

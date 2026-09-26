@@ -58,20 +58,31 @@
     --error: #ffb4ab; --warn: #f0c36d; --flag: #3a3212;
     /* El modo oscuro no es el claro invertido: son los mismos tonos re-escalonados para esta
        superficie (#1c1f26) y validados contra ella. La rampa se recorre al revés porque aquí lo
-       cercano a cero es lo que debe fundirse con el fondo. */
-    --viz-series: #3987e5;
+       cercano a cero es lo que debe fundirse con el fondo.
+       Re-escalonado el 2026-09-26 (revisión de capturas): la serie y el tercer escalón eran el
+       mismo azul, así que en el expediente «lecturas» y «en carga (inferido)» no se distinguían.
+       Ahora la serie es el mismo azul del claro (3,4:1 contra la superficie) y el tercer escalón
+       queda por encima: ΔE 16,5 entre ambos (16,2 protan, 13,6 tritan). La rampa sigue siendo un
+       solo matiz (6°), L monótona y saltos >= 0.06. El gris de «lo normal» (--viz-grid) sube un
+       punto para que el anillo no salga apagado, sin dejar de fundirse con el fondo. */
+    --viz-series: #2a78d6;
     --viz-1: #184f95;
     --viz-2: #256abf;
-    --viz-3: #3987e5;
-    --viz-4: #86b6ef;
-    --viz-5: #cde2fb;
-    --viz-grid: #2a2f3a;
+    --viz-3: #6fadf2;
+    --viz-4: #a3c8f4;
+    --viz-5: #d5e7fb;
+    --viz-grid: #3a4150;
     --viz-empty: #5b6270;
     --viz-accent: #d95926;
     --viz-accent-wash: #3a2419;
     --viz-neutral: #4d5a64;
-    --viz-carga: #c7a6f2;
-    --viz-parada: #2159a8;
+    /* «Parado sin nada que lo explique» era un azul marino que sobre esta superficie no llegaba a
+       2,4:1 y apenas se veía. En oscuro se re-escalona al otro extremo del mismo azul —un azul
+       acero claro— y el violeta de la carga se afirma para separarse de él: ΔE 15,1 entre carga y
+       parada, 16,7 entre carga y serie (8,9 protan, en la franja que exige la lectura y la tabla,
+       como ya pasaba con el claro), y la parada por encima de 3:1 contra la superficie. */
+    --viz-carga: #a98ae8;
+    --viz-parada: #b3cbe9;
     --viz-salta-uno: #e8c547;
     --viz-desconexion: #8a3230;
     --viz-mantenimiento: #2f8f4a;
@@ -84,6 +95,11 @@
   }
 }
 * { box-sizing: border-box; }
+/* Altura de la barra de revisión fija (UX §4.3); la escribe `review-ui.ts` al medirla. Todo lo
+   que puede ser destino de un salto (`scrollIntoView`, «Siguiente pendiente») deja ese margen
+   arriba para no quedar debajo de la barra. Sin barra, el valor por defecto no molesta. */
+:root { --review-bar-height: 0px; --readout-height: 34px; }
+h2, h3, h4, figure.chart, .finding, details { scroll-margin-top: calc(var(--review-bar-height) + 8px); }
 body { margin: 0; background: var(--bg); color: var(--ink);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 /* 1.440 px: en un portátil de 1.920 los gráficos densos (vida de cada AGV, mapa de omisión) aprovechan
@@ -97,7 +113,19 @@ h2 { font-size: 1rem; margin: 0 0 12px; }
 .panel { background: var(--panel); border: 1px solid var(--line);
   border-radius: 10px; padding: 16px; margin-bottom: 16px; }
 label { display: block; font-weight: 600; margin-bottom: 8px; }
-input[type="file"] { max-width: 100%; }
+/* El selector de fichero nativo dice «Choose File» en el idioma del navegador y no se parece a
+   los botones propios. El `input` sigue ahí —las pruebas y los lectores de pantalla lo usan—,
+   pero fuera de la vista (no `display:none`, que lo sacaría del foco y del árbol accesible); lo
+   que se ve es la etiqueta con aspecto de botón y, al lado, el nombre del fichero elegido. */
+.file-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+.file-picker input[type="file"] { position: absolute; width: 1px; height: 1px; margin: -1px;
+  padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.file-picker .file-button { display: inline-flex; align-items: center; font: inherit; font-weight: 400;
+  margin: 0; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); cursor: pointer; }
+.file-picker input:focus-visible + .file-button { outline: 2px solid var(--viz-series); outline-offset: 2px; }
+.file-picker input:disabled + .file-button { opacity: 0.55; cursor: not-allowed; }
+.file-picker .file-name { color: var(--muted); overflow-wrap: anywhere; }
 button { font: inherit; padding: 8px 14px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
 button.danger { border-color: var(--error); color: var(--error); margin-top: 12px; }
@@ -180,9 +208,18 @@ table.data th { color: var(--muted); font-weight: 600; }
 .chart .id { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .chart .readout { font-size: 0.85rem; margin: 6px 0; min-height: 1.5em; font-variant-numeric: tabular-nums; }
 /* La lectura se queda pegada abajo mientras el gráfico está a la vista: en uno más alto que la
-   pantalla, tocar arriba no deja la respuesta fuera (UX_SPEC §7). */
+   pantalla, tocar arriba no deja la respuesta fuera (UX_SPEC §7). Lleva el fondo opaco del panel
+   y un borde fino porque se pinta encima del gráfico mientras está pegada; y el dibujo reserva
+   debajo su misma altura, de modo que en reposo la lectura ocupa esa reserva y nunca cubre el
+   eje ni las últimas filas. */
 .chart .readout { position: sticky; bottom: 0; z-index: 1; background: var(--panel);
-  border-top: 1px solid var(--line); padding: 6px 0; }
+  border-top: 1px solid var(--line); padding: 6px 0; margin: 0; min-height: var(--readout-height); }
+@supports selector(:has(+ .readout)) {
+  .chart .viz-host:has(+ .readout), .chart > svg:has(+ .readout) { padding-bottom: var(--readout-height); }
+  .chart .viz-host + .readout, .chart > svg + .readout { margin-top: calc(-1 * var(--readout-height)); }
+}
+/* Horquilla de tiempos: la leyenda no va pegada a la franja de tramos ni a los puntos de hallazgo. */
+.chart .legend + .viz-host, .chart .legend + .legend + .viz-host { margin-top: 10px; }
 .chart .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; padding: 2px; margin: 0 0 8px; }
 .chart .seg button { border: 0; background: transparent; color: var(--muted); padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; min-height: 28px; }
 .chart .seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
@@ -203,6 +240,12 @@ table.data th { color: var(--muted); font-weight: 600; }
 .chart .inv-action { margin: 0; }
 
 @media (max-width: 560px) {
+  /* Los cuatro botones de cada tarjeta no caben con su texto a 390 px y se partían en dos filas.
+     Solo el icono, con `aria-label` y `title`, en una fila; el texto vuelve en cuanto hay sitio. */
+  .review .seg { flex-wrap: nowrap; }
+  /* Más específico que la regla general de 40 px de más abajo, para que aquí manden los 44 px. */
+  .finding .review .seg button { min-width: 44px; min-height: 44px; padding: 6px 10px; justify-content: center; }
+  .review .seg button .review-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .chart .inv-rows { grid-template-columns: minmax(0, 1fr) 4ch; }
   .chart .inv-track { display: none; }
   .chart .inv-action { grid-column: 1 / -1; margin-top: -4px; }
@@ -264,6 +307,7 @@ table.data th { color: var(--muted); font-weight: 600; }
   .review-actions button { min-height: 44px; }
   details > summary { padding: 12px 0; }
   .chart details summary { font-size: 0.9rem; }
-  input[type="file"]::file-selector-button { min-height: 44px; padding: 8px 14px; margin-right: 10px; }
+  .file-picker .file-button { min-height: 44px; }
+  :root { --readout-height: 36px; }
   input[type="range"] { height: 44px; width: 100%; }
 }

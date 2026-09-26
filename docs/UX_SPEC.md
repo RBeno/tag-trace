@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.33.0
+version: 0.34.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -138,10 +138,17 @@ nota opcional. Los avisos de configuración no los llevan, porque no se comprueb
   (R-EVI-007).
 - **El estado se ve por tres canales**: borde de la tarjeta (acento si está confirmado, gris si está
   descartado, discontinuo si está pospuesto), el botón pulsado con su texto, y el icono. Nunca solo
-  por color. Botones de 40 px, por encima de los 24 px de WCAG 2.2, porque se usa de pie.
+  por color. Botones de 40 px, por encima de los 24 px de WCAG 2.2, porque se usa de pie. **En una
+  pantalla de 560 px o menos** los cuatro botones enseñan solo su icono, en una fila y con 44 px de
+  ancho cada uno, y dicen su nombre entero por `aria-label` y `title` (3.47.0): con el texto se
+  partían en dos filas a 390 px. Es provisional; la siguiente entrega los sustituye por un control
+  compacto.
 - **Una barra fija arriba** dice cuánto va revisado («Revisión: 12 de 40 revisados») con su barra de
   progreso, y lleva el botón **Siguiente pendiente**. Es compacta a propósito: en el móvil, todo lo
-  demás fijo taparía media pantalla.
+  demás fijo taparía media pantalla. Su altura medida se escribe en una variable CSS
+  (`--review-bar-height`) y todo lo que puede ser destino de un salto —encabezados, figuras,
+  tarjetas, desplegables— lleva ese `scroll-margin-top`, así que un `scrollIntoView` o el botón
+  «Siguiente pendiente» nunca dejan el título debajo de la barra (3.47.0).
 - **Debajo, sin quedarse fijo**: el recuento por estado, los filtros (todos, pendientes,
   confirmados, descartados, pospuestos; solo esconden tarjetas, nunca gráficos) y **Exportar
   revisión (CSV)**, con los pendientes incluidos, que son la lista de lo que falta.
@@ -299,11 +306,11 @@ críticos y la deriva ya calculaban y hasta ahora solo se leía en tarjetas y ta
 |---|---|---|
 | **Anillo radial** | dónde se concentra la omisión, qué zona es cuál, dónde están los puntos críticos y de dónde cuelgan las calles | el ángulo es orden en el anillo, no distancia; relleno = declarado, hueco = candidato por firma |
 | **Mapa de omisión tag × AGV** | si lo que falta es del tag (fila) o del vehículo (columna) | pinta lo que falta, no lo que se lee; «no pasó» lleva trama y no es 0 % (R-OPP-013) |
-| **Rotura y degradación en el tiempo** | la forma del cambio: escalón o rampa, y cuándo | mismo eje en todos los paneles; un tramo sin pasadas corta la línea, no la lleva a cero |
+| **Rotura y degradación de cada tag / de cada AGV, en el tiempo** | la forma del cambio: escalón o rampa, y cuándo | mismo eje en todos los paneles; un tramo sin pasadas corta la línea, no la lleva a cero. Es la misma vista dos veces, una bajo «Cambios de tag» y otra bajo «Lo que hay que mirar»; cada una lleva en el título de qué va (3.47.0: antes compartían encabezado) |
 | **Permanencia en los candidatos de tiempo** | parada precisa (estrecha y desplazada) y semáforo (dos grupos) frente a la referencia del cohorte | proporción de pasadas con el mismo eje; sin pares del mismo instante (R-DAT-013); firma, nunca función (R-GRA-007) |
 | **Salidas de los tags con reparto** | cruce (las ramas vuelven a juntarse) o bifurcación (no) | el grosor es la cuota, con su soporte; el margen de saltos es configuración |
 | **Ocupación de las calles de carga** | quién estuvo en cada calle y cuándo, la calle sin servicio, quién esperó de más; y las tres comprobaciones de planta (R-CO-009): la calle que se usa menos o más que las demás con su cuota, el tag de la calle que no se leyó en tantas de tantas estancias, y quién no entró a cargar | solo es barra lo que se sabe: una estancia sin entrada o sin salida es una marca en su extremo conocido; fuera de cobertura, trama (R-CO-007, R-DAT-007); el detalle plegado da la cuota de cada calle y qué se lee dentro de cada una |
-| **Tiempos por sección entre anclas** | cuánto se tarda de un ancla a la siguiente —kitting, cruce, línea— por régimen, y cómo se mueve por fichero | tabla por sección y régimen con muestras, p50, p80, p95 y valla; el p50 por fichero plegado; CSV; sin dos anclas en el anillo, una línea que dice qué declarar (R-TIM-012) |
+| **Tiempos por sección entre anclas** | cuánto se tarda de un ancla a la siguiente —kitting, cruce, línea— por régimen, y cómo se mueve por fichero | tabla por sección y régimen con muestras, p50, p80, p95 y valla, en su caja desplazable; la columna de tags dice «48 tags, de 60000 a 60147» y la lista entera va en el detalle plegado junto al p50 por fichero (3.47.0: la lista en la tabla partía las cabeceras letra a letra); CSV; sin dos anclas en el anillo, una línea que dice qué declarar (R-TIM-012) |
 | **Entrada y salida del tramo cargado** | un adelantamiento como una línea que cruza a las demás | candidato, no avería: OQ-107 sigue sin catálogo de excepciones (R-FLO-001) |
 | **Deriva entre los dos periodos** | qué tag desapareció, apareció o se sustituyó, en lecturas | correlación de posición y tiempo, nunca confirmación física (R-DAT-017, R-EVI-004) |
 | **Inventario** | cuánto hay que valorar frente a lo que no, y qué acción pide cada clase | sin color de severidad: «a valorar» es una pregunta, no un problema (§5.2) |
@@ -360,7 +367,11 @@ marcha», o «…; la producción estaba parada (ningún tag crítico leído)»,
 también estaba parado». Nunca «descanso» ni
 «avería»: la causa la pone una persona (R-EVI-006). Los colores están validados para daltonismo en
 los dos temas; el azul oscuro y el amarillo salen a propósito de la banda de claridad y nunca van
-solos: siempre con la lectura y la tabla.
+solos: siempre con la lectura y la tabla. **En el modo oscuro los tonos se re-escalonan**, no se
+invierten: la parada sin explicar pasa a un azul acero claro (el marino no llegaba a 2,4:1 sobre el
+fondo), la carga se afirma en violeta, y la media barra de «lee sin estar asignado» se dibuja sobre
+el fondo de «fuera del circuito» para que no se lea como una raya negra (3.47.0; los ΔE están en
+`styles.css`).
 
 Se enseñan de entrada, sin causa: **las paradas de la producción** (cuándo, cuáles se repiten a la
 misma hora otro día, si todos siguieron por su sitio y quién aparece delante de quien iba detrás),
@@ -544,13 +555,21 @@ panel táctil del portátil. Todo tiene que poder hacerse con cualquiera de ello
 - **Imán de toque.** Un dedo no acierta una marca de 3 px: si el toque no cae encima de una, se lee
   la más cercana dentro de 22 px (`src/presentation/pointer.ts`).
 - **La lectura se ve siempre.** Va pegada abajo mientras el gráfico está a la vista, así que en uno más
-  alto que la pantalla tocar arriba no deja la respuesta fuera.
+  alto que la pantalla tocar arriba no deja la respuesta fuera. Lleva el fondo opaco del panel y un
+  borde fino, y el dibujo reserva debajo su misma altura: en reposo la lectura ocupa esa reserva y
+  no tapa el eje ni las últimas filas; solo mientras está pegada se pinta encima (3.47.0).
 - **Los gráficos de cobertura y de perfil horario**, que solo tenían el tooltip nativo, ganan la misma
   línea de lectura: en una pantalla táctil el tooltip no aparece nunca.
 - **Objetivos de toque de 44 px** con `(any-pointer: coarse)`: botones, selectores de gráfico,
   campos, desplegables, selector de fichero y el control del replay; el cuerpo, a 16 px. Se usa
   `any-pointer` para que un portátil con pantalla táctil también los tenga, aunque su puntero
   principal sea el panel.
+- **El selector de fichero es un botón propio** («Elegir fichero…») con el nombre del fichero
+  elegido al lado, no el control nativo, que decía «Choose File» en el idioma del navegador junto a
+  botones en español. El `input` sigue existiendo con su `id`, fuera de la vista pero en el foco y en
+  el árbol accesible; el botón enseña el foco con un contorno y mide 44 px con dedo (3.47.0).
+- **Horquilla de tiempos**: la franja del tramo declarado (6 px, también en el móvil) y los puntos
+  de hallazgo van en dos filas con aire entre ellas y separadas de la leyenda (3.47.0).
 - **Ancho.** Hasta 1.440 px de contenido, para que un portátil grande aproveche los gráficos densos.
   El texto corrido se limita a unos 90 caracteres por línea. Probado sin desbordamiento a 768, 1.024,
   1.366, 1.536 y 1.920 px de ancho.

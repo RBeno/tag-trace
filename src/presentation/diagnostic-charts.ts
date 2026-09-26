@@ -551,7 +551,8 @@ export function readMatrixHeatmap(
     overlay.style.top = "0";
     base.setAttribute("role", "img");
     base.setAttribute("aria-label", `Mapa de omisión de ${rows.length} tags por ${columns} vehículos`);
-    area.style.height = `${totalHeight}px`;
+    // Sin alto fijo: la capa base va en el flujo y ya da el alto; con uno fijo, la reserva que el
+    // contenedor deja bajo el dibujo para la lectura pegajosa (styles.css) recortaría las últimas filas.
     area.append(base, overlay);
 
     const context = base.getContext("2d");
@@ -682,9 +683,11 @@ export interface TrendPanel {
  * Un panel por tag o vehículo con tendencia, todos con el mismo eje: la rotura se ve como escalón y
  * la degradación como rampa. El puntero lee la misma hora en todos a la vez.
  */
-export function trendMultiplesChart(panels: readonly TrendPanel[], formats: Formats): HTMLElement {
+export function trendMultiplesChart(panels: readonly TrendPanel[], formats: Formats, title: string): HTMLElement {
+  // El título lo pone quien llama: la misma vista sale una vez por tags y otra por AGV, y con el
+  // mismo encabezado en las dos no se sabía cuál era cuál.
   const wrapper = figure(
-    "Rotura y degradación, en el tiempo",
+    title,
     "Lectura por pasada a lo largo del tiempo, con la misma escala en todos. En blanco: sin pasadas.",
   );
   const area = host();
@@ -2123,6 +2126,11 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
         }
         context.fillStyle = fill;
         if (segment.state === "leyendo-sin-asignar") {
+          // Media barra sobre el fondo de «fuera del circuito», no sobre el del panel: sola, la
+          // franja del panel a cada lado se leía como una raya negra en el modo oscuro.
+          context.fillStyle = fills.fuera;
+          context.fillRect(x0, y, w, rowHeight);
+          context.fillStyle = fill;
           context.fillRect(x0, y + rowHeight / 4, w, rowHeight / 2);
         } else {
           context.fillRect(x0, y, w, rowHeight);
@@ -2198,7 +2206,7 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
       [EXPLAINED_SWATCH, "franja de arriba: producción parada"],
       ["var(--viz-ausente)", "asignado y sin leer, menos de una hora"],
       ["var(--viz-grid)", FLEET_STATE_LABEL.fuera],
-      ["linear-gradient(transparent 30%, var(--viz-series) 30% 70%, transparent 70%)", FLEET_STATE_LABEL["leyendo-sin-asignar"]],
+      ["linear-gradient(var(--viz-grid) 30%, var(--viz-series) 30% 70%, var(--viz-grid) 70%)", FLEET_STATE_LABEL["leyendo-sin-asignar"]],
       [HATCH_SWATCH, FLEET_STATE_LABEL["sin-datos"]],
     ]),
   );
@@ -2310,7 +2318,13 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
   responsive(area, (width) => {
     area.replaceChildren();
     const left = 40;
-    const top = 16;
+    // Dos filas encima del dibujo, con aire entre ellas: la franja del tramo declarado (6 px, para
+    // que también se vea en el móvil) y, aparte, los puntos de hallazgo. Antes iban en la misma
+    // fila y se tocaban.
+    const stripHeight = 6;
+    const markRow = stripHeight + 4;
+    const markRadius = 4;
+    const top = markRow + markRadius * 2 + 6;
     const plotHeight = 180;
     const height = top + plotHeight + 22;
     const plotWidth = Math.max(10, width - left - 4);
@@ -2330,7 +2344,7 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
     rows.forEach((row, index) => {
       const x0 = left + index * step;
       const sectionFill = row.section === null || row.section === undefined ? undefined : sections.get(row.section);
-      if (sectionFill !== undefined) canvas.append(svg("rect", { x: x0, y: 2, width: step, height: 5, fill: sectionFill }));
+      if (sectionFill !== undefined) canvas.append(svg("rect", { x: x0, y: 0, width: step, height: stripHeight, fill: sectionFill }));
       const day = row.produccion;
       if (day === null) {
         canvas.append(svg("rect", { x: x0, y: top + plotHeight - 4, width: Math.max(1, step * 0.6), height: 4, fill: HATCH_FILL }));
@@ -2369,7 +2383,9 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
         );
       }
       if (row.marks.length > 0) {
-        canvas.append(svg("circle", { cx: x0 + step / 2, cy: 7, r: Math.min(4, Math.max(2, step / 2)), fill: "var(--viz-accent)" }));
+        canvas.append(
+          svg("circle", { cx: x0 + step / 2, cy: markRow + markRadius, r: Math.min(markRadius, Math.max(2, step / 2)), fill: "var(--viz-accent)" }),
+        );
       }
     });
     // Rótulos del eje: la posición en el anillo, las que quepan.
