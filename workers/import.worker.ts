@@ -1329,11 +1329,18 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
       );
       return;
     }
+    // El defecto se enseña con su nombre y su primera línea de pila: sin eso no se puede reproducir con
+    // un fixture sintético, que es lo que el mensaje pide. Nunca lleva datos: solo el tipo del error, su
+    // texto y dónde saltó.
+    const detail =
+      error instanceof Error
+        ? `${error.name}: ${error.message}${error.stack === undefined ? "" : ` — ${error.stack.split("\n").slice(1, 3).join(" | ").trim()}`}`
+        : String(error);
     emit(
       {
         type: "error",
         code: "INTERNAL",
-        cause: "Fallo no previsto del motor de importación.",
+        cause: `Fallo no previsto del motor de importación (${detail}).`,
         recovery: "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
       },
       jobId,
