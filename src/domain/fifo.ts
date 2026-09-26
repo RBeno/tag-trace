@@ -19,6 +19,7 @@
  * eso lo que este módulo produce son candidatos, nunca averías confirmadas.
  */
 
+import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
 import type { Reading } from "./reading.js";
 
 export interface FifoThresholds {
@@ -121,7 +122,10 @@ interface SpanPass {
  * Calcada de `staysOf` en `charging.ts`, sin la parada intermedia: solo entrada y salida. Lo que no
  * encaja sale como `incompleta` en vez de forzarse.
  */
-function passesOf(hits: readonly { readonly role: "entrada" | "salida"; readonly utcMs: number }[]): readonly SpanPass[] {
+function passesOf(
+  hits: readonly { readonly role: "entrada" | "salida"; readonly utcMs: number }[],
+  straddlesGap: (fromUtcMs: number, toUtcMs: number) => boolean,
+): readonly SpanPass[] {
   const passes: SpanPass[] = [];
   let open: number | null = null;
 
@@ -134,9 +138,11 @@ function passesOf(hits: readonly { readonly role: "entrada" | "salida"; readonly
       continue;
     }
 
-    // Salida.
+    // Salida. Con un tramo entero sin datos cargados entre la entrada y la salida no se sabe cuánto
+    // tardó (R-DAT-007): darla por completa la haría «adelantada» por todos los que pasaron en la
+    // exportación siguiente.
     if (open !== null) {
-      passes.push({ enteredUtcMs: open, leftUtcMs: hit.utcMs, state: "completa" });
+      passes.push({ enteredUtcMs: open, leftUtcMs: hit.utcMs, state: straddlesGap(open, hit.utcMs) ? "incompleta" : "completa" });
       open = null;
       continue;
     }
@@ -281,8 +287,13 @@ export function buildFifoReport(
   cohortReadings: readonly Reading[],
   spans: readonly LoadedSpan[],
   thresholds: FifoThresholds,
+  /** Los tramos con datos cargados: una pasada que cruza el hueco entre dos no es una pasada. */
+  coverage: readonly Interval[] = [],
 ): FifoReport {
   if (spans.length === 0) return { cohortId, spans: [] };
+  const gaps = uncoveredGaps(mergeIntervals([...coverage]));
+  const straddlesGap = (fromUtcMs: number, toUtcMs: number): boolean =>
+    gaps.some((gap) => fromUtcMs <= gap.from && toUtcMs >= gap.to);
 
   const spanByEntryOrExit = new Map<string, { readonly span: LoadedSpan; readonly role: "entrada" | "salida" }>();
   for (const span of spans) {
@@ -308,7 +319,7 @@ export function buildFifoReport(
   for (const [key, hits] of hitsByVehicleAndSpan) {
     const [agvId, spanId] = key.split("\u0000") as [string, string];
     hits.sort((a, b) => a.utcMs - b.utcMs);
-    for (const pass of passesOf(hits)) {
+    for (const pass of passesOf(hits, straddlesGap)) {
       if (pass.state === "completa" && pass.enteredUtcMs !== null && pass.leftUtcMs !== null) {
         completedBySpan.get(spanId)?.push({ agvId, enteredUtcMs: pass.enteredUtcMs, leftUtcMs: pass.leftUtcMs });
       }

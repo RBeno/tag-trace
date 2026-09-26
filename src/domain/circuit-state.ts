@@ -43,6 +43,9 @@ export interface CircuitStateInput {
   readonly flow: FlowReport;
   /** Tags cuya espera está explicada —parada precisa o semáforo, declarados o candidatos— y su clase. */
   readonly timeCritical: ReadonlyMap<string, string>;
+  /** La lista `circuito` en su orden y los tags con alguna lectura: un declarado sin lecturas dentro de una zona oscura es su causa. */
+  readonly declaredOrder?: readonly string[];
+  readonly readTags?: ReadonlySet<string>;
   readonly reachTags: number;
   /** AGV distintos que hacen falta para hablar de un sitio y no de un AGV. */
   readonly minVehicles: number;
@@ -85,7 +88,14 @@ export interface DarkZone {
   readonly typicalMs: number;
   /** Proporción de pasadas que se saltan algún tag de la zona. */
   readonly skipShare: number;
-  readonly cause: "salta-tag" | "tramo-largo";
+  /**
+   * `tag-sin-lecturas`: la lista `circuito` declara ahí un tag que nadie lee, y la información que
+   * falta es la suya. `salta-tag`: la mayoría de pasadas se salta algún tag. `tramo-largo`: se lee todo
+   * y el tramo tarda.
+   */
+  readonly cause: "tag-sin-lecturas" | "salta-tag" | "tramo-largo";
+  /** Con `tag-sin-lecturas`, los tags declarados sin lecturas dentro de la zona, en el orden de la lista. */
+  readonly missingTags: readonly string[];
 }
 
 export interface NightSegment {
@@ -160,7 +170,12 @@ export function concentrated(
   const tags = Math.max(1, exposure.size);
   for (const [tagId, count] of counts) {
     if (count < 2) continue;
-    const expected = expectedElsewhere(totalCount, count, exposure.get(tagId) ?? 0, totalExposure);
+    // Sin exposición no hay azar con que comparar: lo esperado sería 0 y cualquier recuento saldría
+    // señalado. Un cero sin oportunidad no es un cero (R-OPP-013): un retenedor cuyas pasadas quedan
+    // fuera de la ventana, o un tag sin salidas medibles, no se acusa por eso.
+    const own = exposure.get(tagId) ?? 0;
+    if (own <= 0) continue;
+    const expected = expectedElsewhere(totalCount, count, own, totalExposure);
     if (tags * poissonTail(count, expected) <= maxFalsePoints) flagged.set(tagId, expected);
   }
   return flagged;
@@ -366,6 +381,40 @@ export function buildCircuitState(input: CircuitStateInput, thresholds: CircuitS
       else darkSegments[index] = true;
     });
   }
+  // Los tags que la lista declara entre los dos extremos de la zona y nadie lee. El recorrido por la
+  // lista está acotado: entre los extremos solo pueden aparecer los propios tags de la zona (los que
+  // se leen) y candidatos sin lecturas. Si la lista escribe los extremos en otro orden —dos vecinos
+  // cambiados de sitio (R-GRA-015)—, recorrerla hacia delante daría la vuelta entera y nombraría
+  // cualquier declarado sin lecturas de otro punto del circuito como causa de esta zona; por eso se
+  // prueba en los dos sentidos y se acepta el que cabe. Si ninguno cabe, la lista no dice nada de
+  // esta zona y la causa la dan las lecturas.
+  const declaredOrder = input.declaredOrder ?? [];
+  const readTags = input.readTags ?? new Set<string>();
+  const declaredWithoutReadings = (zoneTags: readonly string[]): string[] => {
+    const from = zoneTags[0] as string;
+    const to = zoneTags[zoneTags.length - 1] as string;
+    const start = declaredOrder.indexOf(from);
+    const end = declaredOrder.indexOf(to);
+    const length = declaredOrder.length;
+    if (start < 0 || end < 0 || start === end) return [];
+    const inZone = new Set(zoneTags);
+    const walk = (direction: 1 | -1): string[] | null => {
+      const between: string[] = [];
+      let seenOfZone = 0;
+      for (let at = (start + direction + length) % length; at !== end; at = (at + direction + length) % length) {
+        const tagId = declaredOrder[at] as string;
+        if (!readTags.has(tagId)) between.push(tagId);
+        else if (inZone.has(tagId)) seenOfZone += 1;
+        else return null; // Un tag leído que no es de la zona: por aquí la lista no describe este tramo.
+        if (seenOfZone > zoneTags.length - 2) return null;
+      }
+      return between;
+    };
+    const forward = walk(1);
+    const backward = walk(-1);
+    if (forward !== null && backward !== null) return forward.length <= backward.length ? forward : backward;
+    return forward ?? backward ?? [];
+  };
   const darkZones: DarkZone[] = [];
   if (typicalGapMs !== null && darkSegments.some(Boolean) && !darkSegments.every(Boolean)) {
     // Se empieza justo después de un tramo claro para no partir en dos una zona que da la vuelta.
@@ -377,12 +426,14 @@ export function buildCircuitState(input: CircuitStateInput, thresholds: CircuitS
       const samples = current.reduce((sum, index) => sum + (gapsOf[index]?.length ?? 0), 0);
       const skips = current.reduce((sum, index) => sum + (skipsOf[index] ?? 0), 0);
       const skipShare = samples === 0 ? 0 : skips / samples;
+      const missingTags = declaredWithoutReadings(tags);
       darkZones.push({
         tags,
         gapMs: Math.max(...current.map((index) => segmentGap[index] ?? 0)),
         typicalMs: typicalGapMs,
         skipShare,
-        cause: skipShare >= 0.5 ? "salta-tag" : "tramo-largo",
+        cause: missingTags.length > 0 ? "tag-sin-lecturas" : skipShare >= 0.5 ? "salta-tag" : "tramo-largo",
+        missingTags,
       });
       current = [];
     };

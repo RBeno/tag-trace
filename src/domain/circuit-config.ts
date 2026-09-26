@@ -64,6 +64,25 @@ export interface ZoneConfig {
 const LANE_ROLES = LIST_FUNCTIONS["carga-online"];
 
 /**
+ * Ordena las filas de una lista por `orden` cuando **todas** lo traen, y por orden del fichero si no.
+ * Mezclar las dos cosas —unas filas con `orden` y otras sin él— no tiene un orden honesto: el `null`
+ * no es «primero» ni «último», así que se avisa y manda el fichero entero.
+ */
+function inListOrder(entries: readonly ConfigEntry[], what: string, problems: string[]): readonly ConfigEntry[] {
+  const withOrder = entries.filter((entry) => entry.order !== null);
+  if (withOrder.length === entries.length) {
+    return [...entries].sort((a, b) => (a.order as number) - (b.order as number));
+  }
+  if (withOrder.length > 0) {
+    problems.push(
+      `${what}: ${withOrder.length} de ${entries.length} filas traen «orden» y el resto no. ` +
+        "Se usa el orden del fichero para todas: un orden a medias no es un orden.",
+    );
+  }
+  return entries;
+}
+
+/**
  * Monta las calles a partir de las filas de la lista `carga-online`.
  *
  * El orden lo fija la columna `orden` cuando está y el orden del fichero cuando no, igual que hace
@@ -126,13 +145,36 @@ export function readCoLanes(entries: readonly ConfigEntry[]): CoLaneConfig {
       continue;
     }
 
-    // Con `orden` cuando lo hay, y con el orden del fichero cuando no: es la misma degradación que
-    // ya sigue la lista `circuito`, y ahí sí es honesta porque la secuencia física existe igual.
-    const ordered = [...group].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const repeatedTags = [...new Set(group.map((item) => item.tagId).filter((tagId, index, all) => all.indexOf(tagId) !== index))];
+    if (repeatedTags.length > 0) {
+      problems.push(
+        `La calle «${laneId}» repite el tag ${repeatedTags.join(", ")}. No se monta: un tag no puede ` +
+          "estar dos veces en la misma calle.",
+      );
+      continue;
+    }
+    const orders = group.map((item) => item.order).filter((order): order is number => order !== null);
+    if (new Set(orders).size !== orders.length) {
+      problems.push(
+        `La calle «${laneId}» declara el mismo «orden» para dos tags. No se monta: cuál va antes no lo ` +
+          "decide el programa.",
+      );
+      continue;
+    }
     const stop = roleOf("parada-precisa")[0] as ConfigEntry;
     // Sin entrada declarada, la calle empieza en su parada.
     const entry = roleOf("entrada")[0] ?? stop;
     const exit = roleOf("salida")[0] as ConfigEntry;
+    if (stop.tagId === exit.tagId || entry.tagId === exit.tagId || (entry !== stop && entry.tagId === stop.tagId)) {
+      problems.push(
+        `La calle «${laneId}» da el mismo tag a dos papeles distintos. No se monta: la entrada, la ` +
+          "parada precisa y la salida son tags distintos.",
+      );
+      continue;
+    }
+    // Con `orden` cuando lo hay, y con el orden del fichero cuando no: es la misma degradación que
+    // ya sigue la lista `circuito`, y ahí sí es honesta porque la secuencia física existe igual.
+    const ordered = inListOrder(group, `La calle «${laneId}»`, problems);
 
     lanes.push({
       laneId,
@@ -144,7 +186,40 @@ export function readCoLanes(entries: readonly ConfigEntry[]): CoLaneConfig {
     });
   }
 
-  return { lanes, problems };
+  // Dos calles no comparten la parada precisa ni la salida: si lo hacen, las estancias de una se
+  // atribuirían a la otra. La entrada sí puede ser común (una bifurcación hacia dos calles): se avisa.
+  const owners = (pick: (lane: CoLane) => string): Map<string, CoLane[]> => {
+    const byTag = new Map<string, CoLane[]>();
+    for (const lane of lanes) {
+      const list = byTag.get(pick(lane)) ?? [];
+      list.push(lane);
+      byTag.set(pick(lane), list);
+    }
+    return byTag;
+  };
+  const shared = new Set<string>();
+  for (const [role, pick] of [
+    ["parada precisa", (lane: CoLane): string => lane.stopTagId],
+    ["salida", (lane: CoLane): string => lane.exitTagId],
+  ] as const) {
+    for (const [tagId, group] of owners(pick)) {
+      if (group.length < 2) continue;
+      problems.push(
+        `Las calles ${group.map((lane) => `«${lane.laneId}»`).join(" y ")} comparten la ${role} ${tagId}. ` +
+          "No se montan: las estancias de una se contarían en la otra.",
+      );
+      for (const lane of group) shared.add(lane.laneId);
+    }
+  }
+  for (const [tagId, group] of owners((lane) => lane.entryTagId)) {
+    if (group.length < 2 || group.every((lane) => shared.has(lane.laneId))) continue;
+    problems.push(
+      `Las calles ${group.map((lane) => `«${lane.laneId}»`).join(" y ")} comparten la entrada ${tagId}: ` +
+        "se montan, pero la entrada común no dice a cuál va cada vehículo hasta que lee la parada.",
+    );
+  }
+
+  return { lanes: lanes.filter((lane) => !shared.has(lane.laneId)), problems };
 }
 
 /** Lee la zona de cada tag de la lista `zona`. */
@@ -260,10 +335,9 @@ export interface LapAnchorsConfig {
 export function readLapAnchors(entries: readonly ConfigEntry[]): LapAnchorsConfig {
   const problems: string[] = [];
   const seen = new Set<string>();
-  // Con `orden` cuando lo hay, y con el orden del fichero cuando no: la misma degradación honesta
-  // que ya sigue `readCoLanes` (el `sort` de JS es estable, así que el empate a 0 conserva la
-  // posición original).
-  const ordered = [...entries].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  // Con `orden` cuando todas lo traen, y con el orden del fichero cuando no: la misma degradación
+  // honesta que ya sigue `readCoLanes`.
+  const ordered = inListOrder(entries, "La lista de anclas", problems);
 
   const anchors: string[] = [];
   for (const entry of ordered) {

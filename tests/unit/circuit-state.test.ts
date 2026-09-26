@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { buildCircuitState, poissonTail, type CircuitStateInput } from "../../src/domain/circuit-state.js";
+import { buildCircuitState, concentrated, poissonTail, type CircuitStateInput } from "../../src/domain/circuit-state.js";
 import type { FlowReport, Retention, VehicleStop } from "../../src/domain/flow-stops.js";
 import type { Transition } from "../../src/domain/graph.js";
 import { buildSegmentBands, type Regime } from "../../src/domain/segment-bands.js";
@@ -83,6 +83,7 @@ function state(
   flow: Partial<FlowReport>,
   transitions: readonly Transition[] = laps(),
   timeCritical: ReadonlyMap<string, string> = new Map(),
+  extra: Partial<CircuitStateInput> = {},
 ) {
   const bands = buildSegmentBands(transitions, RING, DAY, { minBandSamples: 20 }, 30 * SECOND);
   const input: CircuitStateInput = {
@@ -94,6 +95,7 @@ function state(
     reachTags: 2,
     minVehicles: 2,
     headStallMs: 120 * SECOND,
+    ...extra,
   };
   return buildCircuitState(input, { darkZoneFactor: 1.5, maxFalsePoints: 0.01 });
 }
@@ -169,8 +171,31 @@ describe("zonas oscuras (R-GRA-014)", () => {
     expect(explained.explainedSlow).toMatchObject([{ tagId: "T15", function: "parada-precisa" }]);
   });
 
+  it("un tag declarado sin lecturas dentro de la zona es su causa, y se nombra", () => {
+    // La lista declara T15b entre T15 y T16, y nadie lo lee: la información que falta es la suya.
+    const declared = [...RING.slice(0, 16), "T15b", ...RING.slice(16)];
+    const missing = state({}, laps({ long15: true }), new Map(), { declaredOrder: declared, readTags: new Set(RING) });
+    expect(missing.darkZones).toMatchObject([{ tags: ["T15", "T16"], cause: "tag-sin-lecturas", missingTags: ["T15b"] }]);
+    // Si T15b sí se lee, la causa vuelve a ser el tramo.
+    const read = state({}, laps({ long15: true }), new Map(), { declaredOrder: declared, readTags: new Set([...RING, "T15b"]) });
+    expect(read.darkZones).toMatchObject([{ cause: "tramo-largo", missingTags: [] }]);
+  });
+
   it("un circuito sin huecos no tiene zonas oscuras", () => {
     expect(state({}).darkZones).toEqual([]);
+  });
+
+  it("si la lista escribe los extremos de la zona en otro orden, no nombra como causa un tag sin lecturas de otro sitio", () => {
+    // La lista pone T16 antes que T15 (vecinos cambiados, R-GRA-015) y declara T3b, sin lecturas, tras
+    // T3. Recorrer la lista de T15 a T16 hacia delante daba la vuelta entera y nombraba T3b como la
+    // información que falta en T15→T16. La lista no describe ese tramo: la causa la dan las lecturas.
+    const declared = ["T0", "T1", "T2", "T3", "T3b", ...RING.slice(4, 15), "T16", "T15", ...RING.slice(17)];
+    const result = state({}, laps({ long15: true }), new Map(), { declaredOrder: declared, readTags: new Set(RING) });
+    expect(result.darkZones).toMatchObject([{ tags: ["T15", "T16"], cause: "tramo-largo", missingTags: [] }]);
+    // Con la lista en el orden del anillo y T15b declarado entre medias, sí lo nombra.
+    const inOrder = [...RING.slice(0, 16), "T15b", ...RING.slice(16)];
+    const named = state({}, laps({ long15: true }), new Map(), { declaredOrder: inOrder, readTags: new Set(RING) });
+    expect(named.darkZones).toMatchObject([{ cause: "tag-sin-lecturas", missingTags: ["T15b"] }]);
   });
 });
 
@@ -179,5 +204,13 @@ describe("azar", () => {
     expect(poissonTail(0, 3)).toBe(1);
     expect(poissonTail(10, 10)).toBeCloseTo(0.542, 2);
     expect(poissonTail(20, 0.5)).toBeLessThan(1e-12);
+  });
+
+  it("un sitio sin exposición no se señala: sin oportunidad, lo esperado sería cero y cualquier recuento saldría", () => {
+    // X tiene dos recuentos y ninguna pasada con que compararse (R-OPP-013); A tiene tres sobre cien.
+    const flagged = concentrated(new Map([["X", 2], ["A", 3]]), new Map([["A", 100], ["B", 100]]), 0.01);
+    expect(flagged.has("X")).toBe(false);
+    // La misma concentración con exposición sí se juzga, y con cien pasadas por sitio tres no llaman la atención.
+    expect(concentrated(new Map([["X", 2], ["A", 3]]), new Map([["X", 1], ["A", 100], ["B", 100]]), 0.01).has("X")).toBe(true);
   });
 });

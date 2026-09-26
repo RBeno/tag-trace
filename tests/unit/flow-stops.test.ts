@@ -49,6 +49,8 @@ interface Plan {
   readonly offsetMs: number;
   /** Tiempo de más en la transición que sale del paso `step`. */
   readonly pauses?: ReadonlyMap<number, number>;
+  /** Parado sobre el tag del paso `step` ese tiempo, y lo vuelve a leer al arrancar. */
+  readonly rereads?: ReadonlyMap<number, number>;
 }
 
 /** Cada AGV recorre el anillo un tag cada 20 s, 180 pasos, con las esperas que se le digan. */
@@ -59,8 +61,7 @@ function drive(plans: readonly Plan[], steps = 180): { readings: Reading[]; tran
   for (const plan of plans) {
     let time = plan.offsetMs;
     let previous: { tag: string; time: number } | null = null;
-    for (let step = 0; step < steps; step += 1) {
-      const tag = RING[(plan.startTag + step) % RING.length] as string;
+    const read = (tag: string): void => {
       row += 1;
       readings.push({
         time: { utcMs: time, raw: String(time), zone: ZONE, flag: "ok" },
@@ -72,6 +73,15 @@ function drive(plans: readonly Plan[], steps = 180): { readings: Reading[]; tran
         transitions.push({ agvId: plan.agvId, from: previous.tag, to: tag, fromTime: previous.time, toTime: time, sameInstant: false });
       }
       previous = { tag, time };
+    };
+    for (let step = 0; step < steps; step += 1) {
+      const tag = RING[(plan.startTag + step) % RING.length] as string;
+      read(tag);
+      const reread = plan.rereads?.get(step);
+      if (reread !== undefined) {
+        time += reread;
+        read(tag);
+      }
       time += STEP + (plan.pauses?.get(step) ?? 0);
     }
   }
@@ -153,25 +163,41 @@ describe("paradas contra el flujo", () => {
     expect(flow.productionFlow[0]).toMatchObject({ vehicles: 6, inPlace: 6, notInPlace: [], orderKept: true });
   });
 
-  it("si uno que iba detrás aparece delante tras la parada, se dice quién pasó a quién", () => {
-    // Todos parados 15 min; F1, que iba un tag detrás de H, vuelve cuatro tags más allá (se saltó la
-    // lectura de tres) y aparece delante de H, que vuelve por el siguiente.
+  /** La parada de 15 min, con la transición que la cruza de cada AGV cambiada a voluntad. */
+  function flowWith(remap: (agvId: string) => string | null) {
     const all = queue(0).map((plan) => ({ ...plan, pauses: new Map([[90, 15 * 60_000]]) }));
     const { readings, transitions } = drive(all);
-    const jumped = transitions.map((transition) =>
-      transition.agvId === "F1" && transition.fromTime > 1_800_000 && transition.toTime - transition.fromTime > 10 * 60_000
-        ? { ...transition, to: "T13" }
-        : transition,
-    );
+    // La transición que cruza la parada de cada AGV es la única de más de 10 min.
+    const changed = transitions.map((transition) => {
+      const to = transition.toTime - transition.fromTime > 10 * 60_000 ? remap(transition.agvId) : null;
+      return to === null ? transition : { ...transition, to };
+    });
     const coverage = [{ from: 0, to: Math.max(...readings.map((reading) => reading.time.utcMs)) }];
     const production = productionStops(readings, CRITICAL, coverage, ZONE, SHIFTS, THRESHOLDS);
-    const bands = bandsOf(jumped, production.stops, coverage);
-    const flow = flowStops(
-      { transitions: jumped, coverage, bands, regimeOf: DAY, production, laneTags: new Set(), functionOf: new Map() },
+    const bands = bandsOf(changed, production.stops, coverage);
+    return flowStops(
+      { transitions: changed, coverage, bands, regimeOf: DAY, production, laneTags: new Set(), functionOf: new Map() },
       THRESHOLDS,
     );
+  }
+
+  it("si uno que iba detrás aparece delante tras la parada, por su sitio, se dice quién pasó a quién", () => {
+    // Todos parados 15 min; F1, que iba un tag detrás de H (T9 frente a T10), vuelve por T11 (un tag
+    // saltado: por su sitio) mientras H vuelve a leer su mismo T10: F1 aparece delante de H.
+    const flow = flowWith((agvId) => (agvId === "F1" ? "T11" : agvId === "H" ? "T10" : null));
+    expect(flow.productionFlow[0]?.notInPlace).toEqual([]);
     expect(flow.productionFlow[0]?.orderKept).toBe(false);
     expect(flow.productionFlow[0]?.orderChanges).toContainEqual({ agvId: "F1", passed: "H" });
+  });
+
+  it("uno que vuelve saltándose tags no cuenta en el orden: se dice que no siguió por su sitio, no que adelantó", () => {
+    // F1 vuelve cuatro tags más allá (se saltó tres). Su posición no es fiable: la auditoría enseñó al
+    // AGV que salta tags como «delante de» un vecino al que nunca adelantó. Se dice lo que se ve —no
+    // siguió por su sitio— y nada más.
+    const flow = flowWith((agvId) => (agvId === "F1" ? "T13" : null));
+    expect(flow.productionFlow[0]?.notInPlace).toEqual([{ agvId: "F1", fromTagId: "T9", toTagId: "T13", skipped: 3 }]);
+    expect(flow.productionFlow[0]?.orderChanges).toEqual([]);
+    expect(flow.productionFlow[0]?.orderKept).toBe(true);
   });
 
   it("sin tags críticos declarados, la base es la flota entera, y se dice", () => {
@@ -227,6 +253,58 @@ describe("paradas contra el flujo", () => {
   it("una transición de calle de carga no es una parada", () => {
     const { flow } = analyse(queue(5 * 60_000), CRITICAL, new Set(["T10", "T11"]));
     expect(flow.stops.some((stop) => stop.fromTagId === "T10" || stop.toTagId === "T11")).toBe(false);
+  });
+
+  it("el que entró a una calle de carga durante la parada de la producción cuenta, y siguió por su sitio", () => {
+    // Con T10 y T11 declarados como calle, la transición de H que cruza la parada (T10→T11) no es
+    // medible. Antes desaparecía del recuento —cinco AGV en vez de seis—; entrar a cargar es una
+    // salida legítima del anillo, así que está en el circuito y por su sitio.
+    const all = queue(0).map((plan) => ({ ...plan, pauses: new Map([[90, 15 * 60_000]]) }));
+    const { flow } = analyse(all, CRITICAL, new Set(["T10", "T11"]));
+    expect(flow.productionFlow[0]).toMatchObject({ vehicles: 6, inPlace: 6, notInPlace: [] });
+  });
+});
+
+describe("paradas que el dato enseña de otra forma", () => {
+  /** Cuatro AGV repartidos; los de fuera van a 1.000 s de desfase para que A pare con el anillo poblado. */
+  const OTHERS: Plan[] = [
+    { agvId: "B", startTag: 10, offsetMs: 1_000_000 },
+    { agvId: "C", startTag: 20, offsetMs: 1_000_000 },
+    { agvId: "D", startTag: 30, offsetMs: 1_000_000 },
+    { agvId: "E", startTag: 5, offsetMs: 1_000_000 },
+  ];
+
+  it("doce minutos parado sobre un tag que se relee al arrancar es una parada sin explicación, medida contra el tramo que sale de él", () => {
+    // El par (T18, T18) no tiene horquilla; lo habitual con que se compara es lo que se tarda en dejar
+    // T18: la horquilla de T18→T19. Antes esta parada no existía para el flujo.
+    const plans: Plan[] = [
+      { agvId: "A", startTag: 0, offsetMs: 1_000_000, rereads: new Map([[58, 12 * 60_000]]) },
+      { agvId: "G", startTag: 0, offsetMs: 0 },
+      ...OTHERS,
+    ];
+    const { production, flow } = analyse(plans);
+    expect(production.stops).toEqual([]);
+    const stop = flow.stops.find((entry) => entry.agvId === "A");
+    expect(stop).toMatchObject({ fromTagId: "T18", toTagId: "T18", usualMs: STEP, justification: "sin-explicacion" });
+    expect(stop?.excessMs).toBe(12 * 60_000 - STEP);
+    // Doce minutos pasan de los dos de bloqueo, y la producción seguía.
+    expect(flow.blockages.map((blockage) => [blockage.agvId, blockage.tagId])).toEqual([["A", "T18"]]);
+  });
+
+  it("un AGV que calla horas con su último tag en el anillo no retiene a nadie si otros pasaron por ese tag", () => {
+    // G deja de leer dos horas con T20 como último tag; mientras, B–E pasan por T20 una y otra vez. A
+    // para 90 s en T18, a dos tags de «donde está» G. En una guía única nadie pasa por donde hay un AGV
+    // parado: G no estaba ahí, y la parada de A queda sin explicación, con su evidencia.
+    const plans: Plan[] = [
+      { agvId: "A", startTag: 0, offsetMs: 1_000_000, pauses: new Map([[58, 90_000]]) },
+      { agvId: "G", startTag: 0, offsetMs: 0, pauses: new Map([[60, 2 * 3_600_000]]) },
+      ...OTHERS,
+    ];
+    const { flow } = analyse(plans);
+    const stop = flow.stops.find((entry) => entry.agvId === "A");
+    expect(stop).toMatchObject({ fromTagId: "T18", justification: "sin-explicacion", aheadAgvId: null });
+    expect(stop?.aheadEvidence?.agvId).toBe("G");
+    expect(flow.retentions.filter((retention) => retention.holderAgvId === "G")).toEqual([]);
   });
 });
 

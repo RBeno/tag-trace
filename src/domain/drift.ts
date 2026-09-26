@@ -5,7 +5,8 @@
  * vehículo que no lee un tag es indistinguible entre «nunca lo llevó en memoria» y «lo perdió». Lo
  * que separa las dos explicaciones es el tiempo: leído antes y no ahora es un **cambio** —murió, se
  * sustituyó o se retiró—; no leído en ninguna ventana es obsoleto consolidado, con más soporte que
- * una sola muestra pero sin llegar a `confirmed` — eso exige ir a mirarlo (R-EVI-006).
+ * una sola muestra pero sin llegar a `confirmed` — eso exige ir a mirarlo (R-EVI-006). Un cambio se
+ * **afirma** solo si la ausencia no se explica por azar (`AbsenceTest`); si no, se enseña sin afirmar.
  *
  * **Sustitución candidata (R-DAT-017).** Un tag que desaparece y otro que aparece pueden ocupar el
  * mismo hueco de la secuencia de lecturas: si comparten vecino dominante en el mismo lado —el mismo
@@ -37,6 +38,7 @@
  */
 
 import { mergeIntervals, type Interval } from "./coverage.js";
+import { compareReadings, type SourceDirection } from "./order.js";
 import type { Reading } from "./reading.js";
 
 export interface DriftThresholds {
@@ -60,13 +62,44 @@ export interface DriftThresholds {
    * la misma idea aplicada aquí a cuántos vehículos leen un tag en vez de a cuántas veces se lee.
    */
   readonly minAdoptionShare: number;
+  /**
+   * Probabilidad máxima de que la ausencia de un `desaparecido` o un `nuevo` sea casualidad
+   * (`(1 − tasa)^oportunidades ≤ maxChance`), la misma prueba de azar que la suma entre anclas
+   * (`tagChanges.maxChance`, R-DAT-021). Por encima, el hallazgo se enseña «sin afirmar» con su cifra.
+   */
+  readonly maxChance: number;
+}
+
+/**
+ * La prueba de azar de un `desaparecido` o un `nuevo` (OQ-138, 2026-09-26). Antes eran binarios: un
+ * tag con una sola lectura temprana salía como «cambió». Ahora se afirman solo si la ausencia en el
+ * otro periodo es improbable por azar, con la misma idea que la suma entre anclas: la **tasa** es lo
+ * que se leía el tag frente a su vecino dominante en el periodo en que sí se leyó, y las
+ * **oportunidades** son las lecturas de ese mismo vecino en el otro periodo —cada una es una pasada por
+ * su sitio en la que el tag pudo haberse leído—. Sin vecino, o sin lecturas suyas en el otro periodo,
+ * no hubo oportunidades y no se afirma (`chance` 1). Sustituye a la marca `weakSupport`: pocas
+ * lecturas dan una tasa baja, y la prueba lo recoge con su cifra en vez de con una marca.
+ */
+export interface AbsenceTest {
+  /** `true` si la ausencia no se explica por azar: `opportunities > 0` y `chance ≤ maxChance`. */
+  readonly affirmed: boolean;
+  /** Probabilidad de que la ausencia sea casualidad dada la tasa y las oportunidades; 1 sin oportunidades. */
+  readonly chance: number;
+  /** Lecturas del vecino en el otro periodo: las pasadas por su sitio en que pudo haberse leído. */
+  readonly opportunities: number;
+  /** El vecino dominante con que se midió, o `null` si el tag no tiene firma de vecinos. */
+  readonly neighborTagId: string | null;
 }
 
 export type TagDrift =
-  /** Se leía en el periodo temprano y no en el tardío: cambió, y el dato no dice por qué. */
-  | { readonly kind: "desaparecido"; readonly tagId: string; readonly readingsBefore: number }
-  /** Sin lecturas en el periodo temprano y con lecturas en el tardío: sustitución o instalación. */
-  | { readonly kind: "nuevo"; readonly tagId: string; readonly readingsAfter: number }
+  /**
+   * Se leía en el periodo temprano y no en el tardío: cambió, y el dato no dice por qué. `affirmed`
+   * solo si la ausencia después es improbable por azar (`AbsenceTest`); si no, se enseña aparte como
+   * «sin afirmar» con su cifra, nunca se calla.
+   */
+  | ({ readonly kind: "desaparecido"; readonly tagId: string; readonly readingsBefore: number } & AbsenceTest)
+  /** Sin lecturas en el periodo temprano y con lecturas en el tardío: sustitución o instalación. Misma prueba. */
+  | ({ readonly kind: "nuevo"; readonly tagId: string; readonly readingsAfter: number } & AbsenceTest)
   /** Sin ninguna lectura en los dos periodos: obsoleto consolidado, nunca confirmado por esto solo. */
   | { readonly kind: "obsoleto-consolidado"; readonly tagId: string }
   /**
@@ -168,8 +201,8 @@ function bump(target: Map<string, Map<string, number>>, key: string, neighbor: s
  * propósito). Una repetición inmediata del mismo tag no aporta vecino y se descarta, mismo criterio
  * que ya usa `read-matrix.ts` para pasos nulos.
  */
-function buildNeighborTally(readings: readonly Reading[], period: Interval): NeighborTally {
-  const byVehicle = new Map<string, Array<{ readonly tagId: string; readonly utcMs: number }>>();
+function buildNeighborTally(readings: readonly Reading[], period: Interval, direction: SourceDirection): NeighborTally {
+  const byVehicle = new Map<string, Reading[]>();
   for (const entry of readings) {
     const instant = entry.time.utcMs;
     if (instant < period.from || instant > period.to) continue;
@@ -178,16 +211,18 @@ function buildNeighborTally(readings: readonly Reading[], period: Interval): Nei
       seq = [];
       byVehicle.set(entry.agvId, seq);
     }
-    seq.push({ tagId: entry.tagId, utcMs: instant });
+    seq.push(entry);
   }
 
   const predecessors = new Map<string, Map<string, number>>();
   const successors = new Map<string, Map<string, number>>();
   for (const seq of byVehicle.values()) {
-    seq.sort((a, b) => a.utcMs - b.utcMs);
+    // Orden canónico (ADR-0013), como `tag-changes.ts`: dos lecturas del mismo instante se desempatan
+    // por fichero y fila, no por el orden de llegada al array.
+    seq.sort((a, b) => compareReadings(a, b, direction));
     for (let index = 1; index < seq.length; index += 1) {
-      const prev = seq[index - 1] as { readonly tagId: string; readonly utcMs: number };
-      const curr = seq[index] as { readonly tagId: string; readonly utcMs: number };
+      const prev = seq[index - 1] as Reading;
+      const curr = seq[index] as Reading;
       if (prev.tagId === curr.tagId) continue;
       bump(successors, prev.tagId, curr.tagId);
       bump(predecessors, curr.tagId, prev.tagId);
@@ -247,6 +282,32 @@ export function sharedNeighborMatch(early: NeighborSignature, late: NeighborSign
 }
 
 /**
+ * La prueba de azar de una ausencia. `reads` son las lecturas del tag en el periodo en que sí se leyó
+ * (`refCounts`, el mismo periodo de su firma); las oportunidades salen del otro periodo (`otherCounts`).
+ * De los dos vecinos dominantes se toma el que más oportunidades da: el que más se leyó en el otro
+ * periodo, porque es el que más veces deja al tag sin excusa.
+ */
+function absenceTest(
+  reads: number,
+  signature: NeighborSignature,
+  refCounts: ReadonlyMap<string, number>,
+  otherCounts: ReadonlyMap<string, number>,
+  maxChance: number,
+): AbsenceTest {
+  const neighbors = [signature.predecessor, signature.successor].filter((tagId): tagId is string => tagId !== null);
+  let neighborTagId: string | null = null;
+  for (const candidate of neighbors) {
+    if (neighborTagId === null || (otherCounts.get(candidate) ?? 0) > (otherCounts.get(neighborTagId) ?? 0)) neighborTagId = candidate;
+  }
+  if (neighborTagId === null) return { affirmed: false, chance: 1, opportunities: 0, neighborTagId: null };
+  const refReads = refCounts.get(neighborTagId) ?? 0;
+  const rate = refReads === 0 ? 1 : Math.min(1, reads / refReads);
+  const opportunities = otherCounts.get(neighborTagId) ?? 0;
+  const chance = opportunities === 0 ? 1 : (1 - rate) ** opportunities;
+  return { affirmed: opportunities > 0 && chance <= maxChance, chance, opportunities, neighborTagId };
+}
+
+/**
  * Compara el primer y el último periodo cubiertos, a partir de la cobertura ya calculada del
  * circuito. `knownTags` es la unión de las listas de planta declaradas (circuito, memoria,
  * mantenimiento, emergencia, carga online, crítico): es lo único que permite saber que un tag existe
@@ -257,6 +318,8 @@ export function compareDistantPeriods(
   coverage: readonly Interval[],
   knownTags: ReadonlySet<string>,
   thresholds: DriftThresholds,
+  /** El orden de la fuente, para desempatar lecturas del mismo instante en la firma de vecinos. */
+  direction: SourceDirection = "oldest-first",
 ): DriftComparison {
   const merged = mergeIntervals(coverage);
   if (merged.length < 2) {
@@ -305,10 +368,12 @@ export function compareDistantPeriods(
   const paired = new Map<string, { readonly nuevoTagId: string; readonly side: "predecesor" | "sucesor"; readonly neighbor: string }>();
   const absorbedNuevo = new Set<string>();
 
-  if (disappearedCandidates.length > 0 && appearedCandidates.length > 0) {
-    const earlyTally = buildNeighborTally(readings, earlyPeriod);
-    const lateTally = buildNeighborTally(readings, latePeriod);
+  // Las firmas de vecinos sirven a la sustitución candidata y a la prueba de azar; se calculan una vez
+  // por periodo y solo si hay algún tag que desaparece o aparece.
+  const earlyTally = disappeared.length > 0 ? buildNeighborTally(readings, earlyPeriod, direction) : null;
+  const lateTally = appeared.length > 0 ? buildNeighborTally(readings, latePeriod, direction) : null;
 
+  if (disappearedCandidates.length > 0 && appearedCandidates.length > 0 && earlyTally !== null && lateTally !== null) {
     const matchesForD = new Map<string, Array<{ readonly nTag: string; readonly match: SharedNeighborMatch }>>();
     const matchesForN = new Map<string, string[]>();
     for (const d of disappearedCandidates) {
@@ -340,7 +405,18 @@ export function compareDistantPeriods(
   for (const entry of disappeared) {
     const pair = paired.get(entry.tagId);
     if (pair === undefined) {
-      tagDrifts.push({ kind: "desaparecido", tagId: entry.tagId, readingsBefore: entry.readingsBefore });
+      tagDrifts.push({
+        kind: "desaparecido",
+        tagId: entry.tagId,
+        readingsBefore: entry.readingsBefore,
+        ...absenceTest(
+          entry.readingsBefore,
+          earlyTally === null ? { predecessor: null, successor: null } : signatureOf(entry.tagId, earlyTally),
+          early.readingsByTag,
+          late.readingsByTag,
+          thresholds.maxChance,
+        ),
+      });
       continue;
     }
     tagDrifts.push({
@@ -355,7 +431,18 @@ export function compareDistantPeriods(
   }
   for (const entry of appeared) {
     if (absorbedNuevo.has(entry.tagId)) continue;
-    tagDrifts.push({ kind: "nuevo", tagId: entry.tagId, readingsAfter: entry.readingsAfter });
+    tagDrifts.push({
+      kind: "nuevo",
+      tagId: entry.tagId,
+      readingsAfter: entry.readingsAfter,
+      ...absenceTest(
+        entry.readingsAfter,
+        lateTally === null ? { predecessor: null, successor: null } : signatureOf(entry.tagId, lateTally),
+        late.readingsByTag,
+        early.readingsByTag,
+        thresholds.maxChance,
+      ),
+    });
   }
   for (const tagId of consolidated) {
     tagDrifts.push({ kind: "obsoleto-consolidado", tagId });

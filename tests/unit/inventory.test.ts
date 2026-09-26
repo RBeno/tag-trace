@@ -401,16 +401,47 @@ describe("inventario contrastado", () => {
     expect(fila?.action).toBe("comprobar-si-la-calle-se-usa");
   });
 
-  it("un tag de calle que sí se lee queda fuera de toda tasa, como mantenimiento", () => {
-    const readings = [...laps("A", ["0100", "0200"], 12), ...laps("A", ["7002"], 3)];
+  it("un tag de calle que se lee es un tag del circuito: activo si está en memoria, y la parada de una calle servida que nadie lee es crítico sin lectura (R-GRA-004, OQ-135)", () => {
+    const calle = ["7001", "7002", "7003"];
+    const readings = [...laps("A", ["0100", "0200"], 12), ...laps("A", ["7001", "7003"], 3)];
     const inventory = buildTagInventory(
       readings,
-      lists({ virtual: ["0100", "0200"], memory: ["0100", "0200"], charging: ["7002"] }),
+      lists({
+        virtual: ["0100", "0200"],
+        memory: ["0100", "0200", ...calle],
+        charging: calle,
+        critical: { "7002": "parada-precisa" },
+      }),
       THRESHOLDS,
     );
 
-    // Sin la lista de carga habría salido `no-declarado-leido`, abriendo una tarea que no existe.
-    expect(classOf(inventory, "7002")).toBe("especial");
-    expect(inventory.rows.find((row) => row.tagId === "7002")?.action).toBe("ninguna");
+    // La carga online pertenece al circuito (propietario, 2026-09-26): ni «no declarado» ni `especial`.
+    expect(classOf(inventory, "7001")).toBe("activo");
+    expect(classOf(inventory, "7003")).toBe("activo");
+    // La parada precisa de una calle por la que sí se entra y que nadie lee jamás: se perdió la
+    // función, no solo una lectura. Hasta 2026-09-26 salía `especial` y no se veía.
+    expect(classOf(inventory, "7002")).toBe("critico-sin-lectura");
+    expect(inventory.rows.find((row) => row.tagId === "7002")?.truth).toBe("unknown");
+  });
+});
+
+describe("un tag que solo conoce la lista critico", () => {
+  it("sale critico-no-declarado con la acción de comprobar la lista, nunca «declarado sin memoria»", () => {
+    // Errata típica al transcribir: `0l00` por `0100`. Salía como `declarado-sin-memoria` con la
+    // acción «añadir a la memoria», que llevaba a cargar la errata en los vehículos.
+    const RUTA = ["0100", "0200"];
+    const inventory = buildTagInventory(
+      laps("A", RUTA, 5),
+      lists({ virtual: RUTA, memory: RUTA, critical: { "0l00": "cruce" } }),
+      THRESHOLDS,
+    );
+
+    expect(classOf(inventory, "0l00")).toBe("critico-no-declarado");
+    const row = inventory.rows.find((candidate) => candidate.tagId === "0l00");
+    expect(row?.action).toBe("comprobar-lista-critico");
+    expect(row?.inVirtual).toBe(false);
+    expect(row?.inMemory).toBe(false);
+    // El tag bien escrito no se ve afectado.
+    expect(classOf(inventory, "0100")).toBe("activo");
   });
 });

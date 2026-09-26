@@ -109,7 +109,10 @@ interface Step {
 
 interface SlotPass {
   readonly agvId: string;
+  /** La hora del vecino de después: cuándo acabó la pasada. */
   readonly utcMs: number;
+  /** La hora del vecino de antes: cuándo empezó. */
+  readonly fromUtcMs: number;
   readonly span: number;
   readonly hit: boolean;
 }
@@ -237,7 +240,7 @@ export function detectTagChanges(
           let hit = false;
           for (let k = i + 1; k < j; k += 1) if ((seq[k] as Step).tagId === tagId) hit = true;
           const list = passes.get(tagId) ?? [];
-          list.push({ agvId, utcMs: to.utcMs, span: to.span, hit });
+          list.push({ agvId, utcMs: to.utcMs, fromUtcMs: from.utcMs, span: to.span, hit });
           passes.set(tagId, list);
           lastEnd.set(tagId, j);
         }
@@ -258,7 +261,10 @@ export function detectTagChanges(
     let outside = 0;
     for (const pass of list) {
       if (!who.has(pass.agvId)) continue;
-      const beyond = side === "fin" ? pass.utcMs > cut : pass.utcMs < cut;
+      // Fuera de la vida solo si la pasada entera cae fuera: la que empieza antes de la última lectura
+      // es la que la contiene (o la que la rodea), y contarla como fallo de después inflaba la racha en
+      // uno y hacía saltar el umbral con una pasada de menos.
+      const beyond = side === "fin" ? pass.fromUtcMs > cut : pass.utcMs < cut;
       if (beyond) {
         if (pass.span === cutSpan) outside += 1;
       } else {

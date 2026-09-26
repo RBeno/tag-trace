@@ -157,6 +157,23 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
     expect(countAt(timeline, 19)).toBe("1 de 1, 1 leyendo (+0)");
   });
 
+  it("un tramo de cobertura corto sin ninguna lectura del AGV no es «leyendo»: no tiene ritmo que juzgar", () => {
+    // Dos exportaciones: la segunda dura 4 min (menos que el umbral de silencio). A lee en las dos;
+    // B solo en la primera. En la segunda B no aparece, y eso no puede dibujarse como leyendo.
+    const timeline = buildFleetTimeline(
+      input({
+        coverage: [
+          { from: 0, to: 60 * MINUTE },
+          { from: 120 * MINUTE, to: 124 * MINUTE },
+        ],
+        readings: [...every("A", 0, 60), ...every("A", 120, 124), ...every("B", 0, 60)],
+        history: [all("A"), all("B")],
+      }),
+    );
+    expect(stateAt(timeline, "A", 122)).toBe("leyendo");
+    expect(stateAt(timeline, "B", 122)).not.toBe("leyendo");
+  });
+
   it("quien lee sin estar asignado sale aparte y no suma a N", () => {
     const timeline = buildFleetTimeline(input({ readings: [...every("A", 0, 60), ...every("X", 0, 60)], history: [all("A")] }));
     expect(stateAt(timeline, "X", 30)).toBe("leyendo-sin-asignar");
@@ -258,9 +275,25 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
     expect(countAt(timeline, 10)).toBe("2 de 2, 1 leyendo (+0)");
   });
 
+  it("un historial cargado sin ningún periodo es «historial vacío»: M sale de las lecturas, y se dice", () => {
+    // OQ-139: antes, con `history: []`, nadie estaba asignado y M era 0 con toda la flota «sin asignar».
+    // Se trata como no tener historial, pero el resultado lo distingue para que la vista lo enseñe.
+    const readings = [...every("A", 0, 60), ...every("B", 0, 30)];
+    const vacio = buildFleetTimeline(input({ readings, history: [] }));
+    const sinHistorial = buildFleetTimeline(input({ readings, history: null }));
+    expect(vacio.historySource).toBe("historial-vacio");
+    expect(vacio.historyLoaded).toBe(false);
+    expect(countAt(vacio, 10)).toBe("2 de 2, 2 leyendo (+0)");
+    expect(vacio.counts).toEqual(sinHistorial.counts);
+    expect(vacio.vehicles).toEqual(sinHistorial.vehicles);
+    // Con periodos, la fuente es el historial.
+    expect(buildFleetTimeline(input({ readings, history: [all("A")] })).historySource).toBe("historial");
+  });
+
   it("sin historial, M son los vehículos que aparecen en las lecturas", () => {
     const timeline = buildFleetTimeline(input({ readings: [...every("A", 0, 60), ...every("B", 0, 30)] }));
     expect(timeline.historyLoaded).toBe(false);
+    expect(timeline.historySource).toBe("lecturas");
     expect(countAt(timeline, 10)).toBe("2 de 2, 2 leyendo (+0)");
     // Después de su última lectura, B está ausente de lecturas, pero menos de una hora: sigue en el
     // circuito (R-AGV-018).

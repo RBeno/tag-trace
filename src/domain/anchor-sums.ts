@@ -20,7 +20,9 @@
  * lados no hay bastante producción. Un mantenimiento a las diez de la noche tiene su después de noche.
  *
  * **Cambio de estructura.** Un tag del anillo de un lado, ausente en el otro, con la ausencia
- * improbable por azar dada su tasa en el lado donde sí se lee. Un tag que se lee en los dos lados,
+ * improbable por azar dada su tasa en el lado donde sí se lee y sostenida por al menos dos AGV
+ * distintos: si todas las pasadas sin él son del mismo vehículo, puede ser su lector y no el circuito,
+ * y la ausencia queda sin afirmar (`unconfirmed`). Un tag que se lee en los dos lados,
  * aunque sea a medias, no es un cambio de estructura: eso es de la matriz de lectura. Y uno que se lee
  * de vez en cuando sin formar parte del anillo —un tag de mantenimiento— tampoco: el anillo es el
  * circuito, y un tag que no está en él no se pone ni se quita de la línea.
@@ -78,12 +80,28 @@ export type StructureChange =
 export interface GapSide {
   /** Todas las pasadas, de cualquier régimen: con ellas se lee la estructura. */
   readonly passes: number;
+  /** Cuántos AGV distintos hicieron esas pasadas: una ausencia la tienen que sostener al menos dos. */
+  readonly vehicles: number;
   /** Las del régimen en que se compara la suma (todas, si no hay ninguno con bastantes a los dos lados). */
   readonly p50Ms: number | null;
   readonly p80Ms: number | null;
 }
 
 export type SumVerdict = "igual" | "mas-lento" | "mas-rapido" | "sin-medir";
+
+/**
+ * Una ausencia que solo sostiene un AGV: el tag del anillo de un lado no aparece en el otro, pero todas
+ * las pasadas sin él son del mismo vehículo. Eso puede ser el lector de ese AGV (R-AGV-013), no un
+ * cambio del circuito, y no se afirma: queda `unknown` hasta que pase otro.
+ */
+export interface UnconfirmedAbsence {
+  readonly tagId: string;
+  /** En qué lado falta: `retirado` si falta después, `insertado` si faltaba antes. */
+  readonly kind: "retirado" | "insertado";
+  /** Pasadas sin el tag, todas del mismo AGV. */
+  readonly passes: number;
+  readonly agvId: string;
+}
 
 export interface AnchorGapChange {
   readonly fromAnchor: string;
@@ -94,6 +112,8 @@ export interface AnchorGapChange {
   readonly regime: Regime | null;
   readonly sum: SumVerdict;
   readonly changes: readonly StructureChange[];
+  /** Ausencias que un solo AGV sostiene, sin afirmar. */
+  readonly unconfirmed: readonly UnconfirmedAbsence[];
 }
 
 interface Step {
@@ -103,6 +123,7 @@ interface Step {
 }
 
 interface Pass {
+  readonly agvId: string;
   readonly regime: Regime;
   readonly totalMs: number;
   /** Desfase desde P de cada tag leído entre medias (el primero, si se repite). */
@@ -169,17 +190,28 @@ function ringOf(sequences: ReadonlyMap<string, readonly Step[]>, window: Interva
   return findDominantCycle(transitions)?.cycle ?? [];
 }
 
-/** La subsecuencia común más larga de dos anillos, en orden cíclico: las anclas estables. */
+/**
+ * La subsecuencia común más larga de dos anillos, en orden cíclico: las anclas estables. La LCS es
+ * lineal, así que se prueba la rotación en cada tag común y se conserva la más larga: rotar solo al
+ * primer tag común fallaba cuando ese tag era justo el que había cambiado de sitio, y sus vecinos
+ * sanos dejaban de ser anclas. En empate, la que empieza por el primer tag común del anillo de antes.
+ */
 export function stableAnchors(before: readonly string[], after: readonly string[]): readonly string[] {
   const inAfter = new Set(after);
-  const start = before.find((tagId) => inAfter.has(tagId));
-  if (start === undefined) return [];
-  const rotate = (ring: readonly string[]): string[] => {
+  const rotate = (ring: readonly string[], start: string): string[] => {
     const at = ring.indexOf(start);
     return [...ring.slice(at), ...ring.slice(0, at)];
   };
-  const a = rotate(before);
-  const b = rotate(after);
+  let best: string[] = [];
+  for (const start of before) {
+    if (!inAfter.has(start)) continue;
+    const common = linearCommonSubsequence(rotate(before, start), rotate(after, start));
+    if (common.length > best.length) best = common;
+  }
+  return best;
+}
+
+function linearCommonSubsequence(a: readonly string[], b: readonly string[]): string[] {
   const table: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
   for (let i = a.length - 1; i >= 0; i -= 1) {
     for (let j = b.length - 1; j >= 0; j -= 1) {
@@ -237,7 +269,7 @@ function passesBetween(
         if (!overlaps(stops, from, to) && !overlaps(own, from, to)) {
           const key = `${open.from.tagId}\u0000${step.tagId}`;
           const list = passes.get(key);
-          const pass: Pass = { regime: context.regimeOf((from + to) / 2), totalMs: to - from, inner: open.inner };
+          const pass: Pass = { agvId, regime: context.regimeOf((from + to) / 2), totalMs: to - from, inner: open.inner };
           if (list === undefined) passes.set(key, [pass]);
           else list.push(pass);
         }
@@ -273,6 +305,7 @@ function summarize(passes: readonly Pass[]): { side: GapSide; tags: ReadonlyMap<
   return {
     side: {
       passes: passes.length,
+      vehicles: new Set(passes.map((pass) => pass.agvId)).size,
       p50Ms: totals.length === 0 ? null : quantile(totals, 0.5),
       p80Ms: totals.length === 0 ? null : quantile(totals, 0.8),
     },
@@ -315,7 +348,8 @@ function pairInOrder(old: readonly number[], fresh: readonly number[]): readonly
 
 /**
  * Qué cambió de estructura entre dos ventanas, tramo entre anclas por tramo entre anclas. Solo se
- * devuelven los tramos donde algún tag aparece o desaparece.
+ * devuelven los tramos donde algún tag aparece o desaparece con la ausencia afirmada por al menos dos
+ * AGV; una ausencia que sostiene un solo vehículo va en `unconfirmed` del tramo, si el tramo sale.
  */
 export function compareAnchorGaps(
   readings: readonly Reading[] | AnchorSequences,
@@ -343,13 +377,28 @@ export function compareAnchorGaps(
     const allAfter = passesAfter.get(key) ?? [];
     const early = summarize(allBefore);
     const late = summarize(allAfter);
-    const absent = (tag: InnerTag, otherPasses: number): boolean =>
+    // Una ausencia es improbable por azar dada la tasa del tag donde sí se lee; y la afirman al menos
+    // dos AGV distintos: si todas las pasadas sin el tag son del mismo vehículo, puede ser su lector
+    // (R-AGV-013) y no el circuito, y queda sin afirmar.
+    const unlikely = (tag: InnerTag, otherPasses: number): boolean =>
       otherPasses > 0 && (1 - Math.min(1, tag.share)) ** otherPasses <= context.maxChance;
+    const soleVehicle = (passes: readonly Pass[]): string | null => {
+      const ids = new Set(passes.map((pass) => pass.agvId));
+      return ids.size === 1 ? [...ids][0]! : null;
+    };
+    const unconfirmed: UnconfirmedAbsence[] = [];
+    const confirmed = (tag: InnerTag, kind: UnconfirmedAbsence["kind"], otherPasses: readonly Pass[]): boolean => {
+      if (!unlikely(tag, otherPasses.length)) return false;
+      const agvId = soleVehicle(otherPasses);
+      if (agvId === null) return true;
+      unconfirmed.push({ tagId: tag.tagId, kind, passes: otherPasses.length, agvId });
+      return false;
+    };
     const retiredTags = [...early.tags.values()].filter(
-      (tag) => inRingBefore.has(tag.tagId) && !late.tags.has(tag.tagId) && absent(tag, late.side.passes),
+      (tag) => inRingBefore.has(tag.tagId) && !late.tags.has(tag.tagId) && confirmed(tag, "retirado", allAfter),
     );
     const addedTags = [...late.tags.values()].filter(
-      (tag) => inRingAfter.has(tag.tagId) && !early.tags.has(tag.tagId) && absent(tag, early.side.passes),
+      (tag) => inRingAfter.has(tag.tagId) && !early.tags.has(tag.tagId) && confirmed(tag, "insertado", allBefore),
     );
     if (retiredTags.length === 0 && addedTags.length === 0) return;
 
@@ -406,11 +455,12 @@ export function compareAnchorGaps(
     gaps.push({
       fromAnchor,
       toAnchor,
-      before: { passes: early.side.passes, p50Ms: a.p50Ms, p80Ms: a.p80Ms },
-      after: { passes: late.side.passes, p50Ms: b.p50Ms, p80Ms: b.p80Ms },
+      before: { passes: early.side.passes, vehicles: early.side.vehicles, p50Ms: a.p50Ms, p80Ms: a.p80Ms },
+      after: { passes: late.side.passes, vehicles: late.side.vehicles, p50Ms: b.p50Ms, p80Ms: b.p80Ms },
       regime,
       sum: regime === null ? "sin-medir" : (shift ?? "igual"),
       changes,
+      unconfirmed,
     });
   });
   return gaps;
@@ -451,6 +501,12 @@ export function changeClusters(times: readonly number[], maxGapMs: number): read
  * el grupo anterior del mismo tramo, o su inicio, hasta el siguiente, o su final. Comparar contra todo
  * el resto del tramo metería otro cambio en uno de los dos lados, a medias, y su suma se mediría
  * mezclada.
+ *
+ * Los cortes quedan **fuera** de las dos ventanas: los instantes del grupo son la primera lectura del
+ * tag que empieza y la última del que acaba, y una ventana cerrada en ellos los metería en el lado
+ * equivocado. Con la primera lectura del tag nuevo dentro de «antes», bastaba que el ancla siguiente
+ * se leyera en el mismo instante (resolución de minuto) para que la pasada cerrara ahí y el tag nuevo
+ * dejara de ser insertado.
  */
 export function windowsAroundChanges(
   times: readonly number[],
@@ -466,8 +522,8 @@ export function windowsAroundChanges(
     clusters.forEach((cluster, index) => {
       windows.push({
         atUtcMs: cluster.to,
-        before: { from: clusters[index - 1]?.to ?? span.from, to: cluster.from },
-        after: { from: cluster.to, to: clusters[index + 1]?.from ?? span.to },
+        before: { from: clusters[index - 1]?.to ?? span.from, to: cluster.from - 1 },
+        after: { from: cluster.to + 1, to: clusters[index + 1]?.from ?? span.to },
       });
     });
   }

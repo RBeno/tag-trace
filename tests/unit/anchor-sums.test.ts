@@ -200,13 +200,28 @@ describe("dónde mirar dentro de un mismo fichero", () => {
     for (const at of boundaries) expect(Math.abs(at - 20 * 100 * SECOND)).toBeLessThan(100 * SECOND);
   });
 
-  it("cada grupo se compara con lo que hay entre él y el grupo vecino, no con el resto del tramo", () => {
+  it("cada grupo se compara con lo que hay entre él y el grupo vecino, sin los instantes del corte", () => {
+    // Los instantes del grupo (primera lectura del nuevo, última del viejo) quedan fuera de las dos
+    // ventanas: antes acababa en el corte y la primera lectura del tag nuevo caía en «antes».
     const hour = 3_600_000;
     const windows = windowsAroundChanges([10 * hour, 10 * hour + 60_000, 20 * hour], [{ from: 0, to: 30 * hour }], hour);
     expect(windows).toEqual([
-      { atUtcMs: 10 * hour + 60_000, before: { from: 0, to: 10 * hour }, after: { from: 10 * hour + 60_000, to: 20 * hour } },
-      { atUtcMs: 20 * hour, before: { from: 10 * hour + 60_000, to: 20 * hour }, after: { from: 20 * hour, to: 30 * hour } },
+      { atUtcMs: 10 * hour + 60_000, before: { from: 0, to: 10 * hour - 1 }, after: { from: 10 * hour + 60_000 + 1, to: 20 * hour } },
+      { atUtcMs: 20 * hour, before: { from: 10 * hour + 60_000, to: 20 * hour - 1 }, after: { from: 20 * hour + 1, to: 30 * hour } },
     ]);
+  });
+
+  it("un tag nuevo leído en el mismo instante que el ancla siguiente sale insertado dentro del fichero", () => {
+    // N aparece en la vuelta 20 entre T7 y T8 con el mismo utcMs que T8, como con resolución de minuto.
+    const withNew = [...BASE.slice(0, 8), ["N", 80] as const, ...BASE.slice(8)];
+    const readings = run(40, (lap) => (lap < 20 ? BASE : withNew));
+    const ctx = context(readings);
+    const sequences = anchorSequences(readings, "oldest-first", ctx.coverage);
+    const boundaries = structureBoundaries(sequences, ctx.coverage, 10 * 100 * SECOND, new Set());
+    const gaps = windowsAroundChanges(boundaries, ctx.coverage, 3_600_000).flatMap((around) =>
+      compareAnchorGaps(sequences, around.before, around.after, ctx, { minAnchorPasses: 5 }),
+    );
+    expect(gaps.flatMap((gap) => gap.changes)).toContainEqual({ kind: "insertado", tagId: "N", offsetMs: 10 * SECOND });
   });
 });
 
@@ -214,5 +229,50 @@ describe("anclas estables", () => {
   it("la subsecuencia común más larga, en orden cíclico, aunque los anillos empiecen en otro sitio", () => {
     expect(stableAnchors(["A", "B", "C", "D", "E"], ["C", "X", "E", "A", "B"])).toEqual(["A", "B", "C", "E"]);
     expect(stableAnchors(["A", "B"], ["C", "D"])).toEqual([]);
+  });
+});
+
+describe("anclas cuando el primer tag común es el que cambió de sitio", () => {
+  it("se conservan las anclas sanas: la rotación se elige por la subsecuencia más larga, no por el primer tag", () => {
+    // A cambia de sitio; antes se rotaba a A y E y F dejaban de ser anclas, con lo que salían como
+    // retirados e insertados siendo sanos.
+    expect(stableAnchors(["A", "B", "C", "D", "E", "F"], ["B", "C", "D", "A", "E", "F"])).toEqual(["B", "C", "D", "E", "F"]);
+  });
+});
+
+describe("una ausencia la sostienen al menos dos AGV", () => {
+  it("dos pasadas de un solo AGV que se salta un tag sano no son un tag retirado: queda sin afirmar", () => {
+    // Después del corte solo circula V0, dos vueltas, y se salta T4: puede ser su lector, no el circuito.
+    const readings = run(22, (lap) => (lap >= 20 ? BASE.filter(([tagId]) => tagId !== "T4") : BASE)).filter(
+      (entry) => entry.agvId === "V0" || entry.time.utcMs < 20 * 100 * SECOND,
+    );
+    const before = { from: 0, to: 20 * 100 * SECOND - 1 };
+    const after = { from: 20 * 100 * SECOND, to: 22 * 100 * SECOND };
+    expect(compareAnchorGaps(readings, before, after, context(readings), { minAnchorPasses: 5 })).toEqual([]);
+  });
+
+  it("con dos AGV que pasan sin leerlo, la ausencia se afirma", () => {
+    const readings = run(22, (lap) => (lap >= 20 ? BASE.filter(([tagId]) => tagId !== "T4") : BASE)).filter(
+      (entry) => entry.agvId === "V0" || entry.agvId === "V1" || entry.time.utcMs < 20 * 100 * SECOND,
+    );
+    const before = { from: 0, to: 20 * 100 * SECOND - 1 };
+    const after = { from: 20 * 100 * SECOND, to: 22 * 100 * SECOND + 10 * SECOND };
+    const gaps = compareAnchorGaps(readings, before, after, context(readings), { minAnchorPasses: 5 });
+    expect(gaps).toMatchObject([
+      { fromAnchor: "T3", toAnchor: "T5", after: { vehicles: 2 }, changes: [{ kind: "retirado", tagId: "T4" }], unconfirmed: [] },
+    ]);
+  });
+
+  it("la ausencia de un solo AGV se enseña sin afirmar junto a un cambio que sí lo está", () => {
+    // Toda la flota deja de leer T7 (retirado de verdad); además, solo V0 se salta T4 después del corte.
+    const readings = run(40, (lap) => (lap < 20 ? BASE : BASE.filter(([tagId]) => tagId !== "T7"))).filter(
+      (entry) => !(entry.agvId === "V0" && entry.tagId === "T4" && entry.time.utcMs >= 20 * 100 * SECOND),
+    );
+    const { before, after } = windows(readings, 20);
+    const gaps = compareAnchorGaps(readings, before, after, context(readings), { minAnchorPasses: 5 });
+    expect(gaps.map((gap) => [gap.fromAnchor, gap.toAnchor])).toEqual([["T6", "T8"]]);
+    // T4 se lee después por cinco AGV: ni retirado ni sin afirmar, porque no falta en el lado de después.
+    expect(gaps[0]?.unconfirmed).toEqual([]);
+    expect(gaps[0]?.changes).toEqual([{ kind: "retirado", tagId: "T7", offsetMs: 10 * SECOND }]);
   });
 });

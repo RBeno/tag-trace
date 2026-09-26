@@ -2,6 +2,384 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.49.0] - 2026-09-26
+
+Interfaz (3/3), aprobada por el propietario: la portada con cifras, el anillo con capas en el Resumen
+y un solo cajón de tablas en lugar de los desplegables. Sin cambios en el dominio, los Workers ni las
+pruebas unitarias: todo sale de las vistas que ya llegan.
+
+### Añadido
+
+- **Portada con cifras** (`renderTiles`, `renderFindingsTile`, `jumpTo`, `tile` en `main.ts`;
+  `styles.css`; `UX_SPEC.md` §2): una tira de seis stat tiles encima de la bandeja del Resumen
+  —AGV en el circuito («N de M» del último tramo de `fleet.counts`, con «según el historial» o
+  «vistos en las lecturas»), tags en el anillo (con los de fuera y los declarados sin lecturas),
+  cobertura (horas y ficheros, de la primera a la última), hallazgos (pendientes de total y cuántos
+  pueden parar la planta; con el acento solo mientras quede alguno de rango 1; se rehace con cada
+  marca), vuelta (la mediana del último fichero medido y la del anterior) y línea (paradas en
+  producción, minutos sin paso y la cadencia de mediana)—. Cifra grande en la misma sans y en
+  cifras proporcionales, tinta normal; cada tile activa la pestaña que lo explica y desplaza a su
+  encabezado; sin dato, «sin datos» en gris. Dos columnas en el móvil, seis en escritorio.
+- **Capas del anillo** (`ringChart` en `diagnostic-charts.ts`, `RingLayer`, `RingTag.incidents`,
+  `ringDataOf`; `UX_SPEC.md` §4.2): un selector segmentado (`role="radiogroup"`, teclado) con
+  Omisión (la de siempre), Tramos (la banda principal por tramo declarado), Paradas (rampa por
+  incidencias medidas en cada tag según el estado normal: paradas sin explicación, colas de cuello,
+  zona oscura) y Calles (el tag de entrada de cada calle con su nombre, con trama si nadie entró).
+  La banda exterior de zona y las marcas numeradas se mantienen; la lectura al tocar dice lo de la
+  capa activa. **Tocar un tag** —clic, dedo o Enter sobre el segmento con foco; un solo alto de
+  tabulación y las flechas recorren el anillo— rellena el buscador de la barra y activa AGV
+  (`openDossier`).
+- **Cajón de tablas** (`src/presentation/drawer.ts`: `tableDrawer`, `openDrawer`, `closeDrawer`;
+  `UX_SPEC.md` §5.3): un `aside.drawer` único (`role="dialog"`, `aria-modal="false"`,
+  `aria-labelledby`, «Cerrar», Escape, foco dentro al abrir y de vuelta al botón al cerrar) que
+  ocupa el tercio derecho en escritorio y la pantalla entera en el móvil, con desplazamiento propio.
+  El contenido se construye al abrir y se sustituye al abrir otro.
+- **Prueba de navegador `portada.spec.ts`** (TC-275): los seis tiles con cifra y el de hallazgos
+  igual que «Revisados 0 de N»; el tile de la vuelta activa Tiempos; el selector de capas cambia la
+  leyenda y tocar un tag rellena el buscador y activa AGV; el cajón abre con el foco dentro, muestra
+  la tabla, cierra con Escape y devuelve el foco; en el móvil (390 px) dos columnas de tiles y el
+  cajón a pantalla completa sin desborde.
+
+### Cambiado
+
+- **El anillo vive en el Resumen** (`renderRingFigure`), entre la tira de cifras y la bandeja; en
+  Tiempos queda «El anillo del circuito» en palabras, el enlace «El anillo está en Resumen», la lista
+  ordenada y los tags fuera del anillo (`renderRing`).
+- **Todos los desplegables de tabla pasan al cajón**: `lazyDetails` se sustituye por `lazyTable` y
+  `table()` (`charts.ts`) abre el cajón; los treinta y un puntos que los usaban en `main.ts` y
+  `diagnostic-charts.ts` no cambian su texto ni su contenido. El botón enseña el texto de antes
+  («Ver los 145 tags del anillo, en orden») o «Tabla» para «Ver los mismos datos en tabla», que queda
+  como `aria-label` y `title`. Quedan **tres `<details>`**, los de texto corto: «Qué forma tiene que
+  tener el fichero», «Qué forma tiene que tener el historial» y «Detalles de lectura del fichero».
+  **Cambian cuatro pruebas de navegador**: `f2.spec.ts`, `vistas.spec.ts` y
+  `vistas-diagnostico.spec.ts` abrían un desplegable y ahora pulsan el botón y leen dentro de
+  `aside.drawer` (lo que afirman sobre los datos no cambia), y buscan el anillo en Resumen;
+  `tactil.spec.ts` comprueba que el toque cerca de un tag —que el navegador ajusta al segmento, que
+  ahora es un botón— abre su expediente, y el toque en el centro vuelve al texto de reposo.
+
+### Corregido
+
+- **Recargar la misma exportación hacía crecer el circuito guardado** (R-DAT-005, INV-005): cada
+  recarga añadía una procedencia a cada lectura, y con un cuarto de millón de lecturas el registro
+  pasó del tamaño máximo de un valor de IndexedDB en la integración continua («No se pudo importar
+  (INTERNAL)»). La misma fuente ya no es otra procedencia. El fallo no previsto del motor dice ahora
+  su nombre y dónde saltó. El límite del almacén queda en OQ-142.
+
+
+## [3.48.0] - 2026-09-26
+
+Interfaz (2/3), aprobada por el propietario: la página deja de ser una lista de cuarenta y tres
+secciones en el orden en que se calculan (36.646 px sin abrir nada, «Lo que hay que mirar» en la
+posición 22, 65 tarjetas con cuatro botones cada una) y pasa a seis pestañas por pregunta con una
+sola bandeja de hallazgos. Sin cambios en el dominio, los Workers ni las pruebas unitarias.
+
+### Cambiado
+
+- **Pestañas por pregunta, no por cálculo** (`main.ts`, `styles.css`; `UX_SPEC.md` §2): una barra
+  fija bajo la cabecera (`nav` con `role="tablist"`, flechas de teclado, fichas desplazables de 44 px
+  en el móvil) con Resumen, Tags, AGV, Tiempos, Línea y calles y Datos. Cada pestaña es un
+  `section[role="tabpanel"]`; las funciones `render*` escriben en el contenedor de su pestaña (`out`).
+  La activa va en el `hash` (`#tags`, `#agv`…) y se restaura al recargar; por defecto, Resumen. El
+  selector de lecturas, el progreso y los mensajes se ven en todas; listas, copia, fuente («Lo
+  acumulado en «X»»), cobertura, perfil horario, actividad, replay y lecturas viven en Datos. El
+  título «Circuito «X»» abre el Resumen. `renderShapes` se parte en `renderRing` (Tiempos) y
+  `renderReadMatrix` (Tags); la lectura de cada AGV y su rotura pasan a `renderVehicleReadingSection`
+  (AGV); el ritmo y quién retiene salen de «Estado normal del circuito» a `renderPace` (AGV) —las
+  lecturas que llegan juntas se quedan en Tiempos, por AGV y por sitio, porque nacen de la misma
+  medida—; «Orden del circuito según las lecturas» gana su encabezado. Las seis pestañas se
+  construyen al llegar las vistas: los gráficos miden con `ResizeObserver` y se dibujan la primera
+  vez que se enseñan, y la bandeja necesita todas las tarjetas.
+- **El buscador del expediente vive fijo en la barra de pestañas**; buscar activa la pestaña AGV y
+  enseña el expediente al final de ella.
+- **Un solo control de revisión por tarjeta** (`review-ui.ts`; `UX_SPEC.md` §4.3): un botón con el
+  icono y el estado («○ Pendiente ▾») que abre un menú (`role="menu"`, `menuitemradio`, flechas,
+  Home/End, Enter, Escape) con los cuatro estados y la nota. Elegir guarda igual que antes
+  (R-EVI-007) y deja el menú abierto para la nota. 40 px, 44 con dedo; cabe en una fila a 390 px.
+  «Siguiente pendiente» activa el Resumen y deja el foco en el control. Desaparece la regla de solo
+  icono a 560 px de 3.47.0. **Cambian dos pruebas de navegador** (`revision.spec.ts`,
+  `tactil.spec.ts`) que pulsaban los cuatro botones.
+- **Tarjetas gemelas agrupadas** (`groupHighlights`, `groupedTagCard`, `renderVehicleReading`,
+  `renderDrift`; `UX_SPEC.md` §4.3): los tags de «Lo que hay que mirar» que comparten exactamente el
+  mismo conjunto de AGV que no los leen nunca son una tarjeta —«60180 y 60183 (posiciones 59–60 de
+  145): 5 AGV no los leen nunca»— con los AGV y sus cifras dentro (cuatro y «y N más», la tabla al
+  tocar), y las tarjetas «AGV X · no lee nunca 2 tags que el resto sí lee» de esos mismos AGV se
+  pliegan en ella. Su clave es el tipo más el conjunto ordenado de tags. Lo mismo para los AGV que no
+  leen nunca los mismos tags sin tarjeta de grupo, y para los AGV con los mismos tags dejados y no
+  adoptados entre dos periodos. **Cambia una prueba de navegador** (`vistas-diagnostico.spec.ts`)
+  que buscaba la tarjeta suelta del AGV ciego: ahora comprueba su cifra dentro del grupo.
+- **Las pruebas de navegador activan la pestaña antes de buscar un texto** (`tests/e2e/pestanas.ts`,
+  `openTab`); lo que afirman sobre los datos no cambia.
+
+### Añadido
+
+- **Bandeja única de hallazgos** (`buildTray`, `applyTrayFilter`; `UX_SPEC.md` §4.5): todas las
+  tarjetas con clave de revisión viven en el Resumen, ordenadas por rango y agrupadas por tema, con
+  fichas de filtro por tema y los filtros de estado de siempre. Cada tarjeta lleva su tema y tipo
+  («Tiempos · cuello de botella») y el enlace «Ver evidencia», que activa la pestaña de su sección y
+  desplaza hasta su encabezado; en la sección queda «N hallazgos de esta sección: ver en Resumen».
+  Los avisos de configuración se quedan en su sección.
+- **Catálogo `FINDING_KINDS`** en `labels.ts`: por cada tipo de clave de revisión, su tema, su
+  etiqueta corta y su rango (1 puede parar la planta o perder una función; 2 degrada; 3 limpieza y
+  contexto), documentado en `UX_SPEC.md` §4.5.
+- **Prueba de navegador `navegacion.spec.ts`** (TC-274): las seis pestañas, el `hash`, recargar
+  conserva la pestaña, la bandeja tiene tantas tarjetas como «Revisados 0 de N», el filtro por tema,
+  la línea de la sección, «Ver evidencia» lleva a su sección y el control de revisión cambia el
+  estado desde el menú con ratón y con teclado.
+
+## [3.47.0] - 2026-09-26
+
+Revisión de 110 capturas de la interfaz con el circuito sintético de auditoría, a 1.440 px en claro
+y oscuro y a 390 px. Ocho fallos de presentación, sin tocar el dominio ni las medidas; la siguiente
+entrega reorganiza la página.
+
+### Corregido
+
+- **Tabla «Tiempos por sección entre anclas»** (`renderAnchorSections`): la columna de tags listaba
+  decenas de identificadores y partía las cabeceras letra a letra; en el móvil quedaba destrozada.
+  Ahora dice «48 tags, de 60000 a 60147», la tabla va en su caja desplazable como las otras anchas, y
+  la lista completa de cada sección está en el detalle plegado junto al p50 por fichero.
+- **La barra de revisión fija tapaba el destino de un salto**: su altura medida se escribe en
+  `--review-bar-height` y encabezados, figuras, tarjetas y desplegables llevan ese
+  `scroll-margin-top`; un `scrollIntoView` de cualquier `h3` deja el título visible bajo la barra.
+- **La lectura pegajosa de cada gráfico se pintaba encima del dibujo**: tapaba las etiquetas del eje
+  del perfil horario y cortaba filas del mapa de omisión. Fondo opaco del panel y borde superior
+  fino, y el dibujo reserva debajo su misma altura (`--readout-height`), de modo que en reposo no
+  cubre nunca el eje ni las últimas filas; pegada, sigue abajo. El mapa de omisión deja de fijar el
+  alto de su contenedor, que recortaba esa reserva.
+- **Modo oscuro** (`styles.css`, tokens re-escalonados y validados con el comprobador de paleta
+  contra `#1c1f26`): «lecturas» y «en carga (inferido)» del expediente eran el mismo azul
+  (`--viz-series` = `--viz-3`); ahora ΔE 16,5 (rampa de un solo matiz, L monótona, saltos ≥ 0,06).
+  «Parado sin nada que lo explique» era un marino a 2,4:1 que apenas se veía; pasa a azul acero claro
+  y la carga a un violeta más firme (ΔE 15,1 entre ambos, 16,7 carga–serie). La media barra de «lee
+  sin estar asignado» se dibuja sobre el fondo de «fuera del circuito» —sola, la franja del panel a
+  cada lado se leía como una raya negra— y su muestra de leyenda la imita. El gris de «lo normal»
+  del anillo sube un punto (`--viz-grid`) sin dejar de fundirse con el fondo. El claro no cambia.
+- **Encabezado duplicado** «Rotura y degradación, en el tiempo»: `trendMultiplesChart` recibe el
+  título de quien lo llama; bajo «Cambios de tag» es «Rotura y degradación de cada tag, en el tiempo»
+  y bajo «Lo que hay que mirar», «Rotura y degradación de cada AGV, en el tiempo». **Cambia una
+  prueba de navegador** (`vistas-diagnostico.spec.ts`) que fijaba el texto antiguo.
+- **Selectores de fichero nativos** («Choose File» junto a botones en español): cada `input` va
+  dentro de un `.file-picker` con una etiqueta con aspecto de botón («Elegir fichero…») y el nombre
+  del fichero elegido al lado; el `input` queda fuera de la vista sin `display:none`, con foco visible
+  en el botón, 44 px con dedo y el mismo `id`, así que las pruebas que cargan ficheros siguen igual.
+- **Horquilla de tiempos** (`segmentBandChart`): la franja de tramos (ahora de 6 px, también en el
+  móvil) y los puntos de hallazgo van en dos filas con 4 px de aire, y hay 10 px entre la leyenda y
+  el dibujo; antes se tocaban.
+- **Barra de revisión en el móvil**: a 560 px o menos los cuatro botones de cada tarjeta enseñan
+  solo su icono, 44 px de ancho, en una fila; el nombre entero va en `aria-label` y `title`.
+  Provisional hasta el control compacto de la entrega siguiente.
+
+## [3.46.0] - 2026-09-26
+
+Decisiones del propietario sobre las preguntas abiertas de la revisión (OQ-136 a OQ-141).
+
+### Cambiado
+
+- **Deriva** (R-TIM-010, OQ-136): la mediana de un tramo que se mueve siempre hacia el mismo lado
+  entre el primer fichero y el último es una deriva, con saltos o sin ellos. Se corrige el texto de la
+  regla; el código ya lo hacía así.
+- **Constantes de planta en código** (OQ-140): no van a un bloque de configuración de planta. Son
+  provisionales hasta que la memoria del circuito (F4) las mida y consolide con confirmación humana,
+  y así queda dicho en `CONFIG_SCHEMA` §3.5.
+- **La hora repetida de octubre se resuelve por la posición en el fichero** (OQ-137; ADR-0013, nota
+  del 2026-09-26; R-DAT-013): con el sentido medido, el retroceso de la hora de pared separa las dos
+  ocurrencias, y una racha seguida de las 03:xx es la segunda; lo demás sigue ambiguo. Las resueltas
+  (`dst_by_position`) vuelven a afirmar orden en monotonía, transiciones y vueltas, y en la vista
+  previa se marcan aparte, no como sospechosas. El resumen de la fuente dice cuántas se resolvieron y
+  cuántas quedan. **Cambia una prueba unitaria** que fijaba que esas lecturas no formaban transiciones.
+- **Tres medidas que afirmaban de más** (OQ-138): «sin paso» de la línea es solo lo que supera la
+  valla (`aboveFenceMs`) y lo demás «por encima del ciclo local» (R-FLO-010); el «deja de leer» de
+  la batería se mide con huecos de producción, sin la noche ni las paradas, y la evidencia da su
+  referencia (R-AGV-021); `desaparecido` y `nuevo` entre periodos llevan la prueba de azar y se
+  enseñan «sin afirmar» con su cifra cuando no la pasan (R-DAT-016, `drift.max_chance`); desaparece la
+  marca de soporte débil.
+- **Historial de flota** (OQ-139): un `hasta` sin hora es el final de ese día, así que alta y baja el
+  mismo día son válidas; un historial cargado sin periodos válidos es «historial vacío» y la vista lo
+  dice (`historySource`).
+
+### Añadido
+
+- **Tiempos por sección entre anclas** (R-TIM-012, OQ-141): «si se utilizan varias anclas en puntos
+  críticos podría valer también para medir tiempos promedios por zonas tipo kitting, cruce, línea».
+  Todas las anclas de la lista `ancla` que están en el anillo, en el orden del anillo, delimitan
+  secciones; cada una con su horquilla por régimen, su p50 por fichero y el nombre de la lista
+  `tramo` cuando más de la mitad de sus tags están en él. Sin cargas, sin huecos de cobertura ni
+  paradas de la producción en medio. Vista nueva con tabla, detalle por fichero y CSV. En la auditoría
+  (`auditoria/29`) se plantan tres anclas y la lista `tramo`: «kitting», «A → B» y «expedicion».
+- `segmentLaps` corregido: las lecturas seguidas del ancla no fabrican vueltas de segundos y un AGV
+  con una sola lectura sale como vuelta desconocida.
+
+## [3.45.0] - 2026-09-26
+
+### Cambiado
+
+- **La carga online pertenece al circuito también en el inventario** (OQ-135 cerrada por el
+  propietario; R-GRA-004): un tag de calle cuenta como declarado por su lista y se juzga como los
+  demás. La parada precisa de una calle servida que nadie lee es `critico-sin-lectura`; hasta ahora
+  era `especial` y no se veía. **Cambia una prueba unitaria** que fijaba `especial` para un tag de
+  calle leído: fijaba la contradicción con `DATA_CONTRACTS` §3.5.
+
+### Añadido
+
+- **Las tres comprobaciones de las calles** (R-CO-009, propietario): por tag de la calle, en cuántas
+  estancias completas se leyó (`tagReads`); el reparto de estancias entre las calles servidas, con la
+  cuota, la parte que le tocaría y el azar (`usage`, umbrales `charging.usage_max_chance` y
+  `charging.usage_min_deviation`); y quién no entró a cargar, que ya existía. En la vista de calles,
+  como hallazgos y en dos detalles plegados. Sonda de auditoría TC-265.
+
+## [3.44.0] - 2026-09-26
+
+Revisión de la lógica de medición y análisis, segunda entrega: cinco revisiones en paralelo sobre
+todos los módulos del dominio y de la ingesta, cada fallo reproducido en una prueba antes de tocarlo,
+y cada corrección con su prueba de regresión y su regla anotada («revisión de la lógica, 2026-09-26»
+en `RULE_CATALOG.md`; §6.18 de `ALGORITHM_CATALOG.md`; TC-246 a TC-261).
+
+### Corregido
+
+- **Falsas acusaciones a tags sanos.** La lista se alineaba con el anillo rotando al primer tag de
+  la lista: si ese era el mal colocado, media vuelta de tags sanos salía «en otro sitio» (R-GRA-015,
+  comparación con Vsystem, anclas de R-DAT-021). Ahora se prueba cada rotación y gana la subsecuencia
+  común más larga. Una ausencia entre anclas la sostienen al menos dos AGV. «Dejó de leer desde»
+  exige que el resto lo leyera después: una rotura del tag ya no acusa a toda la flota (R-AGV-016).
+  Un tag de noche con una lectura de día fuera de su sitio sigue siendo de noche (R-DAT-019).
+- **Huecos entre exportaciones que se medían.** La cola cortada de una exportación formaba
+  transición y «vuelta» con la primera lectura de la siguiente (aristas de 30 días); una estancia de
+  carga o una pasada FIFO con un extremo en cada exportación era permanencia larga y «adelantado por
+  todos». Solo valen las que caen en el mismo tramo de cobertura (R-DAT-007, R-CO-002, R-FLO-001).
+- **La hora repetida de octubre fabricaba orden**, contra ADR-0013: inversiones falsas, transiciones
+  hacia atrás. Las lecturas marcadas ya no afirman orden (R-DAT-013).
+- **Flujo.** Un AGV que callaba horas seguía «reteniendo» a todo el que parase detrás; ahora un
+  retenedor tiene que estar donde dice su último tag (R-FLO-008). Una parada vista como relectura del
+  mismo tag era invisible. Sin lo habitual del tramo se afirmaba «parado». Reaparecer por detrás se
+  leía como casi una vuelta hacia delante. Un sitio o un AGV sin ninguna pasada salía siempre como
+  concentración. La tercera causa de una zona oscura nombraba tags sin lecturas de otro punto del
+  circuito si la lista escribía los extremos al revés (R-GRA-014).
+- **Línea e incidencias.** Los descansos dibujaban el pulmón con toda la flota (R-FLO-010); un tiempo
+  entre pasos que cruzaba las 22:00 se callaba; una incidencia de 40 s decía «línea sin paso»; volver
+  por el mismo tag no contaba como adelantado; «parado de verdad» se sostenía con 5 s de espera de
+  otro (R-AGV-021). Un cruce cuya rama menor está en el camino de la otra se propone con la duda
+  dicha (R-GRA-007). El ritmo se compara con la mediana de los demás y no se afirma con menos de tres
+  AGV (R-AGV-019).
+- **Ingesta.** Comillas envolventes en campos y cabeceras; cabeceras de listas e historial sin
+  normalizar (acentos, BOM) y columnas desconocidas ignoradas en silencio; procedencia pisada al
+  encadenar tres cortes (R-DAT-005); `Map`/`Set`/`Date` hasheados como `{}`; líneas en blanco en
+  `totalRows`; empates de cohortes por locale. Un tag solo en la lista `critico` es
+  `critico-no-declarado`, no «declarado sin memoria» (R-DAT-016). La pasada que contiene la última
+  lectura ya no cuenta como pasada sin leer (R-DAT-019).
+
+### Cambiado
+
+- **Una prueba unitaria reescrita como cambio de regla**: las ventanas de antes y después de un
+  cambio de estructura dejan fuera el instante del corte (R-DAT-021); la prueba que fijaba los
+  límites inclusivos fijaba el fallo.
+- **Generador de la auditoría** (`auditoria/28`): el retenedor pasa a ser el primer vehículo
+  generado, porque los anteriores lo atravesaban en el semáforo y el análisis, con razón, dejaba de
+  tenerlo por retenedor. La sonda del ritmo admite del retenedor solo «más rápido, solo en la zona
+  cargada», que es lo que su deuda de reloj hace de verdad.
+- El Worker pasa el sentido de la fuente a la deriva entre periodos y la valla de cada tramo a la
+  batería de incidencias.
+
+### Pendiente
+
+- Se calculan y aún no se enseñan: `enoughVehicles`, `unconfirmed` (suma entre anclas),
+  `maybeSkipped`, `behind.unsure`, `blankRows`, `discardedUnreliableTime`. Contradicciones y
+  decisiones del propietario en OQ-135 a OQ-141; la cobertura simétrica (recorte de cabeza) queda
+  con la cola sola porque `DATA_CONTRACTS` §7 y una prueba existente lo fijan así.
+
+## [3.43.0] - 2026-09-26
+
+Revisión de toda la lógica de medición y análisis, módulo a módulo, con cada fallo reproducido en
+una prueba antes de tocarlo. Primera entrega: flota, expediente y configuración de calles.
+
+### Corregido
+
+- **Un tramo de cobertura corto sin lecturas del AGV salía «leyendo»** (R-AGV-014): con una
+  exportación de pocos minutos tras un hueco, el AGV que no aparecía en ella se dibujaba con ritmo
+  normal. Un borde corto solo es ritmo si el AGV leyó en ese tramo.
+- **Silencio abierto medido contra un hueco entre exportaciones** (expediente): un AGV cuya última
+  lectura caía en una exportación anterior salía «sin leer desde» esa hora. Solo se mide si su
+  última lectura cae en el último tramo de cobertura.
+- **Calles de carga mal declaradas que se montaban** (R-CO-001): un tag repetido en la calle, dos
+  tags con el mismo `orden`, el mismo tag en dos papeles, o dos calles con la misma parada precisa o
+  salida. Ahora no se montan y el problema lo dice. Un `orden` vacío ya no se ordena «primero»: con
+  `orden` a medias manda el fichero y se avisa (calles y anclas).
+
+### Preguntas abiertas
+
+- OQ-135 a OQ-141: dos contradicciones código↔documento (carga online como `especial`; definición
+  de *deriva*), la hora repetida de octubre, tres medidas que afirman de más, el historial de flota
+  con alta y baja el mismo día, las constantes de planta que siguen en código y `segmentLaps`.
+
+## [3.42.0] - 2026-09-26
+
+La auditoría, leída entera y no solo su línea de DETECTA: dos falsos positivos que ninguna sonda
+vigilaba, un escenario físicamente inconsistente, y tres sondas y dos invariantes nuevos.
+
+### Corregido
+
+- **Zona oscura «el tramo tarda» donde faltaba un tag declarado** (R-GRA-014). Cuatro zonas del
+  sintético salían con esa causa, y las cuatro eran exactamente los tags declarados que nadie lee.
+  Ahora la causa es `tag-sin-lecturas`, nombra los tags (`missingTags`) y remite a la limpieza de la
+  lista. La lista y los tags leídos llegan a `buildCircuitState`.
+- **«7105 delante de 7115» en una parada de la producción** (R-AGV-018): el AGV que salta tags salía
+  como si hubiera adelantado a un vecino al que nunca adelantó. En el orden solo entran los que
+  volvieron por el mismo tag, el siguiente o uno saltado como mucho; un salto habitual lo hace «por su
+  sitio», no fiable para el orden. **Cambia una prueba unitaria**: el caso en que F1 vuelve saltándose
+  tres tags ya no afirma que pasó a H —se dice «no siguió por su sitio»— y el caso positivo se
+  reescribe con F1 volviendo un tag más allá mientras H relee el suyo.
+
+### Añadido
+
+- **El generador retiene detrás de la parada aislada** (`ocupacionAislada`): quien llega a su tag
+  mientras dura espera, como en el cuello. Antes los de detrás la atravesaban, y la batería decía,
+  con razón sobre esos datos, «lo adelantaron».
+- Sondas: `zona-oscura-por-tag-sin-lecturas`, `bateria-del-que-salta` (avanzaba sin registrar) y
+  `bateria-de-la-parada-aislada` (parado de verdad). Invariantes: ningún hueco «sin clasificar» fuera
+  de una parada de la producción; ningún AGV «deja de leer». `auditoria/27`, 53 clases DETECTA.
+- Los seis huecos «sin clasificar» del informe son la parada de la producción pillada con el AGV en un
+  tag de rama o sustituido, sin tiempo habitual con que clasificarlos; todos justificados.
+
+## [3.41.0] - 2026-09-26
+
+La batería de mediciones de cada incidencia, del propietario: documentar cada una con lo mismo medido,
+porque el hueco puede venir de cualquier punto anterior.
+
+### Añadido
+
+- **Batería de mediciones** (R-AGV-021, `src/domain/incident-battery.ts`). De cada parada sin
+  explicación, primero de cola sin avanzar y AGV que deja de leer, en el mismo orden:
+  - la última y la siguiente lectura, y la calle de carga si el último tag es de una;
+  - la línea: si siguió con su cadencia, y cuánto estuvo parada con AGV esperando. Si es más de la
+    mitad, es la cola de la línea parada;
+  - el de delante: cuántos tags avanzó y hasta dónde;
+  - los de detrás, en cuatro casos:
+    - si siguen avanzando y él reaparece por delante, avanzaba sin registrar lecturas (no lee o sin
+      wifi);
+    - si llegan antes que él a donde reaparece, lo adelantaron: no se movía en la guía;
+    - si se quedan, estaba parado de verdad;
+    - con una vuelta entera, no se afirma;
+  - el cambio de AGV candidato, si no vuelve a leer.
+- **AGV que dejan de leer**: su silencio final supera su propio hueco más largo.
+- En pantalla, «Mediciones» en cada tarjeta y la descarga en CSV de todas las incidencias.
+- `LineFeed` expone los pasos por la línea y la cadencia de noche.
+- OQ-133 cerrada: son descansos, y de 5 a 6 no suele haber producción.
+- Auditoría: clase `bateria-del-bloqueo` (`auditoria/26`). Las 50 clases salen DETECTA.
+
+### Medido, y por eso se hace así
+
+- La primera versión decía «avanzaba sin registrar» si los de detrás pasaban de su último tag. En la
+  auditoría, el AGV al que el resto adelanta salía así, y es al revés. Si los de detrás llegan a donde
+  él reaparece antes que él, lo adelantaron. Solo si reaparece por delante de ellos avanzaba.
+- Un umbral común para «deja de leer» no servía: los silencios normales van de 1 a 12 h según el
+  AGV. Ahora se compara a cada AGV consigo mismo.
+
+### Con el circuito real, sin datos de planta en el repositorio
+
+- 246 incidencias con su batería. 65 coinciden, en más de la mitad de su tiempo, con la línea
+  parada con AGV esperando: son su cola.
+- Dos AGV dejan de leer en la parada de una calle de carga, de madrugada.
+- A uno, parado 12 h, lo adelantaron 30 AGV: estaba fuera de la guía.
+
 ## [3.40.0] - 2026-09-26
 
 Del propietario: que ni el ritmo de la noche ni una parada de la línea contaminen la medición, y ver

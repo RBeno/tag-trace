@@ -104,6 +104,12 @@ export type DefectClass =
   | "lista-con-otro-orden"
   /** La lista escribe un tag con un dígito cambiado; en su sitio se lee el de verdad (R-GRA-015). */
   | "lista-con-numero-mal-escrito"
+  /** Contexto: cada tag declarado que nadie lee hace oscura su zona, y la causa lo nombra (R-GRA-014). */
+  | "zona-oscura-por-tag-sin-lecturas"
+  /** Contexto: la batería del AGV que se salta tags dice que avanzaba sin registrar (R-AGV-021). */
+  | "bateria-del-que-salta"
+  /** Contexto: la batería de la parada aislada dice parado de verdad, con los de detrás sin pasar (R-AGV-021). */
+  | "bateria-de-la-parada-aislada"
   /**
    * Contexto: la limpieza de la lista junta lo que ya está plantado —los declarados que nadie lee, los
    * cambiados de orden y el refuerzo al que le falta un tag— sin plantar nada nuevo (R-GRA-017).
@@ -119,6 +125,11 @@ export type DefectClass =
    * cadencia normal: hacen la parada y no leen el tag (R-FLO-011).
    */
   | "linea-tag-sin-leer"
+  /**
+   * Contexto: la batería de mediciones del AGV que se demora y al que el resto adelanta dice que lo
+   * adelantaron: no se movía en la guía (R-AGV-021).
+   */
+  | "bateria-del-bloqueo"
   /**
    * Contexto: el tiempo sin paso de la línea se mide contra su ciclo local, y el de las paradas de la
    * producción plantadas cuenta como línea parada con AGV esperando (R-FLO-010).
@@ -151,6 +162,8 @@ export interface AuditScenario {
   readonly cleanTags: readonly string[];
   /** El anillo físico, en el orden en que lo recorren los AGV: la verdad del escenario. */
   readonly physicalRing: readonly string[];
+  /** Las anclas de sección declaradas además del ancla de vuelta (R-TIM-012), en el orden del anillo. */
+  readonly sectionAnchors: readonly string[];
   /** La lista `circuito` tal como se escribe, con sus erratas plantadas (R-GRA-015). */
   readonly declaredList: readonly string[];
   readonly vehicles: readonly string[];
@@ -452,13 +465,21 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const cuelloPosicion = 116;
   const CUELLO_ESPERA_MS = 40_000;
   const ocupacionCuello: { from: number; to: number }[] = [];
+  /** Mientras dura la parada aislada, quien llega detrás a su sitio espera: en una guía no se adelanta (Parte 60). */
+  let ocupacionAislada: { from: number; to: number } | null = null;
   /**
    * Quién retiene a otros (Parte 50, R-AGV-020): un AGV sin otro papel se queda en el semáforo más que
    * nadie, en cada pasada de día, y los que llegan detrás —ya lo tenían delante al leer el tag de
    * antes— esperan a que salga. Su espera cabe en la horquilla del semáforo, así que él no para: retiene.
    * Con la deuda de reloj, sin `random()`. El lector degradado no espera, por lo mismo que en el cuello.
    */
-  const retenedor = vehicles[7] as string;
+  // El primero de la flota: los vehículos se generan uno tras otro y solo los generados después de
+  // él ven sus esperas. Con otro índice, los anteriores lo atravesaban en el semáforo —imposible en una
+  // guía única— y el análisis, con razón, dejaba de tenerlo por retenedor (2026-09-26). Devuelve su
+  // espera a la mitad de cada paso siguiente, como toda deuda de reloj, y por eso es de verdad un 6 %
+  // más rápido en la zona cargada: la sonda del ritmo lo sabe (repartir la deuda en toda la vuelta
+  // mueve su sitio en el anillo y descoloca otras clases plantadas).
+  const retenedor = vehicles[0] as string;
   const RETENEDOR_ESPERA_MS = 105_000;
   const semaforoPosicion = 105;
   const ocupacionRetenedor: { from: number; to: number }[] = [];
@@ -722,9 +743,26 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         !paradaAisladaHecha &&
         now >= paradaAisladaDesde
       ) {
+        ocupacionAislada = { from: now, to: now + paradaAislada.extraMs };
         now += paradaAislada.extraMs;
         debtMs += paradaAislada.extraMs;
         paradaAisladaHecha = true;
+      }
+      // Los de detrás (Parte 60): quien lee el tag de la parada aislada mientras dura, espera a que el
+      // parado se vaya, como en el cuello. Solo los vehículos generados después la ven, y el lector
+      // degradado queda fuera por la misma razón que en el cuello.
+      if (
+        margenSuficiente &&
+        position === paradaAislada.position &&
+        vehicle !== paradaAislada.vehicle &&
+        vehicle !== lectorDegradado &&
+        ocupacionAislada !== null &&
+        ocupacionAislada.from <= now &&
+        now < ocupacionAislada.to
+      ) {
+        const extra = ocupacionAislada.to + 2_000 - now;
+        now += extra;
+        debtMs += extra;
       }
       // Punto conflictivo (Parte 47): cada uno de los ocho, una vez en cada posición, a horas de día
       // lejos de las paradas de la producción.
@@ -1016,6 +1054,17 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const listaOrden = ring.filter((tag) => tag !== listaMovido);
   listaOrden.splice(listaOrden.indexOf(ring[52] as string) + 1, 0, listaMovido);
   listaOrden.splice(listaOrden.indexOf(ring[7] as string), 2, ring[8] as string, ring[7] as string);
+  const plantadosParaAnclas = new Set<string>([
+    ...nuncaLeidos, ...lecturaAlta, ...lecturaMedia, ...porMemoria, ...rotos, ...degradados, ...tagsDejados,
+    cruceTag, sustitucionOriginal, paradaPrecisaTag, semaforoTag,
+  ]);
+  const anclaLibre = (desde: number): string => {
+    let position = desde;
+    while (plantadosParaAnclas.has(ring[position] as string)) position += 1;
+    return ring[position] as string;
+  };
+  /** Las dos anclas de sección (R-TIM-012), en tags sanos a partir de las posiciones 50 y 100. */
+  const sectionAnchors = [anclaLibre(50), anclaLibre(100)];
   const declaredList = listaOrden.map((tag) => (tag === listaMalEscritoReal ? listaMalEscrito : tag));
 
   const listsCsv = ["lista;tag;orden;funcion;grupo;capacidad"]
@@ -1040,7 +1089,14 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       ),
     )
     .concat([...zoneOf].map(([tag, zona]) => `zona;${tag};;;${zona};`))
-    .concat([`ancla;${ring[0] as string};1`])
+    // Tres anclas (R-GRA-009 y R-TIM-012): la primera es el ancla de vuelta; las tres, en el orden del
+    // anillo, delimitan las secciones de tiempo. Y la lista `tramo` que las nombra: el primer tercio
+    // «kitting», el último «expedicion», y el del medio sin nombre (solo dos tags de línea: no es mayoría).
+    // Las anclas de sección van en tags sanos: sobre un tag plantado (el roto de la posición 100, por
+    // ejemplo) la sección se quedaría sin cerrar desde la rotura, y eso mediría el defecto, no la sección.
+    .concat([`ancla;${ring[0] as string};1`, ...sectionAnchors.map((tag, index) => `ancla;${tag};${index + 2}`)])
+    .concat(ring.slice(0, 50).map((tag) => `tramo;${tag};;;kitting;`))
+    .concat(ring.slice(100).map((tag) => `tramo;${tag};;;expedicion;`))
     // La línea (Parte 56, R-FLO-010): solo declaración, no cambia ninguna lectura.
     .concat([`linea;${ring[lineaPosicion] as string};1`, `linea;${ring[lineaPosicion + 1] as string};2`])
     .join("\r\n");
@@ -1322,8 +1378,29 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       kind: "parada-sin-explicacion-aislada",
       tags: [ring[paradaAislada.position] as string],
       vehicles: [paradaAislada.vehicle],
-      expect: "una parada candidata sin explicación, con quién iba delante y cuánto avanzó mientras tanto",
+      expect: "una parada candidata sin explicación, con quién iba delante y cuánto avanzó mientras tanto; los de detrás esperan",
       mustNotSay: "una causa (batería, revisión, persona…), ni un bloqueo, ni un punto conflictivo",
+    },
+    {
+      kind: "zona-oscura-por-tag-sin-lecturas",
+      tags: nuncaLeidos,
+      vehicles: [],
+      expect: "cada tag declarado sin lecturas dentro de una zona oscura cuya causa es «tag sin lecturas» y lo nombra",
+      mustNotSay: "«el tramo tarda» de un tramo al que le falta un tag declarado",
+    },
+    {
+      kind: "bateria-del-que-salta",
+      tags: tramoConvoy,
+      vehicles: [saltador],
+      expect: "en un hueco en que se salta el tramo: los de detrás siguen avanzando y él reaparece por delante, avanzaba sin registrar",
+      mustNotSay: "que lo adelantaran o que estuviera parado",
+    },
+    {
+      kind: "bateria-de-la-parada-aislada",
+      tags: [ring[paradaAislada.position] as string],
+      vehicles: [paradaAislada.vehicle],
+      expect: "los de detrás llegan a su tag y no pasan de ahí: parado de verdad, retenía la cola",
+      mustNotSay: "que avanzaba sin registrar ni que lo adelantaran",
     },
     {
       kind: "punto-conflictivo",
@@ -1394,6 +1471,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       vehicles: [],
       expect: "el tiempo sin paso con AGV esperando cubre casi entero el de las tres paradas de la producción plantadas",
       mustNotSay: "que en esas paradas le faltaran AGV a la línea",
+    },
+    {
+      kind: "bateria-del-bloqueo",
+      tags: [],
+      vehicles: [elAdelantado],
+      expect: "su última lectura, el de delante avanzando y los de detrás llegando a su siguiente tag antes que él: lo adelantaron",
+      mustNotSay: "que avanzaba sin registrar lecturas",
     },
     {
       kind: "linea-tag-sin-leer",
@@ -1494,6 +1578,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     defects,
     cleanTags: ring.filter((tag) => !plantados.has(tag)),
     physicalRing: ring,
+    sectionAnchors,
     declaredList,
     vehicles,
     fromUtcMs: toRealUtc(from),

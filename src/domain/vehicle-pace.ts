@@ -4,7 +4,9 @@
  * **Ritmo.** De cada transición libre de un AGV —de producción, que no es parada ni retención, con las
  * lecturas que llegaron juntas ya colapsadas— la razón entre lo que tardó y la mitad de las pasadas de
  * su tramo (el p50 de su horquilla). El ritmo del AGV es la mediana de sus razones, frente a la
- * mediana de toda la flota. Se señala si pasa dos pruebas a la vez:
+ * mediana de **los demás** AGV probados (sin las suyas: una referencia que lo incluye se le acerca y,
+ * con pocos AGV, reparte su diferencia entre todos). Con menos de `MIN_TESTED_VEHICLES` probados no
+ * hay flota y no se afirma nada. Se señala si pasa dos pruebas a la vez:
  *
  * - **de signo**: cuántas razones suyas quedan por encima de la mediana de la flota, con los empates a
  *   mitad; que un reparto así salga por azar, multiplicado por los AGV mirados, no pasa de
@@ -67,6 +69,7 @@ export interface VehiclePace {
   readonly samples: number;
   /** Mediana de sus razones duración / p50 del tramo. */
   readonly ratio: number;
+  /** La referencia: la mediana de las razones de **los demás** AGV probados. */
   readonly fleetRatio: number;
   /** ratio / fleetRatio − 1. */
   readonly shift: number;
@@ -98,18 +101,69 @@ export interface Holder {
 }
 
 export interface PaceReport {
+  /** La mediana de todas las razones de la flota probada; la referencia de cada AGV es la de los demás. */
   readonly fleetRatio: number | null;
+  /** AGV con muestras suficientes para probarse. */
+  readonly testedVehicles: number;
+  /**
+   * Con menos de `MIN_TESTED_VEHICLES` AGV probados no hay flota con que compararse y no se afirma
+   * ningún ritmo: con dos, la diferencia se reparte entre ambos y el sano saldría «más rápido».
+   */
+  readonly enoughVehicles: boolean;
   /** Todos los AGV con muestras suficientes; primero los señalados. */
   readonly vehicles: readonly VehiclePace[];
   /** Todos los que retienen a alguien; primero los señalados. */
   readonly holders: readonly Holder[];
 }
 
+/**
+ * AGV probados que hacen falta para hablar de «la flota». Es un mínimo estadístico, no una constante de
+ * planta: con uno no hay nadie más; con dos, la referencia de cada uno es solo el otro, y un AGV lento
+ * hace parecer «más rápido» al sano.
+ */
+export const MIN_TESTED_VEHICLES = 3;
+
 function median(values: readonly number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 1 ? (sorted[middle] as number) : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
+}
+
+/**
+ * La mediana de las razones de **los demás** AGV, una por AGV, sobre una sola ordenación del conjunto.
+ * Compararse con una mediana que incluye las propias razones acerca la referencia al propio AGV y, con
+ * pocos AGV, reparte su diferencia entre todos.
+ */
+function mediansExcludingOwner(byOwner: ReadonlyMap<string, readonly number[]>): Map<string, number | null> {
+  const pooled: { value: number; owner: string }[] = [];
+  for (const [owner, values] of byOwner) for (const value of values) pooled.push({ value, owner });
+  pooled.sort((a, b) => a.value - b.value);
+  const result = new Map<string, number | null>();
+  for (const [owner, own] of byOwner) {
+    const others = pooled.length - own.length;
+    if (others === 0) {
+      result.set(owner, null);
+      continue;
+    }
+    // Los dos valores centrales de los demás, por rango, saltando los propios.
+    const wantLow = Math.floor((others - 1) / 2);
+    const wantHigh = Math.floor(others / 2);
+    let rank = -1;
+    let low: number | null = null;
+    let high: number | null = null;
+    for (const entry of pooled) {
+      if (entry.owner === owner) continue;
+      rank += 1;
+      if (rank === wantLow) low = entry.value;
+      if (rank === wantHigh) {
+        high = entry.value;
+        break;
+      }
+    }
+    result.set(owner, low === null || high === null ? null : (low + high) / 2);
+  }
+  return result;
 }
 
 /** erfc(x) para x ≥ 0 (Abramowitz y Stegun 7.1.26, error menor que 1,5·10⁻⁷). */
@@ -167,30 +221,42 @@ export function vehiclePace(input: PaceInput, thresholds: VehiclePaceThresholds)
 
   const tested = [...byVehicle].filter(([, ratios]) => ratios.length >= thresholds.minSamples);
   const fleetRatio = median(tested.flatMap(([, ratios]) => ratios));
+  const enoughVehicles = tested.length >= MIN_TESTED_VEHICLES;
+  // La referencia de cada AGV son los demás (sin sus propias razones), en toda la línea y en cada zona.
+  const othersRatio = mediansExcludingOwner(new Map(tested));
   const zones = [...new Set(zoneOf.values())].sort();
-  const fleetByZone = new Map(
-    zones.map((zone) => [zone, median(tested.flatMap(([agvId]) => byVehicleZone.get(agvId)?.get(zone) ?? []))]),
+  const othersByZone = new Map(
+    zones.map((zone) => [
+      zone,
+      mediansExcludingOwner(new Map(tested.map(([agvId]) => [agvId, byVehicleZone.get(agvId)?.get(zone) ?? []]))),
+    ]),
   );
   const judge = (ratios: readonly number[], center: number, tests: number): { ratio: number; chance: number; verdict: PaceVerdict | null } => {
     const ratio = median(ratios) as number;
     const chance = Math.min(1, signTest(ratios, center) * tests);
     const shift = ratio / center - 1;
     const verdict =
-      chance <= thresholds.maxFalsePoints && Math.abs(shift) >= thresholds.minPaceShift ? (shift > 0 ? "mas-lento" : "mas-rapido") : null;
+      enoughVehicles && chance <= thresholds.maxFalsePoints && Math.abs(shift) >= thresholds.minPaceShift
+        ? shift > 0
+          ? "mas-lento"
+          : "mas-rapido"
+        : null;
     return { ratio, chance, verdict };
   };
 
   const vehicles: VehiclePace[] =
     fleetRatio === null
       ? []
-      : tested.map(([agvId, ratios]) => {
-          const overall = judge(ratios, fleetRatio, tested.length);
+      : tested.flatMap(([agvId, ratios]) => {
+          const center = othersRatio.get(agvId) ?? null;
+          if (center === null) return [];
+          const overall = judge(ratios, center, tested.length);
           const zonePaces: ZonePace[] = zones.flatMap((zone) => {
             const own = byVehicleZone.get(agvId)?.get(zone) ?? [];
-            const center = fleetByZone.get(zone) ?? null;
-            if (own.length < thresholds.minSamples || center === null) return [];
-            const verdict = judge(own, center, tested.length * zones.length);
-            return [{ zone, samples: own.length, ratio: verdict.ratio, fleetRatio: center, verdict: verdict.verdict }];
+            const zoneCenter = othersByZone.get(zone)?.get(agvId) ?? null;
+            if (own.length < thresholds.minSamples || zoneCenter === null) return [];
+            const verdict = judge(own, zoneCenter, tested.length * zones.length);
+            return [{ zone, samples: own.length, ratio: verdict.ratio, fleetRatio: zoneCenter, verdict: verdict.verdict }];
           });
           const flaggedZones = zonePaces.filter((zone) => zone.verdict !== null);
           const verdict = overall.verdict ?? (flaggedZones.length > 0 ? (flaggedZones[0] as ZonePace).verdict : null);
@@ -209,17 +275,19 @@ export function vehiclePace(input: PaceInput, thresholds: VehiclePaceThresholds)
                 : deviating.length === 0 || deviating.length === zonePaces.length
                   ? "toda-la-linea"
                   : deviating;
-          return {
-            agvId,
-            samples: ratios.length,
-            ratio: overall.ratio,
-            fleetRatio,
-            shift: overall.ratio / fleetRatio - 1,
-            chance: overall.chance,
-            verdict,
-            zones: zonePaces,
-            where,
-          };
+          return [
+            {
+              agvId,
+              samples: ratios.length,
+              ratio: overall.ratio,
+              fleetRatio: center,
+              shift: overall.ratio / center - 1,
+              chance: overall.chance,
+              verdict,
+              zones: zonePaces,
+              where,
+            },
+          ];
         });
   vehicles.sort(
     (a, b) => Number(b.verdict !== null) - Number(a.verdict !== null) || Math.abs(b.shift) - Math.abs(a.shift) || a.agvId.localeCompare(b.agvId),
@@ -250,7 +318,7 @@ export function vehiclePace(input: PaceInput, thresholds: VehiclePaceThresholds)
   holders.sort(
     (a, b) => Number(b.expected !== null) - Number(a.expected !== null) || b.retentions - a.retentions || a.agvId.localeCompare(b.agvId),
   );
-  return { fleetRatio, vehicles, holders };
+  return { fleetRatio, testedVehicles: tested.length, enoughVehicles, vehicles, holders };
 }
 
 /**

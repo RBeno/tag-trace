@@ -22,10 +22,12 @@ import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { StructureSet } from "../domain/anchor-sums.js";
 import type { PaceReport } from "../domain/vehicle-pace.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
+import type { AnchorSection } from "../domain/anchor-sections.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { UndeclaredTag } from "../domain/undeclared-tags.js";
 import type { ListCleanup } from "../domain/list-cleanup.js";
 import type { LineFeed } from "../domain/line-feed.js";
+import type { Incident, IncidentBattery, IncidentRecord } from "../domain/incident-battery.js";
 import type { CircuitOrder } from "../domain/circuit-order.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
 import type { ReadMatrix } from "../domain/read-matrix.js";
@@ -217,7 +219,15 @@ export interface SourceSummary {
   readonly quarantinedRows: number;
   /** Filas con instante y AGV pero sin tag: no son lecturas y tampoco son un defecto. */
   readonly rowsWithoutTag: number;
+  /** Lecturas que al parsear cayeron en una hora repetida o inexistente del cambio estacional. */
   readonly dstFlagged: number;
+  /**
+   * De las de hora repetida, cuántas se resolvieron por la posición en el fichero (`dst_by_position`,
+   * OQ-137) y cuentan como fiables para el orden.
+   */
+  readonly dstResolvedByPosition: number;
+  /** De las de hora repetida, cuántas siguen `dst_ambiguous` y no afirman orden. */
+  readonly dstAmbiguous: number;
   /**
    * Primer y último instante **aceptado**, en epoch UTC.
    *
@@ -317,6 +327,16 @@ export interface CircuitViews {
    * línea, con AGV esperando o sin ellos. Solo con la lista `linea` cargada.
    */
   readonly lineFeed?: LineFeed;
+  /**
+   * La batería de mediciones de cada incidencia (R-AGV-021), por clave «AGV tag instante»: paradas sin
+   * explicación y primeros de cola sin avanzar. Y los AGV que dejan de leer antes del final.
+   */
+  readonly incidents?: {
+    readonly batteries: Readonly<Record<string, IncidentBattery>>;
+    readonly abandoned: readonly { readonly incident: Incident; readonly battery: IncidentBattery }[];
+    /** Todas, en orden de tiempo, para descargarlas. */
+    readonly records: readonly IncidentRecord[];
+  };
   /** Fotogramas del replay, en fracción temporal — nunca posición física (`PERFORMANCE_BUDGET.md` §6). */
   readonly replay: readonly SerializedReplayFrame[];
   /**
@@ -347,6 +367,23 @@ export interface CircuitViews {
         readonly overtakenBy: readonly string[];
         readonly waitedMs: number;
       }[];
+      /** Por tag de la calle, en cuántas estancias completas se leyó (R-CO-009). */
+      readonly tagReads: readonly {
+        readonly tagId: string;
+        readonly role: "entrada" | "parada-precisa" | "salida" | "paso";
+        readonly staysRead: number;
+        readonly stays: number;
+        readonly vehicles: number;
+      }[];
+    }[];
+    /** El reparto de estancias entre las calles servidas (R-CO-009). */
+    readonly usage: readonly {
+      readonly laneId: string;
+      readonly stays: number;
+      readonly share: number;
+      readonly expectedShare: number;
+      readonly chance: number;
+      readonly verdict: "menos" | "mas" | null;
     }[];
     /** Los que ya estaban dentro antes de empezar la cobertura (R-CO-007). */
     readonly startedInside: readonly {
@@ -454,9 +491,23 @@ export interface CircuitViews {
    */
   readonly lapAnchorProblems?: readonly string[];
   /**
+   * Tiempos por sección entre anclas (R-TIM-012), en el cohorte principal: todas las anclas de la
+   * lista `ancla` que están en el anillo, en el orden del anillo, delimitan secciones consecutivas y
+   * cada una lleva su horquilla por régimen y su p50 por fichero. `sections` va vacío con menos de dos
+   * anclas en el anillo; `declared` dice cuántas hay en la lista, para explicar por qué.
+   */
+  readonly anchorSections: {
+    readonly declared: number;
+    readonly onRing: readonly string[];
+    readonly resolutionMs: number;
+    readonly marginMs: number;
+    readonly sections: readonly AnchorSection[];
+  };
+  /**
    * La flota del circuito a lo largo del tiempo (DS-012, R-AGV-014): la vida de cada AGV en tramos
    * continuos y el recuento N de M. Sin historial cargado, M son los vehículos que aparecen en las
-   * lecturas, y `historyLoaded` lo dice.
+   * lecturas, y `historyLoaded` y `historySource` lo dicen (un historial cargado sin periodos válidos
+   * es «historial vacío», OQ-139).
    */
   readonly fleet: FleetTimeline & {
     readonly circuitName: string | null;
@@ -561,6 +612,13 @@ export interface CircuitViews {
       readonly kind: "desaparecido" | "nuevo" | "obsoleto-consolidado" | "sustitucion-candidata";
       readonly readingsBefore: number;
       readonly readingsAfter: number;
+      /**
+       * Solo en `desaparecido` y `nuevo` (OQ-138): si la ausencia es improbable por azar dadas las
+       * pasadas por su sitio en el otro periodo. Sin afirmar se enseña igual, con su cifra.
+       */
+      readonly affirmed?: boolean;
+      readonly chance?: number;
+      readonly opportunities?: number;
       /** Presentes solo cuando `kind === "sustitucion-candidata"` (R-DAT-017). */
       readonly nuevoTagId?: string;
       readonly sharedNeighbor?: string;

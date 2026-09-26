@@ -43,9 +43,9 @@ export interface TagLists {
   /**
    * Tags de las calles de carga online.
    *
-   * Están fuera del recorrido productivo, como mantenimiento y emergencia, pero con una diferencia
-   * que decide una clase entera: **puede saberse si hubo oportunidad de leerlos**. Si nadie entró
-   * en la calle, el cero no es un cero.
+   * Pertenecen al circuito (R-GRA-004; propietario, 2026-09-26): cuentan como declarados y se juzgan
+   * como cualquier otro tag. Con una diferencia que decide una clase entera: **puede saberse si hubo
+   * oportunidad de leerlos**. Si nadie entró en la calle, el cero no es un cero.
    */
   readonly charging: ReadonlySet<string>;
   /**
@@ -136,7 +136,17 @@ export type TagClass =
    * la redundancia, y la próxima lectura que falle en el refuerzo ya no tiene respaldo. Separarlo de
    * `critico-sin-lectura` es no dar por perdida una parada que los AGV siguen ejecutando.
    */
-  | "refuerzo-sin-lectura";
+  | "refuerzo-sin-lectura"
+  /**
+   * Solo aparece en la lista `critico`: ni el circuito virtual lo declara, ni la memoria lo lleva,
+   * ni nadie lo ha leído.
+   *
+   * No es «declarado sin memoria»: no está declarado. Lo más probable es una errata al transcribir
+   * la lista (`T0l` por `T01`), pero eso es hipótesis; el hecho es que la lista `critico` nombra un
+   * tag que ninguna otra fuente conoce. Salía como `declarado-sin-memoria` con la acción «añadir a
+   * la memoria», que llevaba a cargar la errata en la memoria de los vehículos.
+   */
+  | "critico-no-declarado";
 
 /**
  * Qué tiene que **valorar una persona** en cada caso.
@@ -165,7 +175,9 @@ export type TagAction =
   /** Se perdió una función crítica, no solo una lectura: valorar con la urgencia de esa función. */
   | "valorar-funcion-critica-perdida"
   /** La función la sostiene su refuerzo, que se lee: el punto crítico se ha quedado sin redundancia. */
-  | "revisar-refuerzo-sin-redundancia";
+  | "revisar-refuerzo-sin-redundancia"
+  /** Un tag que solo conoce la lista `critico`: comprobar esa lista antes de tocar nada más. */
+  | "comprobar-lista-critico";
 
 export interface TagInventoryRow {
   readonly tagId: string;
@@ -270,12 +282,15 @@ export function buildTagInventory(
 
   const rows: TagInventoryRow[] = [];
   for (const tagId of [...universe].sort()) {
-    const inVirtual = lists.virtual.has(tagId);
+    // La carga online pertenece al circuito (R-GRA-004; propietario, 2026-09-26, OQ-135): un tag de
+    // calle está declarado por su lista y se juzga como cualquier otro —su parada precisa es crítica—,
+    // no como mantenimiento. Hasta entonces era `especial` y una parada de calle servida que nadie leía
+    // no se veía.
+    const inVirtual = lists.virtual.has(tagId) || lists.charging.has(tagId);
     const inMemory = lists.memory.has(tagId);
     const isSpecial =
       lists.maintenance.has(tagId) ||
       lists.emergency.has(tagId) ||
-      lists.charging.has(tagId) ||
       (lists.night?.has(tagId) ?? false);
     const readers = readersByTag.get(tagId) ?? new Set<string>();
     const readingCount = readingsByTag.get(tagId) ?? 0;
@@ -364,6 +379,9 @@ function classify(input: ClassifyInput): { tagClass: TagClass; truth: TruthState
       if (input.isCritical) return { tagClass: "critico-sin-lectura", truth: "unknown" };
       return { tagClass: "obsoleto-candidato", truth: "unknown" };
     }
+    // Ni declarado ni en memoria: al universo solo pudo entrar por la lista `critico`. Decir de él
+    // «declarado» sería afirmar lo que ninguna lista dice; lo que hay que revisar es esa lista.
+    if (!input.inVirtual) return { tagClass: "critico-no-declarado", truth: "observed" };
     // Declarado, fuera de la memoria maestra y sin una sola lectura: nadie puede leerlo aunque
     // exista. Es un punto ciego de configuración, no una avería.
     return { tagClass: "declarado-sin-memoria", truth: "observed" };
@@ -394,6 +412,8 @@ const ACTION_BY_CLASS: Readonly<Record<TagClass, TagAction>> = {
   "critico-sin-lectura": "valorar-funcion-critica-perdida",
   // La función la sostiene el refuerzo (R-GRA-016): se valora la redundancia, no una función perdida.
   "refuerzo-sin-lectura": "revisar-refuerzo-sin-redundancia",
+  // Ninguna otra lista lo conoce: antes de añadirlo a ningún sitio, comprobar que no es una errata.
+  "critico-no-declarado": "comprobar-lista-critico",
 };
 
 /** La acción, en la frase que se le enseña a quien tiene que decidir. */
@@ -413,6 +433,8 @@ export function describeAction(action: TagAction): string {
       return "Ningún vehículo entró en esa calle: comprobar si sigue en servicio antes de mirar el tag";
     case "valorar-funcion-critica-perdida":
       return "Es un punto crítico declarado y nadie lo ha leído nunca: se perdió su función, no solo una lectura";
+    case "comprobar-lista-critico":
+      return "Solo aparece en la lista de críticos: ni el circuito lo declara, ni la memoria lo lleva, ni nadie lo ha leído. Comprobar esa lista antes de añadirlo a ninguna otra";
     case "revisar-refuerzo-sin-redundancia":
       return "Es el refuerzo de un punto crítico: nadie lo ha leído nunca, pero el otro tag del refuerzo sí se lee y sostiene la función, sin redundancia. Comprobar en planta si está: colocar una copia si falta, o eliminarlo de Vsystem si sobra";
   }

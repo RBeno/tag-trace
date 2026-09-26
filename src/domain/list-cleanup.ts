@@ -148,8 +148,11 @@ export function buildListCleanup(
     const positions = group.tags.map((tagId) => rowOf.get(tagId)?.position ?? 0);
     const next = (a: string, b: string): boolean =>
       placeOf?.get(a)?.successor === b || placeOf?.get(b)?.predecessor === a;
+    // Si a algún tag del refuerzo le falta el vecino leído (se lee, pero no en los AGV con que se
+    // midió el sitio), no se puede decir «separado» por eso: se cae al criterio del anillo.
+    const byRing = placeOf === undefined || group.tags.some((tagId) => !placeOf.has(tagId));
     const together =
-      placeOf === undefined
+      byRing
         ? group.tags.every((tagId) => ringIndex.has(tagId)) &&
           contiguousOnRing(group.tags.map((tagId) => ringIndex.get(tagId) ?? 0), ringSize)
         : group.tags.slice(1).every((tagId, index) => {
@@ -164,7 +167,7 @@ export function buildListCleanup(
         status: "comprobado",
         missing: [],
         detail:
-          placeOf === undefined
+          byRing
             ? `Seguidos en el recorrido (posiciones ${positions.join(", ")}).`
             : `Los AGV los leen uno detrás de otro (posiciones ${positions.join(", ")}).`,
       };

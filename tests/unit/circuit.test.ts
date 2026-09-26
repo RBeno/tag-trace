@@ -177,3 +177,46 @@ describe("hash semántico · INV-010", () => {
     expect(() => canonicalise({ a: Number.POSITIVE_INFINITY })).toThrow(TypeError);
   });
 });
+
+describe("unión encadenada · R-DAT-005", () => {
+  it("tres cortes solapados conservan las tres procedencias del evento común", () => {
+    // La unión se encadena sobre el acumulado; reconstruir `alsoFrom` en cada paso tiraba la
+    // procedencia de todas las exportaciones menos la última.
+    const corte = (source: string): Reading[] => [
+      reading(1000, "0007", "A", source, 2),
+      reading(2000, "0007", "B", source, 3),
+      reading(3000, "0007", "C", source, 4),
+    ];
+    const dos = unionReadings(corte("s1"), corte("s2"));
+    const tres = unionReadings(dos.readings, corte("s3"));
+
+    expect(tres.readings).toHaveLength(3);
+    const a = tres.readings.find((entry) => entry.tagId === "A");
+    expect(a?.provenance.sourceId).toBe("s1");
+    expect(a?.alsoFrom.map((p) => p.sourceId)).toEqual(["s2", "s3"]);
+  });
+
+  it("volver a unir la misma exportación no añade procedencias: el circuito guardado no crece con cada recarga", () => {
+    // Cada recarga de un fichero idéntico sumaba una procedencia a cada lectura; con un cuarto de
+    // millón de lecturas eso pasaba del tamaño máximo de un valor de IndexedDB tras dos recargas.
+    const corte = (source: string): Reading[] => [reading(1000, "0007", "A", source, 2), reading(2000, "0007", "B", source, 3)];
+    const una = unionReadings(corte("s1"), corte("s1"));
+    const dos = unionReadings(una.readings, corte("s1"));
+    const tres = unionReadings(dos.readings, corte("s2"));
+    expect(una.readings.every((entry) => entry.alsoFrom.length === 0)).toBe(true);
+    expect(dos.readings.every((entry) => entry.alsoFrom.length === 0)).toBe(true);
+    expect(tres.readings.map((entry) => entry.alsoFrom.map((p) => p.sourceId))).toEqual([["s2"], ["s2"]]);
+    // Y una fuente distinta ya contada no se cuenta dos veces.
+    const cuatro = unionReadings(tres.readings, corte("s2"));
+    expect(cuatro.readings.map((entry) => entry.alsoFrom.length)).toEqual([1, 1]);
+  });
+});
+
+describe("hash semántico · tipos que no se serializan", () => {
+  it("un Map, un Set o un Date se rechazan en vez de hashearse como {}", () => {
+    // `Object.entries` de los tres es vacío: dos estados distintos daban el mismo hash (INV-010).
+    expect(() => canonicalise(new Map([["a", 1]]))).toThrow(TypeError);
+    expect(() => canonicalise({ x: new Set([1]) })).toThrow(TypeError);
+    expect(() => canonicalise([new Date(0)])).toThrow(TypeError);
+  });
+});

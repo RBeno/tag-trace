@@ -10,6 +10,8 @@
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { openTab } from "./pestanas.js";
+
 import { buildAuditScenario } from "../support/circuito-auditoria.js";
 
 async function freshPage(page: Page): Promise<void> {
@@ -54,17 +56,23 @@ test.describe("tableta táctil y portátil", () => {
       page.locator("figure.chart", { has: page.getByRole("heading", { name: title }) }).first();
 
     // Vida de cada AGV: un toque en una fila escribe su AGV, y la lectura se queda.
+    await openTab(page, "AGV");
     const lifeline = figureOf("Vida de cada AGV en el circuito");
     const lifelineCanvas = lifeline.locator("canvas");
-    await lifelineCanvas.scrollIntoViewIfNeeded();
+    // En una fila de en medio del lienzo, no en la primera: arriba están fijas la barra de pestañas
+    // y la de revisión, y el borde superior del lienzo puede quedar debajo de ellas.
+    await lifelineCanvas.evaluate((el) => el.scrollIntoView({ block: "center" }));
     const box = (await lifelineCanvas.boundingBox()) as { x: number; y: number; width: number; height: number };
-    await page.touchscreen.tap(box.x + box.width * 0.5, box.y + 30);
+    await page.touchscreen.tap(box.x + box.width * 0.5, box.y + box.height * 0.5);
     const lifelineReadout = lifeline.locator(".readout");
     await expect(lifelineReadout).toContainText(/71\d\d/);
     await page.waitForTimeout(400);
     await expect(lifelineReadout).toContainText(/71\d\d/);
 
-    // Anillo: un toque cerca de un segmento, sin caer encima de ninguna marca, lee el tag más cercano.
+    // Anillo (en Resumen desde 3.49.0): un toque cerca de un segmento, sin caer encima de ninguna marca,
+    // lo toca igual —el navegador ajusta el toque al objetivo más cercano, y cada segmento es un botón—
+    // y abre su expediente: el buscador se rellena con el tag y AGV se activa.
+    await openTab(page, "Resumen");
     const ring = figureOf("Anillo del circuito");
     await ring.scrollIntoViewIfNeeded();
     const near = await ring.evaluate((root) => {
@@ -86,24 +94,29 @@ test.describe("tableta táctil y portátil", () => {
     });
     expect(near).not.toBeNull();
     await page.touchscreen.tap(near?.x as number, near?.y as number);
-    const ringReadout = ring.locator(".readout");
-    await expect(ringReadout).toContainText(/Tag \d+ · posición|Calle «|· Tag \d+/);
+    await expect(page.getByRole("tab", { name: "AGV" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#dossier-search")).toHaveValue(/^\d+$/);
+    await expect(page.getByRole("heading", { name: /^Tag \d+$/ })).toBeVisible();
 
     // Un toque en el centro del anillo, lejos de toda marca, vuelve al texto de reposo.
+    await openTab(page, "Resumen");
+    const ringReadout = ring.locator(".readout");
     const ringSvg = (await ring.locator("svg").first().boundingBox()) as { x: number; y: number; width: number; height: number };
     await page.touchscreen.tap(ringSvg.x + ringSvg.width / 2, ringSvg.y + ringSvg.height / 2);
-    await expect(ringReadout).toHaveText("Toca o pasa el puntero por el anillo para leer un tag.");
+    await expect(ringReadout).toHaveText("Toca o pasa el puntero por el anillo para leer un tag; tocar un tag abre su expediente.");
 
     // Con dedo, los botones de los gráficos miden al menos 44 px.
+    await openTab(page, "Tags");
     const heatmapButton = figureOf("Mapa de omisión tag × AGV").getByRole("button", { name: "Peor omisión primero" });
     expect(((await heatmapButton.boundingBox()) as { height: number }).height).toBeGreaterThanOrEqual(44);
 
     // Con ratón (o panel táctil), la lectura sigue al puntero y se va al salir, como antes.
-    await lifelineCanvas.scrollIntoViewIfNeeded();
+    await openTab(page, "AGV");
+    await lifelineCanvas.evaluate((el) => el.scrollIntoView({ block: "center" }));
     const again = (await lifelineCanvas.boundingBox()) as { x: number; y: number; width: number; height: number };
-    await page.mouse.move(again.x + again.width * 0.6, again.y + 60);
+    await page.mouse.move(again.x + again.width * 0.6, again.y + again.height * 0.5);
     await expect(lifelineReadout).toContainText(/71\d\d/);
-    await page.mouse.move(again.x + again.width * 0.6, again.y - 200);
+    await page.mouse.move(again.x + again.width * 0.6, again.y + again.height + 40);
     await expect(lifelineReadout).toHaveText("Toca o pasa el puntero por una fila para leer el tramo.");
 
     // Tableta en vertical y apaisada, y tres portátiles: ninguna anchura desborda la página.

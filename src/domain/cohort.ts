@@ -49,6 +49,17 @@ export interface CohortThresholds {
   readonly minOwnTags: number;
 }
 
+/**
+ * Orden de identificadores por código de carácter, no por locale.
+ *
+ * `localeCompare` sin locale depende del entorno del motor: con identificadores que mezclan
+ * mayúsculas o acentos, dos navegadores podían numerar los cohortes de forma distinta y el mismo
+ * fichero daría dos hashes (INV-010). El orden por código es arbitrario pero idéntico en todas partes.
+ */
+function compareIds(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function jaccard(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
   let shared = 0;
   for (const tag of a) if (b.has(tag)) shared += 1;
@@ -104,7 +115,7 @@ export function assignCohorts(
 
   // 1. Parecido de tags, del vehículo con más tags al que menos.
   const vehicles = [...tagsOf.keys()].sort(
-    (a, b) => (tagsOf.get(b)?.size ?? 0) - (tagsOf.get(a)?.size ?? 0) || a.localeCompare(b),
+    (a, b) => (tagsOf.get(b)?.size ?? 0) - (tagsOf.get(a)?.size ?? 0) || compareIds(a, b),
   );
   const groups: string[][] = [];
   for (const agvId of vehicles) {
@@ -131,7 +142,7 @@ export function assignCohorts(
     }
     return count;
   };
-  groups.sort((a, b) => b.length - a.length || (a[0] as string).localeCompare(b[0] as string));
+  groups.sort((a, b) => b.length - a.length || compareIds(a[0] as string, b[0] as string));
   const firm: string[][] = [];
   const weak: string[][] = [];
   for (const members of groups) {
@@ -159,8 +170,8 @@ export function assignCohorts(
   }
 
   const cohorts: Cohort[] = [...firm, ...alone]
-    .map((members) => [...members].sort())
-    .sort((a, b) => b.length - a.length || (a[0] ?? "").localeCompare(b[0] ?? ""))
+    .map((members) => [...members].sort(compareIds))
+    .sort((a, b) => b.length - a.length || compareIds(a[0] ?? "", b[0] ?? ""))
     .map((members, id) => ({ id, vehicles: members }));
 
   const cohortOf = new Map<string, number>();

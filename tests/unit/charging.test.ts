@@ -21,7 +21,7 @@ import {
 import { buildChargingReport, findLaneJunctions, type ChargingThresholds } from "../../src/domain/charging.js";
 import type { Reading } from "../../src/domain/reading.js";
 
-const THRESHOLDS: ChargingThresholds = { longStayRatio: 2, minStaysForMedian: 4 };
+const THRESHOLDS: ChargingThresholds = { longStayRatio: 2, minStaysForMedian: 4, usageMaxChance: 0.001, usageMinDeviation: 0.25 };
 
 function entry(
   tagId: string,
@@ -105,6 +105,47 @@ describe("configuración de calles (R-CO-001)", () => {
     const { lanes, problems } = readCoLanes([entry("750", "parada-precisa", "calle-c", 1), entry("751", "", "calle-c", 2)]);
     expect(lanes).toEqual([]);
     expect(problems.join(" ")).toContain("salida");
+  });
+
+  it("una calle que da el mismo tag a dos papeles, o repite un tag o un orden, no se monta", () => {
+    const mismoTag = readCoLanes([entry("760", "entrada", "calle-d", 1), entry("760", "parada-precisa", "calle-d", 2), entry("762", "salida", "calle-d", 3)]);
+    expect(mismoTag.lanes).toEqual([]);
+    expect(mismoTag.problems.join(" ")).toContain("repite el tag 760");
+    const paradaYSalida = readCoLanes([entry("770", "parada-precisa", "calle-e", 1), entry("771", "", "calle-e", 2), entry("770", "salida", "calle-e", 3)]);
+    expect(paradaYSalida.lanes).toEqual([]);
+    const mismoOrden = readCoLanes([entry("780", "entrada", "calle-f", 1), entry("781", "parada-precisa", "calle-f", 1), entry("782", "salida", "calle-f", 3)]);
+    expect(mismoOrden.lanes).toEqual([]);
+    expect(mismoOrden.problems.join(" ")).toContain("mismo «orden»");
+  });
+
+  it("dos calles que comparten la parada precisa o la salida no se montan; una entrada común solo avisa", () => {
+    const compartida = readCoLanes([
+      ...lane("calle-g", 800),
+      entry("810", "entrada", "calle-h", 1),
+      entry("801", "parada-precisa", "calle-h", 2),
+      entry("812", "salida", "calle-h", 3),
+      ...lane("calle-i", 820),
+    ]);
+    expect(compartida.lanes.map((lane) => lane.laneId)).toEqual(["calle-i"]);
+    expect(compartida.problems.join(" ")).toContain("comparten la parada precisa 801");
+    const entradaComun = readCoLanes([
+      ...lane("calle-j", 830),
+      entry("830", "entrada", "calle-k", 1),
+      entry("841", "parada-precisa", "calle-k", 2),
+      entry("842", "salida", "calle-k", 3),
+    ]);
+    expect(entradaComun.lanes.map((lane) => lane.laneId)).toEqual(["calle-j", "calle-k"]);
+    expect(entradaComun.problems.join(" ")).toContain("comparten la entrada 830");
+  });
+
+  it("con «orden» solo en parte de las filas manda el orden del fichero, y se avisa; un null no va primero", () => {
+    const { lanes, problems } = readCoLanes([
+      entry("850", "entrada", "calle-l", 1),
+      entry("851", "parada-precisa", "calle-l", null),
+      entry("852", "salida", "calle-l", 3),
+    ]);
+    expect(lanes[0]?.tags).toEqual(["850", "851", "852"]);
+    expect(problems.join(" ")).toContain("orden a medias");
   });
 
   it("un tag de carga sin calle se declara en vez de repartirse a ojo", () => {
@@ -271,6 +312,34 @@ describe("máquina de estados de la calle (R-CO-002)", () => {
     expect(report.coverageStartUtcMs).toBe(0);
   });
 
+  it("una estancia que cruza el hueco entre dos exportaciones no se sabe cuánto duró: incompleta, y no acusa a nadie", () => {
+    // A entra en la primera exportación y su siguiente lectura es la salida, en la segunda, un día
+    // después. B, C, D y E cargan 30 min en la segunda. Darla por completa la hacía permanencia larga
+    // y «salida fuera de antigüedad» frente a los cuatro (R-DAT-007: el hueco es sin datos, no espera).
+    const twoExports = [
+      { from: 0, to: 60 * MINUTE },
+      { from: 25 * 60 * MINUTE, to: 26 * 60 * MINUTE },
+    ];
+    const readings = [
+      read("A", "700", 50 * MINUTE),
+      read("A", "701", 51 * MINUTE),
+      read("A", "702", 25 * 60 * MINUTE + 10 * MINUTE),
+      ...["B", "C", "D", "E"].flatMap((agvId, index) => [
+        read(agvId, "700", 25 * 60 * MINUTE + index * MINUTE),
+        read(agvId, "701", 25 * 60 * MINUTE + index * MINUTE + 10_000),
+        read(agvId, "702", 25 * 60 * MINUTE + index * MINUTE + 30 * MINUTE),
+      ]),
+    ];
+    const calle1 = buildChargingReport(readings, lanes, twoExports, THRESHOLDS).lanes.find((item) => item.laneId === "calle-1");
+    const a = calle1?.stays.find((stay) => stay.agvId === "A");
+    expect(a).toMatchObject({ state: "incompleta", truth: "unknown", durationMs: null, enteredUtcMs: 50 * MINUTE, leftUtcMs: 25 * 60 * MINUTE + 10 * MINUTE });
+    expect(a?.evidence).toContain("sin datos cargados");
+    expect(calle1?.longStays).toEqual([]);
+    expect(calle1?.outOfSeniority).toEqual([]);
+    // La mediana se hace con las cuatro completas.
+    expect(calle1?.medianStayMs).toBe(30 * MINUTE - 10_000);
+  });
+
   it("salir de una calle habiendo circulado antes no es arranque en frío", () => {
     const readings = [
       read("C", "999", 1 * MINUTE),
@@ -389,3 +458,56 @@ describe("vehículos que no entraron en ninguna calle (neverCharged)", () => {
     expect(report.neverCharged[0]).toMatchObject({ firstUtcMs: 0, lastUtcMs: 5 * MINUTE, readings: 2 });
   });
 });
+
+describe("las tres comprobaciones de planta sobre las calles (R-CO-009)", () => {
+  const { lanes } = readCoLanes([...lane("calle-1", 700), ...lane("calle-2", 710), ...lane("calle-3", 720)]);
+  /** Una estancia completa de `agvId` en la calle `base`: entrada, parada y salida, `skip` sin leer. */
+  const stay = (agvId: string, base: number, at: number, skip: readonly string[] = []): Reading[] =>
+    [String(base), String(base + 1), String(base + 2)]
+      .filter((tagId) => !skip.includes(tagId))
+      .map((tagId, index) => read(agvId, tagId, at + index * 2 * MINUTE));
+
+  it("por tag de la calle, en cuántas estancias completas se leyó: la parada que no se lee sale con su cifra", () => {
+    const readings = [
+      ...stay("A", 700, 0),
+      ...stay("B", 700, 20 * MINUTE, ["701"]),
+      ...stay("C", 700, 40 * MINUTE, ["701"]),
+      ...stay("A", 710, 60 * MINUTE),
+    ];
+    const report = buildChargingReport(readings, lanes, [{ from: 0, to: 120 * MINUTE }], THRESHOLDS);
+    const calle1 = report.lanes.find((entry) => entry.laneId === "calle-1");
+    expect(calle1?.tagReads).toEqual([
+      { tagId: "700", role: "entrada", staysRead: 3, stays: 3, readings: 3, vehicles: 3 },
+      { tagId: "701", role: "parada-precisa", staysRead: 1, stays: 3, readings: 1, vehicles: 1 },
+      { tagId: "702", role: "salida", staysRead: 3, stays: 3, readings: 3, vehicles: 3 },
+    ]);
+  });
+
+  it("una calle servida mucho menos que las demás se señala con su cuota; un reparto parejo no dice nada", () => {
+    const parejo: Reading[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      parejo.push(...stay("A", 700, i * 60 * MINUTE), ...stay("B", 710, i * 60 * MINUTE), ...stay("C", 720, i * 60 * MINUTE + 5 * MINUTE));
+    }
+    const igual = buildChargingReport(parejo, lanes, [{ from: 0, to: 24 * 60 * MINUTE }], THRESHOLDS);
+    expect(igual.usage.map((entry) => entry.verdict)).toEqual([null, null, null]);
+
+    const desigual: Reading[] = [];
+    for (let i = 0; i < 30; i += 1) {
+      desigual.push(...stay("A", 700, i * 60 * MINUTE), ...stay("B", 710, i * 60 * MINUTE));
+      if (i % 10 === 0) desigual.push(...stay("C", 720, i * 60 * MINUTE + 5 * MINUTE));
+    }
+    const report = buildChargingReport(desigual, lanes, [{ from: 0, to: 36 * 60 * MINUTE }], THRESHOLDS);
+    const calle3 = report.usage.find((entry) => entry.laneId === "calle-3");
+    expect(calle3).toMatchObject({ stays: 3, verdict: "menos" });
+    expect(calle3?.chance).toBeLessThan(0.001);
+    expect(report.usage.filter((entry) => entry.laneId !== "calle-3").map((entry) => entry.verdict)).toEqual([null, null]);
+  });
+
+  it("el reparto solo compara calles servidas: la que nadie usa ya tiene su clase, y con una sola servida no hay reparto", () => {
+    const readings = [...stay("A", 700, 0), ...stay("B", 700, 30 * MINUTE)];
+    const report = buildChargingReport(readings, lanes, [{ from: 0, to: 120 * MINUTE }], THRESHOLDS);
+    expect(report.usage).toEqual([]);
+    expect(report.neverCharged).toEqual([]);
+  });
+});
+

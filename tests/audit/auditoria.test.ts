@@ -26,11 +26,14 @@ import { dominantNeighbours, locateUndeclaredTags, type UndeclaredTagReport } fr
 import { reconcileCircuitOrder, type CircuitOrder } from "../../src/domain/circuit-order.js";
 import { compareAgainstVsystem, type VsystemComparisonRow } from "../../src/domain/vsystem.js";
 import { findDominantCycle, resolveDeclaredAnchor, segmentLaps, type Lap } from "../../src/domain/laps.js";
+import { measureAnchorSections, type AnchorSectionsReport } from "../../src/domain/anchor-sections.js";
+import { tagSections } from "../../src/domain/tag-info.js";
 import { buildReadMatrix, type ReadMatrix } from "../../src/domain/read-matrix.js";
 import { buildTagInventory } from "../../src/domain/inventory.js";
 import { reinforcementGroups, reinforcementPartners } from "../../src/domain/critical-reinforcement.js";
 import { buildListCleanup } from "../../src/domain/list-cleanup.js";
 import { lineStopExclusion, measureLineFeed, outsideLineStops, type LineFeed } from "../../src/domain/line-feed.js";
+import { abandonedReadings, buildIncidentContext, incidentBattery, type IncidentContext } from "../../src/domain/incident-battery.js";
 import { buildAllAgvDossiers, buildAllTagDossiers } from "../../src/domain/dossier.js";
 import { buildChargingReport, type ChargingReport } from "../../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans, type FifoReport } from "../../src/domain/fifo.js";
@@ -122,6 +125,7 @@ function parseStamp(value: string): number {
 }
 
 interface Analysis {
+  readonly anchorSections: AnchorSectionsReport | null;
   /** Contraste con la lista y el orden según las lecturas (R-GRA-001, R-GRA-015). */
   readonly contrast: readonly VsystemComparisonRow[];
   readonly circuitOrder: CircuitOrder;
@@ -191,6 +195,8 @@ interface Analysis {
   readonly lineFeed: LineFeed;
   /** La misma medida con la entrada en un tramo limpio, para el pulmón. */
   readonly lineFeedPulmon: LineFeed;
+  /** Las lecturas de cada AGV, para la batería de cada incidencia (R-AGV-021). */
+  readonly incidentContext: IncidentContext;
   /** Funciones críticas declaradas y su grupo, para la limpieza de la lista (R-GRA-017). */
   readonly criticalPointsFuncionOf: ReadonlyMap<string, string>;
   readonly criticalPointsGroupOf: ReadonlyMap<string, string>;
@@ -501,6 +507,8 @@ function analyse(
             regimeOf,
             flow,
             timeCritical,
+            declaredOrder: entriesOf("circuito").map((entry) => entry.tagId),
+            readTags: new Set(readings.map((entry) => entry.tagId)),
             reachTags: PROVISIONAL_CONFIG.flowStops.reachTags,
             minVehicles: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
             headStallMs: PROVISIONAL_CONFIG.flowStops.headStallMs,
@@ -630,9 +638,38 @@ function analyse(
   ]);
   const circuitOrder = reconcileCircuitOrder(declaredOrder, ring, readTags, dominantNeighbours(cohortReadings, toPlace));
 
+  // Tiempos por sección entre anclas (R-TIM-012), como el Worker: el cohorte principal, sus anclas en
+  // el anillo y el nombre de la lista `tramo`.
+  const anchorSections =
+    anchor === null
+      ? null
+      : measureAnchorSections(
+          {
+            readings: cohortReadings,
+            direction,
+            ring: anchor.cycle,
+            anchors: lapAnchorsConfig.anchors,
+            coverage: window,
+            productionStops: production.stops.map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs })),
+            laneTags,
+            regimeOf,
+            sectionOf: tagSections(
+              [...catalog.lists].map(([list, entries]) => ({
+                list,
+                entries: entries.map((entry) => ({ tagId: entry.tagId, funcion: entry.funcion, grupo: entry.grupo, note: "" })),
+              })),
+              criticalPointsConfig.funcionOf,
+            ),
+            windows: driftCoverage.map((entry, index) => ({ sourceId: `f${index + 1}`, window: entry })),
+          },
+          PROVISIONAL_CONFIG.bands,
+          PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+        );
+
   return {
     contrast,
     circuitOrder,
+    anchorSections,
     undeclared,
     undeclaredWithNightList,
     lineFeed: measureLineFeed(
@@ -647,6 +684,7 @@ function analyse(
     ),
     // El pulmón se mide aparte, con la entrada en un tramo limpio del anillo: con la línea declarada
     // en el 59 las paradas de la producción paran a la flota en sitios distintos y no marcan un pulmón.
+    incidentContext: buildIncidentContext(readings, [], () => null),
     lineFeedPulmon: measureLineFeed(
       readings,
       [scenario.physicalRing[136] as string],
@@ -732,6 +770,7 @@ describe("auditoría del circuito con verdad conocida", () => {
     undeclaredWithNightList,
     lineFeed,
     lineFeedPulmon,
+    incidentContext,
     criticalPointsFuncionOf,
     criticalPointsGroupOf,
     reinforcementPlaces,
@@ -1419,6 +1458,69 @@ describe("auditoría del circuito con verdad conocida", () => {
           `ciclo entre ${Math.round((day?.cycleLowMs ?? 0) / 1000)} y ${Math.round((day?.cycleHighMs ?? 0) / 1000)} s`,
       };
     },
+    "zona-oscura-por-tag-sin-lecturas": () => {
+      const tags = scenario.defects.find((d) => d.kind === "zona-oscura-por-tag-sin-lecturas")?.tags ?? [];
+      const zones = circuitState?.darkZones ?? [];
+      const found = tags.map((tag) => zones.find((zone) => zone.cause === "tag-sin-lecturas" && zone.missingTags.includes(tag)));
+      const spurious = zones.filter((zone) => zone.cause === "tramo-largo");
+      return {
+        ok: found.every((zone) => zone !== undefined) && spurious.length === 0,
+        detail:
+          tags.map((tag, index) => `${tag}: ${found[index] === undefined ? "sin zona" : `${found[index]?.tags[0]}…${found[index]?.tags.at(-1)}`}`).join(", ") +
+          `; «tramo tarda» sin tag declarado: ${spurious.length}`,
+      };
+    },
+    "bateria-del-que-salta": () => {
+      const defect = scenario.defects.find((d) => d.kind === "bateria-del-que-salta");
+      const agv = defect?.vehicles[0] ?? "";
+      const tramo = new Set(defect?.tags ?? []);
+      const steps = incidentContext.steps.get(agv) ?? [];
+      const physical = scenario.physicalRing;
+      const before = physical[physical.indexOf(defect?.tags[0] ?? "") - 1];
+      const afterTag = physical[physical.indexOf(defect?.tags.at(-1) ?? "") + 1];
+      // Un hueco de producción en que se saltó el tramo entero: del tag anterior al posterior.
+      const regime = regimeReader("Europe/Madrid", PROVISIONAL_CONFIG.regimes);
+      const index = steps.findIndex(
+        (step, at) => step.tagId === before && steps[at + 1]?.tagId === afterTag && regime(step.utcMs) === "produccion",
+      );
+      const from = steps[index];
+      const to = steps[index + 1];
+      if (from === undefined || to === undefined || tramo.size === 0) return { ok: false, detail: `${agv} no se salta el tramo entero` };
+      const battery = incidentBattery(incidentContext, { agvId: agv, fromTagId: from.tagId, fromUtcMs: from.utcMs, toTagId: to.tagId, toUtcMs: to.utcMs }, scenario.toUtcMs);
+      return {
+        ok: battery.reading === "no-registra" && battery.behind.overtook.length === 0,
+        detail: battery.lines.join(" | "),
+      };
+    },
+    "bateria-de-la-parada-aislada": () => {
+      const defect = scenario.defects.find((d) => d.kind === "bateria-de-la-parada-aislada");
+      const stop = flow.stops.find((entry) => entry.agvId === defect?.vehicles[0] && entry.fromTagId === defect?.tags[0]);
+      if (stop === undefined) return { ok: false, detail: "sin la parada aislada" };
+      const battery = incidentBattery(
+        incidentContext,
+        { agvId: stop.agvId, fromTagId: stop.fromTagId, fromUtcMs: stop.fromUtcMs, toTagId: stop.toTagId, toUtcMs: stop.toUtcMs },
+        scenario.toUtcMs,
+      );
+      return {
+        ok: battery.reading === "parado-con-cola" && battery.behind.held.length > 0 && battery.behind.overtook.length === 0,
+        detail: battery.lines.join(" | "),
+      };
+    },
+    "bateria-del-bloqueo": () => {
+      const agv = scenario.defects.find((d) => d.kind === "bateria-del-bloqueo")?.vehicles[0];
+      const blockage = flow.blockages.find((entry) => entry.agvId === agv);
+      if (blockage === undefined) return { ok: false, detail: `sin bloqueo de ${agv ?? "?"}` };
+      const battery = incidentBattery(
+        incidentContext,
+        { agvId: blockage.agvId, fromTagId: blockage.tagId, fromUtcMs: blockage.fromUtcMs, toTagId: blockage.nextTagId, toUtcMs: blockage.toUtcMs },
+        scenario.toUtcMs,
+      );
+      return {
+        // El resto de la flota lo adelanta con su propio reloj (así se plantó): no se movía en la guía.
+        ok: battery.reading === "adelantado" && battery.behind.overtook.length > 0,
+        detail: battery.lines.join(" | "),
+      };
+    },
     "linea-tag-sin-leer": () => {
       const defect = scenario.defects.find((d) => d.kind === "linea-tag-sin-leer");
       const readers = lineFeed.passages?.readers ?? [];
@@ -1757,10 +1859,19 @@ describe("auditoría del circuito con verdad conocida", () => {
     const retiene = scenario.defects.find((d) => d.kind === "retiene-a-otros")?.vehicles[0];
     const ritmos = [pace, ...franjaPace].flatMap((report, index) =>
       (report?.vehicles ?? [])
-        .filter((vehicle) => vehicle.verdict !== null && vehicle.agvId !== lento)
+        .filter((vehicle) => vehicle.verdict !== null && vehicle.agvId !== lento && vehicle.agvId !== retiene)
         .map((vehicle) => `${index === 0 ? "todo" : `f${index}`} ${vehicle.agvId} ${vehicle.verdict}`),
     );
     expect(ritmos, "ritmos señalados sin plantar").toEqual([]);
+    // El retenedor devuelve su espera del semáforo a la mitad de cada paso siguiente (deuda de reloj
+    // del generador), así que en la zona cargada va de verdad más rápido. Si el ritmo lo señala, solo
+    // puede ser por eso: más rápido, y solo ahí.
+    for (const report of [pace, ...franjaPace]) {
+      const vehicle = report?.vehicles.find((entry) => entry.agvId === retiene);
+      if (vehicle === undefined || vehicle.verdict === null) continue;
+      expect(vehicle.verdict).toBe("mas-rapido");
+      expect(vehicle.where).toEqual(["cargado"]);
+    }
     const retenedores = [pace, ...franjaPace].flatMap((report, index) =>
       (report?.holders ?? [])
         .filter((holder) => holder.expected !== null && holder.agvId !== retiene)
@@ -1844,6 +1955,11 @@ describe("auditoría del circuito con verdad conocida", () => {
       agrupadasEspurias.map((delivery) => `${delivery.agvId} ${delivery.fromTagId}`),
       "lecturas agrupadas sin plantar",
     ).toHaveLength(0);
+
+    // Ningún AGV «deja de leer» (R-AGV-021): todos leen hasta el final de lo cargado. Con el umbral de
+    // cada AGV contra sí mismo, un silencio normal —la noche, una carga— no puede salir como abandono.
+    const abandonados = abandonedReadings(incidentContext, scenario.toUtcMs).map((entry) => entry.agvId);
+    expect(abandonados, "AGV que dejan de leer sin plantar").toEqual([]);
   }, PLAZO);
 
   it("con una sola exportación, los cambios de tag y la lectura por AGV coinciden con lo plantado", () => {
@@ -1963,6 +2079,13 @@ describe("auditoría del circuito con verdad conocida", () => {
     expect([...silences.values()].flat().filter((entry) => entry.kind === "desconexion")).toEqual([]);
     // Y el único bloqueo es el plantado.
     expect(flow.blockages.map((blockage) => blockage.agvId)).toEqual([adelantado]);
+    // Un hueco que no se puede clasificar por su tramo (sin tiempo habitual: el AGV estaba en una rama o
+    // en un tag sustituido) solo ocurre dentro de una parada de la producción. Fuera de ellas, todo
+    // hueco tiene clase.
+    const sinClase = [...silences].flatMap(([agvId, list]) =>
+      list.filter((entry) => entry.kind === "sin-clasificar" && entry.justification !== "produccion").map((entry) => `${agvId} ${entry.detail.lastTagBefore}`),
+    );
+    expect(sinClase, "huecos sin clasificar fuera de una parada de la producción").toEqual([]);
   }, PLAZO);
 
   it("fuera de la lista del circuito, solo el tag plantado sale como de noche (R-DAT-022)", () => {
@@ -2001,6 +2124,63 @@ describe("auditoría del circuito con verdad conocida", () => {
     for (const tag of nuncaLeidos) {
       expect(consolidados.has(tag), `${tag} debería salir obsoleto-consolidado`).toBe(true);
     }
+  }, PLAZO);
+
+  it("las calles servidas se usan por igual, sus tags son del circuito y cada estancia lee sus tags (R-CO-009, OQ-135)", () => {
+    // El generador reparte los AGV entre las calles servidas por turno: ninguna debe salir señalada.
+    const servidas = charging.lanes.filter((lane) => lane.served);
+    expect(servidas.length).toBeGreaterThanOrEqual(2);
+    expect(charging.usage.map((entry) => `${entry.laneId}:${entry.verdict}`)).toEqual(
+      servidas.map((lane) => `${lane.laneId}:null`),
+    );
+    // La carga online pertenece al circuito: ningún tag de calle servida es `especial` ni «no declarado».
+    const tagsServidos = new Set(servidas.flatMap((lane) => lane.tagReads.map((tag) => tag.tagId)));
+    const clases = inventory.rows
+      .filter((row) => tagsServidos.has(row.tagId))
+      .map((row) => `${row.tagId}:${row.tagClass}`);
+    expect(clases.filter((entry) => entry.endsWith(":especial") || entry.endsWith(":no-declarado-leido"))).toEqual([]);
+    // Dentro de cada estancia completa se leen la entrada, la parada y la salida: la cifra lo dice.
+    for (const lane of servidas) {
+      for (const tag of lane.tagReads) {
+        expect(tag.stays, `${lane.laneId} ${tag.tagId}`).toBeGreaterThan(0);
+        expect(tag.staysRead / tag.stays, `${lane.laneId} ${tag.tagId} (${tag.role})`).toBeGreaterThanOrEqual(0.9);
+      }
+    }
+  }, PLAZO);
+
+  it("tres anclas delimitan tres secciones con nombre de tramo y tiempos que suman la vuelta (R-TIM-012)", () => {
+    const report = analysis.anchorSections;
+    expect(report).not.toBeNull();
+    const { onRing, sections } = report as AnchorSectionsReport;
+    const physicalRing = scenario.physicalRing;
+    expect(onRing).toEqual([physicalRing[0], ...scenario.sectionAnchors]);
+    expect(sections.map((section) => section.name)).toEqual([
+      "kitting",
+      `${scenario.sectionAnchors[0] as string} → ${scenario.sectionAnchors[1] as string}`,
+      "expedicion",
+    ]);
+    expect(sections.map((section) => section.namedByList)).toEqual([true, false, true]);
+    // Cincuenta posiciones por sección, menos los tags plantados que nadie lee y no entran en el anillo.
+    for (const section of sections) {
+      expect(section.tags.length, section.name).toBeGreaterThanOrEqual(45);
+      expect(section.tags.length, section.name).toBeLessThanOrEqual(50);
+    }
+    expect(sections.reduce((sum, section) => sum + section.tags.length, 0)).toBe(
+      (analysis.anchorSections as AnchorSectionsReport).sections.length > 0 ? ring.length : 0,
+    );
+    // Cada sección tiene horquilla de producción, y las tres suman lo que tarda la vuelta: 150 pasos
+    // de 12 a 20 s (16 s de media), unos 40 minutos, con las esperas plantadas encima.
+    let total = 0;
+    for (const section of sections) {
+      expect(section.produccion, section.name).not.toBeNull();
+      expect(section.produccion?.samples ?? 0, section.name).toBeGreaterThan(PROVISIONAL_CONFIG.bands.minBandSamples);
+      total += section.produccion?.p50Ms ?? 0;
+      // Por fichero: dos ventanas, las dos con muestras.
+      expect(section.bySource.map((entry) => entry.sourceId)).toEqual(["f1", "f2"]);
+      for (const entry of section.bySource) expect(entry.samples, `${section.name} ${entry.sourceId}`).toBeGreaterThan(0);
+    }
+    expect(total).toBeGreaterThan(150 * 16_000 * 0.9);
+    expect(total).toBeLessThan(150 * 16_000 * 1.25);
   }, PLAZO);
 
   it("la lista de deuda conocida no miente: si algo empieza a detectarse, hay que sacarlo", () => {

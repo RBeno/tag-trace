@@ -34,6 +34,8 @@ interface Quirks {
   readonly stay?: { readonly agv: string; readonly atLap: number; readonly ms: number };
   /** El primer AGV que entra desde este instante no hace la parada: el siguiente entra enseguida. */
   readonly noStopFrom?: number;
+  /** Paradas de la producción: toda la flota se queda donde esté hasta que acaban. */
+  readonly breaks?: readonly [number, number][];
 }
 
 function simulate(
@@ -53,9 +55,11 @@ function simulate(
       for (const tag of RING) {
         // En una guía no se adelanta: el retraso es del rezagado y de los que van detrás de él.
         if (tag === (late?.at ?? "A") && late !== null && late.agvs.includes(agv) && late.atLap === lap) t += late.ms;
+        for (const [from, to] of quirks.breaks ?? []) if (t >= from && t < to) t = to;
         if (tag === "E") {
           t = Math.max(t, entryFree);
           for (const [from, to] of stops) if (t >= from && t < to) t = to;
+          for (const [from, to] of quirks.breaks ?? []) if (t >= from && t < to) t = to;
           // La línea toma un AGV cada 40 s: tras una parada los suelta a su ritmo, no todos a la vez.
           const skips = quirks.noStopFrom !== undefined && !noStopUsed && t >= quirks.noStopFrom;
           if (skips) noStopUsed = true;
@@ -164,6 +168,91 @@ describe("alimentación de la línea", () => {
     // Lo único de más es la espera de 20 s: el paso de 40 a 50 s no cuenta como línea sin paso.
     expect(day?.lostMs).toBe(20_000);
     expect(noche?.lostMs).toBe(0);
+  });
+
+  it("con el ciclo entre 50 y 60 s y ninguna parada, «por encima del ciclo local» suma algo pero «sin paso» es 0", () => {
+    // OQ-138: la mitad de los tiempos queda por encima de su mediana local, así que `lostMs` nunca es 0
+    // aunque la línea vaya a su ritmo. Lo que dice «línea parada» es lo que supera la valla local.
+    const cycles = [50_000, 55_000, 60_000, 55_000, 50_000, 60_000];
+    const build = (stopAt: number | null): Reading[] => {
+      const out: Reading[] = [];
+      let t = 0;
+      let n = 0;
+      while (t < 3_600_000) {
+        const agv = String((n % 3) + 1);
+        out.push(reading(agv, "Q", t - 10_000), reading(agv, "E", t), reading(agv, "L", t + 10_000));
+        t += cycles[n % cycles.length] as number;
+        if (stopAt !== null && n === stopAt) t += 300_000; // una parada real de 5 min
+        n += 1;
+      }
+      return out;
+    };
+    const sinParadas = measureLineFeed(build(null), ["E", "L"], [], regimeOf, thresholds).rhythm.find((entry) => entry.regime === "produccion");
+    expect(sinParadas?.lostMs).toBeGreaterThan(0);
+    expect(sinParadas?.aboveFenceMs).toBe(0);
+
+    const conParada = measureLineFeed(build(20), ["E", "L"], [], regimeOf, thresholds);
+    const ritmo = conParada.rhythm.find((entry) => entry.regime === "produccion");
+    // El exceso sobre la valla local se suma: los 5 min menos la valla (unos 10 s sobre el ciclo local
+    // de 50-60 s). Nunca más que lo que está por encima del ciclo local.
+    expect(ritmo?.aboveFenceMs).toBeGreaterThanOrEqual(270_000);
+    expect(ritmo?.aboveFenceMs).toBeLessThanOrEqual(300_000);
+    expect(ritmo?.aboveFenceMs).toBeLessThan(ritmo?.lostMs ?? 0);
+    expect(conParada.stops).toHaveLength(1);
+  });
+
+  it("las paradas de la producción no dibujan el pulmón: la zona sigue siendo donde se espera a la línea", () => {
+    // Dos paradas de la línea de 5 min con la cola en «Q», y tres descansos de 20 min en que toda la
+    // flota se queda donde esté. A mitad de un descanso cualquier AGV del anillo tiene la llegada
+    // vencida: sin quitarlos, la zona salía siendo el anillo casi entero y la ocupación contaba a toda
+    // la flota. Los descansos siguen siendo paradas de la línea, y con AGV esperando.
+    const lineStops: [number, number][] = [[600_000, 900_000], [1_500_000, 1_800_000]];
+    const breaks: [number, number][] = [[2_400_000, 3_600_000], [4_200_000, 5_400_000], [6_000_000, 7_200_000]];
+    const clean = measureLineFeed(simulate(lineStops, null), ["E", "L"], [], regimeOf, thresholds);
+    const feed = measureLineFeed(
+      simulate(lineStops, null, { breaks }), ["E", "L"], [], regimeOf, thresholds, new Set(), new Map(),
+      breaks.map(([from, to]) => ({ from, to })),
+    );
+    expect(feed.zone?.tags).toEqual(clean.zone?.tags);
+    expect(feed.zone?.members).toEqual(clean.zone?.members);
+    expect(feed.zone?.members).toEqual(["E", "L", "Q"]);
+    expect(feed.zone?.capacity).toBe(clean.zone?.capacity);
+    // Los 60 min de descanso no añaden ni un minuto con los tres AGV en el pulmón: eso era contar a la
+    // flota entera. Solo suma minutos con el AGV que el descanso dejó de verdad en la zona.
+    const minutesWith = (feed: typeof clean, agvs: number) => feed.occupancy.find((entry) => entry.agvs === agvs)?.minutes ?? 0;
+    expect(minutesWith(feed, 3)).toBe(minutesWith(clean, 3));
+    expect(minutesWith(feed, 1)).toBeGreaterThan(minutesWith(clean, 1));
+    expect(feed.stops.filter((stop) => stop.durationMs >= 1_200_000).every((stop) => stop.kind === "con-pulmon")).toBe(true);
+    // Con solo descansos no hay con qué medir el pulmón, y se dice.
+    const soloDescansos = measureLineFeed(
+      simulate([], null, { breaks }), ["E", "L"], [], regimeOf, thresholds, new Set(), new Map(),
+      breaks.map(([from, to]) => ({ from, to })),
+    );
+    expect(soloDescansos.zone).toBeNull();
+    expect(soloDescansos.reason).toContain("fuera de las paradas de la producción");
+    expect(soloDescansos.stops.every((stop) => stop.kind === "sin-medir")).toBe(true);
+  });
+
+  it("un tiempo entre pasos que cruza el cambio de régimen va al régimen de su punto medio, no se calla", () => {
+    // La línea toma un AGV cada 40 s de día y cada 80 s de noche (desde el minuto 90). Una parada de la
+    // línea de 5 min empieza un minuto antes de la noche: antes se descartaba por tener un extremo en
+    // cada régimen, y una parada real desaparecía de todo.
+    const out: Reading[] = [];
+    let t = 0;
+    let n = 0;
+    while (t < 9_000_000) {
+      if (t >= 5_340_000 && t < 5_640_000) t = 5_640_000;
+      const agv = String((n % 3) + 1);
+      out.push(reading(agv, "Q", t - 10_000), reading(agv, "E", t), reading(agv, "L", t + 10_000));
+      n += 1;
+      t += t < 5_400_000 ? 40_000 : 80_000;
+    }
+    const night = (utcMs: number) => (utcMs >= 5_400_000 ? ("noche" as const) : ("produccion" as const));
+    const feed = measureLineFeed(out, ["E", "L"], [], night, thresholds);
+    const cruzada = feed.stops.find((stop) => stop.fromUtcMs < 5_400_000 && stop.toUtcMs > 5_400_000);
+    expect(cruzada?.regime).toBe("noche");
+    expect(cruzada?.durationMs).toBeGreaterThanOrEqual(300_000);
+    expect(feed.rhythm.find((entry) => entry.regime === "noche")?.lostMs).toBeGreaterThanOrEqual(200_000);
   });
 
   it("la cola del pulmón durante una parada con AGV esperando no mide ningún tramo; lo demás sí", () => {

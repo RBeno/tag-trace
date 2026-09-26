@@ -31,7 +31,8 @@ function cell(agvId: string, hits: number, passes: number, trailingMisses = 0): 
     byOrder: 0,
     unproven: 0,
     firstHitUtcMs: hits > 0 ? 1_000 : null,
-    lastHitUtcMs: hits > 0 ? 50_000 : null,
+    // Quien lee hasta el final tiene su última lectura después de quien dejó de leer a mitad.
+    lastHitUtcMs: hits > 0 ? (trailingMisses > 0 ? 50_000 : 90_000) : null,
     leadingMisses: hits > 0 ? 0 : passes,
     trailingMisses: hits > 0 ? trailingMisses : passes,
   };
@@ -155,5 +156,21 @@ describe("lectura por AGV", () => {
       THRESHOLDS,
     );
     expect(report.vehicles).toEqual([]);
+  });
+
+  it("«dejó de leer desde» exige que el resto lo leyera después: si nadie lo leyó más, es el tag el que se rompió", () => {
+    // Seis AGV con la misma racha final sin leer: una rotura tardía del tag (R-OPP-015), no seis
+    // AGV que dejaron de leer. Ninguno sale, y el tag tampoco lleva «dejó de leer».
+    const rotura = ["A1", "A2", "A3", "A4", "A5", "A6"].map((agvId) => cell(agvId, 51, 60, 9));
+    const report = describeVehicleReading(
+      { tags: [{ tagId: "T1", isAnchor: false, byVehicle: rotura }] } as unknown as Pick<ReadMatrix, "tags">,
+      READ_RATE,
+      THRESHOLDS,
+    );
+    expect(report.vehicles).toEqual([]);
+    expect(report.tags).toEqual([]);
+    // Con el resto leyendo después (última lectura posterior), sí es del AGV.
+    const conResto = describeVehicleReading(matrix({ T1: [cell("D", 51, 60, 9)] }), READ_RATE, THRESHOLDS);
+    expect(conResto.vehicles[0]?.stopped).toEqual([{ tagId: "T1", sinceUtcMs: 50_000, passesSince: 9 }]);
   });
 });

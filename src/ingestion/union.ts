@@ -41,6 +41,35 @@ export interface UnionResult {
   readonly disagreements: number;
 }
 
+/**
+ * Las procedencias que una lectura ya traía de uniones anteriores.
+ *
+ * La unión se encadena —cada exportación nueva se une al acumulado— y el acumulado ya es un
+ * `MergedReading`. Reconstruir `alsoFrom` desde cero en cada unión tiraba las procedencias de todas
+ * las exportaciones menos la última: con tres cortes solapados, la del segundo desaparecía.
+ */
+function inherited(entry: Reading): readonly Provenance[] {
+  return "alsoFrom" in entry ? (entry as MergedReading).alsoFrom : [];
+}
+
+/**
+ * La misma fuente no es otra procedencia. Volver a cargar una exportación idéntica (INV-005) no
+ * añade nada a `alsoFrom`: sin este filtro cada recarga sumaba una procedencia entera —hash de 64
+ * caracteres incluido— a cada una de las lecturas, y el circuito guardado crecía en decenas de
+ * megabytes por recarga hasta pasar del tamaño máximo de un valor de IndexedDB en Chromium (unos
+ * 127 MiB). Lo destapó la prueba de navegador de la revisión en campo en la integración continua.
+ */
+function withoutRepeats(own: Provenance, list: readonly Provenance[]): readonly Provenance[] {
+  const seen = new Set<string>([own.sourceHash]);
+  const kept: Provenance[] = [];
+  for (const provenance of list) {
+    if (seen.has(provenance.sourceHash)) continue;
+    seen.add(provenance.sourceHash);
+    kept.push(provenance);
+  }
+  return kept;
+}
+
 function key(entry: Reading): string {
   return `${entry.time.utcMs}|${entry.agvId}|${entry.tagId}`;
 }
@@ -84,7 +113,7 @@ export function unionReadings(first: readonly Reading[], second: readonly Readin
 
   if (matchRange === null) {
     const readings = [...first, ...second]
-      .map((entry) => ({ ...entry, alsoFrom: [] as readonly Provenance[] }))
+      .map((entry) => ({ ...entry, alsoFrom: inherited(entry) }))
       .sort(compare);
     return { readings, overlap: null, shared: 0, disagreements: 0 };
   }
@@ -109,28 +138,31 @@ export function unionReadings(first: readonly Reading[], second: readonly Readin
 
   for (const entry of first) {
     if (!matchable(entry)) {
-      merged.push({ ...entry, alsoFrom: [] });
+      merged.push({ ...entry, alsoFrom: inherited(entry) });
       continue;
     }
     const twin = pending.get(key(entry))?.shift();
     if (twin === undefined) {
-      merged.push({ ...entry, alsoFrom: [] });
+      merged.push({ ...entry, alsoFrom: inherited(entry) });
       if (judgeable(entry)) disagreements += 1;
     } else {
       shared += 1;
-      merged.push({ ...entry, alsoFrom: [twin.provenance] });
+      merged.push({
+        ...entry,
+        alsoFrom: withoutRepeats(entry.provenance, [...inherited(entry), twin.provenance, ...inherited(twin)]),
+      });
     }
   }
 
   // Lo que sobra del tramo emparejable solo lo traía la segunda; su parte de fuera entra tal cual.
   for (const bucket of pending.values()) {
     for (const entry of bucket) {
-      merged.push({ ...entry, alsoFrom: [] });
+      merged.push({ ...entry, alsoFrom: inherited(entry) });
       if (judgeable(entry)) disagreements += 1;
     }
   }
   for (const entry of second) {
-    if (!matchable(entry)) merged.push({ ...entry, alsoFrom: [] });
+    if (!matchable(entry)) merged.push({ ...entry, alsoFrom: inherited(entry) });
   }
 
   merged.sort(compare);

@@ -127,6 +127,31 @@ describe("cómo reaparece el AGV", () => {
     expect(classifySilence(gap("A", "B", 10 * MINUTE), none, THRESHOLDS).kind).toBe("sin-clasificar");
   });
 
+  it("volver por el mismo tag se compara con lo que se tarda en dejarlo: el tramo hasta el siguiente", () => {
+    const result = classifySilence(gap("C", "C", 20 * MINUTE), context(), THRESHOLDS);
+    expect(result).toMatchObject({ kind: "parada", detail: { skipped: 0, usualMs: 40 * SECOND, nextTagId: "D" } });
+    // Dentro de tres veces ese habitual no es un hueco, igual que volver por el siguiente.
+    expect(classifySilence(gap("C", "C", 100 * SECOND), context(), THRESHOLDS).kind).toBe("habitual");
+  });
+
+  it("sin lo habitual del tramo no se afirma «parado»: sin clasificar, o desconexión si pasa de una hora", () => {
+    // Ningún paso B→C en la ventana: no hay con qué decir que seis minutos son «más de lo habitual».
+    const withoutBC = laps(MORNING, 5, 40 * SECOND).filter((step) => step.from !== "B");
+    const usual = usualSegmentTimes(withoutBC, RING, ZONE, THRESHOLDS.shiftStartHours);
+    const ctx: SilenceContext = { usual, maintenance: new Set() };
+    expect(classifySilence(gap("B", "C", 6 * MINUTE), ctx, THRESHOLDS)).toMatchObject({ kind: "sin-clasificar", detail: { skipped: 0, usualMs: null } });
+    expect(classifySilence(gap("B", "B", 6 * MINUTE), ctx, THRESHOLDS).kind).toBe("sin-clasificar");
+    expect(classifySilence(gap("B", "C", 2 * 60 * MINUTE), ctx, THRESHOLDS).kind).toBe("desconexion");
+  });
+
+  it("reaparecer por detrás del último tag no es saltarse casi el anillo: sin posición fiable, sin clasificar", () => {
+    // De A a E: E es el tag anterior a A. Antes salía «salta-varios» con tres saltados y lo habitual
+    // de cuatro tramos.
+    const result = classifySilence(gap("A", "E", 6 * MINUTE), context(), THRESHOLDS);
+    expect(result).toMatchObject({ kind: "sin-clasificar", detail: { skipped: null, usualMs: null } });
+    expect(classifySilence(gap("A", "E", 2 * 60 * MINUTE), context(), THRESHOLDS).kind).toBe("desconexion");
+  });
+
   it("un tag de mantenimiento manda sobre todo lo demás", () => {
     expect(classifySilence(gap("A", "B", 20 * MINUTE), context(["B"]), THRESHOLDS).kind).toBe("mantenimiento");
     expect(classifySilence(gap("X", "A", 3 * 60 * MINUTE), context(["X"]), THRESHOLDS).kind).toBe("mantenimiento");

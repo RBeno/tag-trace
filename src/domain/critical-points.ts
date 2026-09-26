@@ -52,6 +52,12 @@ export type CriticalPointCandidate =
       readonly reconvergesAt: string;
       /** Saltos hasta encontrar ese punto común, mínimo entre las dos ramas que reconvergen. */
       readonly hops: number;
+      /**
+       * Ramas que arrancan en un tag por el que pasa el camino de otra: la «corta» solo se salta ese
+       * tag. Es la misma firma que un tag que no siempre se lee (R-GRA-008), así que el candidato se
+       * propone con esa duda dicha; lo decide la lectura de ese tag, no esta firma.
+       */
+      readonly maybeSkipped: readonly string[];
       readonly evidence: string;
     }
   | {
@@ -267,6 +273,11 @@ function firstCommon(
  * dos caminos que se abren y se vuelven a cerrar son un cruce físico, no un reparto que dura. Con
  * 3 o más ramas, basta que un par reconverja para reclasificar el candidato entero — probar todos
  * los pares a la vez queda fuera, límite conocido y no silenciado.
+ *
+ * Cuando una rama está en el camino dominante de otra, la firma es la misma que la de un tag que a
+ * veces no se lee (X→B→C frente a X→C con B sin leer): el candidato sigue saliendo como cruce, porque
+ * el dato no distingue las dos cosas, pero lo dice y nombra el tag (`maybeSkipped`). Lo decide la
+ * lectura de ese tag, nunca esta firma.
  */
 export function classifyCrossings(
   candidates: readonly CriticalPointCandidate[],
@@ -275,10 +286,15 @@ export function classifyCrossings(
 ): readonly CriticalPointCandidate[] {
   const dominant = dominantSuccessorMap(transitions);
 
-  return candidates.map((candidate) => {
+  return candidates.map((candidate): CriticalPointCandidate => {
     if (candidate.kind !== "bifurcacion") return candidate;
 
     const paths = candidate.branches.map((branch) => walk(branch.tagId, thresholds.maxHopsToReconverge, dominant));
+    // Una rama que está en el camino de la otra puede ser el mismo camino con un tag sin leer en medio:
+    // un tag B leído el 60 % de las veces da X→B y X→C «en proporción parecida», y C es justo el
+    // sucesor de B. La reconvergencia sale igual que en un cruce físico, así que se propone, pero con
+    // la duda dicha y el tag nombrado.
+    const maybeSkipped = skippedBranches(paths);
     let reconvergence: { readonly tag: string; readonly hops: number } | null = null;
     outer: for (let i = 0; i < paths.length; i += 1) {
       for (let j = i + 1; j < paths.length; j += 1) {
@@ -299,11 +315,27 @@ export function classifyCrossings(
       branches: candidate.branches,
       reconvergesAt: reconvergence.tag,
       hops: reconvergence.hops,
+      maybeSkipped,
       evidence:
         `${candidate.evidence} Los caminos vuelven a juntarse en «${reconvergence.tag}» ` +
-        `${reconvergence.hops === 0 ? "enseguida" : `tras ${reconvergence.hops} ${reconvergence.hops === 1 ? "tag" : "tags"}`}: parece un cruce.`,
+        `${reconvergence.hops === 0 ? "enseguida" : `tras ${reconvergence.hops} ${reconvergence.hops === 1 ? "tag" : "tags"}`}: parece un cruce` +
+        (maybeSkipped.length === 0
+          ? "."
+          : `, o ${maybeSkipped.length === 1 ? "un tag" : "tags"} que no siempre se lee${maybeSkipped.length === 1 ? "" : "n"} (${maybeSkipped.join(", ")}): ` +
+            "la firma es la misma, y lo decide su lectura."),
     };
   });
+}
+
+/**
+ * Las ramas cuyo camino dominante pasa por el arranque de otra: ahí las dos ramas son el mismo
+ * recorrido y la «corta» solo se salta el tag en que arranca la larga, que es también la firma de un
+ * tag que no siempre se lee. Se devuelve ese tag, el que a veces no se leería.
+ */
+function skippedBranches(paths: readonly (readonly string[])[]): readonly string[] {
+  return paths
+    .filter((path, index) => paths.some((other, otherIndex) => otherIndex !== index && path.slice(1).includes(other[0] as string)))
+    .map((path) => path[0] as string);
 }
 
 /**

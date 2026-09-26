@@ -53,6 +53,14 @@ export function canonicalise(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((item) => canonicalise(item === undefined ? null : item)).join(",")}]`;
   }
+  if (value instanceof Map || value instanceof Set || value instanceof Date) {
+    // `Object.entries` de un Map, un Set o un Date es vacío: los tres se serializaban como `{}` y
+    // dos estados distintos daban el mismo hash, que es lo contrario de lo que INV-010 promete.
+    // Quien hashea convierte antes a objeto plano, array o entero; aquí se falla en vez de mentir.
+    throw new TypeError(
+      `Un ${value.constructor.name} no puede formar parte de un hash semántico: conviértelo antes a objeto plano, array o número`,
+    );
+  }
   if (typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>)
       .filter(([, item]) => item !== undefined)

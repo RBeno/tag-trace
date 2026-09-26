@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.27.0
+version: 0.32.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -293,6 +293,19 @@ Decisiones del propietario al revisar la conversión de la lista de PC2:
   la línea se quita como un descanso (R-FLO-010).
 - **Tramos en las gráficas** (R-GRA-018): kitting, línea y cruces pintados en el anillo y en las
   horquillas, para leerlas mejor; la lista `tramo`, y si no, la línea y los cruces.
+- **Descansos**: las paradas largas de la línea en horas redondas son descansos, y de 5 a 6 no suele
+  haber producción (OQ-133 cerrada).
+- **Batería de mediciones por incidencia** (R-AGV-021): cada parada sin explicación, primero de cola
+  sin avanzar o AGV que deja de leer lleva lo mismo medido —última lectura, la línea, el de delante,
+  los de detrás, cambio de AGV— para documentarla, sin causa. En una guía no se adelanta: si los de
+  detrás llegan antes que él a donde reaparece, lo adelantaron; si él reaparece por delante, avanzaba
+  sin registrar.
+- **La auditoría como herramienta, no solo como red** (2026-09-26): leer su informe entero encontró
+  dos falsos positivos que ninguna sonda vigilaba —cuatro zonas oscuras «el tramo tarda» que eran tags
+  declarados sin lecturas, y el saltador de tags «delante de» un vecino al que nunca adelantó— y un
+  escenario físicamente inconsistente (nadie esperaba detrás de la parada aislada). Los tres se
+  corrigieron y ahora tienen sonda; además, dos invariantes de cero falsos positivos (huecos sin
+  clasificar solo en paradas de la producción; ningún AGV «deja de leer»).
 - **Pasos por la línea** (R-FLO-011): un AGV que no sigue tras la línea (el pin del carro), uno que
   pasó sin la parada (se fue con el carro) y uno que hace la parada sin leer un tag (su lector o su
   memoria). El propietario: nada específico de un circuito, porque casi todos tienen una línea
@@ -308,10 +321,19 @@ El trabajo sigue en otra conversación por el límite de contexto. Todo lo que d
 conversación siguiente.
 
 - **Fase F3** (diagnóstico explicable), en curso. F4 espera `CONTINÚA FASE 4` del propietario
-  (ADR-0010). La última entrega es la posición de un tag según las lecturas (R-GRA-015,
+  (ADR-0010). **Última entrega (2026-09-26): revisión de toda la lógica de medición y análisis**
+  (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
+  regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
+  (OQ-135 a OQ-141), dos de ellas contradicciones código↔documento que no se tocan hasta que decida.
+  Todas quedaron cerradas el mismo día (`[3.45.0]`, `[3.46.0]`): la carga online pertenece al
+  circuito y las calles se comprueban en tres cosas (R-CO-009); deriva es moverse siempre hacia el
+  mismo lado (R-TIM-010); la hora repetida se resuelve por la posición en el fichero (ADR-0013); «sin
+  paso», «deja de leer» y `desaparecido`/`nuevo` afirman solo lo que prueban; el historial de flota
+  admite alta y baja el mismo día; las constantes de planta quedan provisionales hasta F4; y varias
+  anclas en puntos críticos miden tiempos por sección con nombre de tramo (R-TIM-012). La última entrega es la posición de un tag según las lecturas (R-GRA-015,
   `CHANGELOG.md` `[3.32.0]`), publicada en `main` y en la web.
 - **Cómo se ha trabajado**: una entrega por petición del propietario, con su documentación, su clase
-  plantada en la auditoría sintética (`tests/audit/`, 49 clases) y un solo commit en la rama de
+  plantada en la auditoría sintética (`tests/audit/`, 53 clases) y un solo commit en la rama de
   trabajo; PR y fusión solo cuando él lo pide. Las decisiones de cada entrega están en las secciones
   de arriba y en el `CHANGELOG`.
 - **Pendiente de planta**, sin identificadores:

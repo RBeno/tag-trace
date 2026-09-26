@@ -526,3 +526,46 @@ describe("vida del tag y rachas por celda (R-OPP-016)", () => {
     expect(cell?.lastHitUtcMs).toBe(177_000);
   });
 });
+
+describe("vueltas que la matriz no cuenta · cola cortada y hora repetida", () => {
+  it("una vuelta que se cierra en la cola cortada de la exportación no cuenta (R-DAT-007)", () => {
+    clock = 0;
+    const readings = [reading("A", "0100"), reading("A", "0200"), reading("A", "0300"), reading("A", "0400"), reading("A", "0100")];
+    // La cobertura completa termina en 4000: el paso por el ancla de 5000 es la cola cortada.
+    const cobertura = [{ from: 0, to: 4000 }];
+
+    const conCobertura = buildReadMatrix(0, readings, "oldest-first", cobertura, RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
+    const sinCobertura = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
+
+    expect(sinCobertura.vehicles[0]?.laps).toBe(1);
+    // Con la cobertura declarada, los dos extremos de la vuelta no caen en el mismo tramo.
+    expect(conCobertura.vehicles[0]?.laps).toBe(0);
+    expect(conCobertura.supported).toBe(false);
+  });
+
+  it("una vuelta con una lectura en hora repetida no se usa como pasada (ADR-0013)", () => {
+    clock = 0;
+    const readings = [reading("A", "0100"), reading("A", "0200"), reading("A", "0300"), reading("A", "0400"), reading("A", "0100")];
+    const tercera = readings[2] as Reading;
+    readings[2] = { ...tercera, time: { ...tercera.time, flag: "dst_ambiguous" } };
+
+    const matriz = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
+
+    // Dentro de esa hora el instante no separa las dos ocurrencias: ni el orden de los pasos ni el
+    // tiempo de los tramos son medida, así que la vuelta no sostiene ninguna celda.
+    expect(matriz.vehicles[0]?.laps).toBe(0);
+  });
+
+  it("una vuelta con una hora repetida resuelta por posición sí cuenta como pasada (OQ-137)", () => {
+    // La posición en el fichero asignó la ocurrencia, así que el instante vuelve a ordenar los pasos
+    // y a medir los tramos: la vuelta es una pasada normal.
+    clock = 0;
+    const readings = [reading("A", "0100"), reading("A", "0200"), reading("A", "0300"), reading("A", "0400"), reading("A", "0100")];
+    const tercera = readings[2] as Reading;
+    readings[2] = { ...tercera, time: { ...tercera.time, flag: "dst_by_position" } };
+
+    const matriz = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
+
+    expect(matriz.vehicles[0]?.laps).toBe(1);
+  });
+});

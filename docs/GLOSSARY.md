@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.34.0
+version: 0.36.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -36,6 +36,8 @@ last_updated: 2026-09-26
 | Refuerzo comprobado | Refuerzo declarado cuyos tags se leen todos seguidos en el recorrido. Si falta uno es `incompleto`; si se leen lejos, `separado` (R-GRA-017). |
 | Pulmón | Los AGV que esperan antes de la entrada a la línea. No se declara: sale de dónde esperan cuando la línea para, y su capacidad es lo más que llegaron a esperar (R-FLO-010). |
 | Tramo | Parte del circuito con un nombre declarado en la lista `tramo` —kitting, línea, cruce…—. Se dibuja en las gráficas del anillo para leerlas mejor; no cambia ningún cálculo (R-GRA-018). |
+| Batería de mediciones | Lo que se mide de cada incidencia, siempre en el mismo orden: última lectura, la línea, el de delante, los de detrás y el cambio de AGV (R-AGV-021). |
+| Cambio de AGV | Un AGV deja de leer y otro empieza a leer por primera vez poco después: candidato a que uno sustituyó al otro (R-AGV-021). |
 | Línea sin paso | Un tiempo entre dos AGV en la entrada por encima de la valla de su cadencia: la línea parada. Con AGV esperando, o sin ellos, «le faltaron AGV» (R-FLO-010). |
 | Paso por la línea | Una racha de lecturas de tags de la lista `linea` de un AGV. Se revisa si lee los tags esperados, si sigue después y si hizo la parada (R-FLO-011). |
 | Cambio de MTC | Tag que cambia el número de MTC (multicircuito) del AGV —normal, 1, 2… 15— para hacer alguna configuración especial. En planta, «CAMBIO Nº MODO CIRCUITO». El número va en `grupo` (R-GRA-007). |
@@ -49,7 +51,7 @@ last_updated: 2026-09-26
 | Retención | Transición lenta —por encima del p95 de su tramo, con al menos el margen de espera— con un AGV delante que no se iba (R-FLO-008). |
 | Cuello de botella | Tag donde se concentran las retenciones más de lo que da el azar por el tiempo que los AGV pasan ahí: donde se forma cola. Si fluye, no es una avería (R-FLO-008). |
 | Punto conflictivo | Tags vecinos con más paradas sin explicación, de varios AGV, de las que da el azar por sus pasadas. Dice dónde, no por qué (R-FLO-009). |
-| Zona oscura | Tramo donde el hueco entre dos lecturas es mucho mayor que el típico del circuito, porque un tag se salta o porque el tramo tarda: ahí una parada se ve tarde (R-GRA-014). |
+| Zona oscura | Tramo donde el hueco entre dos lecturas es mucho mayor que el típico del circuito, porque un tag se salta o porque el tramo tarda: ahí una parada se ve tarde (R-GRA-014). Su causa es un tag declarado sin lecturas dentro de ella, que se salte algún tag o que el tramo tarde (R-GRA-014). |
 | Primero de la cola (bloqueo) | La parada de una cola sin nadie parado delante. Si pasa dos minutos de lo habitual con la producción en marcha, es un bloqueo: se dice dónde, cuánto, cuántos quedaron detrás y cuántas lecturas críticas hubo mientras tanto. Sin causa (R-AGV-018, R-EVI-006). |
 | Periodo de inactividad | Intervalo dentro de la cobertura en el que un objeto no produce lecturas. Como un AGV detenido no emite, la inactividad no se distingue del fallo de comunicación por la ausencia en sí, sino por el contexto colectivo, el punto de la última lectura y el calendario. |
 | Instante de cambio | Última lectura antes de un silencio o de un cambio sostenido de comportamiento. Es `inferred`: marca el último momento con evidencia, no el instante real en que el objeto dejó de funcionar. |

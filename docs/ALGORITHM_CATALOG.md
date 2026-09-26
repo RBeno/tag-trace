@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.33.0
+version: 0.39.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -310,6 +310,12 @@ Cada diagnóstico conserva explicaciones alternativas y acciones de comprobació
 
 ## 6.1 Comparación entre dos periodos distantes, implementado (R-DAT-016, R-AGV-013)
 
+> **2026-09-26 (OQ-138):** `desaparecido` y `nuevo` llevan la prueba de azar `AbsenceTest`
+> (`affirmed`, `chance`, `opportunities`, `neighborTagId`): tasa del tag frente a su vecino dominante
+> en el periodo en que se leía, oportunidades = lecturas de ese vecino en el otro periodo,
+> `chance = (1 − tasa)^oportunidades`, afirmado si hay oportunidades y `chance ≤ drift.maxChance`. La
+> marca de soporte débil desaparece: la sustituye la prueba.
+
 Es la pieza «histórico» de ALG-009: con una sola ventana, un tag sin lecturas es indistinguible entre
 obsoleto y averiado, y un vehículo que no lee un tag es indistinguible entre «nunca lo llevó en
 memoria» y «lo perdió». Lo que separa las dos explicaciones es el tiempo (R-DAT-016).
@@ -531,7 +537,10 @@ que lo recorren —directas o saltándose tags, hasta media vuelta—; su median
 información del tramo, y lo típico del circuito es la mediana de esas medianas. Un tramo con
 `darkZoneFactor` veces lo típico o más es oscuro, salvo que su tag de salida sea parada precisa o
 semáforo, declarados o candidatos (`explainedSlow`). Los tramos oscuros seguidos forman una zona; la
-causa es `salta-tag` si la mitad o más de las transiciones que la recorren se saltan algún tag.
+causa es `tag-sin-lecturas` si la lista `circuito` declara entre los dos extremos de la zona (en el
+orden de la lista, dando la vuelta) algún tag sin ninguna lectura, y los nombra (`missingTags`);
+si no, `salta-tag` si la mitad o más de las transiciones que la recorren se saltan algún tag; si no,
+`tramo-largo`.
 
 **Noche y cambios.** La noche se compara tramo a tramo con producción por el p50. Entre el primer y
 el último tramo de cobertura, separados al menos `drift.minGapMs`, se construyen dos horquillas y
@@ -749,6 +758,10 @@ del anillo dominante aunque los AGV lo lean justo antes que su pareja, y con el 
 
 ## 6.16 Alimentación de la línea, implementado (R-FLO-010)
 
+> **2026-09-26 (OQ-138):** `rhythm[].aboveFenceMs` = suma del exceso sobre la valla local (ciclo local
+> + (valla − p50) de la cadencia del régimen) de los tiempos que la superan; `lostMs` pasa a leerse
+> como «por encima del ciclo local».
+
 `src/domain/line-feed.ts`, `measureLineFeed(lecturas, linea, cobertura, regimen, umbrales, retienen)`,
 sobre el cohorte mayor. Umbrales: los de siempre, `bands.minBandSamples` y `flowStops.minStopExcessMs`.
 
@@ -784,6 +797,25 @@ sobre el cohorte mayor. Umbrales: los de siempre, `bands.minBandSamples` y `flow
    parada», salvo con `vinculacion`: hasta la racha siguiente de otro AGV, menos que `p5 − max(p50 −
    p5, margen)` de esos tiempos. Los demás pasos se cuentan por AGV; el que no lee un esperado en la
    mitad o más de los suyos se señala como lectura.
+
+## 6.17 Batería de mediciones de una incidencia, implementado (R-AGV-021)
+
+> **2026-09-26 (OQ-138):** `abandonedReadings` toma como referencia el mayor hueco **de producción**
+> del AGV (sin los que cruzan la noche o una parada de la producción; el régimen se muestrea cada
+> 15 min y se afina al minuto por bisección) y mide el silencio final descontando noche y paradas;
+> `Incident.reference` guarda referencia, huecos contados y excluidos y silencio medido. El Worker le
+> pasa `regimeOf` y las paradas de la producción.
+
+`src/domain/incident-battery.ts`, `incidentBattery(contexto, incidencia, finDeVentana)`, con las
+secuencias de cada AGV sin repeticiones seguidas, los pasos por la línea y su horquilla por régimen,
+las paradas de la línea con AGV esperando y la calle de cada tag de calle. La línea: pasos dentro de la
+incidencia y el hueco más largo entre ellos (con los bordes); con paso y ningún hueco por encima de la
+valla, siguió con su cadencia. El de delante: de los demás AGV, el que leyó el último tag de la
+incidencia más tarde antes de ella; sus lecturas durante ella. Los de detrás: los que leen ese tag
+dentro de la incidencia; tras él, si leen el tag donde reaparece, lo adelantaron; si leen otro, siguieron
+avanzando; si no, se quedaron; volver a leer el tag es una vuelta entera. El cambio de AGV: el AGV cuya
+primera lectura de todo lo cargado es la más cercana después. `abandonedReadings`: el silencio final de
+cada AGV contra su propio hueco más largo. `incidentsCsv`, una fila por incidencia.
 
 ## 7. Segmentación de vueltas y huecos
 
@@ -958,3 +990,78 @@ Solo tras disponer de etiquetas humanas y métricas de precisión se considerar�
 - aprendizaje de embeddings de incidencias.
 
 Todo modelo será candidato en sombra, comparado con el algoritmo estable, explicable en sus entradas y sin alterar históricos consolidados.
+
+## 6.18 Revisión de la lógica de medición y análisis (2026-09-26)
+
+Cinco revisiones en paralelo, módulo a módulo, con cada fallo reproducido en una prueba desechable
+antes de tocar el código. Lo que cambia en cada algoritmo está anotado en su regla (marcado
+«revisión de la lógica, 2026-09-26»); aquí, lo que no cabe en una regla:
+
+- **Alineación de dos anillos** (§6.10, §6.13, comparación con Vsystem): la rotación se prueba en
+  cada tag común y se elige la subsecuencia común más larga (`alignToDeclared`); O(n²·m), trivial con
+  cientos de tags. Empate → la rotación más cercana al inicio de la lista.
+- **Mismo tramo de cobertura** (`sameSpan`, `coverage.ts`): una transición, una vuelta, una estancia
+  de carga o una pasada FIFO valen solo si sus dos extremos caen en el mismo intervalo de cobertura.
+  Sustituye a «encierra un hueco entero», que dejaba pasar la cola cortada de una exportación.
+- **Lecturas con `t_flag` distinto de `ok`**: fuera de la monotonía (`unreliablePairs`), de las
+  transiciones (`discardedUnreliableTime`) y de las vueltas de la matriz.
+- **Retenedor fantasma** (`flowStops.holderOf`): un candidato a retenedor se descarta si un tercero
+  —ni él ni el parado— leyó su último tag y **siguió hacia delante** entre su última lectura y la mitad
+  de la parada. Leer solo el tag no basta: el candidato pudo seguir hasta un tag que no se lee (en el
+  sintético, dos tags sin lecturas delante del cuello).
+- **Exposición cero** (`concentrated`): sin pasadas, lo esperado es cero y cualquier recuento salía
+  como concentración; ahora no se señala.
+- **Ritmo contra los demás** (§6.11): mediana de los demás por AGV (`mediansExcludingOwner`); con
+  menos de `MIN_TESTED_VEHICLES = 3` probados no hay veredicto (`enoughVehicles`). Es un mínimo
+  estadístico, no una constante de planta.
+- **Cadencia de la parte de detrás en la batería** (§6.17): `usualDwellMs(tag, hora)` es la valla del
+  tramo que sale de ese tag en su régimen, que el Worker toma de las horquillas del cohorte.
+- **Generador de la auditoría**: el retenedor pasa a ser el primer vehículo generado, porque los
+  vehículos se generan uno tras otro y solo los posteriores ven sus esperas; con otro índice, los
+  anteriores lo atravesaban en el semáforo. Devuelve su espera como toda deuda de reloj y por eso es
+  de verdad más rápido en la zona cargada: la sonda del ritmo lo admite solo como «más rápido, solo
+  ahí». Repartir esa deuda en toda la vuelta mueve su sitio y descoloca otras clases plantadas.
+- **Pendiente de vista** (UX): `enoughVehicles`, `unconfirmed` de la suma entre anclas,
+  `maybeSkipped`, `behind.unsure`, `blankRows` y `discardedUnreliableTime` se calculan y no se enseñan
+  todavía.
+
+## 6.19 Las tres comprobaciones de las calles de carga, implementado (R-CO-009)
+
+Sobre el informe de calles (`buildChargingReport`), con la decisión del propietario de que la carga
+online pertenece al circuito (OQ-135):
+
+- **Qué se lee dentro** (`laneTagReads`): por tag de la calle —entrada, parada precisa, salida y
+  pasos—, en cuántas **estancias completas** el AGV que estaba dentro lo leyó entre entrar y salir,
+  con lecturas y AGV distintos. La oportunidad son las estancias completas: una abierta o incompleta
+  no dice nada del tag que no se leyó. El tiempo y el orden los dan R-CO-002 y R-CO-003.
+- **Reparto entre calles** (`laneUsage`): con `s` estancias servidas en `k` calles servidas, la cuota
+  de cada calle contra `1/k` con la cola binomial exacta (en logaritmos) del lado que toque; se señala
+  `menos` o `mas` si la cola no pasa de `usageMaxChance` y la desviación relativa llega a
+  `usageMinDeviation`. Con menos de dos calles servidas no hay reparto.
+- **Quién no entra** (`neverCharged`, ya existente): por AGV, con su presencia y sus lecturas.
+- **Inventario**: un tag de calle cuenta como declarado por su lista y deja de ser `especial`; la
+  parada precisa de una calle servida que nadie lee es `critico-sin-lectura` (`unknown`).
+
+## 6.20 Tiempos por sección entre anclas, implementado (R-TIM-012)
+
+`src/domain/anchor-sections.ts`. `anchorsOnRing` ordena por posición en el anillo las anclas de la
+lista presentes en él. `sectionPasses` recorre la secuencia de cada AGV (ordenada por el sentido de
+la fuente) con un paso abierto: se abre en la primera lectura de un ancla, se cierra en la primera
+lectura de la siguiente; otra ancla en medio, el mismo ancla tras otros tags, o un tag de calle de
+carga descartan el abierto y abren otro; las relecturas seguidas de un ancla no cuentan. Un paso
+cerrado vale si sus dos extremos caen en el mismo tramo de cobertura (`sameSpan`) y no solapa una
+parada de la producción; el régimen es el del punto medio. `measureAnchorSections` da por sección
+`bandOf` de `segment-bands` por régimen —mismo mínimo de muestras, misma valla, misma resolución— y
+el p50 de producción por ventana de fichero. `sectionName` toma el tramo de `tagSections` al que
+pertenece más de la mitad de los tags de la sección (el ancla de salida y los del anillo hasta la
+siguiente); la mitad justa no es mayoría. `anchorSectionsCsv` con la forma de `bandsCsv`. El Worker
+lo calcula con el cohorte principal y lo publica en `views.anchorSections`.
+
+`segmentLaps` (§6.4) corregido: las lecturas seguidas del ancla forman una racha y solo la primera
+corta; un AGV cuyas únicas lecturas son el ancla sale como vuelta `desconocida`; las relecturas
+finales del ancla no abren una `parcial`.
+
+**Hora repetida por posición** (ADR-0013, nota 2026-09-26): `resolveRepeatedHourByPosition` en
+`time.ts`, llamada por el importador tras medir el sentido y antes de volver a medir la monotonía.
+`isOrderReliable(flag)` es la única pregunta que hacen monotonía, transiciones y vueltas.
+

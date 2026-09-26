@@ -16,7 +16,7 @@
  * es un corte de los datos, no el ancla.
  */
 
-import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
+import { mergeIntervals, sameSpan, type Interval } from "./coverage.js";
 import { sortReadings, type SourceDirection } from "./order.js";
 import type { Reading } from "./reading.js";
 import type { TruthState } from "./truth.js";
@@ -159,6 +159,12 @@ export function resolveDeclaredAnchor(
  * tramo antes del primer paso por el ancla, o el último después del último); `desconocida` cuando
  * el vehículo nunca pasa por el ancla y no hay forma de segmentar nada de lo suyo.
  *
+ * Dos detalles que no son de circuito sino de lectura (R-TIM-012): las lecturas **seguidas** del
+ * ancla —un AGV parado sobre ella la relee— se colapsan a la primera, porque cortar en cada una
+ * fabricaba «vueltas» de segundos; y un vehículo cuyas únicas lecturas son el ancla (una sola, o
+ * varias seguidas) sale como una vuelta `desconocida` en vez de desaparecer: un instante no
+ * segmenta nada, pero el vehículo estuvo ahí y hay que decirlo.
+ *
  * `anchorTruth` no tiene valor por defecto a propósito: quien llama decide explícitamente si el
  * ancla que está pasando es `"observed"` (declarada y resuelta) o `"inferred"` (ciclo dominante),
  * y esa decisión solo se aplica a las vueltas que terminan `completa` — ver `buildLap`.
@@ -171,7 +177,7 @@ export function segmentLaps(
   anchorTruth: TruthState,
 ): readonly Lap[] {
   const ordered = sortReadings([...readings], direction);
-  const gaps = uncoveredGaps(mergeIntervals(coverage));
+  const spans = mergeIntervals(coverage);
   const byVehicle = new Map<string, Reading[]>();
   for (const entry of ordered) {
     let list = byVehicle.get(entry.agvId);
@@ -184,12 +190,19 @@ export function segmentLaps(
 
   const laps: Lap[] = [];
   for (const [agvId, entries] of byVehicle) {
+    // Cada paso por el ancla es una **racha** de lecturas seguidas de ella: la primera es el corte y
+    // las relecturas no abren otra vuelta.
     const anchorIndices: number[] = [];
+    let lastAnchorRead = -1;
     entries.forEach((entry, index) => {
-      if (entry.tagId === anchor) anchorIndices.push(index);
+      if (entry.tagId !== anchor) return;
+      if (index !== lastAnchorRead + 1 || anchorIndices.length === 0) anchorIndices.push(index);
+      lastAnchorRead = index;
     });
 
-    if (anchorIndices.length === 0) {
+    if (anchorIndices.length === 0 || (anchorIndices.length === 1 && entries.every((entry) => entry.tagId === anchor))) {
+      // Sin ancla, o solo el ancla (una lectura o varias seguidas): no hay nada que segmentar, pero el
+      // vehículo estuvo y no puede desaparecer del resultado.
       const first = entries[0] as Reading;
       const last = entries[entries.length - 1] as Reading;
       laps.push({
@@ -207,20 +220,21 @@ export function segmentLaps(
     const firstAnchor = anchorIndices[0] as number;
     if (firstAnchor > 0) {
       laps.push(
-        buildLap(agvId, entries.slice(0, firstAnchor + 1), "parcial", gaps, anchorTruth),
+        buildLap(agvId, entries.slice(0, firstAnchor + 1), "parcial", spans, anchorTruth),
       );
     }
 
     for (let index = 0; index < anchorIndices.length - 1; index += 1) {
       const from = anchorIndices[index] as number;
       const to = anchorIndices[index + 1] as number;
-      laps.push(buildLap(agvId, entries.slice(from, to + 1), "completa", gaps, anchorTruth));
+      laps.push(buildLap(agvId, entries.slice(from, to + 1), "completa", spans, anchorTruth));
     }
 
     // Tramo después del último paso por el ancla: parcial, la cobertura corta ahí, no el circuito.
+    // Las relecturas finales del ancla no son tramo: solo lo es si hay otro tag detrás.
     const lastAnchor = anchorIndices[anchorIndices.length - 1] as number;
-    if (lastAnchor < entries.length - 1) {
-      laps.push(buildLap(agvId, entries.slice(lastAnchor), "parcial", gaps, anchorTruth));
+    if (lastAnchorRead < entries.length - 1) {
+      laps.push(buildLap(agvId, entries.slice(lastAnchor), "parcial", spans, anchorTruth));
     }
   }
 
@@ -231,14 +245,15 @@ function buildLap(
   agvId: string,
   segment: readonly Reading[],
   completeness: LapCompleteness,
-  gaps: readonly Interval[],
+  spans: readonly Interval[],
   anchorTruth: TruthState,
 ): Lap {
   const start = (segment[0] as Reading).time.utcMs;
   const end = (segment[segment.length - 1] as Reading).time.utcMs;
-  // Una vuelta que cruza un hueco de cobertura no es una vuelta: lo que hay en medio es ausencia
-  // de datos, no circulación (R-DAT-007). Degrada a `parcial` en vez de fingir continuidad.
-  const crossesGap = gaps.some((gap) => start <= gap.from && end >= gap.to);
+  // Una vuelta cuyos extremos no caen en el mismo tramo de cobertura no es una vuelta: lo que hay en
+  // medio es ausencia de datos, no circulación (R-DAT-007). Vale también para la cola cortada de una
+  // exportación, que queda fuera de su tramo. Degrada a `parcial` en vez de fingir continuidad.
+  const crossesGap = !sameSpan(spans, start, end);
   const finalCompleteness = crossesGap ? "parcial" : completeness;
   return {
     agvId,

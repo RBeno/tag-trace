@@ -19,7 +19,7 @@
  */
 
 import type { CircuitViews } from "../application/protocol.js";
-import { HATCH_ID, figure, hatchPattern, lazyDetails, legendList, plainTable, scrollBox, svg, table, text } from "./charts.js";
+import { HATCH_ID, figure, hatchPattern, lazyTable, legendList, plainTable, scrollBox, svg, table, text } from "./charts.js";
 import { patternLabel, zoneLabel } from "./labels.js";
 import { inspect } from "./pointer.js";
 
@@ -187,6 +187,17 @@ export interface RingTag {
   readonly isAnchor: boolean;
   /** Tramo declarado (kitting, línea, cruce…), para dibujarlo. */
   readonly section?: string | null;
+  /**
+   * Lo que el estado normal del circuito (R-TIM-009) mide en este tag, para la capa «Paradas»:
+   * paradas sin explicación que empiezan aquí, colas de un cuello de botella, si es punto
+   * conflictivo y si está en una zona oscura. Sale de `circuitState`, ya calculado.
+   */
+  readonly incidents?: {
+    readonly stops: number;
+    readonly bottleneckEpisodes: number;
+    readonly conflict: boolean;
+    readonly dark: boolean;
+  };
 }
 
 export interface RingMark {
@@ -204,31 +215,134 @@ export interface RingData {
   readonly junctions: readonly { readonly laneId: string; readonly tagId: string; readonly served: boolean }[];
 }
 
+/** Las capas del anillo (UX_SPEC §4.2): exclusivas, cambian solo lo que pinta la banda principal. */
+export type RingLayer = "omision" | "tramos" | "paradas" | "calles";
+
+const RING_LAYERS: readonly (readonly [RingLayer, string])[] = [
+  ["omision", "Omisión"],
+  ["tramos", "Tramos"],
+  ["paradas", "Paradas"],
+  ["calles", "Calles"],
+];
+
+/**
+ * Escalones de la capa «Paradas»: cuántas incidencias toca un tag. Clases de pantalla, como las de
+ * omisión: la rampa de un solo tono ordena por recuento y lo que no tiene nada se funde con el fondo.
+ */
+const INCIDENT_CLASSES: readonly (readonly [number, string, string])[] = [
+  [1, "var(--viz-grid)", "ninguna"],
+  [2, "var(--viz-1)", "1"],
+  [3, "var(--viz-2)", "2"],
+  [5, "var(--viz-3)", "3–4"],
+  [10, "var(--viz-4)", "5–9"],
+  [Number.POSITIVE_INFINITY, "var(--viz-5)", "10 o más"],
+];
+function incidentCount(tag: RingTag): number {
+  const incidents = tag.incidents;
+  if (incidents === undefined) return 0;
+  return incidents.stops + incidents.bottleneckEpisodes + (incidents.dark ? 1 : 0);
+}
+function incidentFill(count: number): string {
+  return (INCIDENT_CLASSES.find(([limit]) => count < limit) ?? INCIDENT_CLASSES[5])?.[1] ?? "var(--viz-5)";
+}
+function describeIncidents(tag: RingTag): string {
+  const incidents = tag.incidents;
+  if (incidents === undefined) return "sin medir";
+  const parts: string[] = [];
+  if (incidents.stops > 0) parts.push(`${incidents.stops} ${incidents.stops === 1 ? "parada sin explicación" : "paradas sin explicación"}`);
+  if (incidents.bottleneckEpisodes > 0) parts.push(`cuello de botella (${incidents.bottleneckEpisodes} colas)`);
+  if (incidents.conflict) parts.push("punto conflictivo");
+  if (incidents.dark) parts.push("zona oscura");
+  return parts.length === 0 ? "ninguna incidencia" : parts.join(" · ");
+}
+
 function isEmptyZone(zone: string): boolean {
   return zone.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().startsWith("vac");
+}
+
+export interface RingOptions {
+  /** Tocar un tag —clic, dedo o Enter con el foco en su segmento— abre su expediente. */
+  readonly onTagOpen?: (tagId: string) => void;
 }
 
 /**
  * El anillo entero de un vistazo: dónde se concentra la omisión, qué zona es cuál, dónde están los
  * puntos críticos y de dónde cuelgan las calles. El ángulo es **orden**, no distancia.
+ *
+ * Desde 3.49.0 vive en el Resumen y tiene **capas** (UX_SPEC §4.2): un selector segmentado cambia
+ * lo que pinta la banda principal —omisión, tramo declarado, incidencias medidas o calles— y la
+ * banda exterior de zona y las marcas numeradas de críticos se quedan siempre. Nada de esto calcula:
+ * cada capa dibuja un dato que ya llega en las vistas.
  */
-export function ringChart(data: RingData): HTMLElement {
-  const wrapper = figure(
-    "Anillo del circuito",
-    `Los ${data.tags.length} tags en el orden de marcha, empezando arriba. Es un orden, no un plano. ` +
-      "En gris lo normal; en color, lo que se deja de leer.",
-  );
+export function ringChart(data: RingData, options: RingOptions = {}): HTMLElement {
+  const wrapper = figure("Anillo del circuito", "");
+  const caption = wrapper.querySelector("figcaption") as HTMLElement;
   const area = host();
-  const line = readout("Toca o pasa el puntero por el anillo para leer un tag.");
+  const REST = "Toca o pasa el puntero por el anillo para leer un tag; tocar un tag abre su expediente.";
+  const line = readout(REST);
   const hasZones = data.tags.some((tag) => tag.zone !== null);
   const zoneNames = [...new Set(data.tags.map((tag) => tag.zone).filter((zone): zone is string => zone !== null))];
   const sections = sectionColors(data.tags.map((tag) => tag.section));
+  const hasIncidents = data.tags.some((tag) => tag.incidents !== undefined);
 
   const marks = data.marks.map((mark, index) => ({ ...mark, number: String(index + 1) }));
   const markByTag = new Map(marks.map((mark) => [mark.tagId, mark]));
   const indexOf = new Map(data.tags.map((tag, index) => [tag.tagId, index]));
+  const junctionsOf = new Map<string, (typeof data.junctions)[number][]>();
+  for (const junction of data.junctions) junctionsOf.set(junction.tagId, [...(junctionsOf.get(junction.tagId) ?? []), junction]);
+  const count = data.tags.length;
 
-  responsive(area, (width) => {
+  let layer: RingLayer = "omision";
+  /** El segmento con el foco de teclado (índice rotatorio): un solo alto de tabulación para el anillo. */
+  let focused = 0;
+
+  const captionOf = (): string => {
+    const base = `Los ${count} tags en el orden de marcha, empezando arriba. Es un orden, no un plano. `;
+    switch (layer) {
+      case "omision":
+        return `${base}En gris lo normal; en color, lo que se deja de leer.`;
+      case "tramos":
+        return `${base}Cada color es un tramo declarado en la lista \`tramo\`; en gris, sin tramo declarado.`;
+      case "paradas":
+        return `${base}Más oscuro, más incidencias medidas en ese tag: paradas sin explicación, colas de cuello de botella, punto conflictivo y zona oscura. En gris, ninguna.`;
+      case "calles":
+        return `${base}En color, el tag del que cuelga cada calle de carga, con su nombre; con trama, la calle en la que nadie entró.`;
+    }
+  };
+
+  const describe = (tag: RingTag, index: number): string => {
+    const where =
+      `Tag ${tag.tagId} · posición ${index + 1} de ${count}` +
+      (tag.zone === null ? "" : ` · zona ${tag.zone}`) +
+      (tag.section === null || tag.section === undefined ? "" : ` · tramo ${tag.section}`);
+    const omission = tag.isAnchor
+      ? "corte de vuelta (siempre se lee: no cuenta)"
+      : tag.omission === null
+        ? "ningún AGV pasó por aquí"
+        : `sin leer en el ${percent(tag.omission)} de ${tag.passes} pasadas · ${patternLabel(tag.pattern)}`;
+    const lanes = junctionsOf.get(tag.tagId) ?? [];
+    const laneText =
+      lanes.length === 0
+        ? "sin calle de carga"
+        : lanes.map((lane) => `entrada de la calle «${lane.laneId}»${lane.served ? "" : " (nadie entró en toda la ventana)"}`).join("; ");
+    switch (layer) {
+      case "omision":
+        return `${where} — ${omission}`;
+      case "tramos":
+        return `${where} — ${tag.section === null || tag.section === undefined ? "sin tramo declarado" : `tramo ${tag.section}`} · ${omission}`;
+      case "paradas":
+        return `${where} — ${describeIncidents(tag)}`;
+      case "calles":
+        return `${where} — ${laneText}`;
+    }
+  };
+
+  const openTag = (index: number): void => {
+    const tag = data.tags[index];
+    if (tag !== undefined) options.onTagOpen?.(tag.tagId);
+  };
+
+  const redraw = responsive(area, (width) => {
     area.replaceChildren();
     const size = Math.min(width, 520);
     const small = size < 420;
@@ -238,20 +352,37 @@ export function ringChart(data: RingData): HTMLElement {
     const rZoneIn = rZoneOut - 6;
     const rOut = hasZones ? rZoneIn - 5 : rZoneOut;
     const rIn = rOut - (small ? 16 : 24);
-    const count = data.tags.length;
     const step = (2 * Math.PI) / Math.max(1, count);
     const start = -Math.PI / 2;
     const gap = Math.min(step * 0.3, 1.5 / rOut);
+    const layerName = RING_LAYERS.find(([id]) => id === layer)?.[1] ?? layer;
 
     const canvas = svg("svg", {
       width: size,
       height: size,
       viewBox: `0 0 ${size} ${size}`,
-      role: "img",
-      "aria-label": `Anillo de ${count} tags coloreado por omisión por pasada`,
+      role: "group",
+      "aria-label": `Anillo de ${count} tags, capa ${layerName}. Flechas para recorrerlo, Enter abre el expediente del tag.`,
     });
     canvas.append(hatchPattern());
 
+    const fillOf = (tag: RingTag): string => {
+      switch (layer) {
+        case "omision":
+          return tag.isAnchor ? "var(--ink)" : tag.omission === null ? HATCH_FILL : omissionFill(tag.omission);
+        case "tramos":
+          return (tag.section === null || tag.section === undefined ? undefined : sections.get(tag.section)) ?? "var(--viz-grid)";
+        case "paradas":
+          return incidentFill(incidentCount(tag));
+        case "calles": {
+          const lanes = junctionsOf.get(tag.tagId) ?? [];
+          if (lanes.length === 0) return "var(--viz-grid)";
+          return lanes.some((lane) => lane.served) ? "var(--viz-series)" : HATCH_FILL;
+        }
+      }
+    };
+
+    const segments: SVGPathElement[] = [];
     data.tags.forEach((tag, index) => {
       const from = start + index * step + gap / 2;
       const to = start + (index + 1) * step - gap / 2;
@@ -263,26 +394,55 @@ export function ringChart(data: RingData): HTMLElement {
           }),
         );
       }
-      const fill = tag.isAnchor ? "var(--ink)" : tag.omission === null ? HATCH_FILL : omissionFill(tag.omission);
-      canvas.append(svg("path", { d: arcPath(center, center, rIn, rOut, from, to), fill, "data-index": index }));
-      // El tramo declarado, en una banda fina por dentro del anillo.
+      // Cada segmento es un botón: Enter o un toque abren el expediente del tag. Un solo alto de
+      // tabulación para el anillo entero (índice rotatorio), y las flechas lo recorren.
+      const segment = svg("path", {
+        d: arcPath(center, center, rIn, rOut, from, to),
+        fill: fillOf(tag),
+        "data-index": index,
+        role: "button",
+        tabindex: index === focused ? 0 : -1,
+        "aria-label": `Tag ${tag.tagId}, posición ${index + 1} de ${count}: abrir su expediente`,
+      });
+      segment.addEventListener("focus", () => {
+        focused = index;
+        line.show(describe(tag, index));
+      });
+      segment.addEventListener("blur", () => line.show(null));
+      segment.addEventListener("keydown", (event) => {
+        const key = (event as KeyboardEvent).key;
+        const move = key === "ArrowRight" || key === "ArrowDown" ? 1 : key === "ArrowLeft" || key === "ArrowUp" ? -1 : 0;
+        if (move !== 0) {
+          event.preventDefault();
+          const next = segments[(index + move + count) % count];
+          for (const entry of segments) entry.setAttribute("tabindex", entry === next ? "0" : "-1");
+          next?.focus();
+        } else if (key === "Enter" || key === " ") {
+          event.preventDefault();
+          openTag(index);
+        }
+      });
+      segments.push(segment);
+      canvas.append(segment);
+      // El tramo declarado, en una banda fina por dentro del anillo, solo cuando la banda principal
+      // no lo pinta ya.
       const sectionFill = tag.section === null || tag.section === undefined ? undefined : sections.get(tag.section);
-      if (sectionFill !== undefined) {
+      if (layer === "omision" && sectionFill !== undefined) {
         canvas.append(svg("path", { d: arcPath(center, center, rIn - 7, rIn - 2, start + index * step, start + (index + 1) * step), fill: sectionFill }));
       }
     });
 
-    // Calles: un ramal hacia dentro por calle, desde el tag del que cuelga. Hueco si nadie entró.
-    const byJunction = new Map<string, (typeof data.junctions)[number][]>();
-    for (const junction of data.junctions) byJunction.set(junction.tagId, [...(byJunction.get(junction.tagId) ?? []), junction]);
-    for (const [tagId, lanes] of byJunction) {
+    // Calles: un ramal hacia dentro por calle, desde el tag del que cuelga. Hueco si nadie entró. En
+    // la capa de calles, además, con su nombre.
+    for (const [tagId, lanes] of junctionsOf) {
       const position = indexOf.get(tagId);
       if (position === undefined) continue;
       const angle = start + (position + 0.5) * step;
       lanes.forEach((lane, k) => {
-        const spread = angle + (k - (lanes.length - 1) / 2) * 0.07;
+        // En la capa de calles los ramales se abren más, para que sus nombres no se pisen.
+        const spread = angle + (k - (lanes.length - 1) / 2) * (layer === "calles" ? 0.16 : 0.07);
         const length = small ? 18 : 26;
-        const inset = sections.size > 0 ? 9 : 3;
+        const inset = layer === "omision" && sections.size > 0 ? 9 : 3;
         const x0 = center + (rIn - inset) * Math.cos(angle);
         const y0 = center + (rIn - inset) * Math.sin(angle);
         const x1 = center + (rIn - inset - length) * Math.cos(spread);
@@ -299,6 +459,13 @@ export function ringChart(data: RingData): HTMLElement {
             "data-lane": lane.laneId,
           }),
         );
+        if (layer === "calles") {
+          const inward = 8 + k * 3;
+          const lx = x1 + inward * Math.cos(spread + Math.PI);
+          const ly = y1 + inward * Math.sin(spread + Math.PI);
+          const anchor = Math.cos(spread) > 0.3 ? "end" : Math.cos(spread) < -0.3 ? "start" : "middle";
+          canvas.append(text(lx, ly + 3.5, lane.laneId, "label id", { "text-anchor": anchor, "pointer-events": "none" }));
+        }
       });
     }
 
@@ -351,18 +518,7 @@ export function ringChart(data: RingData): HTMLElement {
         const laneId = target.getAttribute("data-lane");
         if (index !== null) {
           const tag = data.tags[Number(index)];
-          if (tag === undefined) return;
-          const where =
-            `Tag ${tag.tagId} · posición ${Number(index) + 1} de ${count}` +
-            (tag.zone === null ? "" : ` · zona ${tag.zone}`) +
-            (tag.section === null || tag.section === undefined ? "" : ` · tramo ${tag.section}`);
-          line.show(
-            tag.isAnchor
-              ? `${where} — corte de vuelta (siempre se lee: no cuenta)`
-              : tag.omission === null
-                ? `${where} — ningún AGV pasó por aquí`
-                : `${where} — sin leer en el ${percent(tag.omission)} de ${tag.passes} pasadas · ${patternLabel(tag.pattern)}`,
-          );
+          if (tag !== undefined) line.show(describe(tag, Number(index)));
         } else if (markTag !== null) {
           const mark = markByTag.get(markTag);
           if (mark !== undefined) {
@@ -380,23 +536,110 @@ export function ringChart(data: RingData): HTMLElement {
       },
       { snap: "[data-index],[data-mark],[data-lane]" },
     );
+    // Tocar un tag abre su expediente: solo el clic o el toque **encima** del segmento. El imán de
+    // toque (UX_SPEC §7) sigue sirviendo para leer: un toque cerca de un tag fija su lectura sin
+    // llevarse a nadie a otra pestaña.
+    canvas.addEventListener("click", (event) => {
+      const index = ((event as MouseEvent).target as Element).closest("[data-index]")?.getAttribute("data-index");
+      if (index !== null && index !== undefined) openTag(Number(index));
+    });
     area.append(canvas);
   });
 
-  wrapper.append(area, line.node);
-  wrapper.append(
-    legendList([
-      ...OMISSION_CLASSES.map(([, fill, label]) => [fill, `omisión ${label}`] as const),
-      [HATCH_SWATCH, "sin pasadas"],
-      ["var(--ink)", "ancla"],
-    ]),
-  );
+  // --- El selector de capas: exclusivo, con teclado, y la leyenda de la capa activa --------------
+  const seg = document.createElement("div");
+  seg.className = "seg ring-layers";
+  seg.setAttribute("role", "radiogroup");
+  seg.setAttribute("aria-label", "Capa del anillo");
+  const radios = new Map<RingLayer, HTMLButtonElement>();
+  const legend = document.createElement("div");
+  legend.className = "ring-legend";
+
+  const legendOf = (): HTMLElement[] => {
+    switch (layer) {
+      case "omision":
+        return [
+          legendList([
+            ...OMISSION_CLASSES.map(([, fill, label]) => [fill, `omisión ${label}`] as const),
+            [HATCH_SWATCH, "sin pasadas"],
+            ["var(--ink)", "ancla"],
+          ]),
+          ...(sections.size > 0 ? [sectionLegend(sections, "banda interior")] : []),
+        ];
+      case "tramos":
+        return [
+          sections.size > 0
+            ? legendList([...[...sections].map(([name, color]) => [color, `tramo ${name}`] as const), ["var(--viz-grid)", "sin tramo declarado"]])
+            : legendList([["var(--viz-grid)", "sin lista `tramo` cargada: ningún tramo declarado"]]),
+        ];
+      case "paradas":
+        return [
+          hasIncidents
+            ? legendList(INCIDENT_CLASSES.map(([, fill, label]) => [fill, `incidencias: ${label}`] as const))
+            : legendList([["var(--viz-grid)", "sin estado normal medido: ninguna incidencia que pintar"]]),
+        ];
+      case "calles":
+        return [
+          data.junctions.length > 0
+            ? legendList([
+                ["var(--viz-series)", "entrada de una calle servida"],
+                [HATCH_SWATCH, "entrada de una calle en la que nadie entró"],
+                ["var(--viz-grid)", "sin calle"],
+              ])
+            : legendList([["var(--viz-grid)", "sin lista `carga-online` cargada: ninguna calle declarada"]]),
+        ];
+    }
+  };
+  const select = (next: RingLayer, focus: boolean): void => {
+    layer = next;
+    for (const [id, radio] of radios) {
+      radio.setAttribute("aria-checked", String(id === next));
+      radio.tabIndex = id === next ? 0 : -1;
+    }
+    caption.textContent = captionOf();
+    legend.replaceChildren(...legendOf());
+    line.show(null);
+    redraw();
+    if (focus) radios.get(next)?.focus();
+  };
+  for (const [id, label] of RING_LAYERS) {
+    const radio = document.createElement("button");
+    radio.type = "button";
+    radio.setAttribute("role", "radio");
+    radio.setAttribute("aria-checked", String(id === layer));
+    radio.dataset["layer"] = id;
+    radio.tabIndex = id === layer ? 0 : -1;
+    radio.textContent = label;
+    radio.addEventListener("click", () => select(id, false));
+    radios.set(id, radio);
+    seg.append(radio);
+  }
+  seg.addEventListener("keydown", (event) => {
+    const ids = RING_LAYERS.map(([id]) => id);
+    const index = ids.indexOf(layer);
+    const next =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? ids[(index + 1) % ids.length]
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? ids[(index - 1 + ids.length) % ids.length]
+          : event.key === "Home"
+            ? ids[0]
+            : event.key === "End"
+              ? ids[ids.length - 1]
+              : undefined;
+    if (next === undefined) return;
+    event.preventDefault();
+    select(next, true);
+  });
+  caption.textContent = captionOf();
+  legend.replaceChildren(...legendOf());
+
+  wrapper.append(seg, area, line.node, legend);
   if (hasZones) {
     wrapper.append(
       legendList(zoneNames.map((zone) => [isEmptyZone(zone) ? HATCH_SWATCH : "var(--viz-neutral)", `banda exterior: zona ${zoneLabel(zone)}`] as const)),
     );
   }
-  if (sections.size > 0) wrapper.append(sectionLegend(sections, "banda interior"));
   if (marks.length > 0) {
     const list = document.createElement("ol");
     list.className = "ring-marks";
@@ -415,8 +658,8 @@ export function ringChart(data: RingData): HTMLElement {
     }
     wrapper.append(list);
   }
-  // Su tabla equivalente es la lista ordenada del anillo que `main.ts` pone justo debajo, plegada:
-  // repetirla aquí sería la misma tabla dos veces.
+  // Su tabla equivalente es la lista ordenada del anillo, en Tiempos, en el cajón: repetirla aquí
+  // sería la misma tabla dos veces.
   return wrapper;
 }
 
@@ -551,7 +794,8 @@ export function readMatrixHeatmap(
     overlay.style.top = "0";
     base.setAttribute("role", "img");
     base.setAttribute("aria-label", `Mapa de omisión de ${rows.length} tags por ${columns} vehículos`);
-    area.style.height = `${totalHeight}px`;
+    // Sin alto fijo: la capa base va en el flujo y ya da el alto; con uno fijo, la reserva que el
+    // contenedor deja bajo el dibujo para la lectura pegajosa (styles.css) recortaría las últimas filas.
     area.append(base, overlay);
 
     const context = base.getContext("2d");
@@ -682,9 +926,11 @@ export interface TrendPanel {
  * Un panel por tag o vehículo con tendencia, todos con el mismo eje: la rotura se ve como escalón y
  * la degradación como rampa. El puntero lee la misma hora en todos a la vez.
  */
-export function trendMultiplesChart(panels: readonly TrendPanel[], formats: Formats): HTMLElement {
+export function trendMultiplesChart(panels: readonly TrendPanel[], formats: Formats, title: string): HTMLElement {
+  // El título lo pone quien llama: la misma vista sale una vez por tags y otra por AGV, y con el
+  // mismo encabezado en las dos no se sabía cuál era cuál.
   const wrapper = figure(
-    "Rotura y degradación, en el tiempo",
+    title,
     "Lectura por pasada a lo largo del tiempo, con la misma escala en todos. En blanco: sin pasadas.",
   );
   const area = host();
@@ -1866,7 +2112,7 @@ export function fleetCountChart(
     ]),
   );
   wrapper.append(
-    lazyDetails("Ver los mismos datos en tabla", () =>
+    lazyTable("Ver los mismos datos en tabla", () =>
       plainTable(
         ["Desde", "Hasta", "En el circuito", "Leyendo", "Asignados", "Leyendo sin asignar"],
         counts.map((entry) => [
@@ -2123,6 +2369,11 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
         }
         context.fillStyle = fill;
         if (segment.state === "leyendo-sin-asignar") {
+          // Media barra sobre el fondo de «fuera del circuito», no sobre el del panel: sola, la
+          // franja del panel a cada lado se leía como una raya negra en el modo oscuro.
+          context.fillStyle = fills.fuera;
+          context.fillRect(x0, y, w, rowHeight);
+          context.fillStyle = fill;
           context.fillRect(x0, y + rowHeight / 4, w, rowHeight / 2);
         } else {
           context.fillRect(x0, y, w, rowHeight);
@@ -2198,13 +2449,13 @@ export function fleetLifelineChart(fleet: FleetView, formats: Formats): HTMLElem
       [EXPLAINED_SWATCH, "franja de arriba: producción parada"],
       ["var(--viz-ausente)", "asignado y sin leer, menos de una hora"],
       ["var(--viz-grid)", FLEET_STATE_LABEL.fuera],
-      ["linear-gradient(transparent 30%, var(--viz-series) 30% 70%, transparent 70%)", FLEET_STATE_LABEL["leyendo-sin-asignar"]],
+      ["linear-gradient(var(--viz-grid) 30%, var(--viz-series) 30% 70%, var(--viz-grid) 70%)", FLEET_STATE_LABEL["leyendo-sin-asignar"]],
       [HATCH_SWATCH, FLEET_STATE_LABEL["sin-datos"]],
     ]),
   );
   wrapper.append(
     // Catorce columnas: se desplazan dentro de su caja en vez de romper la página en el móvil.
-    lazyDetails("Ver los mismos datos en tabla", () =>
+    lazyTable("Ver los mismos datos en tabla", () =>
       scrollBox(plainTable(
         [
           "AGV",
@@ -2310,7 +2561,13 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
   responsive(area, (width) => {
     area.replaceChildren();
     const left = 40;
-    const top = 16;
+    // Dos filas encima del dibujo, con aire entre ellas: la franja del tramo declarado (6 px, para
+    // que también se vea en el móvil) y, aparte, los puntos de hallazgo. Antes iban en la misma
+    // fila y se tocaban.
+    const stripHeight = 6;
+    const markRow = stripHeight + 4;
+    const markRadius = 4;
+    const top = markRow + markRadius * 2 + 6;
     const plotHeight = 180;
     const height = top + plotHeight + 22;
     const plotWidth = Math.max(10, width - left - 4);
@@ -2330,7 +2587,7 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
     rows.forEach((row, index) => {
       const x0 = left + index * step;
       const sectionFill = row.section === null || row.section === undefined ? undefined : sections.get(row.section);
-      if (sectionFill !== undefined) canvas.append(svg("rect", { x: x0, y: 2, width: step, height: 5, fill: sectionFill }));
+      if (sectionFill !== undefined) canvas.append(svg("rect", { x: x0, y: 0, width: step, height: stripHeight, fill: sectionFill }));
       const day = row.produccion;
       if (day === null) {
         canvas.append(svg("rect", { x: x0, y: top + plotHeight - 4, width: Math.max(1, step * 0.6), height: 4, fill: HATCH_FILL }));
@@ -2369,7 +2626,9 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
         );
       }
       if (row.marks.length > 0) {
-        canvas.append(svg("circle", { cx: x0 + step / 2, cy: 7, r: Math.min(4, Math.max(2, step / 2)), fill: "var(--viz-accent)" }));
+        canvas.append(
+          svg("circle", { cx: x0 + step / 2, cy: markRow + markRadius, r: Math.min(markRadius, Math.max(2, step / 2)), fill: "var(--viz-accent)" }),
+        );
       }
     });
     // Rótulos del eje: la posición en el anillo, las que quepan.
@@ -2415,7 +2674,7 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
     ...(sections.size > 0 ? [sectionLegend(sections, "franja de arriba")] : []),
     area,
     line.node,
-    lazyDetails(`Ver la horquilla de los ${rows.length} tramos`, () =>
+    lazyTable(`Ver la horquilla de los ${rows.length} tramos`, () =>
       plainTable(
         ["Posición", "Tramo", "Pasadas", "Mitad", "80 %", "95 %", "Valla", "Noche (mitad)", "Hallazgo"],
         rows.map((row, index) => [
@@ -2596,7 +2855,7 @@ export function ringTimeChart(rows: readonly RingTimeRow[]): HTMLElement {
     ...(sections.size > 0 ? [sectionLegend(sections, "franja bajo cada fichero")] : []),
     area,
     line.node,
-    lazyDetails(`Ver la posición de los ${allTags.length} tags en cada fichero`, () =>
+    lazyTable(`Ver la posición de los ${allTags.length} tags en cada fichero`, () =>
       plainTable(
         ["Tag", ...rows.map((row) => row.label)],
         allTags.map((tagId) => [
@@ -2700,7 +2959,7 @@ export function segmentHistoryChart(panels: readonly SegmentHistoryPanel[]): HTM
     ]),
     area,
     line.node,
-    lazyDetails(`Ver los ${panels.length} tramos en tabla`, () =>
+    lazyTable(`Ver los ${panels.length} tramos en tabla`, () =>
       plainTable(
         ["Tramo", "Fichero", "Mitad", "80 %", "95 %", "Pasadas"],
         panels.flatMap((panel) =>

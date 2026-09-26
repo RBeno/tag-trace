@@ -15,7 +15,8 @@
  * - **Cuánto le falta a cada AGV**: la mediana del tiempo desde cada tag hasta la entrada, en la misma
  *   vuelta, de producción. Con el último tag que leyó un AGV, lo que le falta es esa mediana menos lo
  *   que lleva desde entonces. Es tiempo de recorrido, nunca distancia (R-TIM-011).
- * - **El pulmón se mide**: a mitad de cada parada larga (la mitad más larga), los AGV que ya deberían
+ * - **El pulmón se mide**: a mitad de cada parada larga (la mitad más larga, sin las que cruzan una
+ *   parada de la producción: en un descanso la flota se queda donde esté), los AGV que ya deberían
  *   haber llegado y no han llegado están esperando. Los tags donde se les encuentra en la mitad de
  *   esas paradas o más son la
  *   zona del pulmón, desde el más alejado hasta la entrada; lo que se ve una sola vez es otra cosa (un
@@ -126,8 +127,19 @@ export interface LineRhythm {
   readonly cycleHighMs: number;
   /** Tiempo con la línea observada: la suma de los tiempos entre pasos. */
   readonly observedMs: number;
-  /** Lo que los tiempos entre pasos se pasan de su ciclo local, sumado: la línea sin paso. */
+  /**
+   * Lo que los tiempos entre pasos se pasan de su ciclo local, sumado: **por encima del ciclo local**.
+   * Como la mitad de los tiempos queda por encima de su mediana, esto no es cero ni con la línea a su
+   * ritmo (propietario, 2026-09-26, OQ-138): la línea sin paso es `aboveFenceMs`.
+   */
   readonly lostMs: number;
+  /**
+   * La línea **sin paso**: solo de los tiempos que superan la **valla local**, lo que se pasan de ella,
+   * sumado. La valla local es el ciclo local más lo que la valla de la cadencia del régimen se separa
+   * de su mediana (`fenceMs − p50Ms`): la misma valla que declara una parada, trasladada al ciclo del
+   * momento. Con el ciclo entre 50 y 60 s y ninguna parada es 0.
+   */
+  readonly aboveFenceMs: number;
   /**
    * De eso, con AGV esperando y sin ninguno; `null` sin pulmón. En una parada, como la parada; en un
    * hueco corto, según hubiera en el pulmón, cuando tocaba entrar, un AGV que ya tenía que haber llegado.
@@ -143,6 +155,10 @@ export interface LineFeed {
   readonly passes: number;
   /** Tiempo entre dos AGV seguidos en la entrada, de producción. */
   readonly cadence: Band | null;
+  /** Lo mismo de noche, si hay muestras. */
+  readonly nightCadence: Band | null;
+  /** Cada paso por la línea, ordenado: la batería de cada incidencia mira si la línea seguía. */
+  readonly passTimes: readonly number[];
   /** La zona del pulmón medida, o `null` si no hubo paradas bastantes para medirla. */
   readonly zone: {
     /** Donde esperan en las paradas largas; `typical` es lo habitual en ellas y `capacity`, lo más. */
@@ -224,6 +240,8 @@ export function measureLineFeed(
     entryTagId,
     passes,
     cadence,
+    nightCadence: null,
+    passTimes: [],
     zone: null,
     occupancy: [],
     stops: [],
@@ -272,8 +290,10 @@ export function measureLineFeed(
     const from = passes[index - 1] as (typeof passes)[number];
     const to = passes[index] as (typeof passes)[number];
     // Cada tiempo entre pasos, en su régimen: la noche tiene otro ritmo y se mide aparte (R-TIM-009).
-    const regime = regimeOf(from.utcMs);
-    if (regimeOf(to.utcMs) === regime && covered(coverage, from.utcMs, to.utcMs)) gaps.push({ from, to, regime });
+    // El régimen es el de su punto medio, como el de cualquier transición (`transitionRegime`): un
+    // hueco que cruza el cambio de turno no se calla, va al régimen en que pasa la mayor parte.
+    const regime = regimeOf((from.utcMs + to.utcMs) / 2);
+    if (covered(coverage, from.utcMs, to.utcMs)) gaps.push({ from, to, regime });
   }
   const productionGaps = gaps.filter((gap) => gap.regime === "produccion");
   if (productionGaps.length < thresholds.minSamples) {
@@ -283,8 +303,9 @@ export function measureLineFeed(
     );
   }
   // La cadencia, sin los tiempos que cruzan una parada de la producción: un descanso no dice cada
-  // cuánto entra un AGV. Esos huecos siguen siendo paradas de la línea; solo no miden su ritmo.
-  const inProductionStop = (gap: (typeof gaps)[number]): boolean =>
+  // cuánto entra un AGV. Esos huecos siguen siendo paradas de la línea; solo no miden su ritmo ni,
+  // más abajo, dónde está el pulmón.
+  const inProductionStop = (gap: { readonly from: { readonly utcMs: number }; readonly to: { readonly utcMs: number } }): boolean =>
     productionStops.some((stop) => stop.from < gap.to.utcMs && gap.from.utcMs < stop.to);
   const cadenceGaps = productionGaps.filter((gap) => !inProductionStop(gap));
   const cadence = bandOf(
@@ -332,10 +353,15 @@ export function measureLineFeed(
   // El pulmón: los tags donde esperan, a mitad de cada parada, los AGV que ya deberían haber entrado.
   // Se mira en la mitad más larga de las paradas: en una corta los AGV no llegan a acumularse, y con
   // muchas paradas cortas el pulmón salía medido en los dos últimos tags.
-  const durations = stopGaps.map((gap) => gap.to.utcMs - gap.from.utcMs);
+  // Las paradas que cruzan una parada de la producción (R-AGV-018) no miden dónde está el pulmón: en
+  // un descanso toda la flota se queda donde esté, y a mitad de uno largo cualquier AGV del anillo
+  // tiene la llegada vencida, así que la zona salía siendo el anillo entero y la ocupación contaba a
+  // toda la flota. Esas paradas se siguen clasificando como las demás; solo no dibujan la zona.
+  const zoneStops = stopGaps.filter((gap) => !inProductionStop(gap));
+  const durations = zoneStops.map((gap) => gap.to.utcMs - gap.from.utcMs);
   const halfMs = durations.length === 0 ? 0 : median(durations);
   // El pulmón se mide con las paradas de producción: de noche el ritmo y la flota son otros.
-  const longStops = stopGaps.filter((gap) => gap.regime === "produccion" && gap.to.utcMs - gap.from.utcMs >= halfMs);
+  const longStops = zoneStops.filter((gap) => gap.regime === "produccion" && gap.to.utcMs - gap.from.utcMs >= halfMs);
   const overdueTags = new Map<string, number>();
   for (const gap of longStops) {
     const mid = (gap.from.utcMs + gap.to.utcMs) / 2;
@@ -478,7 +504,12 @@ export function measureLineFeed(
           const perStop = stops.filter((stop) => stop.kind === "con-pulmon").map((stop) => stop.waiting);
           // Lo habitual, en las paradas largas: en una corta el pulmón no llega a llenarse.
           const perLongStop = stops
-            .filter((stop) => stop.kind === "con-pulmon" && stop.durationMs >= halfMs)
+            .filter(
+              (stop) =>
+                stop.kind === "con-pulmon" &&
+                stop.durationMs >= halfMs &&
+                !inProductionStop({ from: { utcMs: stop.fromUtcMs }, to: { utcMs: stop.toUtcMs } }),
+            )
             .map((stop) => stop.waiting);
           return {
             tags: zoneTags,
@@ -504,7 +535,8 @@ export function measureLineFeed(
   }
 
   // El ritmo en cada régimen: cada tiempo entre pasos contra su ciclo local, la mediana de los que lo
-  // rodean (tantos como muestras mínimas pide una horquilla). Lo que se pasa es línea sin paso; se
+  // rodean (tantos como muestras mínimas pide una horquilla). Lo que se pasa es «por encima del ciclo
+  // local»; solo lo que supera la valla local es línea sin paso (OQ-138, 2026-09-26). El exceso se
   // separa según hubiera en el pulmón, cuando tocaba entrar, un AGV que ya tenía que haber llegado.
   const rhythm: LineRhythm[] = [];
   const stopKindAt = new Map(stops.map((stop) => [stop.fromUtcMs, stop.kind]));
@@ -516,7 +548,12 @@ export function measureLineFeed(
     const local = values.map((_, index) =>
       median(values.slice(Math.max(0, index - half), Math.min(values.length, index + half + 1))),
     );
+    // La valla local: la separación entre la valla de la cadencia del régimen y su mediana, puesta
+    // sobre el ciclo local. Sin cadencia del régimen no hay valla y nada supera la valla.
+    const band = bandFor(regime);
+    const fenceMarginMs = band === null ? Number.POSITIVE_INFINITY : band.fenceMs - band.p50Ms;
     let lostMs = 0;
+    let aboveFenceMs = 0;
     let withAgv = 0;
     let withoutAgv = 0;
     list.forEach((gap, index) => {
@@ -524,6 +561,7 @@ export function measureLineFeed(
       const extra = (values[index] as number) - cycleMs;
       if (extra <= 0) return;
       lostMs += extra;
+      if (extra > fenceMarginMs) aboveFenceMs += extra - fenceMarginMs;
       if (zoneEta === null) return;
       // Un hueco que es una parada se reparte como la parada, que mira a lo largo de toda ella: en el
       // instante en que tocaba entrar, los AGV de un descanso aún no llevan retraso y parecerían faltar.
@@ -550,6 +588,7 @@ export function measureLineFeed(
       cycleHighMs: at(0.9),
       observedMs: values.reduce((sum, value) => sum + value, 0),
       lostMs,
+      aboveFenceMs,
       lostWithAgvMs: zoneEta === null ? null : withAgv,
       lostWithoutAgvMs: zoneEta === null ? null : withoutAgv,
     });
@@ -665,10 +704,15 @@ export function measureLineFeed(
     passages,
     rhythm,
     evaluated: true,
-    reason: zone === null ? "Sin dos paradas de la línea o más no se puede medir dónde esperan los AGV: el pulmón queda sin medir." : null,
+    reason:
+      zone === null
+        ? "Sin dos paradas de la línea o más, fuera de las paradas de la producción, no se puede medir dónde esperan los AGV: el pulmón queda sin medir."
+        : null,
     entryTagId,
     passes: passes.length,
     cadence,
+    nightCadence,
+    passTimes: passes.map((pass) => pass.utcMs),
     zone,
     occupancy: [...counts].sort((a, b) => a[0] - b[0]).map(([agvs, minutes]) => ({ agvs, minutes })),
     stops: annotated,

@@ -17,6 +17,7 @@
 
 import { EXPECTED_STRUCTURE, KNOWN_LISTS } from "../domain/tag-lists.js";
 import { detectDelimiter, type Delimiter } from "./delimiter.js";
+import { normaliseHeaderCell, unquoteField } from "./importer.js";
 
 export { EXPECTED_STRUCTURE, KNOWN_LISTS } from "../domain/tag-lists.js";
 export type { KnownList } from "../domain/tag-lists.js";
@@ -115,8 +116,9 @@ export function importCatalog(text: string): CatalogImport {
   const lines = text.split(/\r\n|\n|\r/).filter((line) => line.trim() !== "");
   if (lines.length < 2) throw tooShort();
   const delimiter = detectDelimiter(lines.slice(0, 50)).delimiter;
+  // Comillas envolventes fuera, como en las lecturas: `"0040"` es el tag `0040`, no otro.
   return importCatalogTable(
-    lines.map((line) => line.split(delimiter)),
+    lines.map((line) => line.split(delimiter).map(unquoteField)),
     delimiter,
   );
 }
@@ -138,7 +140,9 @@ export function importCatalogRows(rows: readonly (readonly string[])[]): Catalog
 
 function importCatalogTable(table: readonly (readonly string[])[], delimiter: Delimiter | null): CatalogImport {
   const separator = delimiter ?? ";";
-  const header = (table[0] ?? []).map((field) => field.trim().toLowerCase());
+  // La misma normalización que la cabecera de lecturas: sin BOM, sin acentos y en minúsculas. Con
+  // `.toLowerCase()` a secas, «Función» no era «funcion» y la columna se ignoraba sin decirlo.
+  const header = (table[0] ?? []).map(normaliseHeaderCell);
 
   const listColumn = header.indexOf("lista");
   const tagColumn = header.indexOf("tag");
@@ -214,6 +218,16 @@ function importCatalogTable(table: readonly (readonly string[])[], delimiter: De
   }
 
   const warnings: string[] = [];
+  const knownColumns: readonly string[] = [...EXPECTED_STRUCTURE.header, ...EXPECTED_STRUCTURE.optional];
+  const unknownColumns = header.filter((name) => name !== "" && !knownColumns.includes(name));
+  if (unknownColumns.length > 0) {
+    // Se ignoran, pero se dice: una columna mal escrita («Funcion » con espacio, «tipo» por
+    // «funcion») perdería su contenido y quien cargó el fichero no tendría forma de saberlo.
+    warnings.push(
+      `Columnas que este importador no conoce y se ignoran: ${unknownColumns.join(", ")}. ` +
+        `Las reconocidas son ${knownColumns.join(", ")}.`,
+    );
+  }
   if (unknown.size > 0) {
     warnings.push(
       `Listas que este producto todavía no sabe usar: ${[...unknown].join(", ")}. Se conservan con ` +

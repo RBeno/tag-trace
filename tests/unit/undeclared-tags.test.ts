@@ -107,3 +107,40 @@ describe("tags leídos fuera de la lista del circuito", () => {
     expect(places.has("0Z")).toBe(false);
   });
 });
+
+describe("el sitio que cruza el final de la lista, y la lectura de día suelta", () => {
+  it("entre el último y el primero de la lista: el declarado sin lecturas del final se nombra", () => {
+    const lista = ["01", "02", "03", "04", "0Z"];
+    const readings = day(() => ["01", "02", "03", "04", "X"]);
+    const x = locateUndeclaredTags(readings, lista, new Set(), regimeOf, THRESHOLDS).tags.find((tag) => tag.tagId === "X");
+    expect(x).toMatchObject({ verdict: "posicion", predecessor: "04", successor: "01", declaredWithoutReadings: ["0Z"] });
+  });
+
+  it("una sola lectura de día no convierte un tag de noche en candidato a la posición: sigue siendo de noche, y se dice", () => {
+    const readings = day((start) => (isNight(start) ? ["01", "02", "03", "04", "N", "05"] : ["01", "02", "03", "04", "05"]));
+    const stray = readings.find((entry) => entry.tagId === "01" && regimeOf(entry.time.utcMs) === "produccion") as Reading;
+    readings.push({ ...stray, tagId: "N", time: { ...stray.time, utcMs: stray.time.utcMs + 45_000 } });
+    const n = locateUndeclaredTags(readings, declared, new Set(), regimeOf, THRESHOLDS).tags.find((tag) => tag.tagId === "N");
+    expect(n).toMatchObject({ verdict: "noche", dayReadings: 1 });
+    expect(n?.evidence).toContain("Tuvo 1 lectura de día, ninguna en su sitio.");
+    // En la lista de noche, lo mismo: declarado.
+    const declaradoNoche = locateUndeclaredTags(readings, declared, new Set(), regimeOf, THRESHOLDS, new Set(["N"])).tags.find(
+      (tag) => tag.tagId === "N",
+    );
+    expect(declaradoNoche?.verdict).toBe("noche-declarado");
+  });
+
+  it("una lectura de día en su sitio sí manda: candidato a la posición", () => {
+    // Todas las noches y una sola vez de día, pero esa vez entre sus vecinos: lo leído lo sitúa ahí.
+    let seen = false;
+    const readings = day((start) => {
+      if (isNight(start)) return ["01", "02", "X", "03", "04", "05"];
+      if (seen) return ["01", "02", "03", "04", "05"];
+      seen = true;
+      return ["01", "02", "X", "03", "04", "05"];
+    });
+    const x = locateUndeclaredTags(readings, declared, new Set(), regimeOf, THRESHOLDS).tags.find((tag) => tag.tagId === "X");
+    expect(x?.verdict).toBe("posicion");
+    expect(x?.dayHits).toBeGreaterThan(0);
+  });
+});

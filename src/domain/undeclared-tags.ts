@@ -20,7 +20,9 @@
  * - `posicion`: se lee de día en su sitio → candidato a esa posición del circuito. Si la lista pone ahí
  *   un tag sin ninguna lectura, se nombra: o se sustituyó, o su número está mal escrito en la lista.
  * - `noche`: solo se lee de noche, y de día se pasa por su sitio las veces suficientes para que no
- *   leerlo nunca no sea casualidad → tag de noche.
+ *   leerlo nunca no sea casualidad → tag de noche. Lecturas de día sueltas fuera de su sitio no lo sacan
+ *   de aquí mientras de día se pase por su sitio sin leerlo; se dice cuántas tuvo. Una de día en su
+ *   sitio sí: lo leído lo sitúa ahí.
  * - `noche-probable`: solo se lee de noche y de día no hay pasadas por su sitio con las que
  *   comprobarlo → posiblemente de noche.
  * - `noche-declarado`: solo se lee de noche y está en la lista `noche`, que el propietario da para
@@ -206,21 +208,28 @@ export function locateUndeclaredTags(
     }
 
     const isDeclaredNight = declaredNight.has(tagId);
+    // Lecturas de día fuera de su sitio —ninguna dentro de una pasada predecesor→sucesor— no lo hacen
+    // candidato a la posición: si además de día se pasa por su sitio sin leerlo las veces suficientes
+    // (la misma prueba que sin ninguna lectura de día), sigue siendo de noche y se dice cuántas tuvo.
+    // Una sola lectura de día **en su sitio** sí manda: lo leído lo sitúa ahí.
+    const nightRate = nightPasses === 0 ? 1 : nightHits / nightPasses;
+    const dayUnlikely =
+      counts.noche > 0 && dayHits === 0 && dayPasses >= thresholds.minSlotPasses && (1 - nightRate) ** dayPasses <= thresholds.maxChance;
     let verdict: UndeclaredVerdict;
-    if (counts.produccion > 0) verdict = "posicion";
+    if (counts.produccion > 0 && !dayUnlikely) verdict = "posicion";
     else if (isDeclaredNight) verdict = "noche-declarado";
-    else {
-      const nightRate = nightPasses === 0 ? 1 : nightHits / nightPasses;
-      const chance = (1 - nightRate) ** dayPasses;
-      verdict = dayPasses >= thresholds.minSlotPasses && chance <= thresholds.maxChance ? "noche" : "noche-probable";
-    }
+    else verdict = dayUnlikely ? "noche" : "noche-probable";
 
     const predecessorOrder = predecessor === null ? null : (orderOf.get(predecessor) ?? null);
     const successorOrder = successor === null ? null : (orderOf.get(successor) ?? null);
+    // Lo que la lista pone entre los dos vecinos; la lista es un anillo, así que si el sitio cruza su
+    // final (predecesor al final, sucesor al principio) se rebana dando la vuelta.
     const between =
-      predecessorOrder !== null && successorOrder !== null && successorOrder > predecessorOrder
-        ? declaredOrder.slice(predecessorOrder, successorOrder - 1)
-        : [];
+      predecessorOrder === null || successorOrder === null
+        ? []
+        : successorOrder > predecessorOrder
+          ? declaredOrder.slice(predecessorOrder, successorOrder - 1)
+          : [...declaredOrder.slice(predecessorOrder), ...declaredOrder.slice(0, successorOrder - 1)];
     const declaredWithoutReadings = between.filter((declaredTag) => (readCount.get(declaredTag) ?? 0) === 0);
 
     const where =
@@ -232,6 +241,8 @@ export function locateUndeclaredTags(
       predecessor === null || successor === null
         ? ""
         : ` Por su sitio se pasa ${dayPasses} veces de día y se lee en ${dayHits}; de noche, ${nightPasses} y ${nightHits}.`;
+    const strayDay =
+      counts.produccion === 0 ? "" : ` Tuvo ${counts.produccion} ${counts.produccion === 1 ? "lectura" : "lecturas"} de día, ninguna en su sitio.`;
     const evidence =
       verdict === "posicion"
         ? `Se lee ${where}: ${reads}.${passes} Candidato a esa posición del circuito${
@@ -240,9 +251,9 @@ export function locateUndeclaredTags(
               : `; la lista pone ahí ${declaredWithoutReadings.join(", ")}, que no se ${declaredWithoutReadings.length === 1 ? "lee" : "leen"}: o se sustituyó, o el número está mal escrito en la lista`
           }.${isDeclaredNight ? " La lista de tags de noche lo declara de noche, y se lee también de día." : ""}`
         : verdict === "noche-declarado"
-          ? `Solo se lee de noche, ${where}: ${reads}.${passes} Está en la lista de tags de noche: es un tag de noche declarado.`
+          ? `Solo se lee de noche, ${where}: ${reads}.${passes} Está en la lista de tags de noche: es un tag de noche declarado.${strayDay}`
           : verdict === "noche"
-          ? `Solo se lee de noche, ${where}: ${reads}.${passes} De día se pasa por su sitio y no se lee: tag de noche.`
+          ? `Solo se lee de noche, ${where}: ${reads}.${passes} De día se pasa por su sitio y no se lee: tag de noche.${strayDay}`
           : `Solo se lee de noche, ${where}: ${reads}.${passes} De día no hay pasadas suficientes por su sitio para comprobarlo: posiblemente de noche.`;
 
     tags.push({

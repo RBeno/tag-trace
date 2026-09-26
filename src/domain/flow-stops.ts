@@ -344,8 +344,23 @@ export interface FlowInput {
 export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): FlowReport {
   const { transitions, bands, production, regimeOf } = input;
   const measurable = measurableTransitions(transitions, input.coverage, input.laneTags);
+  const ring = bands?.ring ?? [];
+  const positionOf = bands?.positionOf ?? new Map<string, number>();
+  /**
+   * La horquilla con que se mide un paso de `from` a `to` en un régimen. Volver a leer **el mismo
+   * tag** es haberse quedado sobre él: el par (T, T) no tiene horquilla propia, así que se mide contra
+   * lo que se suele tardar en dejar ese tag, el tramo hasta el siguiente del anillo. Sin esto, un AGV
+   * parado doce minutos sobre un tag que lo relee al arrancar no tendría ninguna parada.
+   */
+  const bandOfStep = (from: string, to: string, regime: Regime): BandFor | null => {
+    if (bands === null) return null;
+    if (from !== to) return bandFor(bands, from, to, regime);
+    const position = positionOf.get(from);
+    if (position === undefined || ring.length < 2) return null;
+    return bandFor(bands, from, ring[(position + 1) % ring.length] as string, regime);
+  };
   const bandOfTransition = (transition: Transition): BandFor | null =>
-    bands === null ? null : bandFor(bands, transition.from, transition.to, transitionRegime(transition, regimeOf));
+    bandOfStep(transition.from, transition.to, transitionRegime(transition, regimeOf));
 
   // Dónde estaba cada AGV en cada momento: su último tag leído.
   const track = new Map<string, { times: number[]; tags: string[] }>();
@@ -392,12 +407,66 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
     if (own === undefined || index < 0 || index + 1 >= own.times.length || bands === null) return false;
     const fromTime = own.times[index] as number;
     const toTime = own.times[index + 1] as number;
-    const band = bandFor(bands, own.tags[index] as string, own.tags[index + 1] as string, regimeOf((fromTime + toTime) / 2));
+    const band = bandOfStep(own.tags[index] as string, own.tags[index + 1] as string, regimeOf((fromTime + toTime) / 2));
     return band !== null && toTime - fromTime > band.p80Ms;
   };
 
-  const ring = bands?.ring ?? [];
-  const positionOf = bands?.positionOf ?? new Map<string, number>();
+  // Quién leyó cada tag y cuándo, en orden, y con qué tag siguió: para saber si alguien pasó por
+  // donde otro «está».
+  const readsOfTag = new Map<string, { times: number[]; agvIds: string[]; nextTags: (string | null)[]; nextTimes: number[] }>();
+  for (const [agvId, own] of track) {
+    own.tags.forEach((tag, index) => {
+      let reads = readsOfTag.get(tag);
+      if (reads === undefined) {
+        reads = { times: [], agvIds: [], nextTags: [], nextTimes: [] };
+        readsOfTag.set(tag, reads);
+      }
+      reads.times.push(own.times[index] as number);
+      reads.agvIds.push(agvId);
+      reads.nextTags.push(own.tags[index + 1] ?? null);
+      reads.nextTimes.push(own.times[index + 1] ?? Number.POSITIVE_INFINITY);
+    });
+  }
+  for (const reads of readsOfTag.values()) {
+    const order = reads.times.map((_, index) => index).sort((a, b) => (reads.times[a] as number) - (reads.times[b] as number));
+    reads.times = order.map((index) => reads.times[index] as number);
+    reads.agvIds = order.map((index) => reads.agvIds[index] as string);
+    reads.nextTags = order.map((index) => reads.nextTags[index] ?? null);
+    reads.nextTimes = order.map((index) => reads.nextTimes[index] as number);
+  }
+  /**
+   * ¿Atravesó otro AGV el sitio de `tagId` después de `afterUtcMs` y no más tarde de `untilUtcMs`?
+   * Atravesar es leer ese tag **y seguir hacia delante** (su lectura siguiente cae más adelante en el
+   * anillo) dentro de la ventana. En una guía única nadie pasa por donde hay un AGV parado: si alguien
+   * lo hizo después de la última lectura del candidato, el candidato ya no estaba ahí —fuera de la
+   * guía, en maniobra manual o desconectado— y no retiene a nadie. Leer solo el tag no basta: el
+   * candidato pudo seguir hasta un tag que no se lee (hallado con la auditoría: en un cuello con dos
+   * tags sin lecturas delante, el de detrás leía el último tag del retenedor y la cola se quedaba
+   * «sin explicación»).
+   */
+  const passedThrough = (tagId: string, holderAgvId: string, stoppedAgvId: string, afterUtcMs: number, untilUtcMs: number): boolean => {
+    const reads = readsOfTag.get(tagId);
+    const position = positionOf.get(tagId);
+    if (reads === undefined || position === undefined || ring.length < 2) return false;
+    let lo = 0;
+    let hi = reads.times.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((reads.times[mid] as number) <= afterUtcMs) lo = mid + 1;
+      else hi = mid;
+    }
+    for (let index = lo; index < reads.times.length && (reads.times[index] as number) <= untilUtcMs; index += 1) {
+      // Ni el candidato ni el propio parado: lo que se busca es un tercero que pasó por en medio.
+      if (reads.agvIds[index] === holderAgvId || reads.agvIds[index] === stoppedAgvId) continue;
+      const next = reads.nextTags[index];
+      const nextPosition = next === null || next === undefined ? undefined : positionOf.get(next);
+      if (nextPosition === undefined || (reads.nextTimes[index] as number) > untilUtcMs) continue;
+      const ahead = (nextPosition - position + ring.length) % ring.length;
+      if (ahead >= 1 && ahead < ring.length / 2) return true;
+    }
+    return false;
+  };
+
   const vehicles = [...track.keys()];
 
   /**
@@ -436,7 +505,10 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
    * **el mismo**: uno que llega por detrás y lo adelanta no lo retiene, y uno que se aleja tampoco —
    * es justo lo que el propietario llama «el resto avanza y se separa»—. Y tiene que estar retenido o
    * parado de verdad: donde un tag se lee poco, o el tramo es largo, el último tag leído de un AGV
-   * que circula normal se queda atrás de donde está, y sin esta condición parecería una cola.
+   * que circula normal se queda atrás de donde está, y sin esta condición parecería una cola. Y tiene
+   * que **seguir en la guía**: si otro AGV leyó su último tag después que él, antes del punto medio de
+   * la parada, él ya no estaba ahí (un AGV que calla horas fuera de la guía retendría, si no, a todo el
+   * que para cerca de su último tag).
    */
   const holderOf = (transition: Transition): { agvId: string; tagId: string } | null => {
     const start = aheadOf(transition.agvId, transition.from, transition.fromTime, thresholds.reachTags, transition.fromTime);
@@ -448,6 +520,7 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
       const theirs = last === null ? undefined : positionOf.get(last.tag);
       if (last === null || theirs === undefined) continue;
       const distance = (theirs - position + ring.length) % ring.length;
+      if (passedThrough(last.tag, candidate.agvId, transition.agvId, last.time, middle)) continue;
       if (distance <= thresholds.reachTags && lingering(candidate.agvId, middle)) {
         return { agvId: candidate.agvId, tagId: last.tag };
       }
@@ -632,7 +705,9 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
 
   // Cómo salió cada AGV de cada parada de la producción: por su sitio y en el mismo orden.
   const productionFlow: ProductionStopFlow[] = production.stops.map((entry, stopIndex) => {
-    const inside = measurable.filter(
+    // Todas las transiciones, no solo las medibles: el que entró a una calle de carga durante la parada
+    // también estaba en el circuito y siguió por su sitio; dejarlo fuera restaba AGV al recuento.
+    const inside = transitions.filter(
       (transition) =>
         overlapMs({ from: transition.fromTime, to: transition.toTime }, { from: entry.fromUtcMs, to: entry.toUtcMs }) >=
         0.5 * (entry.toUtcMs - entry.fromUtcMs),
@@ -652,11 +727,17 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
       // Por su sitio: el mismo tag, uno más allá en el anillo, o un paso que se da a menudo (una rama
       // o una calle tienen su propio siguiente, fuera del anillo; un tag que se lee poco se salta).
       const usualStep = (pairCount.get(pairKey(transition.from, transition.to)) ?? 0) >= thresholds.minPairSamples;
-      const inPlace = transition.from === transition.to || (skipped !== null && skipped <= 1) || usualStep;
+      const toLane = input.laneTags.has(transition.from) || input.laneTags.has(transition.to);
+      const inPlace = transition.from === transition.to || (skipped !== null && skipped <= 1) || usualStep || toLane;
       if (!inPlace) {
         notInPlace.push({ agvId: transition.agvId, fromTagId: transition.from, toTagId: transition.to, skipped });
       }
-      if (from !== undefined && to !== undefined) {
+      // En el orden solo entran los que leyeron el tag siguiente, el mismo o uno saltado como mucho: un
+      // AGV que se saltó más tags no tiene una posición fiable, ni antes ni después, y comparado con un
+      // vecino parecía adelantarlo. Que el salto sea habitual (`usualStep`) lo hace «por su sitio»,
+      // no fiable para el orden.
+      const orderable = transition.from === transition.to || (skipped !== null && skipped <= 1);
+      if (from !== undefined && to !== undefined && orderable) {
         before.push({ agvId: transition.agvId, position: from, time: transition.fromTime });
         after.push({ agvId: transition.agvId, position: to, time: transition.toTime });
       }

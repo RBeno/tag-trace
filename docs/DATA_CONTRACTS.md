@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.18.0
+version: 0.21.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -233,7 +233,8 @@ vueltas ni de ninguna constante industrial. Es pertenencia a conjuntos y recuent
 | `ciego-parcial` | sí | sí | unos siempre, otros nunca | bimodal: memoria desactualizada en esos vehículos → `inferred` |
 | `no-declarado-leido` | **no** | indiferente | sí | existe y nadie lo declaró: la lista del circuito está desactualizada |
 | `declarado-sin-memoria` | sí | **no** | indiferente | la lista de memoria no lo tiene: sin lecturas, nadie puede leerlo aunque exista (punto ciego de configuración); con lecturas, alguna memoria real lo tiene y la lista va por detrás |
-| `especial` | — | sí | ocasional | mantenimiento, sustitución de emergencia o tag de la lista de noche: fuera del circuito de día y de toda tasa |
+| `especial` | — | sí | ocasional | mantenimiento, sustitución de emergencia o tag de la lista de noche: fuera del circuito de día y de toda tasa. **No** la carga online: sus tags están declarados por su lista y se juzgan como los demás (R-GRA-004; propietario, 2026-09-26) |
+| `critico-no-declarado` | **no** | **no** | **por nadie** | solo la lista `critico` lo nombra: probable errata de esa lista; acción `comprobar-lista-critico`, nunca «añadir a la memoria» (2026-09-26) |
 | `critico-sin-lectura` | indiferente | sí | **por nadie, nunca**, y es crítico | se perdió una función, no solo una lectura (R-GRA-008) → `unknown` |
 | `refuerzo-sin-lectura` | indiferente | sí | **por nadie, nunca**, es crítico y **otro tag de su refuerzo sí se lee** | la función la sostiene el refuerzo; lo perdido es la redundancia (R-GRA-016) → `unknown` |
 
@@ -266,7 +267,7 @@ SE2/4;7102;01/09/2026;15/09/2026 14:00;baja por mantenimiento
 |---|---|---|
 | `agv` | sí | identificador tal cual; `0040` no es `40` (R-DAT-001) |
 | `desde` | sí | instante del alta, día/mes/año con hora opcional; sin hora es a las 00:00 |
-| `hasta` | no | instante de la baja; vacío es que sigue asignado |
+| `hasta` | no | instante de la baja; vacío es que sigue asignado; **sin hora, el final de ese día** (las 00:00 del siguiente en la zona del circuito, exclusivo), así que un alta y una baja el mismo día son un periodo válido (OQ-139, 2026-09-26) |
 | `circuito` | no | a qué circuito pertenece la fila, cuando un mismo fichero trae varios |
 | `nota` | no | texto libre, se conserva y no se interpreta |
 
@@ -359,9 +360,21 @@ que el texto:
   muestra en la vista previa para que el usuario lo confirme. No se supone.
 - Un fichero cuya monotonía no sea limpia no se rechaza: sus inversiones son evidencia de entrega
   diferida y se conservan señaladas.
+- Un par en que alguna lectura lleva `t_flag` distinto de `ok` no cuenta como inversión ni como
+  empate: se cuenta aparte (`unreliablePairs`). Una hora repetida no es una entrega diferida.
+- Las líneas en blanco no son filas: se cuentan aparte (`blankRows`) y `totalRows` es la suma exacta
+  de aceptadas, en cuarentena y sin tag.
+- Las comillas envolventes de un campo o de una celda de cabecera no forman parte del valor
+  (`"0040"` es `0040`, `""` dentro es una comilla). Un separador dentro de un campo entrecomillado
+  **no** se admite: la fila sale por recuento de campos. Vale para lecturas, listas e historial de
+  flota, cuyas cabeceras se normalizan igual que las de lecturas (BOM, comillas, acentos,
+  mayúsculas), y una columna que el importador no conoce se avisa en vez de ignorarse en silencio.
 - Conservar el orden original para auditoría.
-- Los cambios horario de verano/invierno deben detectarse y marcarse; una hora repetida o
-  inexistente no se usa para afirmar orden dentro de la ventana afectada.
+- Los cambios horario de verano/invierno deben detectarse y marcarse; una hora inexistente, o una
+  repetida que el fichero no permite resolver, no se usa para afirmar orden dentro de la ventana
+  afectada. La hora repetida **se resuelve por la posición en el fichero** cuando su sentido está
+  medido (ADR-0013, nota del 2026-09-26): las resueltas llevan `dst_by_position` y sí ordenan. El
+  resumen de la fuente da `dstFlagged`, `dstResolvedByPosition` y `dstAmbiguous`.
 - La representación canónica del tiempo —`t_utc`, `t_raw`, `tz_id` y `t_flag`— está fijada en
   ADR-0013 y es obligatoria para toda observación.
 

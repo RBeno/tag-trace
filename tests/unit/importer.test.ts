@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+import { buildTransitions } from "../../src/domain/graph.js";
 import { decodeSource } from "../../src/ingestion/decode.js";
 import { detectDelimiter } from "../../src/ingestion/delimiter.js";
 import { measureMonotonicity } from "../../src/ingestion/monotonicity.js";
@@ -501,5 +502,247 @@ describe("delimitador", () => {
   it("no acepta un separador que produce recuentos irregulares", () => {
     const lines = ["a,b", "1,2,3,4", "x"];
     expect(detectDelimiter(lines).confidence).toBeLessThan(0.9);
+  });
+});
+
+describe("hora repetida de octubre · ADR-0013", () => {
+  it("los pares con una lectura marcada no cuentan como inversión y se cuentan aparte", () => {
+    // 900 está en hora repetida: su instante calculado no es medida del reloj y no puede acusar a
+    // la fuente de retroceder.
+    const report = measureMonotonicity([500, 400, 900, 300], ["ok", "ok", "dst_ambiguous", "ok"]);
+    expect(report.direction).toBe("newest-first");
+    expect(report.inversions).toBe(0);
+    expect(report.unreliablePairs).toBe(2);
+    expect(report.comparedPairs).toBe(1);
+  });
+
+  it("una pila íntegra que cruza la hora repetida no tiene inversiones y sus aristas se afirman por posición (OQ-137)", () => {
+    // 25/10/2026: 02:00–02:59 ocurre dos veces. Todas las filas van en orden de pila.
+    //
+    // Hasta el 2026-09-26 estas lecturas no afirmaban orden: las dos ocurrencias colapsaban sobre
+    // la primera, los pares que las tocaban se contaban como `unreliablePairs` (5) y solo se
+    // afirmaban las aristas con los dos extremos fuera de la hora repetida (Z>A y F>G). Por decisión
+    // del propietario (OQ-137) la posición en la pila asigna cada fila a su ocurrencia: el retroceso
+    // de 02:40 a 02:10 separa la primera (B, C) de la segunda (D, E), y con instante propio todas
+    // ordenan.
+    const text = [
+      "Fecha;AGV;Tag",
+      "25/10/2026 04:00:00;0040;G",
+      "25/10/2026 03:10:00;0040;F",
+      "25/10/2026 02:40:00;0040;E",
+      "25/10/2026 02:10:00;0040;D",
+      "25/10/2026 02:40:00;0040;C",
+      "25/10/2026 02:10:00;0040;B",
+      "25/10/2026 01:40:00;0040;A",
+      "25/10/2026 00:30:00;0040;Z",
+    ].join("\n");
+    const result = importReadings(text, { sourceId: "dst", fileName: "dst.csv", byteSize: text.length, zone: ZONE }, silent);
+
+    expect(result.summary.dstFlagged).toBe(4);
+    expect(result.summary.dstResolvedByPosition).toBe(4);
+    expect(result.summary.dstAmbiguous).toBe(0);
+    expect(result.summary.monotonicity.direction).toBe("newest-first");
+    // Antes de la revisión salía una inversión: la segunda ocurrencia colapsaba sobre la primera y
+    // el fichero parecía retroceder, con aviso de «entrega diferida» sobre una fuente íntegra. Con
+    // los instantes resueltos la pila compara entera y sigue íntegra.
+    expect(result.summary.monotonicity.inversions).toBe(0);
+    expect(result.summary.monotonicity.unreliablePairs).toBe(0);
+
+    const { transitions, discardedUnreliableTime } = buildTransitions(result.readings, result.summary.direction, []);
+    // Las siete transiciones, incluidas las que cruzan y las que están dentro de la hora repetida.
+    expect(transitions.map((t) => `${t.from}>${t.to}`)).toEqual(["Z>A", "A>B", "B>C", "C>D", "D>E", "E>F", "F>G"]);
+    expect(discardedUnreliableTime).toBe(0);
+  });
+});
+
+describe("comillas, BOM y líneas en blanco", () => {
+  it("las comillas envolventes no forman parte del identificador y la comilla doblada se deshace", () => {
+    const text = [
+      '﻿"Fecha";"AGV";"Tag"',
+      '"13/09/2026 10:00";"0040";"T01"',
+      '13/09/2026 10:01;0040;"di""jo"',
+      '13/09/2026 10:02;0040;T"03',
+    ].join("\n");
+    const result = importReadings(text, { sourceId: "q", fileName: "q.csv", byteSize: text.length, zone: ZONE }, silent);
+
+    expect(result.summary.header).toEqual(["Fecha", "AGV", "Tag"]);
+    expect(result.readings.map((entry) => entry.agvId)).toEqual(["0040", "0040", "0040"]);
+    // `"T01"` es el tag `T01`, no otro; `""` es una comilla; una comilla suelta se conserva.
+    expect(result.readings.map((entry) => entry.tagId)).toEqual(["T01", 'di"jo', 'T"03']);
+  });
+
+  it("las líneas en blanco se cuentan aparte y totalRows es la suma exacta de las cubetas", () => {
+    const text = ["Fecha;AGV;Tag", "13/09/2026 10:00;0040;T01", "", "13/09/2026 10:01;0040;", "   ", "13/09/2026 10:02;0040;T02"].join("\n");
+    const result = importReadings(text, { sourceId: "b", fileName: "b.csv", byteSize: text.length, zone: ZONE }, silent);
+
+    expect(result.blankRows).toBe(2);
+    expect(result.summary.totalRows).toBe(3);
+    expect(result.summary.totalRows).toBe(
+      result.summary.acceptedRows + result.summary.quarantinedRows + result.summary.rowsWithoutTag,
+    );
+    // La procedencia sigue siendo la fila física, con las líneas vacías contadas.
+    expect(result.readings[1]?.provenance.sourceRow).toBe(6);
+  });
+});
+
+describe("hora repetida · desambiguación por posición (OQ-137)", () => {
+  /** 25/10/2026 02:MM en la primera ocurrencia (CEST, UTC+2) y en la segunda (CET, UTC+1). */
+  const primera = (minute: number): number => Date.UTC(2026, 9, 25, 0, minute);
+  const segunda = (minute: number): number => Date.UTC(2026, 9, 25, 1, minute);
+
+  const CABECERA = "Fecha;AGV;Tag";
+  /**
+   * Un fichero íntegro que cruza el cambio, en orden cronológico, con dos vehículos entrelazados. La
+   * hora es la de recepción en el servidor, así que la pila ordena a los dos a la vez: el retroceso
+   * de 02:50 (vehículo 0007) a 02:05 (vehículo 0042) es global, no de un vehículo.
+   */
+  const CRONOLOGICO = [
+    "25/10/2026 01:40:00;0007;A",
+    "25/10/2026 01:50:00;0042;K",
+    "25/10/2026 02:10:00;0007;B",
+    "25/10/2026 02:20:00;0042;L",
+    "25/10/2026 02:50:00;0007;C",
+    "25/10/2026 02:05:00;0042;M",
+    "25/10/2026 02:30:00;0007;D",
+    "25/10/2026 02:45:00;0042;N",
+    "25/10/2026 03:10:00;0007;E",
+    "25/10/2026 03:20:00;0042;O",
+  ];
+
+  function importar(filas: readonly string[]) {
+    const text = [CABECERA, ...filas].join("\n");
+    return importReadings(text, { sourceId: "dst", fileName: "dst.csv", byteSize: text.length, zone: ZONE }, silent);
+  }
+
+  function porTag(result: ReturnType<typeof importar>): Map<string, Reading> {
+    return new Map(result.readings.map((entry) => [entry.tagId, entry]));
+  }
+
+  it("una pila íntegra con las dos ocurrencias resuelve todas por posición, sin inversiones y con las aristas correctas", () => {
+    const result = importar([...CRONOLOGICO].reverse());
+
+    expect(result.summary.direction).toBe("newest-first");
+    expect(result.summary.dstFlagged).toBe(6);
+    expect(result.summary.dstResolvedByPosition).toBe(6);
+    expect(result.summary.dstAmbiguous).toBe(0);
+    // Con los instantes resueltos la pila vuelve a compararse entera y sigue íntegra.
+    expect(result.summary.monotonicity.inversions).toBe(0);
+    expect(result.summary.monotonicity.unreliablePairs).toBe(0);
+
+    const tag = porTag(result);
+    // Antes del retroceso, primera ocurrencia: el instante que ya tenían. Después, una hora más.
+    expect(tag.get("B")?.time).toMatchObject({ utcMs: primera(10), flag: "dst_by_position" });
+    expect(tag.get("L")?.time).toMatchObject({ utcMs: primera(20), flag: "dst_by_position" });
+    expect(tag.get("C")?.time).toMatchObject({ utcMs: primera(50), flag: "dst_by_position" });
+    expect(tag.get("M")?.time).toMatchObject({ utcMs: segunda(5), flag: "dst_by_position" });
+    expect(tag.get("D")?.time).toMatchObject({ utcMs: segunda(30), flag: "dst_by_position" });
+    expect(tag.get("N")?.time).toMatchObject({ utcMs: segunda(45), flag: "dst_by_position" });
+    // La cadena original y las horas normales no cambian.
+    expect(tag.get("M")?.time.raw).toBe("25/10/2026 02:05:00");
+    expect(tag.get("E")?.time.flag).toBe("ok");
+
+    const { transitions, discardedUnreliableTime } = buildTransitions(result.readings, result.summary.direction, []);
+    expect(transitions.map((t) => `${t.from}>${t.to}`).sort()).toEqual(
+      ["A>B", "B>C", "C>D", "D>E", "K>L", "L>M", "M>N", "N>O"].sort(),
+    );
+    expect(discardedUnreliableTime).toBe(0);
+    expect(result.warnings.some((w) => w.includes("por la posición en el fichero"))).toBe(true);
+  });
+
+  it("un fichero oldest-first íntegro se resuelve igual: el criterio depende del sentido medido, no del orden físico", () => {
+    const result = importar(CRONOLOGICO);
+
+    expect(result.summary.direction).toBe("oldest-first");
+    expect(result.summary.dstResolvedByPosition).toBe(6);
+    expect(result.summary.dstAmbiguous).toBe(0);
+    expect(result.summary.monotonicity.inversions).toBe(0);
+
+    const tag = porTag(result);
+    expect(tag.get("C")?.time.utcMs).toBe(primera(50));
+    expect(tag.get("M")?.time.utcMs).toBe(segunda(5));
+
+    const { transitions } = buildTransitions(result.readings, result.summary.direction, []);
+    expect(transitions.map((t) => `${t.from}>${t.to}`).sort()).toEqual(
+      ["A>B", "B>C", "C>D", "D>E", "K>L", "L>M", "M>N", "N>O"].sort(),
+    );
+  });
+
+  it("una racha sin retroceso seguida de 03:xx es la segunda ocurrencia", () => {
+    // La exportación empieza dentro del cambio: no hay primera ocurrencia en el fichero. Entre estas
+    // filas y las de 03:xx no cabe otra hora entera, así que son la segunda (UTC = local − 1 h).
+    const result = importar([
+      "25/10/2026 03:30:00;0007;G",
+      "25/10/2026 03:05:00;0042;F",
+      "25/10/2026 02:45:00;0007;E",
+      "25/10/2026 02:20:00;0042;D",
+    ]);
+
+    expect(result.summary.direction).toBe("newest-first");
+    expect(result.summary.dstResolvedByPosition).toBe(2);
+    expect(result.summary.dstAmbiguous).toBe(0);
+    const tag = porTag(result);
+    expect(tag.get("D")?.time).toMatchObject({ utcMs: segunda(20), flag: "dst_by_position" });
+    expect(tag.get("E")?.time).toMatchObject({ utcMs: segunda(45), flag: "dst_by_position" });
+  });
+
+  it("una racha precedida por 01:xx y sin 03:xx detrás sigue ambigua: parece la primera, pero no se afirma", () => {
+    // La exportación pudo cortarse en medio de la segunda ocurrencia con la primera vacía. Elegir
+    // la hipótesis más probable es lo que ADR-0013 prohíbe.
+    const result = importar([
+      "25/10/2026 02:45:00;0007;C",
+      "25/10/2026 02:20:00;0042;B",
+      "25/10/2026 01:40:00;0007;A",
+      "25/10/2026 01:10:00;0042;Z",
+    ]);
+
+    expect(result.summary.direction).toBe("newest-first");
+    expect(result.summary.dstFlagged).toBe(2);
+    expect(result.summary.dstResolvedByPosition).toBe(0);
+    expect(result.summary.dstAmbiguous).toBe(2);
+    const tag = porTag(result);
+    expect(tag.get("B")?.time).toMatchObject({ utcMs: primera(20), flag: "dst_ambiguous" });
+    expect(tag.get("C")?.time).toMatchObject({ utcMs: primera(45), flag: "dst_ambiguous" });
+    expect(result.summary.monotonicity.unreliablePairs).toBe(2);
+    expect(result.warnings.some((w) => w.includes("sin que el fichero permita resolverla"))).toBe(true);
+  });
+
+  it("un fichero solo con la hora repetida no tiene sentido medible y no resuelve nada", () => {
+    // Todas las filas son ambiguas: la monotonía no compara ningún par y el sentido queda `unknown`.
+    // Sin sentido, la posición no significa nada.
+    const result = importar(["25/10/2026 02:45:00;0007;C", "25/10/2026 02:20:00;0007;B"]);
+
+    expect(result.summary.direction).toBe("unknown");
+    expect(result.summary.dstResolvedByPosition).toBe(0);
+    expect(result.summary.dstAmbiguous).toBe(2);
+    expect(result.readings.every((entry) => entry.time.flag === "dst_ambiguous")).toBe(true);
+  });
+
+  it("la hora inexistente de marzo no cambia: la posición no crea un instante que no existe", () => {
+    const result = importar([
+      "29/03/2026 03:20:00;0007;C",
+      "29/03/2026 02:30:00;0007;B",
+      "29/03/2026 01:40:00;0007;A",
+    ]);
+
+    expect(result.summary.dstFlagged).toBe(1);
+    expect(result.summary.dstResolvedByPosition).toBe(0);
+    expect(result.summary.dstAmbiguous).toBe(0);
+    expect(porTag(result).get("B")?.time.flag).toBe("dst_nonexistent");
+    expect(result.summary.monotonicity.unreliablePairs).toBe(2);
+  });
+
+  it("varios retrocesos dentro de la racha son desorden, no un cambio de hora, y no se afirma nada", () => {
+    const result = importar([
+      "25/10/2026 03:10:00;0007;F",
+      "25/10/2026 02:40:00;0007;E",
+      "25/10/2026 02:10:00;0007;D",
+      "25/10/2026 02:50:00;0007;C",
+      "25/10/2026 02:20:00;0007;B",
+      "25/10/2026 02:35:00;0007;A",
+      "25/10/2026 01:40:00;0007;Z",
+    ]);
+
+    expect(result.summary.dstResolvedByPosition).toBe(0);
+    expect(result.summary.dstAmbiguous).toBe(5);
   });
 });

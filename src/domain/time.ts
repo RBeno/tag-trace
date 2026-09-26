@@ -11,8 +11,25 @@ export type TimeFlag =
   | "ok"
   /** Hora repetida al retrasar el reloj: el mismo texto corresponde a dos instantes. */
   | "dst_ambiguous"
+  /**
+   * Hora repetida que se resolvió por la **posición en el fichero** (OQ-137, decisión del
+   * propietario 2026-09-26). El texto sigue siendo el mismo para las dos ocurrencias, pero la
+   * posición en la pila dice a cuál pertenece la fila, y con eso el instante vuelve a ordenar.
+   */
+  | "dst_by_position"
   /** Hora inexistente al adelantarlo: el texto no corresponde a ningún instante. */
   | "dst_nonexistent";
+
+/**
+ * Si el instante de una lectura sirve para afirmar orden.
+ *
+ * `ok` y `dst_by_position` sí: en el segundo caso la hora era repetida pero la posición en el
+ * fichero dijo a qué ocurrencia pertenece. `dst_ambiguous` y `dst_nonexistent` no: el reloj no
+ * separa las dos ocurrencias ni hay un instante al que corresponda el texto (ADR-0013).
+ */
+export function isOrderReliable(flag: TimeFlag): boolean {
+  return flag === "ok" || flag === "dst_by_position";
+}
 
 /** Representación canónica de un instante. Nunca se guarda solo `utcMs`. */
 export interface CanonicalTime {
@@ -139,14 +156,11 @@ export function wallClockToUtc(
   wall: WallClock,
   zone: string,
 ): { readonly utcMs: number; readonly flag: TimeFlag } {
-  const naive = asUtcMs(wall);
-  const offsets = [zoneOffsetMs(naive - DAY_MS, zone), zoneOffsetMs(naive + DAY_MS, zone)];
-  const candidates = [...new Set(offsets.map((offset) => naive - offset))];
-  const matches = candidates.filter((candidate) => sameWallClock(wallClockAt(candidate, zone), wall));
+  const { candidates, matches } = instantsFor(wall, zone);
 
   if (matches.length >= 2) {
-    // Hora repetida: se conserva la primera ocurrencia y se marca. No se usa para afirmar orden
-    // dentro de la ventana afectada.
+    // Hora repetida: se conserva la primera ocurrencia y se marca. Por sí sola no sirve para afirmar
+    // orden; la posición en el fichero puede resolverla después (`resolveRepeatedHourByPosition`).
     return { utcMs: Math.min(...matches), flag: "dst_ambiguous" };
   }
   if (matches.length === 1) {
@@ -154,6 +168,141 @@ export function wallClockToUtc(
   }
   // Hora inexistente: el reloj saltó por encima. Se conserva el instante en que el salto terminó.
   return { utcMs: Math.max(...candidates), flag: "dst_nonexistent" };
+}
+
+/** Los instantes que producen los dos regímenes de desplazamiento y cuáles reproducen la hora pedida. */
+function instantsFor(
+  wall: WallClock,
+  zone: string,
+): { readonly candidates: readonly number[]; readonly matches: readonly number[] } {
+  const naive = asUtcMs(wall);
+  const offsets = [zoneOffsetMs(naive - DAY_MS, zone), zoneOffsetMs(naive + DAY_MS, zone)];
+  const candidates = [...new Set(offsets.map((offset) => naive - offset))];
+  const matches = candidates.filter((candidate) => sameWallClock(wallClockAt(candidate, zone), wall));
+  return { candidates, matches };
+}
+
+/**
+ * Los dos instantes de una hora repetida: el de antes de retrasar el reloj y el de después.
+ *
+ * Se parte del instante ya calculado (la primera ocurrencia) y se relee su hora de pared, así que no
+ * hace falta volver a parsear la cadena original ni conocer el orden de campos con que se leyó.
+ */
+function repeatedHourInstants(
+  utcMs: number,
+  zone: string,
+): { readonly first: number; readonly second: number } | undefined {
+  const wall = wallClockAt(utcMs, zone);
+  const { matches } = instantsFor(wall, zone);
+  if (matches.length < 2) return undefined;
+  return { first: Math.min(...matches), second: Math.max(...matches) };
+}
+
+export interface RepeatedHourResolution {
+  /** Los mismos instantes, en el mismo orden, con las horas repetidas resueltas donde se pudo. */
+  readonly times: readonly CanonicalTime[];
+  /** Cuántas horas repetidas pasaron a `dst_by_position`. */
+  readonly resolvedByPosition: number;
+  /** Cuántas siguen `dst_ambiguous` porque el fichero no dio contexto para afirmar nada. */
+  readonly stillAmbiguous: number;
+}
+
+/**
+ * Desambigua la hora repetida del cambio de octubre por la **posición en el fichero** (OQ-137).
+ *
+ * La hora de cada fila es la de recepción en el servidor y el fichero es una pila global, así que
+ * la posición ordena las filas de todos los vehículos a la vez: el criterio es global, no por
+ * vehículo. Quien llama debe pasar los instantes **en el orden cronológico del fichero** (leído del
+ * revés si la fuente emite como pila); si el sentido no se pudo medir no debe llamar, porque la
+ * posición no significa nada sin él.
+ *
+ * Las filas `dst_ambiguous` forman rachas contiguas. Dentro de una racha la hora de pared sube de
+ * 02:00 a 02:59 y, si el fichero abarca las dos ocurrencias, **vuelve a empezar** en 02:00:
+ *
+ * - con exactamente un retroceso, las filas de antes son la primera ocurrencia (el instante que ya
+ *   tenían) y las de después la segunda (una hora más tarde en Europa/Madrid);
+ * - sin retroceso, la racha es la segunda ocurrencia si la fila que la sigue cronológicamente es
+ *   una hora normal de la hora de pared **inmediatamente siguiente** del mismo día (03:xx): entre
+ *   una racha y esas filas no cabe otra ocurrencia entera;
+ * - en cualquier otro caso —racha al final del fichero, precedida por 01:xx y sin 03:xx detrás, o
+ *   con varios retrocesos, que es un desorden y no un cambio de hora— no se afirma nada y la racha
+ *   sigue `dst_ambiguous`.
+ *
+ * Una racha precedida por 01:xx y sin 03:xx detrás **no** se declara primera ocurrencia aunque lo
+ * parezca: la exportación pudo cortarse en medio de la segunda con la primera vacía, y elegir la
+ * hipótesis más probable es justo lo que ADR-0013 prohíbe.
+ */
+export function resolveRepeatedHourByPosition(times: readonly CanonicalTime[]): RepeatedHourResolution {
+  const out = [...times];
+  let resolvedByPosition = 0;
+  let stillAmbiguous = 0;
+
+  let index = 0;
+  while (index < out.length) {
+    if ((out[index] as CanonicalTime).flag !== "dst_ambiguous") {
+      index += 1;
+      continue;
+    }
+    let end = index + 1;
+    while (end < out.length && (out[end] as CanonicalTime).flag === "dst_ambiguous") end += 1;
+
+    const split = splitRepeatedHourRun(out, index, end);
+    if (split === undefined) {
+      stillAmbiguous += end - index;
+    } else {
+      for (let at = index; at < end; at += 1) {
+        const time = out[at] as CanonicalTime;
+        const instants = repeatedHourInstants(time.utcMs, time.zone);
+        if (instants === undefined) {
+          // No debería ocurrir: una `dst_ambiguous` siempre tiene dos instantes. Si pasa, no se inventa.
+          stillAmbiguous += 1;
+          continue;
+        }
+        out[at] = {
+          ...time,
+          utcMs: at < split ? instants.first : instants.second,
+          flag: "dst_by_position",
+        };
+        resolvedByPosition += 1;
+      }
+    }
+    index = end;
+  }
+
+  return { times: out, resolvedByPosition, stillAmbiguous };
+}
+
+/**
+ * Dónde empieza la segunda ocurrencia dentro de la racha `[start, end)`, o `undefined` si el
+ * fichero no permite afirmarlo. `start` significa «toda la racha es la segunda ocurrencia».
+ *
+ * Todas las filas de la racha llevan el instante de la primera ocurrencia, así que compararlos
+ * equivale a comparar sus horas de pared: un retroceso del instante es un retroceso del reloj.
+ */
+function splitRepeatedHourRun(
+  times: readonly CanonicalTime[],
+  start: number,
+  end: number,
+): number | undefined {
+  const zone = (times[start] as CanonicalTime).zone;
+  const setbacks: number[] = [];
+  for (let at = start + 1; at < end; at += 1) {
+    const previous = times[at - 1] as CanonicalTime;
+    const current = times[at] as CanonicalTime;
+    // Zonas distintas en la misma racha no tienen comparación posible; se deja sin afirmar.
+    if (current.zone !== zone) return undefined;
+    if (current.utcMs < previous.utcMs) setbacks.push(at);
+  }
+
+  if (setbacks.length === 1) return setbacks[0] as number;
+  if (setbacks.length > 1) return undefined;
+
+  const follower = times[end];
+  if (follower === undefined || follower.flag !== "ok" || follower.zone !== zone) return undefined;
+  const last = wallClockAt((times[end - 1] as CanonicalTime).utcMs, zone);
+  const next = wallClockAt(follower.utcMs, zone);
+  const sameDay = last.year === next.year && last.month === next.month && last.day === next.day;
+  return sameDay && next.hour === last.hour + 1 ? start : undefined;
 }
 
 /** Orden de los dos primeros campos de una fecha numérica. */

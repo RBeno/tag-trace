@@ -227,7 +227,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     maxGapProvenByNeighbours: 1,
     minTimeRatio: 0.6,
   },
-  charging: { longStayRatio: 2, minStaysForMedian: 4 },
+  charging: { longStayRatio: 2, minStaysForMedian: 4, usageMaxChance: 0.001, usageMinDeviation: 0.25 },
   trend: {
     minPassesForTrend: 20,
     minRateDrop: 0.5,
@@ -243,7 +243,8 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     paradaPrecisa: { minDurationMs: 30_000, maxCv: 0.1, minSamples: 4 },
     semaforo: { minGapRatio: 3, maxWithinClusterCv: 0.25, minClusterSamples: 4, minSamples: 20 },
   },
-  drift: { minGapMs: 30 * 60_000, minReadingsPerVehicle: 10, minAdoptionShare: 0.8 },
+  // `maxChance`: la misma prueba de azar y el mismo valor que `tagChanges.maxChance` (OQ-138).
+  drift: { minGapMs: 30 * 60_000, minReadingsPerVehicle: 10, minAdoptionShare: 0.8, maxChance: 0.001 },
   vehicleReading: { minPassesForNever: 8, fleetReadsWellShare: 0.75, manyTagsShare: 0.1, minManyTags: 5, maxChance: 0.001 },
   tagChanges: { minSlotPasses: 10, maxChance: 0.001, maxReadsBetween: 2, maxOverlapMs: 60 * 60_000 },
   silenceKind: { factorOverUsual: 3, longAbsenceMs: 60 * 60_000, shiftStartHours: [6, 14, 22] },

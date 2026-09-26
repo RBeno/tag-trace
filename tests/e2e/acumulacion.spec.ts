@@ -9,6 +9,8 @@
  */
 
 import { expect, test, type Page } from "@playwright/test";
+
+import { openTab } from "./pestanas.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -87,6 +89,7 @@ test.describe("acumular un circuito", () => {
     await importInto(page, "piloto", "ventana-2.csv");
     // 6 + 6 = 12 filas, pero tres son el mismo evento: quedan 9.
     expect(await storedCircuit(page, "piloto")).toEqual({ readings: 9, sources: 2, coverage: 1 });
+    await openTab(page, "Datos");
     await expect(page.getByText(/3 eventos ya estaban/)).toBeVisible();
   });
 
@@ -125,6 +128,7 @@ test.describe("acumular un circuito", () => {
     const stored = await storedCircuit(page, "piloto");
     expect(stored).toMatchObject({ readings: 10, sources: 2, coverage: 2 });
     // Y la interfaz lo dice con todas las letras, que es lo que impide el falso diagnóstico.
+    await openTab(page, "Datos");
     await expect(page.getByText(/no hay datos cargados/)).toBeVisible();
     await expect(page.getByText(/no es un silencio del circuito/)).toBeVisible();
   });
@@ -140,6 +144,7 @@ test.describe("acumular un circuito", () => {
   test("sin circuito, importar no escribe nada en el almacén", async ({ page }) => {
     await freshPage(page);
     await page.locator("#source-file").setInputFiles(`${FIXTURES}ventana-1.csv`);
+    await openTab(page, "Datos");
     await expect(page.getByRole("heading", { name: "Fuente" })).toBeVisible({ timeout: 15_000 });
     expect(await storedCircuit(page, "piloto")).toBeNull();
   });

@@ -26,7 +26,7 @@ registrados en el changelog.
 - `t_utc`: entero, milisegundos desde epoch UTC. Es el único valor que se usa para calcular.
 - `t_raw`: la cadena original, sin normalizar.
 - `tz_id`: identificador IANA de la configuración aplicada.
-- `t_flag`: `ok`, `dst_ambiguous` (hora repetida al retrasar el reloj) o `dst_nonexistent`
+- `t_flag`: `ok`, `dst_ambiguous` (hora repetida al retrasar el reloj), `dst_by_position` (hora repetida resuelta por la posición en el fichero, nota del 2026-09-26) o `dst_nonexistent`
   (hora inexistente al adelantarlo).
 
 Una fecha con formato día/mes indistinguible **no** se resuelve por suposición: produce
@@ -105,3 +105,24 @@ que significa una entrega retrasada:
   trata R-DAT-020, y el análisis de tiempos toma el recorrido entero como una sola transición.
 
 Lo medido hasta ahora encaja: cero inversiones en las exportaciones contrastadas.
+
+## Nota del 2026-09-26: la hora repetida se resuelve por la posición en el fichero
+
+Decisión del propietario (OQ-137). La hora es la de recepción en el servidor y la pila es una sola
+para todos los vehículos, así que la posición en el fichero dice qué ocurrencia es cada lectura de
+02:00–02:59 la noche de octubre. Con el sentido del fichero medido, se recorre en orden cronológico y
+las lecturas `dst_ambiguous` seguidas forman una racha:
+
+- **un solo retroceso** de la hora de pared dentro de la racha (02:59 → 02:00): las de antes son la
+  primera ocurrencia y las de después la segunda;
+- **ningún retroceso** y la lectura siguiente es `ok`, del mismo día y de las 03:xx: la racha entera
+  es la segunda ocurrencia;
+- **cualquier otro caso** —racha al final del fichero, precedida por 01:xx sin 03:xx detrás, dos o
+  más retrocesos, sentido del fichero sin medir— se queda `dst_ambiguous`. Parecer la primera no basta:
+  la exportación pudo cortarse en medio de la segunda.
+
+Las resueltas llevan `dst_by_position`, con `t_raw` intacto, y **cuentan como fiables para el
+orden**: monotonía, transiciones y vueltas. La monotonía se vuelve a medir con los instantes
+resueltos. `dst_nonexistent` (marzo) no cambia: la posición no crea un instante que no existe. El
+resumen de la fuente dice cuántas se resolvieron y cuántas siguen ambiguas.
+

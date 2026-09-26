@@ -25,9 +25,18 @@ import {
 import { decodeSource } from "../src/ingestion/decode.js";
 import { rowsToDelimitedText } from "../src/ingestion/xlsx-readings.js";
 import { declaredTagInfo, tagSections } from "../src/domain/tag-info.js";
+import { measureAnchorSections } from "../src/domain/anchor-sections.js";
 import { reinforcementGroups, reinforcementPartners } from "../src/domain/critical-reinforcement.js";
 import { buildListCleanup } from "../src/domain/list-cleanup.js";
 import { lineStopExclusion, measureLineFeed, outsideLineStops } from "../src/domain/line-feed.js";
+import {
+  abandonedReadings,
+  buildIncidentContext,
+  incidentBattery,
+  type Incident,
+  type IncidentKind,
+  type IncidentRecord,
+} from "../src/domain/incident-battery.js";
 import { dominantNeighbours, locateUndeclaredTags } from "../src/domain/undeclared-tags.js";
 import { reconcileCircuitOrder } from "../src/domain/circuit-order.js";
 import { CatalogFailure, EXPECTED_STRUCTURE, importCatalog, importCatalogRows } from "../src/ingestion/catalog.js";
@@ -64,6 +73,7 @@ import { buildFleetTimeline, mergeFleetPeriods } from "../src/domain/fleet.js";
 import { classifySilence, usualSegmentTimes, type UsualTimes } from "../src/domain/silence-kind.js";
 import {
   bandChangesBetweenPeriods,
+  bandFor,
   buildSegmentBands,
   measurableTransitions,
   regimeExposure,
@@ -328,6 +338,7 @@ async function buildViews(
   // El contraste contra Vsystem y la posición de un tag no declarado exigen un **orden**: el orden en
   // que el fichero trae las filas de la lista `circuito`, que el importador conserva.
   const declaredOrder = [...byName("circuito")];
+  const readTagSet = new Set(readings.map((entry) => entry.tagId));
   // Los refuerzos de cada punto crítico (R-GRA-016): seguidos en ese mismo orden declarado y con la
   // misma función. Una omisión en uno no pierde la función si el otro se lee.
   const declaredReinforcements = reinforcementGroups(
@@ -370,6 +381,8 @@ async function buildViews(
   const lapAnchorProblems: string[] = [];
   /** Lo que suele tardar cada tramo del anillo, por turno, para el cohorte de cada AGV (R-AGV-017). */
   const usualByVehicle = new Map<string, UsualTimes>();
+  /** Lo habitual, por régimen, de dejar cada tag del anillo (la valla de su tramo): para la batería (R-AGV-021). */
+  const usualDwellByTag = new Map<string, { produccion: number | null; noche: number | null }>();
   // Cuándo estuvo parada la producción (R-AGV-018): ningún tag crítico leído, y no por azar. Va antes
   // que cualquier tiempo habitual, porque un descanso no mide un tramo.
   const production = productionStops(
@@ -506,6 +519,14 @@ async function buildViews(
       PROVISIONAL_CONFIG.bands,
       PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
     );
+    for (const [index, from] of bands.ring.entries()) {
+      const to = bands.ring[(index + 1) % bands.ring.length];
+      if (to === undefined || to === from) continue;
+      usualDwellByTag.set(from, {
+        produccion: bandFor(bands, from, to, "produccion")?.fenceMs ?? null,
+        noche: bandFor(bands, from, to, "noche")?.fenceMs ?? null,
+      });
+    }
     const flow = flowStops(
       {
         transitions: cohortTimeline,
@@ -588,7 +609,7 @@ async function buildViews(
     // que se derivan aquí, no una sola vez fuera del bucle como las calles (que son de circuito).
     if (zoneConfig.zoneOf.size > 0) {
       const { spans, problems: spanProblems } = loadedZoneSpans(effective.cycle, zoneConfig.zoneOf);
-      const fifoReport = buildFifoReport(cohort.id, cohortReadings, spans, PROVISIONAL_CONFIG.fifo);
+      const fifoReport = buildFifoReport(cohort.id, cohortReadings, spans, PROVISIONAL_CONFIG.fifo, coverage);
       fifoCohorts.push({ cohortId: cohort.id, spans: fifoReport.spans, problems: spanProblems });
     }
 
@@ -736,6 +757,8 @@ async function buildViews(
           regimeOf,
           flow,
           timeCritical,
+          declaredOrder,
+          readTags: readTagSet,
           reachTags: PROVISIONAL_CONFIG.flowStops.reachTags,
           minVehicles: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
           headStallMs: PROVISIONAL_CONFIG.flowStops.headStallMs,
@@ -786,6 +809,26 @@ async function buildViews(
   const tagInfo = declaredTagInfo(lists, reinforcement);
   // El tramo de cada tag (kitting, línea, cruce…), para dibujarlo en las gráficas del anillo.
   const sections = tagSections(lists, criticalPointsConfig.funcionOf);
+  // Tiempos por sección entre anclas (R-TIM-012), con el cohorte principal: todas las anclas declaradas
+  // que están en su anillo cortan secciones, con las mismas exclusiones que las horquillas.
+  const mainAnchorCohort = cohortAssignment.cohorts[0];
+  const mainRing = mainAnchorCohort === undefined ? undefined : anchors.get(mainAnchorCohort.id)?.cycle;
+  const anchorSections = measureAnchorSections(
+    {
+      readings: mainReadings,
+      direction,
+      ring: mainRing ?? [],
+      anchors: lapAnchorsConfig.anchors,
+      coverage,
+      productionStops: productionStopIntervals,
+      laneTags,
+      regimeOf,
+      sectionOf: sections,
+      windows: measuredWindows.map((entry) => ({ sourceId: entry.source.sourceId, window: entry.window })),
+    },
+    PROVISIONAL_CONFIG.bands,
+    PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+  );
 
   const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, PROVISIONAL_CONFIG.silence.minGapMs);
 
@@ -882,6 +925,7 @@ async function buildViews(
     tagDossiers,
     ...(tagInfo.size === 0 ? {} : { tagInfo: Object.fromEntries(tagInfo) }),
     ...(sections.size === 0 ? {} : { sections: Object.fromEntries(sections) }),
+    anchorSections: { declared: lapAnchorsConfig.anchors.length, ...anchorSections },
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
     fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null, production: productionView, blockages },
     franjas: {
@@ -920,7 +964,15 @@ async function buildViews(
                 overtakenBy: [...breach.overtakenBy],
                 waitedMs: breach.waitedMs,
               })),
+              tagReads: lane.tagReads.map((tag) => ({
+                tagId: tag.tagId,
+                role: tag.role,
+                staysRead: tag.staysRead,
+                stays: tag.stays,
+                vehicles: tag.vehicles,
+              })),
             })),
+            usage: charging.usage.map((entry) => ({ ...entry })),
             startedInside: charging.startedInside.map((stay) => ({
               agvId: stay.agvId,
               laneId: stay.laneId,
@@ -988,7 +1040,7 @@ async function buildViews(
 
   // Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013): usa la cobertura que ya existe
   // -la unión de todas las fuentes aceptadas-, nunca un segundo fichero pedido aparte.
-  const drift = compareDistantPeriods(readings, coverage, knownTags, PROVISIONAL_CONFIG.drift);
+  const drift = compareDistantPeriods(readings, coverage, knownTags, PROVISIONAL_CONFIG.drift, direction);
 
   const counts = new Map<string, number>();
   const truthOf = new Map<string, string>();
@@ -1054,8 +1106,59 @@ async function buildViews(
           productionIntervals,
         );
 
+  // La batería de mediciones de cada incidencia (R-AGV-021): paradas sin explicación, primeros de cola
+  // sin avanzar y AGV que dejan de leer. Cada una, con lo mismo medido en el mismo orden.
+  const windowEnd = Math.max(0, ...coverage.map((span) => span.to));
+  const incidentContext = buildIncidentContext(
+    readings,
+    lineFeed?.passTimes ?? [],
+    (utcMs) => (lineFeed === undefined ? null : regimeOf(utcMs) === "produccion" ? lineFeed.cadence : lineFeed.nightCadence),
+    (lineFeed?.stops ?? []).filter((stop) => stop.kind === "con-pulmon").map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs })),
+    new Map(laneConfig.lanes.flatMap((lane) => lane.tags.map((tagId) => [tagId, lane.laneId] as const))),
+    (tagId, utcMs) => usualDwellByTag.get(tagId)?.[regimeOf(utcMs)] ?? null,
+    // El «deja de leer» mide su hueco de referencia solo con huecos de producción (OQ-138).
+    regimeOf,
+    production.stops,
+  );
+  const batteries: Record<string, ReturnType<typeof incidentBattery>> = {};
+  const records: IncidentRecord[] = [];
+  const addBattery = (kind: IncidentKind, incident: Incident): void => {
+    const battery = incidentBattery(incidentContext, incident, windowEnd);
+    batteries[`${incident.agvId} ${incident.fromTagId} ${incident.fromUtcMs}`] = battery;
+    records.push({ kind, incident, battery });
+  };
+  for (const cohort of circuitStateCohorts) {
+    for (const stop of [...cohort.state.unexplained.produccion, ...cohort.state.unexplained.noche]) {
+      addBattery("parada-sin-explicacion", {
+        agvId: stop.agvId,
+        fromTagId: stop.fromTagId,
+        fromUtcMs: stop.fromUtcMs,
+        toTagId: stop.toTagId,
+        toUtcMs: stop.toUtcMs,
+      });
+    }
+  }
+  for (const report of flowReports) {
+    for (const blockage of report.blockages) {
+      addBattery("bloqueo", {
+        agvId: blockage.agvId,
+        fromTagId: blockage.tagId,
+        fromUtcMs: blockage.fromUtcMs,
+        toTagId: blockage.nextTagId,
+        toUtcMs: blockage.toUtcMs,
+      });
+    }
+  }
+  const abandoned = abandonedReadings(incidentContext, windowEnd).map((incident) => {
+    const battery = incidentBattery(incidentContext, incident, windowEnd);
+    records.push({ kind: "deja-de-leer", incident, battery });
+    return { incident, battery };
+  });
+  records.sort((a, b) => a.incident.fromUtcMs - b.incident.fromUtcMs);
+
   return {
     ...views,
+    incidents: { batteries, abandoned, records },
     ...(lineFeed === undefined ? {} : { lineFeed }),
     ...(undeclared.evaluated ? { undeclaredTags: undeclared.tags } : {}),
     inventory: {
@@ -1096,6 +1199,9 @@ async function buildViews(
               readingsAfter: entry.kind === "nuevo" || entry.kind === "sustitucion-candidata" ? entry.readingsAfter : 0,
               ...(entry.kind === "sustitucion-candidata"
                 ? { nuevoTagId: entry.nuevoTagId, sharedNeighbor: entry.sharedNeighbor, neighborSide: entry.neighborSide }
+                : {}),
+              ...(entry.kind === "desaparecido" || entry.kind === "nuevo"
+                ? { affirmed: entry.affirmed, chance: entry.chance, opportunities: entry.opportunities }
                 : {}),
             })),
             vehicleDrifts: drift.vehicleDrifts.map((entry) => ({
@@ -1223,11 +1329,18 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
       );
       return;
     }
+    // El defecto se enseña con su nombre y su primera línea de pila: sin eso no se puede reproducir con
+    // un fixture sintético, que es lo que el mensaje pide. Nunca lleva datos: solo el tipo del error, su
+    // texto y dónde saltó.
+    const detail =
+      error instanceof Error
+        ? `${error.name}: ${error.message}${error.stack === undefined ? "" : ` — ${error.stack.split("\n").slice(1, 3).join(" | ").trim()}`}`
+        : String(error);
     emit(
       {
         type: "error",
         code: "INTERNAL",
-        cause: "Fallo no previsto del motor de importación.",
+        cause: `Fallo no previsto del motor de importación (${detail}).`,
         recovery: "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
       },
       jobId,

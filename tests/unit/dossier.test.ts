@@ -115,6 +115,16 @@ describe("expediente de AGV", () => {
     expect(cortado.openSilenceSinceUtcMs).toBe(3_100_000);
   });
 
+  it("un AGV cuya última lectura cae en una exportación anterior no tiene silencio abierto: el hueco es sin datos", () => {
+    const coverage = [
+      { from: 0, to: 600_000 },
+      { from: 3_000_000, to: 4_000_000 },
+    ];
+    const readings = [reading(0, "A", "0100"), reading(200_000, "A", "0150"), reading(590_000, "A", "0200")];
+    const dossier = buildAgvDossier("A", readings, LOOKUP, [], coverage, 300_000, []);
+    expect(dossier.openSilenceSinceUtcMs).toBeNull();
+  });
+
   it("una parada entre la parada precisa y la salida de la misma calle es carga, no silencio (R-CO-006)", () => {
     // Es el falso positivo que más daño hace: media hora cargando es lo normal, y llamarlo
     // inactividad convierte en hallazgo lo que pasa todos los días.

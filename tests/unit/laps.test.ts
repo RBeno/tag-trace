@@ -155,3 +155,62 @@ describe("segmentación de vueltas", () => {
     expect(cruzaHueco?.truth).toBe("inferred");
   });
 });
+
+describe("relecturas del ancla y vehículos con una sola lectura · R-TIM-012", () => {
+  const ANILLO = ["0100", "0200", "0300", "0400"];
+
+  it("dos lecturas seguidas del ancla no fabrican una vuelta de segundos: cuenta la primera", () => {
+    // El AGV relee el ancla 3 s después de llegar, en las tres vueltas. Antes, cada relectura cortaba una
+    // «vuelta» completa de 3 s, que no es ninguna vuelta.
+    const readings: Reading[] = [];
+    let t = 0;
+    for (let lap = 0; lap < 3; lap += 1) {
+      readings.push(reading((t += 10_000), "A", "0100"));
+      readings.push(reading(t + 3_000, "A", "0100"));
+      for (const tag of ANILLO.slice(1)) readings.push(reading((t += 10_000), "A", tag));
+    }
+    readings.push(reading((t += 10_000), "A", "0100"));
+    const result = segmentLaps(readings, "oldest-first", [{ from: 0, to: 200_000 }], "0100", "observed");
+
+    const completas = result.filter((lap) => lap.completeness === "completa");
+    expect(completas).toHaveLength(3);
+    expect(completas.every((lap) => lap.endUtcMs - lap.startUtcMs === 40_000)).toBe(true);
+    // La relectura sigue contando como parada dentro de la vuelta: no se borra, solo no corta.
+    expect(completas[0]?.stops).toBe(6);
+    expect(result.some((lap) => lap.endUtcMs - lap.startUtcMs === 3_000)).toBe(false);
+  });
+
+  it("un vehículo con una sola lectura, aunque sea el ancla, sale como vuelta desconocida en vez de desaparecer", () => {
+    const readings = [...laps("A", ANILLO, 2, 0), reading(5_000, "B", "0100")];
+    const result = segmentLaps(readings, "oldest-first", [{ from: 0, to: 200_000 }], "0100", "observed");
+
+    const deB = result.filter((lap) => lap.agvId === "B");
+    expect(deB).toHaveLength(1);
+    expect(deB[0]?.completeness).toBe("desconocida");
+    expect(deB[0]?.truth).toBe("unknown");
+    expect(deB[0]?.stops).toBe(1);
+  });
+
+  it("las relecturas finales del ancla no abren una vuelta parcial: solo la abre otro tag detrás", () => {
+    const readings = [...laps("A", ANILLO, 1, 0), reading(50_000, "A", "0100"), reading(53_000, "A", "0100")];
+    const result = segmentLaps(readings, "oldest-first", [{ from: 0, to: 200_000 }], "0100", "observed");
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.completeness).toBe("completa");
+  });
+});
+
+describe("vueltas y cola cortada · R-DAT-007", () => {
+  it("una vuelta que se cierra en la cola cortada de la exportación se degrada a parcial", () => {
+    const ANILLO = ["0100", "0200", "0300", "0400"];
+    const readings = [...laps("A", ANILLO, 1, 0), reading(50_000, "A", "0100")];
+    // El último instante completo es 40 000: el paso por el ancla de 50 000 queda fuera del tramo.
+    const coverage = [{ from: 0, to: 40_000 }];
+
+    const result = segmentLaps(readings, "oldest-first", coverage, "0100", "observed");
+
+    const vuelta = result.find((lap) => lap.startUtcMs === 10_000 && lap.endUtcMs === 50_000);
+    expect(vuelta?.completeness).toBe("parcial");
+    expect(vuelta?.truth).toBe("inferred");
+  });
+});

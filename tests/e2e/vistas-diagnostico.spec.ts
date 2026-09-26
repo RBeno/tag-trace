@@ -12,6 +12,8 @@
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { openTab } from "./pestanas.js";
+
 import { writeXlsx } from "../support/xlsx-writer.js";
 import { buildAuditScenario } from "../support/circuito-auditoria.js";
 
@@ -87,33 +89,43 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     // llega cuando ya están las dos cosas.
     await page.locator("#source-file").setInputFiles([]);
     await page.locator("#source-file").setInputFiles({ name: "tardio.csv", mimeType: "text/csv", buffer: late });
-    await expect(page.getByRole("heading", { name: "Cambios entre los dos periodos" })).toBeVisible({ timeout: 180_000 });
+    // La bandeja del Resumen trae una tarjeta de cambio entre periodos solo con los dos periodos
+    // cargados: es la señal de que la vista ya es la de la segunda importación.
+    await expect(page.locator(".finding", { hasText: "cambio entre periodos" }).first()).toBeVisible({ timeout: 180_000 });
+    await openTab(page, "Tags");
+    await expect(page.getByRole("heading", { name: "Cambios entre los dos periodos" })).toBeVisible();
 
     const figureOf = (title: string | RegExp) =>
       page.locator("figure.chart", { has: page.getByRole("heading", { name: title }) }).first();
 
-    // El anillo no repite tabla: la suya es la lista ordenada del anillo, plegada justo debajo.
+    // El anillo vive en el Resumen desde 3.49.0 y no repite tabla: la suya es la lista ordenada del
+    // anillo, en Tiempos, en el cajón.
+    await openTab(page, "Resumen");
     const ring = figureOf("Anillo del circuito");
     await expect(ring).toBeVisible();
     expect(await ring.locator("svg title").count()).toBe(0);
+    await openTab(page, "Tiempos");
     await expect(page.getByText(/Ver los \d+ tags del anillo, en orden/).first()).toBeVisible();
 
-    const withTable = [
-      "Rotura y degradación, en el tiempo",
-      "Tiempo de parada en los posibles puntos críticos",
-      "Tags donde el recorrido se divide",
-      "Ocupación de las calles de carga",
-      /^Entrada y salida del tramo cargado/,
-      "Inventario de tags",
+    const withTable: readonly (readonly ["Tags" | "Tiempos" | "Línea y calles", string | RegExp])[] = [
+      // Dos vistas con este dibujo, una por tags y otra por AGV; desde 3.47.0 cada una con su nombre.
+      ["Tags", "Rotura y degradación de cada tag, en el tiempo"],
+      ["Tiempos", "Tiempo de parada en los posibles puntos críticos"],
+      ["Tiempos", "Tags donde el recorrido se divide"],
+      ["Línea y calles", "Ocupación de las calles de carga"],
+      ["Línea y calles", /^Entrada y salida del tramo cargado/],
+      ["Tags", "Inventario de tags"],
     ];
-    for (const title of withTable) {
+    for (const [tab, title] of withTable) {
+      await openTab(page, tab);
       const figure = figureOf(title);
       await expect(figure, String(title)).toBeVisible();
-      await expect(figure.getByText("Ver los mismos datos en tabla"), String(title)).toBeVisible();
+      await expect(figure.getByRole("button", { name: "Ver los mismos datos en tabla" }), String(title)).toBeVisible();
       expect(await figure.locator("svg title").count(), String(title)).toBe(0);
     }
 
     // La deriva lleva su detalle en la tabla plegada de debajo, como antes.
+    await openTab(page, "Tags");
     const drift = figureOf("Cambios entre los dos periodos");
     expect(await drift.locator("svg title").count()).toBe(0);
     await expect(page.getByText(/Detalle de los \d+ tags con cambios/)).toBeVisible();
@@ -128,10 +140,11 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
 
     // La flota: el recuento N de M —en el circuito, y cuántos leen—, la vida de cada AGV en un único
     // lienzo, el asignado que no lee nunca y el que sigue leyendo después de su baja.
+    await openTab(page, "AGV");
     await expect(page.getByRole("heading", { name: "Flota del circuito" })).toBeVisible();
     const count = figureOf("Flota en el circuito");
     await expect(count.getByText(/Menos en el circuito: \d+ de \d+.*Menos leyendo: \d+ de \d+/)).toBeVisible();
-    await expect(count.getByText("Ver los mismos datos en tabla")).toBeVisible();
+    await expect(count.getByRole("button", { name: "Ver los mismos datos en tabla" })).toBeVisible();
     expect(await count.locator("svg title").count()).toBe(0);
     const lifeline = figureOf("Vida de cada AGV en el circuito");
     await expect(lifeline.locator("canvas")).toBeVisible();
@@ -147,10 +160,12 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
       await expect(lifeline.getByText(kind), kind).toBeVisible();
     }
     const adelantado = scenario.defects.find((defect) => defect.kind === "adelantamiento-en-zona-cargada")?.vehicles[0] ?? "";
-    await lifeline.getByText("Ver los mismos datos en tabla").click();
-    const lifeRow = lifeline.locator("tr", { has: page.getByRole("cell", { name: adelantado, exact: true }) });
-    await expect(lifeline.locator("th").nth(6)).toHaveText("Parado, sin explicar");
+    await lifeline.getByRole("button", { name: "Ver los mismos datos en tabla" }).click();
+    const cajon = page.locator("aside.drawer");
+    const lifeRow = cajon.locator("tr", { has: page.getByRole("cell", { name: adelantado, exact: true }) });
+    await expect(cajon.locator("th").nth(6)).toHaveText("Parado, sin explicar");
     await expect(lifeRow.locator("td").nth(6)).not.toHaveText("0 %");
+    await page.keyboard.press("Escape");
     // Contra el flujo (R-AGV-018): las tres paradas de la producción plantadas, la de las 10:00
     // repetida, y el mismo AGV como el primero de su cola sin avanzar con la producción en marcha.
     await expect(page.locator(".finding", { hasText: "La producción se paró 3 veces" })).toContainText(
@@ -162,6 +177,7 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
 
     // Mediciones por fichero (R-TIM-011): los dos ficheros, el anillo en tiempo sin un rótulo por marca
     // y con su tabla, y el CSV de cada fichero con su cabecera.
+    await openTab(page, "Tiempos");
     await expect(page.getByRole("heading", { name: "Mediciones por fichero" })).toBeVisible();
     await expect(page.getByText("2 ficheros medidos", { exact: false })).toBeVisible();
     const ringTime = figureOf("El anillo en tiempo, fichero a fichero");
@@ -195,8 +211,9 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(page.locator(".finding", { hasText: "3 sustituidos en su sitio" })).toHaveCount(1);
     expect(await ringTime.locator("path[data-k]").count()).toBeGreaterThan(0);
 
-    // El expediente de un vehículo, en un solo eje de tiempo.
+    // El expediente de un vehículo, en un solo eje de tiempo: buscar desde la barra abre la pestaña AGV.
     await page.locator("#dossier-search").fill("7112");
+    await expect(page.getByRole("tab", { name: "AGV", exact: true })).toHaveAttribute("aria-selected", "true");
     const timeline = figureOf("Expediente de 7112 en el tiempo");
     await expect(timeline).toBeVisible({ timeout: 15_000 });
     expect(await timeline.locator("svg title").count()).toBe(0);
@@ -227,8 +244,11 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     // enseña los cambios de tag, y mirarla sería mirar una vista a punto de sustituirse.
     await expect(page.locator(".finding", { hasText: "Nadie entró en" }).first()).toBeVisible({ timeout: 180_000 });
 
-    // El cambio de tag, dentro de un solo periodo, con el AGV que no lee el nuevo y su cifra.
+    // El cambio de tag, dentro de un solo periodo, con el AGV que no lee el nuevo y su cifra. La
+    // sección vive en Tags; las tarjetas, en la bandeja del Resumen.
+    await openTab(page, "Tags");
     await expect(page.getByRole("heading", { name: "Cambios de tag" })).toBeVisible();
+    await openTab(page, "Resumen");
     const cambio = page.locator(".finding", { hasText: `${viejo} → ${nuevo}` }).first();
     await expect(cambio).toBeVisible();
     await expect(cambio).toContainText(`${sinActualizar}, nunca (0 de`);
@@ -243,14 +263,23 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     );
 
     // La lectura por AGV: «nunca» con su cifra, y «poco» en pocos tags con su porcentaje. Sin causa.
+    // Los ciegos no leen los mismos dos tags, así que son una sola tarjeta de grupo con el conjunto
+    // de tags como sujeto (UX_SPEC §4.3); la cifra de cada AGV está dentro, en su tabla.
     const ciego = of("omision-por-memoria")?.vehicles[0] ?? "";
-    await expect(page.locator(".finding", { hasText: `AGV ${ciego} · no lee nunca` })).toContainText(": 0 de ");
+    const [tagA, tagB] = of("omision-por-memoria")?.tags ?? [];
+    const grupo = page.locator(".finding", { hasText: `${tagA} y ${tagB}` }).filter({ hasText: "no los leen nunca" });
+    await expect(grupo).toHaveCount(1);
+    await grupo.getByRole("button", { name: /Ver los \d+ AGV con sus pasadas/ }).click();
+    await expect(page.locator("aside.drawer tr", { hasText: ciego })).toContainText("0 de ");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".finding", { hasText: `AGV ${ciego} · no lee nunca` })).toHaveCount(0);
     const desigual = of("lectura-desigual-en-pocos-tags")?.vehicles[0] ?? "";
     await expect(page.locator(".finding", { hasText: `AGV ${desigual} · lee poco en 2 tags` })).toContainText("%");
     await expect(page.locator(".finding", { hasText: /memoria|lector|colocación/i })).toHaveCount(0);
 
     // El estado normal del circuito (R-TIM-009): la horquilla de cada tramo dibujada, con su tabla y
     // sin un rótulo por marca, y los hallazgos medidos con ella, sin causa.
+    await openTab(page, "Tiempos");
     await expect(page.getByRole("heading", { name: "Estado normal del circuito" })).toBeVisible();
     const bandsFigure = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Horquilla de tiempos de cada tramo" }) });
     await expect(bandsFigure).toBeVisible();
