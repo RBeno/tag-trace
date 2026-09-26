@@ -166,9 +166,11 @@ function omissionFill(omission: number): string {
  * para leer mejor el resto: el tramo no cambia ningún cálculo. Colores categóricos propios, distintos de
  * los azules de la omisión y del naranja de los hallazgos; pasados cuatro tramos, el resto en neutro.
  */
+/** Tonos categóricos de tramo (`--viz-tramo-1…8`, validados por parejas vecinas en los dos modos). Nunca más de ocho. */
+export const SECTION_TONES = 8;
 function sectionColors(labels: readonly (string | null | undefined)[]): ReadonlyMap<string, string> {
   const names = [...new Set(labels.filter((label): label is string => label !== null && label !== undefined && label !== ""))];
-  return new Map(names.map((name, index) => [name, index < 4 ? `var(--viz-tramo-${index + 1})` : "var(--viz-neutral)"]));
+  return new Map(names.map((name, index) => [name, index < SECTION_TONES ? `var(--viz-tramo-${index + 1})` : "var(--viz-neutral)"]));
 }
 
 function sectionLegend(colors: ReadonlyMap<string, string>, where: string): HTMLElement {
@@ -266,6 +268,26 @@ export interface RingOptions {
 }
 
 /**
+ * Lo que cambia en el anillo al recorrer el tiempo (ADR-0015 §3): los tags con un delta frente a la
+ * instantánea vecina, cada uno con su frase, y la nota del pie que dice de qué instantánea es el
+ * dibujo. Con el mapa vacío y la nota nula, el anillo es el de hoy.
+ */
+export interface RingHighlight {
+  readonly changed: ReadonlyMap<string, string>;
+  readonly note: string | null;
+}
+
+export interface RingFigure {
+  readonly node: HTMLElement;
+  /** Redibuja con otros datos —otra instantánea— conservando la capa activa y el foco rotatorio. */
+  readonly update: (data: RingData, highlight: RingHighlight) => void;
+}
+
+export function ringChart(data: RingData, options: RingOptions = {}): HTMLElement {
+  return ringFigure(data, options).node;
+}
+
+/**
  * El anillo entero de un vistazo: dónde se concentra la omisión, qué zona es cuál, dónde están los
  * puntos críticos y de dónde cuelgan las calles. El ángulo es **orden**, no distancia.
  *
@@ -274,23 +296,52 @@ export interface RingOptions {
  * banda exterior de zona y las marcas numeradas de críticos se quedan siempre. Nada de esto calcula:
  * cada capa dibuja un dato que ya llega en las vistas.
  */
-export function ringChart(data: RingData, options: RingOptions = {}): HTMLElement {
+/**
+ * El anillo con su asa: `update` lo redibuja con otra instantánea (el control de tiempo de la
+ * portada) sin perder la capa elegida. Los datos son mutables a propósito —`data` cambia con cada
+ * instantánea— y todo lo derivado de ellos se vuelve a construir en `refresh`.
+ */
+export function ringFigure(initial: RingData, options: RingOptions = {}): RingFigure {
   const wrapper = figure("Anillo del circuito", "");
   const caption = wrapper.querySelector("figcaption") as HTMLElement;
   const area = host();
   const REST = "Toca o pasa el puntero por el anillo para leer un tag; tocar un tag abre su expediente.";
   const line = readout(REST);
-  const hasZones = data.tags.some((tag) => tag.zone !== null);
-  const zoneNames = [...new Set(data.tags.map((tag) => tag.zone).filter((zone): zone is string => zone !== null))];
-  const sections = sectionColors(data.tags.map((tag) => tag.section));
-  const hasIncidents = data.tags.some((tag) => tag.incidents !== undefined);
+  let data = initial;
+  let highlight: RingHighlight = { changed: new Map(), note: null };
+  let hasZones = false;
+  let zoneNames: string[] = [];
+  let sections: ReadonlyMap<string, string> = new Map();
+  let hasIncidents = false;
+  let marks: (RingMark & { readonly number: string })[] = [];
+  let markByTag = new Map<string, RingMark & { readonly number: string }>();
+  let indexOf = new Map<string, number>();
+  let junctionsOf = new Map<string, RingData["junctions"][number][]>();
+  let count = 0;
+  const zoneLegend = document.createElement("div");
+  zoneLegend.className = "ring-zones";
+  const markList = document.createElement("div");
+  markList.className = "ring-mark-list";
 
-  const marks = data.marks.map((mark, index) => ({ ...mark, number: String(index + 1) }));
-  const markByTag = new Map(marks.map((mark) => [mark.tagId, mark]));
-  const indexOf = new Map(data.tags.map((tag, index) => [tag.tagId, index]));
-  const junctionsOf = new Map<string, (typeof data.junctions)[number][]>();
-  for (const junction of data.junctions) junctionsOf.set(junction.tagId, [...(junctionsOf.get(junction.tagId) ?? []), junction]);
-  const count = data.tags.length;
+  const refresh = (): void => {
+    hasZones = data.tags.some((tag) => tag.zone !== null);
+    zoneNames = [...new Set(data.tags.map((tag) => tag.zone).filter((zone): zone is string => zone !== null))];
+    sections = sectionColors(data.tags.map((tag) => tag.section));
+    hasIncidents = data.tags.some((tag) => tag.incidents !== undefined);
+    marks = data.marks.map((mark, index) => ({ ...mark, number: String(index + 1) }));
+    markByTag = new Map(marks.map((mark) => [mark.tagId, mark]));
+    indexOf = new Map(data.tags.map((tag, index) => [tag.tagId, index]));
+    junctionsOf = new Map();
+    for (const junction of data.junctions) junctionsOf.set(junction.tagId, [...(junctionsOf.get(junction.tagId) ?? []), junction]);
+    count = data.tags.length;
+    zoneLegend.replaceChildren(
+      ...(hasZones
+        ? [legendList(zoneNames.map((zone) => [isEmptyZone(zone) ? HATCH_SWATCH : "var(--viz-neutral)", `banda exterior: zona ${zoneLabel(zone)}`] as const))]
+        : []),
+    );
+    markList.replaceChildren(...(marks.length > 0 ? [markListOf(marks)] : []));
+  };
+  refresh();
 
   let layer: RingLayer = "omision";
   /** El segmento con el foco de teclado (índice rotatorio): un solo alto de tabulación para el anillo. */
@@ -298,15 +349,17 @@ export function ringChart(data: RingData, options: RingOptions = {}): HTMLElemen
 
   const captionOf = (): string => {
     const base = `Los ${count} tags en el orden de marcha, empezando arriba. Es un orden, no un plano. `;
+    const note = highlight.note === null ? "" : ` ${highlight.note}`;
+    const changes = highlight.changed.size === 0 ? "" : " Con el acento por fuera, lo que cambia frente a la instantánea vecina.";
     switch (layer) {
       case "omision":
-        return `${base}En gris lo normal; en color, lo que se deja de leer.`;
+        return `${base}En gris lo normal; en color, lo que se deja de leer.${changes}${note}`;
       case "tramos":
-        return `${base}Cada color es un tramo declarado en la lista \`tramo\`; en gris, sin tramo declarado.`;
+        return `${base}Cada color es un tramo declarado en la lista \`tramo\`; en gris, sin tramo declarado.${changes}${note}`;
       case "paradas":
-        return `${base}Más oscuro, más incidencias medidas en ese tag: paradas sin explicación, colas de cuello de botella, punto conflictivo y zona oscura. En gris, ninguna.`;
+        return `${base}Más oscuro, más incidencias medidas en ese tag: paradas sin explicación, colas de cuello de botella, punto conflictivo y zona oscura. En gris, ninguna.${changes}${note}`;
       case "calles":
-        return `${base}En color, el tag del que cuelga cada calle de carga, con su nombre; con trama, la calle en la que nadie entró.`;
+        return `${base}En color, el tag del que cuelga cada calle de carga, con su nombre; con trama, la calle en la que nadie entró.${changes}${note}`;
     }
   };
 
@@ -319,21 +372,23 @@ export function ringChart(data: RingData, options: RingOptions = {}): HTMLElemen
       ? "corte de vuelta (siempre se lee: no cuenta)"
       : tag.omission === null
         ? "ningún AGV pasó por aquí"
-        : `sin leer en el ${percent(tag.omission)} de ${tag.passes} pasadas · ${patternLabel(tag.pattern)}`;
+        : `sin leer en el ${percent(tag.omission)} de ${tag.passes} pasadas${tag.pattern === "" ? "" : ` · ${patternLabel(tag.pattern)}`}`;
     const lanes = junctionsOf.get(tag.tagId) ?? [];
     const laneText =
       lanes.length === 0
         ? "sin calle de carga"
         : lanes.map((lane) => `entrada de la calle «${lane.laneId}»${lane.served ? "" : " (nadie entró en toda la ventana)"}`).join("; ");
+    const change = highlight.changed.get(tag.tagId);
+    const changeText = change === undefined ? "" : ` · cambio: ${change}`;
     switch (layer) {
       case "omision":
-        return `${where} — ${omission}`;
+        return `${where} — ${omission}${changeText}`;
       case "tramos":
-        return `${where} — ${tag.section === null || tag.section === undefined ? "sin tramo declarado" : `tramo ${tag.section}`} · ${omission}`;
+        return `${where} — ${tag.section === null || tag.section === undefined ? "sin tramo declarado" : `tramo ${tag.section}`} · ${omission}${changeText}`;
       case "paradas":
-        return `${where} — ${describeIncidents(tag)}`;
+        return `${where} — ${describeIncidents(tag)}${changeText}`;
       case "calles":
-        return `${where} — ${laneText}`;
+        return `${where} — ${laneText}${changeText}`;
     }
   };
 
@@ -350,11 +405,13 @@ export function ringChart(data: RingData, options: RingOptions = {}): HTMLElemen
     const rMark = center - (small ? 10 : 13);
     const rZoneOut = rMark - (small ? 13 : 16);
     const rZoneIn = rZoneOut - 6;
-    const rOut = hasZones ? rZoneIn - 5 : rZoneOut;
+    const rOut = hasZones ? rZoneIn - 5 : rZoneOut - 5;
     const rIn = rOut - (small ? 16 : 24);
     const step = (2 * Math.PI) / Math.max(1, count);
     const start = -Math.PI / 2;
     const gap = Math.min(step * 0.3, 1.5 / rOut);
+    /** Con el foco rotatorio fuera del anillo actual (otra instantánea, menos tags), vuelve al ancla. */
+    if (focused >= count) focused = 0;
     const layerName = RING_LAYERS.find(([id]) => id === layer)?.[1] ?? layer;
 
     const canvas = svg("svg", {
@@ -391,6 +448,18 @@ export function ringChart(data: RingData, options: RingOptions = {}): HTMLElemen
           svg("path", {
             d: arcPath(center, center, rZoneIn, rZoneOut, from, to),
             fill: isEmptyZone(tag.zone) ? HATCH_FILL : "var(--viz-neutral)",
+          }),
+        );
+      }
+      // Lo que cambia frente a la instantánea vecina: un arco de acento por fuera de la banda
+      // principal, que se ve con cualquier capa y no tapa lo que la capa pinta. El acento nunca va
+      // solo: la lectura del tag dice qué cambió, y la sección «Evolución» lo lista.
+      if (highlight.changed.has(tag.tagId)) {
+        canvas.append(
+          svg("path", {
+            d: arcPath(center, center, rOut + 1.5, rOut + 4.5, start + index * step, start + (index + 1) * step),
+            fill: "var(--viz-accent)",
+            "data-change": tag.tagId,
           }),
         );
       }
@@ -516,9 +585,14 @@ export function ringChart(data: RingData, options: RingOptions = {}): HTMLElemen
         const index = target.getAttribute("data-index");
         const markTag = target.getAttribute("data-mark");
         const laneId = target.getAttribute("data-lane");
+        const changedTag = target.getAttribute("data-change");
         if (index !== null) {
           const tag = data.tags[Number(index)];
           if (tag !== undefined) line.show(describe(tag, Number(index)));
+        } else if (changedTag !== null) {
+          const position = indexOf.get(changedTag);
+          const tag = position === undefined ? undefined : data.tags[position];
+          if (tag !== undefined && position !== undefined) line.show(describe(tag, position));
         } else if (markTag !== null) {
           const mark = markByTag.get(markTag);
           if (mark !== undefined) {
@@ -534,7 +608,7 @@ export function ringChart(data: RingData, options: RingOptions = {}): HTMLElemen
           line.show(null);
         }
       },
-      { snap: "[data-index],[data-mark],[data-lane]" },
+      { snap: "[data-index],[data-mark],[data-lane],[data-change]" },
     );
     // Tocar un tag abre su expediente: solo el clic o el toque **encima** del segmento. El imán de
     // toque (UX_SPEC §7) sigue sirviendo para leer: un toque cerca de un tag fija su lectura sin
@@ -555,7 +629,10 @@ export function ringChart(data: RingData, options: RingOptions = {}): HTMLElemen
   const legend = document.createElement("div");
   legend.className = "ring-legend";
 
-  const legendOf = (): HTMLElement[] => {
+  const changesLegend = (): HTMLElement[] =>
+    highlight.changed.size === 0 ? [] : [legendList([["var(--viz-accent)", `cambia frente a la instantánea vecina (${highlight.changed.size} ${highlight.changed.size === 1 ? "tag" : "tags"})`]])];
+  const legendOf = (): HTMLElement[] => [...layerLegendOf(), ...changesLegend()];
+  const layerLegendOf = (): HTMLElement[] => {
     switch (layer) {
       case "omision":
         return [
@@ -634,33 +711,41 @@ export function ringChart(data: RingData, options: RingOptions = {}): HTMLElemen
   caption.textContent = captionOf();
   legend.replaceChildren(...legendOf());
 
-  wrapper.append(seg, area, line.node, legend);
-  if (hasZones) {
-    wrapper.append(
-      legendList(zoneNames.map((zone) => [isEmptyZone(zone) ? HATCH_SWATCH : "var(--viz-neutral)", `banda exterior: zona ${zoneLabel(zone)}`] as const)),
-    );
-  }
-  if (marks.length > 0) {
-    const list = document.createElement("ol");
-    list.className = "ring-marks";
-    for (const mark of marks) {
-      const item = document.createElement("li");
-      const badge = document.createElement("span");
-      badge.className = mark.declared ? "mark declared" : "mark";
-      badge.textContent = mark.number;
-      const id = document.createElement("span");
-      id.className = "mono";
-      id.textContent = mark.tagId;
-      const label = document.createElement("span");
-      label.textContent = mark.declared ? `${mark.label} · declarado` : `posible ${mark.label}`;
-      item.append(badge, id, label);
-      list.append(item);
-    }
-    wrapper.append(list);
-  }
+  wrapper.append(seg, area, line.node, legend, zoneLegend, markList);
   // Su tabla equivalente es la lista ordenada del anillo, en Tiempos, en el cajón: repetirla aquí
   // sería la misma tabla dos veces.
-  return wrapper;
+  return {
+    node: wrapper,
+    update: (next, nextHighlight) => {
+      data = next;
+      highlight = nextHighlight;
+      refresh();
+      caption.textContent = captionOf();
+      legend.replaceChildren(...legendOf());
+      line.show(null);
+      redraw();
+    },
+  };
+}
+
+/** La lista numerada de los puntos marcados, bajo el anillo. */
+function markListOf(marks: readonly (RingMark & { readonly number: string })[]): HTMLElement {
+  const list = document.createElement("ol");
+  list.className = "ring-marks";
+  for (const mark of marks) {
+    const item = document.createElement("li");
+    const badge = document.createElement("span");
+    badge.className = mark.declared ? "mark declared" : "mark";
+    badge.textContent = mark.number;
+    const id = document.createElement("span");
+    id.className = "mono";
+    id.textContent = mark.tagId;
+    const label = document.createElement("span");
+    label.textContent = mark.declared ? `${mark.label} · declarado` : `posible ${mark.label}`;
+    item.append(badge, id, label);
+    list.append(item);
+  }
+  return list;
 }
 
 // --- 3. Mapa de calor tag × AGV --------------------------------------------
@@ -2972,6 +3057,127 @@ export function segmentHistoryChart(panels: readonly SegmentHistoryPanel[]): HTM
             String(point.samples),
           ]),
         ),
+      ),
+    ),
+  );
+  return wrapper;
+}
+
+// --- El circuito a lo largo de los ficheros (ADR-0015 §3) --------------------------------------
+
+export interface EvolutionSeries {
+  readonly name: string;
+  /** El tono de la serie (`--viz-tramo-n`); sigue a la sección, no a su fila. */
+  readonly color: string;
+  /** Un valor por instantánea, en el orden de `labels`; `null` donde esa instantánea no la midió. */
+  readonly p50Ms: readonly (number | null)[];
+}
+
+export interface EvolutionData {
+  /** Una etiqueta por instantánea: el nombre del fichero. */
+  readonly labels: readonly string[];
+  /** Cuándo se tomó cada una, ya escrito. */
+  readonly dates: readonly string[];
+  readonly series: readonly EvolutionSeries[];
+  /** Qué mide cada línea: «la mitad de las pasadas en producción por sección» o «la vuelta». */
+  readonly measure: string;
+}
+
+/**
+ * Una línea por sección entre anclas (o la vuelta, si no hay secciones): la mitad de las pasadas en
+ * producción en cada instantánea, en un solo eje de tiempo. Nunca más de ocho series: quien las
+ * prepara pliega el resto en «otras». La leyenda va siempre —el color no es el único canal— y la
+ * tabla gemela en el cajón lleva cada valor.
+ */
+export function evolutionChart(data: EvolutionData): HTMLElement {
+  const wrapper = figure(
+    "El circuito a lo largo de los ficheros",
+    `Cada línea es ${data.measure}, una instantánea por fichero, de la más antigua a la más reciente. El eje empieza en cero: ` +
+      "un tramo que sube se ve subir. Un hueco es una instantánea que no midió esa sección.",
+  );
+  const area = host();
+  const line = readout("Toca o pasa el puntero por un fichero para leer los tiempos de esa instantánea.");
+  const maxMs = Math.max(10_000, ...data.series.flatMap((series) => series.p50Ms.filter((value): value is number => value !== null))) * 1.12;
+  const n = data.labels.length;
+  const clock = (ms: number): string => {
+    if (ms < 90_000) return `${Math.round(ms / 1000)} s`;
+    const minutes = ms / 60_000;
+    return `${(Number.isInteger(minutes) ? String(minutes) : minutes.toFixed(1)).replace(".", ",")} min`;
+  };
+
+  responsive(area, (width) => {
+    area.replaceChildren();
+    const small = width < 480;
+    // Sitio para «12,5 min» a la izquierda del eje sin que se corte.
+    const left = 58;
+    const right = 12;
+    const top = 10;
+    const height = small ? 200 : 240;
+    const bottom = height - 26;
+    const x = (index: number): number => left + ((width - left - right) * (n === 1 ? 0.5 : index / (n - 1)));
+    const y = (ms: number): number => bottom - ((bottom - top) * ms) / maxMs;
+    const canvas = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `${data.measure}, en ${n} instantáneas` });
+    // Rejilla horizontal a paso redondo de reloj (segundos y minutos enteros), tres o cuatro rayas.
+    const CLOCK_STEPS_S = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
+    const step = (CLOCK_STEPS_S.find((candidate) => maxMs / (candidate * 1000) <= 4) ?? 7200) * 1000;
+    for (let tick = 0; tick <= maxMs; tick += step) {
+      canvas.append(svg("line", { x1: left, x2: width - right, y1: y(tick), y2: y(tick), stroke: "var(--viz-grid)" }));
+      canvas.append(text(left - 6, y(tick) + 3.5, clock(tick), "axis", { "text-anchor": "end" }));
+    }
+    // Una columna por instantánea: rótulo abajo y la zona que lee al puntero.
+    data.labels.forEach((label, index) => {
+      const px = x(index);
+      const anchor = index === 0 ? "start" : index === n - 1 ? "end" : "middle";
+      const short = label.length > 18 ? `${label.slice(0, 16)}…` : label;
+      canvas.append(text(px, height - 8, small && n > 3 ? String(index + 1) : short, "axis", { "text-anchor": anchor }));
+      const half = n === 1 ? (width - left - right) / 2 : (width - left - right) / (n - 1) / 2;
+      canvas.append(svg("rect", { x: px - half, y: top, width: half * 2, height: bottom - top, fill: "transparent", "data-k": index }));
+    });
+    for (const series of data.series) {
+      let path = "";
+      let open = false;
+      series.p50Ms.forEach((value, index) => {
+        if (value === null) {
+          open = false;
+          return;
+        }
+        path += `${open ? "L" : "M"}${x(index).toFixed(1)} ${y(value).toFixed(1)}`;
+        open = true;
+      });
+      canvas.append(svg("path", { d: path, fill: "none", stroke: series.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "pointer-events": "none" }));
+      series.p50Ms.forEach((value, index) => {
+        if (value === null) return;
+        canvas.append(svg("circle", { cx: x(index), cy: y(value), r: 5.5, fill: "var(--panel)", "pointer-events": "none" }));
+        canvas.append(svg("circle", { cx: x(index), cy: y(value), r: 4, fill: series.color, "pointer-events": "none" }));
+      });
+    }
+    inspect(
+      canvas,
+      (point) => {
+        const key = point === null ? null : (point.target as SVGElement).getAttribute("data-k");
+        if (key === null) {
+          line.show(null);
+          return;
+        }
+        const index = Number(key);
+        const values = data.series
+          .map((series) => `${series.name}: ${series.p50Ms[index] === null || series.p50Ms[index] === undefined ? "sin medir" : clock(series.p50Ms[index] as number)}`)
+          .join(" · ");
+        line.show(`«${data.labels[index] ?? ""}» (${data.dates[index] ?? ""}) — ${values}`);
+      },
+      { snap: "[data-k]" },
+    );
+    area.append(canvas);
+  });
+
+  wrapper.append(
+    legendList(data.series.map((series) => [series.color, series.name] as const)),
+    area,
+    line.node,
+    lazyTable("Ver los mismos datos en tabla", () =>
+      plainTable(
+        ["Sección", ...data.labels],
+        data.series.map((series) => [series.name, ...series.p50Ms.map((value) => (value === null ? "sin medir" : clock(value)))]),
       ),
     ),
   );

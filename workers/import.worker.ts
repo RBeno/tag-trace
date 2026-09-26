@@ -55,7 +55,7 @@ import {
   type Lap,
   type LapAnchor,
 } from "../src/domain/laps.js";
-import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-matrix.js";
+import { buildReadMatrix, type OrderEvidenceLimits, type ReadMatrix } from "../src/domain/read-matrix.js";
 import { detectTagChanges, withoutTags } from "../src/domain/tag-changes.js";
 import { describeVehicleReading } from "../src/domain/vehicle-reading.js";
 import { buildChargingReport, findLaneJunctions } from "../src/domain/charging.js";
@@ -68,7 +68,7 @@ import {
   timeSignaturesMeasurable,
   transitionDurationsByTag,
 } from "../src/domain/critical-points.js";
-import { compareDistantPeriods } from "../src/domain/drift.js";
+import type { DriftComparison } from "../src/domain/drift.js";
 import { buildFleetTimeline, mergeFleetPeriods } from "../src/domain/fleet.js";
 import { classifySilence, usualSegmentTimes, type UsualTimes } from "../src/domain/silence-kind.js";
 import {
@@ -115,10 +115,38 @@ import { compareAgainstVsystem } from "../src/domain/vsystem.js";
 import { buildReplayFrames } from "../src/domain/replay.js";
 import { PROVISIONAL_CONFIG } from "../src/domain/config.js";
 import type { CircuitViews } from "../src/application/protocol.js";
-import { isAvailable, loadCircuit, saveCircuit } from "../src/persistence/store.js";
+import {
+  isAvailable,
+  loadCircuit,
+  loadRetainedReadings,
+  loadReviews,
+  loadSnapshots,
+  saveAccumulation,
+  saveCircuit,
+  saveSnapshot,
+  type StoredCircuit,
+  type StoredSource,
+} from "../src/persistence/store.js";
+import { distinctSources, retainedSources } from "../src/persistence/retention.js";
+import {
+  buildSnapshot,
+  compareSnapshots,
+  driftBetweenSnapshots,
+  historiesFromSnapshots,
+  sortSnapshots,
+  structureBetweenSnapshots,
+  type CircuitSnapshot,
+  type SnapshotDelta,
+} from "../src/domain/snapshot.js";
+import { anchorsOnRing } from "../src/domain/anchor-sections.js";
+import { measureAnchorGaps } from "../src/domain/anchor-gaps.js";
+import { buildSnapshotFindings } from "../src/domain/snapshot-findings.js";
+import { assembleSnapshotInput } from "../src/application/snapshot-assembly.js";
+import { APP_VERSION } from "../src/application/version.js";
 import type { Reading } from "../src/domain/reading.js";
 import type { SourceDirection } from "../src/domain/order.js";
 import type { TruthState } from "../src/domain/truth.js";
+import type { TagClass } from "../src/domain/inventory.js";
 import type { AccumulationReport } from "../src/application/protocol.js";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
@@ -139,12 +167,70 @@ async function hashFile(buffer: ArrayBuffer): Promise<string> {
 }
 
 
+/** Lo que la acumulación deja para el análisis: el circuito guardado y la ventana de trabajo. */
+interface Accumulated {
+  readonly report: AccumulationReport;
+  /** El circuito tal como quedó guardado; `undefined` si la afinidad impidió acumular. */
+  readonly stored: StoredCircuit | undefined;
+  /**
+   * La ventana de trabajo (ADR-0015 §2): las lecturas de las fuentes retenidas ya unidas y, si la
+   * fuente importada no está retenida —un fichero repetido cuya primera carga ya se retiró—, también
+   * las suyas, porque es lo que se está mirando.
+   */
+  readonly working: readonly Reading[];
+  /** La cobertura de la ventana de trabajo: solo donde hay lecturas. Fuera no hay silencio, hay instantánea. */
+  readonly workingCoverage: readonly Interval[];
+  /** Las instantáneas que el circuito ya tenía antes de esta importación, en orden de ventana. */
+  readonly snapshots: readonly CircuitSnapshot[];
+}
+
+/** Une las lecturas de varias fuentes retenidas, en orden de ventana, con la unión por tramo común (R-DAT-005). */
+function joinRetained(
+  records: readonly { readonly sourceId: string; readonly readings: readonly Reading[] }[],
+  sources: readonly StoredSource[],
+): readonly Reading[] {
+  const startOf = new Map(sources.map((source) => [source.sourceId, source.complete?.from ?? Infinity]));
+  const ordered = [...records].sort((a, b) => (startOf.get(a.sourceId) ?? Infinity) - (startOf.get(b.sourceId) ?? Infinity));
+  return ordered.reduce<readonly Reading[]>((joined, record) => (joined.length === 0 ? record.readings : unionReadings(joined, record.readings).readings), []);
+}
+
+/** Un informe de acumulación con lo que el circuito **ya tenía**: la fuente no se escribió. */
+function unchangedReport(
+  circuitId: string,
+  existing: StoredCircuit | undefined,
+  working: readonly Reading[],
+  affinity: AccumulationReport["affinity"],
+): AccumulationReport {
+  const sources = existing?.sources ?? [];
+  const distinct = distinctSources(sources);
+  return {
+    circuitId,
+    coverage: existing?.coverage ?? [],
+    totalReadings: working.length,
+    sources: sources.length,
+    shared: 0,
+    disagreements: 0,
+    affinity,
+    accumulated: false,
+    retained: { sourceIds: distinct.filter((source) => source.retained).map((source) => source.sourceId), distinctSources: distinct.length },
+    snapshots: {
+      withSnapshot: distinct.filter((source) => source.snapshot).length,
+      withoutSnapshot: distinct.filter((source) => !source.snapshot).length,
+    },
+  };
+}
+
 /**
- * Suma una fuente recién importada al circuito, uniéndola con lo ya guardado.
+ * Suma una fuente recién importada al circuito.
  *
  * El almacén se lee y se escribe **aquí**, no en el hilo principal: así ni las lecturas guardadas
  * ni las nuevas cruzan un `postMessage`, y la unión —que recorre las dos series— tampoco bloquea la
  * interfaz.
+ *
+ * Desde la versión 6 del almacén (ADR-0015) el circuito no lleva sus lecturas: se cargan solo las
+ * **retenidas** (R-DAT-023), se unen con las nuevas, las nuevas se guardan en su propio registro, se
+ * aplica la retención —la última cargada y, si se solapa con ella, la anterior— y el circuito se
+ * guarda sin lecturas, todo en una transacción. Lo demás del circuito queda como instantánea.
  */
 async function accumulate(
   circuitId: string,
@@ -152,58 +238,67 @@ async function accumulate(
   zone: string,
   result: { summary: { sourceId: string; sourceHash: string; fileName: string; acceptedRows: number };
     readings: readonly Reading[] },
-): Promise<AccumulationReport | undefined> {
+): Promise<Accumulated | undefined> {
   if (!isAvailable()) return undefined;
 
   const existing = await loadCircuit(circuitId);
-  const previous = existing?.readings ?? [];
+  const retainedRecords = await loadRetainedReadings(circuitId);
+  const snapshots = await loadSnapshots(circuitId);
+  const previous = joinRetained(retainedRecords, existing?.sources ?? []);
+  const complete = sourceCoverage(result.readings).complete;
 
   // La afinidad se comprueba **antes de unir y antes de escribir**: una fuente ajena que llegue
   // hasta el almacén ya no se puede separar de las demás, porque la unión no conserva de qué
-  // circuito venía cada lectura. Aquí todavía hay dónde parar (FR-003, R-DAT-006).
-  const affinity = assessAffinity(
-    tagsOf(result.readings),
-    tagsOf(previous),
-    PROVISIONAL_CONFIG.affinity,
-  );
+  // circuito venía cada lectura. Aquí todavía hay dónde parar (FR-003, R-DAT-006). Lo conocido del
+  // circuito son los tags de las lecturas retenidas **y** los de sus instantáneas: un tag que solo se
+  // leyó en un fichero ya retirado sigue siendo del circuito.
+  const knownTags = new Set(tagsOf(previous));
+  for (const snapshot of snapshots) for (const vertex of snapshot.vertices) if (vertex.readings > 0) knownTags.add(vertex.tagId);
+  const affinity = assessAffinity(tagsOf(result.readings), knownTags, PROVISIONAL_CONFIG.affinity);
   if (!affinity.mayAccumulate) {
     return {
-      circuitId,
-      coverage: existing?.coverage ?? [],
-      totalReadings: previous.length,
-      sources: existing?.sources.length ?? 0,
-      shared: 0,
-      disagreements: 0,
-      affinity,
-      accumulated: false,
+      report: unchangedReport(circuitId, existing, previous, affinity),
+      stored: undefined,
+      working: result.readings,
+      workingCoverage: complete === null ? [] : [complete],
+      snapshots,
     };
   }
 
-  const union = unionReadings(previous, result.readings);
-  const complete = sourceCoverage(result.readings).complete;
-
-  const sources = [
-    ...(existing?.sources ?? []),
-    {
-      sourceId: result.summary.sourceId,
-      sourceHash: result.summary.sourceHash,
-      fileName: result.summary.fileName,
-      importedAt: Date.now(),
-      acceptedRows: result.summary.acceptedRows,
-      complete,
-    },
-  ];
+  // Un fichero repetido (misma huella) no es una fuente nueva (R-DAT-005, INV-005): se anota su carga,
+  // pero no crea registro de lecturas ni instantánea ni cambia la retención.
+  const twin = existing?.sources.find((source) => source.sourceHash === result.summary.sourceHash);
+  const entry = {
+    sourceId: result.summary.sourceId,
+    sourceHash: result.summary.sourceHash,
+    fileName: result.summary.fileName,
+    importedAt: Date.now(),
+    acceptedRows: result.summary.acceptedRows,
+    complete,
+    retained: false,
+    snapshot: twin?.snapshot ?? false,
+  };
+  const retained = retainedSources([...(existing?.sources ?? []), entry]);
+  const sources: StoredSource[] = [...(existing?.sources ?? []), entry].map((source) => ({ ...source, retained: retained.has(source.sourceId) }));
   const coverage = mergeIntervals(
     sources.map((source) => source.complete).filter((span): span is Interval => span !== null),
   );
 
-  await saveCircuit({
+  // Las lecturas retenidas que siguen retenidas, unidas con las nuevas: es la ventana de trabajo. Las
+  // que dejan de estarlo se retiran del almacén en la misma transacción.
+  const kept = joinRetained(
+    retainedRecords.filter((record) => retained.has(record.sourceId)),
+    sources,
+  );
+  const union = unionReadings(kept, result.readings);
+  const drop = retainedRecords.map((record) => record.sourceId).filter((sourceId) => !retained.has(sourceId));
+
+  const stored: StoredCircuit = {
     circuitId,
     name: existing?.name ?? circuitName,
     zone,
     sources,
     coverage,
-    readings: union.readings,
     // Las listas sobreviven a la llegada de una fuente nueva. Sin esto, cargar una exportación
     // borraba en silencio las listas de planta del circuito —el objeto se reescribe entero— y el
     // inventario desaparecía sin que nada lo dijera. Lo destapó la prueba de navegador.
@@ -211,17 +306,38 @@ async function accumulate(
     // Y el historial de flota, por la misma razón: lo destapó la prueba de navegador de la Parte 39.
     ...(existing?.fleet === undefined ? {} : { fleet: existing.fleet }),
     updatedAt: Date.now(),
+  };
+  await saveAccumulation({
+    circuit: stored,
+    readings: twin === undefined ? [{ sourceId: entry.sourceId, readings: result.readings }] : [],
+    drop,
   });
 
+  const distinct = distinctSources(sources);
+  const workingCoverage = mergeIntervals([
+    ...sources.filter((source) => retained.has(source.sourceId)).map((source) => source.complete),
+    complete,
+  ].filter((span): span is Interval => span !== null));
   return {
-    circuitId,
-    coverage,
-    totalReadings: union.readings.length,
-    sources: sources.length,
-    shared: union.shared,
-    disagreements: union.disagreements,
-    affinity,
-    accumulated: true,
+    report: {
+      circuitId,
+      coverage,
+      totalReadings: union.readings.length,
+      sources: sources.length,
+      shared: union.shared,
+      disagreements: union.disagreements,
+      affinity,
+      accumulated: true,
+      retained: { sourceIds: [...retained], distinctSources: distinct.length },
+      snapshots: {
+        withSnapshot: distinct.filter((source) => source.snapshot).length,
+        withoutSnapshot: distinct.filter((source) => !source.snapshot).length,
+      },
+    },
+    stored,
+    working: union.readings,
+    workingCoverage,
+    snapshots,
   };
 }
 
@@ -268,21 +384,85 @@ function strideSample(values: readonly number[], max: number): number[] {
  * justamente los que R-DAT-013 marca `inferred` sin sostener topología — el desempate no cambia esa
  * conclusión, solo cuál de las dos direcciones empatadas se etiqueta.
  */
-async function buildViews(
-  circuitId: string | undefined,
-  accumulation: AccumulationReport | undefined,
-  imported: readonly Reading[],
-  zone: string,
-  direction: SourceDirection,
-  importedSource: { readonly sourceId: string; readonly sourceHash: string; readonly fileName: string },
-): Promise<CircuitViews | undefined> {
-  const stored =
-    circuitId !== undefined && accumulation?.accumulated === true && isAvailable()
-      ? await loadCircuit(circuitId)
-      : undefined;
-  const readings = stored?.readings ?? imported;
-  const coverage = stored?.coverage ?? [];
+interface ViewsContext {
+  /** El circuito guardado; `undefined` si la fuente no se acumuló. */
+  readonly stored: StoredCircuit | undefined;
+  /** La ventana de trabajo: las lecturas retenidas unidas (ADR-0015 §2), o las importadas sin circuito. */
+  readonly working: readonly Reading[];
+  readonly workingCoverage: readonly Interval[];
+  /** Las instantáneas que el circuito ya tenía, en orden de ventana. */
+  readonly snapshots: readonly CircuitSnapshot[];
+  readonly imported: readonly Reading[];
+  readonly zone: string;
+  readonly direction: SourceDirection;
+  readonly importedSource: { readonly sourceId: string; readonly sourceHash: string; readonly fileName: string; readonly acceptedRows: number };
+}
+
+interface ViewsResult {
+  readonly views: CircuitViews;
+  /** La instantánea de este fichero, o `null` si no se pudo construir (y `problems` dice por qué). */
+  readonly snapshot: CircuitSnapshot | null;
+  readonly problems: readonly string[];
+}
+
+/** Lo que una instantánea aporta a la vista «Mediciones por fichero» cuando sus lecturas ya no están. */
+function measureFromSnapshot(
+  snapshot: CircuitSnapshot,
+  resolutionMs: number,
+): CircuitViews["franjas"]["cohorts"][number]["measures"][number] {
+  return {
+    sourceId: snapshot.sourceId,
+    cohortId: snapshot.cohortId,
+    ring: snapshot.ring,
+    anchorTagId: snapshot.ring[0] ?? null,
+    // El anillo de la instantánea empieza por el ancla del circuito (`ring` «desde el ancla»).
+    anchorShared: snapshot.anchorTagId !== null && snapshot.ring[0] === snapshot.anchorTagId,
+    positions: snapshot.vertices
+      .filter((vertex) => vertex.position !== null)
+      .sort((a, b) => (a.position as number) - (b.position as number))
+      // La instantánea no guarda con cuántos pasos se situó cada tag: no se inventa, va a cero.
+      .map((vertex) => ({ tagId: vertex.tagId, offsetMs: vertex.offsetMs, samples: 0 })),
+    lapMs: snapshot.lapMs,
+    resolutionMs,
+    bands: snapshot.edges.map((edge) => ({
+      from: edge.from,
+      to: edge.to,
+      produccion: edge.produccion,
+      noche: edge.noche,
+      firstSeenUtcMs: snapshot.window.from,
+      lastSeenUtcMs: snapshot.window.to,
+    })),
+    // Sin lecturas no hay ritmo de cada AGV que medir (R-AGV-019): la vista lo enseña vacío.
+    pace: { fleetRatio: null, testedVehicles: 0, enoughVehicles: false, vehicles: [], holders: [] },
+  };
+}
+
+/**
+ * Ejecuta una comparación entre instantáneas y, si falla, lo dice en vez de tirar la importación
+ * entera: el análisis del fichero actual no depende de ella (R-EVI-006: nunca se calla).
+ */
+function attempt<T>(what: string, problems: string[], fallback: T, compute: () => T): T {
+  try {
+    return compute();
+  } catch (error) {
+    problems.push(`${what}: ${error instanceof Error ? error.message : String(error)}`);
+    return fallback;
+  }
+}
+
+async function buildViews(context: ViewsContext): Promise<ViewsResult | undefined> {
+  const { stored, imported, zone, direction, importedSource } = context;
+  const readings = context.working;
+  const coverage = context.workingCoverage;
   if (readings.length === 0) return undefined;
+  /** Por qué falta una instantánea o una comparación: lo esperado (`notes`) y lo que falló (`failures`). */
+  const notes: string[] = [];
+  const failures: string[] = [];
+  /** Qué fuentes tienen lecturas en la ventana de trabajo: las retenidas y la que se acaba de importar. */
+  const withReadings = new Set([
+    ...(stored?.sources ?? []).filter((source) => source.retained).map((source) => source.sourceId),
+    importedSource.sourceId,
+  ]);
 
   // --- Configuración de planta (OQ-B04, `CONFIG_SCHEMA.md` §3.4) -----------------------------
   //
@@ -449,6 +629,19 @@ async function buildViews(
     change.kind === "cambio" ? [change.oldLastUtcMs, change.newFirstUtcMs] : [change.kind === "deja" ? change.lastUtcMs : change.firstUtcMs],
   );
   const franjaCohorts: CircuitViews["franjas"]["cohorts"][number][] = [];
+  const keepByCohort = new Map<number, (gaps: readonly AnchorGapChange[]) => AnchorGapChange[]>();
+  /** Lo del cohorte principal que la instantánea necesita (ADR-0015): su ancla, su medición y su matriz. */
+  let mainCohort:
+    | {
+        readonly cohortId: number;
+        readonly effective: LapAnchor;
+        readonly anchorTruth: TruthState;
+        readonly measures: CircuitViews["franjas"]["cohorts"][number]["measures"];
+        readonly matrix: ReadMatrix;
+        readonly deliveries: readonly { readonly agvId: string; readonly fromUtcMs: number; readonly toUtcMs: number }[];
+        readonly candidates: ReadonlyMap<string, string>;
+      }
+    | undefined;
 
   for (const cohort of cohortAssignment.cohorts) {
     const vehicleSet = new Set(cohort.vehicles);
@@ -657,8 +850,9 @@ async function buildViews(
       minVehiclesForContrast: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
     };
     const paceInput = { transitions: measuredTimed, regimeOf, flow, zoneOf: zoneConfig.zoneOf };
-    // La medición de cada fichero (R-TIM-011), con las mismas transiciones limpias.
-    const measures = measuredWindows.map((entry) => {
+    // La medición de cada fichero (R-TIM-011), con las mismas transiciones limpias: solo de los ficheros
+    // cuyas lecturas están en la ventana de trabajo. Los demás se leen de su instantánea (ADR-0015 §3).
+    const measures = measuredWindows.filter((entry) => withReadings.has(entry.source.sourceId)).map((entry) => {
       const measure = measureFranjaCohort(
         { cohortId: cohort.id, transitions: cohortTimeline, measured: measuredTimed, anchorTagId: effective.tagId },
         entry.window,
@@ -720,21 +914,24 @@ async function buildViews(
         structure.push({ source: "dentro-del-fichero", beforeSourceId: null, afterSourceId: null, atUtcMs: around.atUtcMs, gaps });
       }
     }
-    for (let index = 1; index < measuredWindows.length; index += 1) {
-      const early = measuredWindows[index - 1] as (typeof measuredWindows)[number];
-      const late = measuredWindows[index] as (typeof measuredWindows)[number];
-      const gaps = keep(compareAnchorGaps(sequences, early.window, late.window, anchorContext, PROVISIONAL_CONFIG.anchorSums));
-      if (gaps.length > 0) {
-        structure.push({
-          source: "entre-ficheros",
-          beforeSourceId: early.source.sourceId,
-          afterSourceId: late.source.sourceId,
-          atUtcMs: late.window.from,
-          gaps,
-        });
-      }
-    }
+    // Entre ficheros seguidos se compara desde las instantáneas (ADR-0015 §3), después del bucle: las
+    // lecturas de un fichero anterior pueden no estar ya. Se guarda el filtro para no repetir un cambio.
+    keepByCohort.set(cohort.id, keep);
     franjaCohorts.push({ cohortId: cohort.id, measures, histories: segmentHistories(measures), structure });
+    if (cohort === cohortAssignment.cohorts[0]) {
+      mainCohort = {
+        cohortId: cohort.id,
+        effective,
+        anchorTruth,
+        measures,
+        matrix,
+        deliveries: grouped.deliveries.map((delivery) => ({ agvId: delivery.agvId, fromUtcMs: delivery.fromUtcMs, toUtcMs: delivery.toUtcMs })),
+        candidates: new Map([
+          ...[...timeCritical].filter(([tagId]) => !criticalPointsConfig.funcionOf.has(tagId)),
+          ...conCruces.map((candidate) => [candidate.tagId, candidate.kind] as const),
+        ]),
+      };
+    }
 
     const size = effective.cycle.length;
     circuitStateCohorts.push({
@@ -824,7 +1021,9 @@ async function buildViews(
       laneTags,
       regimeOf,
       sectionOf: sections,
-      windows: measuredWindows.map((entry) => ({ sourceId: entry.source.sourceId, window: entry.window })),
+      windows: measuredWindows
+        .filter((entry) => withReadings.has(entry.source.sourceId))
+        .map((entry) => ({ sourceId: entry.source.sourceId, window: entry.window })),
     },
     PROVISIONAL_CONFIG.bands,
     PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
@@ -913,7 +1112,7 @@ async function buildViews(
     .flatMap((report) => report.blockages)
     .sort((a, b) => b.behind.length - a.behind.length || b.excessMs - a.excessMs);
 
-  const views: CircuitViews = {
+  const baseViews: Omit<CircuitViews, "snapshots"> = {
     hourly: hourlyProfile(readings, zone),
     activity: activityBand(readings, coverage, ACTIVITY_BINS),
     cohorts: cohortAssignment.cohorts,
@@ -1007,21 +1206,17 @@ async function buildViews(
       : { lapAnchorProblems: [...lapAnchorsConfig.problems, ...lapAnchorProblems] }),
   };
 
-  if (lists.length === 0) return views;
+  // Lo que solo existe con listas de planta cargadas: inventario, contraste, limpieza, línea e
+  // incidencias. Va en una función para que la instantánea, que viene después, tenga el inventario.
+  let inventoryClassOf: ReadonlyMap<string, TagClass> = new Map();
+  const withLists = (): Partial<CircuitViews> => {
+  if (lists.length === 0) return {};
 
   const unservedLaneTags = new Set(
     charging.lanes
       .filter((lane) => !lane.served)
       .flatMap((lane) => laneConfig.lanes.find((item) => item.laneId === lane.laneId)?.tags ?? []),
   );
-  const knownTags = new Set([
-    ...byName("circuito"),
-    ...byName("memoria"),
-    ...byName("mantenimiento"),
-    ...byName("emergencia"),
-    ...byName("carga-online"),
-    ...criticalPointsConfig.funcionOf.keys(),
-  ]);
   const inventory = buildTagInventory(
     readings,
     {
@@ -1038,9 +1233,7 @@ async function buildViews(
     PROVISIONAL_CONFIG.blindness,
   );
 
-  // Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013): usa la cobertura que ya existe
-  // -la unión de todas las fuentes aceptadas-, nunca un segundo fichero pedido aparte.
-  const drift = compareDistantPeriods(readings, coverage, knownTags, PROVISIONAL_CONFIG.drift, direction);
+  inventoryClassOf = new Map(inventory.rows.map((row) => [row.tagId, row.tagClass]));
 
   const counts = new Map<string, number>();
   const truthOf = new Map<string, string>();
@@ -1157,7 +1350,6 @@ async function buildViews(
   records.sort((a, b) => a.incident.fromUtcMs - b.incident.fromUtcMs);
 
   return {
-    ...views,
     incidents: { batteries, abandoned, records },
     ...(lineFeed === undefined ? {} : { lineFeed }),
     ...(undeclared.evaluated ? { undeclaredTags: undeclared.tags } : {}),
@@ -1186,7 +1378,246 @@ async function buildViews(
     ...(criticalPointsConfig.problems.length === 0
       ? {}
       : { criticalPointsProblems: criticalPointsConfig.problems }),
-    ...(!drift.evaluated || drift.earlyPeriod === null || drift.latePeriod === null
+  };
+  };
+  const listViews = withLists();
+
+  // --- La instantánea de este fichero (ADR-0015 §1) ---------------------------------------------
+  //
+  // Se construye con lo que ya está calculado, medido **sobre la ventana de este fichero**: la matriz,
+  // los vecinos, las secciones, las sumas entre anclas, la línea y las calles se recalculan aquí sobre
+  // sus lecturas para que la instantánea diga lo que pasó en ese fichero y no en la ventana de trabajo
+  // entera. Un fichero repetido no crea instantánea (R-DAT-005); uno sin ventana completa, tampoco.
+  const importedWindow = windows.find((entry) => entry.source.sourceId === importedSource.sourceId);
+  let snapshot: CircuitSnapshot | null = null;
+  if (stored === undefined) {
+    // Sin circuito no hay dónde guardar una instantánea, y no es un problema: no se pidió acumular.
+  } else if (importedWindow === undefined) {
+    notes.push("La fuente importada no tiene ventana completa (un solo instante): sin instantánea.");
+  } else if (importedWindow.duplicateOf !== null) {
+    notes.push(`El fichero repite «${importedWindow.duplicateOf}»: no es una fuente nueva y no crea instantánea (R-DAT-005).`);
+  } else {
+    const window = importedWindow.window;
+    const inWindow = (entry: Reading): boolean => entry.time.utcMs >= window.from && entry.time.utcMs <= window.to;
+    // Sin cohorte (un fichero tan corto que no agrupa vehículos) la instantánea es de todas las lecturas,
+    // sin anillo: sigue siendo un grafo con fecha, y es lo que hace que el fichero quede registrado.
+    const fileReadings = (mainAnchorCohort === undefined ? readings : mainReadings).filter(inWindow);
+    const snapshotCohortId = mainAnchorCohort?.id ?? 0;
+    const measure = mainCohort?.measures.find((entry) => entry.sourceId === importedSource.sourceId) ?? null;
+    const ring = measure?.ring ?? [];
+    const anchor = mainCohort?.effective ?? null;
+    const readingsByTag = new Map<string, number>();
+    for (const entry of fileReadings) readingsByTag.set(entry.tagId, (readingsByTag.get(entry.tagId) ?? 0) + 1);
+    const declared = new Set([...declaredOrder, ...criticalPointsConfig.funcionOf.keys()]);
+    const reviews = await loadReviews(stored.circuitId);
+    const declaredOnRing = anchorsOnRing(ring, lapAnchorsConfig.anchors);
+    const fileLine =
+      lineTagList.length === 0
+        ? null
+        : measureLineFeed(
+            fileReadings,
+            lineTagList,
+            [window],
+            regimeOf,
+            lineFeedThresholds,
+            new Set((circuitStateCohorts[0]?.pace.holders ?? []).filter((holder) => holder.expected !== null).map((holder) => holder.agvId)),
+            criticalPointsConfig.funcionOf,
+            productionIntervals,
+          );
+    const fileCharging = laneConfig.lanes.length === 0 ? null : buildChargingReport(readings.filter(inWindow), laneConfig.lanes, [window], PROVISIONAL_CONFIG.charging);
+    snapshot = attempt("La instantánea de este fichero no se pudo construir", failures, null, () =>
+      buildSnapshot(
+        assembleSnapshotInput({
+          circuitId: stored.circuitId,
+          zone,
+          source: { ...importedSource, window },
+          capturedAt: Date.now(),
+          appVersion: APP_VERSION,
+          exposure: regimeExposure([window], productionIntervals, regimeOf),
+          cohortId: snapshotCohortId,
+          anchorTagId: anchor?.tagId ?? null,
+          anchorDeclared: mainCohort?.anchorTruth === "observed",
+          measure,
+          matrix:
+            anchor === null || ring.length === 0
+              ? null
+              : buildReadMatrix(
+                  snapshotCohortId,
+                  fileReadings,
+                  direction,
+                  [window],
+                  ring,
+                  ring[0] as string,
+                  PROVISIONAL_CONFIG.readRate,
+                  orderLimits,
+                  PROVISIONAL_CONFIG.trend,
+                  tagChanges.lives,
+                ),
+          readingsByTag,
+          neighbours: dominantNeighbours(fileReadings, new Set([...ring, ...readingsByTag.keys(), ...declared])),
+          declared,
+          sectionOf: sections,
+          funcionOf: criticalPointsConfig.funcionOf,
+          candidateFunctionOf: mainCohort?.candidates ?? new Map(),
+          inventoryClassOf,
+          laneOfTag: new Map(laneConfig.lanes.flatMap((lane) => lane.tags.map((tagId) => [tagId, lane.laneId] as const))),
+          lineTags: new Set(lineTagList),
+          declaredAnchors: new Set(lapAnchorsConfig.anchors),
+          sections:
+            ring.length === 0
+              ? []
+              : measureAnchorSections(
+                  {
+                    readings: fileReadings,
+                    direction,
+                    ring,
+                    anchors: lapAnchorsConfig.anchors,
+                    coverage: [window],
+                    productionStops: productionIntervals,
+                    laneTags,
+                    regimeOf,
+                    sectionOf: sections,
+                    windows: [{ sourceId: importedSource.sourceId, window }],
+                  },
+                  PROVISIONAL_CONFIG.bands,
+                  PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+                ).sections,
+          anchorGaps:
+            ring.length === 0 || anchor === null
+              ? []
+              : measureAnchorGaps({
+                  readings: fileReadings,
+                  direction,
+                  ring,
+                  // Las anclas declaradas que están en el anillo; si no hay dos, el ancla del circuito
+                  // sola y el hueco es la vuelta entera.
+                  anchors: declaredOnRing.length >= 2 ? declaredOnRing : [ring[0] as string],
+                  coverage: [window],
+                  productionStops: productionIntervals,
+                  laneTags,
+                  regimeOf,
+                  deliveries: mainCohort?.deliveries ?? [],
+                }),
+          fleet,
+          line: fileLine,
+          lanes: fileCharging?.lanes ?? [],
+          laneUsage: fileCharging?.usage ?? [],
+          findings: buildSnapshotFindings({
+            zone,
+            matrix: mainCohort?.matrix ?? null,
+            tagChanges: tagChanges.changes,
+            lanes: charging.lanes,
+            laneUsage: charging.usage,
+            state: circuitStateCohorts[0]?.state ?? null,
+            undeclaredTags: undeclared.evaluated ? undeclared.tags : [],
+            reviews,
+          }),
+        }),
+      ),
+    );
+  }
+
+  // --- Lo que compara ficheros se lee de las instantáneas (ADR-0015 §3) -------------------------
+  const allSnapshots = sortSnapshots([
+    ...context.snapshots.filter((entry) => snapshot === null || entry.sourceId !== snapshot.sourceId),
+    ...(snapshot === null ? [] : [snapshot]),
+  ]);
+  const snapshotOf = new Map(allSnapshots.map((entry) => [entry.sourceId, entry]));
+  const franjaCohortsFinal = franjaCohorts.map((cohort) => {
+    if (mainCohort === undefined || cohort.cohortId !== mainCohort.cohortId) return cohort;
+    // Las mediciones de los ficheros anteriores salen de su instantánea; la del fichero actual, de su
+    // medición; un fichero anterior sin instantánea pero con lecturas retenidas, de su medición.
+    const resolutionMs = cohort.measures.find((entry) => entry.sourceId === importedSource.sourceId)?.resolutionMs ?? 0;
+    const measures = measuredWindows.flatMap((entry) => {
+      const sourceId = entry.source.sourceId;
+      const measured = cohort.measures.find((item) => item.sourceId === sourceId);
+      if (sourceId === importedSource.sourceId && measured !== undefined) return [measured];
+      const own = snapshotOf.get(sourceId);
+      if (own !== undefined) return [measureFromSnapshot(own, resolutionMs)];
+      return measured === undefined ? [] : [measured];
+    });
+    const keep = keepByCohort.get(cohort.cohortId) ?? ((gaps: readonly AnchorGapChange[]): AnchorGapChange[] => [...gaps]);
+    const structure = [...cohort.structure];
+    for (let index = 1; index < allSnapshots.length; index += 1) {
+      const early = allSnapshots[index - 1] as CircuitSnapshot;
+      const late = allSnapshots[index] as CircuitSnapshot;
+      const set = attempt(`La estructura entre «${early.fileName}» y «${late.fileName}» no se pudo comparar`, failures, null, () =>
+        structureBetweenSnapshots(early, late, PROVISIONAL_CONFIG.tagChanges),
+      );
+      if (set === null) continue;
+      const gaps = keep(set.gaps);
+      if (gaps.length > 0) structure.push({ ...set, gaps });
+    }
+    const histories = attempt("Las horquillas entre ficheros no se pudieron leer de las instantáneas", failures, cohort.histories, () =>
+      historiesFromSnapshots(allSnapshots, PROVISIONAL_CONFIG.franjas),
+    );
+    return { cohortId: cohort.cohortId, measures, histories, structure };
+  });
+  // El p50 por fichero de cada sección (R-TIM-012): de la instantánea, en los ficheros sin lecturas.
+  const anchorSectionsFinal: CircuitViews["anchorSections"] = {
+    ...baseViews.anchorSections,
+    sections: anchorSections.sections.map((section) => {
+      const extra = allSnapshots
+        .filter((entry) => !withReadings.has(entry.sourceId))
+        .flatMap((entry) => {
+          const own = entry.sections.find((item) => item.fromTagId === section.fromTagId && item.toTagId === section.toTagId);
+          return own === undefined ? [] : [{ sourceId: entry.sourceId, samples: own.produccion?.samples ?? 0, p50Ms: own.produccion?.p50Ms ?? null }];
+        });
+      const order = new Map(measuredWindows.map((entry, index) => [entry.source.sourceId, index]));
+      const bySource = [...extra, ...section.bySource].sort((a, b) => (order.get(a.sourceId) ?? Infinity) - (order.get(b.sourceId) ?? Infinity));
+      return { ...section, bySource };
+    }),
+  };
+  const deltas: SnapshotDelta[] = [];
+  for (let index = 1; index < allSnapshots.length; index += 1) {
+    const early = allSnapshots[index - 1] as CircuitSnapshot;
+    const late = allSnapshots[index] as CircuitSnapshot;
+    const delta = attempt(`El cambio entre «${early.fileName}» y «${late.fileName}» no se pudo calcular`, failures, null, () =>
+      compareSnapshots(early, late, PROVISIONAL_CONFIG.tagChanges),
+    );
+    if (delta !== null) deltas.push(delta);
+  }
+  // Deriva entre la primera y la última instantánea (R-DAT-016, R-AGV-013), si son distantes: solo con
+  // listas cargadas, como antes, y solo desde instantáneas, nunca desde lecturas de ficheros anteriores.
+  const first = allSnapshots[0];
+  const last = allSnapshots[allSnapshots.length - 1];
+  const drift: DriftComparison | null =
+    lists.length === 0 || first === undefined || last === undefined || first === last
+      ? null
+      : attempt("La deriva entre periodos no se pudo leer de las instantáneas", failures, null, () =>
+          driftBetweenSnapshots(first, last, PROVISIONAL_CONFIG.drift),
+        );
+  const retainedIds = new Set((stored?.sources ?? []).filter((source) => source.retained).map((source) => source.sourceId));
+  const sourceList = (stored?.sources ?? []).length === 0 ? [{ ...importedSource, importedAt: Date.now(), complete: importedWindow?.window ?? null }] : distinctSources(stored?.sources ?? []);
+  const snapshotsView: CircuitViews["snapshots"] = {
+    list: sourceList
+      .flatMap((source) => {
+        const own = snapshotOf.get(source.sourceId);
+        const window = own?.window ?? source.complete;
+        if (window === null) return [];
+        return [
+          {
+            sourceId: source.sourceId,
+            fileName: source.fileName,
+            window,
+            capturedAt: own?.capturedAt ?? source.importedAt,
+            retained: retainedIds.has(source.sourceId) || source.sourceId === importedSource.sourceId,
+            hasSnapshot: own !== undefined,
+          },
+        ];
+      })
+      .sort((a, b) => a.window.from - b.window.from || a.window.to - b.window.to),
+    deltas,
+    problems: [...notes, ...failures],
+  };
+
+  const views: CircuitViews = {
+    ...baseViews,
+    anchorSections: anchorSectionsFinal,
+    franjas: { ...baseViews.franjas, cohorts: franjaCohortsFinal },
+    snapshots: snapshotsView,
+    ...listViews,
+    ...(drift === null || !drift.evaluated || drift.earlyPeriod === null || drift.latePeriod === null
       ? {}
       : {
           drift: {
@@ -1212,6 +1643,7 @@ async function buildViews(
           },
         }),
   };
+  return { views, snapshot, problems: failures };
 }
 
 async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise<void> {
@@ -1286,16 +1718,43 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
     );
     // La acumulación ocurre **después** de que la importación haya terminado del todo, y en una
     // sola transacción: cancelar a mitad no deja nada escrito (INV-006).
-    const accumulation =
+    const accumulated =
       message.circuitId === undefined
         ? undefined
         : await accumulate(message.circuitId, message.circuitName ?? message.circuitId, zone, result);
 
-    // Las vistas se calculan sobre lo que se está mirando: el circuito entero si la fuente se
-    // acumuló, y solo esta fuente si no. Calcularlas siempre sobre el circuito sería mentir cuando
-    // la afinidad ha impedido acumular, porque el usuario estaría viendo un conjunto que no
+    // Las vistas se calculan sobre lo que se está mirando: la ventana de trabajo del circuito si la
+    // fuente se acumuló, y solo esta fuente si no. Calcularlas siempre sobre el circuito sería mentir
+    // cuando la afinidad ha impedido acumular, porque el usuario estaría viendo un conjunto que no
     // incluye el fichero que acaba de cargar.
-    const views = await buildViews(message.circuitId, accumulation, result.readings, zone, result.summary.direction, result.summary);
+    const built = await buildViews({
+      stored: accumulated?.stored,
+      working: accumulated?.working ?? result.readings,
+      workingCoverage: accumulated?.workingCoverage ?? [],
+      snapshots: accumulated?.snapshots ?? [],
+      imported: result.readings,
+      zone,
+      direction: result.summary.direction,
+      importedSource: result.summary,
+    });
+
+    // La instantánea se guarda sola (ADR-0015 §4): es una medición con fecha, no memoria consolidada.
+    // Con ella, la fuente queda marcada como «con instantánea» en el circuito.
+    let accumulation = accumulated?.report;
+    if (built?.snapshot !== null && built?.snapshot !== undefined && accumulated?.stored !== undefined) {
+      const own = built.snapshot;
+      await saveSnapshot(own);
+      const sources = accumulated.stored.sources.map((source) => (source.sourceHash === own.sourceHash ? { ...source, snapshot: true } : source));
+      await saveCircuit({ ...accumulated.stored, sources });
+      const distinct = distinctSources(sources);
+      accumulation = {
+        ...(accumulation as AccumulationReport),
+        snapshots: {
+          withSnapshot: distinct.filter((source) => source.snapshot).length,
+          withoutSnapshot: distinct.filter((source) => !source.snapshot).length,
+        },
+      };
+    }
 
     emit(
       {
@@ -1303,9 +1762,10 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         summary: result.summary,
         readings: result.readings,
         quarantine: result.quarantine,
-        warnings: result.warnings,
+        // Lo que no se pudo construir o comparar se dice con el resto de advertencias (R-EVI-006).
+        warnings: [...result.warnings, ...(built?.problems ?? [])],
         ...(accumulation === undefined ? {} : { accumulation }),
-        ...(views === undefined ? {} : { views }),
+        ...(built === undefined ? {} : { views: built.views }),
       },
       jobId,
     );

@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.36.0
+version: 0.37.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -412,6 +412,10 @@ críticos y la deriva ya calculaban y hasta ahora solo se leía en tarjetas y ta
 | **Salidas de los tags con reparto** | cruce (las ramas vuelven a juntarse) o bifurcación (no) | el grosor es la cuota, con su soporte; el margen de saltos es configuración |
 | **Ocupación de las calles de carga** | quién estuvo en cada calle y cuándo, la calle sin servicio, quién esperó de más; y las tres comprobaciones de planta (R-CO-009): la calle que se usa menos o más que las demás con su cuota, el tag de la calle que no se leyó en tantas de tantas estancias, y quién no entró a cargar | solo es barra lo que se sabe: una estancia sin entrada o sin salida es una marca en su extremo conocido; fuera de cobertura, trama (R-CO-007, R-DAT-007); el detalle plegado da la cuota de cada calle y qué se lee dentro de cada una |
 | **Tiempos por sección entre anclas** | cuánto se tarda de un ancla a la siguiente —kitting, cruce, línea— por régimen, y cómo se mueve por fichero | tabla por sección y régimen con muestras, p50, p80, p95 y valla, en su caja desplazable; la columna de tags dice «48 tags, de 60000 a 60147» y la lista entera va en el detalle plegado junto al p50 por fichero (3.47.0: la lista en la tabla partía las cabeceras letra a letra); CSV; sin dos anclas en el anillo, una línea que dice qué declarar (R-TIM-012) |
+| **El anillo en el tiempo** (Resumen) | cómo estaba el circuito en cada fichero: un control de tiempo (anterior/siguiente, deslizador y lista, con la ventana de cada fichero) redibuja el anillo con esa instantánea conservando la capa; lo que cambia frente a la instantánea vecina lleva un arco de acento por fuera, con leyenda y lectura | la última instantánea es la de hoy y coincide con el análisis; en otra, el pie lo dice y avisa de lo que la instantánea no guarda (zona, paradas sin explicación); con un solo fichero el control no aparece (ADR-0015, R-DAT-023) |
+| **Evolución** (Resumen, bajo el anillo) | de una instantánea a la siguiente: cuántos tags aparecen, desaparecen, se mueven, dejan o empiezan a leerse, cuántos tramos van más lentos o más rápidos, la vuelta antes y después; los primeros cambios con su detalle y el resto en el cajón | hechos, no causas; un cambio de clase de inventario se cuenta pero no resalta el anillo (es etiqueta, no movimiento: cargar las listas entre dos ficheros cambia la clase de todos); con un solo fichero se dice |
+| **El circuito a lo largo de los ficheros** (Tiempos) | el p50 de producción de cada sección entre anclas, una línea por sección y una columna por instantánea, en un solo eje desde cero | como mucho ocho series (las siete mayores y «otras»); un hueco es una instantánea que no midió esa sección; leyenda siempre, lectura al tocar y tabla en el cajón; sin dos instantáneas se dice |
+| **Ficheros del circuito** (Datos) | por fichero: ventana y si tiene lecturas retenidas, solo instantánea, o ninguna instantánea (vuelve a cargarlo) | es la única vista que dice qué alcanza el expediente y el replay (R-DAT-023) |
 | **Entrada y salida del tramo cargado** | un adelantamiento como una línea que cruza a las demás | candidato, no avería: OQ-107 sigue sin catálogo de excepciones (R-FLO-001) |
 | **Deriva entre los dos periodos** | qué tag desapareció, apareció o se sustituyó, en lecturas | correlación de posición y tiempo, nunca confirmación física (R-DAT-017, R-EVI-004) |
 | **Inventario** | cuánto hay que valorar frente a lo que no, y qué acción pide cada clase | sin color de severidad: «a valorar» es una pregunta, no un problema (§5.2) |

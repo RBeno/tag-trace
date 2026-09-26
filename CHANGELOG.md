@@ -2,6 +2,47 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.50.0] - 2026-09-26
+
+El estado del circuito es un grafo que evoluciona (ADR-0015, R-DAT-023; decisión del propietario).
+
+### Añadido
+
+- **Instantánea por fichero** (`src/domain/snapshot.ts`, `DATA_CONTRACTS` §12): un grafo con fecha
+  —vértices con posición, tramo, función, tasa de lectura, no lectores, vecinos, clase y
+  situación; aristas y secciones con su horquilla por régimen; sumas entre anclas; flota, línea,
+  calles y hallazgos con su revisión— construida por el Worker al terminar cada análisis y guardada
+  sola, como medición. `compareSnapshots` da lo que cambia de una a otra: vértices que aparecen,
+  desaparecen, se mueven (por vecino, no por índice), cambian de clase, dejan de leerse o empiezan a
+  leerse; aristas más lentas o más rápidas (R-TIM-010); la vuelta.
+- **Las comparaciones entre ficheros leen de las instantáneas**: horquillas que cambian,
+  estructura por la suma entre anclas y deriva entre periodos, con los mismos criterios y los mismos
+  resultados que desde las lecturas (probado). Lo que cambia dentro de un fichero se mide con sus
+  lecturas.
+- **Almacén local, versión 6**: `circuits` sin lecturas, `sources` con las lecturas retenidas por
+  fuente, `snapshots` por fuente; migración automática desde la 5 al abrir la aplicación. El
+  `.agvproj` pasa al esquema 2 con la sección `instantaneas`, sin lecturas; el 1 se sigue abriendo.
+- La acumulación dice qué ficheros tienen lecturas retenidas y cuáles solo instantánea, y el motor
+  enseña su versión en cada instantánea (`appVersion`, del propio `CHANGELOG`).
+- **El anillo en el tiempo y la evolución** (UX_SPEC §5.2): en la portada, un control de tiempo
+  recorre las instantáneas y redibuja el anillo conservando la capa, con un arco de acento en lo que
+  cambia frente a la vecina; debajo, «Evolución» cuenta lo que aparece, desaparece, se mueve, deja o
+  empieza a leerse, los tramos más lentos o más rápidos y la vuelta, con el detalle en el cajón. En
+  Tiempos, «El circuito a lo largo de los ficheros»: el p50 de cada sección entre anclas, una línea
+  por sección y una columna por instantánea. En Datos, cada fichero dice si tiene lecturas
+  retenidas, solo instantánea, o ninguna. Cuatro tonos más de tramo, validados en claro y oscuro.
+
+### Cambiado
+
+- **Retención de lecturas** (R-DAT-023): solo la última exportación cargada y, si se solapa con la
+  anterior en orden de carga, también esa; las demás se retiran del almacén y quedan como
+  instantánea. El expediente y el replay alcanzan solo las lecturas retenidas. **Cambia una prueba
+  de navegador**: en el circuito de auditoría partido en dos, la rotura plantada cae en el corte y
+  ya no sale «en el tiempo» dentro de la ventana; la enseña la tarjeta «cambio entre periodos»,
+  leída de las dos instantáneas. Dos casos quedan para el propietario en OQ-143.
+- OQ-142 cerrada: el límite de un valor de IndexedDB deja de alcanzarse porque las lecturas ya no
+  se guardan enteras ni para siempre.
+
 ## [3.49.0] - 2026-09-26
 
 Interfaz (3/3), aprobada por el propietario: la portada con cifras, el anillo con capas en el Resumen

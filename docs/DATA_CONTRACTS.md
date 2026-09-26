@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.22.0
+version: 0.24.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -497,6 +497,9 @@ formaliza en F1a y se completa en F4. Como mínimo contendrá:
 - **las instantáneas de cada fichero** (sección `instantaneas`, §12), que son lo que hace que el
   circuito viaje con toda su evolución y sin su bruto (ADR-0015).
 
+`schema_version` 2 desde 2026-09-26 (sección `instantaneas`); un `.agvproj` de la versión 1 se
+abre igual, sin instantáneas, y la aplicación lo dice.
+
 No incluirá el bruto completo por defecto. Un expediente puede conservar un recorte normalizado mínimo cuando sea necesario para reproducir una incidencia.
 
 La **revisión en campo** (R-EVI-007) viaja en una sección opcional `revision`: una entrada por
@@ -575,5 +578,8 @@ cargar.
 
 **Evolución.** La secuencia de instantáneas, en orden de ventana, es la evolución del circuito:
 `compareSnapshots` da los vértices que aparecen, desaparecen, se mueven, cambian de clase, dejan de
-leerse o empiezan a leerse, y las aristas más lentas o más rápidas con el criterio de R-TIM-010.
+leerse o empiezan a leerse, y las aristas más lentas o más rápidas con el criterio de R-TIM-010. Un tag que en el segundo fichero no se lee ni una vez no está en su anillo, así que
+sale como «desaparece», no como «deja de leerse»: esta segunda clase queda para el tag que sigue en
+su sitio (en los dos anillos o en ninguno) y pasa a no leerse con pasadas de sobra. La rotura súbita
+plantada en el corte de la auditoría se ve así, como «desaparece» con sus vecinos.
 

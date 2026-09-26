@@ -31,18 +31,22 @@ import {
   scrollBox,
 } from "./charts.js";
 import { closeDrawer } from "./drawer.js";
+import { changedTagsOf, deltaAround, evolutionDataOf, evolutionSection, ringDataFromSnapshot, sourceStatusList, timeControl } from "./evolution.js";
+import type { CircuitSnapshot } from "../domain/snapshot.js";
 import { FLEET_STRUCTURE } from "../domain/fleet.js";
 import {
   agvTimelineChart,
   driftChart,
   dwellChart,
+  evolutionChart,
+  ringFigure,
+  type RingFigure,
   fifoSlopeChart,
   fleetCountChart,
   fleetLifelineChart,
   forkChart,
   laneOccupancyChart,
   readMatrixHeatmap,
-  ringChart,
   segmentBandChart,
   trendMultiplesChart,
   type BandRow,
@@ -61,7 +65,7 @@ import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
-import { isAvailable, loadCircuit, loadReviews } from "../persistence/store.js";
+import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
 import {
   RANK_LABEL,
@@ -107,6 +111,8 @@ interface State {
   circuitId: string | null;
   /** Ficheros acumulados en el circuito, para la portada: los que dice «Lo acumulado». */
   sources: number;
+  /** Las instantáneas del circuito (ADR-0015), en orden de ventana, leídas del almacén tras cada importación. */
+  snapshots: readonly CircuitSnapshot[];
 }
 
 const state: State = {
@@ -124,6 +130,7 @@ const state: State = {
   fleetFile: null,
   circuitId: null,
   sources: 0,
+  snapshots: [],
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -807,6 +814,7 @@ function handleMessage(message: FromWorker): void {
       }
       if (message.views !== undefined) renderViews(message.views);
       state.views = message.views ?? null;
+      if (message.views !== undefined) loadEvolution(message.views);
       renderDossier();
       renderReplaySkeleton();
       renderTableSkeleton();
@@ -1110,6 +1118,8 @@ function renderAccumulation(report: {
   readonly sources: number;
   readonly shared: number;
   readonly disagreements: number;
+  readonly retained: { readonly sourceIds: readonly string[]; readonly distinctSources: number };
+  readonly snapshots: { readonly withSnapshot: number; readonly withoutSnapshot: number };
 }): void {
   // El nombre del circuito abre el Resumen, que es lo primero que se ve; en Datos, lo acumulado.
   const resumen = viewsOf.get("resumen") as HTMLElement;
@@ -1118,7 +1128,20 @@ function renderAccumulation(report: {
   summaryPanel.append(element("h2", undefined, `Lo acumulado en «${report.circuitId}»`));
   const rows: readonly (readonly [string, string])[] = [
     ["Ficheros cargados", String(report.sources)],
-    ["Lecturas del circuito", report.totalReadings.toLocaleString("es-ES")],
+    // Las lecturas en crudo solo viven en la ventana de trabajo (ADR-0015 §2, R-DAT-023): el
+    // expediente y el replay alcanzan justo esto, y lo demás queda como instantánea.
+    [
+      "Lecturas retenidas",
+      `${report.totalReadings.toLocaleString("es-ES")} lecturas de ${report.retained.sourceIds.length} ` +
+        `${report.retained.sourceIds.length === 1 ? "fichero" : "ficheros"} de ${report.retained.distinctSources}`,
+    ],
+    [
+      "Instantáneas",
+      `${report.snapshots.withSnapshot} de ${report.retained.distinctSources} ficheros` +
+        (report.snapshots.withoutSnapshot === 0
+          ? ""
+          : `; ${report.snapshots.withoutSnapshot} sin instantánea (anteriores a esta versión o sin construir): vuelve a cargarlos para crearla`),
+    ],
     [
       "Cobertura",
       report.coverage.length === 0
@@ -1256,6 +1279,9 @@ function renderViews(views: CircuitViews): void {
   out.append(element("h3", undefined, "Composición del circuito"));
   out.append(element("p", "muted", cohortLine));
   renderRingFigure(views);
+  // La evolución (ADR-0015 §3) se rellena cuando las instantáneas llegan del almacén (`loadEvolution`).
+  evolutionHost = element("div", "evolution-host");
+  out.append(evolutionHost);
 
   // --- Datos: lo cargado, tal cual --------------------------------------------------------------
   out = viewsOf.get("datos") as HTMLElement;
@@ -1273,6 +1299,8 @@ function renderViews(views: CircuitViews): void {
       formatInstant,
     ),
   );
+  // Qué queda de cada fichero en este dispositivo (R-DAT-023): lecturas, instantánea o nada.
+  if (views.snapshots.list.length > 0) out.append(sourceStatusList(views.snapshots, formatTick));
 
   // --- Tags: inventario, lectura, cambios, listas ----------------------------------------------
   out = viewsOf.get("tags") as HTMLElement;
@@ -1335,6 +1363,8 @@ function renderViews(views: CircuitViews): void {
   renderCircuitState(views);
   renderAnchorSections(views);
   renderFranjas(out, views, { finding, formatInstant, formatTick, duration, circuitId: state.circuitId });
+  timesEvolutionHost = element("div", "evolution-host");
+  out.append(timesEvolutionHost);
   renderCriticalPoints(views);
   renderRing(views);
 
@@ -2515,9 +2545,104 @@ function matrixOf(views: CircuitViews, cohortId: number): Matrix | undefined {
  * tag abre su expediente por la misma vía que escribirlo en el buscador de la barra.
  */
 function renderRingFigure(views: CircuitViews): void {
+  ringToday = null;
+  ringHandle = null;
   for (const shape of views.shapes) {
     const matrix = matrixOf(views, shape.cohortId);
-    out.append(ringChart(ringDataOf(shape, matrix, views), { onTagOpen: openDossier }));
+    const data = ringDataOf(shape, matrix, views);
+    const handle = ringFigure(data, { onTagOpen: openDossier });
+    // El control de tiempo recorre el anillo del cohorte principal: el primero, que es el de las instantáneas.
+    if (ringHandle === null) {
+      ringHandle = handle;
+      ringToday = data;
+    }
+    out.append(handle.node);
+  }
+}
+
+/** El anillo de la portada y sus datos de hoy, para que el control de tiempo vuelva a ellos. */
+let ringHandle: RingFigure | null = null;
+let ringToday: RingData | null = null;
+/** Donde la portada y Tiempos escriben la evolución cuando llegan las instantáneas. */
+let evolutionHost: HTMLElement | null = null;
+let timesEvolutionHost: HTMLElement | null = null;
+/** Una importación nueva invalida la carga de instantáneas de la anterior. */
+let evolutionToken = 0;
+
+/**
+ * Lee las instantáneas del almacén y monta la evolución (ADR-0015 §3): el control de tiempo sobre el
+ * anillo, la sección «Evolución» debajo y el gráfico de tiempos en Tiempos. Va después de las vistas
+ * porque las instantáneas no viajan en ellas —`views.snapshots` lleva la lista y los deltas, que
+ * pesan poco; el grafo entero se lee del almacén, que ya lo tiene cuando el Worker responde.
+ */
+function loadEvolution(views: CircuitViews): void {
+  const token = ++evolutionToken;
+  state.snapshots = [];
+  const circuitId = state.circuitId;
+  const mount = (snapshots: readonly CircuitSnapshot[]): void => {
+    if (token !== evolutionToken) return;
+    state.snapshots = snapshots;
+    renderEvolution(views, snapshots);
+  };
+  if (circuitId === null || !isAvailable()) {
+    mount([]);
+    return;
+  }
+  void loadSnapshots(circuitId).then(mount, () => mount([]));
+}
+
+/** La fecha de una instantánea es la ventana de su fichero, no cuándo se calculó: dos cargadas hoy seguidas distan meses de datos. */
+const windowOf = (window: { readonly from: number; readonly to: number }): string => `${formatTick(window.from)} → ${formatTick(window.to)}`;
+
+function renderEvolution(views: CircuitViews, snapshots: readonly CircuitSnapshot[]): void {
+  const host = evolutionHost;
+  const handle = ringHandle;
+  const today = ringToday;
+  const last = snapshots.length - 1;
+  const select = (index: number): void => {
+    if (handle === null || today === null) return;
+    const snapshot = snapshots[index];
+    const around = snapshot === undefined ? null : deltaAround(views.snapshots.deltas, snapshot.sourceId);
+    const changed = around === null ? new Map<string, string>() : changedTagsOf(around.delta);
+    const latest = snapshots[last];
+    // La última instantánea es la de hoy: se vuelve al anillo de las vistas, que lleva la zona, el
+    // patrón y las incidencias medidas que la instantánea no guarda.
+    if (index === last || snapshot === undefined) {
+      handle.update(today, { changed, note: null });
+    } else {
+      handle.update(ringDataFromSnapshot(snapshot), {
+        changed,
+        note: `Instantánea de ${snapshot.fileName}, ${windowOf(snapshot.window)}; hoy: ${latest?.fileName ?? "—"}. La zona y las paradas sin explicación no viajan en la instantánea.`,
+      });
+    }
+    if (host !== null) {
+      host.replaceChildren(evolutionSection({ snapshots, deltas: views.snapshots.deltas, selected: index, formatWindow: windowOf }));
+    }
+  };
+  if (handle !== null && snapshots.length > 1) {
+    const control = timeControl(
+      snapshots.map((snapshot) => ({ label: snapshot.fileName, date: windowOf(snapshot.window) })),
+      last,
+      select,
+    );
+    handle.node.querySelector(".ring-layers")?.before(control);
+  }
+  select(last);
+
+  const times = timesEvolutionHost;
+  if (times !== null) {
+    const data = evolutionDataOf(snapshots, windowOf);
+    times.replaceChildren(
+      data === null
+        ? element(
+            "p",
+            "muted",
+            snapshots.length === 0
+              ? "El circuito a lo largo de los ficheros: sin instantáneas guardadas todavía; se dibuja con la segunda."
+              : "El circuito a lo largo de los ficheros: con una sola instantánea no hay línea que dibujar; se dibuja con la segunda.",
+          )
+        : evolutionChart(data),
+    );
   }
 }
 
@@ -3818,10 +3943,11 @@ function finding(title: string, figure: string, evidence: string, review?: reado
  * Activa una pestaña y desplaza hasta el encabezado con ese texto (o hasta la figura con ese título),
  * dejándole el foco: es lo que hace cada tile y el enlace «El anillo está en Resumen».
  */
-function jumpTo(tab: TabId, heading: string): void {
+function jumpTo(tab: TabId, heading: string, fallback?: string): void {
   activateTab(tab);
   const panel = tabPanels.get(tab);
-  const target = [...(panel?.querySelectorAll<HTMLElement>("h2, h3") ?? [])].find((node) => node.textContent === heading);
+  const headings = [...(panel?.querySelectorAll<HTMLElement>("h2, h3") ?? [])];
+  const target = headings.find((node) => node.textContent === heading) ?? headings.find((node) => node.textContent === fallback);
   const focusOn = target?.closest("figure") ?? target ?? panel;
   focusOn?.scrollIntoView({ block: "start" });
   if (focusOn instanceof HTMLElement) {
@@ -3929,6 +4055,8 @@ function renderTiles(views: CircuitViews): void {
     .filter((entry) => entry.measure !== undefined && entry.measure.lapMs !== null);
   const lastLap = laps[laps.length - 1];
   const previousLap = laps[laps.length - 2];
+  // Con más de una instantánea el tile lo dice y lleva a la figura de evolución; con una, a la tabla.
+  const withSnapshot = views.snapshots.list.filter((entry) => entry.hasSnapshot).length;
   tiles.append(
     tile(
       "Vuelta",
@@ -3936,8 +4064,9 @@ function renderTiles(views: CircuitViews): void {
       lastLap === undefined
         ? "sin vuelta medida"
         : `fichero ${lastLap.source.fileName}` +
-            (previousLap === undefined ? "" : `; el anterior, ${duration(previousLap.measure?.lapMs ?? null)}`),
-      () => jumpTo("tiempos", "Mediciones por fichero"),
+            (previousLap === undefined ? "" : `; el anterior, ${duration(previousLap.measure?.lapMs ?? null)}`) +
+            (withSnapshot > 1 ? `; ${withSnapshot} instantáneas` : ""),
+      () => (withSnapshot > 1 ? jumpTo("tiempos", "El circuito a lo largo de los ficheros", "Mediciones por fichero") : jumpTo("tiempos", "Mediciones por fichero")),
       { id: "vuelta" },
     ),
   );
@@ -4461,12 +4590,15 @@ exportButton.addEventListener("click", () => {
     // La revisión en campo viaja con el proyecto: es trabajo humano, lo único que no se puede
     // volver a calcular importando otra vez las fuentes. Sin marcas, el fichero queda como antes.
     const reviews = [...(await loadReviews(circuitId)).values()];
+    // Y las instantáneas de cada fichero (ADR-0015 §5): el circuito viaja con su evolución y sin su bruto.
+    const snapshots = await loadSnapshots(circuitId);
     const bytes = await writeProject(
       circuitId,
       {
         circuito: { id: circuit.circuitId, nombre: circuit.name, zona: circuit.zone },
         fuentes: circuit.sources,
         cobertura: circuit.coverage,
+        instantaneas: snapshots,
         ...(reviews.length === 0 ? {} : { revision: reviews }),
       },
       Date.now(),
@@ -4476,7 +4608,8 @@ exportButton.addEventListener("click", () => {
     // usuario ya ha hecho otra cosa —abrir un proyecto, por ejemplo— le pisa su mensaje con uno
     // que corresponde a la acción anterior.
     showMessage("info", "Proyecto exportado", [
-      `${circuit.sources.length} ficheros y sus periodos. Las lecturas se quedan en este dispositivo.`,
+      `${circuit.sources.length} ficheros y sus periodos, con ${snapshots.length} ${snapshots.length === 1 ? "instantánea" : "instantáneas"}. ` +
+        "Las lecturas se quedan en este dispositivo.",
       ...(reviews.length === 0 ? [] : [`Incluye ${reviews.length} hallazgos revisados en campo.`]),
     ]);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
@@ -4501,8 +4634,13 @@ projectInput.addEventListener("change", () => {
         | readonly { from: number; to: number }[]
         | undefined;
       const revision = project.sections["revision"] as readonly { state?: string }[] | undefined;
+      const instantaneas = project.sections["instantaneas"] as readonly unknown[] | undefined;
       showMessage("info", `Proyecto «${circuito?.nombre ?? project.manifest.circuit_id}»`, [
         `${fuentes?.length ?? 0} fuentes declaradas, exportado el ${formatInstant(project.manifest.exported_at)}.`,
+        // Un proyecto del esquema 1 no traía instantáneas: se abre igual y se dice (ADR-0015 §5).
+        instantaneas === undefined
+          ? "Sin instantáneas: el proyecto es de una versión anterior."
+          : `${instantaneas.length} ${instantaneas.length === 1 ? "instantánea" : "instantáneas"} del circuito.`,
         cobertura === undefined || cobertura.length === 0
           ? "Sin cobertura declarada."
           : `Cobertura: ${cobertura.map((span) => formatSpan(span.from, span.to)).join("  ·  ")}`,
@@ -4529,6 +4667,14 @@ projectInput.addEventListener("change", () => {
     }
   })();
 });
+
+// --- Almacén: la migración pendiente se hace al abrir, no a mitad de la primera importación --------
+
+if (isAvailable()) {
+  void ensureStore().catch(() => {
+    // Sin almacén utilizable la aplicación sigue analizando; la primera acumulación dirá que no pudo guardar.
+  });
+}
 
 // --- Sin red -----------------------------------------------------------------
 

@@ -134,3 +134,29 @@ describe("apertura defensiva · ADR-0012", () => {
     await expect(readProject(sinUna)).rejects.toThrow(/Falta la sección/);
   });
 });
+
+describe("ADR-0015 §5 · el proyecto lleva las instantáneas y abre las versiones anteriores", () => {
+  it("el esquema vigente es el 2 y la sección `instantaneas` viaja como cualquier otra, con su hash", async () => {
+    const instantaneas = [{ schemaVersion: 1, sourceId: "s1", ring: ["T1", "T2"], vertices: [] }];
+    const project = await readProject(await writeProject("c1", { ...sections, instantaneas }, EXPORTED_AT));
+    expect(project.manifest.schema_version).toBe(2);
+    expect(project.sections["instantaneas"]).toEqual(instantaneas);
+    expect(project.manifest.sections.map((digest) => digest.name)).toContain("instantaneas");
+  });
+
+  it("un proyecto del esquema 1 —sin instantáneas— se sigue abriendo tal cual", async () => {
+    const bytes = await writeProject("c1", sections, EXPORTED_AT);
+    const entries = await readZip(bytes);
+    const manifest = JSON.parse(new TextDecoder().decode((entries[0] as { data: Uint8Array }).data)) as Record<string, unknown>;
+    // El manifiesto se rehace con el esquema 1 y su propio hash, como lo escribió la versión anterior.
+    const { hash: _hash, ...partial } = { ...manifest, schema_version: 1 } as Record<string, unknown>;
+    const { semanticHash } = await import("../../src/domain/semantic-hash.js");
+    const antiguo = { ...partial, hash: await semanticHash(partial) };
+    const proyecto = await readProject(
+      await writeZip([{ name: "manifest.json", data: new TextEncoder().encode(JSON.stringify(antiguo)) }, ...entries.slice(1)]),
+    );
+    expect(proyecto.manifest.schema_version).toBe(1);
+    expect(proyecto.sections).toEqual(sections);
+    expect(proyecto.sections["instantaneas"]).toBeUndefined();
+  });
+});

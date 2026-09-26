@@ -20,6 +20,8 @@ import type { CircuitState } from "../domain/circuit-state.js";
 import type { DeliveryConcentration, GroupedDelivery } from "../domain/grouped-delivery.js";
 import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { StructureSet } from "../domain/anchor-sums.js";
+import type { SnapshotDelta } from "../domain/snapshot.js";
+import type { Interval } from "../domain/coverage.js";
 import type { PaceReport } from "../domain/vehicle-pace.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AnchorSection } from "../domain/anchor-sections.js";
@@ -80,10 +82,30 @@ export interface AccumulationReport {
   readonly circuitId: string;
   /** Intervalos analizables del circuito tras sumar esta fuente (R-DAT-007). */
   readonly coverage: readonly { readonly from: number; readonly to: number }[];
-  /** Lecturas del circuito entero, ya unidas. */
+  /**
+   * Lecturas de la **ventana de trabajo**, ya unidas: las de las fuentes retenidas (R-DAT-023). Hasta
+   * 3.49.0 eran todas las del circuito; ahora las de los ficheros anteriores quedan como instantánea.
+   */
   readonly totalReadings: number;
-  /** Fuentes acumuladas en el circuito. */
+  /** Fuentes acumuladas en el circuito, contando cada carga (un fichero repetido cuenta, INV-005). */
   readonly sources: number;
+  /**
+   * Qué fuentes conservan sus lecturas (ADR-0015 §2): la última cargada y, si se solapa con ella, la
+   * anterior. Lo que el expediente y el replay alcanzan es exactamente esto, y la vista lo dice.
+   */
+  readonly retained: {
+    readonly sourceIds: readonly string[];
+    /** Fuentes distintas del circuito (sin repetidos): el «M» de «lecturas retenidas: N ficheros de M». */
+    readonly distinctSources: number;
+  };
+  /**
+   * Cuántas fuentes distintas tienen instantánea y cuántas no. Sin instantánea quedan las anteriores a
+   * la versión 6 del almacén y las que el análisis no pudo construir; volver a cargar el fichero la crea.
+   */
+  readonly snapshots: {
+    readonly withSnapshot: number;
+    readonly withoutSnapshot: number;
+  };
   /** Eventos que esta fuente ya traía otra: se cuentan una vez y conservan las dos procedencias. */
   readonly shared: number;
   /** Eventos del tramo común que solo una de las dos trae. La fuente se contradice consigo misma. */
@@ -598,6 +620,29 @@ export interface CircuitViews {
        */
       readonly structure: readonly StructureSet[];
     }[];
+  };
+  /**
+   * Las instantáneas del circuito (ADR-0015): una por fuente distinta, en orden de ventana, y qué
+   * cambió de cada una a la siguiente. Las que no la tienen aparecen igual, con `hasSnapshot: false`
+   * —un fichero anterior a la versión 6 del almacén, o uno cuya instantánea no pudo construirse—.
+   */
+  readonly snapshots: {
+    readonly list: readonly {
+      readonly sourceId: string;
+      readonly fileName: string;
+      readonly window: Interval;
+      /** Cuándo se tomó la instantánea; sin ella, cuándo se cargó el fichero. */
+      readonly capturedAt: number;
+      readonly retained: boolean;
+      readonly hasSnapshot: boolean;
+    }[];
+    /** Entre instantáneas consecutivas (`compareSnapshots`). */
+    readonly deltas: readonly SnapshotDelta[];
+    /**
+     * Por qué falta alguna instantánea o comparación, en palabras: nunca se calla (R-EVI-006). Vacío
+     * cuando todo se pudo construir.
+     */
+    readonly problems: readonly string[];
   };
   /**
    * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando

@@ -50,6 +50,14 @@
   --viz-tramo-2: #d49a00;
   --viz-tramo-3: #1b9480;
   --viz-tramo-4: #c2185b;
+  /* Cuatro tonos más (3.50.0) para «El circuito a lo largo de los ficheros», que dibuja hasta ocho
+     secciones: validados por parejas vecinas contra esta superficie con el comprobador de paleta
+     (todas las nuevas por encima de 8 de ΔE en protan/deutan y de 15 en visión normal; solo queda
+     el aviso ya conocido de la pareja 3–4 y del ámbar por debajo de 3:1, que llevan leyenda y tabla). */
+  --viz-tramo-5: #0e7fa8;
+  --viz-tramo-6: #5f8a12;
+  --viz-tramo-7: #8a4a8a;
+  --viz-tramo-8: #b34f1f;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -92,6 +100,12 @@
     --viz-tramo-2: #eec14d;
     --viz-tramo-3: #4cc2ad;
     --viz-tramo-4: #e2659a;
+    /* Como los cuatro de arriba, más claros que la banda del comprobador a propósito (superficie
+       oscura); entre vecinos, ΔE >= 10 en protan/deutan, >= 19 en visión normal y todos por encima de 3:1. */
+    --viz-tramo-5: #3f9fd0;
+    --viz-tramo-6: #93b93a;
+    --viz-tramo-7: #c47fd0;
+    --viz-tramo-8: #e8824a;
   }
 }
 * { box-sizing: border-box; }
@@ -435,3 +449,43 @@ table.data th { color: var(--muted); font-weight: 600; }
 }
 /* El icono del botón del cajón dentro de una figura no es un gráfico: no se estira al ancho. */
 .chart .drawer-open svg { display: inline-block; width: 14px; height: 14px; }
+
+/* --- Evolución: el anillo recorre el tiempo (ADR-0015 §3, 3.50.0) -------------------------------
+   El control de tiempo va dentro de la figura del anillo, encima del selector de capas: «anterior»,
+   el deslizador, «siguiente» y la misma lista como `select` para teclado y lector de pantalla. En
+   el móvil el deslizador ocupa la fila entera y los botones se reparten debajo. */
+.time-control { margin: 0 0 10px; }
+.time-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.time-row .time-range { flex: 1 1 12rem; min-width: 8rem; margin: 0; accent-color: var(--viz-series); }
+.time-row .time-step { padding: 6px 12px; min-height: 32px; font-size: 0.9rem; white-space: nowrap; }
+.time-row .time-step:disabled { opacity: 0.45; cursor: default; }
+.time-row .time-select { font: inherit; font-size: 0.85rem; padding: 6px 8px; min-height: 32px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); max-width: 100%; min-width: 0; }
+.time-label { font-size: 0.85rem; margin: 4px 0 0; font-variant-numeric: tabular-nums; }
+/* La sección «Evolución»: la fila de cifras como chips (número en tinta, etiqueta en gris; el cero
+   apagado pero presente) y la lista compacta de cambios con su tipo como ficha. */
+.evolution h3 { margin: 16px 0 4px; }
+.evo-figures { display: flex; flex-wrap: wrap; gap: 6px 8px; list-style: none; margin: 8px 0; padding: 0; }
+.evo-figure { display: inline-flex; align-items: baseline; gap: 4px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg); font-size: 0.85rem; color: var(--muted); }
+.evo-figure .evo-n { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.evo-figure.zero { opacity: 0.6; }
+.evo-figure.zero .evo-n { color: var(--muted); font-weight: 500; }
+.evo-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; font-size: 0.9rem; }
+.evo-list li { padding-left: 10px; border-left: 3px solid var(--viz-accent); }
+.evo-list .chip, .source-list .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.evo-list .muted { display: inline; }
+/* Ficheros del circuito, en Datos: qué queda de cada uno en este dispositivo. */
+.source-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; font-size: 0.9rem; }
+.source-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.source-list .muted { margin: 0; }
+.source-list .chip.retained { border-color: var(--viz-series); color: var(--ink); }
+.source-list .chip.missing { border-color: var(--warn); color: var(--warn); }
+@media (any-pointer: coarse) {
+  .time-row .time-step, .time-row .time-select { min-height: 44px; }
+  .time-row .time-range { flex-basis: 100%; order: -1; }
+}
+@media (max-width: 560px) {
+  .time-row .time-range { flex-basis: 100%; order: -1; }
+  .time-row .time-select { flex: 1 1 100%; }
+}

@@ -1,18 +1,18 @@
 {
   "project": "TAG TRACE",
   "repository": "RBeno/tag-trace",
-  "documentationVersion": "1.44.0",
-  "currentPhase": "F3",
-  "phaseName": "Diagnóstico explicable",
+  "documentationVersion": "1.46.0",
+  "currentPhase": "F4",
+  "phaseName": "Memoria longitudinal y consolidación",
   "status": "in_progress",
   "baseline": "approved",
   "lastUpdated": "2026-09-26",
   "implementationStarted": true,
   "legacyRepository": "RBeno/tag-trace-agv",
   "nextTransition": {
-    "targetPhase": "F4",
-    "requiredApproval": "CONTINÚA FASE 4",
-    "gate": "G3"
+    "targetPhase": "F5",
+    "requiredApproval": "CONTINÚA FASE 5",
+    "gate": "G4"
   },
   "dataPolicy": {
     "processing": "local-only",

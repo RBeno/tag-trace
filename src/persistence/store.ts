@@ -8,15 +8,23 @@
  * **Migraciones explícitas desde el primer día.** El prototipo se quedó en la versión 1 sin ninguna
  * ruta de migración, así que el primer cambio de forma le habría costado los datos del usuario —los
  * únicos que no se pueden volver a pedir—. Aquí subir `STORE_VERSION` obliga a escribir su paso.
+ *
+ * **Versión 6 (ADR-0015).** Tres tablas: `circuits` (identidad, fuentes con sus metadatos, cobertura,
+ * listas, flota; **sin lecturas**), `sources` (las lecturas de cada fuente, solo mientras estén
+ * retenidas, R-DAT-023) y `snapshots` (una instantánea por fuente, lo que perdura de cada fichero).
+ * Hasta la versión 5 el circuito era un solo valor con todas sus lecturas, y el de auditoría pasó del
+ * tamaño máximo de un valor de IndexedDB en Chromium (OQ-142).
  */
 
 import type { Interval } from "../domain/coverage.js";
 import type { FleetPeriod } from "../domain/fleet.js";
 import type { Reading } from "../domain/reading.js";
 import type { ReviewEntry } from "../domain/review.js";
+import type { CircuitSnapshot } from "../domain/snapshot.js";
+import { splitLegacyCircuit, type LegacyCircuitRecord } from "./retention.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 5;
+export const STORE_VERSION = 6;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
@@ -26,6 +34,10 @@ const CIRCUITS = "circuits";
  * tanto se perdería. Aquí solo escribe la interfaz, y cada marca es su propia transacción.
  */
 const REVIEWS = "reviews";
+/** Las lecturas de cada fuente retenida, un registro por fuente: clave `[circuitId, sourceId]`. */
+const SOURCES = "sources";
+/** Una instantánea por fuente (ADR-0015): clave `[circuitId, sourceId]`. */
+const SNAPSHOTS = "snapshots";
 
 /** Las marcas de revisión de un circuito, por clave de hallazgo (`src/domain/review.ts`). */
 export interface StoredReviews {
@@ -41,6 +53,14 @@ export interface StoredSource {
   readonly acceptedRows: number;
   /** Tramo analizable de esta fuente; la cola cortada queda fuera (R-DAT-007). */
   readonly complete: Interval | null;
+  /** Si sus lecturas siguen en la tabla `sources` (R-DAT-023). Sin ellas no hay expediente ni replay. */
+  readonly retained: boolean;
+  /**
+   * Si tiene instantánea en la tabla `snapshots`. Es `false` en las fuentes anteriores a la versión 6
+   * —no hay análisis guardado con que fabricarla— y cuando el análisis no pudo construirla; volver a
+   * cargar el fichero la crea.
+   */
+  readonly snapshot: boolean;
 }
 
 /**
@@ -84,18 +104,36 @@ export interface StoredTagList {
   readonly fileName: string;
 }
 
+/**
+ * El circuito, sin lecturas: las lecturas retenidas viven en `sources` y lo que perdura de cada
+ * fichero en `snapshots`. Este registro es pequeño y se reescribe entero en cada importación.
+ */
 export interface StoredCircuit {
   readonly circuitId: string;
   readonly name: string;
   readonly zone: string;
+  /** Todas las fuentes cargadas, en orden de carga, con si están retenidas y si tienen instantánea. */
   readonly sources: readonly StoredSource[];
+  /** La cobertura de **todas** las fuentes aceptadas (R-DAT-007), retenidas o no. */
   readonly coverage: readonly Interval[];
-  readonly readings: readonly Reading[];
   /** Listas de planta vigentes. Ausente en circuitos guardados antes de la versión 2. */
   readonly lists?: readonly StoredTagList[];
   /** Historial de flota (DS-012). Ausente hasta que se carga, y en circuitos anteriores a la versión 4. */
   readonly fleet?: StoredFleet;
   readonly updatedAt: number;
+}
+
+/** Las lecturas de una fuente retenida. */
+export interface StoredSourceReadings {
+  readonly circuitId: string;
+  readonly sourceId: string;
+  readonly readings: readonly Reading[];
+}
+
+export interface StoredSnapshot {
+  readonly circuitId: string;
+  readonly sourceId: string;
+  readonly snapshot: CircuitSnapshot;
 }
 
 /**
@@ -110,13 +148,19 @@ export interface StoredFleet {
   readonly fileNames: readonly string[];
 }
 
+/** Todas las claves `[circuitId, *]` de una tabla con clave compuesta: un array ordena después de cualquier texto. */
+function circuitRange(circuitId: string): IDBKeyRange {
+  return IDBKeyRange.bound([circuitId], [circuitId, []]);
+}
+
 /**
  * La escalera de migraciones, un peldaño por versión.
  *
- * Cada paso recibe la base a medio abrir y deja el esquema en su versión destino. No se salta
- * ninguno: abrir una base vieja recorre los peldaños que le falten, en orden.
+ * Cada paso recibe la base a medio abrir —y la transacción de actualización, que permite leer y
+ * escribir— y deja el esquema en su versión destino. No se salta ninguno: abrir una base vieja
+ * recorre los peldaños que le falten, en orden.
  */
-const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDatabase) => void }[] = [
+const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDatabase, tx: IDBTransaction) => void }[] = [
   {
     to: 1,
     apply: (db) => {
@@ -155,6 +199,36 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
       db.createObjectStore(REVIEWS, { keyPath: "circuitId" });
     },
   },
+  {
+    to: 6,
+    // El circuito deja de llevar sus lecturas (ADR-0015). Se crean `sources` y `snapshots` y, en la
+    // misma transacción de actualización, cada circuito antiguo se parte: sus lecturas van a
+    // `sources` por procedencia, se aplica la retención (R-DAT-023) y el registro queda sin
+    // `readings`. Las instantáneas de los ficheros antiguos no se pueden fabricar —no hay análisis
+    // guardado— y las fuentes quedan con `snapshot: false` hasta que se vuelvan a cargar.
+    //
+    // Se hace aquí y no «la próxima vez que se importe» porque una base a medias —unos circuitos
+    // partidos y otros no— es justo el estado que ninguna función de lectura sabría interpretar.
+    apply: (db, tx) => {
+      db.createObjectStore(SOURCES, { keyPath: ["circuitId", "sourceId"] });
+      db.createObjectStore(SNAPSHOTS, { keyPath: ["circuitId", "sourceId"] });
+      const circuits = tx.objectStore(CIRCUITS);
+      const sources = tx.objectStore(SOURCES);
+      const cursor = circuits.openCursor();
+      cursor.onsuccess = () => {
+        const current = cursor.result;
+        if (current === null) return;
+        const legacy = current.value as LegacyCircuitRecord & Record<string, unknown>;
+        const split = splitLegacyCircuit({ ...legacy, readings: legacy.readings ?? [], sources: legacy.sources ?? [] });
+        for (const entry of split.readings) {
+          sources.put({ circuitId: legacy.circuitId, sourceId: entry.sourceId, readings: entry.readings } satisfies StoredSourceReadings);
+        }
+        const { readings: _readings, ...rest } = legacy;
+        current.update({ ...rest, sources: split.sources });
+        current.continue();
+      };
+    },
+  },
 ];
 
 if (MIGRATIONS[MIGRATIONS.length - 1]?.to !== STORE_VERSION) {
@@ -166,9 +240,10 @@ function open(): Promise<IDBDatabase> {
     const request = indexedDB.open(DATABASE, STORE_VERSION);
     request.onupgradeneeded = (event) => {
       const db = request.result;
+      const tx = request.transaction as IDBTransaction;
       const from = event.oldVersion;
       for (const step of MIGRATIONS) {
-        if (step.to > from) step.apply(db);
+        if (step.to > from) step.apply(db, tx);
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -184,9 +259,27 @@ function run<T>(store: IDBObjectStore, request: IDBRequest<T>): Promise<T> {
   });
 }
 
+/** Espera a que una transacción de escritura termine; o queda todo lo escrito o no queda nada. */
+function settle(tx: IDBTransaction, failure: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error(failure));
+    tx.onabort = () => reject(tx.error ?? new Error(`${failure} La escritura se abortó.`));
+  });
+}
+
 /** ¿Hay almacén? En un contexto sin IndexedDB —o con datos de sitio bloqueados— no lo hay. */
 export function isAvailable(): boolean {
   return typeof indexedDB !== "undefined";
+}
+
+/**
+ * Abre el almacén y lo cierra: sirve para que la migración pendiente se haga **al abrir la
+ * aplicación**, no a mitad de la primera importación, que es cuando menos se espera una espera larga.
+ */
+export async function ensureStore(): Promise<void> {
+  const db = await open();
+  db.close();
 }
 
 export async function listCircuits(): Promise<readonly StoredCircuit[]> {
@@ -212,7 +305,7 @@ export async function loadCircuit(circuitId: string): Promise<StoredCircuit | un
 }
 
 /**
- * Guarda un circuito entero en una transacción.
+ * Guarda el registro del circuito —sin lecturas— en una transacción.
  *
  * O queda el estado nuevo o queda el anterior: nunca una mezcla. Es lo que hace que cancelar a
  * mitad no deje un proyecto a medias con aspecto de estar bien (INV-006).
@@ -220,13 +313,97 @@ export async function loadCircuit(circuitId: string): Promise<StoredCircuit | un
 export async function saveCircuit(circuit: StoredCircuit): Promise<void> {
   const db = await open();
   try {
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(CIRCUITS, "readwrite");
-      tx.objectStore(CIRCUITS).put(circuit);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error("No se pudo guardar el circuito."));
-      tx.onabort = () => reject(tx.error ?? new Error("La escritura se abortó."));
-    });
+    const tx = db.transaction(CIRCUITS, "readwrite");
+    tx.objectStore(CIRCUITS).put(circuit);
+    await settle(tx, "No se pudo guardar el circuito.");
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Una importación acumulada, en **una sola** transacción: el circuito sin lecturas, las lecturas de
+ * la fuente nueva y la retirada de las que dejan de estar retenidas. Tres transacciones dejarían,
+ * ante un cierre a mitad, un circuito que dice retener lo que ya no está (INV-006).
+ */
+export async function saveAccumulation(input: {
+  readonly circuit: StoredCircuit;
+  readonly readings: readonly { readonly sourceId: string; readonly readings: readonly Reading[] }[];
+  readonly drop: readonly string[];
+}): Promise<void> {
+  const db = await open();
+  try {
+    const tx = db.transaction([CIRCUITS, SOURCES], "readwrite");
+    tx.objectStore(CIRCUITS).put(input.circuit);
+    const sources = tx.objectStore(SOURCES);
+    for (const entry of input.readings) {
+      sources.put({ circuitId: input.circuit.circuitId, sourceId: entry.sourceId, readings: entry.readings } satisfies StoredSourceReadings);
+    }
+    for (const sourceId of input.drop) sources.delete([input.circuit.circuitId, sourceId]);
+    await settle(tx, "No se pudo guardar la importación.");
+  } finally {
+    db.close();
+  }
+}
+
+/** Las lecturas de las fuentes retenidas de un circuito, un registro por fuente (R-DAT-023). */
+export async function loadRetainedReadings(circuitId: string): Promise<readonly StoredSourceReadings[]> {
+  const db = await open();
+  try {
+    const tx = db.transaction(SOURCES, "readonly");
+    const store = tx.objectStore(SOURCES);
+    return await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<StoredSourceReadings[]>);
+  } finally {
+    db.close();
+  }
+}
+
+export async function saveSourceReadings(circuitId: string, sourceId: string, readings: readonly Reading[]): Promise<void> {
+  const db = await open();
+  try {
+    const tx = db.transaction(SOURCES, "readwrite");
+    tx.objectStore(SOURCES).put({ circuitId, sourceId, readings } satisfies StoredSourceReadings);
+    await settle(tx, "No se pudieron guardar las lecturas de la fuente.");
+  } finally {
+    db.close();
+  }
+}
+
+/** Retira del almacén las lecturas de esas fuentes: dejan de estar retenidas y quedan como instantánea. */
+export async function dropSourceReadings(circuitId: string, sourceIds: readonly string[]): Promise<void> {
+  if (sourceIds.length === 0) return;
+  const db = await open();
+  try {
+    const tx = db.transaction(SOURCES, "readwrite");
+    const store = tx.objectStore(SOURCES);
+    for (const sourceId of sourceIds) store.delete([circuitId, sourceId]);
+    await settle(tx, "No se pudieron retirar las lecturas.");
+  } finally {
+    db.close();
+  }
+}
+
+export async function saveSnapshot(snapshot: CircuitSnapshot): Promise<void> {
+  const db = await open();
+  try {
+    const tx = db.transaction(SNAPSHOTS, "readwrite");
+    tx.objectStore(SNAPSHOTS).put({ circuitId: snapshot.circuitId, sourceId: snapshot.sourceId, snapshot } satisfies StoredSnapshot);
+    await settle(tx, "No se pudo guardar la instantánea.");
+  } finally {
+    db.close();
+  }
+}
+
+/** Las instantáneas de un circuito, en orden de ventana: la secuencia es la evolución (ADR-0015 §3). */
+export async function loadSnapshots(circuitId: string): Promise<readonly CircuitSnapshot[]> {
+  const db = await open();
+  try {
+    const tx = db.transaction(SNAPSHOTS, "readonly");
+    const store = tx.objectStore(SNAPSHOTS);
+    const stored = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<StoredSnapshot[]>);
+    return stored
+      .map((entry) => entry.snapshot)
+      .sort((a, b) => a.window.from - b.window.from || a.window.to - b.window.to || a.sourceId.localeCompare(b.sourceId));
   } finally {
     db.close();
   }
@@ -235,14 +412,14 @@ export async function saveCircuit(circuit: StoredCircuit): Promise<void> {
 export async function deleteCircuit(circuitId: string): Promise<void> {
   const db = await open();
   try {
-    await new Promise<void>((resolve, reject) => {
-      // El circuito y su revisión se van juntos: una marca sin su circuito no significa nada.
-      const tx = db.transaction([CIRCUITS, REVIEWS], "readwrite");
-      tx.objectStore(CIRCUITS).delete(circuitId);
-      tx.objectStore(REVIEWS).delete(circuitId);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error("No se pudo borrar el circuito."));
-    });
+    // El circuito, sus lecturas, sus instantáneas y su revisión se van juntos: una marca o una
+    // instantánea sin su circuito no significan nada.
+    const tx = db.transaction([CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS], "readwrite");
+    tx.objectStore(CIRCUITS).delete(circuitId);
+    tx.objectStore(REVIEWS).delete(circuitId);
+    tx.objectStore(SOURCES).delete(circuitRange(circuitId));
+    tx.objectStore(SNAPSHOTS).delete(circuitRange(circuitId));
+    await settle(tx, "No se pudo borrar el circuito.");
   } finally {
     db.close();
   }

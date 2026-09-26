@@ -6,16 +6,27 @@
  * distinguía de uno válido. Aquí un proyecto corrupto **se nota**.
  *
  * Lo que va dentro y lo que no: `.agvproj` lleva la identidad del circuito, su configuración, el
- * inventario de fuentes con sus hashes y la cobertura. **No lleva el bruto**, por decisión de
- * ADR-0012. Las lecturas se acumulan en el dispositivo; el fichero es lo que viaja entre
- * dispositivos, que además es un intercambio manual (CON-002).
+ * inventario de fuentes con sus hashes, la cobertura y, desde el esquema 2, **las instantáneas de
+ * cada fichero** (sección `instantaneas`, ADR-0015 §5): es lo que hace que el circuito viaje con toda
+ * su evolución. **No lleva el bruto**, por decisión de ADR-0012. Las lecturas se acumulan en el
+ * dispositivo; el fichero es lo que viaja entre dispositivos, que además es un intercambio manual
+ * (CON-002).
  */
 
 import { canonicalise, semanticHash } from "../domain/semantic-hash.js";
 import { readZip, writeZip, ZipError } from "./zip.js";
 
 /** Un número desconocido se rechaza sin tocar nada. Subirlo obliga a escribir su migración. */
-export const AGVPROJ_SCHEMA_VERSION = 1;
+export const AGVPROJ_SCHEMA_VERSION = 2;
+
+/**
+ * Los esquemas anteriores que esta versión sigue abriendo, con lo que hay que hacer con cada uno.
+ *
+ * El 1 no llevaba la sección `instantaneas`: un proyecto de entonces se abre tal cual, sin
+ * instantáneas, y lo dice quien lo enseña (`instantaneas` ausente). No hay nada que reescribir: las
+ * secciones que traía significan lo mismo. Un esquema que no esté aquí ni sea el vigente se rechaza.
+ */
+export const AGVPROJ_READABLE_VERSIONS: readonly number[] = [1, AGVPROJ_SCHEMA_VERSION];
 
 const MANIFEST = "manifest.json";
 
@@ -110,8 +121,9 @@ export async function readProject(bytes: Uint8Array): Promise<Project> {
   }
   const manifest = JSON.parse(new TextDecoder().decode(manifestEntry.data)) as ProjectManifest;
 
-  // 2. Una versión desconocida se rechaza sin tocar el almacenamiento local.
-  if (manifest.schema_version !== AGVPROJ_SCHEMA_VERSION) {
+  // 2. Una versión desconocida se rechaza sin tocar el almacenamiento local. Las anteriores conocidas
+  //    se abren: el esquema 1 es el 2 sin la sección `instantaneas`.
+  if (!AGVPROJ_READABLE_VERSIONS.includes(manifest.schema_version)) {
     throw new ProjectError(
       `El proyecto usa el esquema ${manifest.schema_version} y esta versión entiende el ` +
         `${AGVPROJ_SCHEMA_VERSION}.`,

@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.32.0
+version: 0.33.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -314,14 +314,35 @@ Decisiones del propietario al revisar la conversión de la lista de PC2:
   `vacio`), y es lo que monta los tramos FIFO de zona cargada (R-FLO-001). Las calles de carga online
   van en `vacio` (R-FLO-003).
 
+## F4 abierta (2026-09-26)
+
+El propietario autoriza F4 con estas palabras, en la conversación del 2026-09-26, tras aprobar
+ADR-0015: «De acuerdo con las dos, adelante con el ADR y la entrega. Y a continuación continúa con
+Fase 4». Las dos decisiones aprobadas: retener en crudo solo la última exportación (o dos si se
+solapan) y separar la instantánea automática de cada fichero de la consolidación humana. G3 se
+cierra con lo que F3 dejó demostrado —diagnóstico explicable sobre el circuito de auditoría con 53
+clases plantadas, revisión en campo, interfaz por preguntas— y con lo que sigue abierto declarado,
+no marcado: OQ-101 a OQ-131 en su estado, OQ-143 sobre la retención.
+
+Lo que F4 hereda ya hecho por la última entrega de F3 (`[3.50.0]`): la instantánea por fichero, el
+almacén por fuentes con retención, las comparaciones entre ficheros desde las instantáneas y el
+`.agvproj` con ellas. Lo que F4 tiene que crear (`ROADMAP.md`): la memoria consolidada como
+versiones vN append-only elegidas por el propietario entre las instantáneas revisadas, el
+comparador entre lo consolidado y lo nuevo (el «esperado» frente a lo observado), la
+previsualización y el botón de confirmación humana, la revocación, y el presupuesto de crecimiento
+medido. Ninguna IA consolida: la instantánea se guarda sola, la memoria la aprueba una persona
+(ADR-0010, `MEMORY_CONSOLIDATION.md` §6).
+
+La frase de transición a F5 es `CONTINÚA FASE 5`, y ninguna IA la escribe por el propietario.
+
 ## Estado al 2026-09-26 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
 `project_state.json` y en `CHANGELOG.md`; lo que no esté escrito en el repositorio no existe para la
 conversación siguiente.
 
-- **Fase F3** (diagnóstico explicable), en curso. F4 espera `CONTINÚA FASE 4` del propietario
-  (ADR-0010). **Última entrega (2026-09-26): revisión de toda la lógica de medición y análisis**
+- **Fase F4** (memoria longitudinal y consolidación), abierta el 2026-09-26 por el propietario
+  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-26): revisión de toda la lógica de medición y análisis**
   (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
   regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
   (OQ-135 a OQ-141), dos de ellas contradicciones código↔documento que no se tocan hasta que decida.
