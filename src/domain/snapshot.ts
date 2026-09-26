@@ -16,10 +16,14 @@
  * expedientes, estados por instante. Todo eso se reconstruye cargando el fichero otra vez.
  */
 
+import type { StructureSet } from "./anchor-sums.js";
 import type { Interval } from "./coverage.js";
+import type { DriftComparison, DriftThresholds } from "./drift.js";
+import type { FranjaThresholds, SegmentHistory } from "./franjas.js";
 import type { TagClass } from "./inventory.js";
 import type { Band, Regime } from "./segment-bands.js";
 import type { ReviewState } from "./review.js";
+import type { TagChangeThresholds } from "./tag-changes.js";
 
 export const SNAPSHOT_SCHEMA_VERSION = 1;
 
@@ -219,3 +223,41 @@ export interface SnapshotDelta {
 export function compareSnapshots(before: CircuitSnapshot, after: CircuitSnapshot): SnapshotDelta {
   throw new Error(`compareSnapshots: pendiente de implementar (${before.sourceId} → ${after.sourceId})`);
 }
+
+// --- Comparaciones entre ficheros, desde las instantáneas (ADR-0015 §3) ---------------------------
+
+/**
+ * Qué tramos cambian a lo largo de los ficheros (R-TIM-010, R-TIM-011), leído de las instantáneas en
+ * orden de ventana. Mismo criterio y mismo resultado que `segmentHistories` de `franjas.ts`.
+ */
+export function historiesFromSnapshots(
+  snapshots: readonly CircuitSnapshot[],
+  thresholds: FranjaThresholds,
+): readonly SegmentHistory[] {
+  throw new Error(`historiesFromSnapshots: pendiente de implementar (${snapshots.length} instantáneas, ${thresholds.minPositionSamples})`);
+}
+
+/**
+ * Tags insertados, retirados o sustituidos entre dos ficheros seguidos por la suma entre anclas
+ * (R-DAT-021), leído de `anchorGaps`. `null` si no comparten anclas.
+ */
+export function structureBetweenSnapshots(
+  before: CircuitSnapshot,
+  after: CircuitSnapshot,
+  thresholds: TagChangeThresholds,
+): StructureSet | null {
+  throw new Error(`structureBetweenSnapshots: pendiente de implementar (${before.sourceId} → ${after.sourceId}, ${thresholds.maxChance})`);
+}
+
+/**
+ * Deriva entre dos periodos distantes (R-DAT-016, R-AGV-013): tags desaparecidos y nuevos con su
+ * prueba de azar, y AGV que dejaron de leer o no adoptaron, leído de los vértices.
+ */
+export function driftBetweenSnapshots(
+  early: CircuitSnapshot,
+  late: CircuitSnapshot,
+  thresholds: DriftThresholds,
+): DriftComparison {
+  throw new Error(`driftBetweenSnapshots: pendiente de implementar (${early.sourceId} → ${late.sourceId}, ${thresholds.maxChance})`);
+}
+
