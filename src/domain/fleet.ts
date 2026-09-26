@@ -342,7 +342,10 @@ export function buildFleetTimeline(input: FleetInput): FleetTimeline {
     // a partir de `longAbsenceMs` es desconexión (R-AGV-017).
     // Un borde que cae en una parada de la producción es esperar con el resto: parado, justificado.
     const edge = (from: number, to: number, detail: SilenceDetail): Piece => {
-      if (to - from < input.minGapMs) return [from, to, "leyendo"];
+      // Un borde corto es el ritmo normal solo si el AGV leyó en ese tramo: un tramo entero sin
+      // ninguna lectura suya no tiene ritmo que juzgar, por corto que sea (hallado con una
+      // exportación corta tras un hueco: el AGV que no aparecía en ella salía «leyendo»).
+      if (detail.edge !== "todo" && to - from < input.minGapMs) return [from, to, "leyendo"];
       const stopped = input.productionStops.reduce(
         (sum, stop) => sum + Math.max(0, Math.min(to, stop.to) - Math.max(from, stop.from)),
         0,

@@ -2,6 +2,30 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.43.0] - 2026-09-26
+
+Revisión de toda la lógica de medición y análisis, módulo a módulo, con cada fallo reproducido en
+una prueba antes de tocarlo. Primera entrega: flota, expediente y configuración de calles.
+
+### Corregido
+
+- **Un tramo de cobertura corto sin lecturas del AGV salía «leyendo»** (R-AGV-014): con una
+  exportación de pocos minutos tras un hueco, el AGV que no aparecía en ella se dibujaba con ritmo
+  normal. Un borde corto solo es ritmo si el AGV leyó en ese tramo.
+- **Silencio abierto medido contra un hueco entre exportaciones** (expediente): un AGV cuya última
+  lectura caía en una exportación anterior salía «sin leer desde» esa hora. Solo se mide si su
+  última lectura cae en el último tramo de cobertura.
+- **Calles de carga mal declaradas que se montaban** (R-CO-001): un tag repetido en la calle, dos
+  tags con el mismo `orden`, el mismo tag en dos papeles, o dos calles con la misma parada precisa o
+  salida. Ahora no se montan y el problema lo dice. Un `orden` vacío ya no se ordena «primero»: con
+  `orden` a medias manda el fichero y se avisa (calles y anclas).
+
+### Preguntas abiertas
+
+- OQ-135 a OQ-141: dos contradicciones código↔documento (carga online como `especial`; definición
+  de *deriva*), la hora repetida de octubre, tres medidas que afirman de más, el historial de flota
+  con alta y baja el mismo día, las constantes de planta que siguen en código y `segmentLaps`.
+
 ## [3.42.0] - 2026-09-26
 
 La auditoría, leída entera y no solo su línea de DETECTA: dos falsos positivos que ninguna sonda

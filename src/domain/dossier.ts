@@ -203,9 +203,14 @@ function computeAgvDossier(
     }
   }
 
+  // Un silencio abierto es el que llega hasta el final de la cobertura **dentro del último tramo**:
+  // si la última lectura cae en un tramo anterior, lo que hay entre medias es un hueco entre
+  // exportaciones (R-DAT-007), no un silencio, y la vida de la flota ya lo enseña como ausente.
   const last = own[own.length - 1] ?? null;
+  const lastSpan = spans[spans.length - 1];
+  const inLastSpan = last !== null && (lastSpan === undefined || (lastSpan.from <= last.time.utcMs && last.time.utcMs <= lastSpan.to));
   const openSilence =
-    last !== null && coverageEndUtcMs - last.time.utcMs >= minGapMs ? last.time.utcMs : null;
+    last !== null && inLastSpan && coverageEndUtcMs - last.time.utcMs >= minGapMs ? last.time.utcMs : null;
 
   return {
     agvId,

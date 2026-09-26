@@ -107,6 +107,47 @@ describe("configuración de calles (R-CO-001)", () => {
     expect(problems.join(" ")).toContain("salida");
   });
 
+  it("una calle que da el mismo tag a dos papeles, o repite un tag o un orden, no se monta", () => {
+    const mismoTag = readCoLanes([entry("760", "entrada", "calle-d", 1), entry("760", "parada-precisa", "calle-d", 2), entry("762", "salida", "calle-d", 3)]);
+    expect(mismoTag.lanes).toEqual([]);
+    expect(mismoTag.problems.join(" ")).toContain("repite el tag 760");
+    const paradaYSalida = readCoLanes([entry("770", "parada-precisa", "calle-e", 1), entry("771", "", "calle-e", 2), entry("770", "salida", "calle-e", 3)]);
+    expect(paradaYSalida.lanes).toEqual([]);
+    const mismoOrden = readCoLanes([entry("780", "entrada", "calle-f", 1), entry("781", "parada-precisa", "calle-f", 1), entry("782", "salida", "calle-f", 3)]);
+    expect(mismoOrden.lanes).toEqual([]);
+    expect(mismoOrden.problems.join(" ")).toContain("mismo «orden»");
+  });
+
+  it("dos calles que comparten la parada precisa o la salida no se montan; una entrada común solo avisa", () => {
+    const compartida = readCoLanes([
+      ...lane("calle-g", 800),
+      entry("810", "entrada", "calle-h", 1),
+      entry("801", "parada-precisa", "calle-h", 2),
+      entry("812", "salida", "calle-h", 3),
+      ...lane("calle-i", 820),
+    ]);
+    expect(compartida.lanes.map((lane) => lane.laneId)).toEqual(["calle-i"]);
+    expect(compartida.problems.join(" ")).toContain("comparten la parada precisa 801");
+    const entradaComun = readCoLanes([
+      ...lane("calle-j", 830),
+      entry("830", "entrada", "calle-k", 1),
+      entry("841", "parada-precisa", "calle-k", 2),
+      entry("842", "salida", "calle-k", 3),
+    ]);
+    expect(entradaComun.lanes.map((lane) => lane.laneId)).toEqual(["calle-j", "calle-k"]);
+    expect(entradaComun.problems.join(" ")).toContain("comparten la entrada 830");
+  });
+
+  it("con «orden» solo en parte de las filas manda el orden del fichero, y se avisa; un null no va primero", () => {
+    const { lanes, problems } = readCoLanes([
+      entry("850", "entrada", "calle-l", 1),
+      entry("851", "parada-precisa", "calle-l", null),
+      entry("852", "salida", "calle-l", 3),
+    ]);
+    expect(lanes[0]?.tags).toEqual(["850", "851", "852"]);
+    expect(problems.join(" ")).toContain("orden a medias");
+  });
+
   it("un tag de carga sin calle se declara en vez de repartirse a ojo", () => {
     const { lanes, problems } = readCoLanes([entry("900", "entrada", "")]);
     expect(lanes).toEqual([]);

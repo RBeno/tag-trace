@@ -157,6 +157,23 @@ describe("vida de cada AGV (buildFleetTimeline)", () => {
     expect(countAt(timeline, 19)).toBe("1 de 1, 1 leyendo (+0)");
   });
 
+  it("un tramo de cobertura corto sin ninguna lectura del AGV no es «leyendo»: no tiene ritmo que juzgar", () => {
+    // Dos exportaciones: la segunda dura 4 min (menos que el umbral de silencio). A lee en las dos;
+    // B solo en la primera. En la segunda B no aparece, y eso no puede dibujarse como leyendo.
+    const timeline = buildFleetTimeline(
+      input({
+        coverage: [
+          { from: 0, to: 60 * MINUTE },
+          { from: 120 * MINUTE, to: 124 * MINUTE },
+        ],
+        readings: [...every("A", 0, 60), ...every("A", 120, 124), ...every("B", 0, 60)],
+        history: [all("A"), all("B")],
+      }),
+    );
+    expect(stateAt(timeline, "A", 122)).toBe("leyendo");
+    expect(stateAt(timeline, "B", 122)).not.toBe("leyendo");
+  });
+
   it("quien lee sin estar asignado sale aparte y no suma a N", () => {
     const timeline = buildFleetTimeline(input({ readings: [...every("A", 0, 60), ...every("X", 0, 60)], history: [all("A")] }));
     expect(stateAt(timeline, "X", 30)).toBe("leyendo-sin-asignar");
