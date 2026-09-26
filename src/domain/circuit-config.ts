@@ -184,6 +184,12 @@ export function readZones(entries: readonly ConfigEntry[]): ZoneConfig {
 export interface CriticalPointsConfig {
   /** Función crítica declarada de cada tag, tal como la trae la lista `critico`. */
   readonly funcionOf: ReadonlyMap<string, string>;
+  /**
+   * El `grupo` declarado de cada tag crítico, cuando lo trae: distingue funciones iguales con destino
+   * distinto, como un cambio de MTC a cada calle. Dos tags seguidos con la misma función y distinto
+   * grupo no son un refuerzo (R-GRA-016).
+   */
+  readonly groupOf: ReadonlyMap<string, string>;
   readonly problems: readonly string[];
 }
 
@@ -192,12 +198,18 @@ export interface CriticalPointsConfig {
  *
  * Calcada de `readZones`: una fila por tag, sin agrupar por papel como sí hace una calle. La función
  * es dato de planta declarado y nunca se deduce (R-GRA-007), así que un valor fuera de la taxonomía
- * se conserva con su advertencia en vez de descartarse o adivinarse.
+ * se conserva con su advertencia en vez de descartarse o adivinarse: el tag cuenta como crítico con
+ * la función que planta le dio.
  */
 export function readCriticalPoints(entries: readonly ConfigEntry[]): CriticalPointsConfig {
   const funcionOf = new Map<string, string>();
+  const groupOf = new Map<string, string>();
   const problems: string[] = [];
   const known = LIST_FUNCTIONS.critico as readonly string[];
+  // Una función de planta fuera de la taxonomía sigue siendo crítica (propietario, 2026-09-26): se
+  // avisa una vez por función, con sus tags, y no una vez por tag, porque en planta la misma función
+  // se repite en muchos tags y el aviso es sobre la función, no sobre cada uno.
+  const unknownTags = new Map<string, string[]>();
 
   for (const entry of entries) {
     if (entry.funcion === "") {
@@ -207,10 +219,9 @@ export function readCriticalPoints(entries: readonly ConfigEntry[]): CriticalPoi
       continue;
     }
     if (!known.includes(entry.funcion)) {
-      problems.push(
-        `El tag ${entry.tagId} declara la función «${entry.funcion}», que no es ninguna de ` +
-          `${known.join(", ")}. Se conserva, pero no se reconoce.`,
-      );
+      const tags = unknownTags.get(entry.funcion) ?? [];
+      if (!tags.includes(entry.tagId)) tags.push(entry.tagId);
+      unknownTags.set(entry.funcion, tags);
     }
     const previous = funcionOf.get(entry.tagId);
     if (previous !== undefined && previous !== entry.funcion) {
@@ -221,9 +232,16 @@ export function readCriticalPoints(entries: readonly ConfigEntry[]): CriticalPoi
       continue;
     }
     funcionOf.set(entry.tagId, entry.funcion);
+    if (entry.grupo !== "") groupOf.set(entry.tagId, entry.grupo);
+  }
+  for (const [funcion, tags] of unknownTags) {
+    problems.push(
+      `La función «${funcion}» (${tags.length === 1 ? "tag" : "tags"} ${tags.join(", ")}) no es ninguna de ` +
+        `${known.join(", ")}. Cuenta como punto crítico con su nombre, pero no tiene una regla propia.`,
+    );
   }
 
-  return { funcionOf, problems };
+  return { funcionOf, groupOf, problems };
 }
 
 export interface LapAnchorsConfig {

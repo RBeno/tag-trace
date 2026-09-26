@@ -244,9 +244,10 @@ export function renderFranjas(panel: HTMLElement, views: CircuitViews, deps: Fra
         lapMs: measure.lapMs,
         tags: measure.positions.map((position) => {
           const marked = marks.get(`${measure.sourceId}\u0000${position.tagId}`);
+          const section = views.sections?.[position.tagId] ?? null;
           return marked === undefined
-            ? { tagId: position.tagId, offsetMs: position.offsetMs }
-            : { tagId: position.tagId, offsetMs: position.offsetMs, mark: marked.mark, note: marked.note };
+            ? { tagId: position.tagId, offsetMs: position.offsetMs, section }
+            : { tagId: position.tagId, offsetMs: position.offsetMs, mark: marked.mark, note: marked.note, section };
         }),
       }));
     if (rows.length > 0) panel.append(ringTimeChart(rows));

@@ -103,7 +103,31 @@ export type DefectClass =
   /** La lista pone dos vecinos cambiados de sitio y otro lejos del suyo; las lecturas no cambian (R-GRA-015). */
   | "lista-con-otro-orden"
   /** La lista escribe un tag con un dígito cambiado; en su sitio se lee el de verdad (R-GRA-015). */
-  | "lista-con-numero-mal-escrito";
+  | "lista-con-numero-mal-escrito"
+  /**
+   * Contexto: la limpieza de la lista junta lo que ya está plantado —los declarados que nadie lee, los
+   * cambiados de orden y el refuerzo al que le falta un tag— sin plantar nada nuevo (R-GRA-017).
+   */
+  | "limpieza-de-la-lista"
+  /**
+   * Contexto: con una línea declarada, las tres paradas de la producción ya plantadas son paradas de
+   * la línea con AGV esperando, y el pulmón se mide donde esperan (R-FLO-010).
+   */
+  | "linea-parada-con-pulmon"
+  /**
+   * Contexto: los vehículos que no tienen el 60 en memoria pasan por la línea sin leerlo, con la
+   * cadencia normal: hacen la parada y no leen el tag (R-FLO-011).
+   */
+  | "linea-tag-sin-leer"
+  /**
+   * Contexto: el tiempo sin paso de la línea se mide contra su ciclo local, y el de las paradas de la
+   * producción plantadas cuenta como línea parada con AGV esperando (R-FLO-010).
+   */
+  | "linea-tiempo-sin-paso"
+  /** El mismo tag de noche, declarado en la lista `noche` de planta: explicado, sin comprobarlo. */
+  | "tag-de-noche-declarado"
+  /** Dos desvinculaciones seguidas en el circuito, una sin leerse nunca: la otra sostiene la función (R-GRA-016). */
+  | "refuerzo-sin-lectura";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -303,6 +327,21 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
    */
   const vinculacionTag = ring[15] as string;
   const desvinculacionTag = ring[65] as string;
+  /**
+   * Refuerzo (R-GRA-016, Parte 54): el tag siguiente a la desvinculación se declara con la misma
+   * función y no se lee nunca. La desvinculación se sigue leyendo: es un refuerzo haciendo su
+   * trabajo, con la función en pie y la redundancia perdida. Se apoya en un tag crítico que ya se
+   * leía para no añadir lecturas críticas nuevas, que son la base de la parada de la producción
+   * (R-AGV-018) y moverían las franjas de otras clases.
+   */
+  const refuerzoSinLectura = ring[66] as string;
+  const refuerzoLeido = desvinculacionTag;
+  /**
+   * La línea (R-FLO-010, R-FLO-011): el 59 y el 60. Los vehículos «ciegos» no leen nunca el 60 (no lo
+   * tienen en memoria, `omision-por-memoria`), así que pasan por la línea leyendo solo el 59: hacen la
+   * parada, pero no leen el tag. Solo declaración: las lecturas no cambian.
+   */
+  const lineaPosicion = 59;
   const mantenimiento = ["90001", "90002"]; // fuera del anillo declarado
 
   const ciegos = vehicles.filter((_, index) => index % 8 === 0); // se saltan `porMemoria`
@@ -613,6 +652,10 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
           debtMs += extra;
         }
       }
+
+      // El refuerzo que no se lee (Parte 54) se calla aquí, al final, y no arriba con los nunca leídos:
+      // así consume los mismos sorteos que antes y no desplaza la secuencia de ningún vehículo.
+      if (tag === refuerzoSinLectura) lee = false;
 
       if (lee) {
         filas.push({ t: now, v: vehicle, tag });
@@ -984,6 +1027,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       ),
     )
     .concat([`critico;${desvinculacionTag};;desvinculacion`])
+    .concat([`critico;${refuerzoSinLectura};;desvinculacion`])
     .concat(
       lanes.flatMap((lane) =>
         (
@@ -997,6 +1041,8 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     )
     .concat([...zoneOf].map(([tag, zona]) => `zona;${tag};;;${zona};`))
     .concat([`ancla;${ring[0] as string};1`])
+    // La línea (Parte 56, R-FLO-010): solo declaración, no cambia ninguna lectura.
+    .concat([`linea;${ring[lineaPosicion] as string};1`, `linea;${ring[lineaPosicion + 1] as string};2`])
     .join("\r\n");
 
   const plantados = new Set([
@@ -1030,6 +1076,8 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     // Parte 53: el tag de verdad del número mal escrito, que la lista no tiene. Los cambiados de
     // orden siguen limpios: una errata de la lista no puede decir nada de un tag leído.
     listaMalEscritoReal,
+    // Parte 54: el tag del refuerzo que no se lee. El otro sigue limpio: se lee con normalidad.
+    refuerzoSinLectura,
   ]);
 
   const defects: PlantedDefect[] = [
@@ -1334,6 +1382,43 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       mustNotSay: "que sea candidato a una posición del circuito, ni que otro tag sea de noche",
     },
     {
+      kind: "linea-parada-con-pulmon",
+      tags: [ring[lineaPosicion] as string],
+      vehicles: [],
+      expect: "cada parada de la producción plantada, una parada de la línea con AGV esperando en el pulmón, y el pulmón medido",
+      mustNotSay: "que a la línea le faltaron AGV en una parada de la producción",
+    },
+    {
+      kind: "linea-tiempo-sin-paso",
+      tags: [],
+      vehicles: [],
+      expect: "el tiempo sin paso con AGV esperando cubre casi entero el de las tres paradas de la producción plantadas",
+      mustNotSay: "que en esas paradas le faltaran AGV a la línea",
+    },
+    {
+      kind: "linea-tag-sin-leer",
+      tags: [ring[lineaPosicion + 1] as string],
+      vehicles: ciegos,
+      expect: "exactamente los vehículos sin el 60 en memoria, que pasan por la línea sin leerlo en todos sus pasos",
+      mustNotSay: "que no hicieran la parada, o cualquier otro vehículo",
+    },
+    {
+      kind: "limpieza-de-la-lista",
+      tags: [refuerzoSinLectura, ...nuncaLeidos, listaMalEscrito, ...listaCambiados, listaMovido],
+      vehicles: [],
+      expect:
+        "como no está en el físico, el refuerzo sin lecturas primero y después los nunca leídos y el número mal " +
+        "escrito; en otra posición, los cambiados de orden; el refuerzo de la desvinculación, incompleto",
+      mustNotSay: "ningún otro tag fuera del físico o en otra posición, ni un refuerzo comprobado que falte",
+    },
+    {
+      kind: "tag-de-noche-declarado",
+      tags: [antesDeNoche, tagDeNoche, despuesDeNoche],
+      vehicles: [],
+      expect: "con el tag en la lista de noche, tag de noche declarado en su sitio, y el resto de tags fuera de la lista igual",
+      mustNotSay: "otro veredicto para él, o que la lista cambie el de otro tag",
+    },
+    {
       kind: "lista-con-otro-orden",
       tags: [...listaCambiados, listaMovido, ring[52] as string],
       vehicles: [],
@@ -1350,6 +1435,14 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
         "el número mal escrito, sin lecturas, junto al tag de verdad en el orden según las lecturas; el " +
         "contraste, «posible sustitución o número mal escrito»; y el de verdad, candidato a esa posición",
       mustNotSay: "decidir por el número si es errata o sustitución",
+    },
+    {
+      kind: "refuerzo-sin-lectura",
+      tags: [refuerzoSinLectura, refuerzoLeido],
+      vehicles: [],
+      expect:
+        "el tag sin lecturas como refuerzo de un crítico sin lecturas, con su refuerzo nombrado; el otro, activo",
+      mustNotSay: "que se perdió la función, ni nada del tag del refuerzo que se lee",
     },
     {
       kind: "ritmo-mas-lento-en-un-fichero",

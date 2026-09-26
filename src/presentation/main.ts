@@ -17,7 +17,9 @@ import {
   type SourceSummary,
   type ToWorker,
 } from "../application/protocol.js";
-import { EXPECTED_STRUCTURE, LIST_PURPOSE } from "../domain/tag-lists.js";
+import { EXPECTED_STRUCTURE, FUNCTION_MEANING, LIST_PURPOSE } from "../domain/tag-lists.js";
+import { listCleanupCsv } from "../domain/list-cleanup.js";
+import { lineStopsCsv } from "../domain/line-feed.js";
 import {
   activityChart,
   coverageChart,
@@ -1108,6 +1110,8 @@ function renderViews(views: CircuitViews): void {
     );
   }
   renderCircuitOrder(views);
+  renderListCleanup(views);
+  renderLineFeed(views);
   renderUndeclaredTags(views);
   reviewSession?.refresh();
 }
@@ -1152,13 +1156,200 @@ function renderCircuitOrder(views: CircuitViews): void {
 }
 
 /**
+ * Alimentación de la línea (R-FLO-010): cadencia en la entrada, pulmón medido y cada parada de la
+ * línea, con AGV esperando o sin ellos. Hechos con sus tiempos, sin causa.
+ */
+function renderLineFeed(views: CircuitViews): void {
+  const feed = views.lineFeed;
+  if (feed === undefined) return;
+  viewsPanel.append(element("h3", undefined, "Alimentación de la línea"));
+  if (!feed.evaluated || feed.cadence === null) {
+    viewsPanel.append(element("p", "muted", feed.reason ?? "Sin medir."));
+    return;
+  }
+  const c = feed.cadence;
+  const seconds = (ms: number) => duration(ms);
+  const faltaron = feed.stops.filter((stop) => stop.kind === "sin-agv");
+  const sinMedir = feed.stops.filter((stop) => stop.kind === "sin-medir").length;
+  viewsPanel.append(
+    element(
+      "p",
+      undefined,
+      `Entrada ${feed.entryTagId}: ${feed.passes.toLocaleString("es-ES")} pasos. Entre dos AGV, en producción, la mitad de las veces ` +
+        `${seconds(c.p50Ms)} o menos, el 95 % ${seconds(c.p95Ms)}; por encima de ${seconds(c.fenceMs)} la línea está sin paso. ` +
+        (sinMedir > 0
+          ? `${feed.stops.length} paradas, sin pulmón medido para saber si había AGV esperando.`
+          : `${feed.stops.length} paradas: ${feed.stops.length - faltaron.length} con AGV esperando y ${faltaron.length} en que le faltaron AGV.`),
+    ),
+  );
+  // El ritmo en cada régimen: el ciclo no es fijo, así que se mide contra el ciclo local.
+  const minutes = (ms: number) => `${Math.round(ms / 60_000).toLocaleString("es-ES")} min`;
+  for (const rhythm of feed.rhythm) {
+    const share = rhythm.observedMs === 0 ? 0 : Math.round((rhythm.lostMs / rhythm.observedMs) * 100);
+    viewsPanel.append(
+      element(
+        "p",
+        undefined,
+        `${rhythm.regime === "produccion" ? "Producción" : "Noche"}: un AGV cada ${seconds(rhythm.cycleMs)} de mediana; el ciclo ` +
+          `anda entre ${seconds(rhythm.cycleLowMs)} y ${seconds(rhythm.cycleHighMs)} según el periodo. Sin paso, por encima de su ` +
+          `ciclo, ${minutes(rhythm.lostMs)} de ${minutes(rhythm.observedMs)} (${share} %)` +
+          (rhythm.lostWithAgvMs === null || rhythm.lostWithoutAgvMs === null
+            ? "."
+            : `: ${minutes(rhythm.lostWithAgvMs)} con AGV esperando (la línea no los tomaba) y ` +
+              `${minutes(rhythm.lostWithoutAgvMs)} sin AGV (le faltaron).`),
+      ),
+    );
+  }
+  const zone = feed.zone;
+  viewsPanel.append(
+    element(
+      "p",
+      zone === null ? "muted" : undefined,
+      zone === null
+        ? (feed.reason ?? "Pulmón sin medir.")
+        : `Pulmón medido: desde ${zone.fromTagId} (a ${seconds(zone.etaMs)} de la entrada) hasta la entrada. En las paradas ` +
+          `esperaban ${zone.typical} AGV de mediana y hasta ${zone.capacity}. ` +
+          `Minutos de producción con cada número de AGV en el pulmón: ` +
+          feed.occupancy.map((entry) => `${entry.agvs} AGV, ${entry.minutes} min`).join("; ") +
+          ". Cada AGV en el pulmón son unos " +
+          `${seconds(c.p50Ms)} de línea asegurada.`,
+    ),
+  );
+  const cards = element("div", "findings");
+  for (const stop of [...faltaron, ...feed.stops.filter((stop) => stop.kind === "con-pulmon")].slice(0, HIGHLIGHTS)) {
+    cards.append(
+      finding(
+        `${formatInstant(stop.fromUtcMs)}${stop.regime === "noche" ? " (noche)" : ""}: ${stop.kind === "sin-agv" ? "le faltaron AGV" : stop.kind === "con-pulmon" ? "parada con AGV esperando" : "parada, sin pulmón medido"}`,
+        `${seconds(stop.durationMs)} sin paso · entró antes ${stop.before}, después ${stop.after}`,
+        stop.evidence,
+        ["linea", stop.after],
+      ),
+    );
+  }
+  viewsPanel.append(cards);
+  // Cada paso por la línea (R-FLO-011): quién no lee sus tags, quién no sigue y quién no para.
+  const passages = feed.passages;
+  if (passages !== null) {
+    viewsPanel.append(
+      element(
+        "p",
+        undefined,
+        `${passages.total.toLocaleString("es-ES")} pasos por la línea; se leen ${passages.expected.join(", ") || "—"} en la mitad o más. ` +
+          (passages.exit === null ? "" : `De la línea al siguiente tag, lo habitual hasta ${seconds(passages.exit.fenceMs)}. `) +
+          (passages.parallel
+            ? "Es una línea de vinculación: el AGV sigue en paralelo y no se busca si hizo la parada."
+            : passages.minGapMs === null
+              ? "Sin muestras bastantes para decir cuánto deja la línea, como mínimo, entre dos AGV."
+              : `La línea no deja menos de ${seconds(passages.minGapMs)} entre dos AGV.`),
+      ),
+    );
+    if (passages.readers.length > 0) {
+      viewsPanel.append(
+        element(
+          "p",
+          undefined,
+          "AGV que hacen la parada con la cadencia normal pero no leen algún tag de la línea (revisar su lector o su memoria): " +
+            passages.readers
+              .map((reader) => `${reader.agvId}, sin ${reader.tags.join(" ni ")} en ${reader.missedPasses} de ${reader.passes} pasos`)
+              .join("; ") +
+            ".",
+        ),
+      );
+    }
+    const passCards = element("div", "findings");
+    for (const issue of passages.issues.slice(0, HIGHLIGHTS)) {
+      passCards.append(
+        finding(
+          `${formatInstant(issue.fromUtcMs)}: ${issue.kind === "no-sigue" ? "no sigue tras la línea" : "pasó sin la parada"}`,
+          issue.agvId,
+          issue.evidence,
+          ["linea-paso", issue.agvId],
+        ),
+      );
+    }
+    viewsPanel.append(passCards);
+  }
+  const download = element("button", undefined, "Descargar paradas de la línea (CSV)");
+  download.setAttribute("type", "button");
+  download.addEventListener("click", () => {
+    const url = URL.createObjectURL(new Blob([`\ufeff${lineStopsCsv(feed, formatInstant)}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `linea-${state.circuitId ?? "circuito"}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+  viewsPanel.append(download);
+}
+
+/**
+ * Limpieza de la lista del circuito (R-GRA-017): declarados que no están en el físico, en otra
+ * posición, y refuerzos declarados contra el recorrido. Preguntas para planta, con su acción.
+ */
+function renderListCleanup(views: CircuitViews): void {
+  const cleanup = views.listCleanup;
+  if (cleanup === undefined) return;
+  const critical = cleanup.notPhysical.filter((tag) => tag.funcion !== null).length;
+  const byStatus = (status: string) => cleanup.reinforcements.filter((group) => group.status === status).length;
+  viewsPanel.append(element("h3", undefined, "Limpieza de la lista del circuito"));
+  viewsPanel.append(
+    element(
+      "p",
+      undefined,
+      `${cleanup.notPhysical.length} declarados no están en el circuito físico (${critical} con función crítica: ` +
+        "comprobar si hay que colocar una copia o eliminarlos de Vsystem); " +
+        `${cleanup.moved.length} están en otra posición que en la lista; de ${cleanup.reinforcements.length} refuerzos declarados, ` +
+        `${byStatus("comprobado")} comprobados en el recorrido, ${byStatus("incompleto")} incompletos y ${byStatus("separado")} separados.`,
+    ),
+  );
+  const download = element("button", undefined, "Descargar la limpieza (CSV)");
+  download.setAttribute("type", "button");
+  download.addEventListener("click", () => {
+    // Con BOM y `;`, como las horquillas: se abre en una hoja de cálculo en español tal cual.
+    const url = URL.createObjectURL(new Blob([`\ufeff${listCleanupCsv(cleanup)}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `limpieza-${state.circuitId ?? "circuito"}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+  viewsPanel.append(download);
+  const fn = (funcion: string | null) => (funcion === null ? "—" : criticalFunctionLabel(funcion));
+  viewsPanel.append(
+    lazyDetails(`Ver los ${cleanup.notPhysical.length} declarados que no están en el físico`, () =>
+      plainTable(
+        ["Tag", "Función", "En la lista", "Según la lista", "Acción"],
+        cleanup.notPhysical.map((tag) => [tag.tagId, fn(tag.funcion), String(tag.listPosition), tag.listBetween ?? "—", tag.action]),
+      ),
+    ),
+    lazyDetails(`Ver los ${cleanup.moved.length} en otra posición`, () =>
+      plainTable(
+        ["Tag", "Función", "En la lista", "Según las lecturas", "Según la lista", "Leído entre"],
+        cleanup.moved.map((tag) => [tag.tagId, fn(tag.funcion), String(tag.listPosition), String(tag.position), tag.listBetween ?? "—", tag.readBetween ?? "—"]),
+      ),
+    ),
+    lazyDetails(`Ver los ${cleanup.reinforcements.length} refuerzos declarados`, () =>
+      plainTable(
+        ["Tags", "Función", "Estado", "Detalle"],
+        cleanup.reinforcements.map((group) => [group.tags.join(" + "), fn(group.funcion), group.status, group.detail]),
+      ),
+    ),
+  );
+}
+
+/**
  * Tags que se leen y no están en la lista del circuito (R-DAT-022): dónde se leen y si solo de noche.
  * Candidato a una posición, tag de noche o posiblemente de noche; nunca una causa.
  */
 function renderUndeclaredTags(views: CircuitViews): void {
   const tags = views.undeclaredTags;
   if (tags === undefined || tags.length === 0) return;
-  const label = { posicion: "candidato a una posición", noche: "tag de noche", "noche-probable": "posiblemente de noche" } as const;
+  const label = {
+    posicion: "candidato a una posición",
+    noche: "tag de noche",
+    "noche-probable": "posiblemente de noche",
+    "noche-declarado": "tag de noche declarado",
+  } as const;
   viewsPanel.append(element("h3", undefined, "Tags leídos fuera de la lista del circuito"));
   viewsPanel.append(
     element(
@@ -1652,6 +1843,7 @@ function renderCircuitState(views: CircuitViews): void {
           produccion: pair?.produccion ?? null,
           noche: pair?.noche ?? null,
           marks: marksOf.get(tagId) ?? [],
+          section: views.sections?.[tagId] ?? null,
         };
       });
       viewsPanel.append(segmentBandChart(ringRows, nightLabel));
@@ -1761,6 +1953,7 @@ function ringDataOf(shape: CircuitViews["shapes"][number], matrix: Matrix | unde
         pattern: row?.pattern ?? "sin datos",
         zone: shape.zones?.[index] ?? null,
         isAnchor: tagId === shape.anchorTagId,
+        section: views.sections?.[tagId] ?? null,
       };
     }),
     anchorTagId: shape.anchorTagId,
@@ -3017,8 +3210,10 @@ function renderDossier(): void {
         element(
           "p",
           undefined,
-          `Punto crítico declarado: ${criticalFunctionLabel(tag.criticalFunction)}. Se cambia en el fichero de listas y ` +
-            "volviéndolo a cargar.",
+          `Punto crítico declarado: ${criticalFunctionLabel(tag.criticalFunction)}` +
+            // Qué es esa función en planta, en palabras del propietario, cuando el nombre no lo dice solo.
+            (FUNCTION_MEANING[tag.criticalFunction] === undefined ? "" : ` (${FUNCTION_MEANING[tag.criticalFunction]})`) +
+            ". Se cambia en el fichero de listas y volviéndolo a cargar.",
         ),
       );
     }

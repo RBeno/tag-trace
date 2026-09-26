@@ -24,7 +24,10 @@ import {
 } from "../src/ingestion/importer.js";
 import { decodeSource } from "../src/ingestion/decode.js";
 import { rowsToDelimitedText } from "../src/ingestion/xlsx-readings.js";
-import { declaredTagInfo } from "../src/domain/tag-info.js";
+import { declaredTagInfo, tagSections } from "../src/domain/tag-info.js";
+import { reinforcementGroups, reinforcementPartners } from "../src/domain/critical-reinforcement.js";
+import { buildListCleanup } from "../src/domain/list-cleanup.js";
+import { lineStopExclusion, measureLineFeed, outsideLineStops } from "../src/domain/line-feed.js";
 import { dominantNeighbours, locateUndeclaredTags } from "../src/domain/undeclared-tags.js";
 import { reconcileCircuitOrder } from "../src/domain/circuit-order.js";
 import { CatalogFailure, EXPECTED_STRUCTURE, importCatalog, importCatalogRows } from "../src/ingestion/catalog.js";
@@ -325,6 +328,14 @@ async function buildViews(
   // El contraste contra Vsystem y la posición de un tag no declarado exigen un **orden**: el orden en
   // que el fichero trae las filas de la lista `circuito`, que el importador conserva.
   const declaredOrder = [...byName("circuito")];
+  // Los refuerzos de cada punto crítico (R-GRA-016): seguidos en ese mismo orden declarado y con la
+  // misma función. Una omisión en uno no pierde la función si el otro se lee.
+  const declaredReinforcements = reinforcementGroups(
+    declaredOrder,
+    criticalPointsConfig.funcionOf,
+    criticalPointsConfig.groupOf,
+  );
+  const reinforcement = reinforcementPartners(declaredReinforcements);
   const undeclared = locateUndeclaredTags(
     readings,
     declaredOrder,
@@ -335,9 +346,15 @@ async function buildViews(
       maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
       maxReadsBetween: PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
     },
+    byName("noche"),
   );
-  // Solo el tag de noche comprobado: «posiblemente de noche» es una hipótesis y no se usa como hecho.
-  const nightTags = new Set(undeclared.tags.filter((tag) => tag.verdict === "noche").map((tag) => tag.tagId));
+  // Solo el tag de noche comprobado o declarado en la lista `noche`: «posiblemente de noche» es una
+  // hipótesis y no se usa como hecho.
+  const nightTags = new Set(
+    undeclared.tags
+      .filter((tag) => tag.verdict === "noche" || tag.verdict === "noche-declarado")
+      .map((tag) => tag.tagId),
+  );
   const tagChanges = withoutTags(
     detectTagChanges(readings, direction, coverage, PROVISIONAL_CONFIG.tagChanges, {
       minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
@@ -364,6 +381,32 @@ async function buildViews(
     PROVISIONAL_CONFIG.flowStops,
   );
   const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
+  // Las paradas de la línea con AGV esperando (R-FLO-010), antes que cualquier tiempo habitual: la cola
+  // del pulmón mientras la línea no toma no es el tiempo de esos tramos. Se miden con el cohorte mayor,
+  // que es el que pasa por la línea, y sin saber aún quién retiene: eso no cambia las paradas.
+  const lineTagList = lists.find((entry) => entry.list === "linea")?.tags ?? [];
+  const lineFeedThresholds = {
+    minSamples: PROVISIONAL_CONFIG.bands.minBandSamples,
+    minMarginMs: PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+  };
+  const mainVehicleSet = new Set(cohortAssignment.cohorts[0]?.vehicles ?? []);
+  const mainReadings = readings.filter((entry) => mainVehicleSet.has(entry.agvId));
+  const productionStopIntervals = production.stops.map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs }));
+  const lineExclusion =
+    lineTagList.length === 0
+      ? { intervals: [], tags: new Set<string>() }
+      : lineStopExclusion(
+          measureLineFeed(
+            mainReadings,
+            lineTagList,
+            coverage,
+            regimeOf,
+            lineFeedThresholds,
+            new Set(),
+            criticalPointsConfig.funcionOf,
+            productionStopIntervals,
+          ),
+        );
   const flowReports: FlowReport[] = [];
   const circuitStateCohorts: CircuitViews["circuitState"]["cohorts"][number][] = [];
   // Una franja es un fichero (R-TIM-011): su ventana completa. Sin almacén, la del fichero importado.
@@ -424,7 +467,11 @@ async function buildViews(
     // que un hueco seguido de una ráfaga no es una parada. Se juzga con una horquilla previa —una
     // ráfaga es rara y apenas la mueve— y desde aquí todo lo de tiempos usa la ráfaga colapsada.
     const preliminaryBands = buildSegmentBands(
-      measurableTransitions(outsideProductionStops(cohortTransitions, production.stops), coverage, laneTags),
+      measurableTransitions(
+        outsideLineStops(outsideProductionStops(cohortTransitions, production.stops), lineExclusion),
+        coverage,
+        laneTags,
+      ),
       effective.cycle,
       regimeOf,
       PROVISIONAL_CONFIG.bands,
@@ -440,8 +487,9 @@ async function buildViews(
     );
     const cohortTimeline = grouped.transitions;
 
-    // Las transiciones que cruzan una parada de la producción no miden ningún tramo.
-    const timedTransitions = outsideProductionStops(cohortTimeline, production.stops);
+    // Las transiciones que cruzan una parada de la producción no miden ningún tramo, ni las de la cola
+    // del pulmón mientras la línea estaba parada con AGV esperando.
+    const timedTransitions = outsideLineStops(outsideProductionStops(cohortTimeline, production.stops), lineExclusion);
     const usual = usualSegmentTimes(
       timedTransitions,
       effective.cycle,
@@ -735,7 +783,9 @@ async function buildViews(
   const vehicleIds = agvDossiers.map((dossier) => dossier.agvId);
   const tagDossiers = buildAllTagDossiers(readings, vehicleIds, criticalPointsConfig.funcionOf);
   // Lo que planta declara de cada tag, para acompañar sus incidencias: información, no regla.
-  const tagInfo = declaredTagInfo(lists);
+  const tagInfo = declaredTagInfo(lists, reinforcement);
+  // El tramo de cada tag (kitting, línea, cruce…), para dibujarlo en las gráficas del anillo.
+  const sections = tagSections(lists, criticalPointsConfig.funcionOf);
 
   const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, PROVISIONAL_CONFIG.silence.minGapMs);
 
@@ -831,6 +881,7 @@ async function buildViews(
     agvDossiers,
     tagDossiers,
     ...(tagInfo.size === 0 ? {} : { tagInfo: Object.fromEntries(tagInfo) }),
+    ...(sections.size === 0 ? {} : { sections: Object.fromEntries(sections) }),
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
     fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null, production: productionView, blockages },
     franjas: {
@@ -929,6 +980,8 @@ async function buildViews(
       charging: byName("carga-online"),
       unservedLaneTags,
       critical: criticalPointsConfig.funcionOf,
+      reinforcement,
+      night: byName("noche"),
     },
     PROVISIONAL_CONFIG.blindness,
   );
@@ -948,6 +1001,8 @@ async function buildViews(
 
   let vsystemContrast: CircuitViews["vsystemContrast"];
   let circuitOrder: CircuitViews["circuitOrder"];
+  // El vecino leído de cada tag de un refuerzo, para comprobarlo en el recorrido (R-GRA-017).
+  let reinforcementPlaces: ReturnType<typeof dominantNeighbours> | undefined;
   const mainCohort = cohortAssignment.cohorts[0];
   if (declaredOrder.length > 0 && mainCohort !== undefined) {
     // El anillo observado con el que se contrasta: el ciclo dominante del cohorte mayor, que es el
@@ -964,6 +1019,10 @@ async function buildViews(
         ...declaredOrder.filter((tagId) => readTags.has(tagId) && !inRing.has(tagId)),
         ...undeclared.tags.map((tag) => tag.tagId).filter((tagId) => !inRing.has(tagId)),
       ]);
+      reinforcementPlaces = dominantNeighbours(
+        readings.filter((entry) => mainVehicles.has(entry.agvId)),
+        new Set(declaredReinforcements.flatMap((group) => group.tags)),
+      );
       circuitOrder = reconcileCircuitOrder(
         declaredOrder,
         anchor.cycle,
@@ -976,8 +1035,28 @@ async function buildViews(
     }
   }
 
+  // La alimentación de la línea (R-FLO-010), en el cohorte mayor: el que pasa por la línea declarada.
+  const lineFeed =
+    lineTagList.length === 0 || mainCohort === undefined
+      ? undefined
+      : measureLineFeed(
+          mainReadings,
+          lineTagList,
+          coverage,
+          regimeOf,
+          lineFeedThresholds,
+          new Set(
+            (circuitStateCohorts[0]?.pace.holders ?? [])
+              .filter((holder) => holder.expected !== null)
+              .map((holder) => holder.agvId),
+          ),
+          criticalPointsConfig.funcionOf,
+          productionIntervals,
+        );
+
   return {
     ...views,
+    ...(lineFeed === undefined ? {} : { lineFeed }),
     ...(undeclared.evaluated ? { undeclaredTags: undeclared.tags } : {}),
     inventory: {
       counts: [...counts.entries()].map(([tagClass, count]) => ({
@@ -989,7 +1068,18 @@ async function buildViews(
       listsLoaded: lists.map((entry) => entry.list),
     },
     ...(vsystemContrast === undefined ? {} : { vsystemContrast }),
-    ...(circuitOrder === undefined || !circuitOrder.evaluated ? {} : { circuitOrder }),
+    ...(circuitOrder === undefined || !circuitOrder.evaluated
+      ? {}
+      : {
+          circuitOrder,
+          // Lo que la lista declara y el físico no confirma, para ordenarla (R-GRA-017).
+          listCleanup: buildListCleanup(
+            circuitOrder,
+            criticalPointsConfig.funcionOf,
+            declaredReinforcements,
+            reinforcementPlaces,
+          ),
+        }),
     ...(criticalPointsConfig.problems.length === 0
       ? {}
       : { criticalPointsProblems: criticalPointsConfig.problems }),

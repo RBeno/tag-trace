@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.24.0
+version: 0.30.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Especificación de experiencia de usuario
@@ -477,9 +477,30 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
   nota tal cual, su función y su calle, sin repetir piezas. Es información para el diagnóstico y no
   cambia ningún cálculo (R-GRA-007).
 - **Tags leídos fuera de la lista del circuito** (R-DAT-022), junto al contraste con Vsystem. Una
-  tarjeta por tag, de las más leídas a las menos: «candidato a una posición», «tag de noche» o
-  «posiblemente de noche», con su sitio (entre qué tags y en qué orden de la lista), sus lecturas de
+  tarjeta por tag, de las más leídas a las menos: «candidato a una posición», «tag de noche»,
+  «tag de noche declarado» (en la lista `noche`) o «posiblemente de noche», con su sitio (entre qué tags y en qué orden de la lista), sus lecturas de
   día y de noche y las pasadas por su sitio en cada régimen. Sin lista del circuito no aparece.
+- **Tramos en las gráficas del anillo** (R-GRA-018): el anillo, la horquilla de cada tramo y el anillo
+  en tiempo pintan el tramo de cada tag (kitting, línea, cruce…) en una banda con un color categórico
+  propio (`--viz-tramo-1…4`), distinto de los azules de la omisión y del naranja de los hallazgos, con
+  su leyenda y en la lectura de cada punto.
+- **Alimentación de la línea** (R-FLO-010), con la lista `linea` cargada:
+  - una línea con la cadencia en la entrada y cuántas paradas fueron con AGV esperando y en cuántas le
+    faltaron AGV;
+  - una por régimen con el ritmo: el ciclo de mediana, entre qué valores anda y el tiempo sin paso,
+    con AGV esperando y sin AGV;
+  - otra con el pulmón medido: desde qué tag, cuántos AGV esperaban y los minutos con cada número de
+    AGV en él;
+  - una tarjeta por parada, primero las que le faltaron AGV, con el hueco y quien retiene;
+  - los pasos por la línea (R-FLO-011): qué tags se esperan, lo habitual de la línea al siguiente tag
+    y el mínimo entre dos AGV; los AGV que hacen la parada sin leer un tag; una tarjeta por paso que
+    no sigue o que pasó sin la parada;
+  - un botón «Descargar paradas de la línea (CSV)», con las paradas y los pasos señalados.
+- **Limpieza de la lista del circuito** (R-GRA-017), detrás del orden según las lecturas:
+  - una línea con cuántos declarados no están en el físico (y cuántos de ellos críticos), cuántos
+    están en otra posición y cuántos refuerzos declarados están comprobados, incompletos o separados;
+  - tres tablas desplegables;
+  - un botón «Descargar la limpieza (CSV)» para llevarla a planta.
 - En el contraste con Vsystem **manda lo leído** (R-GRA-015): la cabecera lo dice, y cada diferencia
   se lee como algo que corregir en la lista, no como un fallo del circuito. Un tag que la lista pone
   en otro sitio sale una sola vez, «la lista lo pone en otro sitio», con su sitio en cada lado; un

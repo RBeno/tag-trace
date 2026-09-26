@@ -28,6 +28,9 @@ import { compareAgainstVsystem, type VsystemComparisonRow } from "../../src/doma
 import { findDominantCycle, resolveDeclaredAnchor, segmentLaps, type Lap } from "../../src/domain/laps.js";
 import { buildReadMatrix, type ReadMatrix } from "../../src/domain/read-matrix.js";
 import { buildTagInventory } from "../../src/domain/inventory.js";
+import { reinforcementGroups, reinforcementPartners } from "../../src/domain/critical-reinforcement.js";
+import { buildListCleanup } from "../../src/domain/list-cleanup.js";
+import { lineStopExclusion, measureLineFeed, outsideLineStops, type LineFeed } from "../../src/domain/line-feed.js";
 import { buildAllAgvDossiers, buildAllTagDossiers } from "../../src/domain/dossier.js";
 import { buildChargingReport, type ChargingReport } from "../../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans, type FifoReport } from "../../src/domain/fifo.js";
@@ -182,6 +185,17 @@ interface Analysis {
   readonly readings: number;
   /** Tags leídos fuera de la lista del circuito, con su sitio y si de noche (R-DAT-022). */
   readonly undeclared: UndeclaredTagReport;
+  /** Lo mismo con el tag de noche plantado en la lista `noche` de planta: tag de noche declarado. */
+  readonly undeclaredWithNightList: UndeclaredTagReport;
+  /** Alimentación de la línea declarada (R-FLO-010, R-FLO-011). */
+  readonly lineFeed: LineFeed;
+  /** La misma medida con la entrada en un tramo limpio, para el pulmón. */
+  readonly lineFeedPulmon: LineFeed;
+  /** Funciones críticas declaradas y su grupo, para la limpieza de la lista (R-GRA-017). */
+  readonly criticalPointsFuncionOf: ReadonlyMap<string, string>;
+  readonly criticalPointsGroupOf: ReadonlyMap<string, string>;
+  /** El vecino leído de cada tag de los refuerzos declarados, como en el Worker. */
+  readonly reinforcementPlaces: ReturnType<typeof dominantNeighbours>;
 }
 
 /**
@@ -267,6 +281,18 @@ function analyse(
       maxReadsBetween: PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
     },
   );
+  const undeclaredWithNightList = locateUndeclaredTags(
+    readings,
+    entriesOf("circuito").map((entry) => entry.tagId),
+    new Set([...entriesOf("carga-online"), ...entriesOf("mantenimiento"), ...entriesOf("emergencia")].map((entry) => entry.tagId)),
+    regimeOf,
+    {
+      minSlotPasses: PROVISIONAL_CONFIG.tagChanges.minSlotPasses,
+      maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
+      maxReadsBetween: PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
+    },
+    new Set(scenario.defects.find((d) => d.kind === "tag-de-noche-declarado")?.tags.slice(1, 2) ?? []),
+  );
 
   // Cambios de tag dentro de un solo periodo (R-DAT-019), con la ventana entera como cobertura —el
   // caso de una sola exportación—, antes que la matriz: su vida es lo que la matriz mide (R-OPP-016).
@@ -340,13 +366,27 @@ function analyse(
   );
   const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
   const window = [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }];
+  // Mismo encadenado que el Worker (R-FLO-010): la cola del pulmón mientras la línea está parada con
+  // AGV esperando no mide ningún tramo.
+  const lineExclusion = lineStopExclusion(
+    measureLineFeed(
+      readings,
+      entriesOf("linea").map((entry) => entry.tagId),
+      window,
+      regimeOf,
+      { minSamples: PROVISIONAL_CONFIG.bands.minBandSamples, minMarginMs: PROVISIONAL_CONFIG.flowStops.minStopExcessMs },
+      new Set(),
+      criticalPointsConfig.funcionOf,
+      production.stops.map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs })),
+    ),
+  );
   // Mismo encadenado que el Worker (R-DAT-020): las lecturas que llegaron juntas se colapsan en un solo
   // recorrido antes de medir ningún tiempo, juzgadas con una horquilla previa.
   const preliminaryBands =
     anchor === null
       ? null
       : buildSegmentBands(
-          measurableTransitions(outsideProductionStops(cohortTransitions, production.stops), window, laneTags),
+          measurableTransitions(outsideLineStops(outsideProductionStops(cohortTransitions, production.stops), lineExclusion), window, laneTags),
           anchor.cycle,
           regimeOf,
           PROVISIONAL_CONFIG.bands,
@@ -366,7 +406,7 @@ function analyse(
     measurableTransitions(cohortTransitions, window, laneTags),
     PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
   );
-  const timedTransitions = outsideProductionStops(cohortTimeline, production.stops);
+  const timedTransitions = outsideLineStops(outsideProductionStops(cohortTimeline, production.stops), lineExclusion);
   const productionTimed = timedTransitions.filter((transition) => transitionRegime(transition, regimeOf) === "produccion");
 
   const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
@@ -401,6 +441,10 @@ function analyse(
       charging: laneTagsOf(() => true),
       unservedLaneTags: laneTagsOf((laneId) => noServidas.has(laneId)),
       critical: criticalPointsConfig.funcionOf,
+      // Refuerzos (R-GRA-016), sobre la lista tal como se escribe: lo mismo que hace el Worker.
+      reinforcement: reinforcementPartners(
+        reinforcementGroups(scenario.declaredList, criticalPointsConfig.funcionOf, criticalPointsConfig.groupOf),
+      ),
     },
     PROVISIONAL_CONFIG.blindness,
   );
@@ -590,6 +634,36 @@ function analyse(
     contrast,
     circuitOrder,
     undeclared,
+    undeclaredWithNightList,
+    lineFeed: measureLineFeed(
+      readings,
+      entriesOf("linea").map((entry) => entry.tagId),
+      [],
+      regimeOf,
+      { minSamples: PROVISIONAL_CONFIG.bands.minBandSamples, minMarginMs: PROVISIONAL_CONFIG.flowStops.minStopExcessMs },
+      new Set(),
+      criticalPointsConfig.funcionOf,
+      scenario.productionStopsUtcMs.map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs })),
+    ),
+    // El pulmón se mide aparte, con la entrada en un tramo limpio del anillo: con la línea declarada
+    // en el 59 las paradas de la producción paran a la flota en sitios distintos y no marcan un pulmón.
+    lineFeedPulmon: measureLineFeed(
+      readings,
+      [scenario.physicalRing[136] as string],
+      [],
+      regimeOf,
+      { minSamples: PROVISIONAL_CONFIG.bands.minBandSamples, minMarginMs: PROVISIONAL_CONFIG.flowStops.minStopExcessMs },
+    ),
+    criticalPointsFuncionOf: criticalPointsConfig.funcionOf,
+    criticalPointsGroupOf: criticalPointsConfig.groupOf,
+    reinforcementPlaces: dominantNeighbours(
+      readings,
+      new Set(
+        reinforcementGroups(scenario.declaredList, criticalPointsConfig.funcionOf, criticalPointsConfig.groupOf).flatMap(
+          (group) => group.tags,
+        ),
+      ),
+    ),
     matrix,
     ring,
     offRing,
@@ -655,6 +729,12 @@ describe("auditoría del circuito con verdad conocida", () => {
     franjaPace,
     readings,
     undeclared,
+    undeclaredWithNightList,
+    lineFeed,
+    lineFeedPulmon,
+    criticalPointsFuncionOf,
+    criticalPointsGroupOf,
+    reinforcementPlaces,
     contrast,
     circuitOrder,
   } = analysis;
@@ -1309,6 +1389,105 @@ describe("auditoría del circuito con verdad conocida", () => {
           `de día ${tag.dayPasses} pasadas por su sitio y ${tag.dayHits} lecturas`,
       };
     },
+    "linea-parada-con-pulmon": () => {
+      const planted = scenario.productionStopsUtcMs;
+      const overlapping = (stop: LineFeed["stops"][number]) =>
+        planted.find((span) => stop.fromUtcMs < span.toUtcMs && span.fromUtcMs < stop.toUtcMs);
+      const onPlanted = lineFeedPulmon.stops.filter((stop) => overlapping(stop) !== undefined);
+      const kinds = onPlanted.map((stop) => `${stop.kind}(${stop.waiting})`);
+      const others = lineFeedPulmon.stops.filter((stop) => overlapping(stop) === undefined).map((stop) => stop.kind);
+      return {
+        ok:
+          planted.every((span) => onPlanted.some((stop) => overlapping(stop) === span)) &&
+          onPlanted.every((stop) => stop.kind === "con-pulmon" && stop.waiting > 0) &&
+          lineFeedPulmon.zone !== null,
+        detail:
+          `en las paradas plantadas: ${kinds.join(", ")}; pulmón desde ${lineFeedPulmon.zone?.fromTagId ?? "—"}, hasta ${lineFeedPulmon.zone?.capacity ?? 0} AGV; ` +
+          `otras paradas de la línea: ${others.join(", ") || "ninguna"}`,
+      };
+    },
+    "linea-tiempo-sin-paso": () => {
+      const day = lineFeedPulmon.rhythm.find((entry) => entry.regime === "produccion");
+      const planted = scenario.productionStopsUtcMs.reduce((sum, stop) => sum + (stop.toUtcMs - stop.fromUtcMs), 0);
+      const withAgv = day?.lostWithAgvMs ?? 0;
+      return {
+        // Cada parada cuesta su duración menos un ciclo, así que no llega al 100 %: basta con el 90 %.
+        ok: day !== undefined && withAgv >= planted * 0.9,
+        detail:
+          `sin paso ${Math.round((day?.lostMs ?? 0) / 60_000)} min: con AGV esperando ${Math.round(withAgv / 60_000)} min, ` +
+          `sin AGV ${Math.round((day?.lostWithoutAgvMs ?? 0) / 60_000)} min; paradas plantadas, ${Math.round(planted / 60_000)} min; ` +
+          `ciclo entre ${Math.round((day?.cycleLowMs ?? 0) / 1000)} y ${Math.round((day?.cycleHighMs ?? 0) / 1000)} s`,
+      };
+    },
+    "linea-tag-sin-leer": () => {
+      const defect = scenario.defects.find((d) => d.kind === "linea-tag-sin-leer");
+      const readers = lineFeed.passages?.readers ?? [];
+      // El lector degradado (plantado aparte) también deja de leer tags de la línea: es verdad y se admite.
+      const degradado = scenario.defects.find((d) => d.kind === "lector-agv-degradado")?.vehicles ?? [];
+      const flagged = readers.map((reader) => reader.agvId).filter((agvId) => !degradado.includes(agvId)).sort();
+      const expectedAgvs = [...(defect?.vehicles ?? [])].sort();
+      const sinParada = (lineFeed.passages?.issues ?? []).filter(
+        (issue) => issue.kind === "sin-parada" && expectedAgvs.includes(issue.agvId),
+      );
+      return {
+        ok:
+          flagged.join(",") === expectedAgvs.join(",") &&
+          readers
+            .filter((reader) => expectedAgvs.includes(reader.agvId))
+            .every((reader) => reader.tags.join(",") === defect?.tags.join(",") && reader.missedPasses === reader.passes) &&
+          sinParada.length === 0,
+        detail:
+          `sin leer: ${readers.map((reader) => `${reader.agvId} (${reader.tags.join(",")}, ${reader.missedPasses}/${reader.passes})`).join(", ") || "nadie"}; ` +
+          `pasos señalados: ${(lineFeed.passages?.issues ?? []).map((issue) => `${issue.kind} ${issue.agvId}`).join(", ") || "ninguno"}`,
+      };
+    },
+    "limpieza-de-la-lista": () => {
+      const tags = scenario.defects.find((d) => d.kind === "limpieza-de-la-lista")?.tags ?? [];
+      const [refuerzo, n1, n2, n3, malEscrito, ...movidos] = tags;
+      const cleanup = buildListCleanup(
+        circuitOrder,
+        criticalPointsFuncionOf,
+        reinforcementGroups(scenario.declaredList, criticalPointsFuncionOf, criticalPointsGroupOf),
+        reinforcementPlaces,
+      );
+      const fuera = cleanup.notPhysical.map((tag) => tag.tagId);
+      const otra = cleanup.moved.map((tag) => tag.tagId).sort();
+      const refuerzos = cleanup.reinforcements.map((group) => `${group.tags.join("+")}:${group.status}`);
+      return {
+        ok:
+          fuera[0] === refuerzo &&
+          [...fuera].sort().join(",") === [refuerzo, n1, n2, n3, malEscrito].sort().join(",") &&
+          // De dos vecinos cambiados, uno basta para decirlo (la subsecuencia común conserva el otro).
+          otra.includes(movidos[2] as string) &&
+          (otra.includes(movidos[0] as string) || otra.includes(movidos[1] as string)) &&
+          otra.length === 2 &&
+          refuerzos.length === 1 &&
+          refuerzos[0]?.endsWith(":incompleto") === true,
+        detail: `fuera del físico: ${fuera.join(", ")}; en otra posición: ${otra.join(", ")}; refuerzos: ${refuerzos.join(", ")}`,
+      };
+    },
+    "tag-de-noche-declarado": () => {
+      const [antes, nocturno, despues] = scenario.defects.find((d) => d.kind === "tag-de-noche-declarado")?.tags ?? [];
+      const tag = undeclaredWithNightList.tags.find((entry) => entry.tagId === nocturno);
+      const otros = undeclaredWithNightList.tags
+        .filter((entry) => entry.tagId !== nocturno)
+        .map((entry) => `${entry.tagId}:${entry.verdict}`)
+        .join(", ");
+      const antesSin = undeclared.tags
+        .filter((entry) => entry.tagId !== nocturno)
+        .map((entry) => `${entry.tagId}:${entry.verdict}`)
+        .join(", ");
+      if (tag === undefined) return { ok: false, detail: `${nocturno} no sale entre los tags fuera de la lista` };
+      return {
+        ok:
+          tag.verdict === "noche-declarado" &&
+          tag.declaredNight &&
+          tag.predecessor === antes &&
+          tag.successor === despues &&
+          otros === antesSin,
+        detail: `${nocturno}: ${tag.verdict}, entre ${tag.predecessor} y ${tag.successor}; los demás, igual que sin la lista: ${otros === antesSin ? "sí" : "no"}`,
+      };
+    },
     "lista-con-otro-orden": () => {
       const [a, b, movido] = scenario.defects.find((d) => d.kind === "lista-con-otro-orden")?.tags ?? [];
       const rows = circuitOrder.rows;
@@ -1351,6 +1530,22 @@ describe("auditoría del circuito con verdad conocida", () => {
         detail:
           `${escrito} → ${fila?.verdict ?? "sin fila"} con ${fila?.observedTag ?? "—"}; ${real}: ${fuera?.verdict ?? "no sale fuera de la lista"}` +
           `${fuera === undefined ? "" : `, la lista pone ahí ${fuera.declaredWithoutReadings.join(", ") || "nada"}`}; juntos en el orden leído: ${juntos ? "sí" : "no"}`,
+      };
+    },
+    "refuerzo-sin-lectura": () => {
+      const [sinLectura, leido] = scenario.defects.find((d) => d.kind === "refuerzo-sin-lectura")?.tags ?? [];
+      const fila = inventory.rows.find((row) => row.tagId === sinLectura);
+      const otro = inventory.rows.find((row) => row.tagId === leido);
+      return {
+        ok:
+          fila?.tagClass === "refuerzo-sin-lectura" &&
+          fila.criticalFunction === "desvinculacion" &&
+          fila.reinforcement.includes(leido as string) &&
+          otro?.tagClass === "activo" &&
+          !inventory.rows.some((row) => row.tagClass === "critico-sin-lectura"),
+        detail:
+          `${sinLectura}: ${fila?.tagClass ?? "sin fila"} (${fila?.criticalFunction ?? "—"}, refuerzo con ${fila?.reinforcement.join(", ") || "nadie"}); ` +
+          `${leido}: ${otro?.tagClass ?? "sin fila"}`,
       };
     },
     "ritmo-mas-lento-en-un-fichero": () => {
@@ -1594,7 +1789,10 @@ describe("auditoría del circuito con verdad conocida", () => {
     // vías —«critico» y la columna del circuito virtual— solo declaran los dos tags plantados.
     const funcionesEsperadas = new Set(
       scenario.defects
-        .filter((d) => d.kind === "vinculacion-declarada" || d.kind === "desvinculacion-declarada")
+        .filter(
+          (d) =>
+            d.kind === "vinculacion-declarada" || d.kind === "desvinculacion-declarada" || d.kind === "refuerzo-sin-lectura",
+        )
         .flatMap((d) => d.tags),
     );
     const funcionesEspurias = scenario.cleanTags.filter((tag) => {

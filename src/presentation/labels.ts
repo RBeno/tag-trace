@@ -31,6 +31,7 @@ const TAG_CLASS: Readonly<Record<string, string>> = {
   especial: "especial",
   "calle-sin-servicio": "calle sin servicio",
   "critico-sin-lectura": "crítico sin lecturas",
+  "refuerzo-sin-lectura": "refuerzo de un crítico sin lecturas",
 };
 
 const VERDICT: Readonly<Record<string, string>> = {
@@ -46,6 +47,9 @@ const ZONE: Readonly<Record<string, string>> = { cargado: "cargada", vacio: "vac
 
 const CRITICAL_FUNCTION: Readonly<Record<string, string>> = {
   "parada-precisa": "parada precisa",
+  parada: "parada",
+  giro: "giro",
+  "cambio-de-mtc": "cambio de MTC",
   cruce: "cruce",
   semaforo: "semáforo",
   "dejar-carro": "dejar carro",
@@ -54,6 +58,8 @@ const CRITICAL_FUNCTION: Readonly<Record<string, string>> = {
   bifurcacion: "bifurcación",
   vinculacion: "vinculación",
   desvinculacion: "desvinculación",
+  "tramo-conflictivo": "tramo conflictivo",
+  "control-wifi": "control wifi",
 };
 
 const ORDER_CHANGE: Readonly<Record<string, string>> = {

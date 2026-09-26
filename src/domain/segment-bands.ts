@@ -137,7 +137,7 @@ export function sourceResolutionMs(transitions: readonly Pick<Transition, "fromT
   return transitions.every((transition) => (transition.toTime - transition.fromTime) % 60_000 === 0) ? 60_000 : 1_000;
 }
 
-function bandOf(durations: number[], floorMs: number): Band {
+export function bandOf(durations: number[], floorMs: number): Band {
   const sorted = durations.sort((a, b) => a - b);
   const p50Ms = quantile(sorted, 0.5);
   const p80Ms = quantile(sorted, 0.8);

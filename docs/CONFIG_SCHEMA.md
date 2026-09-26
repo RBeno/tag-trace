@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.15.0
+version: 0.21.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Configuración de circuito
@@ -76,17 +76,35 @@ Las clases son cerradas y las declara el propietario:
 
 ```text
 critical_points : lista de { tag, function, grade, redundancy, valid_from, valid_to }
-function        : parada-precisa | cruce | semaforo | dejar-carro | recoger-carro
-                | cambio-de-mapa | bifurcacion | vinculacion | desvinculacion
+function        : parada-precisa | parada | giro | cambio-de-mtc | cruce | semaforo
+                | dejar-carro | recoger-carro | cambio-de-mapa | bifurcacion
+                | vinculacion | desvinculacion | tramo-conflictivo | control-wifi
 ```
 
-Nueve clases, no siete: dejar y recoger carro son acciones físicamente distintas y se declaran por
+**Catorce clases**: el propietario añade después `tramo-conflictivo` (un tramo con un problema físico
+conocido, como una arqueta metálica bajo la guía magnética) y `control-wifi` (manda continuar a los AGV
+sin wifi), y explica el resto (R-GRA-007): la parada precisa espera al servidor, la condicionada a un
+sensor, un pulsador o una radio; una `parada` es de seguridad y solo se reanuda a mano; los tags MTC
+de carga online son `bifurcacion` hacia la calle que asigna el servidor; pin arriba y pin abajo son
+recoger y dejar carro. El significado de cada una está en `FUNCTION_MEANING`
+(`src/domain/tag-lists.ts`) y se enseña junto al punto crítico.
+
+**Doce clases el 2026-09-26, primero**: el propietario añade `parada` (una parada que no es precisa),
+`giro` y `cambio-de-mtc`, y declara que **toda función de planta es crítica**. Una función fuera de
+estas clases no se rechaza ni se ignora: el tag cuenta como crítico con el nombre que planta le dio, y
+se avisa una vez por función de que no tiene regla propia (R-GRA-007). Dos tags seguidos en la lista
+`circuito` con la misma función son un **refuerzo** (R-GRA-016), salvo `cruce` y
+`tramo-conflictivo`, que seguidos son una zona. Un `cambio-de-mtc` es un tag que cambia el multicircuito del AGV para hacer alguna
+configuración especial; cuando la misma función va a destinos distintos, el destino va en `grupo`, y
+dos seguidos con distinto `grupo` no son un refuerzo.
+
+Antes de esa ampliación eran nueve clases, no siete: dejar y recoger carro son acciones físicamente distintas y se declaran por
 separado, y lo mismo vinculación y desvinculación — sincronizar la velocidad del vehículo con la
 línea de producción, o dejar de hacerlo para ir en paralelo, son dos acciones distintas y no una
 función con dos estados. Es lo que ya implementa `src/domain/tag-lists.ts` (`LIST_FUNCTIONS.critico`),
 y esta sección se corrige para contarlo, no al revés.
 
-`cruce` **no es un bloque aparte**: es una de las nueve clases, y cubre dos fenómenos distintos —el
+`cruce` **no es un bloque aparte**: es una de las clases, y cubre dos fenómenos distintos —el
 cruce interno (dos ramas que reconvergen en pocos saltos dentro del mismo cohorte, con firma propia,
 ver más abajo) y el cruce **entre circuitos**, protegido por un par de tags. Un tag de esta segunda
 clase lleva además los campos que su función exige, y que ninguna otra necesita:
@@ -187,11 +205,11 @@ lista;tag;orden;funcion;grupo;capacidad;nota
 
 | Columna | Qué lleva |
 |---|---|
-| `lista` | `circuito`, `memoria`, `mantenimiento`, `emergencia`, `carga-online`, `critico`, `zona` o `ancla` |
+| `lista` | `circuito`, `memoria`, `mantenimiento`, `emergencia`, `carga-online`, `critico`, `zona`, `ancla`, `noche`, `linea` o `tramo` |
 | `tag` | El identificador, **tal cual**: `0040` no es `40` (R-DAT-001, INV-002) |
 | `orden` | Posición dentro de la lista. Sin ella vale el orden de las filas del fichero |
 | `funcion` | El papel del tag dentro de su lista |
-| `grupo` | La agrupación: la calle en `carga-online`, la zona en `zona` |
+| `grupo` | La agrupación: la calle en `carga-online`, la zona en `zona`, y en `critico` el destino o la variante de la función (la calle de una bifurcación a carga online, el número de MTC de un cambio de MTC, una parada precisa condicionada) |
 | `capacidad` | Cuántos vehículos caben en esa agrupación (R-CO-001) |
 
 Y así se expresan los bloques de §3.4:
@@ -200,8 +218,11 @@ Y así se expresan los bloques de §3.4:
 |---|---|
 | `co_lanes` | `lista=carga-online`, `grupo` = identificador de la calle, `orden` = 1…n y `funcion` ∈ `entrada`, `parada-precisa`, `salida`. `entrada` es opcional: sin ella, la calle empieza en su parada precisa. Un tag de la calle sin `funcion` es un paso intermedio |
 | `loaded_zone` / `empty_zone` | `lista=zona`, `grupo` ∈ `cargado`, `vacio`, una fila por tag |
-| `critical_points` | `lista=critico`, `funcion` con una de las nueve clases de §3.4.1. **Alternativa**: `lista=circuito` con la misma `funcion` en la fila del tag — las dos vías conviven, `critico` gana en caso de contradicción |
+| `critical_points` | `lista=critico`, `funcion` con una de las doce clases de §3.4.1, o la función de planta tal cual (cuenta como crítica y se avisa). **Alternativa**: `lista=circuito` con la misma `funcion` en la fila del tag — las dos vías conviven, `critico` gana en caso de contradicción |
 | `lap_anchors` | `lista=ancla`, `orden` = prioridad cuando se declara más de una (§3.4.2) |
+| tramos | `lista=tramo`, `grupo` = nombre del tramo (kitting, línea, cruce…): se dibuja en las gráficas del anillo y no cambia ningún cálculo (R-GRA-018) |
+| la línea | `lista=linea`, `orden` = 1…n: los tags de la línea de producción; el primero es la entrada, donde se mide la cadencia y el pulmón (R-FLO-010). El pulmón no se declara: sale de las medidas |
+| tags de noche | `lista=noche`, una fila por tag: los que pueden aparecer de noche en el circuito. Explican un tag que solo se lee de noche (R-DAT-022) y son `especial` en el inventario |
 
 ```text
 carga-online;70011;1;entrada;calle-1;2

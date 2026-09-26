@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.18.0
+version: 0.27.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -248,6 +248,59 @@ contra la lista, tag a tag; la lista corregida se entrega como fichero, y declar
 decide el propietario. Un número parecido no prueba una errata: los tags vienen en familias de
 números seguidos; lo que la prueba es el sitio.
 
+## Funciones críticas, situación de planta y refuerzos (2026-09-26)
+
+Decisiones del propietario al revisar la conversión de la lista de PC2:
+
+- **Toda función de planta es crítica**: «si falla una parada precisa, una parada, un cambio de MTC o
+  un giro puede afectar al funcionamiento». Se añaden `parada`, `giro` y `cambio-de-mtc`; cualquier
+  otra función entra con su nombre, cuenta como crítica y se avisa una vez de que no tiene regla
+  propia. A qué clase va cada texto que no lo dice solo es OQ-132 (R-GRA-007).
+- **La situación no es una función**: LINEA es producción y marca el consumo; PICKING es donde se
+  carga el AGV; CRUCE es la zona que se cruza o comparte con otros circuitos. Solo CRUCE se declara
+  crítico (`cruce`); un tag con función y en CRUCE se declara por su función, con CRUCE en la nota.
+- **Tags seguidos con la misma función son un refuerzo** por si falla una lectura (R-GRA-016): uno
+  sin leerse nunca con el otro leído es `refuerzo-sin-lectura`, sin redundancia pero con la función en
+  pie. Un cruce seguido es una zona, no un refuerzo.
+- **Cambio de MTC**: un tag que cambia el número de MTC (multicircuito) del AGV —normal, 1, 2… 15—
+  para hacer alguna configuración especial; en PC2, «CAMBIO Nº MODO CIRCUITO» (confirmado, OQ-132
+  cerrada). El número va en `grupo`; la hoja de PC2 no lo trae.
+- **Qué es cada función de planta**: la parada precisa espera al servidor; la condicionada, a un
+  sensor, un pulsador o una radio. Una PARADA es de seguridad: solo detiene, y el AGV no vuelve a
+  funcionar si no es a mano. «MTC n C.O» ordena girar hacia la calle n que asignó el servidor
+  (`bifurcacion`, calle en `grupo`). Pin arriba es recoger el carro y pin abajo, soltarlo. La
+  reducción por arqueta es un tramo conflictivo (una arqueta metálica bajo la guía magnética), que
+  seguido es una zona y no un refuerzo. Control wifi manda continuar a los AGV sin wifi. La entrada
+  y salida con baterías es un cruce.
+- **Lista de tags de noche** (`noche`): el propietario la da para explicar los tags que pueden
+  aparecer de noche. Un tag suyo que solo se lee de noche es «tag de noche declarado»; si se lee de
+  día, manda lo leído y se dice. En el inventario es `especial` (R-DAT-022).
+- **Lista de PC2**: los cinco tags del circuito que no estaban en la memoria se añaden a la memoria, y
+  los dos números mal escritos (uno de noche y uno de memoria) están corregidos en el libro de
+  listas, fuera del repositorio.
+- **Limpieza de la lista** (R-GRA-017): con las lecturas, los declarados que no están en el físico
+  (para comprobar su función: colocar una copia o eliminarlos de Vsystem), los que están en otra
+  posición, y cada refuerzo declarado comprobado contra el recorrido —«no puede haber tanto
+  refuerzo»—. Se descarga en CSV.
+- **Alimentación de la línea** (R-FLO-010): si por la línea no pasan AGV, está parada. La entrada es
+  el primer tag de la lista `linea`. El pulmón no se declara: el propietario creía que eran 8 AGV y
+  pidió que saliera de las medidas. Cada parada de la línea es con AGV esperando o «le faltaron AGV»,
+  con el hueco con el AGV anterior y si el de detrás retiene a otros.
+- **Ciclo de la línea**: unos 55 s, no fijo (periodos de 50 y de 60), la noche distinta y varias
+  paradas. Cada tiempo entre pasos se mide contra su ciclo local, y lo que se pasa es tiempo sin
+  paso, con AGV esperando o sin AGV (R-FLO-010).
+- **Nada contamina los tiempos**: la noche se mide aparte, y la cola del pulmón durante una parada de
+  la línea se quita como un descanso (R-FLO-010).
+- **Tramos en las gráficas** (R-GRA-018): kitting, línea y cruces pintados en el anillo y en las
+  horquillas, para leerlas mejor; la lista `tramo`, y si no, la línea y los cruces.
+- **Pasos por la línea** (R-FLO-011): un AGV que no sigue tras la línea (el pin del carro), uno que
+  pasó sin la parada (se fue con el carro) y uno que hace la parada sin leer un tag (su lector o su
+  memoria). El propietario: nada específico de un circuito, porque casi todos tienen una línea
+  parecida; los de vinculación siguen en paralelo y no paran.
+- **FIFO**: la zona de cada tag sale del ESTADO de planta (LLENO → `cargado`, VACIO y SIN CARRO →
+  `vacio`), y es lo que monta los tramos FIFO de zona cargada (R-FLO-001). Las calles de carga online
+  van en `vacio` (R-FLO-003).
+
 ## Estado al 2026-09-26 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
@@ -258,15 +311,15 @@ conversación siguiente.
   (ADR-0010). La última entrega es la posición de un tag según las lecturas (R-GRA-015,
   `CHANGELOG.md` `[3.32.0]`), publicada en `main` y en la web.
 - **Cómo se ha trabajado**: una entrega por petición del propietario, con su documentación, su clase
-  plantada en la auditoría sintética (`tests/audit/`, 43 clases) y un solo commit en la rama de
+  plantada en la auditoría sintética (`tests/audit/`, 49 clases) y un solo commit en la rama de
   trabajo; PR y fusión solo cuando él lo pide. Las decisiones de cada entrega están en las secciones
   de arriba y en el `CHANGELOG`.
 - **Pendiente de planta**, sin identificadores:
   1. Calibrar los umbrales provisionales (`draft`) con datos reales (OQ-129).
   2. El propietario revisa la lista de un circuito corregida por las lecturas, que se le entregó
      como fichero, y decide qué tags leídos que la lista no tiene se declaran.
-  3. En su lista de tags de noche hay un número que no está en la memoria y tiene un dígito de más:
-     probablemente una errata. No se cargó.
+  3. Resuelto el 2026-09-26: el propietario dio el número correcto del tag de noche; está en el libro
+     de listas, fuera del repositorio.
   4. El resto de preguntas abiertas, en `OPEN_QUESTIONS.md`.
 - **Fuera del repositorio**: los scripts y las salidas de los análisis con datos de planta vivían en
   `local/` (ignorado por git) y se le entregaron al propietario en un paquete. Para analizar datos

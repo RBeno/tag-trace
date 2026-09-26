@@ -1,8 +1,8 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.26.0
+version: 0.34.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Glosario controlado
@@ -32,6 +32,18 @@ last_updated: 2026-09-25
 | Suma entre anclas | El tiempo entre dos tags que siguen en su sitio a los dos lados de un cambio (las anclas). Es del recorrido: si entre ellas se pone, se quita o se cambia un tag y la suma sigue igual, solo cambió lo de en medio (R-DAT-021). |
 | Orden declarado | El orden de la lista `circuito`. Es `expected`: puede tener erratas al transcribir o ser distinto al real, y no sitúa a ningún tag que se lea (R-GRA-015). |
 | Posición leída | El sitio de un tag en el orden en que lo leen los AGV: sus vecinos leídos. Manda sobre el orden declarado (R-GRA-015). |
+| Refuerzo | Dos o más tags críticos seguidos en la lista del circuito con la misma función: la misma función puesta varias veces por si falla una lectura. Una zona de cruce no es un refuerzo (R-GRA-016). |
+| Refuerzo comprobado | Refuerzo declarado cuyos tags se leen todos seguidos en el recorrido. Si falta uno es `incompleto`; si se leen lejos, `separado` (R-GRA-017). |
+| Pulmón | Los AGV que esperan antes de la entrada a la línea. No se declara: sale de dónde esperan cuando la línea para, y su capacidad es lo más que llegaron a esperar (R-FLO-010). |
+| Tramo | Parte del circuito con un nombre declarado en la lista `tramo` —kitting, línea, cruce…—. Se dibuja en las gráficas del anillo para leerlas mejor; no cambia ningún cálculo (R-GRA-018). |
+| Línea sin paso | Un tiempo entre dos AGV en la entrada por encima de la valla de su cadencia: la línea parada. Con AGV esperando, o sin ellos, «le faltaron AGV» (R-FLO-010). |
+| Paso por la línea | Una racha de lecturas de tags de la lista `linea` de un AGV. Se revisa si lee los tags esperados, si sigue después y si hizo la parada (R-FLO-011). |
+| Cambio de MTC | Tag que cambia el número de MTC (multicircuito) del AGV —normal, 1, 2… 15— para hacer alguna configuración especial. En planta, «CAMBIO Nº MODO CIRCUITO». El número va en `grupo` (R-GRA-007). |
+| MTC de carga online | Tag que ordena al AGV girar hacia la calle de carga online que le asignó el servidor. Es una bifurcación, con la calle en `grupo` (R-GRA-007). |
+| Parada (de seguridad) | Tag que detiene al AGV para que no se vaya por otro circuito; solo vuelve a funcionar a mano. No es una parada precisa ni explica su espera (R-GRA-007). |
+| Tramo conflictivo | Tramo con un problema físico conocido, como una arqueta metálica bajo la guía magnética. Seguido es una zona, no un refuerzo (R-GRA-007, R-GRA-016). |
+| Tag de noche declarado | Tag de la lista `noche` de planta que solo se lee de noche: lo explica la lista, sin comprobarlo con las pasadas de día (R-DAT-022). |
+| Situación de planta | Dónde está un tag: LINEA (producción, marca el consumo), PICKING (donde se carga el AGV) o CRUCE (zona que se cruza o comparte con otros circuitos). No es una función (R-GRA-007). |
 | Posición en tiempo | Los segundos de recorrido desde el ancla hasta un tag, sumando la mitad de las pasadas de cada paso. Es tiempo, nunca distancia; un tag que no se puede situar no se interpola (R-TIM-011). |
 | Valla | Límite de la horquilla de un tramo: p95 + max(p95 − p50, margen mínimo, resolución). Por encima, una transición es una parada candidata (R-FLO-007). |
 | Retención | Transición lenta —por encima del p95 de su tramo, con al menos el margen de espera— con un AGV delante que no se iba (R-FLO-008). |

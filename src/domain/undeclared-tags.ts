@@ -23,6 +23,10 @@
  *   leerlo nunca no sea casualidad → tag de noche.
  * - `noche-probable`: solo se lee de noche y de día no hay pasadas por su sitio con las que
  *   comprobarlo → posiblemente de noche.
+ * - `noche-declarado`: solo se lee de noche y está en la lista `noche`, que el propietario da para
+ *   explicar los tags que pueden aparecer de noche (2026-09-26). No hace falta comprobarlo con las
+ *   pasadas de día: está declarado. Un tag de esa lista que **sí** se lee de día sigue siendo
+ *   `posicion`, y se dice que la lista de noche lo declara: lo leído manda sobre lo declarado.
  *
  * No se nombra causa (R-EVI-006): es dónde y cuándo se lee, con sus cifras.
  */
@@ -40,11 +44,13 @@ export interface UndeclaredTagThresholds {
   readonly maxReadsBetween: number;
 }
 
-export type UndeclaredVerdict = "posicion" | "noche" | "noche-probable";
+export type UndeclaredVerdict = "posicion" | "noche" | "noche-probable" | "noche-declarado";
 
 export interface UndeclaredTag {
   readonly tagId: string;
   readonly verdict: UndeclaredVerdict;
+  /** Está en la lista `noche` de planta. */
+  readonly declaredNight: boolean;
   readonly dayReadings: number;
   readonly nightReadings: number;
   readonly predecessor: string | null;
@@ -144,6 +150,7 @@ export function locateUndeclaredTags(
   excluded: ReadonlySet<string>,
   regimeOf: (utcMs: number) => Regime,
   thresholds: UndeclaredTagThresholds,
+  declaredNight: ReadonlySet<string> = new Set(),
 ): UndeclaredTagReport {
   if (declaredOrder.length === 0) {
     return { evaluated: false, reason: "No hay lista «circuito» cargada con la que comparar.", tags: [] };
@@ -198,8 +205,10 @@ export function locateUndeclaredTags(
       }
     }
 
+    const isDeclaredNight = declaredNight.has(tagId);
     let verdict: UndeclaredVerdict;
     if (counts.produccion > 0) verdict = "posicion";
+    else if (isDeclaredNight) verdict = "noche-declarado";
     else {
       const nightRate = nightPasses === 0 ? 1 : nightHits / nightPasses;
       const chance = (1 - nightRate) ** dayPasses;
@@ -229,14 +238,17 @@ export function locateUndeclaredTags(
             declaredWithoutReadings.length === 0
               ? ""
               : `; la lista pone ahí ${declaredWithoutReadings.join(", ")}, que no se ${declaredWithoutReadings.length === 1 ? "lee" : "leen"}: o se sustituyó, o el número está mal escrito en la lista`
-          }.`
-        : verdict === "noche"
+          }.${isDeclaredNight ? " La lista de tags de noche lo declara de noche, y se lee también de día." : ""}`
+        : verdict === "noche-declarado"
+          ? `Solo se lee de noche, ${where}: ${reads}.${passes} Está en la lista de tags de noche: es un tag de noche declarado.`
+          : verdict === "noche"
           ? `Solo se lee de noche, ${where}: ${reads}.${passes} De día se pasa por su sitio y no se lee: tag de noche.`
           : `Solo se lee de noche, ${where}: ${reads}.${passes} De día no hay pasadas suficientes por su sitio para comprobarlo: posiblemente de noche.`;
 
     tags.push({
       tagId,
       verdict,
+      declaredNight: isDeclaredNight,
       dayReadings: counts.produccion,
       nightReadings: counts.noche,
       predecessor,

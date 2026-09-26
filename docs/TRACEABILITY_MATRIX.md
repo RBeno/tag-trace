@@ -1,8 +1,8 @@
 ---
 document_id: TT-TRACE-001
-version: 0.40.0
+version: 0.48.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Matriz de trazabilidad
@@ -120,6 +120,16 @@ regla exista: la matriz no es una lista de intenciones.
 | R-DAT-022 / R-DAT-019 / TC-214–215 tags fuera de la lista del circuito, de día y de noche | `src/domain/undeclared-tags.ts`, `src/domain/tag-changes.ts` (`withoutTags`), `src/domain/anchor-sums.ts` (`structureBoundaries`), `workers/import.worker.ts`, `src/presentation/main.ts` (`renderUndeclaredTags`) | `tests/unit/undeclared-tags.test.ts`, `tests/unit/tag-changes.test.ts`, `tests/audit/auditoria.test.ts` |
 | R-GRA-001 / TC-216 declarado en el anillo en otro punto del orden | `src/domain/vsystem.ts` (`otro-orden`), `src/presentation/labels.ts` | `tests/unit/vsystem.test.ts` |
 | R-GRA-015 / TC-217–219 la posición de un tag la dan las lecturas | `src/domain/circuit-order.ts`, `src/domain/undeclared-tags.ts` (`dominantNeighbours`), `src/domain/vsystem.ts`, `workers/import.worker.ts` (`circuitOrder`), `src/presentation/main.ts` (`renderCircuitOrder`), `src/presentation/labels.ts` | `tests/unit/circuit-order.test.ts`, `tests/unit/vsystem.test.ts`, `tests/unit/undeclared-tags.test.ts`, `tests/audit/auditoria.test.ts` |
+| R-GRA-007 / TC-222 toda función de planta es crítica; `parada`, `giro`, `cambio-de-mtc` | `src/domain/tag-lists.ts` (`LIST_FUNCTIONS.critico`), `src/domain/circuit-config.ts` (`readCriticalPoints`), `src/presentation/labels.ts` | `tests/unit/charging.test.ts` |
+| R-GRA-016 / TC-220–223 refuerzos de un punto crítico | `src/domain/critical-reinforcement.ts`, `src/domain/inventory.ts` (`refuerzo-sin-lectura`), `src/domain/tag-info.ts`, `workers/import.worker.ts` | `tests/unit/critical-reinforcement.test.ts`, `tests/unit/inventory.test.ts`, `tests/unit/tag-info.test.ts`, `tests/audit/auditoria.test.ts` |
+| R-DAT-022 / TC-224–225, TC-227 lista de tags de noche | `src/domain/tag-lists.ts` (`noche`), `src/domain/undeclared-tags.ts` (`noche-declarado`), `src/domain/inventory.ts` (`night`), `workers/import.worker.ts`, `src/presentation/main.ts` | `tests/unit/undeclared-tags.test.ts`, `tests/unit/inventory.test.ts`, `tests/audit/auditoria.test.ts` |
+| R-GRA-016 / TC-226 refuerzo con `grupo` | `src/domain/circuit-config.ts` (`groupOf`), `src/domain/critical-reinforcement.ts`, `src/domain/tag-info.ts` | `tests/unit/critical-reinforcement.test.ts`, `tests/unit/charging.test.ts`, `tests/unit/tag-info.test.ts` |
+| R-GRA-007 / TC-228 qué es cada función de planta; `tramo-conflictivo`, `control-wifi` | `src/domain/tag-lists.ts` (`FUNCTION_MEANING`), `src/domain/critical-reinforcement.ts`, `src/presentation/main.ts`, `src/presentation/labels.ts` | `tests/unit/charging.test.ts`, `tests/unit/critical-reinforcement.test.ts` |
+| R-GRA-017 / TC-229–230 limpieza de la lista | `src/domain/list-cleanup.ts`, `workers/import.worker.ts` (`listCleanup`), `src/application/protocol.ts`, `src/presentation/main.ts` (`renderListCleanup`) | `tests/unit/list-cleanup.test.ts`, `tests/audit/auditoria.test.ts` |
+| R-FLO-010 / TC-231–232 alimentación de la línea | `src/domain/line-feed.ts`, `src/domain/segment-bands.ts` (`bandOf`), `src/domain/tag-lists.ts` (`linea`), `workers/import.worker.ts` (`lineFeed`), `src/application/protocol.ts`, `src/presentation/main.ts` (`renderLineFeed`) | `tests/unit/line-feed.test.ts`, `tests/audit/auditoria.test.ts` Ritmo y tiempo sin paso: TC-235–236. |
+| R-FLO-011 / TC-233–234 pasos por la línea | `src/domain/line-feed.ts` (`passages`), `workers/import.worker.ts`, `src/presentation/main.ts` (`renderLineFeed`) | `tests/unit/line-feed.test.ts`, `tests/audit/auditoria.test.ts` |
+| R-FLO-010 / TC-237 exclusión de las paradas de la línea | `src/domain/line-feed.ts` (`lineStopExclusion`, `outsideLineStops`), `workers/import.worker.ts` | `tests/unit/line-feed.test.ts`, `tests/audit/auditoria.test.ts` (mismo encadenado) |
+| R-GRA-018 / TC-238 tramos en las gráficas | `src/domain/tag-info.ts` (`tagSections`), `src/domain/tag-lists.ts` (`tramo`), `src/presentation/diagnostic-charts.ts`, `src/presentation/main.ts`, `src/presentation/franjas-ui.ts`, `src/presentation/styles.css` | `tests/unit/tag-info.test.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
 planta (DS-002, DS-006, DS-008) — cubierta más arriba vía `src/ingestion/catalog.ts` —, y el tercer

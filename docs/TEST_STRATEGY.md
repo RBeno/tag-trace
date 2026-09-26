@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.39.0
+version: 0.47.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Estrategia de pruebas y evaluación
@@ -269,6 +269,25 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-217 | Orden del circuito según las lecturas (`reconcileCircuitOrder`) | Dos vecinos cambiados en la lista y uno movido lejos salen donde los leen los AGV, marcados `otro-sitio` con su sitio en cada lado; un declarado sin lecturas va donde lo pone la lista y se dice que es solo eso; lo leído fuera del anillo, detrás de su predecesor leído; un número mal escrito queda junto al tag de verdad; sin lista no se evalúa | Ordenar lo leído por la lista, o dar por leída la posición de un tag que nadie lee |
 | TC-218 | Contraste con Vsystem y tags fuera de la lista (`compareAgainstVsystem`, `locateUndeclaredTags`, `dominantNeighbours`) | La diferencia se dice como corrección de la lista: «manda lo leído»; un declarado sin lecturas donde se lee otro que la lista no tiene es «sustitución o número mal escrito»; un tag fuera de la lista se sitúa por sus vecinos leídos, sin el orden de la lista | Llamar fallo del circuito a una errata de la lista, o decidir por el número |
 | TC-219 | Auditoría (`lista-con-otro-orden`, `lista-con-numero-mal-escrito`) | Con erratas solo en la lista, lo leído no cambia: los tags cambiados de orden siguen limpios en todas las demás sondas y salen donde se leen; el número mal escrito sale junto al de verdad, que es candidato a esa posición | Que una errata de la lista mueva cualquier hallazgo sobre lo leído |
+| TC-220 | Refuerzos (`reinforcementGroups`) | Dos o más tags seguidos en la lista `circuito` con la misma función son un refuerzo; separados, con funciones distintas o en `cruce`, no; el anillo se cierra | Llamar refuerzo a una zona de cruce, o a una parada precisa seguida de una parada | Unitaria |
+| TC-221 | Inventario (`buildTagInventory`) con refuerzo | Un crítico en memoria nunca leído con un refuerzo que se lee es `refuerzo-sin-lectura`; si no se lee ninguno del refuerzo, los dos son `critico-sin-lectura` | Dar por perdida la función que el refuerzo sostiene | Unitaria |
+| TC-222 | Funciones críticas (`readCriticalPoints`) | `parada`, `giro` y `cambio-de-mtc` sin aviso; una función de planta fuera de la taxonomía cuenta como crítica y se avisa una vez por función, con sus tags | Descartarla, o un aviso por tag | Unitaria |
+| TC-223 | Auditoría (`refuerzo-sin-lectura`) | El tag siguiente a la desvinculación, declarado con la misma función y nunca leído, sale `refuerzo-sin-lectura` con su refuerzo nombrado; la desvinculación, activa; ningún `critico-sin-lectura` | Que se perdió la función; cualquier otra clase movida por la plantación | Auditoría |
+| TC-224 | Tags fuera de la lista con la lista `noche` (`locateUndeclaredTags`) | Solo de noche y en la lista: `noche-declarado` aunque no haya pasadas de día; leído de día: `posicion`, diciendo que la lista lo declara de noche | Ignorar lo leído de día por estar en la lista | Unitaria |
+| TC-225 | Inventario con la lista `noche` | Un tag de la lista que se lee es `especial`, no `no-declarado-leido` | Pedir declararlo en Vsystem | Unitaria |
+| TC-226 | Refuerzos con `grupo` (`reinforcementGroups`, `readCriticalPoints`) | La misma función con distinto `grupo` no es un refuerzo; con el mismo, sí | Un refuerzo de cinco cambios de MTC a cinco calles | Unitaria |
+| TC-227 | Auditoría (`tag-de-noche-declarado`) | Con el tag de noche plantado en la lista `noche`, sale `noche-declarado` en su sitio y los demás tags fuera de la lista no cambian | Cambiar el veredicto de otro tag | Auditoría |
+| TC-228 | Funciones críticas (`readCriticalPoints`, `reinforcementGroups`) | `tramo-conflictivo` y `control-wifi` sin aviso; un tramo conflictivo seguido no es un refuerzo | Llamar refuerzo a los tags de una arqueta | Unitaria |
+| TC-229 | Limpieza de la lista (`buildListCleanup`, `listCleanupCsv`) | Declarados sin lecturas, críticos primero y con su acción; en otra posición, con las dos; refuerzos comprobados, incompletos o separados en el anillo leído, dando la vuelta, o con el vecino leído: fuera del anillo pero leído justo antes que su pareja está comprobado | Separar un refuerzo por un declarado sin lecturas intercalado | Unitaria |
+| TC-230 | Auditoría (`limpieza-de-la-lista`) | Fuera del físico, el refuerzo sin lecturas primero y los nunca leídos y el número mal escrito; en otra posición, los cambiados de orden; el refuerzo de la desvinculación, incompleto | Otro tag fuera del físico o en otra posición | Auditoría |
+| TC-231 | Alimentación de la línea (`measureLineFeed`, `lineStopsCsv`) | Sin lista `linea` no se evalúa; la cadencia sale de la entrada; las paradas con AGV esperando miden el pulmón; un rezagado deja a la línea sin AGV, con el hueco y quien retiene; si el siguiente ya estaba en el pulmón, «un AGV en la puerta» | Llamar «le faltaron AGV» a una parada con un AGV en la puerta | Unitaria |
+| TC-232 | Auditoría (`linea-parada-con-pulmon`) | Con una línea declarada, las tres paradas de la producción plantadas son paradas de la línea con AGV esperando, y el pulmón queda medido | Que a la línea le faltaron AGV en una parada de la producción | Auditoría |
+| TC-233 | Pasos por la línea (`measureLineFeed`, `passages`) | Un AGV que nunca lee la entrada, con la cadencia normal, sale como lectura; uno que se queda tras la línea, «no sigue»; uno que no hace la parada, «sin parada»; en una línea de vinculación no se busca «sin parada» | Llamar «sin parada» a quien no lee un tag pero para | Unitaria |
+| TC-234 | Auditoría (`linea-tag-sin-leer`) | Con la línea en el 59 y el 60, exactamente los vehículos sin el 60 en memoria, sin leerlo en todos sus pasos (y el lector degradado, que también es verdad); ningún paso señalado en una parada de la producción | Que no hicieran la parada | Auditoría |
+| TC-235 | Ritmo de la línea (`measureLineFeed`, `rhythm`) | Con periodos de 40 s y de 50 s, el ciclo local sigue a cada uno y solo cuenta como tiempo sin paso la espera de más; la noche, aparte con su ciclo | Contar el cambio de periodo como línea parada | Unitaria |
+| TC-236 | Auditoría (`linea-tiempo-sin-paso`) | El tiempo sin paso con AGV esperando cubre al menos el 90 % de las paradas de la producción plantadas | Que en ellas faltaran AGV | Auditoría |
+| TC-237 | Exclusión de las paradas de la línea (`lineStopExclusion`, `outsideLineStops`) | Una transición del pulmón durante una parada con AGV esperando se quita; una de otro tramo a la vez, o del pulmón después, no | Quitar las de los AGV que siguen moviéndose | Unitaria |
+| TC-238 | Tramos (`tagSections`) | La lista `tramo` manda; lo demás, la línea como «línea» y los críticos `cruce` como «cruce»; el tramo va junto a lo declarado del tag | Que cambie algún cálculo | Unitaria |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda
