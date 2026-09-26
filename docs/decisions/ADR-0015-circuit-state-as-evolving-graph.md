@@ -67,7 +67,7 @@ para la memoria normal; lo que faltaba era hacerlo desde el primer fichero.
 - El tamaño del almacén queda acotado por las lecturas de una o dos exportaciones más una
   instantánea por fichero; el presupuesto se declara en `MEMORY_CONSOLIDATION.md` §9.
 - Lo que una instantánea no guarda no se puede recalcular sin volver a cargar el fichero: la lista de
-  lo que guarda está en `DATA_CONTRACTS.md` §8 y se versiona (`schemaVersion`).
+  lo que guarda está en `DATA_CONTRACTS.md` §12 y se versiona (`schemaVersion`).
 
 ## Alternativas descartadas
 

@@ -1,6 +1,6 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.3.0
+version: 0.4.0
 status: baseline-candidate
 last_updated: 2026-09-23
 ---
@@ -15,9 +15,9 @@ Conservar la evolución real del circuito con el mínimo volumen necesario para 
 
 | Capa | Contenido | Persistencia por defecto |
 |---|---|---|
-| Bruto activo | Archivos originales y filas | Solo durante la sesión/análisis; referencia por hash |
+| Bruto activo | Archivos originales y filas | Solo durante la sesión/análisis; referencia por hash. Las lecturas normalizadas se retienen solo para la última exportación (o dos si se solapan), R-DAT-023 |
 | Trabajo | Eventos normalizados, índices y grafos temporales | Temporal, liberable por etapas |
-| Resultado | Hallazgos, métricas, grafo del periodo | Hasta revisar/exportar |
+| Resultado | Hallazgos, métricas, grafo del periodo | **Duradera como instantánea** por fichero desde 2026-09-26 (ADR-0015, R-DAT-023): un grafo con fecha de cientos de kilobytes, guardado solo, sin ser memoria consolidada |
 | Memoria normal | Estado consolidado y deltas compactos | Duradera en `.agvproj` |
 | Incidencias | Recorte mínimo, replay, informe y contramedidas | Duradera pero separada |
 
@@ -119,6 +119,12 @@ Objetivo candidato: en periodos normales, el incremento consolidado debe ocupar 
 - capacidad de compactar índices reconstruibles sin perder decisiones.
 
 No se eliminará información confirmada solo para cumplir un porcentaje; primero se eliminan duplicaciones y derivados reconstruibles.
+
+**Medido el 2026-09-26** con el circuito de auditoría (230.000 lecturas, 145 tags, 40 AGV): el
+registro con todas las lecturas rondaba los 110 MB y pasó del límite de un valor de IndexedDB en
+Chromium tras dos recargas (OQ-142); una instantánea del mismo fichero ocupa cientos de kilobytes.
+El almacén queda acotado por las lecturas de una o dos exportaciones más una instantánea por
+fichero (ADR-0015).
 
 ## 10. Bifurcación de linaje entre dispositivos
 

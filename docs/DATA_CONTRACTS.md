@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.21.0
+version: 0.22.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -494,6 +494,8 @@ formaliza en F1a y se completa en F4. Como mínimo contendrá:
 - expedientes de incidencia separados;
 - referencias a fuentes y disponibilidad de evidencia;
 - registro append-only de consolidaciones y migraciones.
+- **las instantáneas de cada fichero** (sección `instantaneas`, §12), que son lo que hace que el
+  circuito viaje con toda su evolución y sin su bruto (ADR-0015).
 
 No incluirá el bruto completo por defecto. Un expediente puede conservar un recorte normalizado mínimo cuando sea necesario para reproducir una incidencia.
 
@@ -534,7 +536,44 @@ El usuario debe poder eliminar lo que ha creado, y esa eliminación debe ser ver
   almacenamiento, solicitando persistencia explícita (RSK-011, TH-009).
 - El bruto original nunca es propiedad de la aplicación: se referencia por hash y permanece donde
   el usuario lo tenga.
+- **Retención de lecturas** (R-DAT-023, ADR-0015): el almacén guarda las lecturas por fuente y solo
+  retiene las de la última exportación cargada y, si su ventana completa se solapa con la anterior,
+  las de esa anterior. Las demás se retiran y su fichero queda como instantánea (§12). El
+  expediente y el replay solo alcanzan las lecturas retenidas, y la vista lo dice; volver a cargar
+  el fichero las recupera.
 
 ## 11. Datos reales y GitHub
 
 Ninguna fuente real, aunque esté parcialmente anonimizada, se añade al repositorio. Los fixtures sintéticos deben usar identificadores, geometría, horarios y distribuciones inventados y llevar un manifiesto `synthetic: true`.
+
+## 12. La instantánea del circuito (ADR-0015)
+
+Lo que perdura de cada exportación analizada: un grafo con fecha, definido en
+`src/domain/snapshot.ts` (`CircuitSnapshot`, `schemaVersion` 1). Cambiar un campo es subir la
+versión del esquema y escribir su migración; los campos se añaden, no se renombran.
+
+| Bloque | Contenido | De dónde sale |
+|---|---|---|
+| Identidad | `circuitId`, `zone`, `sourceId`, `sourceHash`, `fileName`, `window` (tramo analizable, R-DAT-007), `capturedAt`, `appVersion`, `acceptedRows`, exposición por régimen | resumen de la fuente y cobertura |
+| Anillo | `cohortId`, `anchorTagId`, `anchorDeclared`, `ring` (desde el ancla), `lapMs` | ciclo dominante del cohorte principal (R-GRA-009) y la vuelta del fichero (R-TIM-011) |
+| Vértices | por tag: posición, `offsetMs` desde el ancla, tramo, función, declarado, tasa de lectura y pasadas (R-OPP-013), lecturas, AGV que nunca lo leen, predecesor y sucesor dominantes (R-DAT-019), clase de inventario, situación (`anillo`, `calle`, `linea`, `fuera`, `sin-lecturas`), calle, ancla | matriz de lectura, inventario, listas, vecinos dominantes |
+| Aristas | por tramo del anillo: horquilla de producción y de noche (R-FLO-007) | horquillas del fichero |
+| Secciones | por sección entre anclas: nombre, tags, horquillas (R-TIM-012) | secciones del fichero |
+| Sumas entre anclas | por hueco entre anclas seguidas: tags, suma por régimen, pasadas y, por tag, en cuántas se leyó y por cuántos AGV (R-DAT-021) | secuencias de anclas del fichero |
+| Contexto | flota («N de M» al final y mediana, origen del historial), línea (cadencia, paradas, sin paso), calles (uso), hallazgos (clave de revisión R-EVI-007, tipo, título, cifra, estado) | vistas del fichero |
+
+Lo que **no** guarda, a propósito (`MEMORY_CONSOLIDATION.md` §4): lecturas, matriz completa,
+replay, expedientes, estados por instante. Se reconstruye cargando el fichero otra vez.
+
+**Almacén local, versión 6.** Tres tablas: `circuits` (clave `circuitId`; identidad, fuentes con
+sus metadatos y si sus lecturas están retenidas, cobertura, listas, historial de flota; sin
+lecturas), `sources` (clave `[circuitId, sourceId]`; las lecturas de esa fuente mientras estén
+retenidas) y `snapshots` (clave `[circuitId, sourceId]`; una instantánea por fuente). La migración
+desde la versión 5 parte el registro antiguo por la procedencia de cada lectura, aplica la
+retención y deja las fuentes anteriores sin instantánea (`snapshot: false`) hasta que se vuelvan a
+cargar.
+
+**Evolución.** La secuencia de instantáneas, en orden de ventana, es la evolución del circuito:
+`compareSnapshots` da los vértices que aparecen, desaparecen, se mueven, cambian de clase, dejan de
+leerse o empiezan a leerse, y las aristas más lentas o más rápidas con el criterio de R-TIM-010.
+
