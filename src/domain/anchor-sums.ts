@@ -448,22 +448,36 @@ export function compareAnchorGaps(
     ];
     const a = timedEarly.side;
     const b = timedLate.side;
-    const shift =
-      regime === null || a.p50Ms === null || a.p80Ms === null || b.p50Ms === null || b.p80Ms === null
-        ? null
-        : bandShift({ p50Ms: a.p50Ms, p80Ms: a.p80Ms }, { p50Ms: b.p50Ms, p80Ms: b.p80Ms });
     gaps.push({
       fromAnchor,
       toAnchor,
       before: { passes: early.side.passes, vehicles: early.side.vehicles, p50Ms: a.p50Ms, p80Ms: a.p80Ms },
       after: { passes: late.side.passes, vehicles: late.side.vehicles, p50Ms: b.p50Ms, p80Ms: b.p80Ms },
       regime,
-      sum: regime === null ? "sin-medir" : (shift ?? "igual"),
+      sum: sumVerdict(regime, a, b),
       changes,
       unconfirmed,
     });
   });
   return gaps;
+}
+
+/**
+ * El veredicto de la suma entre anclas (R-DAT-021): `sin-medir` si ningún régimen tiene bastantes
+ * pasadas a los dos lados; si no, la regla de la horquilla (`bandShift`, R-TIM-010) o `igual`. La
+ * comparten la comparación desde lecturas y la que se hace desde instantáneas (ADR-0015 §3).
+ */
+export function sumVerdict(
+  regime: Regime | null,
+  before: Pick<GapSide, "p50Ms" | "p80Ms">,
+  after: Pick<GapSide, "p50Ms" | "p80Ms">,
+): SumVerdict {
+  if (regime === null) return "sin-medir";
+  const shift =
+    before.p50Ms === null || before.p80Ms === null || after.p50Ms === null || after.p80Ms === null
+      ? null
+      : bandShift({ p50Ms: before.p50Ms, p80Ms: before.p80Ms }, { p50Ms: after.p50Ms, p80Ms: after.p80Ms });
+  return shift ?? "igual";
 }
 
 /** Tags que cambian en un tramo: para no enseñar dos veces el mismo cambio. */

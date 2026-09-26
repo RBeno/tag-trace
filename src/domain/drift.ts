@@ -287,7 +287,7 @@ export function sharedNeighborMatch(early: NeighborSignature, late: NeighborSign
  * De los dos vecinos dominantes se toma el que más oportunidades da: el que más se leyó en el otro
  * periodo, porque es el que más veces deja al tag sin excusa.
  */
-function absenceTest(
+export function absenceTest(
   reads: number,
   signature: NeighborSignature,
   refCounts: ReadonlyMap<string, number>,

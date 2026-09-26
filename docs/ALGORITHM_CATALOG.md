@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.39.0
+version: 0.40.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -1064,4 +1064,36 @@ finales del ancla no abren una `parcial`.
 **Hora repetida por posición** (ADR-0013, nota 2026-09-26): `resolveRepeatedHourByPosition` en
 `time.ts`, llamada por el importador tras medir el sentido y antes de volver a medir la monotonía.
 `isOrderReliable(flag)` es la única pregunta que hacen monotonía, transiciones y vueltas.
+
+## 6.21 La instantánea del circuito y la evolución, implementado (ADR-0015, R-DAT-023)
+
+`src/domain/snapshot.ts`. Nada de este módulo mide: reduce lo ya calculado al contrato de
+`DATA_CONTRACTS.md` §12 y compara instantáneas.
+
+- **`buildSnapshot`** valida (ids, ventana, anillo sin repetidos, posiciones coherentes con el
+  anillo, aristas entre consecutivos) y ordena de forma canónica: vértices por posición y luego por
+  id, aristas y huecos en orden del anillo, hallazgos por clave, listas de AGV ordenadas. Un input
+  inválido es un `TypeError` con el motivo.
+- **`compareSnapshots`**: un tag *aparece* o *desaparece* si está en un anillo y no en el otro;
+  *se mueve* si, en el anillo restringido a los tags comunes, cambian su predecesor **y** su sucesor
+  (insertar un tag desplaza los índices de todos, así que se compara por vecino, nunca por
+  índice); *cambia de clase* por la clase de inventario; *deja de leerse* o *empieza a leerse* solo
+  entre tags con la misma pertenencia al anillo, con pasadas, y con la prueba de azar
+  `(1 − tasa)^pasadas ≤ maxChance` si se da el umbral. Las aristas, por régimen, con `bandShift`
+  (R-TIM-010). La vuelta, si cambia, se dice sin criterio de horquilla (no se guarda).
+- **`historiesFromSnapshots`**: las instantáneas en orden de ventana, el fichero repetido contado una
+  vez, y `segmentHistories` sobre sus aristas: mismo resultado que desde las lecturas.
+- **`structureBetweenSnapshots`**: por hueco entre anclas común a las dos, *retirado* si un tag de
+  antes falta después con `(1 − tasa_antes)^pasadas_después ≤ maxChance` y al menos dos AGV
+  distintos en las pasadas de después (uno solo, `unconfirmed`); *insertado* simétrico; *sustituido*
+  cuando un retirado y un insertado comparten los vecinos estables, «mismo sitio» u «otro punto»
+  según el desfase desde el ancla frente a `p80 − p50`; la suma con `sumVerdict`, el mismo de la
+  comparación dentro del fichero. Sin anclas comunes, `null`.
+- **`driftBetweenSnapshots`**: `desaparecido`, `nuevo`, `obsoleto-consolidado` y
+  `sustitucion-candidata` con `absenceTest` (tasa frente al vecino dominante en el periodo en que se
+  leía, oportunidades = lecturas de ese vecino en el otro); por AGV, `droppedTags` desde
+  `nonReaders` y `notAdoptedTags` con `readRate ≥ minAdoptionShare`. Con las ventanas más cerca de
+  `minGapMs`, no se evalúa y se dice.
+- Para que la comparación entre ficheros sea completa, el Worker rellena en cada hueco `p80Ms`,
+  `readsByTag[].offsetMs` y `vehicleIds` (campos opcionales del contrato).
 
