@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.35.0
+version: 0.36.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -29,16 +29,34 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 
 | Pestaña | Qué contiene |
 |---|---|
-| **Resumen** | La composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo») y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. |
+| **Resumen** | La **portada** (3.49.0): la tira de seis cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta y línea—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. |
 | **Tags** | Inventario de tags; «Lo que hay que mirar» (tags); rotura y degradación de cada tag; mapa de omisión; cambios de tag; tags leídos fuera de la lista; limpieza de la lista; contraste contra Vsystem; orden del circuito según las lecturas; comparación entre dos periodos. |
 | **AGV** | Flota del circuito, flota en el circuito y vida de cada AGV (con las paradas de la producción y los primeros de cola); lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; ritmo de cada AGV y quién retiene; y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
-| **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito con su lista ordenada. |
+| **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito en palabras, con el enlace al dibujo del Resumen, su lista ordenada y los tags fuera del anillo. |
 | **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
 | **Datos** | Listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
 
 Lo que se ve en todas las pestañas: la cabecera, la barra de pestañas con el buscador, la barra fija
 de la revisión (§4.3), el selector de lecturas con el nombre del circuito, el progreso y los
 mensajes. Son la entrada y la respuesta de cada importación, y no dependen de la pregunta.
+
+**La tira de cifras** (`div.tiles`, `role="list"`, un `button` por tile): cifra grande en la misma sans
+que todo lo demás y en cifras proporcionales —nunca `tabular-nums`, que a ese tamaño deja «121»
+suelto—, una etiqueta corta encima y la línea de contexto debajo. Tinta normal, sin color de serie;
+solo el tile de hallazgos lleva el acento en la cifra, y solo mientras quede algún hallazgo de rango 1
+pendiente. Cada tile activa la pestaña que lo explica y desplaza hasta su encabezado. Dos columnas en
+el móvil, tres en tableta y seis en una fila desde 1.100 px, con alto uniforme y sin gráfico dentro.
+De dónde sale cada cifra, y qué dice cuando el dato no existe (siempre «sin datos» en gris, nunca un
+cero inventado):
+
+| Tile | Cifra | Contexto | Lleva a |
+|---|---|---|---|
+| AGV en el circuito | «N de M» del **último tramo** de `fleet.counts` (el más reciente: es lo que se pregunta al abrir; la ventana entera está en «Flota en el circuito») | «según el historial de flota» o «vistos en las lecturas», por `historySource` | AGV, «Flota del circuito» |
+| Tags en el anillo | `shapes[0].tags.length` | «N fuera del anillo, M declarados sin lecturas» (`offRingTags`, `circuitOrder.summary`) | Tags, «Lo que hay que mirar» |
+| Cobertura | horas cargadas (suma de los tramos de cobertura, R-DAT-007) | «N ficheros, de <primera> a <última>» | Datos, «Cobertura cargada» |
+| Hallazgos | pendientes de total, contando las tarjetas de la bandeja; se rehace con cada marca | «N pueden parar la planta» (rango 1 pendientes) o «revisión completa» | la bandeja del Resumen |
+| Vuelta | la vuelta mediana (`lapMs`) del **último fichero medido**, la misma que «Mediciones por fichero» enseña como «Vuelta» | «fichero X; el anterior, Y min» | Tiempos, «Mediciones por fichero» |
+| Línea | paradas de la línea en producción (`lineFeed.stops`) | «X min sin paso; un AGV cada Y s de mediana» (`rhythm` de producción: `aboveFenceMs`, `cycleMs`); sin lista `linea`, «sin línea declarada» | Línea y calles, «Alimentación de la línea» |
 
 **Las seis se construyen al llegar las vistas**, cada una en su pestaña oculta, y se rehacen enteras
 en cada importación. Lo que se pretendía con construirlas a demanda —que un `canvas` oculto no mida
@@ -134,9 +152,31 @@ ordena al revés de como se calcula:
    columnas parte los encabezados letra a letra — cabe y es ilegible. Desde 3.48.0 las tarjetas
    revisables viven en la bandeja del Resumen (§4.5) y la sección conserva su contexto con la línea
    «N hallazgos de esta sección: ver en Resumen»; las tarjetas gemelas se agrupan (§4.3).
-3. **El conjunto completo**, plegado: el anillo en orden (en Tiempos, junto al anillo), los tags
-   fuera del anillo y la matriz entera. Se construye **solo al abrirlo**; dejarlo montado de entrada
-   para tenerlo escondido paga el coste sin enseñar nada.
+3. **El conjunto completo**, a demanda en el **cajón de tablas** (§5.3): el anillo en orden (en
+   Tiempos), los tags fuera del anillo y la matriz entera. Se construye **solo al abrirlo**; dejarlo
+   montado de entrada para tenerlo escondido paga el coste sin enseñar nada.
+
+**El anillo con capas (3.49.0).** El anillo radial vive en la portada del Resumen, entre la tira de
+cifras y la bandeja, y lleva encima un selector segmentado (`.seg`, `role="radiogroup"`, botones
+`role="radio"` con `aria-checked`, flechas de teclado) de cuatro **capas exclusivas** que cambian solo
+lo que pinta la banda principal; la banda exterior de zona y las marcas numeradas de críticos se
+quedan siempre:
+
+| Capa | La banda principal | Leyenda |
+|---|---|---|
+| **Omisión** (por defecto) | la de siempre: gris lo normal, la rampa azul lo que se deja de leer, trama sin pasadas, tinta el ancla; el tramo declarado en la banda fina interior | las cinco clases de omisión |
+| **Tramos** | el tramo declarado (`section`) con la paleta `--viz-tramo-*`; gris sin tramo | un color por tramo |
+| **Paradas** | cuántas incidencias toca cada tag según el estado normal (`circuitState`): paradas sin explicación que empiezan en él, colas de un cuello de botella, y una más si está en una zona oscura; punto conflictivo se dice en la lectura (sus paradas ya son paradas sin explicación). Rampa de un solo tono por recuento | los cortes de la rampa: ninguna, 1, 2, 3–4, 5–9, 10 o más |
+| **Calles** | el tag del que cuelga cada calle (`laneJunctions`) en el azul de serie, con el nombre de la calle junto a su ramal; con trama si nadie entró en ella; gris sin calle | servida, sin servicio, sin calle |
+
+La lectura al puntero y al foco dice lo de la capa activa además del tag. **Tocar un tag** —clic,
+dedo, o Enter con el foco de teclado sobre su segmento (un solo alto de tabulación para el anillo,
+las flechas lo recorren)— abre su expediente: rellena el buscador de la barra y activa AGV, la misma
+vía que escribirlo. Cada segmento es un botón, así que con el dedo el navegador ajusta el toque al
+segmento más cercano: tocar cerca de un tag también lo abre; leer sin abrir es cosa del puntero, del
+foco y de las marcas y calles, que no son botones. Nada de esto calcula: todo sale de las vistas que
+ya llegan. En Tiempos queda «El anillo está en Resumen», con su lista ordenada y los tags fuera del
+anillo.
 
 Dos cosas que la vista dice siempre, porque el número solo no las lleva escritas:
 
@@ -376,6 +416,23 @@ críticos y la deriva ya calculaban y hasta ahora solo se leía en tarjetas y ta
 | **Deriva entre los dos periodos** | qué tag desapareció, apareció o se sustituyó, en lecturas | correlación de posición y tiempo, nunca confirmación física (R-DAT-017, R-EVI-004) |
 | **Inventario** | cuánto hay que valorar frente a lo que no, y qué acción pide cada clase | sin color de severidad: «a valorar» es una pregunta, no un problema (§5.2) |
 | **Expediente de un AGV en el tiempo** | cuándo lee, cuándo carga, cuándo calla y qué periodo está cargado | la carga es inferida; el silencio, causa desconocida; lo que cae fuera de la cobertura no se dibuja como silencio |
+
+**Un solo cajón de tablas (3.49.0).** La tabla equivalente de cada gráfico y las listas largas de
+cada sección («Ver los mismos datos en tabla», «Ver la horquilla de los 145 tramos», «Ver los N tags
+del anillo», «Detalle de las N calles»…) ya no son desplegables `<details>` en la página: abrir uno
+empujaba todo lo demás varias pantallas hacia abajo y, con dos o tres abiertos, la pestaña volvía a
+ser la lista larga que las pestañas evitan. Ahora cada uno es un botón pequeño con icono de tabla y su
+texto («Tabla» para «Ver los mismos datos en tabla», que queda como `aria-label` y `title`) que abre
+**un único `aside.drawer`** para toda la aplicación (`src/presentation/drawer.ts`): `role="dialog"`,
+`aria-modal="false"` —la página sigue visible y no se bloquea—, `aria-labelledby` con el título de la
+tabla y debajo el de la figura o sección de donde viene, botón «Cerrar», Escape cierra, el foco entra
+al abrir y vuelve al botón al cerrar. En escritorio ocupa el tercio derecho con desplazamiento propio;
+en el móvil, la pantalla entera con la barra de cierre fija. El contenido se construye **al abrir**,
+con la misma función perezosa de antes, y abrir otra tabla sustituye a la anterior. Solo quedan como
+`<details>` los tres desplegables de texto corto: «Qué forma tiene que tener el fichero», «Qué forma
+tiene que tener el historial» y «Detalles de lectura del fichero». La regla de §5.1 se mantiene:
+ningún gráfico exige desplazamiento para llegar a su contenido útil, y la tabla del cajón se desplaza
+dentro del cajón, no en la página.
 
 Tres reglas nuevas, las tres aprendidas al mirar el render con el circuito de auditoría:
 

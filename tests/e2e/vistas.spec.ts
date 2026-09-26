@@ -126,14 +126,17 @@ test.describe("listas de tags e inventario", () => {
     await expect(page.getByText("Inventario de tags")).toBeVisible({ timeout: 15_000 });
 
     const inventario = page.locator("figure.chart", { hasText: "Inventario de tags" });
-    await inventario.getByText("Ver los mismos datos en tabla").click();
+    // La tabla se abre en el cajón lateral único (3.49.0), no bajo el gráfico.
+    await inventario.getByRole("button", { name: "Ver los mismos datos en tabla" }).click();
+    const cajon = page.locator("aside.drawer");
     // El tag retirado del suelo y nunca borrado de la lista sale como pregunta, no como avería.
-    await expect(inventario.getByRole("cell", { name: "posible obsoleto" })).toBeVisible();
-    await expect(inventario.getByRole("cell", { name: "sin determinar" })).toBeVisible();
+    await expect(cajon.getByRole("cell", { name: "posible obsoleto" })).toBeVisible();
+    await expect(cajon.getByRole("cell", { name: "sin determinar" })).toBeVisible();
     // Sobre la celda, no sobre el texto suelto: el mismo texto está además en el `<title>` del SVG
     // —que es el tooltip— y un `<title>` nunca es visible, así que la aserción fallaría por donde
     // no toca.
-    await expect(inventario.getByRole("cell", { name: /sigue instalado/ })).toBeVisible();
+    await expect(cajon.getByRole("cell", { name: /sigue instalado/ })).toBeVisible();
+    await page.keyboard.press("Escape");
   });
 });
 
@@ -154,15 +157,16 @@ test.describe("vistas", () => {
     await expect(page.locator("figure.chart", { hasText: "Inventario de tags" })).toBeVisible();
     await openTab(page, "Datos");
 
-    // El color no puede ser el único medio (UX §4): cada gráfico lleva su tabla.
-    const tablas = page.locator("figure.chart details summary");
+    // El color no puede ser el único medio (UX §4): cada gráfico lleva su tabla, en el cajón (3.49.0).
+    const tablas = page.locator("figure.chart button.drawer-open");
     expect(await tablas.count()).toBeGreaterThanOrEqual(3);
 
     // Dos ventanas separadas por dos días: la cobertura sale en dos tramos, y lo de en medio se
     // dibuja como falta de datos, nunca como un silencio del circuito (R-DAT-007).
     const cobertura = page.locator("figure.chart", { hasText: "Cobertura cargada" });
-    await cobertura.getByText("Ver los mismos datos en tabla").click();
-    expect(await cobertura.locator("table tr").count()).toBe(3);
+    await cobertura.getByRole("button", { name: "Ver los mismos datos en tabla" }).click();
+    expect(await page.locator("aside.drawer table tr").count()).toBe(3);
+    await page.keyboard.press("Escape");
     await expect(cobertura.getByText("sin datos cargados (con trama)")).toBeVisible();
   });
 

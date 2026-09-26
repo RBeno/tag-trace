@@ -26,10 +26,11 @@ import {
   coverageChart,
   hourlyChart,
   inventoryChart,
-  lazyDetails,
+  lazyTable,
   plainTable,
   scrollBox,
 } from "./charts.js";
+import { closeDrawer } from "./drawer.js";
 import { FLEET_STRUCTURE } from "../domain/fleet.js";
 import {
   agvTimelineChart,
@@ -104,6 +105,8 @@ interface State {
   fleetFile: File | null;
   /** El circuito cuyas vistas se están enseñando, si la fuente se acumuló en uno. Sin él no se revisa. */
   circuitId: string | null;
+  /** Ficheros acumulados en el circuito, para la portada: los que dice «Lo acumulado». */
+  sources: number;
 }
 
 const state: State = {
@@ -120,6 +123,7 @@ const state: State = {
   views: null,
   fleetFile: null,
   circuitId: null,
+  sources: 0,
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -470,6 +474,11 @@ const trayPanel = element("section", "panel tray-panel");
 trayPanel.hidden = true;
 const tray = element("div", "tray");
 
+/** La tira de cifras de la portada (UX_SPEC §2): seis tiles, cada uno lleva a la pestaña que lo explica. */
+const tiles = element("div", "tiles");
+tiles.setAttribute("role", "list");
+tiles.setAttribute("aria-label", "Cifras del circuito");
+
 {
   const get = (id: TabId): HTMLElement => tabPanels.get(id) as HTMLElement;
   const views = (id: TabId): HTMLElement => viewsOf.get(id) as HTMLElement;
@@ -792,6 +801,7 @@ function handleMessage(message: FromWorker): void {
       state.circuitId = message.accumulation?.accumulated === true ? message.accumulation.circuitId : null;
       if (message.accumulation !== undefined) {
         state.coverage = message.accumulation.coverage;
+        state.sources = message.accumulation.sources;
         renderAccumulation(message.accumulation);
         renderAffinity(message.accumulation);
       }
@@ -1191,6 +1201,8 @@ function resetViews(): void {
   reviewHost.replaceChildren();
   reviewHost.hidden = true;
   reviewSession = null;
+  tiles.replaceChildren();
+  closeDrawer();
 }
 
 /**
@@ -1238,8 +1250,12 @@ function renderViews(views: CircuitViews): void {
       ? `1 circuito de ${describe(views.cohorts[0])}`
       : `${views.cohorts.length} circuitos detectados en el mismo fichero: ` +
         views.cohorts.map(describe).join("; ");
+  // La portada (UX_SPEC §2): la tira de cifras, la composición y el anillo con capas. Las cifras se
+  // rellenan al final, cuando la bandeja ya existe: el tile de hallazgos cuenta sus tarjetas.
+  out.append(tiles);
   out.append(element("h3", undefined, "Composición del circuito"));
   out.append(element("p", "muted", cohortLine));
+  renderRingFigure(views);
 
   // --- Datos: lo cargado, tal cual --------------------------------------------------------------
   out = viewsOf.get("datos") as HTMLElement;
@@ -1333,6 +1349,8 @@ function renderViews(views: CircuitViews): void {
   for (const panel of viewsOf.values()) panel.hidden = panel.childElementCount === 0;
   buildTray();
   reviewSession?.refresh();
+  renderTiles(views);
+  reviewSession?.onChange(() => renderFindingsTile());
 }
 
 /**
@@ -1357,7 +1375,7 @@ function renderCircuitOrder(views: CircuitViews): void {
     ),
   );
   out.append(
-    lazyDetails(`Ver el orden del circuito según las lecturas (${order.rows.length} tags)`, () =>
+    lazyTable(`Ver el orden del circuito según las lecturas (${order.rows.length} tags)`, () =>
       plainTable(
         ["Posición", "Tag", "Lectura", "En la lista", "Diferencia", "Según las lecturas", "Según la lista", "Declarado en planta"],
         order.rows.map((row) => [
@@ -1601,19 +1619,19 @@ function renderListCleanup(views: CircuitViews): void {
   out.append(download);
   const fn = (funcion: string | null) => (funcion === null ? "—" : criticalFunctionLabel(funcion));
   out.append(
-    lazyDetails(`Ver los ${cleanup.notPhysical.length} declarados que no están en el físico`, () =>
+    lazyTable(`Ver los ${cleanup.notPhysical.length} declarados que no están en el físico`, () =>
       plainTable(
         ["Tag", "Función", "En la lista", "Según la lista", "Acción"],
         cleanup.notPhysical.map((tag) => [tag.tagId, fn(tag.funcion), String(tag.listPosition), tag.listBetween ?? "—", tag.action]),
       ),
     ),
-    lazyDetails(`Ver los ${cleanup.moved.length} en otra posición`, () =>
+    lazyTable(`Ver los ${cleanup.moved.length} en otra posición`, () =>
       plainTable(
         ["Tag", "Función", "En la lista", "Según las lecturas", "Según la lista", "Leído entre"],
         cleanup.moved.map((tag) => [tag.tagId, fn(tag.funcion), String(tag.listPosition), String(tag.position), tag.listBetween ?? "—", tag.readBetween ?? "—"]),
       ),
     ),
-    lazyDetails(`Ver los ${cleanup.reinforcements.length} refuerzos declarados`, () =>
+    lazyTable(`Ver los ${cleanup.reinforcements.length} refuerzos declarados`, () =>
       plainTable(
         ["Tags", "Función", "Estado", "Detalle"],
         cleanup.reinforcements.map((group) => [group.tags.join(" + "), fn(group.funcion), group.status, group.detail]),
@@ -1662,7 +1680,7 @@ function renderUndeclaredTags(views: CircuitViews): void {
   out.append(cards);
   if (tags.length > HIGHLIGHTS) {
     out.append(
-      lazyDetails(`Ver los ${tags.length} tags`, () =>
+      lazyTable(`Ver los ${tags.length} tags`, () =>
         plainTable(
           ["Tag", "Veredicto", "Día", "Noche", "Entre", "Y", "Pasadas de día (leído)", "Pasadas de noche (leído)"],
           tags.map((tag) => [
@@ -1817,7 +1835,7 @@ function renderFlowStops(fleet: CircuitViews["fleet"]): void {
   }
   if (blockages.length > shown.length) {
     out.append(
-      lazyDetails(`Ver los ${blockages.length} primeros de cola sin avanzar`, () =>
+      lazyTable(`Ver los ${blockages.length} primeros de cola sin avanzar`, () =>
         plainTable(
           ["AGV", "Tag", "Desde", "Hasta", "Lo habitual", "Detrás", "Lecturas mientras tanto"],
           blockages.map((blockage) => [
@@ -1956,7 +1974,7 @@ function renderCircuitState(views: CircuitViews): void {
     const allUnexplained = [...measured.unexplained.produccion, ...measured.unexplained.noche];
     if (allUnexplained.length > PER_KIND) {
       out.append(
-        lazyDetails(`Ver las ${allUnexplained.length} paradas sin explicación`, () =>
+        lazyTable(`Ver las ${allUnexplained.length} paradas sin explicación`, () =>
           plainTable(
             ["AGV", "Tramo", "Desde", "Hasta", "Lo normal", "De más", "Régimen"],
             allUnexplained.map((stop) => [
@@ -2018,7 +2036,7 @@ function renderCircuitState(views: CircuitViews): void {
         );
       }
       out.append(
-        lazyDetails(
+        lazyTable(
           `Ver las ${grouped.total} veces que llegaron lecturas juntas` +
             (grouped.deliveries.length < grouped.total ? ` (las ${grouped.deliveries.length} más recientes)` : ""),
           () =>
@@ -2194,7 +2212,7 @@ function renderPace(views: CircuitViews): void {
       }
       const holderOf = new Map(pace.holders.map((holder) => [holder.agvId, holder]));
       out.append(
-        lazyDetails(`Ver el ritmo de los ${pace.vehicles.length} AGV`, () =>
+        lazyTable(`Ver el ritmo de los ${pace.vehicles.length} AGV`, () =>
           plainTable(
             ["AGV", "Tramos", "Ritmo frente a la flota", "Lectura", "Retenciones", "Esperas detrás"],
             pace.vehicles.map((vehicle) => {
@@ -2299,7 +2317,7 @@ function renderAnchorSections(views: CircuitViews): void {
   };
   if (sourceIds.length > 0) {
     out.append(
-      lazyDetails(`Ver el p50 de cada sección por fichero (${sourceIds.length} ficheros) y los tags de cada sección`, () => {
+      lazyTable(`Ver el p50 de cada sección por fichero (${sourceIds.length} ficheros) y los tags de cada sección`, () => {
         const body = element("div");
         body.append(
           element("p", "muted", "Tags de cada sección, en el orden del anillo:"),
@@ -2323,7 +2341,7 @@ function renderAnchorSections(views: CircuitViews): void {
       }),
     );
   } else {
-    out.append(lazyDetails("Ver los tags de cada sección", sectionTags));
+    out.append(lazyTable("Ver los tags de cada sección", sectionTags));
   }
   const download = element("button", undefined, "Descargar secciones (CSV)");
   download.setAttribute("type", "button");
@@ -2393,6 +2411,14 @@ function ringDataOf(shape: CircuitViews["shapes"][number], matrix: Matrix | unde
   const marks = [...declaredMarks, ...candidateMarks]
     .slice(0, RING_MARKS)
     .sort((a, b) => (order.get(a.tagId) ?? 0) - (order.get(b.tagId) ?? 0));
+  // La capa «Paradas»: lo que el estado normal (R-TIM-009) mide en cada tag, ya calculado. Las paradas
+  // de un punto conflictivo son paradas sin explicación, así que se cuentan una vez, por su tag.
+  const measured = views.circuitState.cohorts.find((cohort) => cohort.cohortId === shape.cohortId)?.state;
+  const stopsAt = new Map<string, number>();
+  for (const stop of measured?.unexplained.produccion ?? []) stopsAt.set(stop.fromTagId, (stopsAt.get(stop.fromTagId) ?? 0) + 1);
+  const bottleneckAt = new Map((measured?.bottlenecks ?? []).map((entry) => [entry.tagId, entry.episodes]));
+  const conflictTags = new Set((measured?.conflictPoints ?? []).flatMap((entry) => entry.tags));
+  const darkTags = new Set((measured?.darkZones ?? []).flatMap((entry) => entry.tags.slice(0, -1)));
   return {
     tags: shape.tags.map((tagId, index) => {
       const row = rowOf.get(tagId);
@@ -2404,6 +2430,16 @@ function ringDataOf(shape: CircuitViews["shapes"][number], matrix: Matrix | unde
         zone: shape.zones?.[index] ?? null,
         isAnchor: tagId === shape.anchorTagId,
         section: views.sections?.[tagId] ?? null,
+        ...(measured === undefined
+          ? {}
+          : {
+              incidents: {
+                stops: stopsAt.get(tagId) ?? 0,
+                bottleneckEpisodes: bottleneckAt.get(tagId) ?? 0,
+                conflict: conflictTags.has(tagId),
+                dark: darkTags.has(tagId),
+              },
+            }),
       };
     }),
     anchorTagId: shape.anchorTagId,
@@ -2475,8 +2511,26 @@ function matrixOf(views: CircuitViews, cohortId: number): Matrix | undefined {
 }
 
 /**
- * El anillo del circuito (pestaña Tiempos): su forma, la lista ordenada plegada y los tags fuera de
- * él. La lista ordenada es la que se contrasta con el circuito virtual y con la memoria.
+ * El anillo dibujado, en el Resumen (UX_SPEC §2, §4.2): la forma del circuito con sus capas. Tocar un
+ * tag abre su expediente por la misma vía que escribirlo en el buscador de la barra.
+ */
+function renderRingFigure(views: CircuitViews): void {
+  for (const shape of views.shapes) {
+    const matrix = matrixOf(views, shape.cohortId);
+    out.append(ringChart(ringDataOf(shape, matrix, views), { onTagOpen: openDossier }));
+  }
+}
+
+/** Abre el expediente de un identificador: rellena el buscador de la barra y activa AGV, como al escribir. */
+function openDossier(id: string): void {
+  dossierInput.value = id;
+  dossierInput.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/**
+ * El anillo del circuito (pestaña Tiempos): su forma en palabras, la lista ordenada y los tags fuera
+ * de él. La lista ordenada es la que se contrasta con el circuito virtual y con la memoria; el dibujo
+ * vive en el Resumen desde 3.49.0, y aquí queda el enlace.
  */
 function renderRing(views: CircuitViews): void {
   if (views.shapes.length === 0 && (views.lapAnchorProblems ?? []).length === 0) return;
@@ -2495,10 +2549,18 @@ function renderRing(views: CircuitViews): void {
           `con un ${Math.round(shape.weakestShare * 100)} % de coincidencia en el tramo más débil.`,
       ),
     );
-    out.append(ringChart(ringDataOf(shape, matrix, views)));
+    const elsewhere = element("p", "findings-elsewhere");
+    const link = element("a", undefined, "El anillo está en Resumen");
+    link.href = "#resumen";
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      jumpTo("resumen", "Anillo del circuito");
+    });
+    elsewhere.append(link, ", con sus capas: omisión, tramos, paradas y calles.");
+    out.append(elsewhere);
 
     out.append(
-      lazyDetails(`Ver los ${shape.tags.length} tags del anillo, en orden`, () =>
+      lazyTable(`Ver los ${shape.tags.length} tags del anillo, en orden`, () =>
         plainTable(
           ["Posición", "Tag", ...(shape.zones === undefined ? [] : ["Zona"]), "Leído por pasada", "Lectura"],
           shape.tags.map((tagId, index) => {
@@ -2528,7 +2590,7 @@ function renderRing(views: CircuitViews): void {
         ),
       );
       out.append(
-        lazyDetails(
+        lazyTable(
           shape.offRingTags.length === 1
             ? "Ver el tag que queda fuera del anillo"
             : `Ver los ${shape.offRingTags.length} tags fuera del anillo`,
@@ -2706,7 +2768,7 @@ function groupedTagCard(item: TagHighlight, matrix: Matrix): HTMLElement {
   const key = neverSetOf(ids);
   for (const agvId of item.never) foldedVehicles.set(agvId, key);
   card.append(
-    lazyDetails(`Ver los ${item.never.length} AGV con sus pasadas`, () =>
+    lazyTable(`Ver los ${item.never.length} AGV con sus pasadas`, () =>
       plainTable(
         ["AGV", ...ids],
         item.never.map((agvId) => [
@@ -2817,7 +2879,7 @@ function renderVehicleReading(matrix: Matrix, reading: VehicleReadingView | unde
       ["agv-nunca", ...[...group.agvIds].sort()],
     );
     card.append(
-      lazyDetails(`Ver los ${group.agvIds.length} AGV con sus pasadas`, () =>
+      lazyTable(`Ver los ${group.agvIds.length} AGV con sus pasadas`, () =>
         plainTable(
           ["AGV", ...tagIds],
           group.agvIds.map((agvId, index) => [agvId, ...(group.tags[index] ?? []).map((entry) => `0 de ${entry.passes}`)]),
@@ -2876,7 +2938,7 @@ function renderVehicleReading(matrix: Matrix, reading: VehicleReadingView | unde
   }
   if (hidden > 0) out.append(element("p", "muted", `Y ${hidden} más en la tabla.`));
   out.append(
-    lazyDetails(`Ver la lectura de los ${vehicles.length} AGV que se apartan del resto`, () =>
+    lazyTable(`Ver la lectura de los ${vehicles.length} AGV que se apartan del resto`, () =>
       plainTable(
         ["AGV", "Nunca", "Dejó de leer", "Lee poco", "Tags comparados"],
         vehicles.map((vehicle) => [
@@ -3048,7 +3110,7 @@ function renderTagChanges(views: CircuitViews): void {
   const total = absorbed.length + changes.length;
   if (total > 0) {
     out.append(
-      lazyDetails(`Ver los ${total} cambios dentro del periodo`, () =>
+      lazyTable(`Ver los ${total} cambios dentro del periodo`, () =>
         plainTable(["Tag", "Qué pasó", "Hora", "AGV que no lo leen como el resto"], [
           ...absorbed.map(({ gap, atUtcMs }) => [
             gap.changes
@@ -3163,7 +3225,7 @@ function renderCharging(views: CircuitViews): void {
       ),
     );
     out.append(
-      lazyDetails(`Ver los ${charging.neverCharged.length} AGV que no entraron a cargar`, () =>
+      lazyTable(`Ver los ${charging.neverCharged.length} AGV que no entraron a cargar`, () =>
         plainTable(
           ["AGV", "Primera lectura", "Última lectura", "Presente", "Lecturas"],
           charging.neverCharged.map((entry) => [
@@ -3267,7 +3329,7 @@ function renderCharging(views: CircuitViews): void {
 
   const usageOf = new Map(charging.usage.map((entry) => [entry.laneId, entry]));
   out.append(
-    lazyDetails(`Detalle de las ${charging.lanes.length} calles`, () =>
+    lazyTable(`Detalle de las ${charging.lanes.length} calles`, () =>
       plainTable(
         ["Calle", "Capacidad", "Estancias", "Cuota", "Estancia habitual", "Turnos saltados"],
         charging.lanes.map((lane) => {
@@ -3285,7 +3347,7 @@ function renderCharging(views: CircuitViews): void {
     ),
   );
   out.append(
-    lazyDetails("Qué se lee dentro de cada calle", () =>
+    lazyTable("Qué se lee dentro de cada calle", () =>
       plainTable(
         ["Calle", "Tag", "Papel", "Leído en estancias", "AGV distintos"],
         charging.lanes.flatMap((lane) =>
@@ -3382,7 +3444,7 @@ function renderDrift(views: CircuitViews): void {
   }
   if (sortedTags.length > 0) {
     out.append(
-      lazyDetails(`Detalle de los ${sortedTags.length} tags con cambios`, () =>
+      lazyTable(`Detalle de los ${sortedTags.length} tags con cambios`, () =>
         plainTable(
           ["Tag", "Cambio", "Antes", "Ahora"],
           sortedTags.map((entry) => [
@@ -3441,7 +3503,7 @@ function renderDrift(views: CircuitViews): void {
   }
   if (sortedVehicles.length > 0) {
     out.append(
-      lazyDetails(`Detalle de los ${sortedVehicles.length} AGV con cambios`, () =>
+      lazyTable(`Detalle de los ${sortedVehicles.length} AGV con cambios`, () =>
         plainTable(
           ["AGV", "Tags dejados de leer", "Tags nuevos no adoptados"],
           sortedVehicles.map((entry) => [
@@ -3567,7 +3629,7 @@ function renderCriticalPoints(views: CircuitViews): void {
   }
 
   out.append(
-    lazyDetails(`Detalle de los ${candidates.length} candidatos`, () =>
+    lazyTable(`Detalle de los ${candidates.length} candidatos`, () =>
       plainTable(
         ["Tag", "Posible función", "Pasadas", "Detalle"],
         sorted.map((candidate) => [
@@ -3643,7 +3705,7 @@ function renderFifo(views: CircuitViews): void {
   }
 
   out.append(
-    lazyDetails(`Detalle de los ${spans.length} tramos`, () =>
+    lazyTable(`Detalle de los ${spans.length} tramos`, () =>
       plainTable(
         ["Tramo", "Tags", "Pasadas", "Tránsito habitual", "Adelantamientos"],
         spans.map((span) => [
@@ -3748,6 +3810,189 @@ function finding(title: string, figure: string, evidence: string, review?: reado
     reviewSession?.attach(card, review, title, figure);
   }
   return card;
+}
+
+// --- Portada: la tira de cifras (UX_SPEC §2) -------------------------------------------------------
+
+/**
+ * Activa una pestaña y desplaza hasta el encabezado con ese texto (o hasta la figura con ese título),
+ * dejándole el foco: es lo que hace cada tile y el enlace «El anillo está en Resumen».
+ */
+function jumpTo(tab: TabId, heading: string): void {
+  activateTab(tab);
+  const panel = tabPanels.get(tab);
+  const target = [...(panel?.querySelectorAll<HTMLElement>("h2, h3") ?? [])].find((node) => node.textContent === heading);
+  const focusOn = target?.closest("figure") ?? target ?? panel;
+  focusOn?.scrollIntoView({ block: "start" });
+  if (focusOn instanceof HTMLElement) {
+    focusOn.tabIndex = -1;
+    focusOn.focus({ preventScroll: true });
+  }
+}
+
+/** Un tile: etiqueta corta, cifra grande y la línea de contexto. Sin dato, «sin datos» en gris. */
+function tile(
+  label: string,
+  value: string | null,
+  note: string,
+  go: () => void,
+  options: { readonly accent?: boolean; readonly id?: string } = {},
+): HTMLElement {
+  const item = element("div", "tile-item");
+  item.setAttribute("role", "listitem");
+  const button = element("button", "tile");
+  button.type = "button";
+  if (options.id !== undefined) button.dataset["tile"] = options.id;
+  if (options.accent === true) button.classList.add("attn");
+  button.append(
+    element("p", "tile-label", label),
+    element("p", value === null ? "tile-value tile-empty" : "tile-value", value ?? "sin datos"),
+    element("p", "tile-note", note),
+  );
+  button.addEventListener("click", go);
+  item.append(button);
+  return item;
+}
+
+/**
+ * Las seis cifras de la portada, cada una con de dónde sale. Nada se calcula: se lee de las vistas que
+ * ya llegan, y donde el dato no existe el tile dice «sin datos», nunca un cero inventado.
+ */
+function renderTiles(views: CircuitViews): void {
+  tiles.replaceChildren();
+  const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+  // AGV en el circuito: el último tramo del recuento N de M (DS-012). Es el más reciente, que es lo que
+  // se pregunta al abrir el análisis; la ventana entera está en el gráfico de la flota.
+  const fleet = views.fleet;
+  const last = fleet.counts[fleet.counts.length - 1];
+  tiles.append(
+    tile(
+      "AGV en el circuito",
+      last === undefined ? null : `${last.inCircuit} de ${last.assigned}`,
+      last === undefined
+        ? "sin recuento de flota"
+        : fleet.historyLoaded
+          ? "según el historial de flota, al final de lo cargado"
+          : "vistos en las lecturas, al final de lo cargado",
+      () => jumpTo("agv", "Flota del circuito"),
+      { id: "agv" },
+    ),
+  );
+
+  // Tags en el anillo: el ciclo dominante del primer cohorte; fuera del anillo y declarados sin lecturas.
+  const shape = views.shapes[0];
+  const sinLecturas = views.circuitOrder?.summary["sin-lecturas"] ?? null;
+  const tagNotes: string[] = [];
+  if (shape !== undefined && shape.offRingTags.length > 0) tagNotes.push(`${shape.offRingTags.length} fuera del anillo`);
+  if (sinLecturas !== null && sinLecturas > 0) tagNotes.push(plural(sinLecturas, "declarado sin lecturas", "declarados sin lecturas"));
+  tiles.append(
+    tile(
+      "Tags en el anillo",
+      shape === undefined ? null : String(shape.tags.length),
+      shape === undefined ? "sin anillo reconocible" : tagNotes.length === 0 ? "todos en el recorrido" : tagNotes.join(", "),
+      () => jumpTo("tags", "Lo que hay que mirar"),
+      { id: "tags" },
+    ),
+  );
+
+  // Cobertura: las horas cargadas (la unión de los tramos, R-DAT-007) y los ficheros acumulados.
+  const coveredMs = state.coverage.reduce((sum, span) => sum + (span.to - span.from), 0);
+  const first = state.coverage[0];
+  const end = state.coverage[state.coverage.length - 1];
+  const hours = coveredMs / 3_600_000;
+  tiles.append(
+    tile(
+      "Cobertura",
+      state.coverage.length === 0 ? null : `${(hours < 10 ? hours.toFixed(1) : String(Math.round(hours))).replace(".", ",")} h`,
+      state.coverage.length === 0 || first === undefined || end === undefined
+        ? "todavía ninguna"
+        : `${plural(state.sources, "fichero", "ficheros")}, de ${formatTick(first.from)} a ${formatTick(end.to)}`,
+      () => jumpTo("datos", "Cobertura cargada"),
+      { id: "cobertura" },
+    ),
+  );
+
+  // Hallazgos: se rellena aparte, porque cambia con cada marca de revisión.
+  const findingsSlot = element("div", "tile-item");
+  findingsSlot.setAttribute("role", "listitem");
+  findingsSlot.dataset["slot"] = "hallazgos";
+  tiles.append(findingsSlot);
+  renderFindingsTile();
+
+  // Vuelta: la mediana del último fichero medido (R-TIM-011), la misma que la tabla «Mediciones por
+  // fichero» enseña como «Vuelta»; el anterior, para ver si se mueve.
+  const cohort = views.franjas.cohorts[0];
+  const measured = views.franjas.sources.filter((source) => source.duplicateOf === null);
+  const laps = measured
+    .map((source) => ({ source, measure: cohort?.measures.find((entry) => entry.sourceId === source.sourceId) }))
+    .filter((entry) => entry.measure !== undefined && entry.measure.lapMs !== null);
+  const lastLap = laps[laps.length - 1];
+  const previousLap = laps[laps.length - 2];
+  tiles.append(
+    tile(
+      "Vuelta",
+      lastLap === undefined ? null : duration(lastLap.measure?.lapMs ?? null),
+      lastLap === undefined
+        ? "sin vuelta medida"
+        : `fichero ${lastLap.source.fileName}` +
+            (previousLap === undefined ? "" : `; el anterior, ${duration(previousLap.measure?.lapMs ?? null)}`),
+      () => jumpTo("tiempos", "Mediciones por fichero"),
+      { id: "vuelta" },
+    ),
+  );
+
+  // Línea: paradas en producción y el tiempo sin paso (R-FLO-010), con la cadencia de mediana.
+  const feed = views.lineFeed;
+  const production = feed?.rhythm.find((rhythm) => rhythm.regime === "produccion");
+  const lineStops = feed === undefined ? 0 : feed.stops.filter((stop) => stop.regime === "produccion").length;
+  const minutes = (ms: number): string => `${Math.round(ms / 60_000).toLocaleString("es-ES")} min`;
+  tiles.append(
+    tile(
+      "Línea",
+      feed === undefined || !feed.evaluated || feed.cadence === null ? null : plural(lineStops, "parada", "paradas"),
+      feed === undefined
+        ? "sin línea declarada"
+        : !feed.evaluated || feed.cadence === null
+          ? (feed.reason ?? "sin medir")
+          : (production === undefined ? "en producción" : `${minutes(production.aboveFenceMs)} sin paso; un AGV cada ${duration(production.cycleMs)} de mediana`),
+      () => jumpTo("linea", "Alimentación de la línea"),
+      { id: "linea" },
+    ),
+  );
+}
+
+/**
+ * El tile de hallazgos: pendientes de total, y cuántos de rango 1 siguen pendientes. Cuenta las
+ * tarjetas de la bandeja, que es la unidad de revisión (R-EVI-007), y se rehace con cada marca.
+ */
+function renderFindingsTile(): void {
+  const slot = tiles.querySelector<HTMLElement>("[data-slot='hallazgos']");
+  if (slot === null) return;
+  const cards = [...tray.querySelectorAll<HTMLElement>(".finding.reviewable")];
+  const pendingOf = (list: readonly HTMLElement[]): number => list.filter((card) => (card.dataset["review"] ?? "pendiente") === "pendiente").length;
+  const pending = pendingOf(cards);
+  const critical = pendingOf(cards.filter((card) => card.closest<HTMLElement>(".tray-group")?.dataset["rank"] === "1"));
+  slot.replaceChildren(
+    ...tile(
+      "Hallazgos",
+      cards.length === 0 ? null : `${pending} de ${cards.length}`,
+      cards.length === 0
+        ? "ninguno que revisar"
+        : pending === 0
+          ? "revisión completa"
+          : critical === 0
+            ? "pendientes; ninguno puede parar la planta"
+            : `pendientes; ${critical} ${critical === 1 ? "puede" : "pueden"} parar la planta`,
+      () => {
+        activateTab("resumen");
+        trayPanel.scrollIntoView({ block: "start" });
+        trayPanel.tabIndex = -1;
+        trayPanel.focus({ preventScroll: true });
+      },
+      { id: "hallazgos", accent: critical > 0 },
+    ).children,
+  );
 }
 
 // --- Bandeja de hallazgos (UX_SPEC §4.5) ---------------------------------------------------------
@@ -3966,7 +4211,7 @@ function explain(tag: TagRow, readers: VehicleReadingView["tags"][number] | unde
 function renderFullMatrix(matrix: Matrix): void {
   const vehicles = matrix.vehicles.map((vehicle) => vehicle.agvId);
   out.append(
-    lazyDetails(
+    lazyTable(
       `Ver la matriz completa: ${matrix.tags.length} tags × ${vehicles.length} AGV`,
       () =>
         scrollBox(

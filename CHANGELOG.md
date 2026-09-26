@@ -2,6 +2,61 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.49.0] - 2026-09-26
+
+Interfaz (3/3), aprobada por el propietario: la portada con cifras, el anillo con capas en el Resumen
+y un solo cajón de tablas en lugar de los desplegables. Sin cambios en el dominio, los Workers ni las
+pruebas unitarias: todo sale de las vistas que ya llegan.
+
+### Añadido
+
+- **Portada con cifras** (`renderTiles`, `renderFindingsTile`, `jumpTo`, `tile` en `main.ts`;
+  `styles.css`; `UX_SPEC.md` §2): una tira de seis stat tiles encima de la bandeja del Resumen
+  —AGV en el circuito («N de M» del último tramo de `fleet.counts`, con «según el historial» o
+  «vistos en las lecturas»), tags en el anillo (con los de fuera y los declarados sin lecturas),
+  cobertura (horas y ficheros, de la primera a la última), hallazgos (pendientes de total y cuántos
+  pueden parar la planta; con el acento solo mientras quede alguno de rango 1; se rehace con cada
+  marca), vuelta (la mediana del último fichero medido y la del anterior) y línea (paradas en
+  producción, minutos sin paso y la cadencia de mediana)—. Cifra grande en la misma sans y en
+  cifras proporcionales, tinta normal; cada tile activa la pestaña que lo explica y desplaza a su
+  encabezado; sin dato, «sin datos» en gris. Dos columnas en el móvil, seis en escritorio.
+- **Capas del anillo** (`ringChart` en `diagnostic-charts.ts`, `RingLayer`, `RingTag.incidents`,
+  `ringDataOf`; `UX_SPEC.md` §4.2): un selector segmentado (`role="radiogroup"`, teclado) con
+  Omisión (la de siempre), Tramos (la banda principal por tramo declarado), Paradas (rampa por
+  incidencias medidas en cada tag según el estado normal: paradas sin explicación, colas de cuello,
+  zona oscura) y Calles (el tag de entrada de cada calle con su nombre, con trama si nadie entró).
+  La banda exterior de zona y las marcas numeradas se mantienen; la lectura al tocar dice lo de la
+  capa activa. **Tocar un tag** —clic, dedo o Enter sobre el segmento con foco; un solo alto de
+  tabulación y las flechas recorren el anillo— rellena el buscador de la barra y activa AGV
+  (`openDossier`).
+- **Cajón de tablas** (`src/presentation/drawer.ts`: `tableDrawer`, `openDrawer`, `closeDrawer`;
+  `UX_SPEC.md` §5.3): un `aside.drawer` único (`role="dialog"`, `aria-modal="false"`,
+  `aria-labelledby`, «Cerrar», Escape, foco dentro al abrir y de vuelta al botón al cerrar) que
+  ocupa el tercio derecho en escritorio y la pantalla entera en el móvil, con desplazamiento propio.
+  El contenido se construye al abrir y se sustituye al abrir otro.
+- **Prueba de navegador `portada.spec.ts`** (TC-275): los seis tiles con cifra y el de hallazgos
+  igual que «Revisados 0 de N»; el tile de la vuelta activa Tiempos; el selector de capas cambia la
+  leyenda y tocar un tag rellena el buscador y activa AGV; el cajón abre con el foco dentro, muestra
+  la tabla, cierra con Escape y devuelve el foco; en el móvil (390 px) dos columnas de tiles y el
+  cajón a pantalla completa sin desborde.
+
+### Cambiado
+
+- **El anillo vive en el Resumen** (`renderRingFigure`), entre la tira de cifras y la bandeja; en
+  Tiempos queda «El anillo del circuito» en palabras, el enlace «El anillo está en Resumen», la lista
+  ordenada y los tags fuera del anillo (`renderRing`).
+- **Todos los desplegables de tabla pasan al cajón**: `lazyDetails` se sustituye por `lazyTable` y
+  `table()` (`charts.ts`) abre el cajón; los treinta y un puntos que los usaban en `main.ts` y
+  `diagnostic-charts.ts` no cambian su texto ni su contenido. El botón enseña el texto de antes
+  («Ver los 145 tags del anillo, en orden») o «Tabla» para «Ver los mismos datos en tabla», que queda
+  como `aria-label` y `title`. Quedan **tres `<details>`**, los de texto corto: «Qué forma tiene que
+  tener el fichero», «Qué forma tiene que tener el historial» y «Detalles de lectura del fichero».
+  **Cambian cuatro pruebas de navegador**: `f2.spec.ts`, `vistas.spec.ts` y
+  `vistas-diagnostico.spec.ts` abrían un desplegable y ahora pulsan el botón y leen dentro de
+  `aside.drawer` (lo que afirman sobre los datos no cambia), y buscan el anillo en Resumen;
+  `tactil.spec.ts` comprueba que el toque cerca de un tag —que el navegador ajusta al segmento, que
+  ahora es un botón— abre su expediente, y el toque en el centro vuelve al texto de reposo.
+
 ## [3.48.0] - 2026-09-26
 
 Interfaz (2/3), aprobada por el propietario: la página deja de ser una lista de cuarenta y tres

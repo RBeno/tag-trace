@@ -69,8 +69,10 @@ test.describe("tableta táctil y portátil", () => {
     await page.waitForTimeout(400);
     await expect(lifelineReadout).toContainText(/71\d\d/);
 
-    // Anillo: un toque cerca de un segmento, sin caer encima de ninguna marca, lee el tag más cercano.
-    await openTab(page, "Tiempos");
+    // Anillo (en Resumen desde 3.49.0): un toque cerca de un segmento, sin caer encima de ninguna marca,
+    // lo toca igual —el navegador ajusta el toque al objetivo más cercano, y cada segmento es un botón—
+    // y abre su expediente: el buscador se rellena con el tag y AGV se activa.
+    await openTab(page, "Resumen");
     const ring = figureOf("Anillo del circuito");
     await ring.scrollIntoViewIfNeeded();
     const near = await ring.evaluate((root) => {
@@ -92,13 +94,16 @@ test.describe("tableta táctil y portátil", () => {
     });
     expect(near).not.toBeNull();
     await page.touchscreen.tap(near?.x as number, near?.y as number);
-    const ringReadout = ring.locator(".readout");
-    await expect(ringReadout).toContainText(/Tag \d+ · posición|Calle «|· Tag \d+/);
+    await expect(page.getByRole("tab", { name: "AGV" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#dossier-search")).toHaveValue(/^\d+$/);
+    await expect(page.getByRole("heading", { name: /^Tag \d+$/ })).toBeVisible();
 
     // Un toque en el centro del anillo, lejos de toda marca, vuelve al texto de reposo.
+    await openTab(page, "Resumen");
+    const ringReadout = ring.locator(".readout");
     const ringSvg = (await ring.locator("svg").first().boundingBox()) as { x: number; y: number; width: number; height: number };
     await page.touchscreen.tap(ringSvg.x + ringSvg.width / 2, ringSvg.y + ringSvg.height / 2);
-    await expect(ringReadout).toHaveText("Toca o pasa el puntero por el anillo para leer un tag.");
+    await expect(ringReadout).toHaveText("Toca o pasa el puntero por el anillo para leer un tag; tocar un tag abre su expediente.");
 
     // Con dedo, los botones de los gráficos miden al menos 44 px.
     await openTab(page, "Tags");

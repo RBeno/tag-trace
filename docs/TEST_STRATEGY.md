@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.53.0
+version: 0.54.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -323,6 +323,7 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-271 | Prueba de azar de la deriva (`compareDistantPeriods`) | Un tag con una sola lectura temprana sale desaparecido sin afirmar y con su cifra; uno leído en todas las pasadas de antes y en ninguna de después, afirmado; lo mismo para un nuevo | Un «cambió» afirmado con una lectura | Unitaria |
 | TC-272 | Historial de flota (`importFleetHistory`, `buildFleetTimeline`) | Un `hasta` sin hora es el final de ese día, también con cambio de hora; alta y baja el mismo día son válidas; un historial cargado sin periodos es «historial vacío» y M sale de las lecturas | Un AGV fuera todo su último día; un historial vacío que pasa en silencio | Unitaria |
 | TC-273 | Auditoría (secciones entre anclas) | Con tres anclas plantadas en 0, 50 y 100 y la lista `tramo`: tres secciones «kitting», «A → B» y «expedicion» con 50 tags cada una, horquilla de producción en las tres, dos ficheros con muestras, y la suma de los p50 entre el 90 % y el 125 % de la vuelta nominal | Una sección sin nombre teniendo mayoría de tramo; secciones que no suman la vuelta | Auditoría |
+| TC-275 | Navegador: portada con cifras, anillo con capas y cajón de tablas (`portada.spec.ts`, UX_SPEC §2, §4.2, §5.3) | Seis tiles con cifra y el de hallazgos igual que «Revisados 0 de N»; el tile de la vuelta activa Tiempos y deja «Mediciones por fichero» a la vista; el selector de capas cambia la leyenda del anillo (ratón y flechas) y la lectura al tocar dice la capa; tocar un tag y Enter sobre el segmento con foco rellenan el buscador y activan AGV; el cajón abre con el foco dentro, muestra la tabla, sustituye su contenido al abrir otra, cierra con Escape y con «Cerrar» y devuelve el foco; solo quedan `details` de texto corto; en el móvil dos columnas de alto uniforme y el cajón a pantalla completa, sin desborde | Un tile con un cero donde no hay dato; un `details` de tabla que siga en la página; el cajón sin devolver el foco | Navegador |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las seis pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

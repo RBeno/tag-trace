@@ -79,12 +79,13 @@ test.describe("composición del circuito y tasa de lectura", () => {
     // identificadores distintos, que incluiría cualquier tag leído una vez desde una rama.
     await expect(page.getByText("1 circuito de 2 vehículos y 4 tags en el anillo")).toBeVisible();
 
-    // La lista ordenada existe y se despliega: es la que se contrasta con Vsystem y con la memoria.
-    // El anillo vive en Tiempos.
+    // La lista ordenada existe y se abre en el cajón de tablas (3.49.0): es la que se contrasta con
+    // Vsystem y con la memoria. Vive en Tiempos; el dibujo del anillo, en Resumen.
     await openTab(page, "Tiempos");
-    await page.getByText("Ver los 4 tags del anillo, en orden").click();
-    const orden = page.locator("table.data", { hasText: "Posición" }).first();
+    await page.getByRole("button", { name: "Ver los 4 tags del anillo, en orden" }).click();
+    const orden = page.locator("aside.drawer table.data", { hasText: "Posición" }).first();
     await expect(orden.getByRole("cell", { name: "0100", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
   });
 
   test("la tasa de lectura no se calcula sobre vueltas que el vehículo no pasó por ahí", async ({

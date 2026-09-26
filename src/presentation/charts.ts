@@ -20,6 +20,7 @@
 
 import { tagClassLabel, truthLabel } from "./labels.js";
 import { inspect } from "./pointer.js";
+import { tableDrawer } from "./drawer.js";
 
 const NS = "http://www.w3.org/2000/svg";
 
@@ -152,37 +153,25 @@ export function plainTable(headers: readonly string[], rows: readonly (readonly 
 }
 
 /**
- * La tabla equivalente de un gráfico, plegada por defecto: es la vía accesible y el respaldo
- * cuando el color falla, no la vista principal.
+ * La tabla equivalente de un gráfico: es la vía accesible y el respaldo cuando el color falla, no la
+ * vista principal. Desde 3.49.0 se abre en el cajón lateral único (`drawer.ts`) en vez de plegarse
+ * bajo el gráfico, y se construye solo al abrirla.
  */
 export function table(headers: readonly string[], rows: readonly (readonly string[])[]): HTMLElement {
-  const details = document.createElement("details");
-  const summary = document.createElement("summary");
-  summary.textContent = "Ver los mismos datos en tabla";
-  details.append(summary, plainTable(headers, rows));
-  return details;
+  return tableDrawer("Ver los mismos datos en tabla", () => plainTable(headers, rows));
 }
 
 /**
- * Un bloque plegado cuyo contenido **no se construye hasta que alguien lo abre**.
+ * Una tabla o lista larga cuyo contenido **no se construye hasta que alguien la abre**.
  *
  * La matriz completa de un circuito real son miles de celdas. Construirlas de entrada para dejarlas
- * escondidas dentro de un `<details>` es pagar el coste entero sin enseñar nada — que es justo el
- * defecto que la banda de actividad tenía con sus rótulos por celda. Aquí el conjunto completo está
- * disponible y no pesa hasta que se pide.
+ * escondidas es pagar el coste entero sin enseñar nada — que es justo el defecto que la banda de
+ * actividad tenía con sus rótulos por celda. Aquí el conjunto completo está disponible y no pesa
+ * hasta que se pide. Hasta 3.48.0 era un `<details>` en la propia página; ahora es el botón que abre
+ * el cajón lateral único, para que abrir una tabla no empuje el resto de la pestaña.
  */
-export function lazyDetails(summary: string, build: () => HTMLElement): HTMLElement {
-  const details = document.createElement("details");
-  const label = document.createElement("summary");
-  label.textContent = summary;
-  details.append(label);
-  let built = false;
-  details.addEventListener("toggle", () => {
-    if (!details.open || built) return;
-    built = true;
-    details.append(build());
-  });
-  return details;
+export function lazyTable(summary: string, build: () => HTMLElement): HTMLElement {
+  return tableDrawer(summary, build);
 }
 
 /** Contenedor con desplazamiento propio: una matriz ancha se desplaza dentro, no rompe la página. */
