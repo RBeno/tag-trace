@@ -44,6 +44,7 @@ import {
   type TrendThresholds,
 } from "./read-rate-trend.js";
 import type { Reading } from "./reading.js";
+import { isOrderReliable } from "./time.js";
 import type { TruthState } from "./truth.js";
 
 export interface ReadRateThresholds {
@@ -802,7 +803,9 @@ function traceLaps(
       const start = (entries[from] as Reading).time.utcMs;
       const end = (entries[to] as Reading).time.utcMs;
       if (!sameSpan(spans, start, end)) continue;
-      if (entries.slice(from, to + 1).some((entry) => entry.time.flag !== "ok")) continue;
+      // Una hora repetida sin resolver no ordena los pasos ni mide los tramos; resuelta por posición
+      // (`dst_by_position`, OQ-137) sí, y la vuelta cuenta como pasada.
+      if (entries.slice(from, to + 1).some((entry) => !isOrderReliable(entry.time.flag))) continue;
 
       const steps: Step[] = [];
       let lastRel = -1;

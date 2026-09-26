@@ -22,6 +22,7 @@ import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { StructureSet } from "../domain/anchor-sums.js";
 import type { PaceReport } from "../domain/vehicle-pace.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
+import type { AnchorSection } from "../domain/anchor-sections.js";
 import type { AffinityReport } from "../domain/affinity.js";
 import type { UndeclaredTag } from "../domain/undeclared-tags.js";
 import type { ListCleanup } from "../domain/list-cleanup.js";
@@ -218,7 +219,15 @@ export interface SourceSummary {
   readonly quarantinedRows: number;
   /** Filas con instante y AGV pero sin tag: no son lecturas y tampoco son un defecto. */
   readonly rowsWithoutTag: number;
+  /** Lecturas que al parsear cayeron en una hora repetida o inexistente del cambio estacional. */
   readonly dstFlagged: number;
+  /**
+   * De las de hora repetida, cuántas se resolvieron por la posición en el fichero (`dst_by_position`,
+   * OQ-137) y cuentan como fiables para el orden.
+   */
+  readonly dstResolvedByPosition: number;
+  /** De las de hora repetida, cuántas siguen `dst_ambiguous` y no afirman orden. */
+  readonly dstAmbiguous: number;
   /**
    * Primer y último instante **aceptado**, en epoch UTC.
    *
@@ -482,9 +491,23 @@ export interface CircuitViews {
    */
   readonly lapAnchorProblems?: readonly string[];
   /**
+   * Tiempos por sección entre anclas (R-TIM-012), en el cohorte principal: todas las anclas de la
+   * lista `ancla` que están en el anillo, en el orden del anillo, delimitan secciones consecutivas y
+   * cada una lleva su horquilla por régimen y su p50 por fichero. `sections` va vacío con menos de dos
+   * anclas en el anillo; `declared` dice cuántas hay en la lista, para explicar por qué.
+   */
+  readonly anchorSections: {
+    readonly declared: number;
+    readonly onRing: readonly string[];
+    readonly resolutionMs: number;
+    readonly marginMs: number;
+    readonly sections: readonly AnchorSection[];
+  };
+  /**
    * La flota del circuito a lo largo del tiempo (DS-012, R-AGV-014): la vida de cada AGV en tramos
    * continuos y el recuento N de M. Sin historial cargado, M son los vehículos que aparecen en las
-   * lecturas, y `historyLoaded` lo dice.
+   * lecturas, y `historyLoaded` y `historySource` lo dicen (un historial cargado sin periodos válidos
+   * es «historial vacío», OQ-139).
    */
   readonly fleet: FleetTimeline & {
     readonly circuitName: string | null;
@@ -589,6 +612,13 @@ export interface CircuitViews {
       readonly kind: "desaparecido" | "nuevo" | "obsoleto-consolidado" | "sustitucion-candidata";
       readonly readingsBefore: number;
       readonly readingsAfter: number;
+      /**
+       * Solo en `desaparecido` y `nuevo` (OQ-138): si la ausencia es improbable por azar dadas las
+       * pasadas por su sitio en el otro periodo. Sin afirmar se enseña igual, con su cifra.
+       */
+      readonly affirmed?: boolean;
+      readonly chance?: number;
+      readonly opportunities?: number;
       /** Presentes solo cuando `kind === "sustitucion-candidata"` (R-DAT-017). */
       readonly nuevoTagId?: string;
       readonly sharedNeighbor?: string;

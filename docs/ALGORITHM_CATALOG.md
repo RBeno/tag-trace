@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.37.0
+version: 0.39.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -309,6 +309,12 @@ El consenso conserva tanto la ruta dominante como alternativas con soporte. Una 
 Cada diagnóstico conserva explicaciones alternativas y acciones de comprobación.
 
 ## 6.1 Comparación entre dos periodos distantes, implementado (R-DAT-016, R-AGV-013)
+
+> **2026-09-26 (OQ-138):** `desaparecido` y `nuevo` llevan la prueba de azar `AbsenceTest`
+> (`affirmed`, `chance`, `opportunities`, `neighborTagId`): tasa del tag frente a su vecino dominante
+> en el periodo en que se leía, oportunidades = lecturas de ese vecino en el otro periodo,
+> `chance = (1 − tasa)^oportunidades`, afirmado si hay oportunidades y `chance ≤ drift.maxChance`. La
+> marca de soporte débil desaparece: la sustituye la prueba.
 
 Es la pieza «histórico» de ALG-009: con una sola ventana, un tag sin lecturas es indistinguible entre
 obsoleto y averiado, y un vehículo que no lee un tag es indistinguible entre «nunca lo llevó en
@@ -752,6 +758,10 @@ del anillo dominante aunque los AGV lo lean justo antes que su pareja, y con el 
 
 ## 6.16 Alimentación de la línea, implementado (R-FLO-010)
 
+> **2026-09-26 (OQ-138):** `rhythm[].aboveFenceMs` = suma del exceso sobre la valla local (ciclo local
+> + (valla − p50) de la cadencia del régimen) de los tiempos que la superan; `lostMs` pasa a leerse
+> como «por encima del ciclo local».
+
 `src/domain/line-feed.ts`, `measureLineFeed(lecturas, linea, cobertura, regimen, umbrales, retienen)`,
 sobre el cohorte mayor. Umbrales: los de siempre, `bands.minBandSamples` y `flowStops.minStopExcessMs`.
 
@@ -789,6 +799,12 @@ sobre el cohorte mayor. Umbrales: los de siempre, `bands.minBandSamples` y `flow
    mitad o más de los suyos se señala como lectura.
 
 ## 6.17 Batería de mediciones de una incidencia, implementado (R-AGV-021)
+
+> **2026-09-26 (OQ-138):** `abandonedReadings` toma como referencia el mayor hueco **de producción**
+> del AGV (sin los que cruzan la noche o una parada de la producción; el régimen se muestrea cada
+> 15 min y se afina al minuto por bisección) y mide el silencio final descontando noche y paradas;
+> `Incident.reference` guarda referencia, huecos contados y excluidos y silencio medido. El Worker le
+> pasa `regimeOf` y las paradas de la producción.
 
 `src/domain/incident-battery.ts`, `incidentBattery(contexto, incidencia, finDeVentana)`, con las
 secuencias de cada AGV sin repeticiones seguidas, los pasos por la línea y su horquilla por régimen,
@@ -1025,4 +1041,27 @@ online pertenece al circuito (OQ-135):
 - **Quién no entra** (`neverCharged`, ya existente): por AGV, con su presencia y sus lecturas.
 - **Inventario**: un tag de calle cuenta como declarado por su lista y deja de ser `especial`; la
   parada precisa de una calle servida que nadie lee es `critico-sin-lectura` (`unknown`).
+
+## 6.20 Tiempos por sección entre anclas, implementado (R-TIM-012)
+
+`src/domain/anchor-sections.ts`. `anchorsOnRing` ordena por posición en el anillo las anclas de la
+lista presentes en él. `sectionPasses` recorre la secuencia de cada AGV (ordenada por el sentido de
+la fuente) con un paso abierto: se abre en la primera lectura de un ancla, se cierra en la primera
+lectura de la siguiente; otra ancla en medio, el mismo ancla tras otros tags, o un tag de calle de
+carga descartan el abierto y abren otro; las relecturas seguidas de un ancla no cuentan. Un paso
+cerrado vale si sus dos extremos caen en el mismo tramo de cobertura (`sameSpan`) y no solapa una
+parada de la producción; el régimen es el del punto medio. `measureAnchorSections` da por sección
+`bandOf` de `segment-bands` por régimen —mismo mínimo de muestras, misma valla, misma resolución— y
+el p50 de producción por ventana de fichero. `sectionName` toma el tramo de `tagSections` al que
+pertenece más de la mitad de los tags de la sección (el ancla de salida y los del anillo hasta la
+siguiente); la mitad justa no es mayoría. `anchorSectionsCsv` con la forma de `bandsCsv`. El Worker
+lo calcula con el cohorte principal y lo publica en `views.anchorSections`.
+
+`segmentLaps` (§6.4) corregido: las lecturas seguidas del ancla forman una racha y solo la primera
+corta; un AGV cuyas únicas lecturas son el ancla sale como vuelta `desconocida`; las relecturas
+finales del ancla no abren una `parcial`.
+
+**Hora repetida por posición** (ADR-0013, nota 2026-09-26): `resolveRepeatedHourByPosition` en
+`time.ts`, llamada por el importador tras medir el sentido y antes de volver a medir la monotonía.
+`isOrderReliable(flag)` es la única pregunta que hacen monotonía, transiciones y vueltas.
 

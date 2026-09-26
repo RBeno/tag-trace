@@ -170,6 +170,37 @@ describe("alimentación de la línea", () => {
     expect(noche?.lostMs).toBe(0);
   });
 
+  it("con el ciclo entre 50 y 60 s y ninguna parada, «por encima del ciclo local» suma algo pero «sin paso» es 0", () => {
+    // OQ-138: la mitad de los tiempos queda por encima de su mediana local, así que `lostMs` nunca es 0
+    // aunque la línea vaya a su ritmo. Lo que dice «línea parada» es lo que supera la valla local.
+    const cycles = [50_000, 55_000, 60_000, 55_000, 50_000, 60_000];
+    const build = (stopAt: number | null): Reading[] => {
+      const out: Reading[] = [];
+      let t = 0;
+      let n = 0;
+      while (t < 3_600_000) {
+        const agv = String((n % 3) + 1);
+        out.push(reading(agv, "Q", t - 10_000), reading(agv, "E", t), reading(agv, "L", t + 10_000));
+        t += cycles[n % cycles.length] as number;
+        if (stopAt !== null && n === stopAt) t += 300_000; // una parada real de 5 min
+        n += 1;
+      }
+      return out;
+    };
+    const sinParadas = measureLineFeed(build(null), ["E", "L"], [], regimeOf, thresholds).rhythm.find((entry) => entry.regime === "produccion");
+    expect(sinParadas?.lostMs).toBeGreaterThan(0);
+    expect(sinParadas?.aboveFenceMs).toBe(0);
+
+    const conParada = measureLineFeed(build(20), ["E", "L"], [], regimeOf, thresholds);
+    const ritmo = conParada.rhythm.find((entry) => entry.regime === "produccion");
+    // El exceso sobre la valla local se suma: los 5 min menos la valla (unos 10 s sobre el ciclo local
+    // de 50-60 s). Nunca más que lo que está por encima del ciclo local.
+    expect(ritmo?.aboveFenceMs).toBeGreaterThanOrEqual(270_000);
+    expect(ritmo?.aboveFenceMs).toBeLessThanOrEqual(300_000);
+    expect(ritmo?.aboveFenceMs).toBeLessThan(ritmo?.lostMs ?? 0);
+    expect(conParada.stops).toHaveLength(1);
+  });
+
   it("las paradas de la producción no dibujan el pulmón: la zona sigue siendo donde se espera a la línea", () => {
     // Dos paradas de la línea de 5 min con la cola en «Q», y tres descansos de 20 min en que toda la
     // flota se queda donde esté. A mitad de un descanso cualquier AGV del anillo tiene la llegada

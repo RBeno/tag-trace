@@ -25,6 +25,7 @@ import {
 import { decodeSource } from "../src/ingestion/decode.js";
 import { rowsToDelimitedText } from "../src/ingestion/xlsx-readings.js";
 import { declaredTagInfo, tagSections } from "../src/domain/tag-info.js";
+import { measureAnchorSections } from "../src/domain/anchor-sections.js";
 import { reinforcementGroups, reinforcementPartners } from "../src/domain/critical-reinforcement.js";
 import { buildListCleanup } from "../src/domain/list-cleanup.js";
 import { lineStopExclusion, measureLineFeed, outsideLineStops } from "../src/domain/line-feed.js";
@@ -808,6 +809,26 @@ async function buildViews(
   const tagInfo = declaredTagInfo(lists, reinforcement);
   // El tramo de cada tag (kitting, línea, cruce…), para dibujarlo en las gráficas del anillo.
   const sections = tagSections(lists, criticalPointsConfig.funcionOf);
+  // Tiempos por sección entre anclas (R-TIM-012), con el cohorte principal: todas las anclas declaradas
+  // que están en su anillo cortan secciones, con las mismas exclusiones que las horquillas.
+  const mainAnchorCohort = cohortAssignment.cohorts[0];
+  const mainRing = mainAnchorCohort === undefined ? undefined : anchors.get(mainAnchorCohort.id)?.cycle;
+  const anchorSections = measureAnchorSections(
+    {
+      readings: mainReadings,
+      direction,
+      ring: mainRing ?? [],
+      anchors: lapAnchorsConfig.anchors,
+      coverage,
+      productionStops: productionStopIntervals,
+      laneTags,
+      regimeOf,
+      sectionOf: sections,
+      windows: measuredWindows.map((entry) => ({ sourceId: entry.source.sourceId, window: entry.window })),
+    },
+    PROVISIONAL_CONFIG.bands,
+    PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+  );
 
   const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, PROVISIONAL_CONFIG.silence.minGapMs);
 
@@ -904,6 +925,7 @@ async function buildViews(
     tagDossiers,
     ...(tagInfo.size === 0 ? {} : { tagInfo: Object.fromEntries(tagInfo) }),
     ...(sections.size === 0 ? {} : { sections: Object.fromEntries(sections) }),
+    anchorSections: { declared: lapAnchorsConfig.anchors.length, ...anchorSections },
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
     fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null, production: productionView, blockages },
     franjas: {
@@ -1094,6 +1116,9 @@ async function buildViews(
     (lineFeed?.stops ?? []).filter((stop) => stop.kind === "con-pulmon").map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs })),
     new Map(laneConfig.lanes.flatMap((lane) => lane.tags.map((tagId) => [tagId, lane.laneId] as const))),
     (tagId, utcMs) => usualDwellByTag.get(tagId)?.[regimeOf(utcMs)] ?? null,
+    // El «deja de leer» mide su hueco de referencia solo con huecos de producción (OQ-138).
+    regimeOf,
+    production.stops,
   );
   const batteries: Record<string, ReturnType<typeof incidentBattery>> = {};
   const records: IncidentRecord[] = [];
@@ -1174,6 +1199,9 @@ async function buildViews(
               readingsAfter: entry.kind === "nuevo" || entry.kind === "sustitucion-candidata" ? entry.readingsAfter : 0,
               ...(entry.kind === "sustitucion-candidata"
                 ? { nuevoTagId: entry.nuevoTagId, sharedNeighbor: entry.sharedNeighbor, neighborSide: entry.neighborSide }
+                : {}),
+              ...(entry.kind === "desaparecido" || entry.kind === "nuevo"
+                ? { affirmed: entry.affirmed, chance: entry.chance, opportunities: entry.opportunities }
                 : {}),
             })),
             vehicleDrifts: drift.vehicleDrifts.map((entry) => ({

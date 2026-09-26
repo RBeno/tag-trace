@@ -31,7 +31,7 @@
  * donde se puede adelantar, y se dice.
  */
 
-import type { Band } from "./segment-bands.js";
+import type { Band, Regime } from "./segment-bands.js";
 import type { Reading } from "./reading.js";
 
 interface Step {
@@ -57,6 +57,29 @@ export interface IncidentContext {
    * ahí esperó de verdad o simplemente acababa de llegar (sin ella, con el paso del propio AGV).
    */
   readonly usualDwellMs: (tagId: string, utcMs: number) => number | null;
+  /**
+   * El régimen de cada instante (R-TIM-009). El «deja de leer» mide el hueco de referencia de cada AGV
+   * solo con sus huecos de producción: quien vivió una noche no puede callar siete horas sin
+   * declararse (OQ-138, 2026-09-26). Por defecto todo es producción, que es lo que se hacía antes.
+   */
+  readonly regimeOf: (utcMs: number) => Regime;
+  /** Las paradas de la producción (R-AGV-018): un hueco que cruza una no es un hueco de producción. */
+  readonly productionStops: readonly { readonly fromUtcMs: number; readonly toUtcMs: number }[];
+}
+
+/**
+ * Con qué se comparó un «deja de leer»: el silencio final del AGV, contado solo en producción, contra
+ * su hueco de producción más largo del que volvió. Va en la incidencia para que la evidencia lo diga.
+ */
+export interface AbandonReference {
+  /** El hueco de producción más largo del que el AGV volvió a leer. */
+  readonly referenceGapMs: number;
+  /** Cuántos huecos de producción lo sostienen. */
+  readonly productionGaps: number;
+  /** Cuántos huecos suyos se dejaron fuera por cruzar la noche o una parada de la producción. */
+  readonly excludedGaps: number;
+  /** El silencio final medido en producción: sin la noche ni las paradas de la producción. */
+  readonly silenceMs: number;
 }
 
 export interface Incident {
@@ -66,6 +89,8 @@ export interface Incident {
   /** La siguiente lectura del AGV, o `null` si no vuelve a leer. */
   readonly toTagId: string | null;
   readonly toUtcMs: number | null;
+  /** Solo en un «deja de leer»: con qué hueco de referencia se comparó. */
+  readonly reference?: AbandonReference;
 }
 
 export type IncidentReading = "no-registra" | "adelantado" | "fuera-o-sin-registrar" | "parado-con-cola" | "sin-datos";
@@ -112,6 +137,8 @@ export function buildIncidentContext(
   lineStops: readonly { readonly from: number; readonly to: number }[] = [],
   laneOf: ReadonlyMap<string, string> = new Map(),
   usualDwellMs: (tagId: string, utcMs: number) => number | null = () => null,
+  regimeOf: (utcMs: number) => Regime = () => "produccion",
+  productionStops: readonly { readonly fromUtcMs: number; readonly toUtcMs: number }[] = [],
 ): IncidentContext {
   const steps = new Map<string, Step[]>();
   for (const reading of readings) {
@@ -126,7 +153,17 @@ export function buildIncidentContext(
     steps.set(agvId, collapsed);
     if (collapsed[0] !== undefined) firstRead.set(agvId, collapsed[0]);
   }
-  return { steps, linePasses: [...linePasses].sort((a, b) => a - b), lineBandAt, firstRead, lineStops, laneOf, usualDwellMs };
+  return {
+    steps,
+    linePasses: [...linePasses].sort((a, b) => a - b),
+    lineBandAt,
+    firstRead,
+    lineStops,
+    laneOf,
+    usualDwellMs,
+    regimeOf,
+    productionStops,
+  };
 }
 
 /** Índice de la primera lectura con hora > `utcMs`. */
@@ -305,6 +342,18 @@ export function incidentBattery(context: IncidentContext, incident: Incident, wi
     );
   }
 
+  // Un «deja de leer» dice con qué se comparó: el silencio en producción y el hueco de referencia,
+  // medido solo con huecos de producción (OQ-138).
+  if (incident.reference !== undefined) {
+    const ref = incident.reference;
+    lines.push(
+      `Deja de leer: lleva ${duration(ref.silenceMs)} de producción sin leer hasta el final, más que su hueco de producción ` +
+        `más largo del que volvió, ${duration(ref.referenceGapMs)} (de ${ref.productionGaps} ${ref.productionGaps === 1 ? "hueco" : "huecos"} ` +
+        `de producción${ref.excludedGaps > 0 ? `; ${ref.excludedGaps} que ${ref.excludedGaps === 1 ? "cruza" : "cruzan"} la noche o una parada de la producción no ${ref.excludedGaps === 1 ? "cuenta" : "cuentan"}` : ""}). ` +
+        "Medido en producción: la noche y las paradas de la producción no suman.",
+    );
+  }
+
   const reading: IncidentReading =
     overtook.length > 0
       ? "adelantado"
@@ -333,25 +382,108 @@ export function incidentBattery(context: IncidentContext, incident: Incident, wi
   return { durationMs, line, ahead, behind: { reached, moved, overtook, held, unsure }, swap, lineStoppedMs, reading, lines };
 }
 
+/** Con qué paso se busca un cambio de régimen dentro de un tramo, y a qué resolución se afina. */
+const REGIME_SCAN_MS = 15 * 60_000;
+const REGIME_RESOLUTION_MS = 60_000;
+
 /**
- * AGV que dejan de leer antes del final de lo cargado: su silencio hasta el final es más largo que el
- * hueco más largo que ese mismo AGV tuvo antes y del que volvió. Cada AGV contra sí mismo, porque los
- * silencios normales van de una hora a varias según el AGV (noche, carga, sin conexión).
+ * Cuánto de `[from, to]` es producción según `regimeOf`. El régimen se muestrea cada cuarto de hora y
+ * cada cambio se afina al minuto por bisección: es una resolución de cálculo, no una constante de
+ * planta (los regímenes se declaran por horas en la configuración).
+ */
+function productionMs(from: number, to: number, regimeOf: (utcMs: number) => Regime): number {
+  if (to <= from) return 0;
+  let total = 0;
+  let cursor = from;
+  let regime = regimeOf(from);
+  while (cursor < to) {
+    const next = Math.min(to, cursor + REGIME_SCAN_MS);
+    const nextRegime = regimeOf(next);
+    if (nextRegime === regime) {
+      if (regime === "produccion") total += next - cursor;
+      cursor = next;
+      continue;
+    }
+    // Cambio dentro del tramo: se busca el instante al minuto.
+    let lo = cursor;
+    let hi = next;
+    while (hi - lo > REGIME_RESOLUTION_MS) {
+      const mid = (lo + hi) / 2;
+      if (regimeOf(mid) === regime) lo = mid;
+      else hi = mid;
+    }
+    if (regime === "produccion") total += hi - cursor;
+    cursor = hi;
+    regime = nextRegime;
+  }
+  return total;
+}
+
+/**
+ * AGV que dejan de leer antes del final de lo cargado: su silencio hasta el final, contado solo en
+ * producción, es más largo que el **hueco de producción** más largo que ese mismo AGV tuvo antes y del
+ * que volvió. Cada AGV contra sí mismo, porque los silencios normales van de minutos a horas según el
+ * AGV (carga, sin conexión). Un hueco que cruza la noche o una parada de la producción no es un hueco de
+ * producción y no entra en la referencia (OQ-138, 2026-09-26): con él, quien vivió una noche podía
+ * callar siete horas sin declararse. Sin ningún hueco de producción no hay referencia y no se juzga.
  */
 export function abandonedReadings(context: IncidentContext, windowEndUtcMs: number): readonly Incident[] {
   const out: Incident[] = [];
+  const inProductionStop = (from: number, to: number): boolean =>
+    context.productionStops.some((stop) => stop.fromUtcMs < to && from < stop.toUtcMs);
   for (const [agvId, list] of context.steps) {
     const last = list[list.length - 1];
     if (last === undefined || list.length < 2) continue;
     let longest = 0;
+    let productionGaps = 0;
+    let excludedGaps = 0;
     for (let index = 1; index < list.length; index += 1) {
-      longest = Math.max(longest, (list[index] as Step).utcMs - (list[index - 1] as Step).utcMs);
+      const from = (list[index - 1] as Step).utcMs;
+      const to = (list[index] as Step).utcMs;
+      // Un hueco es de producción si toda su duración es producción y no cruza ninguna parada de la
+      // producción. La propia lectura puede caer justo al cambiar el régimen: se admite la resolución.
+      const isProduction = !inProductionStop(from, to) && to - from - productionMs(from, to, context.regimeOf) < REGIME_RESOLUTION_MS;
+      if (!isProduction) {
+        excludedGaps += 1;
+        continue;
+      }
+      productionGaps += 1;
+      longest = Math.max(longest, to - from);
     }
-    if (windowEndUtcMs - last.utcMs > longest) {
-      out.push({ agvId, fromTagId: last.tagId, fromUtcMs: last.utcMs, toTagId: null, toUtcMs: null });
+    if (productionGaps === 0) continue;
+    const silenceMs = outsideStops(last.utcMs, windowEndUtcMs, context.productionStops).reduce(
+      (sum, piece) => sum + productionMs(piece.from, piece.to, context.regimeOf),
+      0,
+    );
+    if (silenceMs > longest) {
+      out.push({
+        agvId,
+        fromTagId: last.tagId,
+        fromUtcMs: last.utcMs,
+        toTagId: null,
+        toUtcMs: null,
+        reference: { referenceGapMs: longest, productionGaps, excludedGaps, silenceMs },
+      });
     }
   }
   return out.sort((a, b) => a.fromUtcMs - b.fromUtcMs);
+}
+
+/** Los trozos de `[from, to]` que quedan fuera de las paradas de la producción. */
+function outsideStops(
+  from: number,
+  to: number,
+  stops: readonly { readonly fromUtcMs: number; readonly toUtcMs: number }[],
+): readonly { readonly from: number; readonly to: number }[] {
+  const pieces: { from: number; to: number }[] = [];
+  let cursor = from;
+  for (const stop of [...stops].sort((a, b) => a.fromUtcMs - b.fromUtcMs)) {
+    if (stop.toUtcMs <= cursor || stop.fromUtcMs >= to) continue;
+    if (stop.fromUtcMs > cursor) pieces.push({ from: cursor, to: stop.fromUtcMs });
+    cursor = Math.max(cursor, stop.toUtcMs);
+  }
+  if (cursor < to) pieces.push({ from: cursor, to });
+  return pieces;
 }
 
 export type IncidentKind = "parada-sin-explicacion" | "bloqueo" | "deja-de-leer";

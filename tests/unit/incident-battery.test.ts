@@ -93,6 +93,51 @@ describe("batería de mediciones de una incidencia", () => {
     expect(battery.lines.join(" ")).toContain("Cambio de AGV candidato: Y");
   });
 
+  it("«deja de leer» mide su referencia solo con huecos de producción: la noche entre dos lecturas no la alarga", () => {
+    // OQ-138. Un AGV lee a las 0 h y a las 8 h (noche de 1 h a 7 h entre medias) y luego cada 5 min hasta
+    // las 9 h; la ventana acaba a las 15 h. Antes, el hueco de 8 h era su referencia y podía callar
+    // seis horas sin declararse; ahora la referencia son los 5 min de producción, y sí deja de leer.
+    const H = 3_600_000;
+    const noche = (utcMs: number) => (utcMs >= 1 * H && utcMs < 7 * H ? ("noche" as const) : ("produccion" as const));
+    const readings = [
+      r("X", "A", 0), r("X", "B", 8 * H),
+      ...Array.from({ length: 12 }, (_, index) => r("X", index % 2 === 0 ? "C" : "D", 8 * H + (index + 1) * 300 * S)),
+    ];
+    const context = buildIncidentContext(readings, [], () => null, [], new Map(), () => null, noche);
+    const abandoned = abandonedReadings(context, 15 * H);
+    expect(abandoned.map((entry) => entry.agvId)).toEqual(["X"]);
+    const reference = abandoned[0]?.reference;
+    expect(reference).toMatchObject({ referenceGapMs: 300 * S, productionGaps: 12, excludedGaps: 1 });
+    expect(reference?.silenceMs).toBe(15 * H - (9 * H));
+    // La evidencia dice con qué se comparó y que se midió en producción.
+    const battery = incidentBattery(context, abandoned[0] as (typeof abandoned)[number], 15 * H);
+    const text = battery.lines.join(" ");
+    expect(text).toContain("hueco de producción más largo del que volvió, 5,0 min (de 12 huecos de producción");
+    expect(text).toContain("Medido en producción");
+    expect(text).toContain("1 que cruza la noche o una parada de la producción no cuenta");
+
+    // Con el régimen por defecto (todo producción), el hueco de 8 h sigue siendo la referencia y no se
+    // declara: es lo que se hacía antes, y sigue valiendo cuando no hay noche declarada.
+    expect(abandonedReadings(buildIncidentContext(readings, [], () => null), 15 * H)).toEqual([]);
+  });
+
+  it("si el hueco de producción de referencia justifica el silencio, no deja de leer; ni una parada de la producción cuenta", () => {
+    // OQ-138. Y lee cada 2 h en producción y calla 1,5 h al final: dentro de lo suyo. Z lee cada 5 min,
+    // pero su silencio final cae casi entero en una parada de la producción de 1 h: en producción son
+    // 4 min, menos que su referencia.
+    const H = 3_600_000;
+    const readings = [
+      r("Y", "A", 0), r("Y", "B", 2 * H), r("Y", "C", 4 * H), r("Y", "D", 6 * H),
+      ...Array.from({ length: 6 }, (_, index) => r("Z", index % 2 === 0 ? "C" : "D", 6 * H + index * 300 * S)),
+    ];
+    const stops = [{ fromUtcMs: 6 * H + 1_500 * S + 120 * S, toUtcMs: 7 * H + 1_500 * S + 120 * S }];
+    const context = buildIncidentContext(readings, [], () => null, [], new Map(), () => null, () => "produccion", stops);
+    expect(abandonedReadings(context, 7 * H + 1_500 * S + 240 * S)).toEqual([]);
+    // Sin la parada, los 64 min de Z sí superan sus 5 min.
+    const sinParada = buildIncidentContext(readings, [], () => null);
+    expect(abandonedReadings(sinParada, 7 * H + 1_500 * S + 240 * S).map((entry) => entry.agvId)).toEqual(["Z"]);
+  });
+
   it("una incidencia más corta que un ciclo de la línea sin paso dentro no se juzga: no le tocaba entrar a nadie", () => {
     // 40 s entre dos pasos de la línea (a 90 y 145 s) con la valla en 90 s: decir «sin paso» sería
     // afirmar una parada de la línea que el dato no sostiene.

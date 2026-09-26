@@ -7,7 +7,7 @@
  */
 
 import type { SourceDirection } from "../domain/order.js";
-import type { TimeFlag } from "../domain/time.js";
+import { isOrderReliable, type TimeFlag } from "../domain/time.js";
 
 export interface MonotonicityReport {
   readonly direction: SourceDirection;
@@ -30,12 +30,13 @@ export interface MonotonicityReport {
   readonly tiedPairs: number;
   /**
    * Pares consecutivos en que alguna de las dos lecturas cae en una hora repetida o inexistente del
-   * cambio estacional (`flag !== "ok"`, ADR-0013).
+   * cambio estacional sin resolver (`dst_ambiguous` o `dst_nonexistent`, ADR-0013).
    *
    * En la hora repetida de octubre las dos ocurrencias reciben el mismo instante calculado, así que
    * un fichero perfectamente ordenado parece retroceder al pasar de una a otra. Contarlo como
    * inversión acusaría de defecto de integridad a una fuente íntegra; estos pares no aportan evidencia
-   * de sentido en ningún sentido y se cuentan aparte.
+   * de sentido en ningún sentido y se cuentan aparte. Una hora repetida ya resuelta por la posición
+   * en el fichero (`dst_by_position`, OQ-137) tiene instante propio y sí compara.
    */
   readonly unreliablePairs: number;
 }
@@ -56,7 +57,7 @@ export function measureMonotonicity(
   let unreliablePairs = 0;
 
   for (let index = 0; index + 1 < utcMs.length; index += 1) {
-    if ((flags[index] ?? "ok") !== "ok" || (flags[index + 1] ?? "ok") !== "ok") {
+    if (!isOrderReliable(flags[index] ?? "ok") || !isOrderReliable(flags[index + 1] ?? "ok")) {
       unreliablePairs += 1;
       continue;
     }

@@ -127,8 +127,19 @@ export interface LineRhythm {
   readonly cycleHighMs: number;
   /** Tiempo con la línea observada: la suma de los tiempos entre pasos. */
   readonly observedMs: number;
-  /** Lo que los tiempos entre pasos se pasan de su ciclo local, sumado: la línea sin paso. */
+  /**
+   * Lo que los tiempos entre pasos se pasan de su ciclo local, sumado: **por encima del ciclo local**.
+   * Como la mitad de los tiempos queda por encima de su mediana, esto no es cero ni con la línea a su
+   * ritmo (propietario, 2026-09-26, OQ-138): la línea sin paso es `aboveFenceMs`.
+   */
   readonly lostMs: number;
+  /**
+   * La línea **sin paso**: solo de los tiempos que superan la **valla local**, lo que se pasan de ella,
+   * sumado. La valla local es el ciclo local más lo que la valla de la cadencia del régimen se separa
+   * de su mediana (`fenceMs − p50Ms`): la misma valla que declara una parada, trasladada al ciclo del
+   * momento. Con el ciclo entre 50 y 60 s y ninguna parada es 0.
+   */
+  readonly aboveFenceMs: number;
   /**
    * De eso, con AGV esperando y sin ninguno; `null` sin pulmón. En una parada, como la parada; en un
    * hueco corto, según hubiera en el pulmón, cuando tocaba entrar, un AGV que ya tenía que haber llegado.
@@ -524,7 +535,8 @@ export function measureLineFeed(
   }
 
   // El ritmo en cada régimen: cada tiempo entre pasos contra su ciclo local, la mediana de los que lo
-  // rodean (tantos como muestras mínimas pide una horquilla). Lo que se pasa es línea sin paso; se
+  // rodean (tantos como muestras mínimas pide una horquilla). Lo que se pasa es «por encima del ciclo
+  // local»; solo lo que supera la valla local es línea sin paso (OQ-138, 2026-09-26). El exceso se
   // separa según hubiera en el pulmón, cuando tocaba entrar, un AGV que ya tenía que haber llegado.
   const rhythm: LineRhythm[] = [];
   const stopKindAt = new Map(stops.map((stop) => [stop.fromUtcMs, stop.kind]));
@@ -536,7 +548,12 @@ export function measureLineFeed(
     const local = values.map((_, index) =>
       median(values.slice(Math.max(0, index - half), Math.min(values.length, index + half + 1))),
     );
+    // La valla local: la separación entre la valla de la cadencia del régimen y su mediana, puesta
+    // sobre el ciclo local. Sin cadencia del régimen no hay valla y nada supera la valla.
+    const band = bandFor(regime);
+    const fenceMarginMs = band === null ? Number.POSITIVE_INFINITY : band.fenceMs - band.p50Ms;
     let lostMs = 0;
+    let aboveFenceMs = 0;
     let withAgv = 0;
     let withoutAgv = 0;
     list.forEach((gap, index) => {
@@ -544,6 +561,7 @@ export function measureLineFeed(
       const extra = (values[index] as number) - cycleMs;
       if (extra <= 0) return;
       lostMs += extra;
+      if (extra > fenceMarginMs) aboveFenceMs += extra - fenceMarginMs;
       if (zoneEta === null) return;
       // Un hueco que es una parada se reparte como la parada, que mira a lo largo de toda ella: en el
       // instante en que tocaba entrar, los AGV de un descanso aún no llevan retraso y parecerían faltar.
@@ -570,6 +588,7 @@ export function measureLineFeed(
       cycleHighMs: at(0.9),
       observedMs: values.reduce((sum, value) => sum + value, 0),
       lostMs,
+      aboveFenceMs,
       lostWithAgvMs: zoneEta === null ? null : withAgv,
       lostWithoutAgvMs: zoneEta === null ? null : withoutAgv,
     });

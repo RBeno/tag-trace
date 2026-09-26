@@ -29,6 +29,7 @@
 import { mergeIntervals, sameSpan, type Interval } from "./coverage.js";
 import { sortReadings, type SourceDirection } from "./order.js";
 import type { Reading } from "./reading.js";
+import { isOrderReliable } from "./time.js";
 import type { TruthState } from "./truth.js";
 
 /**
@@ -119,7 +120,8 @@ export interface ObservedGraph {
   readonly discardedAcrossGaps: number;
   /**
    * Pares consecutivos descartados porque una de las dos lecturas cae en una hora repetida o
-   * inexistente del cambio estacional (`flag !== "ok"`, ADR-0013).
+   * inexistente del cambio estacional sin resolver (`dst_ambiguous` o `dst_nonexistent`, ADR-0013).
+   * Una hora repetida resuelta por la posición en el fichero (`dst_by_position`, OQ-137) sí ordena.
    *
    * Dentro de esa hora el instante calculado no separa las dos ocurrencias, así que el orden de las
    * lecturas no lo da el reloj y una arista construida sobre ellas afirmaría una secuencia que nadie
@@ -163,7 +165,7 @@ export function buildTransitions(
     // Hora repetida o inexistente en cualquiera de los dos extremos: el reloj no ordena ese par
     // (ADR-0013) y no se afirma nada sobre él. La lectura sigue siendo evidencia de que el vehículo
     // estuvo ahí; lo que no se sostiene es su secuencia.
-    if (previous.time.flag !== "ok" || entry.time.flag !== "ok") {
+    if (!isOrderReliable(previous.time.flag) || !isOrderReliable(entry.time.flag)) {
       discardedUnreliableTime += 1;
       continue;
     }

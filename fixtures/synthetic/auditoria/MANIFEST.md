@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/28`
+- Dataset ID/version: `auditoria/29`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -125,4 +125,12 @@ otro y solo los posteriores ven sus esperas, así que con otro índice los anter
 hacen cola detrás siguen siendo solo los generados después de él. El retenedor devuelve su espera
 como deuda de reloj y sale de verdad más rápido en la zona cargada; la sonda del ritmo lo admite solo
 como «más rápido, solo ahí» y nada más. Todas las clases siguen DETECTA.
+
+## Secciones entre anclas (2026-09-26): `auditoria/29`
+
+Se declaran tres anclas —las posiciones 0, 50 y 100 del anillo— y la lista `tramo`: el primer tercio
+«kitting», el último «expedicion», y el del medio sin tramo (solo sus dos tags de línea, que no son
+mayoría). La primera sigue siendo el ancla de vuelta. La sonda afirma tres secciones de 50 tags con
+esos nombres, horquilla de producción en las tres, muestras en los dos ficheros, y que la suma de sus
+p50 cabe en la vuelta nominal (150 pasos de 12 a 20 s). Ninguna lectura cambia.
 

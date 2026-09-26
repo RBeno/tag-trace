@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { compareDistantPeriods, type DriftThresholds } from "../../src/domain/drift.js";
 import type { Reading } from "../../src/domain/reading.js";
 
-const THRESHOLDS: DriftThresholds = { minGapMs: 1000, minReadingsPerVehicle: 3, minAdoptionShare: 0.8 };
+const THRESHOLDS: DriftThresholds = { minGapMs: 1000, minReadingsPerVehicle: 3, minAdoptionShare: 0.8, maxChance: 0.001 };
 
 let row = 0;
 function reading(utcMs: number, agvId: string, tagId: string): Reading {
@@ -341,12 +341,17 @@ describe("adopción de tag nuevo (R-AGV-013 ampliada)", () => {
   });
 });
 
-describe("soporte débil de un desaparecido o un nuevo", () => {
-  it("un tag leído una vez antes y nunca después sale desaparecido, con el soporte débil dicho", () => {
-    const coverage = [
-      { from: 0, to: 1000 },
-      { from: 5000, to: 6000 },
-    ];
+describe("prueba de azar de un desaparecido o un nuevo (OQ-138)", () => {
+  const coverage = [
+    { from: 0, to: 1000 },
+    { from: 5000, to: 6000 },
+  ];
+
+  it("un tag leído una vez antes y nunca después sale desaparecido, pero sin afirmar y con su cifra", () => {
+    // Antes salía como «cambió» con una marca de soporte débil; ahora el veredicto se somete a la
+    // prueba de azar: una lectura entre seis de su vecino da una tasa baja, y con seis oportunidades
+    // después la ausencia es perfectamente casual. Lo mismo para el nuevo con una lectura, y para NX,
+    // cuyo vecino no se leyó antes: sin oportunidades no se afirma nada.
     const readings = [
       ...chain("A1", ["TA", "TB", "TC", "TA", "TB", "TC"], 0),
       reading(200, "A1", "M"),
@@ -355,9 +360,40 @@ describe("soporte débil de un desaparecido o un nuevo", () => {
       ...chain("A1", ["NX", "NX", "NX"], 5300),
     ];
     const result = compareDistantPeriods(readings, coverage, new Set(), THRESHOLDS);
-    expect(result.tagDrifts).toContainEqual({ kind: "desaparecido", tagId: "M", readingsBefore: 1, weakSupport: true });
-    expect(result.tagDrifts).toContainEqual({ kind: "nuevo", tagId: "N", readingsAfter: 1, weakSupport: true });
-    expect(result.tagDrifts).toContainEqual({ kind: "nuevo", tagId: "NX", readingsAfter: 3, weakSupport: false });
+    const m = result.tagDrifts.find((d) => d.tagId === "M");
+    expect(m).toMatchObject({ kind: "desaparecido", readingsBefore: 1, affirmed: false, opportunities: 2 });
+    expect(m?.kind === "desaparecido" && m.chance).toBeGreaterThan(THRESHOLDS.maxChance);
+    expect(result.tagDrifts.find((d) => d.tagId === "N")).toMatchObject({ kind: "nuevo", readingsAfter: 1, affirmed: false });
+    expect(result.tagDrifts.find((d) => d.tagId === "NX")).toMatchObject({ kind: "nuevo", readingsAfter: 3, affirmed: false, chance: 1, opportunities: 0 });
+  });
+
+  it("un tag leído en todas las pasadas de antes y en ninguna de después sale desaparecido afirmado", () => {
+    // Doce pasadas A→X→B antes; doce pasadas A→B después sin X. La tasa de X frente a su vecino A es
+    // 1, así que la probabilidad de doce ausencias por azar es 0: se afirma.
+    const readings = [
+      ...Array.from({ length: 12 }, (_, index) => chain(index % 2 === 0 ? "A1" : "A2", ["A", "X", "B"], index * 50)).flat(),
+      ...Array.from({ length: 12 }, (_, index) => chain(index % 2 === 0 ? "A1" : "A2", ["A", "B"], 5000 + index * 50)).flat(),
+    ];
+    const result = compareDistantPeriods(readings, coverage, new Set(), THRESHOLDS);
+    expect(result.tagDrifts.find((d) => d.tagId === "X")).toMatchObject({
+      kind: "desaparecido",
+      readingsBefore: 12,
+      affirmed: true,
+      chance: 0,
+      opportunities: 12,
+    });
+  });
+
+  it("un tag nuevo leído en todas las pasadas de después sale afirmado; uno que solo se leyó en una, sin afirmar", () => {
+    const readings = [
+      ...Array.from({ length: 12 }, (_, index) => chain("A1", ["A", "B"], index * 50)).flat(),
+      ...Array.from({ length: 12 }, (_, index) => chain("A1", index === 5 ? ["A", "Y", "Z", "B"] : ["A", "Y", "B"], 5000 + index * 50)).flat(),
+    ];
+    const result = compareDistantPeriods(readings, coverage, new Set(), THRESHOLDS);
+    expect(result.tagDrifts.find((d) => d.tagId === "Y")).toMatchObject({ kind: "nuevo", readingsAfter: 12, affirmed: true, opportunities: 12 });
+    const z = result.tagDrifts.find((d) => d.tagId === "Z");
+    expect(z).toMatchObject({ kind: "nuevo", readingsAfter: 1, affirmed: false });
+    expect(z?.kind === "nuevo" && z.chance).toBeGreaterThan(THRESHOLDS.maxChance);
   });
 
   it("la firma de vecinos desempata dos lecturas del mismo instante por fichero y fila, no por el orden del array", () => {

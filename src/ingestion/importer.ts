@@ -15,6 +15,8 @@ import { measureSameInstant } from "./same-instant.js";
 import {
   detectFieldOrder,
   parseTimestamp,
+  resolveRepeatedHourByPosition,
+  type CanonicalTime,
   type FieldOrder,
   type TimeFlag,
   type TimeParseOptions,
@@ -467,7 +469,34 @@ export function importReadings(
   callbacks.onProgress("ordering", 0, 1, "Midiendo el sentido de la fuente");
   // Los pares con hora repetida o inexistente no cuentan como inversión: en octubre las dos
   // ocurrencias reciben el mismo instante y un fichero íntegro parecería retroceder (ADR-0013).
-  const monotonicity = measureMonotonicity(utcSequence, flagSequence);
+  let monotonicity = measureMonotonicity(utcSequence, flagSequence);
+
+  // --- Hora repetida: desambiguación por posición (OQ-137) ---
+  // La hora de cada fila es la de recepción en el servidor y el fichero es una pila global, así que
+  // una vez medido el sentido la posición dice a qué ocurrencia pertenece cada fila de 02:xx. Se
+  // recorre en el orden cronológico del fichero, todos los vehículos entrelazados tal como llegaron.
+  // Sin sentido medido la posición no significa nada y no se resuelve ninguna.
+  let dstResolvedByPosition = 0;
+  let dstAmbiguous = flagSequence.filter((flag) => flag === "dst_ambiguous").length;
+  if (dstAmbiguous > 0 && monotonicity.direction !== "unknown") {
+    const chronological: CanonicalTime[] = readings.map((entry) => entry.time);
+    if (monotonicity.direction === "newest-first") chronological.reverse();
+    const resolution = resolveRepeatedHourByPosition(chronological);
+    const resolved = [...resolution.times];
+    if (monotonicity.direction === "newest-first") resolved.reverse();
+    for (let at = 0; at < readings.length; at += 1) {
+      const time = resolved[at] as CanonicalTime;
+      if (time === (readings[at] as Reading).time) continue;
+      readings[at] = { ...(readings[at] as Reading), time };
+      utcSequence[at] = time.utcMs;
+      flagSequence[at] = time.flag;
+    }
+    dstResolvedByPosition = resolution.resolvedByPosition;
+    dstAmbiguous = resolution.stillAmbiguous;
+    // Con los instantes ya resueltos las filas de la hora repetida vuelven a comparar: la monotonía
+    // que se publica es la del fichero tal como se va a ordenar, no la de antes de resolver.
+    monotonicity = measureMonotonicity(utcSequence, flagSequence);
+  }
   sortReadings(readings, monotonicity.direction);
   // Después de ordenar, no antes: dos lecturas «consecutivas» de un vehículo solo lo son una vez
   // la secuencia está en orden cronológico (R-DAT-013).
@@ -487,10 +516,17 @@ export function importReadings(
         `fuente. Es compatible con una entrega diferida y las filas se conservan señaladas.`,
     );
   }
-  if (dstFlagged > 0) {
+  if (dstResolvedByPosition > 0) {
     warnings.push(
-      `${dstFlagged} lecturas caen en una hora repetida o inexistente del cambio estacional y no ` +
-        `deben usarse para afirmar orden dentro de esa ventana.`,
+      `${dstResolvedByPosition} lecturas caen en la hora repetida del cambio estacional y se ` +
+        `asignaron a su ocurrencia por la posición en el fichero; con ese instante sí ordenan.`,
+    );
+  }
+  if (dstFlagged - dstResolvedByPosition > 0) {
+    warnings.push(
+      `${dstFlagged - dstResolvedByPosition} lecturas caen en una hora repetida o inexistente del ` +
+        `cambio estacional sin que el fichero permita resolverla, y no deben usarse para afirmar ` +
+        `orden dentro de esa ventana.`,
     );
   }
   if (rowsWithoutTag > 0) {
@@ -546,6 +582,8 @@ export function importReadings(
       quarantinedRows: defectiveRows,
       rowsWithoutTag,
       dstFlagged,
+      dstResolvedByPosition,
+      dstAmbiguous,
       // Las lecturas ya están ordenadas, así que los extremos son los dos bordes de lo observado.
       observedFrom: (readings[0] as Reading).time.utcMs,
       observedTo: (readings[readings.length - 1] as Reading).time.utcMs,

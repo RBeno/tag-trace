@@ -14,6 +14,33 @@ Decisiones del propietario sobre las preguntas abiertas de la revisión (OQ-136 
 - **Constantes de planta en código** (OQ-140): no van a un bloque de configuración de planta. Son
   provisionales hasta que la memoria del circuito (F4) las mida y consolide con confirmación humana,
   y así queda dicho en `CONFIG_SCHEMA` §3.5.
+- **La hora repetida de octubre se resuelve por la posición en el fichero** (OQ-137; ADR-0013, nota
+  del 2026-09-26; R-DAT-013): con el sentido medido, el retroceso de la hora de pared separa las dos
+  ocurrencias, y una racha seguida de las 03:xx es la segunda; lo demás sigue ambiguo. Las resueltas
+  (`dst_by_position`) vuelven a afirmar orden en monotonía, transiciones y vueltas, y en la vista
+  previa se marcan aparte, no como sospechosas. El resumen de la fuente dice cuántas se resolvieron y
+  cuántas quedan. **Cambia una prueba unitaria** que fijaba que esas lecturas no formaban transiciones.
+- **Tres medidas que afirmaban de más** (OQ-138): «sin paso» de la línea es solo lo que supera la
+  valla (`aboveFenceMs`) y lo demás «por encima del ciclo local» (R-FLO-010); el «deja de leer» de
+  la batería se mide con huecos de producción, sin la noche ni las paradas, y la evidencia da su
+  referencia (R-AGV-021); `desaparecido` y `nuevo` entre periodos llevan la prueba de azar y se
+  enseñan «sin afirmar» con su cifra cuando no la pasan (R-DAT-016, `drift.max_chance`); desaparece la
+  marca de soporte débil.
+- **Historial de flota** (OQ-139): un `hasta` sin hora es el final de ese día, así que alta y baja el
+  mismo día son válidas; un historial cargado sin periodos válidos es «historial vacío» y la vista lo
+  dice (`historySource`).
+
+### Añadido
+
+- **Tiempos por sección entre anclas** (R-TIM-012, OQ-141): «si se utilizan varias anclas en puntos
+  críticos podría valer también para medir tiempos promedios por zonas tipo kitting, cruce, línea».
+  Todas las anclas de la lista `ancla` que están en el anillo, en el orden del anillo, delimitan
+  secciones; cada una con su horquilla por régimen, su p50 por fichero y el nombre de la lista
+  `tramo` cuando más de la mitad de sus tags están en él. Sin cargas, sin huecos de cobertura ni
+  paradas de la producción en medio. Vista nueva con tabla, detalle por fichero y CSV. En la auditoría
+  (`auditoria/29`) se plantan tres anclas y la lista `tramo`: «kitting», «A → B» y «expedicion».
+- `segmentLaps` corregido: las lecturas seguidas del ancla no fabrican vueltas de segundos y un AGV
+  con una sola lectura sale como vuelta desconocida.
 
 ## [3.45.0] - 2026-09-26
 

@@ -7,8 +7,13 @@
  * Tres decisiones que conviene no deshacer:
  *
  * - **Las fechas son día/mes**, declarado y no adivinado, en la zona del circuito, con hora opcional.
- *   Una fecha sin hora es a las 00:00.
+ *   Un `desde` sin hora es a las 00:00 de ese día; un `hasta` sin hora es el **final de ese día**: el
+ *   periodo llega hasta las 00:00 del día siguiente, exclusivo (propietario, 2026-09-26, OQ-139). Así,
+ *   un alta y una baja escritas el mismo día son un periodo válido de un día entero, y el AGV no queda
+ *   fuera todo su último día. En una hoja de Excel, un número de serie entero es una fecha sin hora.
  * - **El periodo es `[desde, hasta)`**: `hasta` es el instante de la baja, y vacío es que sigue.
+ *   `HASTA_ANTES_DE_DESDE` solo cuando, leído así, `hasta` queda antes que `desde` (o igual, con hora:
+ *   un periodo vacío no asigna nada).
  * - **Un fichero puede traer varios circuitos.** El importador no elige: devuelve cuántas filas
  *   trae cada uno, y quien llama filtra por el que corresponde.
  */
@@ -60,12 +65,28 @@ function parseDate(raw: string, zone: string): number | null {
 }
 
 /**
+ * Un `hasta`: sin hora, el final de ese día, que son las 00:00 del día siguiente en la zona del
+ * circuito (no 24 h después: un cambio de hora en medio las haría 23 o 25). Con hora, tal cual.
+ */
+function parseUntil(raw: string, zone: string): number | null {
+  const text = raw.trim();
+  const match = DATE_ONLY.exec(text);
+  if (match === null) return parseDate(text, zone);
+  const [, day, month, year] = match as unknown as [string, string, string, string];
+  const next = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day) + 1));
+  if (Number.isNaN(next.getTime())) return null;
+  // La fecha escrita tiene que ser válida por sí misma (31/02 no lo es) antes de pasar al día siguiente.
+  if (parseDate(text, zone) === null) return null;
+  return parseDate(`${next.getUTCDate()}/${next.getUTCMonth() + 1}/${next.getUTCFullYear()}`, zone);
+}
+
+/**
  * Una fecha que Excel guardó como número de serie —días desde el 30/12/1899, con la hora en la parte
  * decimal— cuando la celda no estaba en formato texto. Es la hora de pared tal como se escribió, así
  * que se pasa a día/mes/año y se lee en la zona del circuito como cualquier otra. Solo en una hoja de
  * Excel: en un texto, un número suelto en una columna de fecha no es una fecha.
  */
-export function excelSerialToText(raw: string): string {
+export function excelSerialToText(raw: string, dateOnlyIfWhole = false): string {
   const text = raw.trim();
   if (!/^\d+(\.\d+)?$/.test(text)) return raw;
   const serial = Number(text);
@@ -73,10 +94,10 @@ export function excelSerialToText(raw: string): string {
   if (serial < 18264 || serial > 91311) return raw;
   const wall = new Date(Math.round((serial - 25569) * 86_400_000));
   const pad = (value: number): string => String(value).padStart(2, "0");
-  return (
-    `${pad(wall.getUTCDate())}/${pad(wall.getUTCMonth() + 1)}/${wall.getUTCFullYear()} ` +
-    `${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}:${pad(wall.getUTCSeconds())}`
-  );
+  const date = `${pad(wall.getUTCDate())}/${pad(wall.getUTCMonth() + 1)}/${wall.getUTCFullYear()}`;
+  // Un serie entero es una celda de fecha sin hora: en el `hasta` del historial, el final de ese día.
+  if (dateOnlyIfWhole && Number.isInteger(serial)) return date;
+  return `${date} ${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}:${pad(wall.getUTCSeconds())}`;
 }
 
 function tooShort(): FleetFailure {
@@ -152,8 +173,8 @@ function importFleetTable(table: readonly (readonly string[])[], zone: string, d
       continue;
     }
     const fromUtcMs = parseDate(dateCell(fields, fromColumn), zone);
-    const rawTo = dateCell(fields, toColumn);
-    const toUtcMs = rawTo === "" ? null : parseDate(rawTo, zone);
+    const rawTo = fromExcel ? excelSerialToText(cell(fields, toColumn), true) : cell(fields, toColumn);
+    const toUtcMs = rawTo === "" ? null : parseUntil(rawTo, zone);
     if (fromUtcMs === null || (rawTo !== "" && toUtcMs === null)) {
       rejected.push({ sourceRow, reason: "FECHA_INVALIDA", excerpt: excerpt(line) });
       continue;

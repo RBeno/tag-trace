@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.31.0
+version: 0.32.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -325,8 +325,12 @@ conversación siguiente.
   (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
   regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
   (OQ-135 a OQ-141), dos de ellas contradicciones código↔documento que no se tocan hasta que decida.
-  OQ-135 ya está cerrada: la carga online pertenece al circuito, y las calles se comprueban en tres
-  cosas (R-CO-009, `[3.45.0]`). La última entrega es la posición de un tag según las lecturas (R-GRA-015,
+  Todas quedaron cerradas el mismo día (`[3.45.0]`, `[3.46.0]`): la carga online pertenece al
+  circuito y las calles se comprueban en tres cosas (R-CO-009); deriva es moverse siempre hacia el
+  mismo lado (R-TIM-010); la hora repetida se resuelve por la posición en el fichero (ADR-0013); «sin
+  paso», «deja de leer» y `desaparecido`/`nuevo` afirman solo lo que prueban; el historial de flota
+  admite alta y baja el mismo día; las constantes de planta quedan provisionales hasta F4; y varias
+  anclas en puntos críticos miden tiempos por sección con nombre de tramo (R-TIM-012). La última entrega es la posición de un tag según las lecturas (R-GRA-015,
   `CHANGELOG.md` `[3.32.0]`), publicada en `main` y en la web.
 - **Cómo se ha trabajado**: una entrega por petición del propietario, con su documentación, su clase
   plantada en la auditoría sintética (`tests/audit/`, 53 clases) y un solo commit en la rama de

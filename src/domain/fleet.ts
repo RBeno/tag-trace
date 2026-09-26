@@ -13,7 +13,9 @@
  *   hueco entre dos exportaciones nunca es un silencio;
  * - el **historial de flota** que declara el propietario: qué AGV estaba asignado al circuito y
  *   desde cuándo. Sin él, la flota asignada son los vehículos que aparecen en las lecturas, y la
- *   vista lo dice: un AGV asignado que no lee nada no se puede contar sin el historial.
+ *   vista lo dice: un AGV asignado que no lee nada no se puede contar sin el historial. Un historial
+ *   cargado sin ningún periodo es un **historial vacío**: M sale igual de las lecturas, y
+ *   `historySource` lo dice para que la vista lo enseñe (OQ-139).
  *
  * Cada hueco sin carga lleva además **cómo reapareció** el AGV (R-AGV-017, `silence-kind.ts`):
  * parado en su sitio, un tag o varios más allá, una hora o más fuera, o por un tag de mantenimiento.
@@ -167,8 +169,17 @@ export interface FleetCount {
   readonly unassignedActive: number;
 }
 
+/**
+ * De dónde sale M, la flota asignada: del historial de flota; de las lecturas, sin historial; o de las
+ * lecturas porque el historial cargado no tiene ningún periodo (**historial vacío**, OQ-139,
+ * 2026-09-26): se trata como no tener historial, pero se dice, para que la vista lo enseñe.
+ */
+export type FleetHistorySource = "historial" | "lecturas" | "historial-vacio";
+
 export interface FleetTimeline {
+  /** `true` solo cuando el historial tiene periodos y es el que da M (`historySource === "historial"`). */
   readonly historyLoaded: boolean;
+  readonly historySource: FleetHistorySource;
   readonly fromUtcMs: number;
   readonly toUtcMs: number;
   readonly vehicles: readonly FleetVehicle[];
@@ -178,7 +189,10 @@ export interface FleetTimeline {
 export interface FleetInput {
   readonly readings: readonly Reading[];
   readonly coverage: readonly Interval[];
-  /** `null` sin historial cargado: la flota son los vehículos que aparecen en las lecturas. */
+  /**
+   * `null` sin historial cargado: la flota son los vehículos que aparecen en las lecturas. Un historial
+   * cargado sin ningún periodo (`[]`) se trata igual, y el resultado lo dice (`historySource`).
+   */
   readonly history: readonly FleetPeriod[] | null;
   /** Las inactividades de cada vehículo, con su causa, tal como las calcula el expediente. */
   readonly inactivity: ReadonlyMap<string, readonly FleetGap[]>;
@@ -276,6 +290,10 @@ function inCircuit(segment: FleetSegment): boolean {
 
 /** La vida de cada AGV en tramos continuos, y el recuento N de M a lo largo de la ventana. */
 export function buildFleetTimeline(input: FleetInput): FleetTimeline {
+  // Un historial sin periodos no puede decir quién está asignado: M sale de las lecturas, y se dice.
+  const historySource: FleetHistorySource =
+    input.history === null ? "lecturas" : input.history.length === 0 ? "historial-vacio" : "historial";
+  const history = historySource === "historial" ? input.history : null;
   const coverage = mergeIntervals([...input.coverage]);
   const timesOf = new Map<string, number[]>();
   /** Qué tag leyó cada AGV en cada instante: lo que dice el borde de un tramo sin lecturas. */
@@ -308,14 +326,14 @@ export function buildFleetTimeline(input: FleetInput): FleetTimeline {
     windowTo = Math.max(windowTo, entry.last);
   }
   if (!Number.isFinite(windowFrom) || windowTo <= windowFrom) {
-    return { historyLoaded: input.history !== null, fromUtcMs: 0, toUtcMs: 0, vehicles: [], counts: [] };
+    return { historyLoaded: history !== null, historySource, fromUtcMs: 0, toUtcMs: 0, vehicles: [], counts: [] };
   }
   const covered = coverage.length > 0 ? coverage : [{ from: windowFrom, to: windowTo }];
 
   // Periodos de asignación por AGV, recortados a la ventana.
   const assignment = new Map<string, Interval[]>();
-  if (input.history !== null) {
-    for (const period of input.history) {
+  if (history !== null) {
+    for (const period of history) {
       const from = Math.max(period.fromUtcMs, windowFrom);
       const to = Math.min(period.toUtcMs ?? windowTo, windowTo);
       if (to <= from) continue;
@@ -413,8 +431,7 @@ export function buildFleetTimeline(input: FleetInput): FleetTimeline {
     let pieces = pieces0;
 
     // 2. La asignación: fuera de ella, la actividad es «sin asignar» y la ausencia es «fuera».
-    const assigned =
-      input.history === null ? [{ from: windowFrom, to: windowTo }] : mergeIntervals(assignment.get(agvId) ?? []);
+    const assigned = history === null ? [{ from: windowFrom, to: windowTo }] : mergeIntervals(assignment.get(agvId) ?? []);
     pieces = splitBy(pieces, assigned, (state, inside) =>
       inside ? state : IN_SERVICE.has(state) ? "leyendo-sin-asignar" : "fuera",
     );
@@ -424,14 +441,15 @@ export function buildFleetTimeline(input: FleetInput): FleetTimeline {
 
     return {
       agvId,
-      assignedEver: input.history === null || assigned.length > 0,
+      assignedEver: history === null || assigned.length > 0,
       readings: own?.count ?? 0,
       segments: mergeAdjacent(pieces),
     };
   });
 
   return {
-    historyLoaded: input.history !== null,
+    historyLoaded: history !== null,
+    historySource,
     fromUtcMs: windowFrom,
     toUtcMs: windowTo,
     vehicles: vehicles.sort(

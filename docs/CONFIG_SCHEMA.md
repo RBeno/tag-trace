@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.23.0
+version: 0.24.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -174,6 +174,13 @@ reconstruido, y si no aparece en él se prueba la siguiente. Ninguna declarada, 
 el ciclo, deja el mecanismo tal como estaba — con el ancla inferida y su verdad `inferred` — en vez
 de inventar un corte que el dato no sostiene.
 
+**Doble papel de la lista (R-TIM-012, propietario 2026-09-26).** Además del ancla de vuelta, todas
+las anclas de la lista que estén en el anillo —en el orden del anillo, no el de la lista— delimitan
+**secciones** consecutivas con su horquilla de tiempo por régimen y su p50 por fichero: kitting,
+cruce, línea… Para nombrarlas se usa la lista `tramo` (§3.4.3): la sección toma el nombre del tramo
+al que pertenece más de la mitad de sus tags. Declarar un ancla en cada punto crítico que separa una
+zona de la siguiente es lo que hace medibles esas zonas; con una sola ancla solo hay vuelta.
+
 **Lo que una ancla declarada cambia, y lo que no.** La topología —qué tags forman el anillo y en qué
 orden— la sigue dando el tráfico observado; declarar un ancla no la recalcula, solo **rota** el mismo
 ciclo para que empiece en el tag declarado (R-GRA-009). Y el estado de verdad que gana depende de la
@@ -271,6 +278,7 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `max_false_points` | R-FLO-008, R-FLO-009: puntos marcados por azar que se aceptan en todo el circuito. |
 | `charging.long_stay_ratio`, `charging.min_stays_for_median` | R-CO-002: cuántas veces la estancia habitual hace larga una permanencia, y cuántas estancias completas hacen falta para tener una habitual. |
 | `charging.usage_max_chance`, `charging.usage_min_deviation` | R-CO-009: azar máximo y desviación mínima (fracción de la parte que le tocaría) para señalar una calle que se usa menos o más que las demás. Provisionales: 0,001 y 0,25. |
+| `drift.max_chance` | R-DAT-016 (OQ-138): azar máximo para afirmar un `desaparecido` o un `nuevo` entre periodos. Provisional: 0,001, el mismo que `tag_changes.max_chance`. |
 
 Los valores que hoy viven en `PROVISIONAL_CONFIG` con aspecto de dato de planta —horas de arranque de
 turno, regímenes, la hora sin leer que hace una desconexión, los dos minutos del bloqueo, la

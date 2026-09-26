@@ -26,6 +26,8 @@ import { dominantNeighbours, locateUndeclaredTags, type UndeclaredTagReport } fr
 import { reconcileCircuitOrder, type CircuitOrder } from "../../src/domain/circuit-order.js";
 import { compareAgainstVsystem, type VsystemComparisonRow } from "../../src/domain/vsystem.js";
 import { findDominantCycle, resolveDeclaredAnchor, segmentLaps, type Lap } from "../../src/domain/laps.js";
+import { measureAnchorSections, type AnchorSectionsReport } from "../../src/domain/anchor-sections.js";
+import { tagSections } from "../../src/domain/tag-info.js";
 import { buildReadMatrix, type ReadMatrix } from "../../src/domain/read-matrix.js";
 import { buildTagInventory } from "../../src/domain/inventory.js";
 import { reinforcementGroups, reinforcementPartners } from "../../src/domain/critical-reinforcement.js";
@@ -123,6 +125,7 @@ function parseStamp(value: string): number {
 }
 
 interface Analysis {
+  readonly anchorSections: AnchorSectionsReport | null;
   /** Contraste con la lista y el orden según las lecturas (R-GRA-001, R-GRA-015). */
   readonly contrast: readonly VsystemComparisonRow[];
   readonly circuitOrder: CircuitOrder;
@@ -635,9 +638,38 @@ function analyse(
   ]);
   const circuitOrder = reconcileCircuitOrder(declaredOrder, ring, readTags, dominantNeighbours(cohortReadings, toPlace));
 
+  // Tiempos por sección entre anclas (R-TIM-012), como el Worker: el cohorte principal, sus anclas en
+  // el anillo y el nombre de la lista `tramo`.
+  const anchorSections =
+    anchor === null
+      ? null
+      : measureAnchorSections(
+          {
+            readings: cohortReadings,
+            direction,
+            ring: anchor.cycle,
+            anchors: lapAnchorsConfig.anchors,
+            coverage: window,
+            productionStops: production.stops.map((stop) => ({ from: stop.fromUtcMs, to: stop.toUtcMs })),
+            laneTags,
+            regimeOf,
+            sectionOf: tagSections(
+              [...catalog.lists].map(([list, entries]) => ({
+                list,
+                entries: entries.map((entry) => ({ tagId: entry.tagId, funcion: entry.funcion, grupo: entry.grupo, note: "" })),
+              })),
+              criticalPointsConfig.funcionOf,
+            ),
+            windows: driftCoverage.map((entry, index) => ({ sourceId: `f${index + 1}`, window: entry })),
+          },
+          PROVISIONAL_CONFIG.bands,
+          PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+        );
+
   return {
     contrast,
     circuitOrder,
+    anchorSections,
     undeclared,
     undeclaredWithNightList,
     lineFeed: measureLineFeed(
@@ -2114,6 +2146,41 @@ describe("auditoría del circuito con verdad conocida", () => {
         expect(tag.staysRead / tag.stays, `${lane.laneId} ${tag.tagId} (${tag.role})`).toBeGreaterThanOrEqual(0.9);
       }
     }
+  }, PLAZO);
+
+  it("tres anclas delimitan tres secciones con nombre de tramo y tiempos que suman la vuelta (R-TIM-012)", () => {
+    const report = analysis.anchorSections;
+    expect(report).not.toBeNull();
+    const { onRing, sections } = report as AnchorSectionsReport;
+    const physicalRing = scenario.physicalRing;
+    expect(onRing).toEqual([physicalRing[0], ...scenario.sectionAnchors]);
+    expect(sections.map((section) => section.name)).toEqual([
+      "kitting",
+      `${scenario.sectionAnchors[0] as string} → ${scenario.sectionAnchors[1] as string}`,
+      "expedicion",
+    ]);
+    expect(sections.map((section) => section.namedByList)).toEqual([true, false, true]);
+    // Cincuenta posiciones por sección, menos los tags plantados que nadie lee y no entran en el anillo.
+    for (const section of sections) {
+      expect(section.tags.length, section.name).toBeGreaterThanOrEqual(45);
+      expect(section.tags.length, section.name).toBeLessThanOrEqual(50);
+    }
+    expect(sections.reduce((sum, section) => sum + section.tags.length, 0)).toBe(
+      (analysis.anchorSections as AnchorSectionsReport).sections.length > 0 ? ring.length : 0,
+    );
+    // Cada sección tiene horquilla de producción, y las tres suman lo que tarda la vuelta: 150 pasos
+    // de 12 a 20 s (16 s de media), unos 40 minutos, con las esperas plantadas encima.
+    let total = 0;
+    for (const section of sections) {
+      expect(section.produccion, section.name).not.toBeNull();
+      expect(section.produccion?.samples ?? 0, section.name).toBeGreaterThan(PROVISIONAL_CONFIG.bands.minBandSamples);
+      total += section.produccion?.p50Ms ?? 0;
+      // Por fichero: dos ventanas, las dos con muestras.
+      expect(section.bySource.map((entry) => entry.sourceId)).toEqual(["f1", "f2"]);
+      for (const entry of section.bySource) expect(entry.samples, `${section.name} ${entry.sourceId}`).toBeGreaterThan(0);
+    }
+    expect(total).toBeGreaterThan(150 * 16_000 * 0.9);
+    expect(total).toBeLessThan(150 * 16_000 * 1.25);
   }, PLAZO);
 
   it("la lista de deuda conocida no miente: si algo empieza a detectarse, hay que sacarlo", () => {

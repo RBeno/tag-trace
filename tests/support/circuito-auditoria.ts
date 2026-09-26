@@ -162,6 +162,8 @@ export interface AuditScenario {
   readonly cleanTags: readonly string[];
   /** El anillo físico, en el orden en que lo recorren los AGV: la verdad del escenario. */
   readonly physicalRing: readonly string[];
+  /** Las anclas de sección declaradas además del ancla de vuelta (R-TIM-012), en el orden del anillo. */
+  readonly sectionAnchors: readonly string[];
   /** La lista `circuito` tal como se escribe, con sus erratas plantadas (R-GRA-015). */
   readonly declaredList: readonly string[];
   readonly vehicles: readonly string[];
@@ -1052,6 +1054,17 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   const listaOrden = ring.filter((tag) => tag !== listaMovido);
   listaOrden.splice(listaOrden.indexOf(ring[52] as string) + 1, 0, listaMovido);
   listaOrden.splice(listaOrden.indexOf(ring[7] as string), 2, ring[8] as string, ring[7] as string);
+  const plantadosParaAnclas = new Set<string>([
+    ...nuncaLeidos, ...lecturaAlta, ...lecturaMedia, ...porMemoria, ...rotos, ...degradados, ...tagsDejados,
+    cruceTag, sustitucionOriginal, paradaPrecisaTag, semaforoTag,
+  ]);
+  const anclaLibre = (desde: number): string => {
+    let position = desde;
+    while (plantadosParaAnclas.has(ring[position] as string)) position += 1;
+    return ring[position] as string;
+  };
+  /** Las dos anclas de sección (R-TIM-012), en tags sanos a partir de las posiciones 50 y 100. */
+  const sectionAnchors = [anclaLibre(50), anclaLibre(100)];
   const declaredList = listaOrden.map((tag) => (tag === listaMalEscritoReal ? listaMalEscrito : tag));
 
   const listsCsv = ["lista;tag;orden;funcion;grupo;capacidad"]
@@ -1076,7 +1089,14 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       ),
     )
     .concat([...zoneOf].map(([tag, zona]) => `zona;${tag};;;${zona};`))
-    .concat([`ancla;${ring[0] as string};1`])
+    // Tres anclas (R-GRA-009 y R-TIM-012): la primera es el ancla de vuelta; las tres, en el orden del
+    // anillo, delimitan las secciones de tiempo. Y la lista `tramo` que las nombra: el primer tercio
+    // «kitting», el último «expedicion», y el del medio sin nombre (solo dos tags de línea: no es mayoría).
+    // Las anclas de sección van en tags sanos: sobre un tag plantado (el roto de la posición 100, por
+    // ejemplo) la sección se quedaría sin cerrar desde la rotura, y eso mediría el defecto, no la sección.
+    .concat([`ancla;${ring[0] as string};1`, ...sectionAnchors.map((tag, index) => `ancla;${tag};${index + 2}`)])
+    .concat(ring.slice(0, 50).map((tag) => `tramo;${tag};;;kitting;`))
+    .concat(ring.slice(100).map((tag) => `tramo;${tag};;;expedicion;`))
     // La línea (Parte 56, R-FLO-010): solo declaración, no cambia ninguna lectura.
     .concat([`linea;${ring[lineaPosicion] as string};1`, `linea;${ring[lineaPosicion + 1] as string};2`])
     .join("\r\n");
@@ -1558,6 +1578,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     defects,
     cleanTags: ring.filter((tag) => !plantados.has(tag)),
     physicalRing: ring,
+    sectionAnchors,
     declaredList,
     vehicles,
     fromUtcMs: toRealUtc(from),

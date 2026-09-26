@@ -54,6 +54,7 @@ import {
 } from "./diagnostic-charts.js";
 import { PROVISIONAL_CONFIG } from "../domain/config.js";
 import { bandsCsv } from "../domain/segment-bands.js";
+import { anchorSectionsCsv } from "../domain/anchor-sections.js";
 import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
 import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
@@ -571,7 +572,10 @@ function appendRows(): void {
   for (let index = state.shown; index < end; index += 1) {
     const reading = state.visible[index] as Reading;
     const row = element("tr");
-    if (reading.time.flag !== "ok") row.className = "flagged";
+    // La hora repetida resuelta por posición (ADR-0013, nota 2026-09-26) ordena como cualquier otra:
+    // se marca aparte y no como sospechosa.
+    if (reading.time.flag === "dst_by_position") row.className = "resolved";
+    else if (reading.time.flag !== "ok") row.className = "flagged";
 
     row.append(element("td", undefined, formatInstant(reading.time.utcMs)));
     row.append(element("td", "mono", reading.agvId));
@@ -1079,6 +1083,7 @@ function renderViews(views: CircuitViews): void {
   viewsPanel.append(element("p", "muted", cohortLine));
   renderShapes(views);
   renderCircuitState(views);
+  renderAnchorSections(views);
   renderFranjas(viewsPanel, views, { finding, formatInstant, formatTick, duration, circuitId: state.circuitId });
   renderCriticalPoints(views);
   renderCharging(views);
@@ -1259,8 +1264,8 @@ function renderLineFeed(views: CircuitViews): void {
         "p",
         undefined,
         `${rhythm.regime === "produccion" ? "Producción" : "Noche"}: un AGV cada ${seconds(rhythm.cycleMs)} de mediana; el ciclo ` +
-          `anda entre ${seconds(rhythm.cycleLowMs)} y ${seconds(rhythm.cycleHighMs)} según el periodo. Sin paso, por encima de su ` +
-          `ciclo, ${minutes(rhythm.lostMs)} de ${minutes(rhythm.observedMs)} (${share} %)` +
+          `anda entre ${seconds(rhythm.cycleLowMs)} y ${seconds(rhythm.cycleHighMs)} según el periodo. Sin paso (por encima de la ` +
+          `valla), ${minutes(rhythm.aboveFenceMs)}; por encima de su ciclo local, ${minutes(rhythm.lostMs)} de ${minutes(rhythm.observedMs)} (${share} %)` +
           (rhythm.lostWithAgvMs === null || rhythm.lostWithoutAgvMs === null
             ? "."
             : `: ${minutes(rhythm.lostWithAgvMs)} con AGV esperando (la línea no los tomaba) y ` +
@@ -1482,7 +1487,10 @@ function renderFleet(views: CircuitViews): void {
       "muted",
       fleet.historyLoaded
         ? `${assigned.length} AGV asignados según el historial de flota.`
-        : "Sin historial de flota se cuentan solo los AGV que aparecen en las lecturas. Cárgalo en " +
+        : fleet.historySource === "historial-vacio"
+          ? "El historial de flota cargado no tiene ningún periodo válido: se cuentan solo los AGV que aparecen " +
+            "en las lecturas. Revisa sus filas rechazadas en «Listas del circuito»."
+          : "Sin historial de flota se cuentan solo los AGV que aparecen en las lecturas. Cárgalo en " +
             "«Listas del circuito» para ver también los asignados que no leen.",
     ),
   );
@@ -1969,6 +1977,107 @@ function renderCircuitState(views: CircuitViews): void {
       }
     }
   }
+}
+
+/**
+ * Tiempos por sección entre anclas (R-TIM-012): todas las anclas declaradas que están en el anillo
+ * del cohorte principal cortan secciones consecutivas —kitting, cruce, línea…— y cada una lleva su
+ * horquilla por régimen y su p50 por fichero. Es la medida que el propietario pidió (OQ-141); no
+ * diagnostica nada por sí sola.
+ */
+function renderAnchorSections(views: CircuitViews): void {
+  const { anchorSections } = views;
+  viewsPanel.append(element("h3", undefined, "Tiempos por sección entre anclas"));
+  if (anchorSections.onRing.length < 2) {
+    viewsPanel.append(
+      element(
+        "p",
+        "muted",
+        anchorSections.declared < 2
+          ? "Declara dos o más anclas en la lista `ancla` para medir por secciones: cada ancla del anillo corta una " +
+              "sección (kitting, cruce, línea…) y se mide el tiempo entre una y la siguiente."
+          : `De las ${anchorSections.declared} anclas declaradas, ${anchorSections.onRing.length === 0 ? "ninguna está" : "solo una está"} ` +
+              "en el anillo reconstruido: hacen falta dos o más en el anillo para medir por secciones.",
+      ),
+    );
+    return;
+  }
+  const { sections } = anchorSections;
+  const named = sections.filter((section) => section.namedByList).length;
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      `${sections.length} secciones entre las anclas ${anchorSections.onRing.join(", ")}, en el orden del anillo. Un paso es el tiempo ` +
+        "de un AGV desde su lectura de un ancla hasta la siguiente, sin otra ancla ni una calle de carga en medio y sin cruzar un " +
+        "hueco de cobertura ni una parada de la producción; las relecturas seguidas del ancla cuentan una vez. La horquilla sigue el " +
+        `criterio de los tramos y la valla nunca queda a menos de ${duration(anchorSections.marginMs)} del 95 %.` +
+        (named > 0 ? ` ${named} de las secciones toman el nombre de la lista \`tramo\`.` : ""),
+    ),
+  );
+  const rows: string[][] = [];
+  const regimeLabel = { produccion: "producción", noche: "noche" } as const;
+  for (const section of sections) {
+    const bands = [
+      ["produccion", section.produccion],
+      ["noche", section.noche],
+    ] as const;
+    const withBand = bands.filter(([, band]) => band !== null);
+    if (withBand.length === 0) {
+      rows.push([section.name, section.tags.join(" "), "—", "sin muestras suficientes", "—", "—", "—", "—"]);
+      continue;
+    }
+    for (const [regime, band] of withBand) {
+      if (band === null) continue;
+      rows.push([
+        section.name,
+        section.tags.join(" "),
+        regimeLabel[regime],
+        String(band.samples),
+        duration(band.p50Ms),
+        duration(band.p80Ms),
+        duration(band.p95Ms),
+        duration(band.fenceMs),
+      ]);
+    }
+  }
+  viewsPanel.append(plainTable(["Sección", "Tags", "Régimen", "Muestras", "p50", "p80", "p95", "Valla"], rows));
+
+  // La tendencia: el p50 de producción de cada sección en cada fichero (R-TIM-011).
+  const fileNameOf = new Map(views.franjas.sources.map((source) => [source.sourceId, source.fileName]));
+  const sourceIds = [...new Set(sections.flatMap((section) => section.bySource.map((entry) => entry.sourceId)))];
+  if (sourceIds.length > 0) {
+    viewsPanel.append(
+      lazyDetails(`Ver el p50 de cada sección por fichero (${sourceIds.length} ficheros)`, () =>
+        plainTable(
+          ["Fichero", "Sección", "Muestras", "p50 (producción)"],
+          sourceIds.flatMap((sourceId) =>
+            sections.map((section) => {
+              const entry = section.bySource.find((item) => item.sourceId === sourceId);
+              return [
+                fileNameOf.get(sourceId) ?? sourceId,
+                section.name,
+                String(entry?.samples ?? 0),
+                entry === undefined || entry.p50Ms === null ? "—" : duration(entry.p50Ms),
+              ];
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+  const download = element("button", undefined, "Descargar secciones (CSV)");
+  download.setAttribute("type", "button");
+  download.addEventListener("click", () => {
+    // Con BOM y `;`, como las horquillas: se abre en una hoja de cálculo en español tal cual.
+    const url = URL.createObjectURL(new Blob([`\ufeff${anchorSectionsCsv(sections)}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `secciones-${state.circuitId ?? "circuito"}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+  viewsPanel.append(download);
 }
 
 type Matrix = CircuitViews["readMatrices"][number];
@@ -2760,11 +2869,19 @@ function renderDrift(views: CircuitViews): void {
     "obsoleto-consolidado": "sin lecturas en ningún periodo",
     "sustitucion-candidata": "posible sustitución",
   };
+  // Un desaparecido o un nuevo se afirma solo si la ausencia es improbable por azar (OQ-138); si no,
+  // se enseña igual, «sin afirmar», con las pasadas por su sitio que hubo para leerlo.
+  const azar = (entry: TagDriftEntry): string =>
+    entry.affirmed === undefined
+      ? ""
+      : entry.affirmed
+        ? ` (${entry.opportunities} pasadas por su sitio sin leerlo)`
+        : ` — sin afirmar: ${entry.opportunities ?? 0} pasadas por su sitio, por azar saldría ${formatChance(entry.chance ?? 1)}`;
   const detailOf = (entry: TagDriftEntry): string =>
     entry.kind === "desaparecido"
-      ? `${entry.readingsBefore} lecturas antes, 0 ahora`
+      ? `${entry.readingsBefore} lecturas antes, 0 ahora${azar(entry)}`
       : entry.kind === "nuevo"
-        ? `0 lecturas antes, ${entry.readingsAfter} ahora`
+        ? `0 lecturas antes, ${entry.readingsAfter} ahora${azar(entry)}`
         : entry.kind === "sustitucion-candidata"
           ? `${entry.readingsBefore} lecturas de «${entry.tagId}» antes, ${entry.readingsAfter} de ` +
             `«${entry.nuevoTagId}» ahora, en el mismo sitio (junto a ${entry.sharedNeighbor})`

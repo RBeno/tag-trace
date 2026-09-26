@@ -555,4 +555,17 @@ describe("vueltas que la matriz no cuenta · cola cortada y hora repetida", () =
     // tiempo de los tramos son medida, así que la vuelta no sostiene ninguna celda.
     expect(matriz.vehicles[0]?.laps).toBe(0);
   });
+
+  it("una vuelta con una hora repetida resuelta por posición sí cuenta como pasada (OQ-137)", () => {
+    // La posición en el fichero asignó la ocurrencia, así que el instante vuelve a ordenar los pasos
+    // y a medir los tramos: la vuelta es una pasada normal.
+    clock = 0;
+    const readings = [reading("A", "0100"), reading("A", "0200"), reading("A", "0300"), reading("A", "0400"), reading("A", "0100")];
+    const tercera = readings[2] as Reading;
+    readings[2] = { ...tercera, time: { ...tercera.time, flag: "dst_by_position" } };
+
+    const matriz = buildReadMatrix(0, readings, "oldest-first", [], RING, "0100", THRESHOLDS, SIN_ZONAS, SIN_TENDENCIA);
+
+    expect(matriz.vehicles[0]?.laps).toBe(1);
+  });
 });

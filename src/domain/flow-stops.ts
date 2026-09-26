@@ -515,13 +515,11 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
     if (start.length === 0) return null;
     const middle = (transition.fromTime + transition.toTime) / 2;
     const position = positionOf.get(transition.from) as number;
-    if (transition.from === "60312" && transition.toTime - transition.fromTime > 50_000) console.log("DBG stop", transition.agvId, new Date(transition.fromTime).toISOString(), transition.toTime - transition.fromTime, JSON.stringify(start));
     for (const candidate of start) {
       const last = lastAt(candidate.agvId, middle);
       const theirs = last === null ? undefined : positionOf.get(last.tag);
       if (last === null || theirs === undefined) continue;
       const distance = (theirs - position + ring.length) % ring.length;
-      if (transition.from === "60312" && transition.toTime - transition.fromTime > 50_000) console.log("DBG cand", candidate.agvId, JSON.stringify(last), distance, passedThrough(last.tag, candidate.agvId, transition.agvId, last.time, middle), lingering(candidate.agvId, middle));
       if (passedThrough(last.tag, candidate.agvId, transition.agvId, last.time, middle)) continue;
       if (distance <= thresholds.reachTags && lingering(candidate.agvId, middle)) {
         return { agvId: candidate.agvId, tagId: last.tag };

@@ -261,6 +261,23 @@ describe("lo que el grafo no afirma · hora repetida y cola cortada", () => {
     expect(discardedUnreliableTime).toBe(2);
   });
 
+  it("una hora repetida resuelta por posición sí forma transición: su instante vuelve a ordenar (OQ-137)", () => {
+    // `dst_by_position` es una hora repetida a la que la posición en el fichero asignó su ocurrencia.
+    // Con instante propio, el par se afirma igual que uno `ok`; solo `dst_ambiguous` sigue fuera.
+    const vuelta = laps("A", ANILLO, 1, 0);
+    const resuelta = vuelta[2] as Reading;
+    const readings = [
+      ...vuelta.slice(0, 2),
+      { ...resuelta, time: { ...resuelta.time, flag: "dst_by_position" as const } },
+      ...vuelta.slice(3),
+    ];
+
+    const { transitions, discardedUnreliableTime } = buildTransitions(readings, "oldest-first", []);
+
+    expect(transitions.map((t) => `${t.from}>${t.to}`)).toEqual(["0100>0200", "0200>0300", "0300>0400"]);
+    expect(discardedUnreliableTime).toBe(0);
+  });
+
   it("la cola cortada de una exportación no se empareja con la primera lectura de la siguiente (R-DAT-007)", () => {
     // La cobertura de una fuente termina en su último instante completo; la lectura de la cola queda
     // fuera. Con el criterio de «encerrar un hueco entero» esa lectura, al estar ya dentro del hueco,

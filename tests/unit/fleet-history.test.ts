@@ -43,6 +43,33 @@ describe("lectura del historial (importFleetHistory)", () => {
     expect(result.circuits).toEqual([]);
   });
 
+  it("un «hasta» sin hora es el final de ese día: un alta y una baja el mismo día son un periodo válido", () => {
+    // OQ-139: antes «hasta» sin hora valían las 00:00 de ese día, el periodo quedaba vacío y la fila se
+    // rechazaba; el AGV quedaba fuera todo su último día. Ahora el periodo llega hasta las 00:00 del
+    // día siguiente, exclusivo. Con hora, «hasta» sigue siendo el instante escrito.
+    const result = importFleetHistory(
+      ["agv;desde;hasta", "7101;01/09/2026;01/09/2026", "7102;01/09/2026;05/09/2026", "7103;01/09/2026 08:00;01/09/2026 08:00"].join("\n"),
+      ZONE,
+    );
+    expect(result.rows.map((row) => [row.agvId, row.toUtcMs])).toEqual([
+      ["7101", SEP_1 + 24 * 3_600_000],
+      ["7102", SEP_1 + 5 * 24 * 3_600_000],
+    ]);
+    // Con hora e igual a «desde», el periodo es vacío y se rechaza: no asigna nada.
+    expect(result.rejected.map((row) => row.reason)).toEqual(["HASTA_ANTES_DE_DESDE"]);
+    // Y cuando «hasta», leído como final de su día, queda antes que «desde», se rechaza como siempre.
+    const antes = importFleetHistory(["agv;desde;hasta", "7104;02/09/2026;01/09/2026", "7105;01/09/2026;"].join("\n"), ZONE);
+    expect(antes.rejected.map((row) => row.reason)).toEqual(["HASTA_ANTES_DE_DESDE"]);
+    expect(antes.rows).toHaveLength(1);
+  });
+
+  it("el final del día se calcula en la zona del circuito, también con cambio de hora", () => {
+    // El 25/10/2026 Madrid pasa de UTC+2 a UTC+1: ese día tiene 25 h, y el final del día son las 00:00
+    // del 26 en Madrid (23:00 UTC del 25), no 24 h después de su comienzo.
+    const result = importFleetHistory(["agv;desde;hasta", "7101;25/10/2026;25/10/2026"].join("\n"), ZONE);
+    expect(result.rows[0]?.toUtcMs).toBe(Date.UTC(2026, 9, 25, 23, 0, 0));
+  });
+
   it("avisa de dos periodos del mismo AGV que se pisan, sin rechazarlos", () => {
     const result = importFleetHistory(["agv;desde;hasta", "7101;01/09/2026;", "7101;05/09/2026;"].join("\n"), ZONE);
     expect(result.rows).toHaveLength(2);

@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.20.0
+version: 0.21.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -267,7 +267,7 @@ SE2/4;7102;01/09/2026;15/09/2026 14:00;baja por mantenimiento
 |---|---|---|
 | `agv` | sí | identificador tal cual; `0040` no es `40` (R-DAT-001) |
 | `desde` | sí | instante del alta, día/mes/año con hora opcional; sin hora es a las 00:00 |
-| `hasta` | no | instante de la baja; vacío es que sigue asignado |
+| `hasta` | no | instante de la baja; vacío es que sigue asignado; **sin hora, el final de ese día** (las 00:00 del siguiente en la zona del circuito, exclusivo), así que un alta y una baja el mismo día son un periodo válido (OQ-139, 2026-09-26) |
 | `circuito` | no | a qué circuito pertenece la fila, cuando un mismo fichero trae varios |
 | `nota` | no | texto libre, se conserva y no se interpreta |
 
@@ -370,8 +370,11 @@ que el texto:
   flota, cuyas cabeceras se normalizan igual que las de lecturas (BOM, comillas, acentos,
   mayúsculas), y una columna que el importador no conoce se avisa en vez de ignorarse en silencio.
 - Conservar el orden original para auditoría.
-- Los cambios horario de verano/invierno deben detectarse y marcarse; una hora repetida o
-  inexistente no se usa para afirmar orden dentro de la ventana afectada.
+- Los cambios horario de verano/invierno deben detectarse y marcarse; una hora inexistente, o una
+  repetida que el fichero no permite resolver, no se usa para afirmar orden dentro de la ventana
+  afectada. La hora repetida **se resuelve por la posición en el fichero** cuando su sentido está
+  medido (ADR-0013, nota del 2026-09-26): las resueltas llevan `dst_by_position` y sí ordenan. El
+  resumen de la fuente da `dstFlagged`, `dstResolvedByPosition` y `dstAmbiguous`.
 - La representación canónica del tiempo —`t_utc`, `t_raw`, `tz_id` y `t_flag`— está fijada en
   ADR-0013 y es obligatoria para toda observación.
 

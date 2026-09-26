@@ -117,6 +117,7 @@ table.readings th, table.readings td {
   text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
 table.readings th { color: var(--muted); font-weight: 600; }
 tr.flagged { background: var(--flag); }
+tr.resolved td:first-child { text-decoration: underline dotted; }
 .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .raw { color: var(--muted); }
 #show-more { margin-top: 12px; }
