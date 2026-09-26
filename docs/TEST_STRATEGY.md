@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.50.0
+version: 0.51.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -311,6 +311,10 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-259 | Batería de una incidencia (`incidentBattery`) | Una incidencia más corta que un ciclo sin paso dentro no juzga la línea; si reaparece por su mismo tag, quien llegó antes lo adelantó; el de detrás solo cuenta como retenido si esperó más de lo habitual, con la cifra, y sin referencia no se afirma | «Línea sin paso» en 40 s; «avanzaba sin registrar» para un adelantado; «parado de verdad» sostenido por 5 s de espera | Unitaria |
 | TC-260 | Lectura por AGV (`describeVehicleReading`) | «Dejó de leer desde» exige que el resto lo leyera después; una rotura del tag para toda la flota no genera ningún «dejó de leer» | Seis AGV acusados de una rotura del tag | Unitaria |
 | TC-261 | Auditoría (`auditoria/28`) | Con el retenedor como primer vehículo generado, ninguna parada sin explicación fuera de las plantadas, ningún retenedor fantasma, y el único ritmo señalado del retenedor es «más rápido, solo en la zona cargada» (deuda de reloj del generador) | Colas sin explicación detrás de un retenedor atravesado | Auditoría |
+| TC-262 | Lo que se lee dentro de cada calle (`buildChargingReport`, `tagReads`) | Con tres estancias completas y la parada leída en una sola, la parada sale «1 de 3» con un AGV y la entrada y la salida «3 de 3» | Un tag de calle que no se lee y no se dice | Unitaria |
+| TC-263 | Reparto entre calles (`buildChargingReport`, `usage`) | Tres calles con 20 estancias cada una: ningún veredicto; dos con 30 y una con 3: `menos` con azar por debajo del umbral y las otras sin veredicto; con una sola servida no hay reparto | Una calle acusada por una diferencia normal; el reparto contando a la calle sin servicio | Unitaria |
+| TC-264 | Inventario con carga online en el circuito (`buildTagInventory`) | Un tag de calle leído y en memoria es `activo`; la parada precisa de una calle servida que nadie lee es `critico-sin-lectura`, `unknown` | `especial` o «no declarado» para un tag de calle | Unitaria |
+| TC-265 | Auditoría (calles) | Las cuatro calles servidas sin veredicto de uso; ningún tag de calle servida `especial` ni «no declarado»; dentro de cada estancia completa se lee cada tag en al menos el 90 % | Una calle servida señalada sin plantar | Auditoría |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda

@@ -21,7 +21,7 @@ import {
 import { buildChargingReport, findLaneJunctions, type ChargingThresholds } from "../../src/domain/charging.js";
 import type { Reading } from "../../src/domain/reading.js";
 
-const THRESHOLDS: ChargingThresholds = { longStayRatio: 2, minStaysForMedian: 4 };
+const THRESHOLDS: ChargingThresholds = { longStayRatio: 2, minStaysForMedian: 4, usageMaxChance: 0.001, usageMinDeviation: 0.25 };
 
 function entry(
   tagId: string,
@@ -458,3 +458,56 @@ describe("vehículos que no entraron en ninguna calle (neverCharged)", () => {
     expect(report.neverCharged[0]).toMatchObject({ firstUtcMs: 0, lastUtcMs: 5 * MINUTE, readings: 2 });
   });
 });
+
+describe("las tres comprobaciones de planta sobre las calles (R-CO-009)", () => {
+  const { lanes } = readCoLanes([...lane("calle-1", 700), ...lane("calle-2", 710), ...lane("calle-3", 720)]);
+  /** Una estancia completa de `agvId` en la calle `base`: entrada, parada y salida, `skip` sin leer. */
+  const stay = (agvId: string, base: number, at: number, skip: readonly string[] = []): Reading[] =>
+    [String(base), String(base + 1), String(base + 2)]
+      .filter((tagId) => !skip.includes(tagId))
+      .map((tagId, index) => read(agvId, tagId, at + index * 2 * MINUTE));
+
+  it("por tag de la calle, en cuántas estancias completas se leyó: la parada que no se lee sale con su cifra", () => {
+    const readings = [
+      ...stay("A", 700, 0),
+      ...stay("B", 700, 20 * MINUTE, ["701"]),
+      ...stay("C", 700, 40 * MINUTE, ["701"]),
+      ...stay("A", 710, 60 * MINUTE),
+    ];
+    const report = buildChargingReport(readings, lanes, [{ from: 0, to: 120 * MINUTE }], THRESHOLDS);
+    const calle1 = report.lanes.find((entry) => entry.laneId === "calle-1");
+    expect(calle1?.tagReads).toEqual([
+      { tagId: "700", role: "entrada", staysRead: 3, stays: 3, readings: 3, vehicles: 3 },
+      { tagId: "701", role: "parada-precisa", staysRead: 1, stays: 3, readings: 1, vehicles: 1 },
+      { tagId: "702", role: "salida", staysRead: 3, stays: 3, readings: 3, vehicles: 3 },
+    ]);
+  });
+
+  it("una calle servida mucho menos que las demás se señala con su cuota; un reparto parejo no dice nada", () => {
+    const parejo: Reading[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      parejo.push(...stay("A", 700, i * 60 * MINUTE), ...stay("B", 710, i * 60 * MINUTE), ...stay("C", 720, i * 60 * MINUTE + 5 * MINUTE));
+    }
+    const igual = buildChargingReport(parejo, lanes, [{ from: 0, to: 24 * 60 * MINUTE }], THRESHOLDS);
+    expect(igual.usage.map((entry) => entry.verdict)).toEqual([null, null, null]);
+
+    const desigual: Reading[] = [];
+    for (let i = 0; i < 30; i += 1) {
+      desigual.push(...stay("A", 700, i * 60 * MINUTE), ...stay("B", 710, i * 60 * MINUTE));
+      if (i % 10 === 0) desigual.push(...stay("C", 720, i * 60 * MINUTE + 5 * MINUTE));
+    }
+    const report = buildChargingReport(desigual, lanes, [{ from: 0, to: 36 * 60 * MINUTE }], THRESHOLDS);
+    const calle3 = report.usage.find((entry) => entry.laneId === "calle-3");
+    expect(calle3).toMatchObject({ stays: 3, verdict: "menos" });
+    expect(calle3?.chance).toBeLessThan(0.001);
+    expect(report.usage.filter((entry) => entry.laneId !== "calle-3").map((entry) => entry.verdict)).toEqual([null, null]);
+  });
+
+  it("el reparto solo compara calles servidas: la que nadie usa ya tiene su clase, y con una sola servida no hay reparto", () => {
+    const readings = [...stay("A", 700, 0), ...stay("B", 700, 30 * MINUTE)];
+    const report = buildChargingReport(readings, lanes, [{ from: 0, to: 120 * MINUTE }], THRESHOLDS);
+    expect(report.usage).toEqual([]);
+    expect(report.neverCharged).toEqual([]);
+  });
+});
+

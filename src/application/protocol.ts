@@ -358,6 +358,23 @@ export interface CircuitViews {
         readonly overtakenBy: readonly string[];
         readonly waitedMs: number;
       }[];
+      /** Por tag de la calle, en cuántas estancias completas se leyó (R-CO-009). */
+      readonly tagReads: readonly {
+        readonly tagId: string;
+        readonly role: "entrada" | "parada-precisa" | "salida" | "paso";
+        readonly staysRead: number;
+        readonly stays: number;
+        readonly vehicles: number;
+      }[];
+    }[];
+    /** El reparto de estancias entre las calles servidas (R-CO-009). */
+    readonly usage: readonly {
+      readonly laneId: string;
+      readonly stays: number;
+      readonly share: number;
+      readonly expectedShare: number;
+      readonly chance: number;
+      readonly verdict: "menos" | "mas" | null;
     }[];
     /** Los que ya estaban dentro antes de empezar la cobertura (R-CO-007). */
     readonly startedInside: readonly {

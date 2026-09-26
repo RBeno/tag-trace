@@ -1979,6 +1979,13 @@ const HIGHLIGHTS = 8;
 /** Tarjetas de AGV por cada tipo de diferencia de lectura. Parámetro de pantalla. */
 const PER_KIND = 5;
 
+/** Una probabilidad pequeña, legible: «1 vez de cada 1.000» o «menos de 1 de cada millón». */
+function formatChance(chance: number): string {
+  if (chance >= 0.1) return `${Math.round(chance * 100)} de cada 100 veces`;
+  if (chance < 1e-6) return "menos de 1 vez de cada millón";
+  return `1 vez de cada ${Math.round(1 / chance).toLocaleString("es-ES")}`;
+}
+
 function percent(rate: number | null): string {
   return rate === null ? "—" : `${Math.round(rate * 100)} %`;
 }
@@ -2623,6 +2630,35 @@ function renderCharging(views: CircuitViews): void {
     );
   }
 
+  // Las tres comprobaciones de planta (R-CO-009): que todos los AGV entren (arriba, «no entraron»),
+  // que todas las calles se usen por igual, y que dentro de cada estancia se lean sus tags.
+  for (const entry of charging.usage.filter((usage) => usage.verdict !== null)) {
+    viewsPanel.append(
+      finding(
+        `«${entry.laneId}» se usa ${entry.verdict === "menos" ? "menos" : "más"} que las demás`,
+        `${entry.stays} estancias, el ${Math.round(entry.share * 100)} %`,
+        `Con todas las calles servidas por igual le tocaría el ${Math.round(entry.expectedShare * 100)} %; ` +
+          `una cuota así por azar sale ${formatChance(entry.chance)}. Qué la asigna o la evita lo decide planta.`,
+        ["calle-uso", entry.laneId],
+      ),
+    );
+  }
+  for (const lane of charging.lanes.filter((entry) => entry.served)) {
+    for (const tag of lane.tagReads.filter((entry) => entry.stays > 0 && entry.staysRead < entry.stays)) {
+      const missed = tag.stays - tag.staysRead;
+      viewsPanel.append(
+        finding(
+          `${tag.tagId} (${tag.role}) de «${lane.laneId}» no se leyó en ${missed} de ${tag.stays} estancias`,
+          `${tag.staysRead} de ${tag.stays}`,
+          tag.staysRead === 0
+            ? "Ningún AGV lo leyó estando dentro: comprobar el tag en planta (su clase, en el inventario)."
+            : `Lo leyeron ${tag.vehicles} AGV distintos; los demás pasaron sin leerlo.`,
+          ["calle-lectura", lane.laneId, tag.tagId],
+        ),
+      );
+    }
+  }
+
   for (const lane of charging.lanes) {
     // Solo las esperas más largas de cada calle. Dos vehículos cargando a la vez con duraciones
     // distintas invierten el orden de salida con toda normalidad, así que enseñarlas todas sería
@@ -2667,17 +2703,32 @@ function renderCharging(views: CircuitViews): void {
   }
 
 
+  const usageOf = new Map(charging.usage.map((entry) => [entry.laneId, entry]));
   viewsPanel.append(
     lazyDetails(`Detalle de las ${charging.lanes.length} calles`, () =>
       plainTable(
-        ["Calle", "Capacidad", "Estancias", "Estancia habitual", "Turnos saltados"],
-        charging.lanes.map((lane) => [
-          lane.laneId,
-          lane.capacity === null ? "—" : String(lane.capacity),
-          String(lane.stays),
-          duration(lane.medianStayMs),
-          String(lane.outOfSeniority.length),
-        ]),
+        ["Calle", "Capacidad", "Estancias", "Cuota", "Estancia habitual", "Turnos saltados"],
+        charging.lanes.map((lane) => {
+          const usage = usageOf.get(lane.laneId);
+          return [
+            lane.laneId,
+            lane.capacity === null ? "—" : String(lane.capacity),
+            String(lane.stays),
+            usage === undefined ? "—" : `${Math.round(usage.share * 100)} % (le tocaría ${Math.round(usage.expectedShare * 100)} %)`,
+            duration(lane.medianStayMs),
+            String(lane.outOfSeniority.length),
+          ];
+        }),
+      ),
+    ),
+  );
+  viewsPanel.append(
+    lazyDetails("Qué se lee dentro de cada calle", () =>
+      plainTable(
+        ["Calle", "Tag", "Papel", "Leído en estancias", "AGV distintos"],
+        charging.lanes.flatMap((lane) =>
+          lane.tagReads.map((tag) => [lane.laneId, tag.tagId, tag.role, `${tag.staysRead} de ${tag.stays}`, String(tag.vehicles)]),
+        ),
       ),
     ),
   );

@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.21.0
+version: 0.22.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -269,6 +269,8 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `min_stop_excess_ms` | R-FLO-007: margen mínimo de la valla sobre el p95 de un tramo. |
 | `dark_zone_factor` | R-GRA-014: cuántas veces el hueco típico del circuito hace oscuro un tramo. |
 | `max_false_points` | R-FLO-008, R-FLO-009: puntos marcados por azar que se aceptan en todo el circuito. |
+| `charging.long_stay_ratio`, `charging.min_stays_for_median` | R-CO-002: cuántas veces la estancia habitual hace larga una permanencia, y cuántas estancias completas hacen falta para tener una habitual. |
+| `charging.usage_max_chance`, `charging.usage_min_deviation` | R-CO-009: azar máximo y desviación mínima (fracción de la parte que le tocaría) para señalar una calle que se usa menos o más que las demás. Provisionales: 0,001 y 0,25. |
 
 ### 3.6 Cohortes
 

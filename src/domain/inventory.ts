@@ -43,9 +43,9 @@ export interface TagLists {
   /**
    * Tags de las calles de carga online.
    *
-   * Están fuera del recorrido productivo, como mantenimiento y emergencia, pero con una diferencia
-   * que decide una clase entera: **puede saberse si hubo oportunidad de leerlos**. Si nadie entró
-   * en la calle, el cero no es un cero.
+   * Pertenecen al circuito (R-GRA-004; propietario, 2026-09-26): cuentan como declarados y se juzgan
+   * como cualquier otro tag. Con una diferencia que decide una clase entera: **puede saberse si hubo
+   * oportunidad de leerlos**. Si nadie entró en la calle, el cero no es un cero.
    */
   readonly charging: ReadonlySet<string>;
   /**
@@ -282,12 +282,15 @@ export function buildTagInventory(
 
   const rows: TagInventoryRow[] = [];
   for (const tagId of [...universe].sort()) {
-    const inVirtual = lists.virtual.has(tagId);
+    // La carga online pertenece al circuito (R-GRA-004; propietario, 2026-09-26, OQ-135): un tag de
+    // calle está declarado por su lista y se juzga como cualquier otro —su parada precisa es crítica—,
+    // no como mantenimiento. Hasta entonces era `especial` y una parada de calle servida que nadie leía
+    // no se veía.
+    const inVirtual = lists.virtual.has(tagId) || lists.charging.has(tagId);
     const inMemory = lists.memory.has(tagId);
     const isSpecial =
       lists.maintenance.has(tagId) ||
       lists.emergency.has(tagId) ||
-      lists.charging.has(tagId) ||
       (lists.night?.has(tagId) ?? false);
     const readers = readersByTag.get(tagId) ?? new Set<string>();
     const readingCount = readingsByTag.get(tagId) ?? 0;

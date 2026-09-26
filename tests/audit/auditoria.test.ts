@@ -2094,6 +2094,28 @@ describe("auditoría del circuito con verdad conocida", () => {
     }
   }, PLAZO);
 
+  it("las calles servidas se usan por igual, sus tags son del circuito y cada estancia lee sus tags (R-CO-009, OQ-135)", () => {
+    // El generador reparte los AGV entre las calles servidas por turno: ninguna debe salir señalada.
+    const servidas = charging.lanes.filter((lane) => lane.served);
+    expect(servidas.length).toBeGreaterThanOrEqual(2);
+    expect(charging.usage.map((entry) => `${entry.laneId}:${entry.verdict}`)).toEqual(
+      servidas.map((lane) => `${lane.laneId}:null`),
+    );
+    // La carga online pertenece al circuito: ningún tag de calle servida es `especial` ni «no declarado».
+    const tagsServidos = new Set(servidas.flatMap((lane) => lane.tagReads.map((tag) => tag.tagId)));
+    const clases = inventory.rows
+      .filter((row) => tagsServidos.has(row.tagId))
+      .map((row) => `${row.tagId}:${row.tagClass}`);
+    expect(clases.filter((entry) => entry.endsWith(":especial") || entry.endsWith(":no-declarado-leido"))).toEqual([]);
+    // Dentro de cada estancia completa se leen la entrada, la parada y la salida: la cifra lo dice.
+    for (const lane of servidas) {
+      for (const tag of lane.tagReads) {
+        expect(tag.stays, `${lane.laneId} ${tag.tagId}`).toBeGreaterThan(0);
+        expect(tag.staysRead / tag.stays, `${lane.laneId} ${tag.tagId} (${tag.role})`).toBeGreaterThanOrEqual(0.9);
+      }
+    }
+  }, PLAZO);
+
   it("la lista de deuda conocida no miente: si algo empieza a detectarse, hay que sacarlo", () => {
     const yaDetectadas: string[] = [];
     for (const [kind] of DEUDA_CONOCIDA) {

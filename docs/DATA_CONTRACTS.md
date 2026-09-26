@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.19.0
+version: 0.20.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -233,7 +233,7 @@ vueltas ni de ninguna constante industrial. Es pertenencia a conjuntos y recuent
 | `ciego-parcial` | sí | sí | unos siempre, otros nunca | bimodal: memoria desactualizada en esos vehículos → `inferred` |
 | `no-declarado-leido` | **no** | indiferente | sí | existe y nadie lo declaró: la lista del circuito está desactualizada |
 | `declarado-sin-memoria` | sí | **no** | indiferente | la lista de memoria no lo tiene: sin lecturas, nadie puede leerlo aunque exista (punto ciego de configuración); con lecturas, alguna memoria real lo tiene y la lista va por detrás |
-| `especial` | — | sí | ocasional | mantenimiento, sustitución de emergencia o tag de la lista de noche: fuera del circuito de día y de toda tasa |
+| `especial` | — | sí | ocasional | mantenimiento, sustitución de emergencia o tag de la lista de noche: fuera del circuito de día y de toda tasa. **No** la carga online: sus tags están declarados por su lista y se juzgan como los demás (R-GRA-004; propietario, 2026-09-26) |
 | `critico-no-declarado` | **no** | **no** | **por nadie** | solo la lista `critico` lo nombra: probable errata de esa lista; acción `comprobar-lista-critico`, nunca «añadir a la memoria» (2026-09-26) |
 | `critico-sin-lectura` | indiferente | sí | **por nadie, nunca**, y es crítico | se perdió una función, no solo una lectura (R-GRA-008) → `unknown` |
 | `refuerzo-sin-lectura` | indiferente | sí | **por nadie, nunca**, es crítico y **otro tag de su refuerzo sí se lee** | la función la sostiene el refuerzo; lo perdido es la redundancia (R-GRA-016) → `unknown` |

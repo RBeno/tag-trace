@@ -37,6 +37,38 @@ export interface ChargingThresholds {
   readonly longStayRatio: number;
   /** Estancias mínimas de una calle para que su mediana signifique algo. */
   readonly minStaysForMedian: number;
+  /**
+   * Uso de las calles (R-CO-009): una calle servida se señala si su cuota de estancias, frente a la
+   * parte que le tocaría con todas por igual, es improbable por azar hasta este umbral…
+   */
+  readonly usageMaxChance: number;
+  /** …y además se desvía de esa parte al menos esta fracción (0,25 = un cuarto menos o más). */
+  readonly usageMinDeviation: number;
+}
+
+/** Cuánto se lee cada tag de una calle en las estancias que sí hubo (R-CO-009). */
+export interface LaneTagRead {
+  readonly tagId: string;
+  readonly role: "entrada" | "parada-precisa" | "salida" | "paso";
+  /** Estancias completas de la calle en que ese AGV leyó el tag entre entrar y salir. */
+  readonly staysRead: number;
+  /** Estancias completas de la calle: la oportunidad. */
+  readonly stays: number;
+  readonly readings: number;
+  readonly vehicles: number;
+}
+
+/** El reparto de estancias entre las calles servidas (R-CO-009). */
+export interface LaneUsage {
+  readonly laneId: string;
+  readonly stays: number;
+  /** Cuota observada de las estancias de las calles servidas. */
+  readonly share: number;
+  /** La parte que le tocaría con todas las calles servidas por igual. */
+  readonly expectedShare: number;
+  /** Probabilidad de una cuota así o más extrema si todas se usaran por igual. */
+  readonly chance: number;
+  readonly verdict: "menos" | "mas" | null;
 }
 
 /**
@@ -82,6 +114,8 @@ export interface LaneReport {
   readonly served: boolean;
   readonly outOfSeniority: readonly SeniorityBreach[];
   readonly longStays: readonly LaneStay[];
+  /** Por tag de la calle, en cuántas estancias completas se leyó (R-CO-009). */
+  readonly tagReads: readonly LaneTagRead[];
 }
 
 export interface ChargingReport {
@@ -110,6 +144,8 @@ export interface ChargingReport {
    * última lectura. Y no dice nada de su batería: sin SOC fiable no se juzga (R-CO-004).
    */
   readonly neverCharged: readonly NeverCharged[];
+  /** El reparto de estancias entre las calles servidas (R-CO-009); vacío con menos de dos servidas. */
+  readonly usage: readonly LaneUsage[];
 }
 
 export interface NeverCharged {
@@ -318,7 +354,7 @@ export function buildChargingReport(
   coverage: readonly Interval[],
   thresholds: ChargingThresholds,
 ): ChargingReport {
-  if (lanes.length === 0) return { lanes: [], startedInside: [], coverageStartUtcMs: null, neverCharged: [] };
+  if (lanes.length === 0) return { lanes: [], startedInside: [], coverageStartUtcMs: null, neverCharged: [], usage: [] };
 
   const index = roleIndex(lanes);
   const coverageStartUtcMs =
@@ -330,6 +366,11 @@ export function buildChargingReport(
   // Una pasada por las lecturas, agrupando por vehículo. El resto trabaja ya sobre lecturas de
   // calle, que son una fracción diminuta del total (WP-001: nada de recorrer el CSV varias veces).
   const byVehicle = new Map<string, LaneHit[]>();
+  // Toda lectura de cualquier tag de una calle —pasos intermedios incluidos—, por vehículo y en orden,
+  // para saber qué leyó cada AGV dentro de cada estancia (R-CO-009).
+  const laneOfTag = new Map<string, CoLane>();
+  for (const lane of lanes) for (const tagId of lane.tags) laneOfTag.set(tagId, lane);
+  const laneReadsByVehicle = new Map<string, { utcMs: number; tagId: string }[]>();
   const firstReadingOf = new Map<string, number>();
   const lastReadingOf = new Map<string, number>();
   const readingCount = new Map<string, number>();
@@ -341,6 +382,11 @@ export function buildChargingReport(
     const latest = lastReadingOf.get(reading.agvId);
     if (latest === undefined || reading.time.utcMs > latest) lastReadingOf.set(reading.agvId, reading.time.utcMs);
     readingCount.set(reading.agvId, (readingCount.get(reading.agvId) ?? 0) + 1);
+    if (laneOfTag.has(reading.tagId)) {
+      const list = laneReadsByVehicle.get(reading.agvId) ?? [];
+      list.push({ utcMs: reading.time.utcMs, tagId: reading.tagId });
+      laneReadsByVehicle.set(reading.agvId, list);
+    }
     const role = index.get(reading.tagId);
     if (role === undefined) continue;
     let hits = byVehicle.get(reading.agvId);
@@ -369,10 +415,13 @@ export function buildChargingReport(
     }
   }
 
+  for (const list of laneReadsByVehicle.values()) list.sort((a, b) => a.utcMs - b.utcMs);
+
   const report: LaneReport[] = lanes.map((lane) => {
     const stays = (staysByLane.get(lane.laneId) ?? []).sort(
       (a, b) => (a.enteredUtcMs ?? a.leftUtcMs ?? 0) - (b.enteredUtcMs ?? b.leftUtcMs ?? 0),
     );
+    const tagReads = laneTagReads(lane, stays, laneReadsByVehicle);
     const durations = stays
       .filter((stay) => stay.state === "completa" && stay.durationMs !== null)
       .map((stay) => stay.durationMs as number);
@@ -392,6 +441,7 @@ export function buildChargingReport(
       served: stays.length > 0,
       outOfSeniority: seniorityBreaches(stays),
       longStays,
+      tagReads,
     };
   });
 
@@ -405,7 +455,115 @@ export function buildChargingReport(
       readings: readingCount.get(agvId) ?? 0,
     }));
 
-  return { lanes: report, startedInside, coverageStartUtcMs, neverCharged };
+  return { lanes: report, startedInside, coverageStartUtcMs, neverCharged, usage: laneUsage(report, thresholds) };
+}
+
+/**
+ * Qué se lee dentro de cada calle (R-CO-009): por tag, en cuántas estancias completas el AGV que
+ * estaba dentro lo leyó entre entrar y salir. La oportunidad son las estancias completas: una que
+ * empezó antes de los datos o que seguía al acabar no dice nada del tag que no se leyó.
+ */
+function laneTagReads(
+  lane: CoLane,
+  stays: readonly LaneStay[],
+  laneReadsByVehicle: ReadonlyMap<string, readonly { utcMs: number; tagId: string }[]>,
+): readonly LaneTagRead[] {
+  const complete = stays.filter(
+    (stay) => stay.state === "completa" && stay.enteredUtcMs !== null && stay.leftUtcMs !== null,
+  );
+  const staysRead = new Map<string, number>();
+  const readings = new Map<string, number>();
+  const vehicles = new Map<string, Set<string>>();
+  for (const tagId of lane.tags) {
+    staysRead.set(tagId, 0);
+    readings.set(tagId, 0);
+    vehicles.set(tagId, new Set());
+  }
+  for (const stay of complete) {
+    const own = laneReadsByVehicle.get(stay.agvId) ?? [];
+    const from = stay.enteredUtcMs as number;
+    const to = stay.leftUtcMs as number;
+    const seen = new Set<string>();
+    // Las lecturas están en orden: el primer índice dentro de la estancia se busca a saltos.
+    let lo = 0;
+    let hi = own.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((own[mid] as { utcMs: number }).utcMs < from) lo = mid + 1;
+      else hi = mid;
+    }
+    for (let i = lo; i < own.length && (own[i] as { utcMs: number }).utcMs <= to; i += 1) {
+      const tagId = (own[i] as { tagId: string }).tagId;
+      if (!staysRead.has(tagId)) continue;
+      readings.set(tagId, (readings.get(tagId) ?? 0) + 1);
+      vehicles.get(tagId)?.add(stay.agvId);
+      seen.add(tagId);
+    }
+    for (const tagId of seen) staysRead.set(tagId, (staysRead.get(tagId) ?? 0) + 1);
+  }
+  const roleOf = (tagId: string): LaneTagRead["role"] =>
+    tagId === lane.stopTagId
+      ? "parada-precisa"
+      : tagId === lane.exitTagId
+        ? "salida"
+        : tagId === lane.entryTagId
+          ? "entrada"
+          : "paso";
+  return lane.tags.map((tagId) => ({
+    tagId,
+    role: roleOf(tagId),
+    staysRead: staysRead.get(tagId) ?? 0,
+    stays: complete.length,
+    readings: readings.get(tagId) ?? 0,
+    vehicles: vehicles.get(tagId)?.size ?? 0,
+  }));
+}
+
+/** log(n!) por Stirling con corrección de serie: exacto de sobra para colas binomiales. */
+function logFactorial(n: number): number {
+  if (n < 2) return 0;
+  if (n < 20) {
+    let total = 0;
+    for (let i = 2; i <= n; i += 1) total += Math.log(i);
+    return total;
+  }
+  return n * Math.log(n) - n + 0.5 * Math.log(2 * Math.PI * n) + 1 / (12 * n) - 1 / (360 * n * n * n);
+}
+
+/** P(X ≤ k) o P(X ≥ k) con X ~ Binomial(n, p), sumando en logaritmos. */
+function binomialTail(k: number, n: number, p: number, side: "lower" | "upper"): number {
+  if (n <= 0) return 1;
+  const from = side === "lower" ? 0 : k;
+  const to = side === "lower" ? k : n;
+  let total = 0;
+  for (let i = from; i <= to; i += 1) {
+    total += Math.exp(logFactorial(n) - logFactorial(i) - logFactorial(n - i) + i * Math.log(p) + (n - i) * Math.log(1 - p));
+  }
+  return Math.min(1, total);
+}
+
+/**
+ * El reparto de estancias entre las calles servidas (R-CO-009): «todas las calles se usan de forma
+ * similar». Cada calle contra la parte que le tocaría con todas por igual, con la prueba de azar
+ * sobre las estancias observadas y un mínimo de efecto, porque con cientos de estancias cualquier
+ * diferencia es significativa. Solo las servidas: la calle por la que no entró nadie ya tiene su
+ * clase (R-CO-008), y contarla aquí diría dos veces lo mismo.
+ */
+function laneUsage(lanes: readonly LaneReport[], thresholds: ChargingThresholds): readonly LaneUsage[] {
+  const served = lanes.filter((lane) => lane.served);
+  if (served.length < 2) return [];
+  const total = served.reduce((sum, lane) => sum + lane.stays.length, 0);
+  const expectedShare = 1 / served.length;
+  return served.map((lane) => {
+    const stays = lane.stays.length;
+    const share = stays / total;
+    const fewer = share < expectedShare;
+    const chance = binomialTail(stays, total, expectedShare, fewer ? "lower" : "upper");
+    const deviation = Math.abs(share - expectedShare) / expectedShare;
+    const verdict =
+      chance <= thresholds.usageMaxChance && deviation >= thresholds.usageMinDeviation ? (fewer ? "menos" : "mas") : null;
+    return { laneId: lane.laneId, stays, share, expectedShare, chance, verdict };
+  });
 }
 
 /** De qué tag del anillo cuelga una calle: el que precede con más frecuencia a su tag de entrada. */

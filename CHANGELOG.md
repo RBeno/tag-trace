@@ -2,6 +2,24 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.45.0] - 2026-09-26
+
+### Cambiado
+
+- **La carga online pertenece al circuito también en el inventario** (OQ-135 cerrada por el
+  propietario; R-GRA-004): un tag de calle cuenta como declarado por su lista y se juzga como los
+  demás. La parada precisa de una calle servida que nadie lee es `critico-sin-lectura`; hasta ahora
+  era `especial` y no se veía. **Cambia una prueba unitaria** que fijaba `especial` para un tag de
+  calle leído: fijaba la contradicción con `DATA_CONTRACTS` §3.5.
+
+### Añadido
+
+- **Las tres comprobaciones de las calles** (R-CO-009, propietario): por tag de la calle, en cuántas
+  estancias completas se leyó (`tagReads`); el reparto de estancias entre las calles servidas, con la
+  cuota, la parte que le tocaría y el azar (`usage`, umbrales `charging.usage_max_chance` y
+  `charging.usage_min_deviation`); y quién no entró a cargar, que ya existía. En la vista de calles,
+  como hallazgos y en dos detalles plegados. Sonda de auditoría TC-265.
+
 ## [3.44.0] - 2026-09-26
 
 Revisión de la lógica de medición y análisis, segunda entrega: cinco revisiones en paralelo sobre

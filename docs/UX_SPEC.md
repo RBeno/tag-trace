@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.31.0
+version: 0.32.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -302,7 +302,7 @@ críticos y la deriva ya calculaban y hasta ahora solo se leía en tarjetas y ta
 | **Rotura y degradación en el tiempo** | la forma del cambio: escalón o rampa, y cuándo | mismo eje en todos los paneles; un tramo sin pasadas corta la línea, no la lleva a cero |
 | **Permanencia en los candidatos de tiempo** | parada precisa (estrecha y desplazada) y semáforo (dos grupos) frente a la referencia del cohorte | proporción de pasadas con el mismo eje; sin pares del mismo instante (R-DAT-013); firma, nunca función (R-GRA-007) |
 | **Salidas de los tags con reparto** | cruce (las ramas vuelven a juntarse) o bifurcación (no) | el grosor es la cuota, con su soporte; el margen de saltos es configuración |
-| **Ocupación de las calles de carga** | quién estuvo en cada calle y cuándo, la calle sin servicio, quién esperó de más | solo es barra lo que se sabe: una estancia sin entrada o sin salida es una marca en su extremo conocido; fuera de cobertura, trama (R-CO-007, R-DAT-007) |
+| **Ocupación de las calles de carga** | quién estuvo en cada calle y cuándo, la calle sin servicio, quién esperó de más; y las tres comprobaciones de planta (R-CO-009): la calle que se usa menos o más que las demás con su cuota, el tag de la calle que no se leyó en tantas de tantas estancias, y quién no entró a cargar | solo es barra lo que se sabe: una estancia sin entrada o sin salida es una marca en su extremo conocido; fuera de cobertura, trama (R-CO-007, R-DAT-007); el detalle plegado da la cuota de cada calle y qué se lee dentro de cada una |
 | **Entrada y salida del tramo cargado** | un adelantamiento como una línea que cruza a las demás | candidato, no avería: OQ-107 sigue sin catálogo de excepciones (R-FLO-001) |
 | **Deriva entre los dos periodos** | qué tag desapareció, apareció o se sustituyó, en lecturas | correlación de posición y tiempo, nunca confirmación física (R-DAT-017, R-EVI-004) |
 | **Inventario** | cuánto hay que valorar frente a lo que no, y qué acción pide cada clase | sin color de severidad: «a valorar» es una pregunta, no un problema (§5.2) |

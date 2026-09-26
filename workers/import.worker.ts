@@ -942,7 +942,15 @@ async function buildViews(
                 overtakenBy: [...breach.overtakenBy],
                 waitedMs: breach.waitedMs,
               })),
+              tagReads: lane.tagReads.map((tag) => ({
+                tagId: tag.tagId,
+                role: tag.role,
+                staysRead: tag.staysRead,
+                stays: tag.stays,
+                vehicles: tag.vehicles,
+              })),
             })),
+            usage: charging.usage.map((entry) => ({ ...entry })),
             startedInside: charging.startedInside.map((stay) => ({
               agvId: stay.agvId,
               laneId: stay.laneId,

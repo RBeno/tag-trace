@@ -227,7 +227,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     maxGapProvenByNeighbours: 1,
     minTimeRatio: 0.6,
   },
-  charging: { longStayRatio: 2, minStaysForMedian: 4 },
+  charging: { longStayRatio: 2, minStaysForMedian: 4, usageMaxChance: 0.001, usageMinDeviation: 0.25 },
   trend: {
     minPassesForTrend: 20,
     minRateDrop: 0.5,

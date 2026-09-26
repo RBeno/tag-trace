@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.36.0
+version: 0.37.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -1008,4 +1008,21 @@ antes de tocar el código. Lo que cambia en cada algoritmo está anotado en su r
 - **Pendiente de vista** (UX): `enoughVehicles`, `unconfirmed` de la suma entre anclas,
   `maybeSkipped`, `behind.unsure`, `blankRows` y `discardedUnreliableTime` se calculan y no se enseñan
   todavía.
+
+## 6.19 Las tres comprobaciones de las calles de carga, implementado (R-CO-009)
+
+Sobre el informe de calles (`buildChargingReport`), con la decisión del propietario de que la carga
+online pertenece al circuito (OQ-135):
+
+- **Qué se lee dentro** (`laneTagReads`): por tag de la calle —entrada, parada precisa, salida y
+  pasos—, en cuántas **estancias completas** el AGV que estaba dentro lo leyó entre entrar y salir,
+  con lecturas y AGV distintos. La oportunidad son las estancias completas: una abierta o incompleta
+  no dice nada del tag que no se leyó. El tiempo y el orden los dan R-CO-002 y R-CO-003.
+- **Reparto entre calles** (`laneUsage`): con `s` estancias servidas en `k` calles servidas, la cuota
+  de cada calle contra `1/k` con la cola binomial exacta (en logaritmos) del lado que toque; se señala
+  `menos` o `mas` si la cola no pasa de `usageMaxChance` y la desviación relativa llega a
+  `usageMinDeviation`. Con menos de dos calles servidas no hay reparto.
+- **Quién no entra** (`neverCharged`, ya existente): por AGV, con su presencia y sus lecturas.
+- **Inventario**: un tag de calle cuenta como declarado por su lista y deja de ser `especial`; la
+  parada precisa de una calle servida que nadie lee es `critico-sin-lectura` (`unknown`).
 
