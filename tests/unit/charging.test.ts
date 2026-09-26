@@ -84,6 +84,29 @@ describe("configuración de calles (R-CO-001)", () => {
     expect(problems.join(" ")).toContain("más de");
   });
 
+  it("una calle puede empezar en su parada precisa: sin entrada, y con pasos intermedios sin función", () => {
+    // Así son las calles de un circuito real: el vehículo entra y se para en el primer tag, espera la
+    // carga, y sale por los siguientes.
+    const { lanes, problems } = readCoLanes([
+      entry("730", "parada-precisa", "calle-a", 1),
+      entry("731", "", "calle-a", 2),
+      entry("732", "salida", "calle-a", 3),
+      entry("740", "parada-precisa", "calle-b", 1),
+      entry("741", "salida", "calle-b", 2),
+    ]);
+    expect(problems).toEqual([]);
+    expect(lanes.map((item) => [item.laneId, item.entryTagId, item.stopTagId, item.exitTagId, item.tags])).toEqual([
+      ["calle-a", "730", "730", "732", ["730", "731", "732"]],
+      ["calle-b", "740", "740", "741", ["740", "741"]],
+    ]);
+  });
+
+  it("sin salida una calle no se monta, aunque empiece en su parada", () => {
+    const { lanes, problems } = readCoLanes([entry("750", "parada-precisa", "calle-c", 1), entry("751", "", "calle-c", 2)]);
+    expect(lanes).toEqual([]);
+    expect(problems.join(" ")).toContain("salida");
+  });
+
   it("un tag de carga sin calle se declara en vez de repartirse a ojo", () => {
     const { lanes, problems } = readCoLanes([entry("900", "entrada", "")]);
     expect(lanes).toEqual([]);
@@ -170,6 +193,27 @@ describe("máquina de estados de la calle (R-CO-002)", () => {
     expect(calle1?.stays[0]?.durationMs).toBe(30 * MINUTE);
     // La secuencia es observada; que estuviera cargando, inferido. Nunca `observed`.
     expect(calle1?.stays[0]?.truth).toBe("inferred");
+  });
+
+  it("en una calle que empieza en su parada, la estancia va de la parada a la salida", () => {
+    const { lanes: desdeLaParada } = readCoLanes([
+      entry("730", "parada-precisa", "calle-a", 1),
+      entry("731", "", "calle-a", 2),
+      entry("732", "salida", "calle-a", 3),
+    ]);
+    const readings = [
+      read("A", "730", 10 * MINUTE),
+      // Leer otra vez la parada estando dentro no es otra entrada.
+      read("A", "730", 12 * MINUTE),
+      read("A", "731", 90 * MINUTE),
+      read("A", "732", 91 * MINUTE),
+    ];
+    const report = buildChargingReport(readings, desdeLaParada, coverage, THRESHOLDS);
+    const stays = report.lanes[0]?.stays ?? [];
+    expect(stays).toHaveLength(1);
+    expect(stays[0]?.state).toBe("completa");
+    expect(stays[0]?.durationMs).toBe(81 * MINUTE);
+    expect(stays[0]?.evidence).toContain("parada precisa y salida");
   });
 
   it("una calle por la que no entró nadie no tiene estancias, y eso no acusa a sus tags", () => {

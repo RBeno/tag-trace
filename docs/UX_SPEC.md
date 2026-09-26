@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.22.1
+version: 0.24.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -460,12 +460,37 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
 
 ## 5.8 Libros de Excel para rellenar e importar
 
+- El selector de lecturas acepta la exportación de Vsystem en `.xlsx`, además del CSV, con el aviso
+  «Leyendo el libro de Excel» mientras la abre (`DATA_CONTRACTS.md` §3.8).
 - Los dos selectores de «Listas del circuito» —listas de tags e historial de flota— aceptan el
   `.xlsx` tal cual, además del CSV. Un libro que no se puede leer se rechaza con su motivo y la salida:
   guardarlo de nuevo en Excel o exportarlo como CSV.
 - **La aplicación no descarga libros.** Las plantillas y el circuito de cada análisis se entregan como
   ficheros (`DATA_CONTRACTS.md` §3.7); en la interfaz no hay botones de descarga de Excel
   (propietario, 2026-09-25).
+
+## 5.9 Lo declarado en planta y los tags fuera de la lista (Parte 52)
+
+- **Declarado en planta.** Cada tarjeta que nombra un tag concreto —lectura por tag, cambios de tag,
+  deriva, puntos críticos, cuellos de botella, zonas oscuras, puntos conflictivos, paradas y el
+  expediente del tag— añade una línea «Declarado en planta: …» con lo que las listas dicen de él: su
+  nota tal cual, su función y su calle, sin repetir piezas. Es información para el diagnóstico y no
+  cambia ningún cálculo (R-GRA-007).
+- **Tags leídos fuera de la lista del circuito** (R-DAT-022), junto al contraste con Vsystem. Una
+  tarjeta por tag, de las más leídas a las menos: «candidato a una posición», «tag de noche» o
+  «posiblemente de noche», con su sitio (entre qué tags y en qué orden de la lista), sus lecturas de
+  día y de noche y las pasadas por su sitio en cada régimen. Sin lista del circuito no aparece.
+- En el contraste con Vsystem **manda lo leído** (R-GRA-015): la cabecera lo dice, y cada diferencia
+  se lee como algo que corregir en la lista, no como un fallo del circuito. Un tag que la lista pone
+  en otro sitio sale una sola vez, «la lista lo pone en otro sitio», con su sitio en cada lado; un
+  declarado que no se lee donde se lee otro que la lista no tiene, «posible sustitución o número mal
+  escrito».
+- **Orden del circuito según las lecturas**, debajo del contraste: una línea con cuántos tags están en
+  el orden de la lista, cuántos en otro sitio, cuántos sin lecturas (posición solo de la lista),
+  cuántos leídos que la lista no tiene y cuántos fuera del recorrido; y, plegada, la tabla tag a tag
+  con su posición en cada lado y lo declarado en planta. No hay descarga: la lista corregida se
+  entrega como fichero.
+- La tarjeta de un tag fuera de la lista dice su posición según las lecturas.
 
 ## 6. Consolidación
 

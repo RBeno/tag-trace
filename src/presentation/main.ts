@@ -58,7 +58,15 @@ import type { FieldOrder } from "../domain/time.js";
 import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
 import { isAvailable, loadCircuit, loadReviews } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
-import { criticalFunctionLabel, patternLabel, truthLabel, verdictLabel, zoneLabel } from "./labels.js";
+import {
+  criticalFunctionLabel,
+  orderChangeLabel,
+  orderReadingLabel,
+  patternLabel,
+  truthLabel,
+  verdictLabel,
+  zoneLabel,
+} from "./labels.js";
 
 /** Zona horaria del piloto. Es configuración: vivirá en el circuito cuando exista (F1b). */
 const ZONE = "Europe/Madrid";
@@ -153,7 +161,7 @@ header.append(title, subtitle);
 const picker = element("section", "panel");
 const fileInput = element("input");
 fileInput.type = "file";
-fileInput.accept = ".csv,.tsv,.txt,text/csv,text/plain";
+fileInput.accept = ".csv,.tsv,.txt,.xlsx,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 fileInput.id = "source-file";
 const fileLabel = element("label", undefined, "Fichero de lecturas");
 fileLabel.htmlFor = "source-file";
@@ -1004,6 +1012,7 @@ function renderAffinity(report: AccumulationReport): void {
 
 /** Las cuatro vistas, en el orden en que responden preguntas: qué hay, cuándo, quién, y qué falta. */
 function renderViews(views: CircuitViews): void {
+  currentTagInfo = views.tagInfo ?? {};
   viewsPanel.replaceChildren();
   viewsPanel.hidden = false;
   viewsPanel.append(element("h2", undefined, "Análisis"));
@@ -1077,8 +1086,10 @@ function renderViews(views: CircuitViews): void {
       element(
         "p",
         "muted",
-        "Lo declarado en Vsystem frente al anillo observado. Solo se listan las diferencias; una " +
-          "«posible sustitución» es una hipótesis que hay que comprobar.",
+        "La lista del circuito frente al orden en que leen los AGV. Manda lo leído: la lista puede " +
+          "tener erratas al transcribir o un orden distinto al real, así que una diferencia es algo que " +
+          "corregir en la lista, no un fallo del circuito. Solo se listan las diferencias; una «posible " +
+          "sustitución o número mal escrito» se comprueba en planta.",
       ),
     );
     viewsPanel.append(
@@ -1096,7 +1107,102 @@ function renderViews(views: CircuitViews): void {
       ),
     );
   }
+  renderCircuitOrder(views);
+  renderUndeclaredTags(views);
   reviewSession?.refresh();
+}
+
+/**
+ * El orden del circuito según las lecturas, tag a tag contra la lista (R-GRA-015). Es la lista que
+ * dictan los AGV: lo leído en su sitio leído, y lo que no se lee donde lo pone la lista, dicho así.
+ */
+function renderCircuitOrder(views: CircuitViews): void {
+  const order = views.circuitOrder;
+  if (order === undefined) return;
+  const s = order.summary;
+  const count = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
+  viewsPanel.append(
+    element(
+      "p",
+      undefined,
+      `Según las lecturas: ${count(s.igual, "tag en el orden de la lista", "tags en el orden de la lista")}, ` +
+        `${count(s["otro-sitio"], "que la lista pone en otro sitio", "que la lista pone en otro sitio")}, ` +
+        `${count(s["sin-lecturas"], "sin lecturas", "sin lecturas")} (su posición es solo la de la lista), ` +
+        `${count(s["no-en-la-lista"], "leído que la lista no tiene", "leídos que la lista no tiene")} y ` +
+        `${count(s["fuera-del-recorrido"], "leído fuera del recorrido principal", "leídos fuera del recorrido principal")}.`,
+    ),
+  );
+  viewsPanel.append(
+    lazyDetails(`Ver el orden del circuito según las lecturas (${order.rows.length} tags)`, () =>
+      plainTable(
+        ["Posición", "Tag", "Lectura", "En la lista", "Diferencia", "Según las lecturas", "Según la lista", "Declarado en planta"],
+        order.rows.map((row) => [
+          String(row.position),
+          row.tagId,
+          orderReadingLabel(row.reading),
+          row.listPosition === null ? "—" : String(row.listPosition),
+          orderChangeLabel(row.change),
+          row.readBetween ?? "—",
+          row.listBetween ?? "—",
+          currentTagInfo[row.tagId] ?? "",
+        ]),
+      ),
+    ),
+  );
+}
+
+/**
+ * Tags que se leen y no están en la lista del circuito (R-DAT-022): dónde se leen y si solo de noche.
+ * Candidato a una posición, tag de noche o posiblemente de noche; nunca una causa.
+ */
+function renderUndeclaredTags(views: CircuitViews): void {
+  const tags = views.undeclaredTags;
+  if (tags === undefined || tags.length === 0) return;
+  const label = { posicion: "candidato a una posición", noche: "tag de noche", "noche-probable": "posiblemente de noche" } as const;
+  viewsPanel.append(element("h3", undefined, "Tags leídos fuera de la lista del circuito"));
+  viewsPanel.append(
+    element(
+      "p",
+      "muted",
+      `${tags.length} ${tags.length === 1 ? "tag se lee" : "tags se leen"} y no ${tags.length === 1 ? "está" : "están"} en la lista del circuito. De cada uno, ` +
+        "dónde se lee y si de día o solo de noche. Son candidatos para comprobar en planta.",
+    ),
+  );
+  const cards = element("div", "findings");
+  // Su sitio en el orden que dictan las lecturas, no en el de la lista (R-GRA-015).
+  const positionOf = new Map((views.circuitOrder?.rows ?? []).map((row) => [row.tagId, row.position]));
+  for (const tag of tags.slice(0, HIGHLIGHTS)) {
+    const position = positionOf.get(tag.tagId);
+    cards.append(
+      finding(
+        `${tag.tagId}: ${label[tag.verdict]}`,
+        `${(tag.dayReadings + tag.nightReadings).toLocaleString("es-ES")} lecturas` +
+          (position === undefined ? "" : ` · posición ${position} según las lecturas`),
+        tag.evidence,
+        ["tag-fuera-del-circuito", tag.tagId],
+      ),
+    );
+  }
+  viewsPanel.append(cards);
+  if (tags.length > HIGHLIGHTS) {
+    viewsPanel.append(
+      lazyDetails(`Ver los ${tags.length} tags`, () =>
+        plainTable(
+          ["Tag", "Veredicto", "Día", "Noche", "Entre", "Y", "Pasadas de día (leído)", "Pasadas de noche (leído)"],
+          tags.map((tag) => [
+            tag.tagId,
+            label[tag.verdict],
+            String(tag.dayReadings),
+            String(tag.nightReadings),
+            tag.predecessor ?? "—",
+            tag.successor ?? "—",
+            `${tag.dayPasses} (${tag.dayHits})`,
+            `${tag.nightPasses} (${tag.nightHits})`,
+          ]),
+        ),
+      ),
+    );
+  }
 }
 
 /** La revisión en campo de las vistas que se están enseñando (`review-ui.ts`). */
@@ -1352,7 +1458,9 @@ function renderCircuitState(views: CircuitViews): void {
             `${duration(stop.usualMs)}`,
           (ahead === null
             ? "Nadie delante en medio circuito. "
-            : `Nadie delante que lo retuviera: ${ahead.agvId} iba ${ahead.distanceAtStart} tags por delante` +
+            : `Nadie delante que lo retuviera: ${ahead.agvId} iba ${
+                ahead.distanceAtStart === 0 ? "en su mismo tag, por delante" : ahead.distanceAtStart === 1 ? "1 tag por delante" : `${ahead.distanceAtStart} tags por delante`
+              }` +
               (ahead.tagsAdvanced === null ? " y siguió. " : ` y avanzó ${ahead.tagsAdvanced} mientras tanto. `)) +
             "La producción seguía. Qué lo paró no lo dice el dato.",
           ["parada-sin-explicacion", `${stop.agvId} ${stop.fromTagId} ${stop.fromUtcMs}`],
@@ -2666,6 +2774,40 @@ function duration(ms: number | null): string {
  * Una tarjeta de hallazgo. Con `review` —su tipo y su sujeto— lleva además los botones de revisión
  * en campo. Sin él es un aviso de configuración, que no se va a comprobar delante de ningún tag.
  */
+/** Lo que planta declara de cada tag del análisis que se está enseñando (`views.tagInfo`). */
+let currentTagInfo: Readonly<Record<string, string>> = {};
+
+/**
+ * Qué tags nombra una tarjeta, por su tipo de revisión. Solo los tipos cuyo sujeto es un tag: en los
+ * de AGV, un identificador de vehículo que coincida con el de un tag no debe traer su función.
+ */
+function tagsOfReview(review: readonly string[] | undefined): readonly string[] {
+  if (review === undefined) return [];
+  const [kind, ...rest] = review;
+  switch (kind) {
+    case "tag-lectura":
+    case "tag-deja":
+    case "tag-empieza":
+    case "tag-rotura":
+    case "tag-degradacion":
+    case "cuello-de-botella":
+    case "zona-oscura":
+    case "cambio-tag":
+    case "tag-fuera-del-circuito":
+      return rest;
+    case "punto-conflictivo":
+      return (rest[0] ?? "").split("+");
+    case "deriva":
+    case "punto-critico":
+      return rest.slice(1);
+    case "bloqueo":
+    case "parada-sin-explicacion":
+      return [(rest[0] ?? "").split(" ")[1] ?? ""];
+    default:
+      return [];
+  }
+}
+
 function finding(title: string, figure: string, evidence: string, review?: readonly string[]): HTMLElement {
   const card = element("div", "finding");
   card.append(
@@ -2673,6 +2815,17 @@ function finding(title: string, figure: string, evidence: string, review?: reado
     element("p", "finding-figure", figure),
     element("p", "muted", evidence),
   );
+  // Lo declarado en planta de cada tag de la tarjeta: aporta al diagnóstico y no cambia nada.
+  const declared = [...new Set(tagsOfReview(review))].filter((tagId) => currentTagInfo[tagId] !== undefined);
+  if (declared.length > 0) {
+    card.append(
+      element(
+        "p",
+        "muted",
+        `Declarado en planta: ${declared.map((tagId) => (declared.length === 1 ? currentTagInfo[tagId] : `${tagId}, ${currentTagInfo[tagId]}`)).join("; ")}.`,
+      ),
+    );
+  }
   if (review !== undefined) reviewSession?.attach(card, review, title, figure);
   return card;
 }
@@ -2869,6 +3022,8 @@ function renderDossier(): void {
         ),
       );
     }
+    const declaredInfo = currentTagInfo[tag.tagId];
+    if (declaredInfo !== undefined) dossierResult.append(element("p", undefined, `Declarado en planta: ${declaredInfo}.`));
     dossierResult.append(
       plainTable(
         ["AGV", "Última lectura"],

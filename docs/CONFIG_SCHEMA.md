@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.13.1
+version: 0.15.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -198,7 +198,7 @@ Y así se expresan los bloques de §3.4:
 
 | Bloque | Cómo se escribe |
 |---|---|
-| `co_lanes` | `lista=carga-online`, `grupo` = identificador de la calle, `orden` = 1…n y `funcion` ∈ `entrada`, `parada-precisa`, `salida` |
+| `co_lanes` | `lista=carga-online`, `grupo` = identificador de la calle, `orden` = 1…n y `funcion` ∈ `entrada`, `parada-precisa`, `salida`. `entrada` es opcional: sin ella, la calle empieza en su parada precisa. Un tag de la calle sin `funcion` es un paso intermedio |
 | `loaded_zone` / `empty_zone` | `lista=zona`, `grupo` ∈ `cargado`, `vacio`, una fila por tag |
 | `critical_points` | `lista=critico`, `funcion` con una de las nueve clases de §3.4.1. **Alternativa**: `lista=circuito` con la misma `funcion` en la fila del tag — las dos vías conviven, `critico` gana en caso de contradicción |
 | `lap_anchors` | `lista=ancla`, `orden` = prioridad cuando se declara más de una (§3.4.2) |
@@ -213,8 +213,18 @@ circuito;103358;12;vinculacion
 ancla;51944;1
 ```
 
-**Lo que no se puede montar se declara, no se completa.** Una calle sin `parada-precisa`, o con dos
-tags reclamando el mismo papel, **no se usa**, y su motivo aparece junto al análisis. Adivinar cuál
+Una calle puede **empezar en su parada precisa**: en algunos circuitos el primer tag de la calle es el
+último que se lee antes de una espera de muchos minutos. Entonces se declara sin `entrada`
+(`parada-precisa`, los intermedios sin función y `salida`) y la estancia va de la parada a la salida.
+
+```text
+carga-online;70021;1;parada-precisa;calle-2
+carga-online;70022;2;;calle-2
+carga-online;70023;3;salida;calle-2
+```
+
+**Lo que no se puede montar se declara, no se completa.** Una calle sin `parada-precisa` o sin
+`salida`, o con dos tags reclamando el mismo papel, **no se usa**, y su motivo aparece junto al análisis. Adivinar cuál
 de los tres tags es la parada por su posición sería sustituir la configuración por proximidad, que
 es lo que R-CO-006 prohíbe con esas palabras. La consecuencia es visible y conviene que lo sea: sin
 la calle montada, sus cargas vuelven a contarse como silencios.
@@ -281,6 +291,10 @@ tag_lists:
   maintenance : { tags[], extracted_at, valid_from, valid_to }
   emergency   : { tags[], extracted_at, valid_from, valid_to }
 ```
+
+`ordered` dice que la lista trae un orden, y ese orden es `expected`: puede tener erratas al
+transcribir o ser distinto al real. La posición de cada tag la dan las lecturas; donde difieren, la
+aplicación enseña el orden leído y la corrección de la lista (R-GRA-015).
 
 `scope` no es un detalle de formato: decide el estado de verdad de todo lo que se derive.
 

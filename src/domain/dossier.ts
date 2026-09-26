@@ -128,12 +128,19 @@ export function buildAllAgvDossiers(
 /**
  * La firma de R-CO-006, indexada para poder resolverla de un vistazo por cada hueco.
  *
- * La clave es el par (tag de parada, tag de salida) de **la misma** calle. Que tenga que ser la
- * misma no es detalle: salir por la calle 3 después de haber parado en la 1 no es una carga, es
- * algo que hay que mirar, y una clave por tag suelto lo habría dado por bueno.
+ * La clave es el par (tag de parada, tag siguiente) de **la misma** calle: la salida, o un paso
+ * intermedio entre la parada y la salida, que es donde termina la espera cuando la calle lo tiene. Que
+ * tenga que ser la misma no es detalle: salir por la calle 3 después de haber parado en la 1 no es
+ * una carga, es algo que hay que mirar, y una clave por tag suelto lo habría dado por bueno.
  */
 function laneSignatures(lanes: readonly CoLane[]): ReadonlyMap<string, string> {
-  return new Map(lanes.map((lane) => [`${lane.stopTagId}\u0000${lane.exitTagId}`, lane.laneId]));
+  const signatures = new Map<string, string>();
+  for (const lane of lanes) {
+    const stopAt = lane.tags.indexOf(lane.stopTagId);
+    const after = stopAt < 0 ? [lane.exitTagId] : lane.tags.slice(stopAt + 1);
+    for (const tagId of after.length === 0 ? [lane.exitTagId] : after) signatures.set(`${lane.stopTagId}\u0000${tagId}`, lane.laneId);
+  }
+  return signatures;
 }
 
 function groupByVehicle(readings: readonly Reading[]): ReadonlyMap<string, readonly Reading[]> {

@@ -2,6 +2,115 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.32.1] - 2026-09-26
+
+Relevo a una conversación nueva por el límite de contexto. Solo documentación.
+
+### Cambiado
+
+- `PROJECT_MEMORY.md`: sección «Estado al 2026-09-26», con la fase, cómo se ha trabajado, lo
+  pendiente de planta y lo que no está en el repositorio.
+- `CLAUDE.md` decía «Fase F0, `implementationStarted: false`» y que no se programa aplicación. Era de
+  F0 y nadie lo había actualizado; una conversación nueva lo lee primero. Ahora remite a
+  `project_state.json` y a la nota de relevo.
+- `README.md` decía lo mismo («Fase 0», «todavía no contiene la aplicación»). Ahora dice F3 y enlaza
+  la web publicada.
+
+## [3.32.0] - 2026-09-25
+
+La posición de un tag la dan las lecturas, no la lista (R-GRA-015). El propietario: la lista del
+circuito puede tener erratas al transcribir o un orden distinto al real, y las lecturas de los AGV son
+las que dictan la posición real de cada tag.
+
+### Añadido
+
+- **Orden del circuito según las lecturas** (`src/domain/circuit-order.ts`). Debajo del contraste con
+  Vsystem:
+  - una línea con cuántos tags están en el orden de la lista, cuántos en otro sitio, cuántos sin
+    lecturas (con la posición solo de la lista), cuántos leídos que la lista no tiene y cuántos fuera
+    del recorrido;
+  - la tabla tag a tag, con su posición en cada lado.
+
+  El anillo va en el orden en que se lee. Lo leído fuera de él va detrás de su predecesor leído, y lo
+  que nadie lee, donde lo pone la lista, y así se dice.
+- `dominantNeighbours` (`undeclared-tags.ts`): el sitio leído de cualquier tag, compartido con los
+  tags fuera de la lista.
+- Auditoría: `lista-con-otro-orden` y `lista-con-numero-mal-escrito` (`auditoria/19`). Las erratas
+  van solo en la lista y las lecturas no cambian. Las 43 clases salen DETECTA. Los tags cambiados de
+  orden siguen limpios en todas las sondas: una errata de la lista no mueve nada de lo leído.
+
+### Cambiado
+
+- **El contraste habla de la lista, no del circuito.** La cabecera dice que manda lo leído. Cada caso
+  se llama ahora así:
+  - «la lista lo pone en otro sitio», con su sitio según las lecturas y según la lista;
+  - «posible sustitución o número mal escrito»: un tag declarado que no se lee, en el sitio donde se
+    lee otro que la lista no tiene;
+  - «su sitio solo lo da la lista»: un tag declarado sin lecturas.
+- Un tag fuera de la lista se sitúa por sus vecinos leídos, sin el orden de la lista. Su tarjeta dice
+  su posición según las lecturas.
+- La auditoría llama `physicalRing` al anillo verdadero, que antes se llamaba `declaredRing`, y
+  guarda aparte la lista tal como se escribe (`declaredList`).
+
+### Medido, y por eso no se hace
+
+No hay detector de erratas por parecido de número. Los tags vienen en familias de números seguidos:
+en un circuito real, de 75 tags declarados sin lecturas, 53 tienen un tag leído a un solo dígito.
+Un número parecido no prueba nada; el sitio, sí.
+
+### Corregido
+
+- En `[3.31.0]` decía que la auditoría tenía 40 clases; eran 41.
+
+## [3.31.0] - 2026-09-25
+
+La exportación de un circuito real en Excel, con la lista del propietario convertida a las listas
+del importador. Todo lo que ese análisis pidió, y los defectos que encontró.
+
+### Añadido
+
+- **Lecturas en `.xlsx`** (`src/ingestion/xlsx-readings.ts`, `DATA_CONTRACTS.md` §3.8). La exportación
+  de Vsystem se carga tal cual por el selector de lecturas. Cada fila pasa a texto con un separador
+  que no esté en ninguna celda y se importa como un CSV. Excel no guarda las celdas vacías del final:
+  la fila se completa hasta el ancho de la cabecera. La procedencia apunta a la fila del libro.
+- **Una calle de carga puede empezar en su parada precisa** (R-CO-002, `readCoLanes`). `entrada` es
+  opcional y un tag de la calle sin función es un paso intermedio. En el circuito real, el primer tag
+  de cada calle es el último que se lee antes de una espera de muchos minutos.
+- **Lo declarado en planta junto a cada incidencia** (`src/domain/tag-info.ts`). Las tarjetas que
+  nombran un tag añaden «Declarado en planta: …» con su nota, su función y su calle, sin repetir
+  piezas. Es información: no cambia ningún cálculo (R-GRA-007).
+- **Tags leídos fuera de la lista del circuito** (R-DAT-022, `src/domain/undeclared-tags.ts`). De
+  cada uno, su sitio, sus lecturas de día y de noche y las pasadas por su sitio en cada régimen:
+  candidato a una posición, tag de noche o posiblemente de noche.
+- Auditoría: clase `tag-de-noche` (`auditoria/18`). Las 41 clases salen DETECTA.
+
+### Corregido
+
+- **Un tag de noche no es un cambio de tag.** Empezaba a leerse cada noche y dejaba de leerse cada
+  mañana, así que salía en los cambios de tag (R-DAT-019) y partía la ventana de la suma entre anclas
+  (R-DAT-021): dos clases de la auditoría pasaban a «suma sin medir». Ahora el tag de noche
+  comprobado se quita de los dos (`withoutTags`, `structureBoundaries`). «Posiblemente de noche» no se
+  quita: es una hipótesis.
+- **Contraste con Vsystem.** Un tag declarado que está en el anillo en otro punto del orden salía dos
+  veces y contradiciéndose: «se lee fuera del recorrido» y «no declarado». Ahora sale una vez,
+  `otro-orden`, con su sitio en Vsystem y en el recorrido. En el circuito real eran dos tags vecinos
+  cambiados de orden.
+- **Inventario, «declarado, no en memoria».** La acción decía «nadie puede leerlo», pero la clase
+  también recoge un tag declarado que la flota sí lee y la lista de memoria no tiene: ahí la lista va
+  por detrás. Ahora dice «la lista de memoria no lo tiene», que vale en los dos casos, y la tabla de
+  `DATA_CONTRACTS.md` §3.5 recoge el segundo caso, que el código ya aplicaba.
+- «Nadie delante que lo retuviera: … iba 1 tags por delante» → «1 tag»; con 0, «en su mismo tag».
+
+### Con el circuito real, sin datos de planta en el repositorio
+
+- 105.154 lecturas de 141.063 filas y 29 h; la importación del libro con las listas tarda unos 13 s
+  en el navegador.
+- Las 5 calles se montan y dan 98 estancias, con una estancia habitual de entre 63 y 96 min según la
+  calle.
+- De dos tags fuera de la lista, uno sale candidato a la posición de un declarado sin lecturas y otro
+  sale tag de noche: de día se pasa por su sitio más de 800 veces y se lee una.
+- La parada de la producción en la frontera de las 05:00 aparece también aquí (OQ-114).
+
 ## [3.30.2] - 2026-09-25
 
 Los tres defectos encontrados con las exportaciones reales, corregidos.

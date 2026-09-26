@@ -134,7 +134,10 @@ export type TagAction =
   | "valorar-sustituir-o-eliminar"
   /** Revisar la memoria de los vehículos que nunca lo leen. */
   | "revisar-memoria-de-vehiculos"
-  /** Está declarado en el circuito y no en la lista de memoria: nadie puede leerlo. */
+  /**
+   * Está declarado en el circuito y no en la lista de memoria: si nadie lo lee, nadie puede leerlo;
+   * si se lee, la lista de memoria va por detrás.
+   */
   | "anadir-a-la-memoria"
   /** Se lee y no está declarado: la lista del circuito va por detrás del suelo. */
   | "declarar-en-vsystem"
@@ -367,7 +370,7 @@ export function describeAction(action: TagAction): string {
     case "revisar-memoria-de-vehiculos":
       return "Revisar la memoria de los vehículos que nunca lo leen";
     case "anadir-a-la-memoria":
-      return "Añadirlo a la lista de memoria: está declarado y nadie puede leerlo";
+      return "Añadirlo a la lista de memoria: está declarado y la lista de memoria no lo tiene";
     case "declarar-en-vsystem":
       return "Declararlo en Vsystem: existe y se lee, pero no está en la lista del circuito";
     case "comprobar-si-la-calle-se-usa":

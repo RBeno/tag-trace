@@ -121,7 +121,7 @@ test.describe("contraste contra Vsystem", () => {
     await expect(fila).toHaveCount(1);
     await expect(fila.getByRole("cell", { name: "0999", exact: true })).toBeVisible();
     await expect(fila.getByRole("cell", { name: "0400", exact: true })).toBeVisible();
-    await expect(fila.getByRole("cell", { name: "posible sustitución", exact: true })).toBeVisible();
+    await expect(fila.getByRole("cell", { name: "posible sustitución o número mal escrito", exact: true })).toBeVisible();
     // Es una hipótesis, nunca un hecho asignado.
     await expect(fila.getByRole("cell", { name: "inferido", exact: true })).toBeVisible();
   });

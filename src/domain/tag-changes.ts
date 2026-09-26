@@ -324,9 +324,7 @@ export function detectTagChanges(
     if (pairedStarts.has(start.tagId)) continue;
     changes.push({ kind: "empieza", tagId: start.tagId, firstUtcMs: start.utcMs, passesBefore: start.passes });
   }
-  const at = (change: TagChange): number =>
-    change.kind === "cambio" ? change.oldLastUtcMs : change.kind === "deja" ? change.lastUtcMs : change.firstUtcMs;
-  changes.sort((a, b) => at(a) - at(b));
+  changes.sort((a, b) => changeAt(a) - changeAt(b));
 
   const lives = new Map<string, TagLife>();
   const setLife = (tagId: string, part: Partial<TagLife>): void => {
@@ -382,4 +380,35 @@ function factOf(list: readonly SlotPass[], thresholds: AdoptionThresholds): Adop
   }
   if (hits / list.length < thresholds.highRate) return { kind: "poco", hits, passes: list.length };
   return null;
+}
+
+/**
+ * El informe sin estos tags: los que se leen solo en un régimen, como un tag de noche (R-DAT-022),
+ * empiezan y dejan de leerse cada día por su horario, no porque cambien. Un cambio emparejado con uno
+ * de ellos se queda en lo que dice el otro lado: el que deja de leerse, o el que empieza.
+ */
+function changeAt(change: TagChange): number {
+  return change.kind === "cambio" ? change.oldLastUtcMs : change.kind === "deja" ? change.lastUtcMs : change.firstUtcMs;
+}
+
+export function withoutTags(report: TagChangeReport, tags: ReadonlySet<string>): TagChangeReport {
+  if (tags.size === 0) return report;
+  const changes: TagChange[] = [];
+  for (const change of report.changes) {
+    if (change.kind !== "cambio") {
+      if (!tags.has(change.tagId)) changes.push(change);
+      continue;
+    }
+    const oldOut = tags.has(change.oldTagId);
+    const newOut = tags.has(change.newTagId);
+    if (!oldOut && !newOut) changes.push(change);
+    else if (!oldOut) changes.push({ kind: "deja", tagId: change.oldTagId, lastUtcMs: change.oldLastUtcMs, passesAfter: change.passesAfterOld });
+    else if (!newOut) changes.push({ kind: "empieza", tagId: change.newTagId, firstUtcMs: change.newFirstUtcMs, passesBefore: change.passesBeforeNew });
+  }
+  changes.sort((a, b) => changeAt(a) - changeAt(b));
+  return {
+    changes,
+    adoption: report.adoption.filter((issue) => !tags.has(issue.tagId)),
+    lives: new Map([...report.lives].filter(([tagId]) => !tags.has(tagId))),
+  };
 }

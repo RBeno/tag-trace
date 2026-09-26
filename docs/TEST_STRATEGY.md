@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.37.2
+version: 0.39.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -259,6 +259,16 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-207 | Circuitos de una exportación (`assignCohorts`) | Tres circuitos que comparten un tramo salen como tres; un vehículo visto en parte del recorrido, o que se salta tags y hace saltos que nadie más hace, va con los suyos; uno que no se parece a nadie queda aparte | Juntar dos circuitos por una transición común; abrir un circuito por un vehículo que lee mal |
 | TC-208 | Contraste con Vsystem (`compareAgainstVsystem`) | Un declarado que sobra en un hueco y se lee en otro sitio sale `fuera-del-anillo`, `observed` | Decir «sin lecturas» de un tag que se lee |
 | TC-209 | Firmas de tiempo (`findPrecisePauseCandidates`, `findTrafficLightCandidates`) | Con todas las duraciones en minutos enteros, ni parada precisa ni semáforo; con segundos, sí | Proponer paradas precisas que salen del redondeo |
+| TC-210 | Lecturas en Excel (`rowsToDelimitedText`) | Una exportación en `.xlsx` da las mismas lecturas, cuarentena y filas sin tag que la misma en CSV, con los ceros de los AGV y la fila de procedencia; una fila `Uso` a la que Excel quitó las celdas vacías del final sigue siendo «no es una lectura»; una fecha guardada como número se lee como la que se escribió; un `;` dentro de una celda cambia el separador | Convertir la fila corta en fila defectuosa, o partir una columna por un `;` |
+| TC-211 | Navegador | La misma exportación en `.xlsx` por el selector de lecturas se cuenta una vez con la del CSV | Pedir convertir el libro a CSV |
+| TC-212 | Calles que empiezan en su parada (`readCoLanes`, `buildChargingReport`, expediente) | Sin `entrada` y con un paso intermedio sin función, la calle se monta; sin `salida`, no; la estancia va de la parada a la salida, y la espera hasta el paso intermedio también es carga (R-CO-006) | Exigir una entrada que la planta no tiene, o contar la carga como silencio |
+| TC-213 | Lo declarado en planta (`declaredTagInfo`) | Se junta la nota, la función y la calle de cada tag, sin repetir pieza a pieza; un tag del que nadie dice nada no aparece | Enseñar «SIN CARRO · SIN CARRO», o convertir un texto de planta en regla |
+| TC-214 | Tags fuera de la lista del circuito (`locateUndeclaredTags`, R-DAT-022) | De día en su sitio: candidato a esa posición, nombrando el declarado sin lecturas del mismo sitio; solo de noche con pasadas de día sin leerlo: tag de noche; sin pasadas de día: posiblemente de noche; sin lista del circuito no se evalúa | Llamar «tag de noche» a uno que de día no se ha podido comprobar |
+| TC-215 | Auditoría (`tag-de-noche`) y cambios de tag (`withoutTags`, `structureBoundaries`) | Solo el tag plantado sale como de noche; un tag de noche no es un cambio de tag ni parte la ventana de la suma entre anclas, y un cambio emparejado con él se queda en el otro lado | Contar cada noche como un tag que empieza y deja de leerse |
+| TC-216 | Contraste con Vsystem (`compareAgainstVsystem`) | Un declarado que está en el anillo en otro punto del orden sale una sola vez, `otro-orden`, con su sitio en cada lado | Decir a la vez «se lee fuera del recorrido» y «no declarado» del mismo tag |
+| TC-217 | Orden del circuito según las lecturas (`reconcileCircuitOrder`) | Dos vecinos cambiados en la lista y uno movido lejos salen donde los leen los AGV, marcados `otro-sitio` con su sitio en cada lado; un declarado sin lecturas va donde lo pone la lista y se dice que es solo eso; lo leído fuera del anillo, detrás de su predecesor leído; un número mal escrito queda junto al tag de verdad; sin lista no se evalúa | Ordenar lo leído por la lista, o dar por leída la posición de un tag que nadie lee |
+| TC-218 | Contraste con Vsystem y tags fuera de la lista (`compareAgainstVsystem`, `locateUndeclaredTags`, `dominantNeighbours`) | La diferencia se dice como corrección de la lista: «manda lo leído»; un declarado sin lecturas donde se lee otro que la lista no tiene es «sustitución o número mal escrito»; un tag fuera de la lista se sitúa por sus vecinos leídos, sin el orden de la lista | Llamar fallo del circuito a una errata de la lista, o decidir por el número |
+| TC-219 | Auditoría (`lista-con-otro-orden`, `lista-con-numero-mal-escrito`) | Con erratas solo en la lista, lo leído no cambia: los tags cambiados de orden siguen limpios en todas las demás sondas y salen donde se leen; el número mal escrito sale junto al de verdad, que es candidato a esa posición | Que una errata de la lista mueva cualquier hallazgo sobre lo leído |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el
 producto pasaba, y la pantalla mentía. Corregido el 2026-09-20 junto con la regla R-GRA-010; queda

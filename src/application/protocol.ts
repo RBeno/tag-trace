@@ -23,6 +23,8 @@ import type { StructureSet } from "../domain/anchor-sums.js";
 import type { PaceReport } from "../domain/vehicle-pace.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AffinityReport } from "../domain/affinity.js";
+import type { UndeclaredTag } from "../domain/undeclared-tags.js";
+import type { CircuitOrder } from "../domain/circuit-order.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
 import type { ReadMatrix } from "../domain/read-matrix.js";
 import type { TagChangeReport } from "../domain/tag-changes.js";
@@ -290,8 +292,17 @@ export interface CircuitViews {
   readonly agvDossiers: readonly AgvDossier[];
   /** Expediente reducido por tag. */
   readonly tagDossiers: readonly TagDossier[];
+  /**
+   * Lo que las listas declaran de cada tag —nota, función, calle—, para enseñarlo junto a cualquier
+   * incidencia de ese tag. Información, no regla: no cambia ningún cálculo.
+   */
+  readonly tagInfo?: Readonly<Record<string, string>>;
   /** Solo si el circuito tiene la lista `circuito` cargada con orden: sin ella no hay con qué alinear. */
   readonly vsystemContrast?: readonly VsystemComparisonRow[];
+  /** Tags que se leen y no están en la lista `circuito`: dónde y cuándo se leen (R-DAT-022). */
+  readonly undeclaredTags?: readonly UndeclaredTag[];
+  /** El orden del circuito según las lecturas, contrastado tag a tag con la lista (R-GRA-015). */
+  readonly circuitOrder?: CircuitOrder;
   /** Fotogramas del replay, en fracción temporal — nunca posición física (`PERFORMANCE_BUDGET.md` §6). */
   readonly replay: readonly SerializedReplayFrame[];
   /**

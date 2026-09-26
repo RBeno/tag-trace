@@ -194,7 +194,7 @@ describe("dónde mirar dentro de un mismo fichero", () => {
     const readings = run(40, replaced(20, { T3: "X3", T4: "X4", T5: "X5" }));
     const times = readings.map((entry) => entry.time.utcMs);
     const span = { from: Math.min(...times), to: Math.max(...times) };
-    const boundaries = structureBoundaries(anchorSequences(readings, "oldest-first", [span]), [span], 10 * 100 * SECOND);
+    const boundaries = structureBoundaries(anchorSequences(readings, "oldest-first", [span]), [span], 10 * 100 * SECOND, new Set());
     // Seis bordes (la última lectura de cada viejo, la primera de cada nuevo), todos en torno a la vuelta 20.
     expect(boundaries).toHaveLength(6);
     for (const at of boundaries) expect(Math.abs(at - 20 * 100 * SECOND)).toBeLessThan(100 * SECOND);

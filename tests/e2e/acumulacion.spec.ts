@@ -9,7 +9,10 @@
  */
 
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
+import { writeXlsx } from "../support/xlsx-writer.js";
 
 const FIXTURES = fileURLToPath(new URL("../../fixtures/synthetic/acumulacion/", import.meta.url));
 
@@ -85,6 +88,25 @@ test.describe("acumular un circuito", () => {
     // 6 + 6 = 12 filas, pero tres son el mismo evento: quedan 9.
     expect(await storedCircuit(page, "piloto")).toEqual({ readings: 9, sources: 2, coverage: 1 });
     await expect(page.getByText(/3 eventos ya estaban/)).toBeVisible();
+  });
+
+  test("la misma exportación en Excel se lee igual que en CSV, y se cuenta una vez", async ({ page }) => {
+    await freshPage(page);
+    // La exportación de la ventana 1, tal cual, como libro de Excel: primera hoja, en texto.
+    const rows = readFileSync(`${FIXTURES}ventana-1.csv`, "utf8").trim().split(/\r?\n/).map((line) => line.split(";"));
+    const book = await writeXlsx([{ name: "Sheet", rows, header: true, widths: [20, 8, 10] }]);
+    await page.locator("#circuit-name").fill("piloto");
+    await page.locator("#source-file").setInputFiles({
+      name: "ventana-1.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: Buffer.from(book),
+    });
+    await expect(page.getByText("Circuito «piloto»")).toBeVisible({ timeout: 15_000 });
+    expect(await storedCircuit(page, "piloto")).toEqual({ readings: 6, sources: 1, coverage: 1 });
+
+    // Y el mismo contenido en CSV no suma nada: son los mismos eventos.
+    await importInto(page, "piloto", "ventana-1.csv");
+    expect(await storedCircuit(page, "piloto")).toMatchObject({ readings: 6, sources: 2 });
   });
 
   test("volver a cargar la misma exportación no cambia ninguna cifra", async ({ page }) => {

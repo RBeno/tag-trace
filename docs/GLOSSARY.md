@@ -1,6 +1,6 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.25.1
+version: 0.26.0
 status: baseline-candidate
 last_updated: 2026-09-25
 ---
@@ -30,6 +30,8 @@ last_updated: 2026-09-25
 | Ritmo de un AGV | La mitad de sus tramos, cada uno medido contra lo habitual de ese tramo, frente a lo mismo de toda la flota; sin paradas ni esperas detrás de otro. Un 1,10 es un 10 % más lento (R-AGV-019). |
 | Retener | Ir delante de otro AGV, más despacio de lo habitual en ese tramo, mientras el de detrás espera. Quien retiene no tiene por qué pararse (R-AGV-020). |
 | Suma entre anclas | El tiempo entre dos tags que siguen en su sitio a los dos lados de un cambio (las anclas). Es del recorrido: si entre ellas se pone, se quita o se cambia un tag y la suma sigue igual, solo cambió lo de en medio (R-DAT-021). |
+| Orden declarado | El orden de la lista `circuito`. Es `expected`: puede tener erratas al transcribir o ser distinto al real, y no sitúa a ningún tag que se lea (R-GRA-015). |
+| Posición leída | El sitio de un tag en el orden en que lo leen los AGV: sus vecinos leídos. Manda sobre el orden declarado (R-GRA-015). |
 | Posición en tiempo | Los segundos de recorrido desde el ancla hasta un tag, sumando la mitad de las pasadas de cada paso. Es tiempo, nunca distancia; un tag que no se puede situar no se interpola (R-TIM-011). |
 | Valla | Límite de la horquilla de un tramo: p95 + max(p95 − p50, margen mínimo, resolución). Por encima, una transición es una parada candidata (R-FLO-007). |
 | Retención | Transición lenta —por encima del p95 de su tramo, con al menos el margen de espera— con un AGV delante que no se iba (R-FLO-008). |

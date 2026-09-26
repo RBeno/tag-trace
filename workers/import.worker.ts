@@ -23,6 +23,10 @@ import {
   importReadings,
 } from "../src/ingestion/importer.js";
 import { decodeSource } from "../src/ingestion/decode.js";
+import { rowsToDelimitedText } from "../src/ingestion/xlsx-readings.js";
+import { declaredTagInfo } from "../src/domain/tag-info.js";
+import { dominantNeighbours, locateUndeclaredTags } from "../src/domain/undeclared-tags.js";
+import { reconcileCircuitOrder } from "../src/domain/circuit-order.js";
 import { CatalogFailure, EXPECTED_STRUCTURE, importCatalog, importCatalogRows } from "../src/ingestion/catalog.js";
 import { looksLikeZip, readXlsxRows, XlsxError } from "../src/persistence/xlsx.js";
 import { unionReadings } from "../src/ingestion/union.js";
@@ -40,7 +44,7 @@ import {
   type LapAnchor,
 } from "../src/domain/laps.js";
 import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-matrix.js";
-import { detectTagChanges } from "../src/domain/tag-changes.js";
+import { detectTagChanges, withoutTags } from "../src/domain/tag-changes.js";
 import { describeVehicleReading } from "../src/domain/vehicle-reading.js";
 import { buildChargingReport, findLaneJunctions } from "../src/domain/charging.js";
 import { buildFifoReport, loadedZoneSpans } from "../src/domain/fifo.js";
@@ -311,11 +315,37 @@ async function buildViews(
   const vehicleReadings: CircuitViews["vehicleReading"][number][] = [];
   // Cambios de tag dentro de un mismo periodo (R-DAT-019), antes que la matriz: cuándo empezó o dejó
   // de leerse cada tag es lo que hace falta para medirlo solo dentro de su vida (R-OPP-016).
-  const tagChanges = detectTagChanges(readings, direction, coverage, PROVISIONAL_CONFIG.tagChanges, {
-    minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
-    highRate: PROVISIONAL_CONFIG.readRate.highRate,
-    minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
-  });
+  // Régimen de cada instante (R-TIM-009): la noche se mide aparte y no altera el estado normal.
+  const regimeOf = regimeReader(zone, PROVISIONAL_CONFIG.regimes);
+  // Los tags que se leen y no están en la lista del circuito: dónde y cuándo se leen (R-DAT-022). Va
+  // antes que los cambios de tag porque un tag de noche empieza y deja de leerse cada día por su
+  // horario, no porque cambie: no es un cambio de tag ni parte la ventana en dos.
+  const byName = (name: string): ReadonlySet<string> =>
+    new Set(lists.find((entry) => entry.list === name)?.tags ?? []);
+  // El contraste contra Vsystem y la posición de un tag no declarado exigen un **orden**: el orden en
+  // que el fichero trae las filas de la lista `circuito`, que el importador conserva.
+  const declaredOrder = [...byName("circuito")];
+  const undeclared = locateUndeclaredTags(
+    readings,
+    declaredOrder,
+    new Set([...byName("carga-online"), ...byName("mantenimiento"), ...byName("emergencia")]),
+    regimeOf,
+    {
+      minSlotPasses: PROVISIONAL_CONFIG.tagChanges.minSlotPasses,
+      maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
+      maxReadsBetween: PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
+    },
+  );
+  // Solo el tag de noche comprobado: «posiblemente de noche» es una hipótesis y no se usa como hecho.
+  const nightTags = new Set(undeclared.tags.filter((tag) => tag.verdict === "noche").map((tag) => tag.tagId));
+  const tagChanges = withoutTags(
+    detectTagChanges(readings, direction, coverage, PROVISIONAL_CONFIG.tagChanges, {
+      minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
+      highRate: PROVISIONAL_CONFIG.readRate.highRate,
+      minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
+    }),
+    nightTags,
+  );
   const fifoCohorts: NonNullable<CircuitViews["fifo"]>[number][] = [];
   const criticalPointCohorts: CircuitViews["criticalPoints"][number][] = [];
   /** El ancla efectiva de cada cohorte (declarada si se resolvió, si no la inferida). */
@@ -335,8 +365,6 @@ async function buildViews(
   );
   const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
   const flowReports: FlowReport[] = [];
-  // Régimen de cada instante (R-TIM-009): la noche se mide aparte y no altera el estado normal.
-  const regimeOf = regimeReader(zone, PROVISIONAL_CONFIG.regimes);
   const circuitStateCohorts: CircuitViews["circuitState"]["cohorts"][number][] = [];
   // Una franja es un fichero (R-TIM-011): su ventana completa. Sin almacén, la del fichero importado.
   const windows = franjaWindows(
@@ -605,7 +633,7 @@ async function buildViews(
     // cambios de tag por su sitio (R-DAT-019) y de donde un tag empieza o deja de leerse: un bloque de
     // tags seguidos cambiado a la vez no tiene sitio que comparar, porque sus vecinos también cambiaron.
     const sequences = anchorSequences(cohortReadings, direction, structureSpans);
-    const boundaries = structureBoundaries(sequences, structureSpans, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs);
+    const boundaries = structureBoundaries(sequences, structureSpans, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs, nightTags);
     // Un mismo cambio se enseña una vez. Primero dentro de cada fichero, que dice a qué hora; entre
     // ficheros solo lo que no esté ya dicho: los mismos tags, o menos, de un cambio ya enseñado.
     const structure: StructureSet[] = [];
@@ -706,6 +734,8 @@ async function buildViews(
   );
   const vehicleIds = agvDossiers.map((dossier) => dossier.agvId);
   const tagDossiers = buildAllTagDossiers(readings, vehicleIds, criticalPointsConfig.funcionOf);
+  // Lo que planta declara de cada tag, para acompañar sus incidencias: información, no regla.
+  const tagInfo = declaredTagInfo(lists);
 
   const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, PROVISIONAL_CONFIG.silence.minGapMs);
 
@@ -800,6 +830,7 @@ async function buildViews(
     tagChanges: { changes: tagChanges.changes, adoption: tagChanges.adoption },
     agvDossiers,
     tagDossiers,
+    ...(tagInfo.size === 0 ? {} : { tagInfo: Object.fromEntries(tagInfo) }),
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
     fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null, production: productionView, blockages },
     franjas: {
@@ -875,8 +906,6 @@ async function buildViews(
 
   if (lists.length === 0) return views;
 
-  const byName = (name: string): ReadonlySet<string> =>
-    new Set(lists.find((entry) => entry.list === name)?.tags ?? []);
   const unservedLaneTags = new Set(
     charging.lanes
       .filter((lane) => !lane.served)
@@ -917,29 +946,39 @@ async function buildViews(
     actionOf.set(row.tagClass, describeAction(row.action));
   }
 
-  // El contraste contra Vsystem exige un **orden**, no solo la pertenencia al circuito: sin orden,
-  // la lista es un conjunto y no hay secuencia con la que alinear el anillo. El orden declarado es
-  // el orden en que el fichero trae las filas de la lista `circuito` — el importador lo conserva
-  // (`Set` mantiene el primer orden de aparición) — así que no hace falta guardar una columna aparte.
-  const declaredOrder = [...byName("circuito")];
-
   let vsystemContrast: CircuitViews["vsystemContrast"];
+  let circuitOrder: CircuitViews["circuitOrder"];
   const mainCohort = cohortAssignment.cohorts[0];
   if (declaredOrder.length > 0 && mainCohort !== undefined) {
     // El anillo observado con el que se contrasta: el ciclo dominante del cohorte mayor, que es el
     // que tiene más soporte y por tanto la reconstrucción más fiable. Ya se calculó arriba.
     const anchor = anchors.get(mainCohort.id);
     if (anchor !== undefined) {
-      vsystemContrast = compareAgainstVsystem(
+      const readTags = new Set(readings.map((entry) => entry.tagId));
+      vsystemContrast = compareAgainstVsystem(declaredOrder, anchor.cycle, readTags);
+      // El orden del circuito según las lecturas (R-GRA-015): el anillo, lo leído fuera de él en su
+      // sitio leído, y lo declarado sin lecturas donde lo pone la lista.
+      const inRing = new Set(anchor.cycle);
+      const mainVehicles = new Set(mainCohort.vehicles);
+      const toPlace = new Set([
+        ...declaredOrder.filter((tagId) => readTags.has(tagId) && !inRing.has(tagId)),
+        ...undeclared.tags.map((tag) => tag.tagId).filter((tagId) => !inRing.has(tagId)),
+      ]);
+      circuitOrder = reconcileCircuitOrder(
         declaredOrder,
         anchor.cycle,
-        new Set(readings.map((entry) => entry.tagId)),
+        readTags,
+        dominantNeighbours(
+          readings.filter((entry) => mainVehicles.has(entry.agvId)),
+          toPlace,
+        ),
       );
     }
   }
 
   return {
     ...views,
+    ...(undeclared.evaluated ? { undeclaredTags: undeclared.tags } : {}),
     inventory: {
       counts: [...counts.entries()].map(([tagClass, count]) => ({
         tagClass,
@@ -950,6 +989,7 @@ async function buildViews(
       listsLoaded: lists.map((entry) => entry.list),
     },
     ...(vsystemContrast === undefined ? {} : { vsystemContrast }),
+    ...(circuitOrder === undefined || !circuitOrder.evaluated ? {} : { circuitOrder }),
     ...(criticalPointsConfig.problems.length === 0
       ? {}
       : { criticalPointsProblems: criticalPointsConfig.problems }),
@@ -1006,7 +1046,30 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
   }
 
   const sourceHash = await hashFile(buffer);
-  const { text, encoding } = decodeSource(buffer);
+  // Un libro de Excel se lee directamente, primera hoja (DS-001, DS-011 en `.xlsx`); si no, es texto.
+  let text: string;
+  let encoding: string;
+  const bytes = new Uint8Array(buffer);
+  if (looksLikeZip(bytes)) {
+    emit({ type: "progress", stage: "hashing", done: 0, total: 1, note: "Leyendo el libro de Excel" }, jobId);
+    try {
+      text = rowsToDelimitedText(await readXlsxRows(bytes));
+      encoding = "xlsx";
+    } catch (error) {
+      emit(
+        {
+          type: "error",
+          code: "SOURCE_UNREADABLE",
+          cause: error instanceof XlsxError ? error.reason : "El libro de Excel no pudo leerse.",
+          recovery: "Guarda el libro de nuevo en Excel (.xlsx) o expórtalo como CSV.",
+        },
+        jobId,
+      );
+      return;
+    }
+  } else {
+    ({ text, encoding } = decodeSource(buffer));
+  }
 
   try {
     const result = importReadings(

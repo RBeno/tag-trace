@@ -31,6 +31,7 @@ export interface CoLane {
   readonly laneId: string;
   /** Los tags de la calle, en el orden declarado. */
   readonly tags: readonly string[];
+  /** El tag por el que se entra; la propia parada si la calle empieza en ella. */
   readonly entryTagId: string;
   /** La parada precisa: donde el vehículo se detiene a cargar. */
   readonly stopTagId: string;
@@ -67,7 +68,11 @@ const LANE_ROLES = LIST_FUNCTIONS["carga-online"];
  *
  * El orden lo fija la columna `orden` cuando está y el orden del fichero cuando no, igual que hace
  * la lista `circuito`. Los papeles no admiten esa degradación: sin `funcion` no hay forma de saber
- * cuál de los tres tags es la parada, y adivinarlo por la posición sería inventar la regla.
+ * cuál de los tags es la parada, y adivinarlo por la posición sería inventar la regla.
+ *
+ * `parada-precisa` y `salida` son obligatorias; **`entrada` no**: hay calles que empiezan en su
+ * parada precisa —el vehículo entra y se para en el primer tag—, y entonces la entrada es la propia
+ * parada. Un tag de la calle sin `funcion` es un paso intermedio entre la parada y la salida.
  */
 export function readCoLanes(entries: readonly ConfigEntry[]): CoLaneConfig {
   const byLane = new Map<string, ConfigEntry[]>();
@@ -92,7 +97,7 @@ export function readCoLanes(entries: readonly ConfigEntry[]): CoLaneConfig {
   const lanes: CoLane[] = [];
   for (const [laneId, group] of [...byLane].sort((a, b) => a[0].localeCompare(b[0], "es"))) {
     const unknownRole = group.filter(
-      (entry) => !(LANE_ROLES as readonly string[]).includes(entry.funcion),
+      (entry) => entry.funcion !== "" && !(LANE_ROLES as readonly string[]).includes(entry.funcion),
     );
     if (unknownRole.length > 0) {
       problems.push(
@@ -105,7 +110,7 @@ export function readCoLanes(entries: readonly ConfigEntry[]): CoLaneConfig {
 
     const roleOf = (role: string): readonly ConfigEntry[] =>
       group.filter((entry) => entry.funcion === role);
-    const missing = LANE_ROLES.filter((role) => roleOf(role).length === 0);
+    const missing = LANE_ROLES.filter((role) => role !== "entrada" && roleOf(role).length === 0);
     if (missing.length > 0) {
       problems.push(
         `La calle «${laneId}» no se monta: le falta ${missing.map((role) => `«${role}»`).join(" y ")}.`,
@@ -124,8 +129,9 @@ export function readCoLanes(entries: readonly ConfigEntry[]): CoLaneConfig {
     // Con `orden` cuando lo hay, y con el orden del fichero cuando no: es la misma degradación que
     // ya sigue la lista `circuito`, y ahí sí es honesta porque la secuencia física existe igual.
     const ordered = [...group].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    const entry = roleOf("entrada")[0] as ConfigEntry;
     const stop = roleOf("parada-precisa")[0] as ConfigEntry;
+    // Sin entrada declarada, la calle empieza en su parada.
+    const entry = roleOf("entrada")[0] ?? stop;
     const exit = roleOf("salida")[0] as ConfigEntry;
 
     lanes.push({

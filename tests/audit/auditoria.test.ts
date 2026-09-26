@@ -22,6 +22,9 @@ import { buildAuditScenario, toRealUtc, type DefectClass } from "../support/circ
 import { importReadings } from "../../src/ingestion/importer.js";
 import { buildTransitions } from "../../src/domain/graph.js";
 import { assignCohorts } from "../../src/domain/cohort.js";
+import { dominantNeighbours, locateUndeclaredTags, type UndeclaredTagReport } from "../../src/domain/undeclared-tags.js";
+import { reconcileCircuitOrder, type CircuitOrder } from "../../src/domain/circuit-order.js";
+import { compareAgainstVsystem, type VsystemComparisonRow } from "../../src/domain/vsystem.js";
 import { findDominantCycle, resolveDeclaredAnchor, segmentLaps, type Lap } from "../../src/domain/laps.js";
 import { buildReadMatrix, type ReadMatrix } from "../../src/domain/read-matrix.js";
 import { buildTagInventory } from "../../src/domain/inventory.js";
@@ -36,7 +39,7 @@ import {
   type CriticalPointCandidate,
 } from "../../src/domain/critical-points.js";
 import { compareDistantPeriods, type DriftComparison } from "../../src/domain/drift.js";
-import { detectTagChanges, type TagChangeReport } from "../../src/domain/tag-changes.js";
+import { detectTagChanges, withoutTags, type TagChangeReport } from "../../src/domain/tag-changes.js";
 import { describeVehicleReading, type VehicleReadingReport } from "../../src/domain/vehicle-reading.js";
 import { classifySilence, usualSegmentTimes, type SilenceClass } from "../../src/domain/silence-kind.js";
 import {
@@ -116,6 +119,9 @@ function parseStamp(value: string): number {
 }
 
 interface Analysis {
+  /** Contraste con la lista y el orden según las lecturas (R-GRA-001, R-GRA-015). */
+  readonly contrast: readonly VsystemComparisonRow[];
+  readonly circuitOrder: CircuitOrder;
   readonly matrix: ReadMatrix | undefined;
   readonly ring: readonly string[];
   readonly offRing: readonly string[];
@@ -174,6 +180,8 @@ interface Analysis {
   readonly deliverySummary: DeliverySummary;
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
+  /** Tags leídos fuera de la lista del circuito, con su sitio y si de noche (R-DAT-022). */
+  readonly undeclared: UndeclaredTagReport;
 }
 
 /**
@@ -245,18 +253,37 @@ function analyse(
 
   const cohortReadings = readings.filter((entry) => vehicleSet.has(entry.agvId));
 
+  // Mismo encadenado que el Worker: la lista del circuito en su orden, sin los de calles ni
+  // mantenimiento (R-DAT-022). Va antes que los cambios de tag: un tag de noche no es un cambio.
+  const regimeOf = regimeReader("Europe/Madrid", PROVISIONAL_CONFIG.regimes);
+  const undeclared = locateUndeclaredTags(
+    readings,
+    entriesOf("circuito").map((entry) => entry.tagId),
+    new Set([...entriesOf("carga-online"), ...entriesOf("mantenimiento"), ...entriesOf("emergencia")].map((entry) => entry.tagId)),
+    regimeOf,
+    {
+      minSlotPasses: PROVISIONAL_CONFIG.tagChanges.minSlotPasses,
+      maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
+      maxReadsBetween: PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
+    },
+  );
+
   // Cambios de tag dentro de un solo periodo (R-DAT-019), con la ventana entera como cobertura —el
   // caso de una sola exportación—, antes que la matriz: su vida es lo que la matriz mide (R-OPP-016).
-  const tagChanges = detectTagChanges(
-    readings,
-    direction,
-    [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
-    PROVISIONAL_CONFIG.tagChanges,
-    {
-      minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
-      highRate: PROVISIONAL_CONFIG.readRate.highRate,
-      minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
-    },
+  const nightTags = new Set(undeclared.tags.filter((tag) => tag.verdict === "noche").map((tag) => tag.tagId));
+  const tagChanges = withoutTags(
+    detectTagChanges(
+      readings,
+      direction,
+      [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }],
+      PROVISIONAL_CONFIG.tagChanges,
+      {
+        minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
+        highRate: PROVISIONAL_CONFIG.readRate.highRate,
+        minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
+      },
+    ),
+    nightTags,
   );
 
   const laps: Lap[] =
@@ -311,8 +338,6 @@ function analyse(
     PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
     PROVISIONAL_CONFIG.flowStops,
   );
-  // Régimen de cada instante (R-TIM-009): las firmas de tiempo, solo en producción.
-  const regimeOf = regimeReader("Europe/Madrid", PROVISIONAL_CONFIG.regimes);
   const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
   const window = [{ from: scenario.fromUtcMs, to: scenario.toUtcMs }];
   // Mismo encadenado que el Worker (R-DAT-020): las lecturas que llegaron juntas se colapsan en un solo
@@ -357,7 +382,8 @@ function analyse(
     (tagId) => !inRing.has(tagId),
   );
 
-  const declared = new Set(scenario.declaredRing);
+  // La lista tal como se escribe, con sus erratas: es lo que carga el Worker (R-GRA-015).
+  const declared = new Set(scenario.declaredList);
   const laneTagsOf = (predicate: (laneId: string) => boolean): Set<string> =>
     new Set(
       laneConfig.lanes.filter((lane) => predicate(lane.laneId)).flatMap((lane) => [...lane.tags]),
@@ -545,12 +571,25 @@ function analyse(
   const changeTimes = tagChanges.changes.flatMap((change) =>
     change.kind === "cambio" ? [change.oldLastUtcMs, change.newFirstUtcMs] : [change.kind === "deja" ? change.lastUtcMs : change.firstUtcMs],
   );
-  const boundaries = structureBoundaries(sequences, window, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs);
+  const boundaries = structureBoundaries(sequences, window, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs, nightTags);
   const dentroDelFichero = windowsAroundChanges([...changeTimes, ...boundaries], window, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs).flatMap(
     (around) => compareAnchorGaps(sequences, around.before, around.after, anchorContext, PROVISIONAL_CONFIG.anchorSums),
   );
 
+  // El contraste y el orden según las lecturas, como en el Worker (R-GRA-015).
+  const declaredOrder = entriesOf("circuito").map((entry) => entry.tagId);
+  const readTags = new Set(readings.map((entry) => entry.tagId));
+  const contrast = compareAgainstVsystem(declaredOrder, ring, readTags);
+  const toPlace = new Set([
+    ...declaredOrder.filter((tagId) => readTags.has(tagId) && !inRing.has(tagId)),
+    ...undeclared.tags.map((tag) => tag.tagId).filter((tagId) => !inRing.has(tagId)),
+  ]);
+  const circuitOrder = reconcileCircuitOrder(declaredOrder, ring, readTags, dominantNeighbours(cohortReadings, toPlace));
+
   return {
+    contrast,
+    circuitOrder,
+    undeclared,
     matrix,
     ring,
     offRing,
@@ -615,6 +654,9 @@ describe("auditoría del circuito con verdad conocida", () => {
     pace,
     franjaPace,
     readings,
+    undeclared,
+    contrast,
+    circuitOrder,
   } = analysis;
 
   /**
@@ -1094,10 +1136,10 @@ describe("auditoría del circuito con verdad conocida", () => {
       const defect = scenario.defects.find((d) => d.kind === "noche-medida-aparte");
       if (bands === null || circuitState === null || defect === undefined) return { ok: false, detail: "sin anillo" };
       const clean = new Set(scenario.cleanTags);
-      const declaredRing = scenario.declaredRing;
-      const nextOf = (tag: string): string => declaredRing[(declaredRing.indexOf(tag) + 1) % declaredRing.length] as string;
+      const physicalRing = scenario.physicalRing;
+      const nextOf = (tag: string): string => physicalRing[(physicalRing.indexOf(tag) + 1) % physicalRing.length] as string;
       // La horquilla de producción de un tramo limpio, para comparar.
-      const cleanP95 = declaredRing
+      const cleanP95 = physicalRing
         .filter((tag) => clean.has(tag) && clean.has(nextOf(tag)))
         .map((tag) => bands.pairs.get(pairKey(tag, nextOf(tag)))?.produccion?.p95Ms)
         .filter((value): value is number => value !== undefined)
@@ -1164,8 +1206,8 @@ describe("auditoría del circuito con verdad conocida", () => {
     "cuello-de-botella": () => {
       const defect = scenario.defects.find((d) => d.kind === "cuello-de-botella");
       const tag = defect?.tags[0] as string;
-      const declaredRing = scenario.declaredRing;
-      const antes = declaredRing[(declaredRing.indexOf(tag) - 1 + declaredRing.length) % declaredRing.length];
+      const physicalRing = scenario.physicalRing;
+      const antes = physicalRing[(physicalRing.indexOf(tag) - 1 + physicalRing.length) % physicalRing.length];
       const cuello = circuitState?.bottlenecks.find((entry) => entry.tagId === tag);
       const detras = circuitState?.unexplained.produccion.filter((stop) => stop.fromTagId === antes).length ?? 0;
       return {
@@ -1188,7 +1230,7 @@ describe("auditoría del circuito con verdad conocida", () => {
       };
     },
     "posicion-en-tiempo": () => {
-      const declared = scenario.declaredRing;
+      const declared = scenario.physicalRing;
       const nunca = scenario.defects.find((d) => d.kind === "declarado-sin-lecturas")?.tags ?? [];
       const nuevo = scenario.defects.find((d) => d.kind === "tag-nuevo-a-mitad-de-ventana")?.tags[0] ?? "";
       const problems: string[] = [];
@@ -1255,6 +1297,61 @@ describe("auditoría del circuito con verdad conocida", () => {
       const entre = lee(structure.entreFicheros);
       const dentro = lee(structure.dentroDelFichero);
       return { ok: entre.ok && dentro.ok, detail: `entre ficheros ${entre.detail}; dentro ${dentro.detail}` };
+    },
+    "tag-de-noche": () => {
+      const [antes, nocturno, despues] = scenario.defects.find((d) => d.kind === "tag-de-noche")?.tags ?? [];
+      const tag = undeclared.tags.find((entry) => entry.tagId === nocturno);
+      if (tag === undefined) return { ok: false, detail: `${nocturno} no sale entre los tags fuera de la lista` };
+      return {
+        ok: tag.verdict === "noche" && tag.predecessor === antes && tag.successor === despues && tag.dayReadings === 0 && tag.dayHits === 0,
+        detail:
+          `${nocturno}: ${tag.verdict}, entre ${tag.predecessor} y ${tag.successor}; ${tag.nightReadings} lecturas de noche; ` +
+          `de día ${tag.dayPasses} pasadas por su sitio y ${tag.dayHits} lecturas`,
+      };
+    },
+    "lista-con-otro-orden": () => {
+      const [a, b, movido] = scenario.defects.find((d) => d.kind === "lista-con-otro-orden")?.tags ?? [];
+      const rows = circuitOrder.rows;
+      const at = (tag: string | undefined): number => rows.findIndex((row) => row.tagId === tag);
+      const change = (tag: string | undefined) => rows[at(tag)]?.change;
+      const physical = scenario.physicalRing;
+      const i = physical.indexOf(movido as string);
+      const enOrdenLeido = at(a) < at(b) && at(physical[i - 1]) < at(movido) && at(movido) < at(physical[i + 1]);
+      const cambiados = [change(a), change(b)].filter((value) => value === "otro-sitio").length;
+      const otros = rows.filter((row) => row.change === "otro-sitio" && ![a, b, movido].includes(row.tagId)).map((row) => row.tagId);
+      const enContraste = contrast.filter((row) => row.verdict === "otro-orden").map((row) => row.declaredTag);
+      const movidoFila = rows[at(movido)];
+      return {
+        ok:
+          enOrdenLeido &&
+          cambiados === 1 &&
+          change(movido) === "otro-sitio" &&
+          otros.length === 0 &&
+          enContraste.includes(movido as string) &&
+          (enContraste.includes(a as string) || enContraste.includes(b as string)),
+        detail:
+          `${a} y ${b} en orden leído: ${at(a) < at(b) ? "sí" : "no"}, ${cambiados} marcado como otro sitio; ` +
+          `${movido}: ${change(movido)}, según las lecturas ${movidoFila?.readBetween}, según la lista ${movidoFila?.listBetween}; ` +
+          `otros en otro sitio: ${otros.length === 0 ? "ninguno" : otros.join(", ")}`,
+      };
+    },
+    "lista-con-numero-mal-escrito": () => {
+      const [real, escrito] = scenario.defects.find((d) => d.kind === "lista-con-numero-mal-escrito")?.tags ?? [];
+      const fila = contrast.find((row) => row.declaredTag === escrito);
+      const fuera = undeclared.tags.find((tag) => tag.tagId === real);
+      const ids = circuitOrder.rows.map((row) => row.tagId);
+      const juntos = Math.abs(ids.indexOf(real as string) - ids.indexOf(escrito as string)) === 1;
+      return {
+        ok:
+          fila?.verdict === "sustituido-candidato" &&
+          fila.observedTag === real &&
+          fuera?.verdict === "posicion" &&
+          fuera.declaredWithoutReadings.includes(escrito as string) &&
+          juntos,
+        detail:
+          `${escrito} → ${fila?.verdict ?? "sin fila"} con ${fila?.observedTag ?? "—"}; ${real}: ${fuera?.verdict ?? "no sale fuera de la lista"}` +
+          `${fuera === undefined ? "" : `, la lista pone ahí ${fuera.declaredWithoutReadings.join(", ") || "nada"}`}; juntos en el orden leído: ${juntos ? "sí" : "no"}`,
+      };
     },
     "ritmo-mas-lento-en-un-fichero": () => {
       const agv = scenario.defects.find((d) => d.kind === "ritmo-mas-lento-en-un-fichero")?.vehicles[0] ?? "";
@@ -1358,7 +1455,7 @@ describe("auditoría del circuito con verdad conocida", () => {
     console.log(
       `\n=== AUDITORÍA ===\n` +
         `${readings.toLocaleString("es-ES")} lecturas, ${scenario.vehicles.length} vehículos. ` +
-        `Anillo reconstruido: ${ring.length} tags de ${scenario.declaredRing.length} declarados. ` +
+        `Anillo reconstruido: ${ring.length} tags de ${scenario.physicalRing.length} declarados. ` +
         `Fuera del anillo: ${offRing.length}.\n` +
         lineas.join("\n") +
         `\n--- Estado normal del circuito (R-TIM-009) ---\n` +
@@ -1434,17 +1531,17 @@ describe("auditoría del circuito con verdad conocida", () => {
 
   it("el estado normal no señala nada limpio: cuellos, conflictos, zonas oscuras y paradas sin explicación (R-TIM-009)", () => {
     const clean = new Set(scenario.cleanTags);
-    const declaredRing = scenario.declaredRing;
+    const physicalRing = scenario.physicalRing;
     expect(circuitState).not.toBeNull();
     const state = circuitState as CircuitState;
     expect(state.bottlenecks.filter((entry) => clean.has(entry.tagId)).map((entry) => entry.tagId)).toEqual([]);
     expect(state.conflictPoints.flatMap((point) => point.tags).filter((tag) => clean.has(tag))).toEqual([]);
     // Una zona oscura tiene que tocar algo plantado entre su primer y su último tag.
     const limpias = state.darkZones.filter((zone) => {
-      const first = declaredRing.indexOf(zone.tags[0] as string);
-      const last = declaredRing.indexOf(zone.tags[zone.tags.length - 1] as string);
-      const span = (last - first + declaredRing.length) % declaredRing.length;
-      return Array.from({ length: span + 1 }, (_, step) => declaredRing[(first + step) % declaredRing.length] as string).every(
+      const first = physicalRing.indexOf(zone.tags[0] as string);
+      const last = physicalRing.indexOf(zone.tags[zone.tags.length - 1] as string);
+      const span = (last - first + physicalRing.length) % physicalRing.length;
+      return Array.from({ length: span + 1 }, (_, step) => physicalRing[(first + step) % physicalRing.length] as string).every(
         (tag) => clean.has(tag),
       );
     });
@@ -1669,6 +1766,15 @@ describe("auditoría del circuito con verdad conocida", () => {
     // Y el único bloqueo es el plantado.
     expect(flow.blockages.map((blockage) => blockage.agvId)).toEqual([adelantado]);
   }, PLAZO);
+
+  it("fuera de la lista del circuito, solo el tag plantado sale como de noche (R-DAT-022)", () => {
+    const nocturno = scenario.defects.find((d) => d.kind === "tag-de-noche")?.tags[1];
+    const deNoche = undeclared.tags.filter((tag) => tag.verdict !== "posicion").map((tag) => tag.tagId);
+    expect(deNoche).toEqual([nocturno]);
+    // Y ningún tag de la lista sale como leído fuera de ella.
+    const declarados = new Set(scenario.declaredList);
+    expect(undeclared.tags.filter((tag) => declarados.has(tag.tagId))).toEqual([]);
+  });
 
   it("detecta las clases que ya sabe detectar, y sigue haciéndolo", () => {
     const fallos: string[] = [];

@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.15.1
+version: 0.18.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Memoria compacta del proyecto
@@ -223,3 +223,52 @@ R-AGV-020).
 Los libros de Excel se entregan como ficheros; la aplicación solo los importa (propietario,
 2026-09-25): las plantillas de listas y flota y el circuito de cada análisis se generan fuera del
 programa, y en la interfaz no hay descargas de Excel.
+
+## Lista del circuito de planta y exportación en Excel (2026-09-25)
+
+Decisiones del propietario al convertir su lista de un circuito real al formato del importador: una
+zona LLENO es `cargado` y VACIO o SIN CARRO es `vacio`; la columna de todos los tags es la memoria;
+el primer tag de cada calle de carga es su parada precisa —es el último que se lee antes de una
+espera de muchos minutos—, así que una calle puede empezar en su parada (R-CO-002); una situación
+CRUCE es un crítico `cruce`; y de la función, solo lo que dice PRECISA es parada precisa. **El resto
+del texto de planta se guarda y se enseña junto a cada incidencia del tag**, porque ayuda al
+diagnóstico, pero no cambia ningún cálculo (R-GRA-007). Un tag que se lee y no está en la lista se
+sitúa y se clasifica por día y noche (R-DAT-022): de día en el mismo sitio es candidato a esa
+posición; solo de noche, con pasadas de día sin leerlo, es un tag de noche. Las lecturas también
+entran en `.xlsx`, tal como las exporta Vsystem.
+
+## La posición de un tag la dan las lecturas (2026-09-25)
+
+El propietario: «el orden de tags del circuito no tiene por qué ser del todo correcto: puede contener
+erratas al transcribir o un orden diferente al real. Al final las lecturas de los AGV son las que
+dictan la posición real de los tags, y por eso existe este proyecto». La lista del circuito es lo
+declarado; donde difiere de lo leído, manda lo leído y la diferencia es una corrección de la lista,
+no un fallo del circuito (R-GRA-015). La aplicación enseña el orden del circuito según las lecturas
+contra la lista, tag a tag; la lista corregida se entrega como fichero, y declarar un tag nuevo lo
+decide el propietario. Un número parecido no prueba una errata: los tags vienen en familias de
+números seguidos; lo que la prueba es el sitio.
+
+## Estado al 2026-09-26 (relevo a un chat nuevo)
+
+El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
+`project_state.json` y en `CHANGELOG.md`; lo que no esté escrito en el repositorio no existe para la
+conversación siguiente.
+
+- **Fase F3** (diagnóstico explicable), en curso. F4 espera `CONTINÚA FASE 4` del propietario
+  (ADR-0010). La última entrega es la posición de un tag según las lecturas (R-GRA-015,
+  `CHANGELOG.md` `[3.32.0]`), publicada en `main` y en la web.
+- **Cómo se ha trabajado**: una entrega por petición del propietario, con su documentación, su clase
+  plantada en la auditoría sintética (`tests/audit/`, 43 clases) y un solo commit en la rama de
+  trabajo; PR y fusión solo cuando él lo pide. Las decisiones de cada entrega están en las secciones
+  de arriba y en el `CHANGELOG`.
+- **Pendiente de planta**, sin identificadores:
+  1. Calibrar los umbrales provisionales (`draft`) con datos reales (OQ-129).
+  2. El propietario revisa la lista de un circuito corregida por las lecturas, que se le entregó
+     como fichero, y decide qué tags leídos que la lista no tiene se declaran.
+  3. En su lista de tags de noche hay un número que no está en la memoria y tiene un dígito de más:
+     probablemente una errata. No se cargó.
+  4. El resto de preguntas abiertas, en `OPEN_QUESTIONS.md`.
+- **Fuera del repositorio**: los scripts y las salidas de los análisis con datos de planta vivían en
+  `local/` (ignorado por git) y se le entregaron al propietario en un paquete. Para analizar datos
+  nuevos hay que volver a subir la exportación y, si hacen falta, las listas.
+
