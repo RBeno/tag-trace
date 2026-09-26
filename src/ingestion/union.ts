@@ -52,6 +52,24 @@ function inherited(entry: Reading): readonly Provenance[] {
   return "alsoFrom" in entry ? (entry as MergedReading).alsoFrom : [];
 }
 
+/**
+ * La misma fuente no es otra procedencia. Volver a cargar una exportación idéntica (INV-005) no
+ * añade nada a `alsoFrom`: sin este filtro cada recarga sumaba una procedencia entera —hash de 64
+ * caracteres incluido— a cada una de las lecturas, y el circuito guardado crecía en decenas de
+ * megabytes por recarga hasta pasar del tamaño máximo de un valor de IndexedDB en Chromium (unos
+ * 127 MiB). Lo destapó la prueba de navegador de la revisión en campo en la integración continua.
+ */
+function withoutRepeats(own: Provenance, list: readonly Provenance[]): readonly Provenance[] {
+  const seen = new Set<string>([own.sourceHash]);
+  const kept: Provenance[] = [];
+  for (const provenance of list) {
+    if (seen.has(provenance.sourceHash)) continue;
+    seen.add(provenance.sourceHash);
+    kept.push(provenance);
+  }
+  return kept;
+}
+
 function key(entry: Reading): string {
   return `${entry.time.utcMs}|${entry.agvId}|${entry.tagId}`;
 }
@@ -131,7 +149,7 @@ export function unionReadings(first: readonly Reading[], second: readonly Readin
       shared += 1;
       merged.push({
         ...entry,
-        alsoFrom: [...inherited(entry), twin.provenance, ...inherited(twin)],
+        alsoFrom: withoutRepeats(entry.provenance, [...inherited(entry), twin.provenance, ...inherited(twin)]),
       });
     }
   }

@@ -57,6 +57,15 @@ pruebas unitarias: todo sale de las vistas que ya llegan.
   `tactil.spec.ts` comprueba que el toque cerca de un tag —que el navegador ajusta al segmento, que
   ahora es un botón— abre su expediente, y el toque en el centro vuelve al texto de reposo.
 
+### Corregido
+
+- **Recargar la misma exportación hacía crecer el circuito guardado** (R-DAT-005, INV-005): cada
+  recarga añadía una procedencia a cada lectura, y con un cuarto de millón de lecturas el registro
+  pasó del tamaño máximo de un valor de IndexedDB en la integración continua («No se pudo importar
+  (INTERNAL)»). La misma fuente ya no es otra procedencia. El fallo no previsto del motor dice ahora
+  su nombre y dónde saltó. El límite del almacén queda en OQ-142.
+
+
 ## [3.48.0] - 2026-09-26
 
 Interfaz (2/3), aprobada por el propietario: la página deja de ser una lista de cuarenta y tres

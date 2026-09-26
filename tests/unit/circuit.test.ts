@@ -195,6 +195,21 @@ describe("unión encadenada · R-DAT-005", () => {
     expect(a?.provenance.sourceId).toBe("s1");
     expect(a?.alsoFrom.map((p) => p.sourceId)).toEqual(["s2", "s3"]);
   });
+
+  it("volver a unir la misma exportación no añade procedencias: el circuito guardado no crece con cada recarga", () => {
+    // Cada recarga de un fichero idéntico sumaba una procedencia a cada lectura; con un cuarto de
+    // millón de lecturas eso pasaba del tamaño máximo de un valor de IndexedDB tras dos recargas.
+    const corte = (source: string): Reading[] => [reading(1000, "0007", "A", source, 2), reading(2000, "0007", "B", source, 3)];
+    const una = unionReadings(corte("s1"), corte("s1"));
+    const dos = unionReadings(una.readings, corte("s1"));
+    const tres = unionReadings(dos.readings, corte("s2"));
+    expect(una.readings.every((entry) => entry.alsoFrom.length === 0)).toBe(true);
+    expect(dos.readings.every((entry) => entry.alsoFrom.length === 0)).toBe(true);
+    expect(tres.readings.map((entry) => entry.alsoFrom.map((p) => p.sourceId))).toEqual([["s2"], ["s2"]]);
+    // Y una fuente distinta ya contada no se cuenta dos veces.
+    const cuatro = unionReadings(tres.readings, corte("s2"));
+    expect(cuatro.readings.map((entry) => entry.alsoFrom.length)).toEqual([1, 1]);
+  });
 });
 
 describe("hash semántico · tipos que no se serializan", () => {
