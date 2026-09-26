@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.34.0
+version: 0.35.0
 status: baseline-candidate
 last_updated: 2026-09-26
 ---
@@ -19,19 +19,36 @@ La interfaz no debe obligar a revisar AGV por AGV para descubrir un patrón cole
 
 ## 2. Arquitectura de navegación
 
-| Área | Objetivo |
+**Pestañas por pregunta, no por cálculo (3.48.0).** Medido con el circuito sintético de auditoría,
+la página era una sola lista de cuarenta y tres secciones en el orden en que se calculan: 36.646 px
+de alto sin abrir nada, sin índice, y «Lo que hay que mirar» era la sección 22. Ahora una barra fija
+bajo la cabecera (`nav` con `role="tablist"`, botones `role="tab"` con `aria-selected`, flechas de
+teclado; en el móvil, fichas desplazables en horizontal de 44 px con dedo) reparte el análisis en
+seis pestañas. La activa va en el `hash` de la URL (`#tags`, `#agv`…) y se restaura al recargar; por
+defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
+
+| Pestaña | Qué contiene |
 |---|---|
-| Gestor de circuitos | Crear/abrir/importar/exportar proyectos aislados y ver su estado. |
-| Preparar análisis | Cargar fuentes, mapear columnas, revisar calidad, calendario y afinidad. |
-| Resumen | Prioridades, cambios, cobertura, salud y avisos principales. |
-| Circuito | Grafo/plano, capas teórica–observada–validada y evolución. |
-| Timeline y replay | Movimiento multi-AGV, estados e incertidumbre. |
-| Diagnóstico | Tags, AGV, tramos, FIFO, CO, críticos y explicaciones. |
-| Expediente de AGV o tag | Buscar por identificador y ver todo lo conocido sobre ese objeto: contraste con su cohorte, inactividad, instante de cambio y evidencia. |
-| Comparador | Periodo actual frente a consolidado, periodo o configuración. |
-| Consolidación | Revisión de cambios y creación de memoria vN+1. |
-| Incidencias | Expedientes, replay, casos similares y contramedidas. |
-| Configuración | Calendarios, zonas, criticidad, parámetros y vigencias. |
+| **Resumen** | La composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo») y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. |
+| **Tags** | Inventario de tags; «Lo que hay que mirar» (tags); rotura y degradación de cada tag; mapa de omisión; cambios de tag; tags leídos fuera de la lista; limpieza de la lista; contraste contra Vsystem; orden del circuito según las lecturas; comparación entre dos periodos. |
+| **AGV** | Flota del circuito, flota en el circuito y vida de cada AGV (con las paradas de la producción y los primeros de cola); lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; ritmo de cada AGV y quién retiene; y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
+| **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito con su lista ordenada. |
+| **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
+| **Datos** | Listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
+
+Lo que se ve en todas las pestañas: la cabecera, la barra de pestañas con el buscador, la barra fija
+de la revisión (§4.3), el selector de lecturas con el nombre del circuito, el progreso y los
+mensajes. Son la entrada y la respuesta de cada importación, y no dependen de la pregunta.
+
+**Las seis se construyen al llegar las vistas**, cada una en su pestaña oculta, y se rehacen enteras
+en cada importación. Lo que se pretendía con construirlas a demanda —que un `canvas` oculto no mida
+su ancho— ya lo resuelve cada gráfico por su cuenta: mide con `ResizeObserver` y se dibuja la primera
+vez que su pestaña se enseña. Y la bandeja del Resumen necesita todas las tarjetas, que nacen dentro
+de la sección que las explica: construirlas dos veces costaría el doble para enseñar lo mismo.
+
+Áreas previstas que todavía no existen en el producto y que irán a su pestaña cuando lleguen:
+gestor de circuitos y preparación del análisis (Datos), comparador y consolidación (Resumen, F4),
+incidencias con casos similares y contramedidas (Línea y calles), configuración (Datos).
 
 ## 3. Flujo de análisis
 
@@ -109,14 +126,17 @@ Un circuito real son ciento cincuenta tags por cincuenta vehículos: siete mil q
 Enseñarlas de golpe no es informar, es esconder el hallazgo dentro de una cuadrícula. La vista se
 ordena al revés de como se calcula:
 
-1. **Cuántos vehículos y cuántos tags** forman el circuito, en una línea. El número de tags sale del
-   ciclo dominante, no de contar identificadores distintos.
-2. **Lo que hay que mirar**: los tags con patrón destacable y los vehículos que concentran tags sin
-   leer, cada uno como **tarjeta de hallazgo** (§4) y no como fila de tabla. La razón es medible: en
-   360 px una tabla de cinco columnas parte los encabezados letra a letra — cabe y es ilegible.
-3. **El conjunto completo**, plegado: el anillo en orden, los tags fuera del anillo y la matriz
-   entera. Se construye **solo al abrirlo**; dejarlo montado de entrada para tenerlo escondido paga
-   el coste sin enseñar nada.
+1. **Cuántos vehículos y cuántos tags** forman el circuito, en una línea, en el Resumen. El número
+   de tags sale del ciclo dominante, no de contar identificadores distintos.
+2. **Lo que hay que mirar**: los tags con patrón destacable (pestaña Tags) y los vehículos que
+   concentran tags sin leer (pestaña AGV, «Lectura de cada AGV»), cada uno como **tarjeta de
+   hallazgo** (§4) y no como fila de tabla. La razón es medible: en 360 px una tabla de cinco
+   columnas parte los encabezados letra a letra — cabe y es ilegible. Desde 3.48.0 las tarjetas
+   revisables viven en la bandeja del Resumen (§4.5) y la sección conserva su contexto con la línea
+   «N hallazgos de esta sección: ver en Resumen»; las tarjetas gemelas se agrupan (§4.3).
+3. **El conjunto completo**, plegado: el anillo en orden (en Tiempos, junto al anillo), los tags
+   fuera del anillo y la matriz entera. Se construye **solo al abrirlo**; dejarlo montado de entrada
+   para tenerlo escondido paga el coste sin enseñar nada.
 
 Dos cosas que la vista dice siempre, porque el número solo no las lleva escritas:
 
@@ -130,28 +150,40 @@ porque el contenido útil ya está arriba, sin desplegar nada.
 ## 4.3 Revisión en campo
 
 Para ir a los puntos conflictivos con el móvil y dejar constancia de lo que se vio. Cada tarjeta de
-hallazgo lleva cuatro botones: **○ Pendiente · ✓ Confirmado · ✕ Descartado · » Pospuesto**, y una
-nota opcional. Los avisos de configuración no los llevan, porque no se comprueban en campo.
+hallazgo lleva **un solo control de revisión**: un botón que enseña el icono y el estado actual
+(«○ Pendiente ▾») y abre un menú (`role="menu"`, elementos `menuitemradio`) con los cuatro estados
+—**○ Pendiente · ✓ Confirmado · ✕ Descartado · » Pospuesto**— y el campo de nota. Los avisos de
+configuración no lo llevan, porque no se comprueban en campo.
 
-- **Se guarda sola** en el dispositivo en cada pulsación, y sigue ahí al recargar la página o al
+- **Se guarda sola** en el dispositivo al elegir un estado, y sigue ahí al recargar la página o al
   cargar otra extracción: la marca va con el tipo y el sujeto del hallazgo, no con su texto
-  (R-EVI-007).
-- **El estado se ve por tres canales**: borde de la tarjeta (acento si está confirmado, gris si está
-  descartado, discontinuo si está pospuesto), el botón pulsado con su texto, y el icono. Nunca solo
-  por color. Botones de 40 px, por encima de los 24 px de WCAG 2.2, porque se usa de pie. **En una
-  pantalla de 560 px o menos** los cuatro botones enseñan solo su icono, en una fila y con 44 px de
-  ancho cada uno, y dicen su nombre entero por `aria-label` y `title` (3.47.0): con el texto se
-  partían en dos filas a 390 px. Es provisional; la siguiente entrega los sustituye por un control
-  compacto.
-- **Una barra fija arriba** dice cuánto va revisado («Revisión: 12 de 40 revisados») con su barra de
-  progreso, y lleva el botón **Siguiente pendiente**. Es compacta a propósito: en el móvil, todo lo
-  demás fijo taparía media pantalla. Su altura medida se escribe en una variable CSS
-  (`--review-bar-height`) y todo lo que puede ser destino de un salto —encabezados, figuras,
-  tarjetas, desplegables— lleva ese `scroll-margin-top`, así que un `scrollIntoView` o el botón
-  «Siguiente pendiente» nunca dejan el título debajo de la barra (3.47.0).
-- **Debajo, sin quedarse fijo**: el recuento por estado, los filtros (todos, pendientes,
-  confirmados, descartados, pospuestos; solo esconden tarjetas, nunca gráficos) y **Exportar
-  revisión (CSV)**, con los pendientes incluidos, que son la lista de lo que falta.
+  (R-EVI-007). Elegir un estado deja el menú abierto para escribir la nota; se cierra con Escape,
+  tocando fuera o con el propio botón.
+- **El sujeto de un grupo es su conjunto.** Cuando varias tarjetas de tag comparten exactamente el
+  mismo conjunto de AGV que no los leen nunca, sale **una** tarjeta —«60180 y 60183 (posiciones
+  59–60 de 145): 5 AGV no los leen nunca»— con los AGV y sus cifras dentro (cuatro y «y N más», la
+  tabla al tocar), y las tarjetas de AGV «no lee nunca 2 tags que el resto sí lee» de esos mismos AGV
+  se pliegan en ella. Su clave de revisión es el tipo más el conjunto ordenado de tags
+  (`tag-lectura|60180|60183`), distinta de la de cada tag suelto. El mismo criterio se aplica a los
+  AGV que no leen nunca los mismos tags sin tarjeta de grupo (`agv-nunca|7100|7108|7116`) y a los
+  que dejaron y no adoptaron los mismos tags entre dos periodos (`deriva-agv|…`): una tarjeta
+  idéntica salvo el sujeto no es un hecho distinto (3.48.0).
+- **El estado se ve por tres canales**: el borde de la tarjeta (acento si está confirmado, gris si
+  está descartado, discontinuo si está pospuesto), el botón con su icono y su texto, y el elemento
+  marcado del menú. Nunca solo por color. El botón y cada estado del menú miden 40 px, y 44 con
+  dedo, por encima de los 24 px de WCAG 2.2, porque se usa de pie; en 390 px caben en una fila con
+  el enlace «Ver evidencia». Con teclado: flecha abajo abre el menú en el estado actual, las flechas
+  mueven, Enter elige y Escape cierra y devuelve el foco al botón.
+- **Una barra fija arriba**, justo debajo de la barra de pestañas y en todas ellas, dice cuánto va
+  revisado («Revisados 12 de 40») con su barra de progreso, y lleva el botón **Siguiente pendiente**,
+  que activa el Resumen y deja el foco en el control de la tarjeta. Es compacta a propósito: en el
+  móvil, todo lo demás fijo taparía media pantalla. Las alturas medidas de las dos barras se escriben
+  en variables CSS (`--tabs-height`, `--review-bar-height`) y todo lo que puede ser destino de un
+  salto —encabezados, figuras, tarjetas, desplegables— lleva ese `scroll-margin-top`, así que un
+  `scrollIntoView`, «Siguiente pendiente» o «Ver evidencia» nunca dejan el título debajo de ellas.
+- **En el Resumen, junto a la bandeja y sin quedarse fijo**: el recuento por estado, los filtros
+  (todos, pendientes, confirmados, descartados, pospuestos; solo esconden tarjetas, nunca gráficos) y
+  **Exportar revisión (CSV)**, con los pendientes incluidos, que son la lista de lo que falta.
 - **Si la cifra de un hallazgo cambió desde que se marcó**, la tarjeta lo dice con la cifra de
   entonces: una confirmación sobre datos distintos no es la misma confirmación.
 - **Una marca cuyo hallazgo ya no aparece** no se borra: se cuenta aparte y va en el CSV.
@@ -180,6 +212,35 @@ La pantalla habla como un producto terminado, no como el proyecto que lo constru
   que cambian la lectura («no es una tasa de salud», «fuera de la cobertura no hay datos, no
   silencio», «posible…») se conservan, en una frase, porque son lo que evita una conclusión falsa.
 - **Singular y plural reales**, nunca «tag(s)».
+
+## 4.5 Bandeja de hallazgos
+
+Todas las tarjetas de hallazgo con clave de revisión viven en **una sola lista en el Resumen**, no
+repartidas por las secciones donde se calculan (3.48.0). Es la unidad de revisión (R-EVI-007), y hay
+**una sola copia** de cada tarjeta: en su sección queda una línea compacta «N hallazgos de esta
+sección: ver en Resumen», que activa el Resumen y filtra por el tema de la sección. Cada tarjeta
+lleva encima su tema y su tipo («Tiempos · cuello de botella») y el enlace **Ver evidencia**, que
+activa la pestaña de su sección y desplaza hasta su encabezado. Los avisos de configuración
+(«Configuración que no se pudo usar», «Corte de vuelta declarado que no se pudo usar»…) no tienen
+clave y se quedan en su sección.
+
+La lista va **ordenada por rango y, dentro del rango, agrupada por tema** en el orden Tags, AGV,
+Tiempos, Línea y calles, y dentro del tema en el orden en que la vista los produce. Los filtros son
+fichas: por tema (todos, Tags, AGV, Tiempos, Línea y calles) y los de estado de revisión de §4.3;
+un rango que se queda sin tarjetas visibles se esconde entero.
+
+El catálogo vive en `src/presentation/labels.ts` (`FINDING_KINDS`), por el primer elemento de la
+clave de revisión. El tema es el de la pregunta que responde el hallazgo, no la sección donde se
+calcula («Ver evidencia» lleva a la sección; el tema es lo que se filtra):
+
+| Rango | Qué es | Tipos (tema) |
+|---|---|---|
+| **1** | Puede parar la planta o perder una función | `bloqueo`, `cuello-de-botella`, `punto-conflictivo`, `produccion-parada` (Tiempos); `tag-rotura` (Tags); `agv-rotura`, `deja-de-leer` (AGV); `calle-sin-servicio`, `linea`, `linea-paso` (Línea y calles) |
+| **2** | Degrada el circuito | `zona-oscura`, `parada-sin-explicacion`, `entrega-agrupada-sitio`, `cambio-de-horquilla`, `tramo-entre-ficheros`, `estructura-entre-ficheros` (Tiempos); `tag-lectura`, `tag-deja`, `tag-empieza`, `tag-degradacion`, `cambio-tag`, `estructura` (Tags); `agv-nunca`, `agv-desde`, `agv-poco`, `agv-degradacion`, `ritmo-agv`, `retiene-agv`, `entrega-agrupada-agv`, `flota-sin-lecturas`, `flota-sin-asignar` (AGV); `calle-lectura`, `calle-espera`, `calle-permanencia`, `sin-carga`, `fifo` (Línea y calles) |
+| **3** | Limpieza y contexto | `deriva`, `tag-fuera-del-circuito` (Tags); `deriva-agv` (AGV); `punto-critico` (Tiempos); `calle-uso`, `arranque-en-frio` (Línea y calles) |
+
+Un tipo que no esté en el catálogo va a contexto y se enseña con su identificador: antes que
+esconderlo.
 
 ## 5. Grafo y plano
 
@@ -560,8 +621,9 @@ panel táctil del portátil. Todo tiene que poder hacerse con cualquiera de ello
   no tapa el eje ni las últimas filas; solo mientras está pegada se pinta encima (3.47.0).
 - **Los gráficos de cobertura y de perfil horario**, que solo tenían el tooltip nativo, ganan la misma
   línea de lectura: en una pantalla táctil el tooltip no aparece nunca.
-- **Objetivos de toque de 44 px** con `(any-pointer: coarse)`: botones, selectores de gráfico,
-  campos, desplegables, selector de fichero y el control del replay; el cuerpo, a 16 px. Se usa
+- **Objetivos de toque de 44 px** con `(any-pointer: coarse)`: botones, pestañas, el control de
+  revisión y los estados de su menú, las fichas de la bandeja, selectores de gráfico, campos,
+  desplegables, selector de fichero y el control del replay; el cuerpo, a 16 px. Se usa
   `any-pointer` para que un portátil con pantalla táctil también los tenga, aunque su puntero
   principal sea el panel.
 - **El selector de fichero es un botón propio** («Elegir fichero…») con el nombre del fichero

@@ -7,6 +7,8 @@
  */
 
 import { expect, test, type Page } from "@playwright/test";
+
+import { openTab } from "./pestanas.js";
 import { fileURLToPath } from "node:url";
 
 const FIXTURES = fileURLToPath(new URL("../../fixtures/synthetic/acumulacion/", import.meta.url));
@@ -153,6 +155,7 @@ test.describe("ida y vuelta de `.agvproj` por la interfaz", () => {
     await page.locator("#source-file").setInputFiles(`${FIXTURES}ventana-1.csv`);
     await expect(page.getByText("Circuito «piloto»")).toBeVisible({ timeout: 15_000 });
 
+    await openTab(page, "Datos");
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: "Exportar circuito (.agvproj)" }).click(),

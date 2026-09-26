@@ -12,6 +12,8 @@
  */
 
 import { expect, test, type Page } from "@playwright/test";
+
+import { openTab } from "./pestanas.js";
 import { fileURLToPath } from "node:url";
 
 const LECTURAS = fileURLToPath(new URL("../../fixtures/synthetic/acumulacion/", import.meta.url));
@@ -77,6 +79,7 @@ test.describe("afinidad de circuito", () => {
     expect(await storedReadings(page, "sintetico")).toBe(before);
     // Y sus lecturas sí se muestran: FR-003 separa analizar de consolidar, y ver el fichero dudoso
     // es cómo se averigua si lo es.
+    await openTab(page, "Datos");
     await expect(page.locator("table.readings tbody tr").first()).toBeVisible();
   });
 
@@ -88,6 +91,7 @@ test.describe("afinidad de circuito", () => {
     await expect(page.getByText("Circuito «nuevo»")).toBeVisible({ timeout: 15_000 });
 
     expect(await storedReadings(page, "nuevo")).toBeGreaterThan(0);
+    await openTab(page, "Datos");
     await expect(page.getByText(/no porque se haya comprobado/)).toBeVisible();
   });
 });
@@ -96,6 +100,7 @@ test.describe("listas de tags e inventario", () => {
   test("la estructura se enseña antes de pedir el fichero", async ({ page }) => {
     await freshPage(page);
     // Es un fichero que se escribe a mano: si no se dice qué forma tiene, no hay forma de acertar.
+    await openTab(page, "Datos");
     await page.getByText("Qué forma tiene que tener el fichero").click();
     await expect(page.getByText("lista;tag;orden")).toBeVisible();
     await expect(page.getByText("la lista maestra que cada vehículo debería llevar")).toBeVisible();
@@ -117,6 +122,7 @@ test.describe("listas de tags e inventario", () => {
 
     // El inventario aparece en la importación siguiente, que es cuando hay con qué contrastar.
     await importInto(page, "sintetico", "ventana-2.csv");
+    await openTab(page, "Tags");
     await expect(page.getByText("Inventario de tags")).toBeVisible({ timeout: 15_000 });
 
     const inventario = page.locator("figure.chart", { hasText: "Inventario de tags" });
@@ -137,16 +143,16 @@ test.describe("vistas", () => {
     await importInto(page, "sintetico", "ventana-1.csv");
     await expect(page.getByText("Circuito «sintetico»")).toBeVisible({ timeout: 15_000 });
     await importInto(page, "sintetico", "ventana-lejana.csv");
+    // Cobertura, perfil y actividad viven en Datos; el inventario, en Tags.
+    await openTab(page, "Datos");
     await expect(page.getByText("Cobertura cargada")).toBeVisible({ timeout: 15_000 });
 
-    for (const title of [
-      "Cobertura cargada",
-      "Perfil horario",
-      "Actividad por vehículo",
-      "Inventario de tags",
-    ]) {
+    for (const title of ["Cobertura cargada", "Perfil horario", "Actividad por vehículo"]) {
       await expect(page.locator("figure.chart", { hasText: title })).toBeVisible();
     }
+    await openTab(page, "Tags");
+    await expect(page.locator("figure.chart", { hasText: "Inventario de tags" })).toBeVisible();
+    await openTab(page, "Datos");
 
     // El color no puede ser el único medio (UX §4): cada gráfico lleva su tabla.
     const tablas = page.locator("figure.chart details summary");
@@ -163,6 +169,7 @@ test.describe("vistas", () => {
   test("la banda de actividad no emite un rótulo por celda", async ({ page }) => {
     await freshPage(page);
     await importInto(page, "sintetico", "ventana-1.csv");
+    await openTab(page, "Datos");
     await expect(page.getByText("Cobertura cargada")).toBeVisible({ timeout: 15_000 });
 
     // Medido en un circuito real de 54 vehículos y 96 tramos: un `<title>` por celda eran 10.368

@@ -47,19 +47,23 @@ test.describe("revisión en campo", () => {
     await page.locator("#source-file").setInputFiles(readings);
 
     // Una calle sin servicio solo existe con las listas cargadas: es la señal de que la vista ya es
-    // la de la segunda importación.
+    // la de la segunda importación. Las tarjetas viven en la bandeja del Resumen (UX_SPEC §4.5).
     const lane = page.locator(".finding", { hasText: "Nadie entró en" }).first();
     await expect(lane).toBeVisible({ timeout: 180_000 });
-    // La barra fija dice cuánto va revisado; el panel de debajo, el recuento, los filtros y el CSV.
+    // La barra fija dice cuánto va revisado; el panel de la bandeja, el recuento, los filtros y el CSV.
     const bar = page.locator(".review-bar");
     const panel = page.locator(".review-panel");
     await expect(bar).toContainText(/Revisados 0 de \d+/);
 
-    await lane.getByRole("button", { name: /Confirmado/ }).click();
+    // Un solo control por tarjeta: se abre el menú y se elige el estado; la nota va en el menú.
+    await lane.getByRole("button", { name: /Revisión en campo/ }).click();
+    await lane.getByRole("menuitemradio", { name: /Confirmado/ }).click();
     await lane.getByRole("textbox").fill("Calle cerrada por obra");
     await lane.getByRole("textbox").press("Tab");
     const broken = page.locator(".finding", { hasText: /Tag \d+: dejó de leerse/ }).first();
-    await broken.getByRole("button", { name: /Pospuesto/ }).click();
+    await broken.getByRole("button", { name: /Revisión en campo/ }).click();
+    await broken.getByRole("menuitemradio", { name: /Pospuesto/ }).click();
+    await page.keyboard.press("Escape");
 
     await expect(lane).toHaveAttribute("data-review", "confirmado");
     await expect(broken).toHaveAttribute("data-review", "pospuesto");
@@ -79,7 +83,10 @@ test.describe("revisión en campo", () => {
     await page.locator("#source-file").setInputFiles(readings);
     const laneAgain = page.locator(".finding", { hasText: "Nadie entró en" }).first();
     await expect(laneAgain).toHaveAttribute("data-review", "confirmado", { timeout: 180_000 });
+    await expect(laneAgain.getByRole("button", { name: /Revisión en campo/ })).toContainText("Confirmado");
+    await laneAgain.getByRole("button", { name: /Revisión en campo/ }).click();
     await expect(laneAgain.getByRole("textbox")).toHaveValue("Calle cerrada por obra");
+    await page.keyboard.press("Escape");
     await expect(page.locator(".finding", { hasText: /Tag \d+: dejó de leerse/ }).first()).toHaveAttribute("data-review", "pospuesto");
     await expect(page.locator(".review-bar")).toContainText(/Revisados 2 de \d+/);
 

@@ -2,6 +2,66 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.48.0] - 2026-09-26
+
+Interfaz (2/3), aprobada por el propietario: la página deja de ser una lista de cuarenta y tres
+secciones en el orden en que se calculan (36.646 px sin abrir nada, «Lo que hay que mirar» en la
+posición 22, 65 tarjetas con cuatro botones cada una) y pasa a seis pestañas por pregunta con una
+sola bandeja de hallazgos. Sin cambios en el dominio, los Workers ni las pruebas unitarias.
+
+### Cambiado
+
+- **Pestañas por pregunta, no por cálculo** (`main.ts`, `styles.css`; `UX_SPEC.md` §2): una barra
+  fija bajo la cabecera (`nav` con `role="tablist"`, flechas de teclado, fichas desplazables de 44 px
+  en el móvil) con Resumen, Tags, AGV, Tiempos, Línea y calles y Datos. Cada pestaña es un
+  `section[role="tabpanel"]`; las funciones `render*` escriben en el contenedor de su pestaña (`out`).
+  La activa va en el `hash` (`#tags`, `#agv`…) y se restaura al recargar; por defecto, Resumen. El
+  selector de lecturas, el progreso y los mensajes se ven en todas; listas, copia, fuente («Lo
+  acumulado en «X»»), cobertura, perfil horario, actividad, replay y lecturas viven en Datos. El
+  título «Circuito «X»» abre el Resumen. `renderShapes` se parte en `renderRing` (Tiempos) y
+  `renderReadMatrix` (Tags); la lectura de cada AGV y su rotura pasan a `renderVehicleReadingSection`
+  (AGV); el ritmo y quién retiene salen de «Estado normal del circuito» a `renderPace` (AGV) —las
+  lecturas que llegan juntas se quedan en Tiempos, por AGV y por sitio, porque nacen de la misma
+  medida—; «Orden del circuito según las lecturas» gana su encabezado. Las seis pestañas se
+  construyen al llegar las vistas: los gráficos miden con `ResizeObserver` y se dibujan la primera
+  vez que se enseñan, y la bandeja necesita todas las tarjetas.
+- **El buscador del expediente vive fijo en la barra de pestañas**; buscar activa la pestaña AGV y
+  enseña el expediente al final de ella.
+- **Un solo control de revisión por tarjeta** (`review-ui.ts`; `UX_SPEC.md` §4.3): un botón con el
+  icono y el estado («○ Pendiente ▾») que abre un menú (`role="menu"`, `menuitemradio`, flechas,
+  Home/End, Enter, Escape) con los cuatro estados y la nota. Elegir guarda igual que antes
+  (R-EVI-007) y deja el menú abierto para la nota. 40 px, 44 con dedo; cabe en una fila a 390 px.
+  «Siguiente pendiente» activa el Resumen y deja el foco en el control. Desaparece la regla de solo
+  icono a 560 px de 3.47.0. **Cambian dos pruebas de navegador** (`revision.spec.ts`,
+  `tactil.spec.ts`) que pulsaban los cuatro botones.
+- **Tarjetas gemelas agrupadas** (`groupHighlights`, `groupedTagCard`, `renderVehicleReading`,
+  `renderDrift`; `UX_SPEC.md` §4.3): los tags de «Lo que hay que mirar» que comparten exactamente el
+  mismo conjunto de AGV que no los leen nunca son una tarjeta —«60180 y 60183 (posiciones 59–60 de
+  145): 5 AGV no los leen nunca»— con los AGV y sus cifras dentro (cuatro y «y N más», la tabla al
+  tocar), y las tarjetas «AGV X · no lee nunca 2 tags que el resto sí lee» de esos mismos AGV se
+  pliegan en ella. Su clave es el tipo más el conjunto ordenado de tags. Lo mismo para los AGV que no
+  leen nunca los mismos tags sin tarjeta de grupo, y para los AGV con los mismos tags dejados y no
+  adoptados entre dos periodos. **Cambia una prueba de navegador** (`vistas-diagnostico.spec.ts`)
+  que buscaba la tarjeta suelta del AGV ciego: ahora comprueba su cifra dentro del grupo.
+- **Las pruebas de navegador activan la pestaña antes de buscar un texto** (`tests/e2e/pestanas.ts`,
+  `openTab`); lo que afirman sobre los datos no cambia.
+
+### Añadido
+
+- **Bandeja única de hallazgos** (`buildTray`, `applyTrayFilter`; `UX_SPEC.md` §4.5): todas las
+  tarjetas con clave de revisión viven en el Resumen, ordenadas por rango y agrupadas por tema, con
+  fichas de filtro por tema y los filtros de estado de siempre. Cada tarjeta lleva su tema y tipo
+  («Tiempos · cuello de botella») y el enlace «Ver evidencia», que activa la pestaña de su sección y
+  desplaza hasta su encabezado; en la sección queda «N hallazgos de esta sección: ver en Resumen».
+  Los avisos de configuración se quedan en su sección.
+- **Catálogo `FINDING_KINDS`** en `labels.ts`: por cada tipo de clave de revisión, su tema, su
+  etiqueta corta y su rango (1 puede parar la planta o perder una función; 2 degrada; 3 limpieza y
+  contexto), documentado en `UX_SPEC.md` §4.5.
+- **Prueba de navegador `navegacion.spec.ts`** (TC-274): las seis pestañas, el `hash`, recargar
+  conserva la pestaña, la bandeja tiene tantas tarjetas como «Revisados 0 de N», el filtro por tema,
+  la línea de la sección, «Ver evidencia» lleva a su sección y el control de revisión cambia el
+  estado desde el menú con ratón y con teclado.
+
 ## [3.47.0] - 2026-09-26
 
 Revisión de 110 capturas de la interfaz con el circuito sintético de auditoría, a 1.440 px en claro

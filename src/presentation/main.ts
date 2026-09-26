@@ -63,8 +63,14 @@ import { ProjectError, readProject, writeProject } from "../persistence/agvproj.
 import { isAvailable, loadCircuit, loadReviews } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
 import {
+  RANK_LABEL,
+  THEMES,
+  THEME_LABEL,
   criticalFunctionLabel,
+  findingKindOf,
   orderChangeLabel,
+  type FindingRank,
+  type Theme,
   orderReadingLabel,
   patternLabel,
   truthLabel,
@@ -306,12 +312,75 @@ const fleetNote = element("p", "muted", "");
   listsPanel.append(fleetLabel, filePicker(fleetInput), fleetStructure, fleetNote);
 }
 
-const viewsPanel = element("section", "panel");
-viewsPanel.hidden = true;
+/**
+ * Las pestañas por pregunta (UX_SPEC §2): Resumen, Tags, AGV, Tiempos, Línea y calles, Datos. Una
+ * página de cuarenta y tres secciones en el orden en que se calculan medía 36.646 px sin abrir nada
+ * y «Lo que hay que mirar» era la sección 22; ahora cada pregunta tiene su pestaña y la activa va en
+ * el `hash` de la URL, así que recargar la conserva.
+ */
+const TABS = [
+  ["resumen", "Resumen"],
+  ["tags", "Tags"],
+  ["agv", "AGV"],
+  ["tiempos", "Tiempos"],
+  ["linea", "Línea y calles"],
+  ["datos", "Datos"],
+] as const;
+type TabId = (typeof TABS)[number][0];
+const TAB_IDS: readonly TabId[] = TABS.map(([id]) => id);
+
+const tabsBar = element("nav", "tabs");
+tabsBar.setAttribute("aria-label", "Secciones del análisis");
+const tabList = element("div", "tablist");
+tabList.setAttribute("role", "tablist");
+const tabButtons = new Map<TabId, HTMLButtonElement>();
+const tabPanels = new Map<TabId, HTMLElement>();
+/** Donde escribe cada pestaña lo que sale de las vistas. Se vacían y se rehacen en cada importación. */
+const viewsOf = new Map<TabId, HTMLElement>();
+for (const [id, label] of TABS) {
+  const button = element("button", undefined, label);
+  button.type = "button";
+  button.id = `tab-${id}`;
+  button.setAttribute("role", "tab");
+  button.setAttribute("aria-selected", "false");
+  button.setAttribute("aria-controls", `panel-${id}`);
+  button.tabIndex = -1;
+  button.addEventListener("click", () => activateTab(id));
+  tabButtons.set(id, button);
+  tabList.append(button);
+  const panel = element("section", "tabpanel");
+  panel.id = `panel-${id}`;
+  panel.setAttribute("role", "tabpanel");
+  panel.setAttribute("aria-labelledby", `tab-${id}`);
+  panel.hidden = true;
+  tabPanels.set(id, panel);
+  const views = element("div", "panel views");
+  views.hidden = true;
+  viewsOf.set(id, views);
+}
+// Flechas entre pestañas, y activación al mover el foco (es lo que espera un `tablist`).
+tabList.addEventListener("keydown", (event) => {
+  const index = TAB_IDS.indexOf(activeTab);
+  const target =
+    event.key === "ArrowRight"
+      ? TAB_IDS[(index + 1) % TAB_IDS.length]
+      : event.key === "ArrowLeft"
+        ? TAB_IDS[(index - 1 + TAB_IDS.length) % TAB_IDS.length]
+        : event.key === "Home"
+          ? TAB_IDS[0]
+          : event.key === "End"
+            ? TAB_IDS[TAB_IDS.length - 1]
+            : undefined;
+  if (target === undefined) return;
+  event.preventDefault();
+  activateTab(target);
+  tabButtons.get(target)?.focus();
+});
 
 /**
  * Expediente de AGV o tag: la vía de trabajo declarada como principal — «qué le pasa al 3524» — y
- * por eso se entra escribiendo un identificador en vez de navegar (UX_SPEC §4.1).
+ * por eso se entra escribiendo un identificador en vez de navegar (UX_SPEC §4.1). El buscador vive
+ * fijo en la barra de pestañas; el resultado se enseña en la pestaña AGV, que se activa al buscar.
  */
 const dossierPanel = element("section", "panel");
 dossierPanel.hidden = true;
@@ -320,10 +389,47 @@ dossierInput.type = "search";
 dossierInput.id = "dossier-search";
 dossierInput.placeholder = "número de AGV o de tag";
 dossierInput.inputMode = "numeric";
-const dossierLabel = element("label", undefined, "Buscar");
+dossierInput.setAttribute("aria-label", "Expediente de un AGV o tag");
+const dossierLabel = element("label", undefined, "Expediente");
 dossierLabel.htmlFor = "dossier-search";
 const dossierResult = element("div");
-dossierInput.addEventListener("input", () => renderDossier());
+dossierInput.addEventListener("input", () => {
+  renderDossier();
+  if (dossierInput.value.trim() !== "" && state.views !== null) activateTab("agv");
+});
+const dossierSearch = element("div", "dossier-search");
+dossierSearch.append(dossierLabel, dossierInput);
+tabsBar.append(tabList, dossierSearch);
+
+/** La barra fija de la revisión en campo (UX_SPEC §4.3) se queda bajo las pestañas en todas ellas. */
+const reviewHost = element("div", "review-host");
+reviewHost.hidden = true;
+
+let activeTab: TabId = "resumen";
+
+function isTabId(value: string): value is TabId {
+  return (TAB_IDS as readonly string[]).includes(value);
+}
+
+function activateTab(id: TabId): void {
+  activeTab = id;
+  for (const [tabId, button] of tabButtons) {
+    const selected = tabId === id;
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    const panel = tabPanels.get(tabId);
+    if (panel !== undefined) panel.hidden = !selected;
+  }
+  // En el `hash` sin mover la página: `location.hash` desplazaría hasta un elemento con ese id.
+  if (location.hash !== `#${id}`) history.replaceState(null, "", `#${id}`);
+  // En el móvil las pestañas se desplazan en horizontal: la activa se trae a la vista.
+  tabButtons.get(id)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+window.addEventListener("hashchange", () => {
+  const id = location.hash.slice(1);
+  if (isTabId(id) && id !== activeTab) activateTab(id);
+});
 
 /**
  * Replay básico (ROADMAP F2). Un control temporal y una tabla, no un mapa: el circuito es
@@ -359,26 +465,42 @@ const filterNote = element("p", "muted", "");
 agvFilter.addEventListener("input", () => applyFilter());
 tagFilter.addEventListener("input", () => applyFilter());
 
+/** La bandeja de hallazgos (UX_SPEC §4.5): todas las tarjetas revisables, en el Resumen. */
+const trayPanel = element("section", "panel tray-panel");
+trayPanel.hidden = true;
+const tray = element("div", "tray");
+
+{
+  const get = (id: TabId): HTMLElement => tabPanels.get(id) as HTMLElement;
+  const views = (id: TabId): HTMLElement => viewsOf.get(id) as HTMLElement;
+  // Resumen: la composición del circuito y la bandeja. Tags, Tiempos y Línea y calles: solo vistas.
+  get("resumen").append(views("resumen"), trayPanel);
+  get("tags").append(views("tags"));
+  // AGV: las vistas de la flota y, al final, el expediente que abre el buscador de la barra.
+  get("agv").append(views("agv"), dossierPanel);
+  get("tiempos").append(views("tiempos"));
+  get("linea").append(views("linea"));
+  // Datos: lo que se carga y lo que entró, tal cual: listas, copia, fuente, cobertura y perfil,
+  // replay y lecturas.
+  get("datos").append(listsPanel, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel);
+  const empty = element("p", "muted tab-empty", "Todavía no hay análisis: elige un fichero de lecturas y escribe el circuito.");
+  get("resumen").prepend(empty);
+}
+
 app.append(
   header,
+  tabsBar,
+  reviewHost,
+  // El selector de lecturas, el progreso y los mensajes se ven en todas las pestañas: son la
+  // entrada y la respuesta de cada importación.
   picker,
-  listsPanel,
-  projectPanel,
   progressPanel,
   messagePanel,
-  summaryPanel,
-  // El expediente va **antes** que las vistas, no después. Es la vía de trabajo declarada más
-  // frecuente —«qué le pasa al 3524»— y medido en un circuito real quedaba a 3.569 px del principio
-  // en pantalla de móvil: cuatro pantallas y media de desplazamiento por delante de lo que más se
-  // usa, detrás de los agregados que se consultan de vez en cuando (`UX_SPEC.md` §4.1).
-  dossierPanel,
-  viewsPanel,
-  replayPanel,
-  tablePanel,
+  ...TAB_IDS.map((id) => tabPanels.get(id) as HTMLElement),
 );
 
 {
-  dossierPanel.append(element("h2", undefined, "Expediente de un AGV o tag"), dossierLabel, dossierInput, dossierResult);
+  dossierPanel.append(element("h2", undefined, "Expediente de un AGV o tag"), dossierResult);
   replayPanel.append(
     element("h2", undefined, "Replay"),
     replayLabel,
@@ -391,6 +513,14 @@ app.append(
     ),
     replayTable,
   );
+  // La altura de la barra de pestañas, para que la barra de revisión se pegue debajo y ningún salto
+  // deje un título detrás de las dos.
+  const measure = (): void => {
+    document.documentElement.style.setProperty("--tabs-height", `${Math.ceil(tabsBar.getBoundingClientRect().height)}px`);
+  };
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(measure).observe(tabsBar);
+  const initial = location.hash.slice(1);
+  activateTab(isTabId(initial) ? initial : "resumen");
 }
 
 
@@ -657,6 +787,7 @@ function handleMessage(message: FromWorker): void {
       if (message.warnings.length > 0) {
         showMessage("warn", "Advertencias", message.warnings);
       }
+      resetViews();
       renderSummary(message.summary);
       state.circuitId = message.accumulation?.accumulated === true ? message.accumulation.circuitId : null;
       if (message.accumulation !== undefined) {
@@ -780,6 +911,9 @@ function startImport(file: File, fieldOrder?: FieldOrder): void {
   clearMessages();
   summaryPanel.hidden = true;
   tablePanel.hidden = true;
+  // El título «Circuito «X»» del Resumen es el de la importación anterior hasta que llegue la nueva:
+  // se esconde, como la fuente, para que nadie lo lea como si ya fuera el resultado.
+  (viewsOf.get("resumen") as HTMLElement).hidden = true;
 
   const jobId = crypto.randomUUID();
   const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
@@ -967,7 +1101,11 @@ function renderAccumulation(report: {
   readonly shared: number;
   readonly disagreements: number;
 }): void {
-  summaryPanel.append(element("h2", undefined, `Circuito «${report.circuitId}»`));
+  // El nombre del circuito abre el Resumen, que es lo primero que se ve; en Datos, lo acumulado.
+  const resumen = viewsOf.get("resumen") as HTMLElement;
+  resumen.append(element("h2", undefined, `Circuito «${report.circuitId}»`));
+  resumen.hidden = false;
+  summaryPanel.append(element("h2", undefined, `Lo acumulado en «${report.circuitId}»`));
   const rows: readonly (readonly [string, string])[] = [
     ["Ficheros cargados", String(report.sources)],
     ["Lecturas del circuito", report.totalReadings.toLocaleString("es-ES")],
@@ -1037,49 +1175,50 @@ function renderAffinity(report: AccumulationReport): void {
   }
 }
 
-/** Las cuatro vistas, en el orden en que responden preguntas: qué hay, cuándo, quién, y qué falta. */
+/** Donde escribe la función `render*` en curso: el contenedor de vistas de una pestaña. */
+let out: HTMLElement = viewsOf.get("resumen") as HTMLElement;
+
+/** Vacía las pestañas, la bandeja y la barra de revisión: cada importación las rehace enteras. */
+function resetViews(): void {
+  for (const panel of viewsOf.values()) {
+    panel.replaceChildren();
+    panel.hidden = true;
+  }
+  tabPanels.get("resumen")?.querySelector(".tab-empty")?.remove();
+  tray.replaceChildren();
+  trayPanel.replaceChildren();
+  trayPanel.hidden = true;
+  reviewHost.replaceChildren();
+  reviewHost.hidden = true;
+  reviewSession = null;
+}
+
+/**
+ * Las vistas, repartidas por pregunta en las pestañas (UX_SPEC §2). Se construyen todas al llegar,
+ * cada una en su pestaña oculta: la bandeja del Resumen necesita todas las tarjetas, y las tarjetas
+ * nacen dentro de la sección que las explica. Los gráficos no pagan por estar ocultos: miden su
+ * ancho con `ResizeObserver` y se dibujan la primera vez que su pestaña se enseña.
+ */
 function renderViews(views: CircuitViews): void {
   currentTagInfo = views.tagInfo ?? {};
   currentBatteries = views.incidents?.batteries ?? {};
-  viewsPanel.replaceChildren();
-  viewsPanel.hidden = false;
-  viewsPanel.append(element("h2", undefined, "Análisis"));
   // La revisión en campo solo existe sobre un circuito: sin él, una marca no tendría dónde guardarse.
   reviewSession =
     state.circuitId === null
       ? null
-      : createReviewSession(state.circuitId, viewsPanel, formatInstant, (reason) =>
-          showMessage("error", "Revisión sin guardar", [reason]),
+      : createReviewSession(
+          state.circuitId,
+          tray,
+          formatInstant,
+          (reason) => showMessage("error", "Revisión sin guardar", [reason]),
+          () => activateTab("resumen"),
         );
-  if (reviewSession !== null) viewsPanel.append(reviewSession.bar, reviewSession.panel);
+  reviewHost.hidden = reviewSession === null;
+  if (reviewSession !== null) reviewHost.append(reviewSession.bar);
 
-  if (state.coverage.length > 0) viewsPanel.append(coverageChart(state.coverage, formatInstant));
-  viewsPanel.append(hourlyChart({ counts: views.hourly.counts, days: views.hourly.days }));
-  viewsPanel.append(
-    activityChart(
-      {
-        rows: views.activity.rows,
-        binStarts: views.activity.binStarts,
-        uncoveredBins: views.activity.uncoveredBins,
-        maxPerBin: views.activity.maxPerBin,
-      },
-      formatInstant,
-    ),
-  );
-  renderFleet(views);
-  viewsPanel.append(
-    inventoryChart(
-      (views.inventory?.counts ?? []).map((entry) => ({
-        label: entry.tagClass,
-        count: entry.count,
-        truth: entry.truth,
-        action: entry.action,
-      })),
-    ),
-  );
-  renderTagChanges(views);
-  renderDrift(views);
-
+  // --- Resumen: de qué está hecho el circuito (el título lo puso `renderAccumulation`) -----------
+  out = viewsOf.get("resumen") as HTMLElement;
+  if (out.childElementCount === 0) out.append(element("h2", undefined, "Resumen"));
   // Cohortes (R-DAT-012): un solo grupo es lo esperado; más de uno avisa de que el fichero mezcla
   // circuitos, que es justo el error que la comparación por cohorte existe para impedir.
   //
@@ -1099,19 +1238,46 @@ function renderViews(views: CircuitViews): void {
       ? `1 circuito de ${describe(views.cohorts[0])}`
       : `${views.cohorts.length} circuitos detectados en el mismo fichero: ` +
         views.cohorts.map(describe).join("; ");
-  viewsPanel.append(element("h3", undefined, "Composición del circuito"));
-  viewsPanel.append(element("p", "muted", cohortLine));
-  renderShapes(views);
-  renderCircuitState(views);
-  renderAnchorSections(views);
-  renderFranjas(viewsPanel, views, { finding, formatInstant, formatTick, duration, circuitId: state.circuitId });
-  renderCriticalPoints(views);
-  renderCharging(views);
-  renderFifo(views);
+  out.append(element("h3", undefined, "Composición del circuito"));
+  out.append(element("p", "muted", cohortLine));
 
+  // --- Datos: lo cargado, tal cual --------------------------------------------------------------
+  out = viewsOf.get("datos") as HTMLElement;
+  out.append(element("h2", undefined, "Lo cargado"));
+  if (state.coverage.length > 0) out.append(coverageChart(state.coverage, formatInstant));
+  out.append(hourlyChart({ counts: views.hourly.counts, days: views.hourly.days }));
+  out.append(
+    activityChart(
+      {
+        rows: views.activity.rows,
+        binStarts: views.activity.binStarts,
+        uncoveredBins: views.activity.uncoveredBins,
+        maxPerBin: views.activity.maxPerBin,
+      },
+      formatInstant,
+    ),
+  );
+
+  // --- Tags: inventario, lectura, cambios, listas ----------------------------------------------
+  out = viewsOf.get("tags") as HTMLElement;
+  out.append(element("h2", undefined, "Tags"));
+  out.append(
+    inventoryChart(
+      (views.inventory?.counts ?? []).map((entry) => ({
+        label: entry.tagClass,
+        count: entry.count,
+        truth: entry.truth,
+        action: entry.action,
+      })),
+    ),
+  );
+  renderReadMatrix(views);
+  renderTagChanges(views);
+  renderUndeclaredTags(views);
+  renderListCleanup(views);
   if (views.vsystemContrast !== undefined) {
-    viewsPanel.append(element("h3", undefined, "Contraste contra Vsystem"));
-    viewsPanel.append(
+    out.append(element("h3", undefined, "Contraste contra Vsystem"));
+    out.append(
       element(
         "p",
         "muted",
@@ -1121,7 +1287,7 @@ function renderViews(views: CircuitViews): void {
           "sustitución o número mal escrito» se comprueba en planta.",
       ),
     );
-    viewsPanel.append(
+    out.append(
       plainTable(
         ["Declarado", "Observado", "Veredicto", "Estado", "Evidencia"],
         views.vsystemContrast
@@ -1137,10 +1303,35 @@ function renderViews(views: CircuitViews): void {
     );
   }
   renderCircuitOrder(views);
-  renderListCleanup(views);
+  renderDrift(views);
+
+  // --- AGV: la flota, quién lee qué, el ritmo. Después de Tags: las tarjetas de AGV que no leen
+  // los mismos tags que un grupo de «Lo que hay que mirar» se pliegan en él. ----------------------
+  out = viewsOf.get("agv") as HTMLElement;
+  out.append(element("h2", undefined, "AGV"));
+  renderFleet(views);
+  renderVehicleReadingSection(views);
+  renderPace(views);
+
+  // --- Tiempos: el estado normal, las secciones, los ficheros, los críticos y el anillo ----------
+  out = viewsOf.get("tiempos") as HTMLElement;
+  out.append(element("h2", undefined, "Tiempos"));
+  renderCircuitState(views);
+  renderAnchorSections(views);
+  renderFranjas(out, views, { finding, formatInstant, formatTick, duration, circuitId: state.circuitId });
+  renderCriticalPoints(views);
+  renderRing(views);
+
+  // --- Línea y calles ---------------------------------------------------------------------------
+  out = viewsOf.get("linea") as HTMLElement;
+  out.append(element("h2", undefined, "Línea y calles"));
   renderLineFeed(views);
   renderAbandoned(views);
-  renderUndeclaredTags(views);
+  renderCharging(views);
+  renderFifo(views);
+
+  for (const panel of viewsOf.values()) panel.hidden = panel.childElementCount === 0;
+  buildTray();
   reviewSession?.refresh();
 }
 
@@ -1153,7 +1344,8 @@ function renderCircuitOrder(views: CircuitViews): void {
   if (order === undefined) return;
   const s = order.summary;
   const count = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
-  viewsPanel.append(
+  out.append(element("h3", undefined, "Orden del circuito según las lecturas"));
+  out.append(
     element(
       "p",
       undefined,
@@ -1164,7 +1356,7 @@ function renderCircuitOrder(views: CircuitViews): void {
         `${count(s["fuera-del-recorrido"], "leído fuera del recorrido principal", "leídos fuera del recorrido principal")}.`,
     ),
   );
-  viewsPanel.append(
+  out.append(
     lazyDetails(`Ver el orden del circuito según las lecturas (${order.rows.length} tags)`, () =>
       plainTable(
         ["Posición", "Tag", "Lectura", "En la lista", "Diferencia", "Según las lecturas", "Según la lista", "Declarado en planta"],
@@ -1191,8 +1383,8 @@ function renderCircuitOrder(views: CircuitViews): void {
 function renderAbandoned(views: CircuitViews): void {
   const records = views.incidents?.records ?? [];
   if (records.length > 0) {
-    viewsPanel.append(element("h3", undefined, "Incidencias y sus mediciones"));
-    viewsPanel.append(
+    out.append(element("h3", undefined, "Incidencias y sus mediciones"));
+    out.append(
       element(
         "p",
         "muted",
@@ -1210,12 +1402,12 @@ function renderAbandoned(views: CircuitViews): void {
       link.click();
       URL.revokeObjectURL(url);
     });
-    viewsPanel.append(download);
+    out.append(download);
   }
   const abandoned = views.incidents?.abandoned ?? [];
   if (abandoned.length === 0) return;
-  viewsPanel.append(element("h3", undefined, "AGV que dejan de leer"));
-  viewsPanel.append(
+  out.append(element("h3", undefined, "AGV que dejan de leer"));
+  out.append(
     element(
       "p",
       "muted",
@@ -1245,7 +1437,7 @@ function renderAbandoned(views: CircuitViews): void {
     card.append(element("p", "finding-figure", "Mediciones"), list);
     cards.append(card);
   }
-  viewsPanel.append(cards);
+  out.append(cards);
 }
 
 /**
@@ -1255,16 +1447,16 @@ function renderAbandoned(views: CircuitViews): void {
 function renderLineFeed(views: CircuitViews): void {
   const feed = views.lineFeed;
   if (feed === undefined) return;
-  viewsPanel.append(element("h3", undefined, "Alimentación de la línea"));
+  out.append(element("h3", undefined, "Alimentación de la línea"));
   if (!feed.evaluated || feed.cadence === null) {
-    viewsPanel.append(element("p", "muted", feed.reason ?? "Sin medir."));
+    out.append(element("p", "muted", feed.reason ?? "Sin medir."));
     return;
   }
   const c = feed.cadence;
   const seconds = (ms: number) => duration(ms);
   const faltaron = feed.stops.filter((stop) => stop.kind === "sin-agv");
   const sinMedir = feed.stops.filter((stop) => stop.kind === "sin-medir").length;
-  viewsPanel.append(
+  out.append(
     element(
       "p",
       undefined,
@@ -1279,7 +1471,7 @@ function renderLineFeed(views: CircuitViews): void {
   const minutes = (ms: number) => `${Math.round(ms / 60_000).toLocaleString("es-ES")} min`;
   for (const rhythm of feed.rhythm) {
     const share = rhythm.observedMs === 0 ? 0 : Math.round((rhythm.lostMs / rhythm.observedMs) * 100);
-    viewsPanel.append(
+    out.append(
       element(
         "p",
         undefined,
@@ -1294,7 +1486,7 @@ function renderLineFeed(views: CircuitViews): void {
     );
   }
   const zone = feed.zone;
-  viewsPanel.append(
+  out.append(
     element(
       "p",
       zone === null ? "muted" : undefined,
@@ -1319,11 +1511,11 @@ function renderLineFeed(views: CircuitViews): void {
       ),
     );
   }
-  viewsPanel.append(cards);
+  out.append(cards);
   // Cada paso por la línea (R-FLO-011): quién no lee sus tags, quién no sigue y quién no para.
   const passages = feed.passages;
   if (passages !== null) {
-    viewsPanel.append(
+    out.append(
       element(
         "p",
         undefined,
@@ -1337,7 +1529,7 @@ function renderLineFeed(views: CircuitViews): void {
       ),
     );
     if (passages.readers.length > 0) {
-      viewsPanel.append(
+      out.append(
         element(
           "p",
           undefined,
@@ -1360,7 +1552,7 @@ function renderLineFeed(views: CircuitViews): void {
         ),
       );
     }
-    viewsPanel.append(passCards);
+    out.append(passCards);
   }
   const download = element("button", undefined, "Descargar paradas de la línea (CSV)");
   download.setAttribute("type", "button");
@@ -1372,7 +1564,7 @@ function renderLineFeed(views: CircuitViews): void {
     link.click();
     URL.revokeObjectURL(url);
   });
-  viewsPanel.append(download);
+  out.append(download);
 }
 
 /**
@@ -1384,8 +1576,8 @@ function renderListCleanup(views: CircuitViews): void {
   if (cleanup === undefined) return;
   const critical = cleanup.notPhysical.filter((tag) => tag.funcion !== null).length;
   const byStatus = (status: string) => cleanup.reinforcements.filter((group) => group.status === status).length;
-  viewsPanel.append(element("h3", undefined, "Limpieza de la lista del circuito"));
-  viewsPanel.append(
+  out.append(element("h3", undefined, "Limpieza de la lista del circuito"));
+  out.append(
     element(
       "p",
       undefined,
@@ -1406,9 +1598,9 @@ function renderListCleanup(views: CircuitViews): void {
     link.click();
     URL.revokeObjectURL(url);
   });
-  viewsPanel.append(download);
+  out.append(download);
   const fn = (funcion: string | null) => (funcion === null ? "—" : criticalFunctionLabel(funcion));
-  viewsPanel.append(
+  out.append(
     lazyDetails(`Ver los ${cleanup.notPhysical.length} declarados que no están en el físico`, () =>
       plainTable(
         ["Tag", "Función", "En la lista", "Según la lista", "Acción"],
@@ -1443,8 +1635,8 @@ function renderUndeclaredTags(views: CircuitViews): void {
     "noche-probable": "posiblemente de noche",
     "noche-declarado": "tag de noche declarado",
   } as const;
-  viewsPanel.append(element("h3", undefined, "Tags leídos fuera de la lista del circuito"));
-  viewsPanel.append(
+  out.append(element("h3", undefined, "Tags leídos fuera de la lista del circuito"));
+  out.append(
     element(
       "p",
       "muted",
@@ -1467,9 +1659,9 @@ function renderUndeclaredTags(views: CircuitViews): void {
       ),
     );
   }
-  viewsPanel.append(cards);
+  out.append(cards);
   if (tags.length > HIGHLIGHTS) {
-    viewsPanel.append(
+    out.append(
       lazyDetails(`Ver los ${tags.length} tags`, () =>
         plainTable(
           ["Tag", "Veredicto", "Día", "Noche", "Entre", "Y", "Pasadas de día (leído)", "Pasadas de noche (leído)"],
@@ -1499,9 +1691,9 @@ let reviewSession: ReviewSession | null = null;
 function renderFleet(views: CircuitViews): void {
   const fleet = views.fleet;
   if (fleet.vehicles.length === 0) return;
-  viewsPanel.append(element("h3", undefined, "Flota del circuito"));
+  out.append(element("h3", undefined, "Flota del circuito"));
   const assigned = fleet.vehicles.filter((vehicle) => vehicle.assignedEver);
-  viewsPanel.append(
+  out.append(
     element(
       "p",
       "muted",
@@ -1514,13 +1706,13 @@ function renderFleet(views: CircuitViews): void {
             "«Listas del circuito» para ver también los asignados que no leen.",
     ),
   );
-  viewsPanel.append(fleetCountChart(fleet, state.coverage, FORMATS));
+  out.append(fleetCountChart(fleet, state.coverage, FORMATS));
   renderFlowStops(fleet);
 
   if (fleet.historyLoaded) {
     const neverRead = assigned.filter((vehicle) => vehicle.readings === 0).map((vehicle) => vehicle.agvId);
     if (neverRead.length > 0) {
-      viewsPanel.append(
+      out.append(
         finding(
           neverRead.length === 1
             ? "1 AGV asignado no leyó nada en toda la ventana"
@@ -1536,7 +1728,7 @@ function renderFleet(views: CircuitViews): void {
       .filter((vehicle) => vehicle.segments.some((segment) => segment.state === "leyendo-sin-asignar"))
       .map((vehicle) => vehicle.agvId);
     if (unassigned.length > 0) {
-      viewsPanel.append(
+      out.append(
         finding(
           unassigned.length === 1
             ? "1 AGV lee en el circuito sin estar asignado"
@@ -1548,7 +1740,7 @@ function renderFleet(views: CircuitViews): void {
       );
     }
   }
-  viewsPanel.append(fleetLifelineChart(fleet, FORMATS));
+  out.append(fleetLifelineChart(fleet, FORMATS));
 }
 
 /**
@@ -1592,7 +1784,7 @@ function renderFlowStops(fleet: CircuitViews["fleet"]): void {
           ]
             .filter((part) => part !== "")
             .join(" ");
-    viewsPanel.append(
+    out.append(
       finding(
         production.stops.length === 1
           ? "La producción se paró 1 vez"
@@ -1606,7 +1798,7 @@ function renderFlowStops(fleet: CircuitViews["fleet"]): void {
   const shown = blockages.slice(0, PER_KIND);
   for (const blockage of shown) {
     const where = blockage.functionAtTag === null ? blockage.tagId : `${blockage.tagId} (${blockage.functionAtTag})`;
-    viewsPanel.append(
+    out.append(
       finding(
         `${blockage.agvId}: el primero de la cola, sin avanzar ${duration(blockage.toUtcMs - blockage.fromUtcMs)}`,
         `En ${where}, de ${formatTick(blockage.fromUtcMs)} a ${formatTick(blockage.toUtcMs)}; lo habitual hasta ` +
@@ -1620,11 +1812,11 @@ function renderFlowStops(fleet: CircuitViews["fleet"]): void {
         ["bloqueo", `${blockage.agvId} ${blockage.tagId} ${blockage.fromUtcMs}`],
       ),
     );
-    const blockCard = viewsPanel.lastElementChild;
+    const blockCard = out.lastElementChild;
     if (blockCard instanceof HTMLElement) withBattery(blockCard, `${blockage.agvId} ${blockage.tagId} ${blockage.fromUtcMs}`);
   }
   if (blockages.length > shown.length) {
-    viewsPanel.append(
+    out.append(
       lazyDetails(`Ver los ${blockages.length} primeros de cola sin avanzar`, () =>
         plainTable(
           ["AGV", "Tag", "Desde", "Hasta", "Lo habitual", "Detrás", "Lecturas mientras tanto"],
@@ -1656,8 +1848,8 @@ function renderCircuitState(views: CircuitViews): void {
   const nightLabel = `de ${pad(circuitState.night.fromHour)}:00 a ${pad(circuitState.night.toHour)}:00`;
   const hours = (ms: number): string => `${(ms / 3_600_000).toFixed(1).replace(".", ",")} h`;
   const exposure = circuitState.exposure;
-  viewsPanel.append(element("h3", undefined, "Estado normal del circuito"));
-  viewsPanel.append(
+  out.append(element("h3", undefined, "Estado normal del circuito"));
+  out.append(
     element(
       "p",
       "muted",
@@ -1673,10 +1865,10 @@ function renderCircuitState(views: CircuitViews): void {
   for (const cohort of circuitState.cohorts) {
     const shape = views.shapes.find((entry) => entry.cohortId === cohort.cohortId);
     const measured = cohort.state;
-    if (circuitState.cohorts.length > 1) viewsPanel.append(element("p", "muted", `Circuito ${cohort.cohortId}:`));
+    if (circuitState.cohorts.length > 1) out.append(element("p", "muted", `Circuito ${cohort.cohortId}:`));
 
     for (const bottleneck of measured.bottlenecks.slice(0, PER_KIND)) {
-      viewsPanel.append(
+      out.append(
         finding(
           `Cuello de botella en ${bottleneck.tagId}`,
           `${bottleneck.retentions} esperas detrás de un AGV que no avanzaba, en ${bottleneck.episodes} colas ` +
@@ -1692,7 +1884,7 @@ function renderCircuitState(views: CircuitViews): void {
     }
     for (const point of measured.conflictPoints.slice(0, PER_KIND)) {
       const where = point.tags.join(" y ");
-      viewsPanel.append(
+      out.append(
         finding(
           point.ofOneVehicle === null ? `Punto conflictivo en ${where}` : `${point.ofOneVehicle} para una y otra vez en ${where}`,
           `${point.stops} paradas sin explicación` +
@@ -1709,7 +1901,7 @@ function renderCircuitState(views: CircuitViews): void {
     for (const zone of measured.darkZones.slice(0, PER_KIND)) {
       const first = zone.tags[0] ?? "—";
       const last = zone.tags[zone.tags.length - 1] ?? "—";
-      viewsPanel.append(
+      out.append(
         finding(
           `Zona oscura de ${first} a ${last}`,
           `${duration(zone.gapMs)} entre dos lecturas al pasar por ahí; lo típico del circuito, ${duration(zone.typicalMs)}`,
@@ -1726,7 +1918,7 @@ function renderCircuitState(views: CircuitViews): void {
       );
     }
     if (measured.explainedSlow.length > 0) {
-      viewsPanel.append(
+      out.append(
         element(
           "p",
           "muted",
@@ -1743,7 +1935,7 @@ function renderCircuitState(views: CircuitViews): void {
     const unexplained = measured.unexplained.produccion.filter((stop) => !inPoints.has(stop.fromTagId));
     for (const stop of unexplained.slice(0, PER_KIND)) {
       const ahead = stop.aheadEvidence;
-      viewsPanel.append(
+      out.append(
         finding(
           `${stop.agvId}: ${duration(stop.excessMs)} de más en ${stop.fromTagId}`,
           `De ${formatTick(stop.fromUtcMs)} a ${formatTick(stop.toUtcMs)}, hasta ${stop.toTagId}; lo normal en ese tramo, ` +
@@ -1758,12 +1950,12 @@ function renderCircuitState(views: CircuitViews): void {
           ["parada-sin-explicacion", `${stop.agvId} ${stop.fromTagId} ${stop.fromUtcMs}`],
         ),
       );
-      const stopCard = viewsPanel.lastElementChild;
+      const stopCard = out.lastElementChild;
       if (stopCard instanceof HTMLElement) withBattery(stopCard, `${stop.agvId} ${stop.fromTagId} ${stop.fromUtcMs}`);
     }
     const allUnexplained = [...measured.unexplained.produccion, ...measured.unexplained.noche];
     if (allUnexplained.length > PER_KIND) {
-      viewsPanel.append(
+      out.append(
         lazyDetails(`Ver las ${allUnexplained.length} paradas sin explicación`, () =>
           plainTable(
             ["AGV", "Tramo", "Desde", "Hasta", "Lo normal", "De más", "Régimen"],
@@ -1789,9 +1981,9 @@ function renderCircuitState(views: CircuitViews): void {
       `el recorrido entero tardó ${duration(delivery.totalMs)}, lo normal ${duration(delivery.usualMs)}: ` +
       (delivery.kind === "sin-parada" ? "no paró" : "hubo una espera en algún punto de ese tramo, sin poder situarla");
     if (!grouped.evaluated) {
-      viewsPanel.append(element("p", "muted", `Lecturas que llegaron juntas al servidor: sin evaluar (${grouped.reason ?? "—"}).`));
+      out.append(element("p", "muted", `Lecturas que llegaron juntas al servidor: sin evaluar (${grouped.reason ?? "—"}).`));
     } else if (grouped.total > 0) {
-      viewsPanel.append(
+      out.append(
         element(
           "p",
           "muted",
@@ -1803,7 +1995,7 @@ function renderCircuitState(views: CircuitViews): void {
       );
       for (const vehicle of grouped.vehicles.slice(0, PER_KIND)) {
         const latest = [...grouped.deliveries].reverse().find((delivery) => delivery.agvId === vehicle.id);
-        viewsPanel.append(
+        out.append(
           finding(
             `${vehicle.id}: le llegan lecturas juntas`,
             `${vehicle.count} veces, cuando el azar daría ${chance(vehicle.expected)} con los tramos que recorre`,
@@ -1815,7 +2007,7 @@ function renderCircuitState(views: CircuitViews): void {
       }
       for (const site of grouped.sites.slice(0, PER_KIND)) {
         const vehicles = [...new Set(grouped.deliveries.filter((delivery) => delivery.fromTagId === site.id).map((delivery) => delivery.agvId))];
-        viewsPanel.append(
+        out.append(
           finding(
             `Lecturas juntas al pasar por ${site.id}`,
             `${site.count} veces, de ${vehicles.length} AGV (${few(vehicles)}), cuando el azar daría ${chance(site.expected)} ` +
@@ -1825,7 +2017,7 @@ function renderCircuitState(views: CircuitViews): void {
           ),
         );
       }
-      viewsPanel.append(
+      out.append(
         lazyDetails(
           `Ver las ${grouped.total} veces que llegaron lecturas juntas` +
             (grouped.deliveries.length < grouped.total ? ` (las ${grouped.deliveries.length} más recientes)` : ""),
@@ -1847,71 +2039,11 @@ function renderCircuitState(views: CircuitViews): void {
       );
     }
 
-    // Ritmo de cada AGV y quién retiene a otros (R-AGV-019, R-AGV-020): hechos con su cifra, sin causa.
-    const pace = cohort.pace;
-    const whereText = (where: (typeof pace.vehicles)[number]["where"]): string =>
-      where === null || where === "toda-la-linea" ? "en toda la línea" : `solo en la zona ${where.map((zone) => `«${zone}»`).join(" y ")}`;
-    const paced = pace.vehicles.filter((vehicle) => vehicle.verdict !== null);
-    for (const vehicle of paced.slice(0, PER_KIND)) {
-      const shift = Math.abs(vehicle.ratio / vehicle.fleetRatio - 1);
-      viewsPanel.append(
-        finding(
-          `${vehicle.agvId} va un ${Math.round(shift * 100)} % más ${vehicle.verdict === "mas-lento" ? "lento" : "rápido"} que la flota, ${whereText(vehicle.where)}`,
-          `La mitad de sus tramos tarda ${vehicle.ratio.toFixed(2).replace(".", ",")} veces lo habitual del tramo; la de la flota, ` +
-            `${vehicle.fleetRatio.toFixed(2).replace(".", ",")} (${vehicle.samples} tramos)`,
-          "Contra la horquilla de cada tramo, en producción y sin contar paradas ni esperas detrás de otro. Con tantos " +
-            "tramos una diferencia pequeña ya sale por encima del azar: solo se enseña desde un 5 %. La causa no la dice " +
-            "el dato.",
-          ["ritmo-agv", vehicle.agvId],
-        ),
-      );
-    }
-    const holding = pace.holders.filter((holder) => holder.expected !== null);
-    for (const holder of holding.slice(0, PER_KIND)) {
-      viewsPanel.append(
-        finding(
-          `${holder.agvId} retiene a otros AGV`,
-          `${holder.retentions} veces, a ${holder.retained.length} AGV distintos (${few(holder.retained)}), cuando el azar daría ` +
-            `${chance(holder.expected as number)} con sus pasadas`,
-          `Iba delante, más despacio de lo habitual en ese tramo, y los de detrás esperaron ${duration(holder.waitMs)} en total, ` +
-            `en ${few(holder.sites)}. Quien retiene no tiene por qué pararse: basta con que tarde más donde otros vienen ` +
-            "detrás. La causa no la dice el dato.",
-          ["retiene-agv", holder.agvId],
-        ),
-      );
-    }
-    if (pace.vehicles.length > 0) {
-      if (paced.length === 0 && holding.length === 0) {
-        viewsPanel.append(
-          element("p", "muted", "Ningún AGV va un 5 % o más lento o más rápido que la flota, y nadie retiene a otros más de lo que da el azar."),
-        );
-      }
-      const holderOf = new Map(pace.holders.map((holder) => [holder.agvId, holder]));
-      viewsPanel.append(
-        lazyDetails(`Ver el ritmo de los ${pace.vehicles.length} AGV`, () =>
-          plainTable(
-            ["AGV", "Tramos", "Ritmo frente a la flota", "Lectura", "Retenciones", "Esperas detrás"],
-            pace.vehicles.map((vehicle) => {
-              const holder = holderOf.get(vehicle.agvId);
-              return [
-                vehicle.agvId,
-                String(vehicle.samples),
-                percent(vehicle.ratio / vehicle.fleetRatio),
-                vehicle.verdict === null ? "a su paso" : `${vehicle.verdict === "mas-lento" ? "más lento" : "más rápido"}, ${whereText(vehicle.where)}`,
-                String(holder?.retentions ?? 0),
-                holder === undefined ? "—" : duration(holder.waitMs),
-              ];
-            }),
-          ),
-        ),
-      );
-    }
-
     // La noche, medida aparte.
     const nightDiffers = measured.night.filter(
       (entry) => Math.abs(Math.log(entry.nocheP50Ms / Math.max(1, entry.produccionP50Ms))) >= Math.log(1.5),
     );
-    viewsPanel.append(
+    out.append(
       element(
         "p",
         "muted",
@@ -1949,7 +2081,7 @@ function renderCircuitState(views: CircuitViews): void {
           section: views.sections?.[tagId] ?? null,
         };
       });
-      viewsPanel.append(segmentBandChart(ringRows, nightLabel));
+      out.append(segmentBandChart(ringRows, nightLabel));
     }
     const download = element("button", undefined, "Descargar horquillas (CSV)");
     download.setAttribute("type", "button");
@@ -1963,7 +2095,7 @@ function renderCircuitState(views: CircuitViews): void {
       link.click();
       URL.revokeObjectURL(url);
     });
-    viewsPanel.append(
+    out.append(
       download,
       element(
         "p",
@@ -1979,10 +2111,10 @@ function renderCircuitState(views: CircuitViews): void {
       const { earlyPeriod, latePeriod, changes } = cohort.changes;
       const periods = `${formatTick(earlyPeriod.from)}–${formatTick(earlyPeriod.to)} frente a ${formatTick(latePeriod.from)}–${formatTick(latePeriod.to)}`;
       if (changes.length === 0) {
-        viewsPanel.append(element("p", "muted", `Entre ${periods}, ningún tramo se sale de su horquilla.`));
+        out.append(element("p", "muted", `Entre ${periods}, ningún tramo se sale de su horquilla.`));
       }
       for (const change of changes.slice(0, PER_KIND)) {
-        viewsPanel.append(
+        out.append(
           finding(
             `${change.from} → ${change.to}, ${change.kind === "mas-lento" ? "más lento" : "más rápido"}` +
               (change.regime === "noche" ? " de noche" : ""),
@@ -2000,6 +2132,91 @@ function renderCircuitState(views: CircuitViews): void {
 }
 
 /**
+ * Ritmo de cada AGV y quién retiene a otros (R-AGV-019, R-AGV-020): hechos con su cifra, sin causa.
+ * Es la parte por AGV del estado normal del circuito; lo que es por sitio —cuellos, puntos
+ * conflictivos, zonas oscuras, lecturas juntas al pasar por un tag— se queda en Tiempos.
+ */
+function renderPace(views: CircuitViews): void {
+  const { circuitState } = views;
+  if (circuitState.cohorts.length === 0 || circuitState.cohorts.every((cohort) => cohort.pace.vehicles.length === 0)) return;
+  const few = (ids: readonly string[]): string => (ids.length > 4 ? `${ids.slice(0, 4).join(", ")}…` : ids.join(", "));
+  const chance = (expected: number): string =>
+    expected < 0.1 ? "menos de 0,1" : expected.toFixed(1).replace(".", ",");
+  out.append(element("h3", undefined, "Ritmo de cada AGV y quién retiene"));
+  out.append(
+    element(
+      "p",
+      "muted",
+      "Contra la horquilla de cada tramo, en producción y sin contar paradas ni esperas detrás de otro. " +
+        "Quien retiene no tiene por qué pararse: basta con que tarde más donde otros vienen detrás.",
+    ),
+  );
+  for (const cohort of circuitState.cohorts) {
+    if (circuitState.cohorts.length > 1) out.append(element("p", "muted", `Circuito ${cohort.cohortId}:`));
+    // Ritmo de cada AGV y quién retiene a otros (R-AGV-019, R-AGV-020): hechos con su cifra, sin causa.
+    const pace = cohort.pace;
+    const whereText = (where: (typeof pace.vehicles)[number]["where"]): string =>
+      where === null || where === "toda-la-linea" ? "en toda la línea" : `solo en la zona ${where.map((zone) => `«${zone}»`).join(" y ")}`;
+    const paced = pace.vehicles.filter((vehicle) => vehicle.verdict !== null);
+    for (const vehicle of paced.slice(0, PER_KIND)) {
+      const shift = Math.abs(vehicle.ratio / vehicle.fleetRatio - 1);
+      out.append(
+        finding(
+          `${vehicle.agvId} va un ${Math.round(shift * 100)} % más ${vehicle.verdict === "mas-lento" ? "lento" : "rápido"} que la flota, ${whereText(vehicle.where)}`,
+          `La mitad de sus tramos tarda ${vehicle.ratio.toFixed(2).replace(".", ",")} veces lo habitual del tramo; la de la flota, ` +
+            `${vehicle.fleetRatio.toFixed(2).replace(".", ",")} (${vehicle.samples} tramos)`,
+          "Contra la horquilla de cada tramo, en producción y sin contar paradas ni esperas detrás de otro. Con tantos " +
+            "tramos una diferencia pequeña ya sale por encima del azar: solo se enseña desde un 5 %. La causa no la dice " +
+            "el dato.",
+          ["ritmo-agv", vehicle.agvId],
+        ),
+      );
+    }
+    const holding = pace.holders.filter((holder) => holder.expected !== null);
+    for (const holder of holding.slice(0, PER_KIND)) {
+      out.append(
+        finding(
+          `${holder.agvId} retiene a otros AGV`,
+          `${holder.retentions} veces, a ${holder.retained.length} AGV distintos (${few(holder.retained)}), cuando el azar daría ` +
+            `${chance(holder.expected as number)} con sus pasadas`,
+          `Iba delante, más despacio de lo habitual en ese tramo, y los de detrás esperaron ${duration(holder.waitMs)} en total, ` +
+            `en ${few(holder.sites)}. Quien retiene no tiene por qué pararse: basta con que tarde más donde otros vienen ` +
+            "detrás. La causa no la dice el dato.",
+          ["retiene-agv", holder.agvId],
+        ),
+      );
+    }
+    if (pace.vehicles.length > 0) {
+      if (paced.length === 0 && holding.length === 0) {
+        out.append(
+          element("p", "muted", "Ningún AGV va un 5 % o más lento o más rápido que la flota, y nadie retiene a otros más de lo que da el azar."),
+        );
+      }
+      const holderOf = new Map(pace.holders.map((holder) => [holder.agvId, holder]));
+      out.append(
+        lazyDetails(`Ver el ritmo de los ${pace.vehicles.length} AGV`, () =>
+          plainTable(
+            ["AGV", "Tramos", "Ritmo frente a la flota", "Lectura", "Retenciones", "Esperas detrás"],
+            pace.vehicles.map((vehicle) => {
+              const holder = holderOf.get(vehicle.agvId);
+              return [
+                vehicle.agvId,
+                String(vehicle.samples),
+                percent(vehicle.ratio / vehicle.fleetRatio),
+                vehicle.verdict === null ? "a su paso" : `${vehicle.verdict === "mas-lento" ? "más lento" : "más rápido"}, ${whereText(vehicle.where)}`,
+                String(holder?.retentions ?? 0),
+                holder === undefined ? "—" : duration(holder.waitMs),
+              ];
+            }),
+          ),
+        ),
+      );
+    }
+
+  }
+}
+
+/**
  * Tiempos por sección entre anclas (R-TIM-012): todas las anclas declaradas que están en el anillo
  * del cohorte principal cortan secciones consecutivas —kitting, cruce, línea…— y cada una lleva su
  * horquilla por régimen y su p50 por fichero. Es la medida que el propietario pidió (OQ-141); no
@@ -2007,9 +2224,9 @@ function renderCircuitState(views: CircuitViews): void {
  */
 function renderAnchorSections(views: CircuitViews): void {
   const { anchorSections } = views;
-  viewsPanel.append(element("h3", undefined, "Tiempos por sección entre anclas"));
+  out.append(element("h3", undefined, "Tiempos por sección entre anclas"));
   if (anchorSections.onRing.length < 2) {
-    viewsPanel.append(
+    out.append(
       element(
         "p",
         "muted",
@@ -2024,7 +2241,7 @@ function renderAnchorSections(views: CircuitViews): void {
   }
   const { sections } = anchorSections;
   const named = sections.filter((section) => section.namedByList).length;
-  viewsPanel.append(
+  out.append(
     element(
       "p",
       "muted",
@@ -2067,7 +2284,7 @@ function renderAnchorSections(views: CircuitViews): void {
     }
   }
   // En su caja desplazable, como las otras tablas anchas: las cabeceras cortas no se parten.
-  viewsPanel.append(scrollBox(plainTable(["Sección", "Tags", "Régimen", "Muestras", "p50", "p80", "p95", "Valla"], rows)));
+  out.append(scrollBox(plainTable(["Sección", "Tags", "Régimen", "Muestras", "p50", "p80", "p95", "Valla"], rows)));
 
   // La tendencia: el p50 de producción de cada sección en cada fichero (R-TIM-011). Delante, la
   // lista completa de tags de cada sección, que la tabla de arriba ya no lleva.
@@ -2081,7 +2298,7 @@ function renderAnchorSections(views: CircuitViews): void {
     return list;
   };
   if (sourceIds.length > 0) {
-    viewsPanel.append(
+    out.append(
       lazyDetails(`Ver el p50 de cada sección por fichero (${sourceIds.length} ficheros) y los tags de cada sección`, () => {
         const body = element("div");
         body.append(
@@ -2106,7 +2323,7 @@ function renderAnchorSections(views: CircuitViews): void {
       }),
     );
   } else {
-    viewsPanel.append(lazyDetails("Ver los tags de cada sección", sectionTags));
+    out.append(lazyDetails("Ver los tags de cada sección", sectionTags));
   }
   const download = element("button", undefined, "Descargar secciones (CSV)");
   download.setAttribute("type", "button");
@@ -2119,7 +2336,7 @@ function renderAnchorSections(views: CircuitViews): void {
     link.click();
     URL.revokeObjectURL(url);
   });
-  viewsPanel.append(download);
+  out.append(download);
 }
 
 type Matrix = CircuitViews["readMatrices"][number];
@@ -2250,22 +2467,27 @@ function trendPanel(
   };
 }
 
-/**
- * El anillo, los casos destacados y la matriz completa.
- *
- * El orden importa tanto como el contenido: primero **a cuáles mirar**, y solo después el conjunto
- * entero, plegado. Enseñar de golpe ciento cincuenta tags por cincuenta vehículos no es informar,
- * es esconder el hallazgo dentro de una cuadrícula (`UX_SPEC.md` §5.1).
- */
-function renderShapes(views: CircuitViews): void {
-  for (const shape of views.shapes) {
-    const matrix = views.readMatrices.find((entry) => entry.cohortId === shape.cohortId);
+type VehicleReadingView = CircuitViews["vehicleReading"][number];
 
+/** La matriz de lectura de un cohorte, si la tiene. */
+function matrixOf(views: CircuitViews, cohortId: number): Matrix | undefined {
+  return views.readMatrices.find((entry) => entry.cohortId === cohortId);
+}
+
+/**
+ * El anillo del circuito (pestaña Tiempos): su forma, la lista ordenada plegada y los tags fuera de
+ * él. La lista ordenada es la que se contrasta con el circuito virtual y con la memoria.
+ */
+function renderRing(views: CircuitViews): void {
+  if (views.shapes.length === 0 && (views.lapAnchorProblems ?? []).length === 0) return;
+  out.append(element("h3", undefined, "El anillo del circuito"));
+  for (const shape of views.shapes) {
+    const matrix = matrixOf(views, shape.cohortId);
     const anchorPhrase =
       shape.anchorTruth === "observed"
         ? `vuelta cortada en «${shape.anchorTagId}» (declarado)`
         : `vuelta cortada en «${shape.anchorTagId}» (deducido del recorrido)`;
-    viewsPanel.append(
+    out.append(
       element(
         "p",
         "muted",
@@ -2273,10 +2495,9 @@ function renderShapes(views: CircuitViews): void {
           `con un ${Math.round(shape.weakestShare * 100)} % de coincidencia en el tramo más débil.`,
       ),
     );
-    viewsPanel.append(ringChart(ringDataOf(shape, matrix, views)));
+    out.append(ringChart(ringDataOf(shape, matrix, views)));
 
-    // La lista ordenada, plegada: es la que se contrasta con el circuito virtual y con la memoria.
-    viewsPanel.append(
+    out.append(
       lazyDetails(`Ver los ${shape.tags.length} tags del anillo, en orden`, () =>
         plainTable(
           ["Posición", "Tag", ...(shape.zones === undefined ? [] : ["Zona"]), "Leído por pasada", "Lectura"],
@@ -2295,7 +2516,7 @@ function renderShapes(views: CircuitViews): void {
     );
 
     if (shape.offRingTags.length > 0) {
-      viewsPanel.append(
+      out.append(
         element(
           "p",
           "muted",
@@ -2306,7 +2527,7 @@ function renderShapes(views: CircuitViews): void {
             "estos últimos merecen revisarse.",
         ),
       );
-      viewsPanel.append(
+      out.append(
         lazyDetails(
           shape.offRingTags.length === 1
             ? "Ver el tag que queda fuera del anillo"
@@ -2319,9 +2540,25 @@ function renderShapes(views: CircuitViews): void {
         ),
       );
     }
+  }
+  for (const problem of views.lapAnchorProblems ?? []) {
+    out.append(finding("Corte de vuelta declarado que no se pudo usar", "—", problem));
+  }
+}
 
+/**
+ * La lectura de cada tag (pestaña Tags): a cuáles mirar, el mapa de omisión y la matriz completa.
+ *
+ * El orden importa tanto como el contenido: primero **a cuáles mirar**, y solo después el conjunto
+ * entero, plegado. Enseñar de golpe ciento cincuenta tags por cincuenta vehículos no es informar,
+ * es esconder el hallazgo dentro de una cuadrícula (`UX_SPEC.md` §5.1).
+ */
+function renderReadMatrix(views: CircuitViews): void {
+  for (const shape of views.shapes) {
+    const matrix = matrixOf(views, shape.cohortId);
+    out.append(element("h3", undefined, "Lo que hay que mirar"));
     if (matrix === undefined || !matrix.supported) {
-      viewsPanel.append(
+      out.append(
         element(
           "p",
           "muted",
@@ -2331,10 +2568,9 @@ function renderShapes(views: CircuitViews): void {
       );
       continue;
     }
-
     // Cuánto puede apoyarse la prueba por tiempo: si pocos segmentos tienen mediana medida, un
     // tramo largo sin leer no se puede contrastar y quedará sin sostener con más frecuencia.
-    viewsPanel.append(
+    out.append(
       element(
         "p",
         "muted",
@@ -2343,16 +2579,63 @@ function renderShapes(views: CircuitViews): void {
       ),
     );
     renderHighlights(matrix, views.vehicleReading.find((entry) => entry.cohortId === matrix.cohortId));
-    viewsPanel.append(readMatrixHeatmap(matrix, flaggedTagsOf(matrix), flaggedVehiclesOf(matrix)));
+    out.append(readMatrixHeatmap(matrix, flaggedTagsOf(matrix), flaggedVehiclesOf(matrix)));
     renderFullMatrix(matrix);
-  }
-
-  for (const problem of views.lapAnchorProblems ?? []) {
-    viewsPanel.append(finding("Corte de vuelta declarado que no se pudo usar", "—", problem));
   }
 }
 
-type VehicleReadingView = CircuitViews["vehicleReading"][number];
+/** El conjunto de AGV que no leen nunca un tag, como texto ordenado: es lo que agrupa tarjetas gemelas. */
+function neverSetOf(ids: readonly string[]): string {
+  return [...ids].sort().join(" ");
+}
+
+/** Un tag destacado o un grupo de tags gemelos: los que comparten el mismo conjunto de AGV que no los leen nunca. */
+interface TagHighlight {
+  readonly tags: readonly TagRow[];
+  readonly readers: readonly VehicleReadingView["tags"][number][];
+  /** Los AGV que no leen ninguno de estos tags, ordenados por pasadas (los que más pasan, primero). */
+  readonly never: readonly string[];
+}
+
+/** Los AGV cuya tarjeta «no lee nunca» quedó plegada en un grupo de tags gemelos, en la última matriz dibujada. */
+const foldedVehicles = new Map<string, string>();
+
+/**
+ * Agrupa los tags destacados que comparten exactamente el mismo conjunto de AGV que no los leen nunca
+ * (UX_SPEC §4.3): «60180 y 60183: 5 AGV no los leen nunca» es un hecho, no siete tarjetas.
+ */
+function groupHighlights(notable: readonly TagRow[], readersOf: ReadonlyMap<string, VehicleReadingView["tags"][number]>): TagHighlight[] {
+  const groups = new Map<string, { tags: TagRow[]; readers: VehicleReadingView["tags"][number][] }>();
+  const singles: TagHighlight[] = [];
+  const order: TagHighlight[] = [];
+  for (const tag of notable) {
+    const readers = readersOf.get(tag.tagId);
+    const never = readers === undefined ? [] : readers.never.map((entry) => entry.agvId);
+    if (tag.pattern !== "bimodal-candidato" || readers === undefined || never.length === 0) {
+      const single: TagHighlight = { tags: [tag], readers: readers === undefined ? [] : [readers], never: [] };
+      singles.push(single);
+      order.push(single);
+      continue;
+    }
+    const key = neverSetOf(never);
+    const group = groups.get(key);
+    if (group === undefined) {
+      const created = { tags: [tag], readers: [readers] };
+      groups.set(key, created);
+      // Se coloca en el orden del primer tag del grupo; el objeto se completa después.
+      order.push({ tags: created.tags, readers: created.readers, never });
+    } else {
+      group.tags.push(tag);
+      group.readers.push(readers);
+    }
+  }
+  return order.map((item) => {
+    const first = item.readers[0];
+    if (item.tags.length < 2 || first === undefined) return { ...item, never: [] };
+    const passesOf = new Map(first.never.map((entry) => [entry.agvId, entry.passes]));
+    return { ...item, never: [...item.never].sort((a, b) => (passesOf.get(b) ?? 0) - (passesOf.get(a) ?? 0)) };
+  });
+}
 
 /** Lo que hay que mirar, visible de entrada: los tags y los vehículos que se salen de lo normal. */
 function renderHighlights(matrix: Matrix, reading: VehicleReadingView | undefined): void {
@@ -2361,8 +2644,7 @@ function renderHighlights(matrix: Matrix, reading: VehicleReadingView | undefine
     .sort((a, b) => (a.rate ?? 1) - (b.rate ?? 1));
   const readersOf = new Map((reading?.tags ?? []).map((entry) => [entry.tagId, entry]));
 
-  viewsPanel.append(element("h3", undefined, "Lo que hay que mirar"));
-  viewsPanel.append(
+  out.append(
     element(
       "p",
       "muted",
@@ -2371,26 +2653,76 @@ function renderHighlights(matrix: Matrix, reading: VehicleReadingView | undefine
     ),
   );
 
+  foldedVehicles.clear();
   if (notable.length === 0) {
-    viewsPanel.append(element("p", "muted", "Ningún tag destacable: todos se leen al pasar."));
+    out.append(element("p", "muted", "Ningún tag destacable: todos se leen al pasar."));
   } else {
-    for (const tag of notable.slice(0, HIGHLIGHTS)) {
-      viewsPanel.append(
-        finding(
-          `Tag ${tag.tagId} · posición ${tag.position + 1} de ${matrix.ring.length}`,
-          `${percent(tag.rate)} de las pasadas · ${patternLabel(tag.pattern)}`,
-          explain(tag, readersOf.get(tag.tagId)),
-          ["tag-lectura", tag.tagId],
-        ),
-      );
+    const items = groupHighlights(notable, readersOf);
+    for (const item of items.slice(0, HIGHLIGHTS)) {
+      const [tag] = item.tags;
+      if (tag === undefined) continue;
+      if (item.tags.length === 1) {
+        out.append(
+          finding(
+            `Tag ${tag.tagId} · posición ${tag.position + 1} de ${matrix.ring.length}`,
+            `${percent(tag.rate)} de las pasadas · ${patternLabel(tag.pattern)}`,
+            explain(tag, readersOf.get(tag.tagId)),
+            ["tag-lectura", tag.tagId],
+          ),
+        );
+        continue;
+      }
+      out.append(groupedTagCard(item, matrix));
     }
-    if (notable.length > HIGHLIGHTS) {
-      viewsPanel.append(element("p", "muted", `Y ${notable.length - HIGHLIGHTS} más en la matriz completa.`));
+    if (items.length > HIGHLIGHTS) {
+      out.append(element("p", "muted", `Y ${items.length - HIGHLIGHTS} más en la matriz completa.`));
     }
   }
+}
 
-  renderVehicleReading(matrix, reading);
-  renderVehicleTrends(matrix);
+/** Una tarjeta para un grupo de tags gemelos, con los AGV y sus cifras dentro y la tabla al tocar. */
+function groupedTagCard(item: TagHighlight, matrix: Matrix): HTMLElement {
+  const ids = item.tags.map((tag) => tag.tagId);
+  const positions = item.tags.map((tag) => tag.position + 1).sort((a, b) => a - b);
+  const first = positions[0] ?? 0;
+  const last = positions[positions.length - 1] ?? 0;
+  const consecutive = last - first === positions.length - 1;
+  const where = consecutive ? `posiciones ${first}–${last}` : `posiciones ${positions.join(", ")}`;
+  const passesOf = (agvId: string): string =>
+    item.readers.map((readers) => `0 de ${readers.never.find((entry) => entry.agvId === agvId)?.passes ?? 0}`).join(" y ");
+  const listed = item.never.slice(0, 4).map((agvId) => `${agvId}: ${passesOf(agvId)}`);
+  const rest = item.never.length - listed.length;
+  const goods = item.readers.map((readers) => readers.good);
+  const sameGood = goods.every((value) => value === goods[0]);
+  const card = finding(
+    `${joinIds(ids)} (${where} de ${matrix.ring.length}): ${item.never.length} AGV no los leen nunca`,
+    `${item.tags.map((tag) => percent(tag.rate)).join(" y ")} de las pasadas · ${patternLabel("bimodal-candidato")}`,
+    `${listed.join("; ")}${rest > 0 ? `; y ${rest} más` : ""}. ` +
+      (sameGood ? `${goods[0] ?? 0} AGV los leen bien.` : `Los leen bien ${goods.join(" y ")} AGV.`) +
+      " Contado sobre las veces que cada AGV pasó por cada punto.",
+    ["tag-lectura", ...[...ids].sort()],
+  );
+  // La tarjeta de cada AGV «no lee nunca N tags» de estos mismos AGV se pliega aquí (no sale aparte).
+  const key = neverSetOf(ids);
+  for (const agvId of item.never) foldedVehicles.set(agvId, key);
+  card.append(
+    lazyDetails(`Ver los ${item.never.length} AGV con sus pasadas`, () =>
+      plainTable(
+        ["AGV", ...ids],
+        item.never.map((agvId) => [
+          agvId,
+          ...item.readers.map((readers) => `0 de ${readers.never.find((entry) => entry.agvId === agvId)?.passes ?? 0}`),
+        ]),
+      ),
+    ),
+  );
+  return card;
+}
+
+/** «60180 y 60183», «7100, 7108 y 7116». */
+function joinIds(ids: readonly string[]): string {
+  if (ids.length <= 1) return ids.join("");
+  return `${ids.slice(0, -1).join(", ")} y ${ids[ids.length - 1] ?? ""}`;
 }
 
 /** Lista corta de tags con su cifra: los cuatro primeros y cuántos más. */
@@ -2401,13 +2733,35 @@ function tagList(items: readonly string[]): string {
 const tagWord = (count: number): string => (count === 1 ? "tag" : "tags");
 
 /**
+ * La lectura de cada AGV (pestaña AGV): quién no lee lo que el resto sí, y cuya lectura cae o baja.
+ * Es la parte por AGV de «Lo que hay que mirar»; se enseña con su propio título.
+ */
+function renderVehicleReadingSection(views: CircuitViews): void {
+  for (const shape of views.shapes) {
+    const matrix = matrixOf(views, shape.cohortId);
+    if (matrix === undefined || !matrix.supported) continue;
+    out.append(element("h3", undefined, "Lectura de cada AGV"));
+    out.append(
+      element(
+        "p",
+        "muted",
+        "Sobre los tags que el resto de la flota lee bien: quién no los lee nunca, quién dejó de leerlos y quién " +
+          "los lee poco. Porcentaje sobre las pasadas de cada AGV por cada tag; tampoco es una tasa de salud.",
+      ),
+    );
+    renderVehicleReading(matrix, views.vehicleReading.find((entry) => entry.cohortId === matrix.cohortId));
+    renderVehicleTrends(matrix);
+  }
+}
+
+/**
  * La lectura de cada AGV sobre los tags que el resto lee bien (R-AGV-016): nunca, desde una hora,
  * poco en muchos tags, poco en pocos. La diferencia medida, sin causa.
  */
 function renderVehicleReading(matrix: Matrix, reading: VehicleReadingView | undefined): void {
   const vehicles = reading?.vehicles ?? [];
   if (vehicles.length === 0) {
-    viewsPanel.append(element("p", "muted", "Ningún AGV se aparta de lo que lee el resto de la flota."));
+    out.append(element("p", "muted", "Ningún AGV se aparta de lo que lee el resto de la flota."));
     return;
   }
   const unprovenOf = new Map(matrix.vehicles.map((vehicle) => [vehicle.agvId, vehicle.unproven]));
@@ -2419,17 +2773,60 @@ function renderVehicleReading(matrix: Matrix, reading: VehicleReadingView | unde
   // Por tipo, para que ninguno quede escondido detrás de los demás: nunca, dejó de leer, poco en
   // muchos tags y poco en pocos.
   const groups: Record<"nunca" | "desde" | "muchos" | "pocos", HTMLElement[]> = { nunca: [], desde: [], muchos: [], pocos: [] };
+  // «No lee nunca»: los AGV que no leen exactamente los mismos tags son una sola tarjeta con el conjunto
+  // como sujeto; y si esos tags ya tienen su tarjeta de grupo en «Lo que hay que mirar», ninguna.
+  const neverGroups = new Map<string, { agvIds: string[]; tags: VehicleReadingView["vehicles"][number]["never"][] }>();
+  let folded = 0;
   for (const vehicle of vehicles) {
-    if (vehicle.never.length > 0) {
+    if (vehicle.never.length === 0) continue;
+    const key = neverSetOf(vehicle.never.map((entry) => entry.tagId));
+    if (foldedVehicles.get(vehicle.agvId) === key) {
+      folded += 1;
+      continue;
+    }
+    const group = neverGroups.get(key);
+    if (group === undefined) neverGroups.set(key, { agvIds: [vehicle.agvId], tags: [vehicle.never] });
+    else {
+      group.agvIds.push(vehicle.agvId);
+      group.tags.push(vehicle.never);
+    }
+  }
+  for (const group of neverGroups.values()) {
+    const [firstNever] = group.tags;
+    if (firstNever === undefined) continue;
+    const tagIds = firstNever.map((entry) => entry.tagId);
+    if (group.agvIds.length === 1) {
+      const agvId = group.agvIds[0] ?? "";
       groups.nunca.push(
         finding(
-          `AGV ${vehicle.agvId} · no lee nunca ${vehicle.never.length} ${tagWord(vehicle.never.length)} que el resto sí lee`,
-          tagList(vehicle.never.map((entry) => `${entry.tagId}: 0 de ${entry.passes} pasadas`)),
-          `Contado sobre las veces que pasó por cada punto.${extra(vehicle.agvId)}`,
-          ["agv-nunca", vehicle.agvId],
+          `AGV ${agvId} · no lee nunca ${tagIds.length} ${tagWord(tagIds.length)} que el resto sí lee`,
+          tagList(firstNever.map((entry) => `${entry.tagId}: 0 de ${entry.passes} pasadas`)),
+          `Contado sobre las veces que pasó por cada punto.${extra(agvId)}`,
+          ["agv-nunca", agvId],
         ),
       );
+      continue;
     }
+    const passesOf = (agvIndex: number): string => (group.tags[agvIndex] ?? []).map((entry) => `0 de ${entry.passes}`).join(" y ");
+    const listed = group.agvIds.slice(0, 4).map((agvId, index) => `${agvId}: ${passesOf(index)}`);
+    const rest = group.agvIds.length - listed.length;
+    const card = finding(
+      `${joinIds(group.agvIds)} · no leen nunca ${tagIds.length} ${tagWord(tagIds.length)} que el resto sí lee`,
+      `${joinIds(tagIds)} · ${listed.join("; ")}${rest > 0 ? `; y ${rest} más` : ""}`,
+      "Contado sobre las veces que cada uno pasó por cada punto.",
+      ["agv-nunca", ...[...group.agvIds].sort()],
+    );
+    card.append(
+      lazyDetails(`Ver los ${group.agvIds.length} AGV con sus pasadas`, () =>
+        plainTable(
+          ["AGV", ...tagIds],
+          group.agvIds.map((agvId, index) => [agvId, ...(group.tags[index] ?? []).map((entry) => `0 de ${entry.passes}`)]),
+        ),
+      ),
+    );
+    groups.nunca.push(card);
+  }
+  for (const vehicle of vehicles) {
     if (vehicle.stopped.length > 0) {
       groups.desde.push(
         finding(
@@ -2462,13 +2859,23 @@ function renderVehicleReading(matrix: Matrix, reading: VehicleReadingView | unde
       );
     }
   }
+  if (folded > 0) {
+    out.append(
+      element(
+        "p",
+        "muted",
+        `${folded} ${folded === 1 ? "AGV no lee nunca los mismos tags que ya tienen" : "AGV no leen nunca los mismos tags que ya tienen"} ` +
+          "su tarjeta en «Lo que hay que mirar» (Tags): están dentro de ella.",
+      ),
+    );
+  }
   let hidden = 0;
   for (const cards of Object.values(groups)) {
-    for (const card of cards.slice(0, PER_KIND)) viewsPanel.append(card);
+    for (const card of cards.slice(0, PER_KIND)) out.append(card);
     hidden += Math.max(0, cards.length - PER_KIND);
   }
-  if (hidden > 0) viewsPanel.append(element("p", "muted", `Y ${hidden} más en la tabla.`));
-  viewsPanel.append(
+  if (hidden > 0) out.append(element("p", "muted", `Y ${hidden} más en la tabla.`));
+  out.append(
     lazyDetails(`Ver la lectura de los ${vehicles.length} AGV que se apartan del resto`, () =>
       plainTable(
         ["AGV", "Nunca", "Dejó de leer", "Lee poco", "Tags comparados"],
@@ -2495,12 +2902,12 @@ function renderVehicleTrends(matrix: Matrix): void {
     .filter((panel): panel is { readonly panel: TrendPanel; readonly drop: number } => panel !== null)
     .sort((a, b) => b.drop - a.drop);
   if (panels.length > 0) {
-    viewsPanel.append(
+    out.append(
       trendMultiplesChart(panels.slice(0, TREND_PANELS).map((entry) => entry.panel), FORMATS, "Rotura y degradación de cada AGV, en el tiempo"),
     );
   }
   for (const vehicle of broken) {
-    viewsPanel.append(
+    out.append(
       finding(
         `AGV ${vehicle.agvId}: su lectura cae de golpe`,
         `${percent(vehicle.rateBefore ?? null)} → ${percent(vehicle.rateAfter ?? null)} desde ` +
@@ -2511,7 +2918,7 @@ function renderVehicleTrends(matrix: Matrix): void {
     );
   }
   for (const vehicle of declining) {
-    viewsPanel.append(
+    out.append(
       finding(
         `AGV ${vehicle.agvId}: su lectura baja a lo largo del periodo`,
         (vehicle.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
@@ -2568,8 +2975,8 @@ function renderTagChanges(views: CircuitViews): void {
   );
   if (changes.length === 0 && absorbed.length === 0 && trendTags.length === 0) return;
 
-  viewsPanel.append(element("h3", undefined, "Cambios de tag"));
-  viewsPanel.append(
+  out.append(element("h3", undefined, "Cambios de tag"));
+  out.append(
     element(
       "p",
       "muted",
@@ -2637,10 +3044,10 @@ function renderTagChanges(views: CircuitViews): void {
       );
     }
   }
-  for (const card of cards.slice(0, HIGHLIGHTS)) viewsPanel.append(card);
+  for (const card of cards.slice(0, HIGHLIGHTS)) out.append(card);
   const total = absorbed.length + changes.length;
   if (total > 0) {
-    viewsPanel.append(
+    out.append(
       lazyDetails(`Ver los ${total} cambios dentro del periodo`, () =>
         plainTable(["Tag", "Qué pasó", "Hora", "AGV que no lo leen como el resto"], [
           ...absorbed.map(({ gap, atUtcMs }) => [
@@ -2681,17 +3088,17 @@ function renderTagTrends(tags: readonly TagRow[]): void {
     .filter((panel): panel is { readonly panel: TrendPanel; readonly drop: number } => panel !== null)
     .sort((a, b) => b.drop - a.drop);
   if (panels.length > 0) {
-    viewsPanel.append(
+    out.append(
       trendMultiplesChart(panels.slice(0, TREND_PANELS).map((entry) => entry.panel), FORMATS, "Rotura y degradación de cada tag, en el tiempo"),
     );
     if (panels.length > TREND_PANELS) {
-      viewsPanel.append(
+      out.append(
         element("p", "muted", `Se dibujan los ${TREND_PANELS} cambios más marcados de ${panels.length}; el resto, en las tarjetas.`),
       );
     }
   }
   for (const tag of broken) {
-    viewsPanel.append(
+    out.append(
       finding(
         `Tag ${tag.tagId}: su lectura cae de golpe`,
         `${percent(tag.rateBefore ?? null)} → ${percent(tag.rateAfter ?? null)} desde ` +
@@ -2702,7 +3109,7 @@ function renderTagTrends(tags: readonly TagRow[]): void {
     );
   }
   for (const tag of declining) {
-    viewsPanel.append(
+    out.append(
       finding(
         `Tag ${tag.tagId}: su lectura baja a lo largo del periodo`,
         (tag.segmentRates ?? []).map((rate) => percent(rate)).join(" → "),
@@ -2725,10 +3132,10 @@ function renderCharging(views: CircuitViews): void {
   const charging = views.charging;
   if (charging === undefined) return;
 
-  viewsPanel.append(element("h3", undefined, "Calles de carga"));
+  out.append(element("h3", undefined, "Calles de carga"));
 
   const zonas = views.zones ?? [];
-  viewsPanel.append(
+  out.append(
     element(
       "p",
       "muted",
@@ -2740,14 +3147,14 @@ function renderCharging(views: CircuitViews): void {
   );
 
   for (const problem of charging.problems) {
-    viewsPanel.append(finding("Configuración que no se pudo usar", "—", problem));
+    out.append(finding("Configuración que no se pudo usar", "—", problem));
   }
 
   // Lo primero de la sección: los AGV que no entraron a cargar en toda la ventana.
   if (charging.neverCharged.length > 0) {
     const ids = charging.neverCharged.map((entry) => entry.agvId);
     const total = views.agvDossiers.length;
-    viewsPanel.append(
+    out.append(
       finding(
         `${charging.neverCharged.length} de ${total} AGV no entraron en ninguna calle en toda la ventana`,
         ids.length > 12 ? `${ids.slice(0, 12).join(", ")}…` : ids.join(", "),
@@ -2755,7 +3162,7 @@ function renderCharging(views: CircuitViews): void {
         ["sin-carga", "circuito"],
       ),
     );
-    viewsPanel.append(
+    out.append(
       lazyDetails(`Ver los ${charging.neverCharged.length} AGV que no entraron a cargar`, () =>
         plainTable(
           ["AGV", "Primera lectura", "Última lectura", "Presente", "Lecturas"],
@@ -2771,11 +3178,11 @@ function renderCharging(views: CircuitViews): void {
     );
   }
 
-  if (charging.lanes.length > 0) viewsPanel.append(laneOccupancyChart(charging.lanes, state.coverage, FORMATS));
+  if (charging.lanes.length > 0) out.append(laneOccupancyChart(charging.lanes, state.coverage, FORMATS));
 
   const sinServicio = charging.lanes.filter((lane) => !lane.served);
   for (const lane of sinServicio) {
-    viewsPanel.append(
+    out.append(
       finding(
         `Nadie entró en «${lane.laneId}»`,
         "0 estancias",
@@ -2788,7 +3195,7 @@ function renderCharging(views: CircuitViews): void {
   // Las tres comprobaciones de planta (R-CO-009): que todos los AGV entren (arriba, «no entraron»),
   // que todas las calles se usen por igual, y que dentro de cada estancia se lean sus tags.
   for (const entry of charging.usage.filter((usage) => usage.verdict !== null)) {
-    viewsPanel.append(
+    out.append(
       finding(
         `«${entry.laneId}» se usa ${entry.verdict === "menos" ? "menos" : "más"} que las demás`,
         `${entry.stays} estancias, el ${Math.round(entry.share * 100)} %`,
@@ -2801,7 +3208,7 @@ function renderCharging(views: CircuitViews): void {
   for (const lane of charging.lanes.filter((entry) => entry.served)) {
     for (const tag of lane.tagReads.filter((entry) => entry.stays > 0 && entry.staysRead < entry.stays)) {
       const missed = tag.stays - tag.staysRead;
-      viewsPanel.append(
+      out.append(
         finding(
           `${tag.tagId} (${tag.role}) de «${lane.laneId}» no se leyó en ${missed} de ${tag.stays} estancias`,
           `${tag.staysRead} de ${tag.stays}`,
@@ -2819,7 +3226,7 @@ function renderCharging(views: CircuitViews): void {
     // distintas invierten el orden de salida con toda normalidad, así que enseñarlas todas sería
     // enterrar la que importa entre las que no. El detalle plegado da el recuento completo.
     for (const breach of lane.outOfSeniority.slice(0, 2)) {
-      viewsPanel.append(
+      out.append(
         finding(
           `A ${breach.waited} se le saltó el turno en «${lane.laneId}»`,
           duration(breach.waitedMs),
@@ -2830,7 +3237,7 @@ function renderCharging(views: CircuitViews): void {
       );
     }
     for (const stay of lane.longStays) {
-      viewsPanel.append(
+      out.append(
         finding(
           `${stay.agvId} permaneció en «${lane.laneId}» mucho más que el resto`,
           duration(stay.durationMs),
@@ -2846,7 +3253,7 @@ function renderCharging(views: CircuitViews): void {
       charging.coverageStartUtcMs === null
         ? "el inicio de la cobertura"
         : new Date(charging.coverageStartUtcMs).toISOString().slice(0, 16).replace("T", " ");
-    viewsPanel.append(
+    out.append(
       finding(
         `${charging.startedInside.length} AGV ya estaban cargando al empezar los datos`,
         charging.startedInside.map((stay) => stay.agvId).join(", "),
@@ -2859,7 +3266,7 @@ function renderCharging(views: CircuitViews): void {
 
 
   const usageOf = new Map(charging.usage.map((entry) => [entry.laneId, entry]));
-  viewsPanel.append(
+  out.append(
     lazyDetails(`Detalle de las ${charging.lanes.length} calles`, () =>
       plainTable(
         ["Calle", "Capacidad", "Estancias", "Cuota", "Estancia habitual", "Turnos saltados"],
@@ -2877,7 +3284,7 @@ function renderCharging(views: CircuitViews): void {
       ),
     ),
   );
-  viewsPanel.append(
+  out.append(
     lazyDetails("Qué se lee dentro de cada calle", () =>
       plainTable(
         ["Calle", "Tag", "Papel", "Leído en estancias", "AGV distintos"],
@@ -2943,8 +3350,8 @@ function renderDrift(views: CircuitViews): void {
   const tagCellOf = (entry: TagDriftEntry): string =>
     entry.kind === "sustitucion-candidata" ? `${entry.tagId} → ${entry.nuevoTagId}` : entry.tagId;
 
-  viewsPanel.append(element("h3", undefined, "Comparación entre dos periodos"));
-  viewsPanel.append(
+  out.append(element("h3", undefined, "Comparación entre dos periodos"));
+  out.append(
     element(
       "p",
       "muted",
@@ -2953,7 +3360,7 @@ function renderDrift(views: CircuitViews): void {
         "Dice qué cambió entre los dos periodos, no por qué.",
     ),
   );
-  if (drift.tagDrifts.length > 0) viewsPanel.append(driftChart(drift));
+  if (drift.tagDrifts.length > 0) out.append(driftChart(drift));
 
   // La suma entre anclas sitúa cada cambio (R-DAT-021): se añade como una línea, sin otra tarjeta.
   const gaps = views.franjas.cohorts.flatMap((cohort) =>
@@ -2965,7 +3372,7 @@ function renderDrift(views: CircuitViews): void {
   };
   const sortedTags = [...drift.tagDrifts].sort((a, b) => a.tagId.localeCompare(b.tagId));
   for (const entry of sortedTags.slice(0, 5)) {
-    viewsPanel.append(
+    out.append(
       finding(`${entry.tagId}: ${kindLabel[entry.kind]}`, detailOf(entry), `${evidenceOf(entry)}${gapLine(entry.kind === "sustitucion-candidata" ? (entry.nuevoTagId ?? entry.tagId) : entry.tagId)}`, [
         "deriva",
         entry.kind,
@@ -2974,7 +3381,7 @@ function renderDrift(views: CircuitViews): void {
     );
   }
   if (sortedTags.length > 0) {
-    viewsPanel.append(
+    out.append(
       lazyDetails(`Detalle de los ${sortedTags.length} tags con cambios`, () =>
         plainTable(
           ["Tag", "Cambio", "Antes", "Ahora"],
@@ -2992,11 +3399,25 @@ function renderDrift(views: CircuitViews): void {
   const sortedVehicles = [...drift.vehicleDrifts].sort(
     (a, b) => b.droppedTags.length + b.notAdoptedTags.length - (a.droppedTags.length + a.notAdoptedTags.length),
   );
-  for (const entry of sortedVehicles.slice(0, 5)) {
+  // Los AGV con exactamente los mismos tags dejados y no adoptados son una sola tarjeta, con el
+  // conjunto como sujeto (UX_SPEC §4.3): siete tarjetas iguales salvo el número no son siete hechos.
+  const vehicleGroups = new Map<string, { agvIds: string[]; sample: (typeof sortedVehicles)[number] }>();
+  for (const entry of sortedVehicles) {
+    const key = `${neverSetOf(entry.droppedTags)}|${neverSetOf(entry.notAdoptedTags)}`;
+    const group = vehicleGroups.get(key);
+    if (group === undefined) vehicleGroups.set(key, { agvIds: [entry.agvId], sample: entry });
+    else group.agvIds.push(entry.agvId);
+  }
+  for (const { agvIds, sample: entry } of [...vehicleGroups.values()].slice(0, 5)) {
+    const plural = agvIds.length > 1;
     const parts: string[] = [];
-    if (entry.droppedTags.length > 0) parts.push(`dejó de leer ${entry.droppedTags.length} tags que sí leía antes`);
+    if (entry.droppedTags.length > 0) {
+      parts.push(`${plural ? "dejaron" : "dejó"} de leer ${entry.droppedTags.length} tags que sí ${plural ? "leían" : "leía"} antes`);
+    }
     if (entry.notAdoptedTags.length > 0) {
-      parts.push(`no registra ${entry.notAdoptedTags.length === 1 ? "1 tag nuevo" : `${entry.notAdoptedTags.length} tags nuevos`} que ya lee la mayoría de la flota`);
+      parts.push(
+        `no ${plural ? "registran" : "registra"} ${entry.notAdoptedTags.length === 1 ? "1 tag nuevo" : `${entry.notAdoptedTags.length} tags nuevos`} que ya lee la mayoría de la flota`,
+      );
     }
     const detail = [
       entry.droppedTags.length > 0
@@ -3008,17 +3429,18 @@ function renderDrift(views: CircuitViews): void {
     ]
       .filter((line): line is string => line !== null)
       .join(" — ");
-    viewsPanel.append(
+    const shown = agvIds.length > 4 ? `${agvIds.slice(0, 4).join(", ")} y ${agvIds.length - 4} más` : joinIds(agvIds);
+    out.append(
       finding(
-        `${entry.agvId}: ${parts.join(", y ")}`,
+        `${shown}: ${parts.join(", y ")}`,
         detail,
-        "El resto de la flota lee esos tags con normalidad: revisar la memoria de este AGV.",
-        ["deriva-agv", entry.agvId],
+        `El resto de la flota lee esos tags con normalidad: revisar la memoria de ${plural ? "estos AGV" : "este AGV"}.`,
+        ["deriva-agv", ...[...agvIds].sort()],
       ),
     );
   }
   if (sortedVehicles.length > 0) {
-    viewsPanel.append(
+    out.append(
       lazyDetails(`Detalle de los ${sortedVehicles.length} AGV con cambios`, () =>
         plainTable(
           ["AGV", "Tags dejados de leer", "Tags nuevos no adoptados"],
@@ -3063,8 +3485,8 @@ function renderCriticalPoints(views: CircuitViews): void {
   const branchesOf = (candidate: Candidate): string =>
     (candidate.branches ?? []).map((branch) => `${branch.tagId} (${Math.round(branch.share * 100)} %)`).join(", ");
 
-  viewsPanel.append(element("h3", undefined, "Candidatos a punto crítico"));
-  viewsPanel.append(
+  out.append(element("h3", undefined, "Candidatos a punto crítico"));
+  out.append(
     element(
       "p",
       "muted",
@@ -3073,7 +3495,7 @@ function renderCriticalPoints(views: CircuitViews): void {
     ),
   );
   if (atMinute) {
-    viewsPanel.append(
+    out.append(
       element(
         "p",
         "muted",
@@ -3084,7 +3506,7 @@ function renderCriticalPoints(views: CircuitViews): void {
   }
 
   for (const problem of problems) {
-    viewsPanel.append(finding("Punto crítico declarado que no se pudo usar", "—", problem));
+    out.append(finding("Punto crítico declarado que no se pudo usar", "—", problem));
   }
 
   const sorted = [...candidates].sort((a, b) => weightOf(b) - weightOf(a));
@@ -3103,7 +3525,7 @@ function renderCriticalPoints(views: CircuitViews): void {
       ...(candidate.hops === undefined ? {} : { hops: candidate.hops }),
     }));
   if (forks.length > 0) {
-    viewsPanel.append(forkChart(forks, PROVISIONAL_CONFIG.criticalPoints.cruce.maxHopsToReconverge));
+    out.append(forkChart(forks, PROVISIONAL_CONFIG.criticalPoints.cruce.maxHopsToReconverge));
   }
   for (const cohort of views.criticalPoints) {
     const timed = cohort.candidates
@@ -3131,11 +3553,11 @@ function renderCriticalPoints(views: CircuitViews): void {
         isReference: false,
       })),
     ];
-    viewsPanel.append(dwellChart(rows));
+    out.append(dwellChart(rows));
   }
 
   for (const candidate of sorted.slice(0, 5)) {
-    viewsPanel.append(
+    out.append(
       finding(`${candidate.tagId}: ${kindLabel[candidate.kind]}`, detailOf(candidate), candidate.evidence, [
         "punto-critico",
         candidate.kind,
@@ -3144,7 +3566,7 @@ function renderCriticalPoints(views: CircuitViews): void {
     );
   }
 
-  viewsPanel.append(
+  out.append(
     lazyDetails(`Detalle de los ${candidates.length} candidatos`, () =>
       plainTable(
         ["Tag", "Posible función", "Pasadas", "Detalle"],
@@ -3179,8 +3601,8 @@ function renderFifo(views: CircuitViews): void {
   const problems = fifo.flatMap((cohort) => cohort.problems);
   if (spans.length === 0 && problems.length === 0) return;
 
-  viewsPanel.append(element("h3", undefined, "Orden de paso en zona cargada (FIFO)"));
-  viewsPanel.append(
+  out.append(element("h3", undefined, "Orden de paso en zona cargada (FIFO)"));
+  out.append(
     element(
       "p",
       "muted",
@@ -3191,7 +3613,7 @@ function renderFifo(views: CircuitViews): void {
   );
 
   for (const problem of problems) {
-    viewsPanel.append(finding("Tramo que no se pudo acotar", "—", problem));
+    out.append(finding("Tramo que no se pudo acotar", "—", problem));
   }
 
   // El adelantamiento con más vehículos por delante, dibujado: una línea que cruza a las demás.
@@ -3202,14 +3624,14 @@ function renderFifo(views: CircuitViews): void {
       top: span.overtakes.reduce((best, overtake) => (overtake.overtakenBy.length > best.overtakenBy.length ? overtake : best)),
     }))
     .sort((a, b) => b.top.overtakenBy.length - a.top.overtakenBy.length)[0];
-  if (focused !== undefined) viewsPanel.append(fifoSlopeChart(focused.span, focused.top.overtaken, FORMATS));
+  if (focused !== undefined) out.append(fifoSlopeChart(focused.span, focused.top.overtaken, FORMATS));
 
   const overtakesFlat = spans.flatMap((span) =>
     span.overtakes.map((overtake) => ({ span, overtake })),
   );
   overtakesFlat.sort((a, b) => b.overtake.marginMs - a.overtake.marginMs);
   for (const { span, overtake } of overtakesFlat.slice(0, 5)) {
-    viewsPanel.append(
+    out.append(
       finding(
         `${overtake.overtaken} fue adelantado en el tramo cargado «${span.spanId}»`,
         `por ${overtake.overtakenBy.join(", ")}, ${duration(overtake.marginMs)} de margen`,
@@ -3220,7 +3642,7 @@ function renderFifo(views: CircuitViews): void {
     );
   }
 
-  viewsPanel.append(
+  out.append(
     lazyDetails(`Detalle de los ${spans.length} tramos`, () =>
       plainTable(
         ["Tramo", "Tags", "Pasadas", "Tránsito habitual", "Adelantamientos"],
@@ -3321,8 +3743,183 @@ function finding(title: string, figure: string, evidence: string, review?: reado
       ),
     );
   }
-  if (review !== undefined) reviewSession?.attach(card, review, title, figure);
+  if (review !== undefined) {
+    card.dataset["kind"] = review[0] ?? "";
+    reviewSession?.attach(card, review, title, figure);
+  }
   return card;
+}
+
+// --- Bandeja de hallazgos (UX_SPEC §4.5) ---------------------------------------------------------
+
+/** El filtro por tema de la bandeja («» es todos). */
+let trayTheme: Theme | "" = "";
+
+/** Un identificador de encabezado a partir de su texto, único dentro de la página. */
+function headingId(text: string, taken: Set<string>): string {
+  const base = `sec-${text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
+  let id = base;
+  for (let n = 2; taken.has(id); n += 1) id = `${base}-${n}`;
+  taken.add(id);
+  return id;
+}
+
+/**
+ * Reúne todas las tarjetas revisables en la bandeja del Resumen, ordenadas por rango y agrupadas por
+ * tema, y deja en cada sección una línea «N hallazgos de esta sección: ver en Resumen». Una sola
+ * copia de cada tarjeta: es la unidad de revisión (R-EVI-007).
+ */
+function buildTray(): void {
+  interface Entry {
+    readonly card: HTMLElement;
+    readonly tab: TabId;
+    readonly sectionId: string;
+    readonly sectionTitle: string;
+    readonly order: number;
+  }
+  const entries: Entry[] = [];
+  const taken = new Set<string>();
+  for (const tab of TAB_IDS) {
+    const panel = viewsOf.get(tab) as HTMLElement;
+    let section: { id: string; title: string } = { id: panel.id, title: TABS.find(([id]) => id === tab)?.[1] ?? tab };
+    const firstOfSection = new Map<string, HTMLElement>();
+    const countOf = new Map<string, number>();
+    for (const node of panel.querySelectorAll<HTMLElement>("h3, .finding.reviewable")) {
+      if (node.tagName === "H3") {
+        // Los títulos de las figuras no abren sección: la tarjeta que sigue a un gráfico es de la
+        // sección que lo contiene.
+        if (node.closest("figure") !== null) continue;
+        if (node.id === "") node.id = headingId(node.textContent ?? "", taken);
+        section = { id: node.id, title: node.textContent ?? "" };
+        continue;
+      }
+      entries.push({ card: node, tab, sectionId: section.id, sectionTitle: section.title, order: entries.length });
+      countOf.set(section.id, (countOf.get(section.id) ?? 0) + 1);
+      if (!firstOfSection.has(section.id)) firstOfSection.set(section.id, node);
+    }
+    // En cada sección, donde salían las tarjetas, la línea que lleva a la bandeja.
+    for (const [sectionId, first] of firstOfSection) {
+      const count = countOf.get(sectionId) ?? 0;
+      const line = element("p", "findings-elsewhere");
+      const link = element("a", undefined, "ver en Resumen");
+      link.href = "#resumen";
+      const theme = findingKindOf(first.dataset["kind"] ?? "").theme;
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        setTrayTheme(theme);
+        activateTab("resumen");
+        trayPanel.scrollIntoView({ block: "start" });
+      });
+      line.append(`${count} ${count === 1 ? "hallazgo de esta sección" : "hallazgos de esta sección"}: `, link);
+      first.replaceWith(line);
+    }
+  }
+  for (const entry of entries) entry.card.remove();
+
+  // Ordenadas por rango; dentro del rango, por tema y por orden de aparición.
+  const kindOf = (entry: Entry) => findingKindOf(entry.card.dataset["kind"] ?? "");
+  entries.sort((a, b) => {
+    const ka = kindOf(a);
+    const kb = kindOf(b);
+    if (ka.rank !== kb.rank) return ka.rank - kb.rank;
+    if (ka.theme !== kb.theme) return THEMES.indexOf(ka.theme) - THEMES.indexOf(kb.theme);
+    return a.order - b.order;
+  });
+
+  trayPanel.replaceChildren();
+  trayPanel.hidden = false;
+  trayPanel.append(element("h2", undefined, "Hallazgos"));
+  trayPanel.append(
+    element(
+      "p",
+      "muted",
+      entries.length === 0
+        ? "Ningún hallazgo que revisar en este análisis."
+        : `${entries.length} ${entries.length === 1 ? "hallazgo" : "hallazgos"}, de mayor a menor gravedad. Cada tarjeta lleva a la ` +
+            "sección que la explica; el estado de la revisión se guarda en este dispositivo.",
+    ),
+  );
+  if (reviewSession !== null) trayPanel.append(reviewSession.panel);
+  const chips = element("div", "seg theme-filter");
+  chips.setAttribute("role", "group");
+  chips.setAttribute("aria-label", "Tema");
+  for (const [value, label] of [["", "Todos los temas"], ...THEMES.map((theme) => [theme, THEME_LABEL[theme]] as const)] as const) {
+    const chip = element("button", undefined, label);
+    chip.type = "button";
+    chip.dataset["theme"] = value;
+    chip.setAttribute("aria-pressed", String(value === trayTheme));
+    chip.addEventListener("click", () => setTrayTheme(value));
+    chips.append(chip);
+  }
+  trayPanel.append(chips, tray);
+
+  let rank: FindingRank | null = null;
+  let group: HTMLElement | null = null;
+  for (const entry of entries) {
+    const kind = kindOf(entry);
+    if (kind.rank !== rank) {
+      rank = kind.rank;
+      group = element("div", "tray-group");
+      group.dataset["rank"] = String(rank);
+      group.append(element("h3", "tray-rank", RANK_LABEL[rank]));
+      tray.append(group);
+    }
+    const card = entry.card;
+    card.dataset["theme"] = kind.theme;
+    card.dataset["tab"] = entry.tab;
+    const where = element("p", "finding-where");
+    const chip = element("span", "chip", `${THEME_LABEL[kind.theme]} · ${kind.label}`);
+    const link = element("a", "evidence", "Ver evidencia");
+    link.href = `#${entry.tab}`;
+    link.setAttribute("aria-label", `Ver evidencia en «${entry.sectionTitle}»`);
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      activateTab(entry.tab);
+      const target = document.getElementById(entry.sectionId);
+      (target ?? tabPanels.get(entry.tab))?.scrollIntoView({ block: "start" });
+      if (target instanceof HTMLElement) {
+        target.tabIndex = -1;
+        target.focus({ preventScroll: true });
+      }
+    });
+    where.append(chip, " ", link);
+    card.prepend(where);
+    // El control de revisión cierra la tarjeta: lo que se añadió después (las mediciones de una
+    // incidencia) va antes que él.
+    const review = card.querySelector(":scope > .review");
+    if (review !== null) card.append(review);
+    group?.append(card);
+  }
+  reviewSession?.onChange(applyTrayFilter);
+  applyTrayFilter();
+}
+
+function setTrayTheme(theme: Theme | ""): void {
+  trayTheme = theme;
+  for (const chip of trayPanel.querySelectorAll<HTMLButtonElement>(".theme-filter button")) {
+    chip.setAttribute("aria-pressed", String((chip.dataset["theme"] ?? "") === theme));
+  }
+  applyTrayFilter();
+}
+
+/** Esconde las tarjetas que no pasan el filtro de tema ni el de estado, y los rangos que quedan vacíos. */
+function applyTrayFilter(): void {
+  const state = reviewSession?.filter() ?? "";
+  for (const group of tray.querySelectorAll<HTMLElement>(".tray-group")) {
+    let visible = 0;
+    for (const card of group.querySelectorAll<HTMLElement>(".finding.reviewable")) {
+      const shown =
+        (trayTheme === "" || card.dataset["theme"] === trayTheme) && (state === "" || card.dataset["review"] === state);
+      card.hidden = !shown;
+      if (shown) visible += 1;
+    }
+    group.hidden = visible === 0;
+  }
 }
 
 /** La frase que acompaña a cada patrón. Enuncia la pregunta; no la responde (R-EVI-006). */
@@ -3368,7 +3965,7 @@ function explain(tag: TagRow, readers: VehicleReadingView["tags"][number] | unde
 /** La matriz entera, plegada y construida solo si alguien la abre. */
 function renderFullMatrix(matrix: Matrix): void {
   const vehicles = matrix.vehicles.map((vehicle) => vehicle.agvId);
-  viewsPanel.append(
+  out.append(
     lazyDetails(
       `Ver la matriz completa: ${matrix.tags.length} tags × ${vehicles.length} AGV`,
       () =>
@@ -3390,7 +3987,7 @@ function renderFullMatrix(matrix: Matrix): void {
         ),
     ),
   );
-  viewsPanel.append(
+  out.append(
     element(
       "p",
       "muted",
@@ -3407,7 +4004,8 @@ function renderDossier(): void {
   const query = dossierInput.value.trim();
   dossierResult.replaceChildren();
   if (query === "" || state.views === null) {
-    dossierPanel.hidden = state.views === null;
+    // Sin búsqueda no hay expediente que enseñar: el panel se queda fuera de la pestaña AGV.
+    dossierPanel.hidden = true;
     return;
   }
   dossierPanel.hidden = false;

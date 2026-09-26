@@ -7,6 +7,8 @@
  */
 
 import { expect, test, type Page } from "@playwright/test";
+
+import { openTab } from "./pestanas.js";
 import { fileURLToPath } from "node:url";
 
 const ANILLO = fileURLToPath(new URL("../../fixtures/synthetic/anillo/", import.meta.url));
@@ -78,6 +80,8 @@ test.describe("composición del circuito y tasa de lectura", () => {
     await expect(page.getByText("1 circuito de 2 vehículos y 4 tags en el anillo")).toBeVisible();
 
     // La lista ordenada existe y se despliega: es la que se contrasta con Vsystem y con la memoria.
+    // El anillo vive en Tiempos.
+    await openTab(page, "Tiempos");
     await page.getByText("Ver los 4 tags del anillo, en orden").click();
     const orden = page.locator("table.data", { hasText: "Posición" }).first();
     await expect(orden.getByRole("cell", { name: "0100", exact: true })).toBeVisible();
@@ -93,6 +97,7 @@ test.describe("composición del circuito y tasa de lectura", () => {
 
     // Lo que nunca puede desaparecer del texto: que el porcentaje es por pasada y que esto no es
     // una tasa de salud. Sin esas dos frases, el número afirma más de lo que el dato sostiene.
+    await openTab(page, "Tags");
     await expect(page.getByText(/pasó por el punto/)).toBeVisible();
     await expect(page.getByText(/No es una tasa de salud/)).toBeVisible();
   });
@@ -114,6 +119,7 @@ test.describe("contraste contra Vsystem", () => {
     // con las que cruzar.
     await page.locator("#source-file").setInputFiles([]);
     await page.locator("#source-file").setInputFiles(`${ANILLO}lecturas.csv`);
+    await openTab(page, "Tags");
     await expect(page.getByText("Contraste contra Vsystem")).toBeVisible({ timeout: 15_000 });
 
     const contraste = page.locator("h3", { hasText: "Contraste contra Vsystem" });
@@ -136,6 +142,7 @@ test.describe("replay básico", () => {
     await page.locator("#source-file").setInputFiles(`${ANILLO}lecturas.csv`);
     await expect(page.getByText("Circuito «anillo»")).toBeVisible({ timeout: 15_000 });
 
+    await openTab(page, "Datos");
     await expect(page.getByRole("heading", { name: "Replay" })).toBeVisible();
     // En el primer fotograma, 0042 —cuya primera lectura es dos minutos después del inicio del
     // anillo— todavía no ha leído nada: no se le inventa una posición de partida, y tampoco se le
