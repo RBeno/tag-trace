@@ -1816,6 +1816,19 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
  * los cambios propuestos y vuelve a cargarlas, el análisis siguiente las recoge ya actualizadas y
  * el anterior sigue explicándose con las suyas.
  */
+/** Consolidación y revocación de la memoria (F4). Pendiente de implementar: hoy responde con error. */
+async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "revoke" }>): Promise<void> {
+  emit(
+    {
+      type: "error",
+      code: "INTERNAL",
+      cause: `La memoria consolidada aún no está disponible (${message.type}).`,
+      recovery: "Espera a la entrega de la fase 4.",
+    },
+    message.jobId,
+  );
+}
+
 async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<void> {
   const { jobId, file, circuitId } = message;
   if (!isAvailable()) {
@@ -2029,6 +2042,13 @@ scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   if (message.type === "cancel") {
     // Solo cancela el trabajo vigente: una cancelación tardía de otro trabajo no afecta a este.
     if (message.jobId === currentJobId) cancelRequested = true;
+    return;
+  }
+
+  if (message.type === "consolidate" || message.type === "revoke") {
+    currentJobId = message.jobId;
+    seq = 0;
+    void runMemory(message);
     return;
   }
 

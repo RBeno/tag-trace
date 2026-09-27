@@ -21,6 +21,7 @@ import type { DeliveryConcentration, GroupedDelivery } from "../domain/grouped-d
 import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { StructureSet } from "../domain/anchor-sums.js";
 import type { SnapshotDelta } from "../domain/snapshot.js";
+import type { ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryComparison } from "../domain/memory.js";
 import type { Interval } from "../domain/coverage.js";
 import type { PaceReport } from "../domain/vehicle-pace.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
@@ -188,7 +189,34 @@ export interface FleetChooseCircuitMessage extends Envelope {
   readonly options: readonly { readonly name: string; readonly rows: number }[];
 }
 
-export type ToWorker = StartMessage | CancelMessage | LoadListsMessage | LoadFleetMessage;
+/**
+ * Consolidar un periodo (F4; `MEMORY_CONSOLIDATION.md` §6). `mode: "preview"` devuelve qué pasaría
+ * sin escribir nada; `mode: "commit"` escribe vN+1 y solo se envía tras la confirmación humana. El
+ * Worker no decide consolidar: ejecuta lo que la persona confirmó (R-MEM-001).
+ */
+export interface ConsolidateMessage {
+  readonly type: "consolidate";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  /** El fichero cuya instantánea se consolida. */
+  readonly sourceId: string;
+  readonly mode: "preview" | "commit";
+  /** Justificación humana, solo en `commit`. */
+  readonly note?: string;
+}
+
+/** Revocar una versión: no la borra, la marca con fecha y razón (§7). */
+export interface RevokeMessage {
+  readonly type: "revoke";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly version: number;
+  readonly reason: string;
+}
+
+export type ToWorker = StartMessage | CancelMessage | LoadListsMessage | LoadFleetMessage | ConsolidateMessage | RevokeMessage;
 
 interface Envelope {
   readonly protocolVersion: number;
@@ -645,6 +673,12 @@ export interface CircuitViews {
     readonly problems: readonly string[];
   };
   /**
+   * La memoria consolidada del circuito (F4). Ausente si el circuito no tiene versiones; con
+   * `current: null` si todas están revocadas. `comparison` es lo observado (la instantánea del
+   * fichero de trabajo) frente a la versión vigente, o `null` si no hay vigente o falta instantánea.
+   */
+  readonly memory?: MemoryViews;
+  /**
    * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando
    * el circuito tiene listas de planta cargadas **y** al menos dos periodos distantes: con una sola
    * fuente cargada no hay con qué comparar, y no mostrar nada es más honesto que un aviso permanente.
@@ -675,6 +709,53 @@ export interface CircuitViews {
       readonly notAdoptedTags: readonly string[];
     }[];
   };
+}
+
+/** Resumen de una versión consolidada, sin el grafo: lo que la lista de versiones necesita. */
+export interface VersionSummary {
+  readonly version: number;
+  readonly createdAt: number;
+  readonly basedOnFileName: string;
+  readonly basedOnSourceId: string;
+  readonly window: { readonly from: number; readonly to: number };
+  readonly decisions: { readonly confirmed: number; readonly discarded: number; readonly postponed: number };
+  readonly note: string | null;
+  readonly revoked: { readonly at: number; readonly reason: string } | null;
+  readonly hash: string;
+  readonly bytes: number;
+}
+
+export interface MemoryViews {
+  readonly versions: readonly VersionSummary[];
+  /** Número de la versión vigente (última no revocada) o `null`. */
+  readonly current: number | null;
+  readonly comparison: MemoryComparison | null;
+  /** Bytes que ocupan todas las versiones guardadas, revocadas incluidas (§9). */
+  readonly budgetBytes: number;
+  /** Relación con la memoria que traía el último `.agvproj` abierto, si hubo (§10). */
+  readonly lineage: LineageRelation | null;
+}
+
+/** Respuesta a `consolidate` en modo `preview`: nada se ha escrito. */
+export interface ConsolidationPreviewMessage extends Envelope {
+  readonly type: "consolidation-preview";
+  readonly circuitId: string;
+  readonly preview: ConsolidationPreview;
+}
+
+/** Respuesta a `consolidate` en modo `commit`: la versión ya está en el almacén. */
+export interface ConsolidatedMessage extends Envelope {
+  readonly type: "consolidated";
+  readonly circuitId: string;
+  readonly version: ConsolidatedVersion;
+  readonly memory: MemoryViews;
+}
+
+export interface RevokedMessage extends Envelope {
+  readonly type: "revoked";
+  readonly circuitId: string;
+  readonly version: number;
+  readonly memory: MemoryViews;
 }
 
 /** `ReplayFrame` tal como cruza el `postMessage`: el mapa de vehículos, ya como pares. */
@@ -718,7 +799,10 @@ export type FromWorker =
   | CancelledMessage
   | ListsLoadedMessage
   | FleetLoadedMessage
-  | FleetChooseCircuitMessage;
+  | FleetChooseCircuitMessage
+  | ConsolidationPreviewMessage
+  | ConsolidatedMessage
+  | RevokedMessage;
 
 /**
  * `Omit` sobre una unión colapsa a las claves comunes y pierde el discriminante. Distribuyendo
