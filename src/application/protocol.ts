@@ -249,6 +249,8 @@ export type PlanAction =
   | {
       readonly kind: "aceptar-propuesta";
       readonly proposalId: string;
+      /** El fichero de cuya observación salió la propuesta: el Worker la recalcula desde su instantánea. */
+      readonly sourceId: string;
       readonly reason: string;
       /** Solo en `salida-sin-ubicar`: la ubicación del anillo de la que cuelga la salida. */
       readonly branchFrom?: string;
@@ -261,6 +263,8 @@ export interface PlanActionMessage {
   readonly jobId: string;
   readonly circuitId: string;
   readonly action: PlanAction;
+  /** El fichero de trabajo que la interfaz enseña: la respuesta trae el plano leído contra él. */
+  readonly workingSourceId: string | null;
 }
 
 export type ToWorker =
