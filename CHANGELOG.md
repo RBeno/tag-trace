@@ -2,6 +2,38 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.53.0] - 2026-09-27
+
+El plano físico del circuito (ADR-0016): tres ideas del esbozo inicial del propietario que se
+habían perdido, recuperadas a petición suya.
+
+### Añadido
+
+- **Ubicaciones estables, distintas del tag instalado** (R-GRA-019). El plano del circuito son
+  ubicaciones `U-0001`… con su tag a lo largo del tiempo: sustituir un tag no borra la historia del
+  sitio. Una ubicación puede no tener tag físico, con el código que el circuito virtual declara.
+- **Un plano que no cambia porque un tag deje de leerse** (R-GRA-020). Sus cambios son eventos
+  append-only con fecha efectiva, razón y evidencia, y solo los escribe una persona. El programa
+  propone —tag nuevo entre dos ubicaciones, sustitución donde una deja de leerse, salida sin
+  ubicar— y la persona confirma. Una ubicación sin leer sigue en el plano como «sin leer: N pasadas
+  por su sitio», inferida, o «sin ocasión»; la evolución y la comparación con la memoria lo dicen
+  así en vez de «desaparece».
+- **Salidas que se revisan a mano** (R-GRA-021): los tags de parada por salida de circuito cuelgan de
+  una ubicación del anillo, no entran en ninguna tasa, y su estado es la última revisión registrada.
+- **Estadísticas que se suman entre periodos** (R-MEM-004): cada horquilla guarda media y M2; por
+  ubicación, oportunidades, aciertos, omisiones e inciertos; por conexión, recuento, media y
+  desviación, combinados de forma exacta entre ficheros.
+- **Sección «Plano del circuito»** en la pestaña Memoria (`UX_SPEC.md` §6.1): crear el plano desde una
+  versión, ubicaciones con su estado y su historia, acciones manuales, salidas, propuestas, tramos
+  entre ubicaciones e historial. Fixtures sintéticos nuevos en `memoria/`.
+
+### Cambiado
+
+- **Almacén local, versión 8** (tabla `plan`) y **`.agvproj` esquema 4** (sección `plano`); los
+  anteriores se siguen abriendo. **Cambia un resultado esperado por la subida de esquema**: la
+  prueba del esquema vigente del `.agvproj` espera 4.
+- Umbral provisional nuevo en configuración: `plan.min_vehicles_for_proposal` = 2.
+
 ## [3.52.0] - 2026-09-27
 
 El propietario cierra OQ-143 y OQ-144 con las recomendaciones («Ok entonces continúa con las 3»).

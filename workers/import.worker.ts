@@ -114,11 +114,13 @@ import { buildAllAgvDossiers, buildAllTagDossiers } from "../src/domain/dossier.
 import { compareAgainstVsystem } from "../src/domain/vsystem.js";
 import { buildReplayFrames } from "../src/domain/replay.js";
 import { PROVISIONAL_CONFIG } from "../src/domain/config.js";
-import type { CircuitViews, MemoryViews, VersionSummary } from "../src/application/protocol.js";
+import type { CircuitViews, MemoryViews, PlanViews, VersionSummary } from "../src/application/protocol.js";
 import {
+  appendPlanEvents,
   isAvailable,
   loadCircuit,
   loadMemoryState,
+  loadPlanEvents,
   loadRetainedReadings,
   loadReviews,
   loadSnapshots,
@@ -147,6 +149,19 @@ import {
   type ConsolidationPreview,
   type LineageState,
 } from "../src/domain/memory.js";
+import {
+  bootstrapPlan,
+  describeEvent,
+  observeAgainstPlan,
+  planAt,
+  proposeChanges,
+  reinterpretDelta,
+  summarizePlan,
+  validateEvent,
+  type PlanEvent,
+  type PlanEventInput,
+  type PlanObservation,
+} from "../src/domain/plan.js";
 import { findingKindOf } from "../src/domain/finding-kinds.js";
 import { distinctSources, retainedSources } from "../src/persistence/retention.js";
 import {
@@ -1655,12 +1670,45 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     }
   }
 
+  // El plano físico (ADR-0016): si el circuito tiene plano, o una versión vigente desde la que crearlo.
+  // Con plano, la evolución y la comparación con la memoria se leen con él: un tag instalado que no se
+  // leyó es «no observado» en su ubicación, no «desaparece» (`reinterpretDelta`).
+  let plan: PlanViews | undefined;
+  let snapshotsFinal = snapshotsView;
+  if (stored !== undefined && isAvailable()) {
+    try {
+      const [events, memoryData] = await Promise.all([loadPlanEvents(stored.circuitId), loadMemory(stored.circuitId)]);
+      const built = planViewsFrom({
+        events,
+        current: currentVersion(memoryData.active),
+        snapshots: allSnapshots,
+        working: snapshot ?? snapshotOf.get(importedSource.sourceId) ?? null,
+        declaredExits: declaredExitsOf(stored.lists),
+      });
+      if (built !== undefined) {
+        plan = built.views;
+        if (events.length > 0) {
+          snapshotsFinal = {
+            ...snapshotsView,
+            deltas: snapshotsView.deltas.map((delta) => reinterpretDelta(delta, built.observations.get(delta.toSourceId) ?? null)),
+          };
+          if (memory !== undefined && memory.comparison !== null) {
+            memory = { ...memory, comparison: { ...memory.comparison, delta: reinterpretDelta(memory.comparison.delta, built.views.observation) } };
+          }
+        }
+      }
+    } catch (error) {
+      failures.push(`El plano físico no se pudo leer: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   const views: CircuitViews = {
     ...baseViews,
     anchorSections: anchorSectionsFinal,
     franjas: { ...baseViews.franjas, cohorts: franjaCohortsFinal },
-    snapshots: snapshotsView,
+    snapshots: snapshotsFinal,
     ...(memory === undefined ? {} : { memory }),
+    ...(plan === undefined ? {} : { plan }),
     ...listViews,
     ...(drift === null || !drift.evaluated || drift.earlyPeriod === null || drift.latePeriod === null
       ? {}
@@ -2012,6 +2060,175 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
   }
 }
 
+// --- Plano físico (ADR-0016) -----------------------------------------------------------------------
+
+/** Tags de parada por salida de circuito declarados: lista `critico`, función `parada`. */
+function declaredExitsOf(lists: StoredCircuit["lists"]): readonly string[] {
+  const tags = (lists ?? [])
+    .filter((list) => list.list === "critico")
+    .flatMap((list) => list.entries ?? [])
+    .filter((entry) => entry.funcion === "parada")
+    .map((entry) => entry.tagId);
+  return [...new Set(tags)].sort();
+}
+
+interface PlanInputs {
+  readonly events: readonly PlanEvent[];
+  /** La versión consolidada vigente, o `null`. */
+  readonly current: ConsolidatedVersion | null;
+  readonly snapshots: readonly CircuitSnapshot[];
+  /** La instantánea del fichero de trabajo, o `null`. */
+  readonly working: CircuitSnapshot | null;
+  readonly declaredExits: readonly string[];
+}
+
+/**
+ * Las vistas del plano, todas calculadas aquí: el plano vigente, el historial en palabras, el fichero
+ * de trabajo leído con el plano de su ventana, la suma de todas las instantáneas y las propuestas.
+ * `undefined` si el circuito no tiene plano ni versión vigente desde la que crearlo. Devuelve también
+ * la observación de cada instantánea, para leer la evolución con el plano.
+ */
+function planViewsFrom(input: PlanInputs): { readonly views: PlanViews; readonly observations: ReadonlyMap<string, PlanObservation> } | undefined {
+  const { events, current, working } = input;
+  if (events.length === 0 && current === null) return undefined;
+  const hasPlan = events.some((event) => event.type === "crear-plano");
+  const observations = new Map<string, PlanObservation>();
+  for (const entry of sortSnapshots(input.snapshots)) {
+    if (observations.has(entry.sourceId)) continue;
+    const plan = planAt(events, entry.window.to);
+    if (plan !== null) observations.set(entry.sourceId, observeAgainstPlan(plan, entry));
+  }
+  const workingPlan = working === null ? null : planAt(events, working.window.to);
+  const observation = working === null || workingPlan === null ? null : (observations.get(working.sourceId) ?? observeAgainstPlan(workingPlan, working));
+  if (working !== null && observation !== null) observations.set(working.sourceId, observation);
+  const proposals =
+    working === null || workingPlan === null || observation === null
+      ? []
+      : proposeChanges(workingPlan, observation, working, {
+          declaredExits: input.declaredExits,
+          minVehicles: PROVISIONAL_CONFIG.plan.minVehiclesForProposal,
+        });
+  return {
+    views: {
+      current: planAt(events, Date.now()),
+      canBootstrap: hasPlan || current === null ? null : { version: current.version, fileName: current.basedOn.fileName },
+      events: [...events].sort((a, b) => a.seq - b.seq).map((event) => ({ ...event, text: describeEvent(event, events) })),
+      observation,
+      summary: observations.size === 0 ? null : summarizePlan([...observations.values()]),
+      proposals,
+    },
+    observations,
+  };
+}
+
+/** Una negativa del plano con su motivo y qué hacer: no es un defecto, es una acción que no vale. */
+class PlanRefusal extends Error {
+  constructor(
+    readonly reason: string,
+    readonly recovery: string,
+  ) {
+    super(reason);
+    this.name = "PlanRefusal";
+  }
+}
+
+/**
+ * Cambios del plano físico (ADR-0016). El Worker no decide nada: escribe lo que una persona confirmó,
+ * con su razón, después de validar **todos** los eventos en orden contra el registro guardado, y en
+ * una sola transacción append-only. Las propuestas se recalculan aquí desde la instantánea del
+ * fichero; nunca se escribe la que trae la interfaz.
+ */
+async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Promise<void> {
+  const { jobId, circuitId, action } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  if (!isAvailable()) {
+    fail("No hay almacén local: el plano físico necesita IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
+    return;
+  }
+  try {
+    const reason = typeof action.reason === "string" ? action.reason.trim() : "";
+    if (reason === "") throw new PlanRefusal("La razón está vacía: ningún cambio del plano se escribe sin su justificación.", "Escribe por qué se hace el cambio y vuelve a confirmarlo.");
+    const stored = await loadCircuit(circuitId);
+    if (stored === undefined) throw new PlanRefusal(`El circuito ${circuitId} no está en el almacén.`, "Carga antes un fichero del circuito.");
+    const [events, memoryData, snapshots] = await Promise.all([loadPlanEvents(circuitId), loadMemory(circuitId), loadSnapshots(circuitId)]);
+    const declaredExits = declaredExitsOf(stored.lists);
+    const now = Date.now();
+    const lastSeq = events.reduce((max, event) => Math.max(max, event.seq), 0);
+    const build = (inputs: readonly PlanEventInput[], origin: PlanEvent["origin"]): PlanEvent[] =>
+      inputs.map((input, index) => ({ ...input, evidence: input.evidence ?? null, circuitId, seq: lastSeq + 1 + index, recordedAt: now, reason, origin }) as PlanEvent);
+
+    let toWrite: PlanEvent[];
+    if (action.kind === "crear-plano") {
+      if (events.length > 0) throw new PlanRefusal("El circuito ya tiene plano: no se crea dos veces.", "Registra los cambios como eventos del plano existente.");
+      const version = memoryData.active.find((entry) => entry.version === action.fromVersion);
+      if (version === undefined) throw new PlanRefusal(`La versión v${action.fromVersion} no está en el linaje activo del circuito.`, "Elige una versión de la lista de versiones.");
+      if (version.revoked !== null) throw new PlanRefusal(`La versión v${action.fromVersion} está revocada: el plano no nace de una versión revocada.`, "Elige la versión vigente.");
+      toWrite = [bootstrapPlan(version, { circuitId, recordedAt: now, reason })];
+    } else if (action.kind === "aceptar-propuesta") {
+      const snapshot = snapshots.find((entry) => entry.sourceId === action.sourceId);
+      if (snapshot === undefined) throw new PlanRefusal(`El fichero ${action.sourceId} no tiene instantánea: la propuesta no se puede volver a calcular.`, "Vuelve a cargar el fichero y revisa las propuestas.");
+      const plan = planAt(events, snapshot.window.to);
+      if (plan === null) throw new PlanRefusal(`Al final de la ventana de «${snapshot.fileName}» todavía no había plano.`, "Las propuestas salen de ficheros posteriores a la creación del plano.");
+      const observation = observeAgainstPlan(plan, snapshot);
+      const proposal = proposeChanges(plan, observation, snapshot, { declaredExits, minVehicles: PROVISIONAL_CONFIG.plan.minVehiclesForProposal }).find(
+        (entry) => entry.id === action.proposalId,
+      );
+      if (proposal === undefined) {
+        throw new PlanRefusal(
+          `La propuesta «${action.proposalId}» ya no sale de «${snapshot.fileName}» con el plano guardado: quizá ya se aceptó o el plano cambió.`,
+          "Revisa la lista de propuestas actualizada.",
+        );
+      }
+      let inputs = proposal.events;
+      if (proposal.kind === "salida-sin-ubicar") {
+        const branchFrom = action.branchFrom ?? "";
+        const anchor = plan.locations.find((location) => location.locationId === branchFrom);
+        if (branchFrom === "" || anchor === undefined || anchor.kind !== "anillo") {
+          throw new PlanRefusal(
+            branchFrom === "" ? "Una salida tiene que colgar de una ubicación del anillo, y no se ha elegido ninguna." : `${branchFrom} no es una ubicación de anillo abierta del plano.`,
+            "Elige la ubicación del anillo de la que cuelga la salida.",
+          );
+        }
+        inputs = inputs.map((input) => (input.type === "crear-ubicacion" ? { ...input, branchFrom } : input));
+      }
+      toWrite = build(inputs, "propuesta");
+    } else {
+      toWrite = build([action.event], "manual");
+    }
+
+    // Todos los eventos se validan en orden antes de escribir ninguno.
+    const accumulated: PlanEvent[] = [...events];
+    for (const event of toWrite) {
+      const problem = validateEvent(accumulated, event);
+      if (problem !== null) throw new PlanRefusal(`No se escribe nada: «${describeEvent(event, accumulated)}» no vale. ${problem}`, "Corrige el cambio y vuelve a confirmarlo.");
+      accumulated.push(event);
+    }
+    await appendPlanEvents(toWrite);
+
+    const saved = await loadPlanEvents(circuitId);
+    const ordered = sortSnapshots(snapshots);
+    const working =
+      message.workingSourceId === null
+        ? (ordered[ordered.length - 1] ?? null)
+        : (snapshots.find((entry) => entry.sourceId === message.workingSourceId) ?? null);
+    const built = planViewsFrom({ events: saved, current: currentVersion(memoryData.active), snapshots, working, declaredExits });
+    if (built === undefined) throw new Error("Los eventos se guardaron pero el plano no se pudo volver a leer.");
+    emit({ type: "plan-updated", circuitId, written: toWrite.map((event) => describeEvent(event, saved)), plan: built.views }, jobId);
+  } catch (error) {
+    if (error instanceof PlanRefusal) {
+      fail(error.reason, error.recovery);
+      return;
+    }
+    // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
+    fail(
+      `La operación del plano falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
+    );
+  }
+}
+
 /**
  * Carga las listas de tags de un circuito y las guarda **con él**.
  *
@@ -2020,19 +2237,6 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
  * los cambios propuestos y vuelve a cargarlas, el análisis siguiente las recoge ya actualizadas y
  * el anterior sigue explicándose con las suyas.
  */
-/** Cambios del plano físico (ADR-0016). Pendiente de implementar: hoy responde con error. */
-async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Promise<void> {
-  emit(
-    {
-      type: "error",
-      code: "INTERNAL",
-      cause: `El plano físico aún no está disponible (${message.action.kind}).`,
-      recovery: "Espera a la entrega del plano.",
-    },
-    message.jobId,
-  );
-}
-
 async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<void> {
   const { jobId, file, circuitId } = message;
   if (!isAvailable()) {

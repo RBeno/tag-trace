@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.26.0
+version: 0.27.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -502,7 +502,9 @@ abre igual, sin instantáneas, y la aplicación lo dice. **`schema_version` 3 de
 sección `memoria` con las versiones consolidadas (§13) y el estado de linaje —linaje activo,
 linajes archivados y los eventos de elección—; un linaje entrante sin resolver no se exporta. Se
 leen los esquemas 1, 2 y 3; el 2 es el 3 sin `memoria`, que al abrirse se clasifica como
-`sin-memoria` (`MEMORY_CONSOLIDATION.md` §10).
+`sin-memoria` (`MEMORY_CONSOLIDATION.md` §10). **`schema_version` 4 desde 2026-09-27**: sección
+`plano` con los eventos del plano físico (§14). Se leen los esquemas 1 a 4; el 3 es el 4 sin
+`plano`.
 
 No incluirá el bruto completo por defecto. Un expediente puede conservar un recorte normalizado mínimo cuando sea necesario para reproducir una incidencia.
 
@@ -615,4 +617,42 @@ Borrar el circuito borra su memoria. Consolidar escribe la versión y el estado 
 **Lo observado frente a la memoria.** En cada importación, si el circuito tiene una versión
 vigente, el Worker compara la instantánea del fichero de trabajo con ella (`compareToMemory`) y
 la vista lo enseña en la pestaña Memoria. Sin vigente (todas revocadas) no hay comparación y se dice.
+
+## 14. El plano físico (ADR-0016)
+
+El plano (`src/domain/plan.ts`) separa la **ubicación** del **tag instalado** en ella (R-GRA-019). Se
+guarda como una lista de eventos append-only con fecha efectiva; el plano de cualquier instante sale
+de recorrerlos (`planAt`).
+
+| Evento | Qué hace |
+|---|---|
+| `crear-plano` | Crea una ubicación de anillo por tag del anillo de una versión consolidada, en orden, con su tag |
+| `crear-ubicacion` | Ubicación nueva: de anillo, detrás de `after`; o `salida`, colgando de `branchFrom`. Nace sin tag; `virtualTag` guarda el código que el circuito virtual declara para ese sitio |
+| `instalar`, `sustituir`, `retirar` | Cambian el tag de una ubicación; la ubicación y su historia siguen |
+| `cerrar-ubicacion` | La ubicación deja de existir; en el anillo, sus vecinos quedan conectados |
+| `revision-manual` | Resultado de ir a mirar: `correcto`, `averiado` o `no-encontrado`, con nota |
+
+Cada evento lleva `seq`, fecha efectiva, fecha de registro, razón humana, evidencia (fichero y
+detalle) y origen (`manual` o `propuesta` confirmada). Los identificadores de ubicación
+(`U-0001`…) no se reutilizan nunca, tampoco los de una ubicación cerrada. Un evento que dejaría sin
+valor otro posterior se rechaza, así que uno retroactivo no rompe el historial.
+
+**Observación de un fichero contra el plano** (`observeAgainstPlan`), con el plano vigente al final
+de su ventana. Por ubicación: estado (`observado`, `no-observado`, `sin-ocasion`, `sin-tag`,
+`revision-manual`), grado de verdad, oportunidades evaluables, aciertos, omisiones e inciertos.
+Los inciertos son desconocidos (`null`) en toda ubicación de anillo con tag: la instantánea no
+guarda las pasadas cortadas. Las pasadas por el sitio salen, por orden de preferencia, de la sección
+entre anclas que contiene la ubicación según el plano, de las pasadas probadas de su vértice, o de
+la arista que la salta entre sus vecinos leídos (entonces es inferida). Por conexión y régimen:
+recuento, media y M2 (Welford), que `summarizePlan` combina entre periodos de forma exacta (Chan).
+Una conexión que salta ubicaciones sin leer es una **ruta**, no una conexión del plano.
+
+**Almacén local, versión 8.** Tabla `plan` con clave `[circuitId, seq]`, escrita con `add` en una
+transacción: si un `seq` ya existe no se escribe ninguno. La migración desde la 7 solo crea la tabla.
+Borrar el circuito borra su plano. Al abrir un `.agvproj`, los eventos entrantes se clasifican
+frente a los locales: `sin-plano`, `identico`, `local-adelantado`, `entrante-adelantado` (se añaden
+los que faltan) o `distinto` (no se mezcla nada, R-MEM-002).
+
+Las horquillas (`Band`) guardan desde 3.53.0 `meanMs` y `m2` de las mismas muestras; las instantáneas
+anteriores no los traen y sus conexiones salen sin momentos.
 

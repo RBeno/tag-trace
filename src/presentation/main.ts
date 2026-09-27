@@ -15,6 +15,7 @@ import {
   type CircuitViews,
   type FromWorker,
   type MemoryViews,
+  type PlanAction,
   type SourceSummary,
   type ToWorker,
 } from "../application/protocol.js";
@@ -65,11 +66,13 @@ import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
 import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
-import { ProjectError, readMemorySection, readProject, writeProject } from "../persistence/agvproj.js";
+import { ProjectError, readMemorySection, readPlanSection, readProject, writeProject } from "../persistence/agvproj.js";
 import { exportProjectMemory, importProjectMemory } from "../persistence/project-memory.js";
+import { exportProjectPlan, importProjectPlan } from "../persistence/project-plan.js";
 import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
 import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
+import { createPlanPanel, planRelationText } from "./plan-ui.js";
 import {
   RANK_LABEL,
   THEMES,
@@ -118,6 +121,8 @@ interface State {
   snapshots: readonly CircuitSnapshot[];
   /** Qué operación de memoria (F4) espera respuesta del Worker, para saber a quién contarle el error. */
   memoryJob: "preview" | "commit" | "revoke" | "resolve-fork" | null;
+  /** Una acción sobre el plano físico (ADR-0016) espera respuesta del Worker. */
+  planJob: boolean;
 }
 
 const state: State = {
@@ -137,6 +142,7 @@ const state: State = {
   sources: 0,
   snapshots: [],
   memoryJob: null,
+  planJob: false,
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -517,6 +523,23 @@ const memoryPanel = createMemoryPanel({
   resolveFork: (choice, reason) => startMemory({ type: "resolve-fork", choice, reason }),
 });
 
+/**
+ * La sección «Plano del circuito» (ADR-0016), debajo de la memoria en la misma pestaña. Se rehace con
+ * cada análisis (`views.plan`) y con cada `plan-updated`. Cada cambio del plano lo pide una persona con
+ * un botón y una razón escrita; el Worker lo valida y lo escribe.
+ */
+const planPanel = createPlanPanel({
+  formatInstant,
+  // «12/01»: día y mes con dos cifras, en la zona del circuito.
+  formatDay: (utcMs) => {
+    const parts = new Intl.DateTimeFormat("es-ES", { timeZone: ZONE, day: "numeric", month: "numeric" }).formatToParts(new Date(utcMs));
+    const part = (type: string): string => (parts.find((entry) => entry.type === type)?.value ?? "").padStart(2, "0");
+    return `${part("day")}/${part("month")}`;
+  },
+  zone: ZONE,
+  send: (action) => startPlan(action),
+});
+
 {
   const get = (id: TabId): HTMLElement => tabPanels.get(id) as HTMLElement;
   const views = (id: TabId): HTMLElement => viewsOf.get(id) as HTMLElement;
@@ -528,7 +551,7 @@ const memoryPanel = createMemoryPanel({
   get("tiempos").append(views("tiempos"));
   get("linea").append(views("linea"));
   // Memoria: la memoria consolidada del circuito, sus versiones y el flujo de consolidar (F4).
-  get("memoria").append(memoryPanel.node);
+  get("memoria").append(memoryPanel.node, planPanel.node);
   // Datos: lo que se carga y lo que entró, tal cual: listas, copia, fuente, cobertura y perfil,
   // replay y lecturas.
   get("datos").append(listsPanel, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel);
@@ -847,11 +870,9 @@ function handleMessage(message: FromWorker): void {
       }
       if (message.views !== undefined) renderViews(message.views);
       state.views = message.views ?? null;
-      memoryPanel.update({
-        circuitId: state.circuitId,
-        memory: message.views?.memory ?? null,
-        working: message.views === undefined ? null : workingFileOf(message.views),
-      });
+      const working = message.views === undefined ? null : workingFileOf(message.views);
+      memoryPanel.update({ circuitId: state.circuitId, memory: message.views?.memory ?? null, working });
+      planPanel.update({ circuitId: state.circuitId, plan: message.views?.plan ?? null, working });
       if (message.views !== undefined) loadEvolution(message.views);
       renderDossier();
       renderReplaySkeleton();
@@ -873,6 +894,12 @@ function handleMessage(message: FromWorker): void {
         memoryPanel.setBusy(false);
         setBusy(false);
         disposeWorker();
+        return;
+      }
+      // Y el de una acción del plano, en su sección.
+      if (state.planJob) {
+        finishPlanJob();
+        planPanel.showError(message.cause, message.recovery);
         return;
       }
       // WP-005: cero filas es una respuesta legítima, y llega siempre con causa y recuperación.
@@ -978,21 +1005,79 @@ function handleMessage(message: FromWorker): void {
     case "consolidated":
       finishMemoryJob();
       memoryPanel.showConsolidated(message.version, message.memory);
+      planPanel.memoryChanged(message.memory);
       renderMemoryTile(message.memory);
       return;
 
     case "revoked":
       finishMemoryJob();
       memoryPanel.showRevoked(message.version, message.memory);
+      planPanel.memoryChanged(message.memory);
       renderMemoryTile(message.memory);
       return;
 
     case "fork-resolved":
       finishMemoryJob();
       memoryPanel.showForkResolved(message.memory);
+      planPanel.memoryChanged(message.memory);
       renderMemoryTile(message.memory);
       return;
+
+    // --- Plano físico (ADR-0016): la respuesta se pinta en su sección --------------------------------
+    case "plan-updated":
+      finishPlanJob();
+      planPanel.showUpdated(message.written, message.plan);
+      return;
   }
+}
+
+function finishPlanJob(): void {
+  state.planJob = false;
+  planPanel.setBusy(false);
+  setBusy(false);
+  disposeWorker();
+}
+
+/**
+ * Envía una acción sobre el plano físico al Worker (ADR-0016): crear el plano, confirmar una
+ * propuesta o registrar un cambio a mano. Como `startMemory`: mismo Worker, `jobId` propio, y la
+ * presentación solo pide. Va con el fichero de trabajo para que la respuesta traiga el plano leído
+ * contra él.
+ */
+function startPlan(action: PlanAction): void {
+  const circuitId = state.circuitId;
+  if (circuitId === null) {
+    planPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");
+    return;
+  }
+  disposeWorker();
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  state.planJob = true;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    finishPlanJob();
+    planPanel.showError("el proceso auxiliar se detuvo.", "El plano no se ha modificado. Vuelve a intentarlo.");
+  };
+  setBusy(true);
+  planPanel.setBusy(true);
+  progressNote.textContent =
+    action.kind === "crear-plano" ? "Creando el plano" : action.kind === "aceptar-propuesta" ? "Escribiendo el cambio confirmado" : "Registrando el cambio del plano";
+  progressBar.value = 0;
+  const working = state.views === null ? null : workingFileOf(state.views);
+  const message: ToWorker = {
+    type: "plan-action",
+    protocolVersion: PROTOCOL_VERSION,
+    jobId,
+    circuitId,
+    action,
+    workingSourceId: working === null ? null : working.sourceId,
+  };
+  worker.postMessage(message);
 }
 
 function finishMemoryJob(): void {
@@ -4771,6 +4856,8 @@ exportButton.addEventListener("click", () => {
     // Y la memoria consolidada (F4, §10-§11): las versiones con su cadena de hashes, para que el
     // destino clasifique el linaje al abrirlo. Sin versiones, la sección no viaja.
     const memoria = await exportProjectMemory(circuitId);
+    // Y el plano físico (ADR-0016, esquema 4): sus eventos append-only. Sin plano, la sección no viaja.
+    const plano = await exportProjectPlan(circuitId);
     const bytes = await writeProject(
       circuitId,
       {
@@ -4780,6 +4867,7 @@ exportButton.addEventListener("click", () => {
         instantaneas: snapshots,
         ...(reviews.length === 0 ? {} : { revision: reviews }),
         ...(memoria === undefined ? {} : { memoria }),
+        ...(plano === undefined ? {} : { plano }),
       },
       Date.now(),
     );
@@ -4792,6 +4880,7 @@ exportButton.addEventListener("click", () => {
         "Las lecturas se quedan en este dispositivo.",
       ...(reviews.length === 0 ? [] : [`Incluye ${reviews.length} hallazgos revisados en campo.`]),
       ...(memoria === undefined ? [] : [`Incluye la memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.`]),
+      ...(plano === undefined ? [] : [`Incluye el plano del circuito: ${plano.eventos.length} ${plano.eventos.length === 1 ? "cambio registrado" : "cambios registrados"}.`]),
     ]);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
     const link = element("a");
@@ -4822,6 +4911,10 @@ projectInput.addEventListener("change", () => {
       const memoria = readMemorySection(project);
       const imported = isAvailable() ? await importProjectMemory(project.manifest.circuit_id, memoria) : null;
       const lineage = imported?.relation ?? null;
+      // Y el plano físico (ADR-0016): su forma se comprueba antes de tocar nada; solo entran eventos
+      // si el plano local es un prefijo exacto del entrante. Dos planos distintos no se mezclan.
+      const plano = readPlanSection(project);
+      const planImport = isAvailable() ? await importProjectPlan(project.manifest.circuit_id, plano) : null;
       showMessage("info", `Proyecto «${circuito?.nombre ?? project.manifest.circuit_id}»`, [
         `${fuentes?.length ?? 0} fuentes declaradas, exportado el ${formatInstant(project.manifest.exported_at)}.`,
         // Un proyecto del esquema 1 no traía instantáneas: se abre igual y se dice (ADR-0015 §5).
@@ -4833,6 +4926,12 @@ projectInput.addEventListener("change", () => {
           : `Memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.` +
             (lineage === null ? " Sin almacén local no se puede comparar con la de este dispositivo." : ` ${LINEAGE_LABEL[lineage]}`) +
             (lineage === "bifurcada" ? " Elige cuál sigue en la pestaña Memoria, al importar las lecturas del circuito." : lineage === "entrante-adelantada" ? " Se verá al volver a importar las lecturas del circuito." : ""),
+        planImport === null
+          ? plano === undefined
+            ? "El proyecto no traía plano del circuito."
+            : "Trae el plano del circuito. Sin almacén local no se puede comparar con el de este dispositivo."
+          : planRelationText(planImport.relation, planImport.added) +
+            (planImport.added > 0 ? " Se verá al volver a importar las lecturas del circuito." : ""),
         // Una revocación que llega cambia la versión vigente: se dice, versión por versión (OQ-144).
         ...(imported?.revocations ?? []).map(
           (entry) => `El proyecto trae la revocación de v${entry.version} (${formatInstant(entry.at)}): ${entry.reason}. Aquí queda revocada.`,

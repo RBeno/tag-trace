@@ -1,6 +1,6 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.6.0
+version: 0.7.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -96,6 +96,12 @@ vigente basada en el mismo fichero y ninguna bifurcación sin resolver. Las dem�
 (calidad, calendario, incidencias separadas) quedan a la vista de la persona en el análisis, no las
 decide la aplicación. La previsualización enseña las decisiones por estado, el delta frente a la
 versión vigente y el tamaño estimado; cancelar antes de confirmar no deja rastro.
+
+**El plano físico (2026-09-27, ADR-0016).** Desde una versión consolidada se crea, con una acción
+humana, el plano del circuito: ubicaciones estables con su tag, que ya no cambian porque un tag
+deje de leerse. Sus cambios —tag nuevo, sustitución, salida, revisión manual— son eventos
+append-only que una persona confirma, y las estadísticas por ubicación y conexión se suman entre
+periodos. Es la «versión de grafo» de §8 con su vigencia, su motivo y su evidencia.
 
 ## 7. Inmutabilidad y correcciones
 

@@ -536,3 +536,53 @@ table.data th { color: var(--muted); font-weight: 600; }
 .memory-fork-columns { display: grid; gap: 12px; }
 @media (min-width: 900px) { .memory-fork-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .memory-lineage-events { margin: 4px 0; padding-left: 18px; }
+
+/* --- Plano del circuito (ADR-0016) ----------------------------------------------------------------
+   Debajo de la memoria, en la misma pestaña. Las ubicaciones son una lista compacta: id, tag, estado
+   en el fichero de trabajo y, en gris, lo acumulado y la historia. Los cambios a mano van plegados
+   en un menú por ubicación y se abren en su sitio con su razón; una propuesta es una tarjeta que dice
+   que no se ha escrito nada. El estado nunca va solo por color: siempre en palabras. */
+.plan-panel h3 { margin: 20px 0 4px; }
+.plan-panel h4 { margin: 0 0 4px; font-size: 1rem; }
+.plan-panel label { display: block; margin-top: 8px; }
+.plan-status[role="status"]:empty { display: none; }
+.plan-status { margin: 8px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+.plan-status p { margin: 2px 0; }
+.plan-status.error { border-color: var(--error); }
+.plan-status.error p:first-child { color: var(--error); font-weight: 600; }
+.plan-none { font-weight: 600; margin: 8px 0 0; }
+.plan-bootstrap { margin-top: 8px; }
+.plan-locations, .plan-exits, .plan-events { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.plan-location, .plan-exit { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.plan-location[data-state="no-observado"] { border-left: 3px solid var(--viz-accent); }
+.plan-location-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.plan-id { font-weight: 600; }
+.plan-tag.muted { margin: 0; }
+.plan-location .muted, .plan-exit .muted { margin: 2px 0 0; font-size: 0.85rem; }
+.plan-location-head .muted { margin: 0; font-size: inherit; }
+.plan-panel .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.plan-review { margin: 4px 0 0; }
+.plan-review.none { color: var(--muted); }
+.plan-review.averiado, .plan-review.no-encontrado { color: var(--warn); }
+.plan-location-actions, .plan-proposal-actions { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; }
+.plan-menu > summary { cursor: pointer; color: var(--viz-series); padding: 4px 0; list-style-position: inside; }
+.plan-menu-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.plan-menu-items button, .plan-location-actions > button { padding: 4px 10px; font-size: 0.9rem; }
+.plan-form { flex: 1 1 100%; margin-top: 4px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
+.plan-form-title { font-weight: 600; margin: 0 0 4px; }
+.plan-form .muted { font-size: 0.85rem; }
+.plan-input { font: inherit; width: 100%; max-width: 40rem; padding: 6px 10px; min-height: 24px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); margin: 4px 0 4px; box-sizing: border-box; }
+.plan-date, .plan-result, .plan-branch { width: auto; max-width: 100%; }
+.plan-send:disabled { opacity: 0.5; cursor: default; }
+.plan-proposals { display: grid; gap: 8px; margin-top: 8px; }
+.plan-proposal { padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--viz-series); background: var(--bg); }
+.plan-proposal p { margin: 4px 0 0; }
+.plan-unwritten { font-weight: 600; }
+.plan-edges td, .plan-edges th { white-space: nowrap; }
+.plan-event-when { font-weight: 600; }
+.plan-event p { margin: 2px 0 0; font-size: 0.85rem; }
+@media (any-pointer: coarse) {
+  .plan-menu > summary { min-height: 44px; display: flex; align-items: center; }
+  .plan-menu-items button, .plan-location-actions > button, .plan-input { min-height: 44px; }
+}

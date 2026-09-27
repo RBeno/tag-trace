@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.19.0
+version: 0.20.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -141,7 +141,7 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
 - [ ] Incidencias excluidas del esperado.
 - [ ] Crecimiento normal dentro del presupuesto o desviación aceptada.
 - [ ] Reapertura y round-trip de `.agvproj`. **Evidencia**: ida y vuelta con memoria y relación «idéntica»; adopción en almacén vacío (TC-285, TC-286). La bifurcación solo tiene prueba unitaria (TC-284).
-- [ ] Comparación histórica reproduce deltas correctos.
+- [ ] Comparación histórica reproduce deltas correctos. **Evidencia parcial (3.53.0)**: con plano, un tag instalado sin leer ya no sale como «desaparece» sino «sin leer en su ubicación», y las estadísticas de dos periodos se combinan igual que medidas juntas (TC-288, TC-290).
 
 ## G5 — Autorizar F6
 

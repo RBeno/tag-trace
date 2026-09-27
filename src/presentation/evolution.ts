@@ -185,6 +185,10 @@ function figuresOf(delta: SnapshotDelta): HTMLElement {
     [delta.edges.filter((edge) => edge.direction === "mas-rapido").length, "tramos más rápidos"],
     [count("cambia-de-clase"), "cambian de clase"],
   ];
+  // Leída con el plano (ADR-0016 §4), una ubicación cuyo tag no se leyó no «desaparece»: sigue en su
+  // sitio, sin leer. La cifra solo sale cuando hay alguna, para no añadir un cero donde no hay plano.
+  const unread = count("no-observado");
+  if (unread > 0) items.splice(2, 0, [unread, unread === 1 ? "sin leer en su ubicación" : "sin leer en sus ubicaciones"]);
   const list = node("ul", "evo-figures");
   list.setAttribute("aria-label", "Cifras del cambio");
   for (const [value, label] of items) {

@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.39.0
+version: 0.40.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -34,7 +34,7 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 | **AGV** | Flota del circuito, flota en el circuito y vida de cada AGV (con las paradas de la producción y los primeros de cola); lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; ritmo de cada AGV y quién retiene; y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
 | **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito en palabras, con el enlace al dibujo del Resumen, su lista ordenada y los tags fuera del anillo. |
 | **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
-| **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje. |
+| **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje; debajo, el **plano del circuito** (§6.1). |
 | **Datos** | Listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
 
 Lo que se ve en todas las pestañas: la cabecera, la barra de pestañas con el buscador, la barra fija
@@ -694,6 +694,31 @@ elegir», «no traía memoria»); si trae revocaciones que aquí no estaban, las
 su razón («El proyecto trae la revocación de v1 (fecha): razón. Aquí queda revocada.»), y cuántas
 elecciones de linaje de otro dispositivo se añadieron al historial, donde salen marcadas «(en otro
 dispositivo)». Al exportar, cuántas versiones incluye.
+
+### 6.1 Plano del circuito (3.53.0, ADR-0016)
+
+Debajo de la memoria, en la misma pestaña (`src/presentation/plan-ui.ts`):
+
+1. **Sin plano**: una frase de qué es —«Cada ubicación guarda su historia aunque cambie el tag que
+   tiene puesto»— y «Crear el plano desde vN» con razón obligatoria; sin versión, «Consolida un
+   periodo para crear el plano.»
+2. **Cifras**: ubicaciones del anillo, salidas, sin leer en su sitio y cambios propuestos.
+3. **Ubicaciones del anillo**, en orden: identificador, tag o «sin tag físico (código virtual X)»,
+   estado en el fichero de trabajo con su cifra —«leído en X de N pasadas», «sin leer: N pasadas por
+   su sitio» con la ficha «inferido», «sin ocasión», «sin tag»—, el acumulado de todos los periodos y
+   la historia de tags. Un menú «Cambiar…» por ubicación: sustituir, retirar o instalar tag, añadir
+   una ubicación detrás, cerrarla; todas con fecha efectiva y razón obligatoria.
+4. **Salidas por revisar a mano**: tag, de qué ubicación cuelga y la última revisión («Sin revisar
+   todavía.» o «Revisada el …: resultado — nota»), con «Registrar revisión…».
+5. **Cambios propuestos**: una tarjeta por propuesta, con «Propuesta: todavía no se ha escrito
+   nada.», su evidencia y «Confirmar…» con razón; una salida pide además de qué ubicación cuelga.
+6. **Tramos entre ubicaciones**: por conexión o ruta, pasadas, media y desviación típica por
+   régimen, y en cuántos periodos se midió.
+7. **Historial del plano**: cada evento con su fecha efectiva, su razón y si vino de una propuesta.
+
+Ningún botón que escribe se activa sin razón. En la evolución, un tag instalado que no se lee sale
+«sin leer en su ubicación», nunca «desaparece». Al abrir un `.agvproj`, el mensaje dice la relación
+de su plano con el local; al exportar, cuántos cambios incluye.
 
 ## 7. Móvil, tableta y portátil
 

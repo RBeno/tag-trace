@@ -10,28 +10,31 @@
  * cada fichero** (sección `instantaneas`, ADR-0015 §5): es lo que hace que el circuito viaje con toda
  * su evolución. Desde el esquema 3 lleva además **la memoria consolidada** (sección `memoria`, F4,
  * `MEMORY_CONSOLIDATION.md` §10 y §11): las versiones y el estado de linaje, para que al abrirlo se
- * compare la cadena de hashes con la local. **No lleva el bruto**, por decisión de ADR-0012. Las lecturas se acumulan en el
+ * compare la cadena de hashes con la local. Desde el esquema 4 lleva **el plano físico** (sección
+ * `plano`, ADR-0016): sus eventos append-only. **No lleva el bruto**, por decisión de ADR-0012. Las lecturas se acumulan en el
  * dispositivo; el fichero es lo que viaja entre dispositivos, que además es un intercambio manual
  * (CON-002).
  */
 
 import { sortVersions, type ConsolidatedVersion, type LineageEvent, type LineageRef, type LineageState } from "../domain/memory.js";
+import type { PlanEvent } from "../domain/plan.js";
 import { canonicalise, semanticHash } from "../domain/semantic-hash.js";
 import { readZip, writeZip, ZipError } from "./zip.js";
 
 /** Un número desconocido se rechaza sin tocar nada. Subirlo obliga a escribir su migración. */
-export const AGVPROJ_SCHEMA_VERSION = 3;
+export const AGVPROJ_SCHEMA_VERSION = 4;
 
 /**
  * Los esquemas anteriores que esta versión sigue abriendo, con lo que hay que hacer con cada uno.
  *
  * El 1 no llevaba la sección `instantaneas`: un proyecto de entonces se abre tal cual, sin
  * instantáneas, y lo dice quien lo enseña (`instantaneas` ausente). El 2 no llevaba `memoria`: se
- * abre igual, sin memoria (`memoria` ausente, que es «sin-memoria» al clasificar el linaje). No hay
+ * abre igual, sin memoria (`memoria` ausente, que es «sin-memoria» al clasificar el linaje). El 3 no
+ * llevaba `plano`: se abre igual, sin plano (`plano` ausente, que es «sin-plano» al importarlo). No hay
  * nada que reescribir: las secciones que traían significan lo mismo. Un esquema que no esté aquí ni
  * sea el vigente se rechaza.
  */
-export const AGVPROJ_READABLE_VERSIONS: readonly number[] = [1, 2, AGVPROJ_SCHEMA_VERSION];
+export const AGVPROJ_READABLE_VERSIONS: readonly number[] = [1, 2, 3, AGVPROJ_SCHEMA_VERSION];
 
 const MANIFEST = "manifest.json";
 
@@ -127,7 +130,8 @@ export async function readProject(bytes: Uint8Array): Promise<Project> {
   const manifest = JSON.parse(new TextDecoder().decode(manifestEntry.data)) as ProjectManifest;
 
   // 2. Una versión desconocida se rechaza sin tocar el almacenamiento local. Las anteriores conocidas
-  //    se abren: el esquema 1 es el 2 sin la sección `instantaneas`, y el 2 es el 3 sin `memoria`.
+  //    se abren: el esquema 1 es el 2 sin la sección `instantaneas`, el 2 es el 3 sin `memoria` y el 3
+  //    es el 4 sin `plano`.
   if (!AGVPROJ_READABLE_VERSIONS.includes(manifest.schema_version)) {
     throw new ProjectError(
       `El proyecto usa el esquema ${manifest.schema_version} y esta versión entiende el ` +
@@ -245,4 +249,72 @@ export function readMemorySection(project: Project): ProjectMemorySection | unde
     versiones: versiones as readonly ConsolidatedVersion[],
     linaje: { activo: activo as LineageRef | null, archivados: archivados as readonly LineageRef[], eventos: eventos as readonly LineageEvent[] },
   };
+}
+
+// --- Sección `plano` (esquema 4) -------------------------------------------------------------------
+
+/** El nombre de la sección del plano físico en el contenedor. */
+export const PLAN_SECTION = "plano";
+
+/** Lo que viaja del plano físico (ADR-0016): sus eventos, tal cual, en orden de registro. */
+export interface ProjectPlanSection {
+  readonly eventos: readonly PlanEvent[];
+}
+
+/** Construye la sección `plano`. `undefined` si el circuito no tiene plano. */
+export function planSection(events: readonly PlanEvent[]): ProjectPlanSection | undefined {
+  if (events.length === 0) return undefined;
+  return { eventos: [...events].sort((a, b) => a.seq - b.seq) };
+}
+
+const PLAN_EVENT_TYPES = ["crear-plano", "crear-ubicacion", "instalar", "retirar", "sustituir", "cerrar-ubicacion", "revision-manual"];
+
+/** Qué le falta a un evento del plano para tener la forma esperada, o `null` si la tiene. */
+function planEventProblem(value: unknown): string | null {
+  if (!isRecord(value)) return "un evento no es un objeto";
+  const { type } = value;
+  if (typeof type !== "string" || !PLAN_EVENT_TYPES.includes(type)) return "un evento tiene un tipo desconocido";
+  if (typeof value["circuitId"] !== "string") return "un evento no tiene circuito";
+  if (!Number.isInteger(value["seq"])) return "un evento no tiene número";
+  if (typeof value["effectiveAt"] !== "number" || typeof value["recordedAt"] !== "number") return "un evento no tiene sus fechas";
+  if (typeof value["reason"] !== "string" || value["reason"].trim() === "") return "un evento no tiene razón";
+  if (value["origin"] !== "manual" && value["origin"] !== "propuesta") return "un evento no tiene origen";
+  const evidence = value["evidence"];
+  if (evidence !== null && (!isRecord(evidence) || typeof evidence["detail"] !== "string")) return "un evento tiene una evidencia sin detalle";
+  if (type === "crear-plano") {
+    const ring = value["ring"];
+    if (typeof value["fromVersion"] !== "number" || !Array.isArray(ring)) return "el evento de creación no tiene versión o anillo";
+    if (!ring.every((entry) => isRecord(entry) && typeof entry["locationId"] === "string" && typeof entry["tagId"] === "string")) return "el anillo inicial no es válido";
+    return null;
+  }
+  if (typeof value["locationId"] !== "string") return "un evento no nombra su ubicación";
+  if (type === "crear-ubicacion") {
+    if (value["kind"] !== "anillo" && value["kind"] !== "salida") return "una ubicación nueva no tiene clase";
+    for (const field of ["after", "branchFrom", "virtualTag"]) {
+      const entry = value[field];
+      if (entry !== null && typeof entry !== "string") return `una ubicación nueva tiene «${field}» inválido`;
+    }
+  }
+  if ((type === "instalar" || type === "sustituir") && typeof value["tagId"] !== "string") return "un evento de instalación no nombra el tag";
+  if (type === "revision-manual" && (typeof value["result"] !== "string" || typeof value["note"] !== "string")) return "una revisión manual no tiene resultado o nota";
+  return null;
+}
+
+/**
+ * La sección `plano` de un proyecto ya validado por hash, con su forma comprobada; `undefined` si el
+ * proyecto no la trae (esquemas 1 a 3). Una forma que no sea la esperada se rechaza.
+ */
+export function readPlanSection(project: Project): ProjectPlanSection | undefined {
+  const raw = project.sections[PLAN_SECTION];
+  if (raw === undefined) return undefined;
+  const malformed = (what: string): ProjectError =>
+    new ProjectError(`La sección «${PLAN_SECTION}» no tiene la forma esperada: ${what}.`, "El proyecto se creó con otra versión de la aplicación. No se ha cargado nada.");
+  if (!isRecord(raw)) throw malformed("no es un objeto");
+  const eventos = raw["eventos"];
+  if (!Array.isArray(eventos)) throw malformed("faltan los eventos");
+  for (const event of eventos as unknown[]) {
+    const problem = planEventProblem(event);
+    if (problem !== null) throw malformed(problem);
+  }
+  return { eventos: eventos as readonly PlanEvent[] };
 }

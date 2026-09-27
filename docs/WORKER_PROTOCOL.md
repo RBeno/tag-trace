@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.3.0
+version: 0.4.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -73,6 +73,7 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `fleet` | fichero de historial de flota (DS-012), circuito, valor de `circuito` elegido si ya lo hay | Se **fusiona** con lo guardado por (AGV, `desde`); no sustituye. |
 | `consolidate` | circuito, fichero base (`sourceId`), `mode: "preview" \| "commit"`, nota opcional | `preview` no escribe nada. `commit` solo se envía tras la confirmación humana, y el Worker vuelve a calcular la previsualización desde el almacén antes de escribir: con bloqueos responde `error` (R-MEM-001). |
 | `revoke` | circuito, número de versión, razón | Marca la versión con fecha y razón; no la borra (R-MEM-002). |
+| `plan-action` | circuito, fichero de trabajo, acción: `crear-plano` (desde una versión), `aceptar-propuesta` (id y fichero de la propuesta; en una salida, de qué ubicación cuelga) o `evento` (uno registrado a mano), siempre con razón | El Worker recalcula la propuesta desde la instantánea de su fichero antes de escribirla, valida todos los eventos en orden y los escribe en una transacción (ADR-0016). |
 | `resolve-fork` | circuito, elección (`conservar-local` \| `adoptar-entrante`), razón | Resuelve una bifurcación de linaje; el linaje no elegido queda archivado y la elección, en el historial (`MEMORY_CONSOLIDATION.md` §10). |
 
 ### Del Worker a la interfaz
@@ -92,10 +93,15 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `consolidated` | la versión escrita y la memoria del circuito (`MemoryViews`: versiones resumidas, vigente, comparación, bytes, linaje) | Único mensaje que confirma una consolidación. |
 | `revoked` | número revocado y la memoria del circuito | |
 | `fork-resolved` | la memoria del circuito tras la elección | |
+| `plan-updated` | los eventos escritos en palabras y el plano (`PlanViews`) leído contra el fichero de trabajo | |
 
 Las vistas de una importación (`complete.views`) llevan `memory` cuando el circuito tiene versiones:
 la lista resumida, la vigente, **lo observado frente a la memoria** (la instantánea del fichero de
 trabajo comparada con la vigente), los bytes que ocupan todas las versiones y el estado de linaje.
+Y `plan` cuando el circuito tiene plano o una versión vigente desde la que crearlo: el plano actual,
+los eventos con su línea en palabras, la observación del fichero de trabajo, el resumen de todas las
+instantáneas y las propuestas. Con plano, los cambios de la evolución y de la comparación con la
+memoria se leen con él: un tag instalado que no se lee sale «sin leer en su ubicación».
 
 ## 5. Cancelación
 

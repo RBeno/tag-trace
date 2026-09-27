@@ -20,9 +20,14 @@
  * misma numeración y solo el hash las distingue; la única reescritura admitida es la copia revocada—,
  * y `memoryState`, el estado de linaje de cada circuito (activo, entrante sin resolver, archivados y
  * las elecciones registradas, `MEMORY_CONSOLIDATION.md` §10).
+ *
+ * **Versión 8 (ADR-0016).** La tabla `plan`: los eventos del plano físico de cada circuito, clave
+ * `[circuitId, seq]`, **append-only** —se añaden con `add`, nunca se reescriben—. El plano de un
+ * instante se reconstruye recorriéndolos (`planAt`).
  */
 
 import type { Interval } from "../domain/coverage.js";
+import type { PlanEvent } from "../domain/plan.js";
 import type { FleetPeriod } from "../domain/fleet.js";
 import { sortVersions, type ConsolidatedVersion, type LineageState } from "../domain/memory.js";
 import type { Reading } from "../domain/reading.js";
@@ -31,7 +36,7 @@ import type { CircuitSnapshot } from "../domain/snapshot.js";
 import { splitLegacyCircuit, type LegacyCircuitRecord } from "./retention.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 7;
+export const STORE_VERSION = 8;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
@@ -49,6 +54,8 @@ const SNAPSHOTS = "snapshots";
 const MEMORY = "memory";
 /** El estado de linaje de cada circuito (§10): clave `circuitId`. */
 const MEMORY_STATE = "memoryState";
+/** Los eventos del plano físico (ADR-0016), append-only: clave `[circuitId, seq]`. */
+const PLAN = "plan";
 
 /** Las marcas de revisión de un circuito, por clave de hallazgo (`src/domain/review.ts`). */
 export interface StoredReviews {
@@ -256,6 +263,14 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
       db.createObjectStore(MEMORY_STATE, { keyPath: "circuitId" });
     },
   },
+  {
+    to: 8,
+    // El plano físico (ADR-0016): una tabla nueva y vacía. Nada que reescribir: el plano nace con una
+    // acción humana desde una versión consolidada, y ningún circuito anterior lo tiene.
+    apply: (db) => {
+      db.createObjectStore(PLAN, { keyPath: ["circuitId", "seq"] });
+    },
+  },
 ];
 
 if (MIGRATIONS[MIGRATIONS.length - 1]?.to !== STORE_VERSION) {
@@ -439,15 +454,16 @@ export async function loadSnapshots(circuitId: string): Promise<readonly Circuit
 export async function deleteCircuit(circuitId: string): Promise<void> {
   const db = await open();
   try {
-    // El circuito, sus lecturas, sus instantáneas, su revisión y su memoria se van juntos: una marca,
-    // una instantánea o una versión sin su circuito no significan nada.
-    const tx = db.transaction([CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS, MEMORY, MEMORY_STATE], "readwrite");
+    // El circuito, sus lecturas, sus instantáneas, su revisión, su memoria y su plano se van juntos:
+    // una marca, una instantánea, una versión o un evento del plano sin su circuito no significan nada.
+    const tx = db.transaction([CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS, MEMORY, MEMORY_STATE, PLAN], "readwrite");
     tx.objectStore(CIRCUITS).delete(circuitId);
     tx.objectStore(REVIEWS).delete(circuitId);
     tx.objectStore(SOURCES).delete(circuitRange(circuitId));
     tx.objectStore(SNAPSHOTS).delete(circuitRange(circuitId));
     tx.objectStore(MEMORY).delete(circuitRange(circuitId));
     tx.objectStore(MEMORY_STATE).delete(circuitId);
+    tx.objectStore(PLAN).delete(circuitRange(circuitId));
     await settle(tx, "No se pudo borrar el circuito.");
   } finally {
     db.close();
@@ -563,6 +579,40 @@ export async function saveMemoryState(state: StoredMemoryState): Promise<void> {
     const tx = db.transaction(MEMORY_STATE, "readwrite");
     tx.objectStore(MEMORY_STATE).put(state);
     await settle(tx, "No se pudo guardar el estado de linaje.");
+  } finally {
+    db.close();
+  }
+}
+
+// --- Plano físico (ADR-0016) ------------------------------------------------------------------------
+
+/**
+ * Añade eventos del plano en **una sola** transacción, con `add`: si alguno ya existe con ese
+ * `[circuitId, seq]`, la transacción se aborta y no queda ninguno. Un evento nunca se reescribe; una
+ * corrección es otro evento (append-only, como la memoria).
+ */
+export async function appendPlanEvents(events: readonly PlanEvent[]): Promise<void> {
+  if (events.length === 0) return;
+  const db = await open();
+  try {
+    const tx = db.transaction(PLAN, "readwrite");
+    const store = tx.objectStore(PLAN);
+    // Una clave repetida hace fallar su `add`; el error sube a la transacción, que se aborta entera.
+    for (const event of events) store.add(event);
+    await settle(tx, "No se pudieron guardar los eventos del plano (¿número de evento repetido?).");
+  } finally {
+    db.close();
+  }
+}
+
+/** Los eventos del plano de un circuito, en orden de registro (`seq`); vacío si no tiene plano. */
+export async function loadPlanEvents(circuitId: string): Promise<readonly PlanEvent[]> {
+  const db = await open();
+  try {
+    const tx = db.transaction(PLAN, "readonly");
+    const store = tx.objectStore(PLAN);
+    const stored = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<PlanEvent[]>);
+    return [...stored].sort((a, b) => a.seq - b.seq);
   } finally {
     db.close();
   }

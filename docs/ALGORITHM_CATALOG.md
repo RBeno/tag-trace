@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.41.0
+version: 0.42.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -1122,4 +1122,31 @@ compara versiones.
   consolidación hasta que la persona elige; el linaje no elegido se archiva con el evento y su razón.
 - El Worker (`runMemory`) recalcula siempre la previsualización desde el almacén antes de un
   `commit`, y escribe versión y estado en una transacción.
+
+## 6.23 El plano físico con ubicaciones estables, implementado (ADR-0016, R-GRA-019..021, R-MEM-004)
+
+`src/domain/plan.ts`. Nada de este módulo cambia el plano por su cuenta: recorre eventos, observa y
+propone.
+
+- **`planAt`** recorre los eventos por (fecha efectiva, `seq`) hasta el instante pedido; los que no
+  valen se saltan, y `validateEvent` impide escribirlos: además de las comprobaciones directas,
+  repite el historial con el candidato y lo rechaza si deja sin valor un evento posterior.
+- **`observeAgainstPlan`**: las pasadas de una ubicación salen de la sección entre anclas que la
+  contiene según el orden del plano (pasadas completas de ancla a ancla y, por tag, en cuántas se
+  leyó); si no, de las pasadas probadas de su vértice (`readRate × passes` recupera los aciertos,
+  porque `readRate` es aciertos entre pasadas probadas); si no, de la arista que la salta entre sus
+  vecinos leídos, admitiendo en medio solo tags fuera del plano y tomando la menor de las aristas del
+  camino (observación inferida). Sin nada de eso, «sin ocasión». Una sección con cero pasadas no
+  prueba nada.
+- **`proposeChanges`**: `sustitucion` cuando entre dos ubicaciones leídas hay exactamente un código
+  fuera del plano y exactamente una ubicación sin leer con pasadas; `tag-nuevo` para los demás
+  códigos fuera del plano leídos por al menos `plan.min_vehicles_for_proposal` AGV distintos (si la
+  instantánea no dice cuántos, no se propone); `salida-sin-ubicar` por cada tag de parada por salida
+  declarado sin ubicación. Cada tag nuevo va detrás de la ubicación planificada más cercana que lo
+  precede en el anillo del fichero, sin encadenarse con otros nuevos: así se aceptan en cualquier
+  orden y el anillo queda en el orden del fichero.
+- **`momentsOf`, `combineMoments`, `varianceOf`**: Welford y la combinación de Chan; combinar dos
+  mitades da lo mismo que medir todo junto. `summarizePlan` suma por ubicación y por conexión.
+- **`reinterpretDelta`**: un «desaparece» de un tag instalado en el plano pasa a «no-observado», con
+  las pasadas por su sitio en el detalle.
 

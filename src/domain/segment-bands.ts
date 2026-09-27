@@ -149,7 +149,16 @@ export function bandOf(durations: number[], floorMs: number): Band {
   const p50Ms = quantile(sorted, 0.5);
   const p80Ms = quantile(sorted, 0.8);
   const p95Ms = quantile(sorted, 0.95);
-  return { samples: sorted.length, p50Ms, p80Ms, p95Ms, fenceMs: p95Ms + Math.max(p95Ms - p50Ms, floorMs) };
+  // Media y M2 de las mismas duraciones, con Welford (ADR-0016 §6): se combinan entre periodos sin
+  // las muestras (`combineMoments` en `plan.ts`), cosa que los percentiles no permiten.
+  let meanMs = 0;
+  let m2 = 0;
+  sorted.forEach((value, index) => {
+    const delta = value - meanMs;
+    meanMs += delta / (index + 1);
+    m2 += delta * (value - meanMs);
+  });
+  return { samples: sorted.length, meanMs, m2, p50Ms, p80Ms, p95Ms, fenceMs: p95Ms + Math.max(p95Ms - p50Ms, floorMs) };
 }
 
 /**

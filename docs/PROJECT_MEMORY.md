@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.35.0
+version: 0.36.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -351,6 +351,16 @@ linaje de otro dispositivo se añaden al historial y las revocaciones que llegan
 de volver al ancestro común. Pendiente: el resto de G4 (incidencias excluidas del esperado,
 presupuesto medido, comparación histórica), que es F4 todavía.
 
+## El plano físico (2026-09-27)
+
+El propietario comparó su esbozo inicial con el programa y aprobó recuperar tres ideas («Aplica los
+puntos que has propuesto 1, 2 y 3», ADR-0016, `[3.53.0]`): la ubicación y el tag instalado son
+identidades distintas; el plano físico persiste frente a las lecturas y solo cambia por
+confirmación humana; y las estadísticas guardan recuento, media y M2 para sumarse entre periodos.
+Añadió que una ubicación puede existir sin tag físico, y que los tags de parada por salida de
+circuito, que casi nunca se recorren, entren como salidas del grafo que se revisan a mano
+(R-GRA-021). El plano se crea desde una versión consolidada con una acción humana.
+
 ## Estado al 2026-09-26 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
@@ -358,7 +368,7 @@ El trabajo sigue en otra conversación por el límite de contexto. Todo lo que d
 conversación siguiente.
 
 - **Fase F4** (memoria longitudinal y consolidación), abierta el 2026-09-26 por el propietario
-  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): la consolidación humana con versiones** (`[3.51.0]` y `[3.52.0]`, sección de arriba). Anterior: **revisión de toda la lógica de medición y análisis**
+  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): el plano físico con ubicaciones estables** (`[3.53.0]`), tras la consolidación humana con versiones (`[3.51.0]`, `[3.52.0]`). Anterior: **revisión de toda la lógica de medición y análisis**
   (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
   regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
   (OQ-135 a OQ-141), dos de ellas contradicciones código↔documento que no se tocan hasta que decida.

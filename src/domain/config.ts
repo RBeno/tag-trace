@@ -75,6 +75,13 @@ export interface AnalysisConfig {
   readonly franjas: FranjaThresholds;
   readonly anchorSums: AnchorSumThresholds;
   readonly pace: PaceThresholds;
+  /**
+   * El plano físico (ADR-0016). `minVehiclesForProposal`: AGV distintos que tienen que leer un código
+   * fuera del plano para proponerlo como tag nuevo. Es el criterio de R-DAT-021 —una ausencia o una
+   * aparición la sostienen al menos dos AGV, porque lo de un solo lector es de ese lector—, no un
+   * valor de planta nuevo.
+   */
+  readonly plan: { readonly minVehiclesForProposal: number };
 }
 
 /**
@@ -264,6 +271,8 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   franjas: { minPositionSamples: 4 },
   anchorSums: { minAnchorPasses: 5 },
   pace: { minPaceShift: 0.05 },
+  // El mismo «al menos dos AGV distintos» que R-DAT-021 exige para afirmar una ausencia.
+  plan: { minVehiclesForProposal: 2 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

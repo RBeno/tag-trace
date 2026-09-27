@@ -11,12 +11,15 @@ import { describe, expect, it } from "vitest";
 import {
   AGVPROJ_SCHEMA_VERSION,
   memorySection,
+  planSection,
   ProjectError,
   readMemorySection,
+  readPlanSection,
   readProject,
   writeProject,
 } from "../../src/persistence/agvproj.js";
 import { emptyLineageState, withConsolidated, type ConsolidatedVersion } from "../../src/domain/memory.js";
+import type { PlanEvent } from "../../src/domain/plan.js";
 import { readZip, writeZip, ZipError, ZIP_LIMITS } from "../../src/persistence/zip.js";
 
 const EXPORTED_AT = 1_758_000_000_000;
@@ -139,10 +142,12 @@ describe("apertura defensiva · ADR-0012", () => {
 });
 
 describe("ADR-0015 §5 · el proyecto lleva las instantáneas y abre las versiones anteriores", () => {
-  it("el esquema vigente es el 3 y la sección `instantaneas` viaja como cualquier otra, con su hash", async () => {
+  // ADR-0016 subió el esquema al 4 (sección `plano`): el número vigente cambia por decisión, no para
+  // que la prueba pase; lo que fija esta prueba —que `instantaneas` viaja con su hash— no cambia.
+  it("el esquema vigente es el 4 y la sección `instantaneas` viaja como cualquier otra, con su hash", async () => {
     const instantaneas = [{ schemaVersion: 1, sourceId: "s1", ring: ["T1", "T2"], vertices: [] }];
     const project = await readProject(await writeProject("c1", { ...sections, instantaneas }, EXPORTED_AT));
-    expect(project.manifest.schema_version).toBe(3);
+    expect(project.manifest.schema_version).toBe(4);
     expect(project.sections["instantaneas"]).toEqual(instantaneas);
     expect(project.manifest.sections.map((digest) => digest.name)).toContain("instantaneas");
   });
@@ -230,5 +235,68 @@ describe("F4 · esquema 3: la memoria consolidada viaja en la sección `memoria`
     expect(proyecto.sections["instantaneas"]).toEqual(instantaneas);
     expect(proyecto.sections["memoria"]).toBeUndefined();
     expect(readMemorySection(proyecto)).toBeUndefined();
+  });
+});
+
+/** Reescribe el manifiesto de un proyecto con otro número de esquema y su propio hash, como lo escribió una versión anterior. */
+async function asSchema(bytes: Uint8Array, schema: number): Promise<Uint8Array> {
+  const entries = await readZip(bytes);
+  const manifest = JSON.parse(new TextDecoder().decode((entries[0] as { data: Uint8Array }).data)) as Record<string, unknown>;
+  const { hash: _hash, ...partial } = { ...manifest, schema_version: schema } as Record<string, unknown>;
+  const { semanticHash } = await import("../../src/domain/semantic-hash.js");
+  const antiguo = { ...partial, hash: await semanticHash(partial) };
+  return writeZip([{ name: "manifest.json", data: new TextEncoder().encode(JSON.stringify(antiguo)) }, ...entries.slice(1)]);
+}
+
+describe("ADR-0016 · esquema 4: el plano físico viaja en la sección `plano` y el 3 se sigue abriendo", () => {
+  const eventos: PlanEvent[] = [
+    {
+      type: "crear-plano",
+      circuitId: "c1",
+      seq: 1,
+      effectiveAt: 1000,
+      recordedAt: 2000,
+      reason: "plano inicial desde v1",
+      evidence: { sourceId: "s1", fileName: "s1.csv", detail: "anillo de v1" },
+      origin: "manual",
+      fromVersion: 1,
+      ring: [
+        { locationId: "U-0001", tagId: "T001" },
+        { locationId: "U-0002", tagId: "T002" },
+      ],
+    },
+    { type: "sustituir", circuitId: "c1", seq: 2, effectiveAt: 3000, recordedAt: 4000, reason: "cambio en campo", evidence: null, origin: "propuesta", locationId: "U-0002", tagId: "T009" },
+  ];
+
+  it("ida y vuelta: los eventos vuelven iguales y en orden, con su hash de sección", async () => {
+    const plano = planSection([...eventos].reverse());
+    expect(plano?.eventos.map((event) => event.seq)).toEqual([1, 2]);
+    const project = await readProject(await writeProject("c1", { ...sections, plano }, EXPORTED_AT));
+    expect(project.manifest.schema_version).toBe(AGVPROJ_SCHEMA_VERSION);
+    expect(project.manifest.sections.map((digest) => digest.name)).toContain("plano");
+    expect(readPlanSection(project)).toEqual({ eventos });
+  });
+
+  it("sin eventos no hay sección", () => {
+    expect(planSection([])).toBeUndefined();
+  });
+
+  it("una sección `plano` con otra forma se rechaza diciendo qué falla", async () => {
+    const sinEventos = await readProject(await writeProject("c1", { ...sections, plano: { eventos: "no" } }, EXPORTED_AT));
+    expect(() => readPlanSection(sinEventos)).toThrow(/eventos/);
+    const sinRazon = await readProject(await writeProject("c1", { ...sections, plano: { eventos: [{ ...eventos[1], reason: " " }] } }, EXPORTED_AT));
+    expect(() => readPlanSection(sinRazon)).toThrow(ProjectError);
+    expect(() => readPlanSection(sinRazon)).toThrow(/razón/);
+    const tipoRaro = await readProject(await writeProject("c1", { ...sections, plano: { eventos: [{ ...eventos[1], type: "mover" }] } }, EXPORTED_AT));
+    expect(() => readPlanSection(tipoRaro)).toThrow(/tipo/);
+  });
+
+  it("un proyecto del esquema 3 —sin plano— se sigue abriendo tal cual", async () => {
+    const memoria = memorySection([version(1, "h1", null)], undefined);
+    const proyecto = await readProject(await asSchema(await writeProject("c1", { ...sections, memoria }, EXPORTED_AT), 3));
+    expect(proyecto.manifest.schema_version).toBe(3);
+    expect(readMemorySection(proyecto)).toEqual(memoria);
+    expect(proyecto.sections["plano"]).toBeUndefined();
+    expect(readPlanSection(proyecto)).toBeUndefined();
   });
 });
