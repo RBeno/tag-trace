@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.27.0
+version: 0.28.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -389,10 +389,12 @@ origin         : quién o qué la introdujo
 state          : draft | active | superseded
 ```
 
-Una configuración `draft` permite analizar en modo exploratorio pero **no** consolidar. Un análisis
-que abarque dos vigencias distintas debe separarse por tramos o declararse `unknown` en la frontera.
-**Pendiente de decisión (2026-09-27):** la aplicación consolida con la configuración provisional
-(`draft`) desde 3.51.0 (OQ-152), y ante dos vigencias en la ventana de trabajo solo avisa (OQ-153).
+**La configuración provisional (`draft`) permite consolidar** (propietario, 2026-09-27, OQ-152:
+«OQ-152 permite consolidar»): sin consolidar, la memoria no podría medir los valores de planta que la harán
+definitiva (OQ-140). Cada instantánea guarda con qué configuración se midió (`configVersion`,
+FR-031), así que ninguna versión pierde de qué configuración salió. **Un análisis que abarque dos
+vigencias** no se parte por tramos: la aplicación avisa de que un valor cambia dentro de lo cargado
+(propietario, 2026-09-27, OQ-153: «OQ-153 quedarnos con el aviso»).
 
 ## 5. Privacidad
 
