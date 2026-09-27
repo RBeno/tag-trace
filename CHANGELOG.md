@@ -2,6 +2,33 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.64.0] - 2026-09-27
+
+Primera entrega de F5: la decisión del expediente, **propuesta** y pendiente del propietario. El
+propietario pidió empezar por el ADR del expediente y medir la repercusión de una incidencia «como
+una onda en un estanque»: un AGV cargado detenido 7 minutos, cómo se propaga, cómo afecta y cuándo
+se vuelve a la calma.
+
+### Añadido
+
+- **ADR-0017** (`Proposed`): el expediente como registro de eventos append-only, con estados que
+  solo cambia una persona; ventana antes/durante/después con márgenes sacados de las medidas (una
+  vuelta p50 antes; hasta la calma más una vuelta después); recorte de lecturas de toda la flota con
+  las versiones congeladas, para que el expediente se reproduzca cuando ADR-0015 retire el bruto; y
+  la **repercusión como onda**: epicentro, cola aguas arriba, hueco aguas abajo, pulmón, línea,
+  coste en AGV·minutos, atenuación, eco y vuelta a la calma, con lo que no afirma (ondas
+  superpuestas, interrupciones, fin de cobertura, zona vacía). Define cuándo se dice `precede`,
+  `es compatible con`, `correlaciona` y `confirmado como causa`, y qué medirá la onda con cada
+  fuente futura (informe ampliado, coordenadas del plano, F7, F8).
+- `OPEN_QUESTIONS.md`: OQ-159 a OQ-163 (criterio de calma, onda en la batería o solo en el
+  expediente, recorte en el `.agvproj`, cifra principal del impacto, «AGV cargado» por zona), con
+  la recomendación de la IA.
+- `INCIDENTS_REPORTING.md` §10: resumen de la propuesta, marcado como no normativo.
+
+### Sin cambios de código
+
+Nada se implementa mientras ADR-0017 esté `Proposed`.
+
 ## [3.63.0] - 2026-09-27
 
 **F5 abierta** por el propietario («pasa a Fase 5»), tras fusionar el PR #12 (3.50.0 a 3.62.0,

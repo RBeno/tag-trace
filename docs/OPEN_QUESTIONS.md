@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.58.0
+version: 0.59.0
 status: active
 last_updated: 2026-09-27
 ---
@@ -66,6 +66,19 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-134 | **Parcial.** Cerrado el 2026-09-26: los 60 s no son un ajuste. El ciclo ronda los 55 s y no es fijo —hay periodos de 50 y de 60—, la noche es distinta y la línea puede parar varias veces, así que cada tiempo entre pasos se mide contra su ciclo local (R-FLO-010). Abierto: con el pulmón lleno el cruce no deja pasar a más AGV y se acumulan detrás de la parada precisa; en el día medido no se ven AGV esperando detrás del pulmón, así que falta un día con el pulmón desbordado para medirlo. | Ninguna constante de planta va al código. |
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? **Nota (2026-09-24):** ya se puede auditar con los datos: las paradas de la producción salen de los tags críticos (R-AGV-018) y se marca cuáles se repiten a la misma hora otro día; el propietario espera franjas como 8:00–8:10, 10:00–10:15, 12:00–12:10, 16:00–16:10 y 18:00–18:15. **Nota (2026-09-25):** una exportación real de otro circuito muestra también una parada de toda la producción en esa frontera —ningún tag crítico leído y ningún AGV leyendo durante unos tres cuartos de hora—, y las franjas que espera el propietario salen de los datos sin declararlas. Siguen siendo dos observaciones, de circuitos distintos y de un solo día cada una. | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
 
+
+## Necesarias durante F5
+
+Abiertas por ADR-0017 (propuesta, 2026-09-27). La columna de recomendación es de la IA; decide el
+propietario.
+
+| ID | Pregunta | Recomendación | Documentos |
+|---|---|---|---|
+| OQ-159 | ¿Cuándo se da por **vuelta a la calma** la zona afectada por una onda? | Cola descargada, cada AGV afectado con una transición libre por debajo del p80 de su tramo, y la cadencia y las separaciones de la línea dentro de su valla durante un tramo de estabilización. La longitud de ese tramo va a configuración como `draft` (propuesta: una vuelta p50 del circuito), hasta calibrarla con planta. | ADR-0017 §4 |
+| OQ-160 | ¿La onda se mide para cada incidencia de la batería (R-AGV-021) o solo al abrir un expediente? | Para cada incidencia de la batería, como columnas más de su CSV (profundidad, alcance, coste, recuperación), y con todo el detalle solo en el expediente. Así la biblioteca de casos tiene firmas desde el primer fichero. | ADR-0017 §4, §7 |
+| OQ-161 | ¿El recorte de lecturas de un expediente viaja en el `.agvproj`? | Sí, en una sección `incidencias`: es un fichero local que no pasa por GitHub, y sin el recorte el expediente no se reproduce en otro dispositivo. Enmienda a ADR-0015 §5, que hoy dice que el `.agvproj` no lleva lecturas. | ADR-0017 §3, ADR-0012, ADR-0015 |
+| OQ-162 | ¿Qué cifra encabeza el impacto de una incidencia? | Con línea declarada, los pasos que faltaron en la línea frente a su ciclo local y el tiempo sin paso; sin línea, los AGV·minutos por encima del p50. Las demás medidas, debajo. | ADR-0017 §4 |
+| OQ-163 | ¿«AGV cargado» se deduce solo de la zona (cargada o vacía) en la que está, o hay otra señal? | De la zona declarada (R-FLO-001 a R-FLO-003), diciendo que es una deducción por la zona y no una lectura del carro. | ADR-0017 §4 |
 
 ## Decisiones de producto posteriores
 

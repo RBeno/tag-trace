@@ -1,8 +1,8 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.2.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-09-27
 ---
 
 # Incidencias, replay e informes
@@ -113,3 +113,16 @@ Una exportación es una instantánea; el expediente local continúa vivo. El inf
 - Crear, guardar o cerrar una incidencia no altera la memoria normal.
 - El periodo marcado como incidencia queda excluido del entrenamiento del esperado por defecto.
 - Un aprendizaje general puede proponerse posteriormente como cambio de regla/configuración, pero requiere una decisión y consolidación separadas.
+
+## 10. Repercusión como onda (propuesta)
+
+**Pendiente de decisión: ADR-0017 está `Proposed`.** Mientras no se acepte, este apartado no es
+normativo y nada se implementa.
+
+La propuesta cambia la pregunta de «cuánto duró» a «cuánto se extendió, cuánto costó y cuándo dejó
+de notarse». Desde un epicentro —por ejemplo, un AGV cargado detenido siete minutos— se miden la
+cola que crece aguas arriba, el hueco que avanza aguas abajo hasta la línea, lo que absorbió el
+pulmón, el coste acumulado en AGV·minutos, la atenuación con la distancia, el eco una vuelta
+después y la vuelta a la calma. Las medidas, sus límites (ondas superpuestas, interrupciones, fin
+de cobertura) y el lenguaje de causalidad de §4 están en ADR-0017; las decisiones que faltan, en
+`OPEN_QUESTIONS.md` (OQ-159 a OQ-163).

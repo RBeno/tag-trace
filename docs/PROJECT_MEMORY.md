@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.45.0
+version: 0.46.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -410,6 +410,17 @@ síntoma, intervalo o hallazgo; retroceso temporal y topológico; replay multi-A
 incertidumbre; biblioteca de casos y similitud explicada; informe vivo y exportación local;
 contramedidas y verificación antes/después.
 
+## El expediente y la onda (2026-09-27, propuesta)
+
+Primera entrega de F5: ADR-0017, **`Proposed`**. El propietario: «en vez de medir una cantidad,
+medir la repercusión como una onda en un estanque. Ejemplo: un AGV cargado que se detiene durante
+7 minutos, cómo se propaga, cómo afecta, cuándo se vuelve a la calma». La propuesta: expediente
+append-only con recorte de lecturas de toda la flota y versiones congeladas; la onda se mide con
+piezas que ya existen (cadena de cola, horquillas, cadencia, pulmón); la calma, el coste y el eco
+son medidas nuevas; y un lenguaje de causalidad con cuatro niveles, el último solo humano. Pendiente:
+que el propietario acepte o corrija ADR-0017 y responda OQ-159 a OQ-163. Hasta entonces no hay
+código de F5.
+
 ## Estado al 2026-09-27 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
@@ -418,8 +429,8 @@ conversación siguiente.
 
 - **Fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
-  6` (ADR-0010). **Aún no hay ninguna entrega de F5**: el primer trabajo de esta fase es el punto de
-  partida en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  6` (ADR-0010). **Primera entrega de F5: ADR-0017 propuesto** (expediente y onda, sección de
+  arriba), pendiente del propietario; el resto del alcance está en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
   (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
   antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**
