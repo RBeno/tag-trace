@@ -60,6 +60,7 @@ import {
   type TrendPanel,
 } from "./diagnostic-charts.js";
 import { PROVISIONAL_CONFIG } from "../domain/config.js";
+import { CARDS_SHOWN } from "../domain/finding-kinds.js";
 import { bandsCsv } from "../domain/segment-bands.js";
 import { anchorSectionsCsv } from "../domain/anchor-sections.js";
 import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
@@ -510,6 +511,7 @@ tiles.setAttribute("aria-label", "Cifras del circuito");
 const memoryPanel = createMemoryPanel({
   formatInstant,
   formatWindow: (window) => `${formatTick(window.from)} → ${formatTick(window.to)}`,
+  formatTick,
   findings: findingsStatus,
   goToPending: () => {
     activateTab("resumen");
@@ -1619,6 +1621,7 @@ function renderViews(views: CircuitViews): void {
   renderCharging(views);
   renderFifo(views);
 
+  renderUncardedFindings(views);
   for (const panel of viewsOf.values()) panel.hidden = panel.childElementCount === 0;
   buildTray();
   reviewSession?.refresh();
@@ -2636,9 +2639,9 @@ type Matrix = CircuitViews["readMatrices"][number];
 type TagRow = Matrix["tags"][number];
 
 /** Cuántos casos se enseñan de entrada. Es un parámetro de pantalla, no una magnitud de planta. */
-const HIGHLIGHTS = 8;
+const HIGHLIGHTS = CARDS_SHOWN.highlights;
 /** Tarjetas de AGV por cada tipo de diferencia de lectura. Parámetro de pantalla. */
-const PER_KIND = 5;
+const PER_KIND = CARDS_SHOWN.perKind;
 
 /** Una probabilidad pequeña, legible: «1 vez de cada 1.000» o «menos de 1 de cada millón». */
 function formatChance(chance: number): string {
@@ -4424,6 +4427,33 @@ function headingId(text: string, taken: Set<string>): string {
  * tema, y deja en cada sección una línea «N hallazgos de esta sección: ver en Resumen». Una sola
  * copia de cada tarjeta: es la unidad de revisión (R-EVI-007).
  */
+/**
+ * Los hallazgos de la instantánea del fichero de trabajo que ninguna sección ha pintado —cada sección
+ * enseña los primeros de cada tipo y el resto en su tabla— van a la bandeja como tarjetas propias.
+ * Son los que cuentan al consolidar: sin tarjeta no se podrían revisar y quedarían pendientes para
+ * siempre (3.57.0). La clave es la de la instantánea, partida por su separador.
+ */
+function renderUncardedFindings(views: CircuitViews): void {
+  const session = reviewSession;
+  if (session === null) return;
+  const missing = (views.snapshots.workingFindings ?? []).filter((item) => !session.has(item.key));
+  if (missing.length === 0) return;
+  const out = viewsOf.get("resumen") as HTMLElement;
+  out.append(element("h3", undefined, "Más hallazgos del periodo"));
+  out.append(
+    element(
+      "p",
+      "muted",
+      "Su sección enseña los primeros de cada tipo; estos también cuentan al consolidar y se revisan aquí.",
+    ),
+  );
+  const cards = element("div", "findings");
+  for (const item of missing) {
+    cards.append(finding(item.title, item.figure, "Está en la tabla de su sección.", item.key.split("|")));
+  }
+  out.append(cards);
+}
+
 function buildTray(): void {
   interface Entry {
     readonly card: HTMLElement;

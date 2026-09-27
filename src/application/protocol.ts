@@ -20,7 +20,7 @@ import type { CircuitState } from "../domain/circuit-state.js";
 import type { DeliveryConcentration, GroupedDelivery } from "../domain/grouped-delivery.js";
 import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { StructureSet } from "../domain/anchor-sums.js";
-import type { SnapshotDelta } from "../domain/snapshot.js";
+import type { SnapshotDelta, SnapshotFinding } from "../domain/snapshot.js";
 import type { ChangeSummary } from "../domain/change-class.js";
 import type { ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryComparison, VersionComparison } from "../domain/memory.js";
 import type {
@@ -737,6 +737,12 @@ export interface CircuitViews {
     }[];
     /** Entre instantáneas consecutivas (`compareSnapshots`). */
     readonly deltas: readonly SnapshotDelta[];
+    /**
+     * Los hallazgos que guarda la instantánea del fichero de trabajo: son los que cuentan al
+     * consolidar. La interfaz enseña en la bandeja los que no tienen tarjeta en su sección, para que
+     * ninguno quede pendiente sin poder revisarse (3.57.0).
+     */
+    readonly workingFindings?: readonly SnapshotFinding[];
     /**
      * Por qué falta alguna instantánea o comparación, en palabras: nunca se calla (R-EVI-006). Vacío
      * cuando todo se pudo construir.

@@ -2,6 +2,30 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.57.0] - 2026-09-27
+
+El propietario cerró OQ-149 y OQ-150 con las recomendaciones («De acuerdo con las dos, adelante»).
+
+### Añadido
+
+- **Hallazgos graves con instante como incidencias** (OQ-149, R-INC-004): el primero de cola sin
+  avanzar, la parada de la línea, el paso por la línea, el AGV que deja de leer y la producción parada
+  entran en la instantánea con la clave de su tarjeta y su ventana. Confirmados, se excluyen del
+  esperado: los de un sitio, su tag y sus tramos; los de un AGV o de toda la producción no tocan el
+  grafo y quedan registrados con su AGV y su ventana.
+- **Evento puntual que vuelve** (OQ-150): un cambio que la versión vigente dejó pendiente y ya no está
+  en el último fichero sale en la previsualización siguiente como «se vio en vN y volvió».
+
+### Corregido
+
+- **Hallazgos que contaban al consolidar sin poder revisarse.** Cada sección enseña los primeros de
+  cada tipo, pero la instantánea guardaba todos: en el circuito de auditoría faltaban las tarjetas
+  de varios tags fuera de la lista y de roturas, que habrían dejado la consolidación pendiente para
+  siempre. La bandeja los enseña ahora en «Más hallazgos del periodo», y una prueba de navegador
+  comprueba que toda clave de la instantánea tiene tarjeta (sin el arreglo, falla).
+- **Cambia una prueba por la decisión**: en la prueba de oro, el tramo lento del periodo 3 sale en v4
+  como evento puntual (OQ-150).
+
 ## [3.56.0] - 2026-09-27
 
 ### Añadido

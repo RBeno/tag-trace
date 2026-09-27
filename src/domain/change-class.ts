@@ -453,6 +453,10 @@ export interface IncidentRecord {
   readonly figure: string;
   /** Claves de sujeto que toca: los tags que nombra el hallazgo y los tramos que salen de ellos o llegan a ellos. */
   readonly subjects: readonly string[];
+  /** Opcionales (OQ-149): la ventana del hallazgo, una por parada si hubo varias, y su AGV si es de un AGV. */
+  readonly window?: { readonly from: number; readonly to: number };
+  readonly windows?: readonly { readonly from: number; readonly to: number }[];
+  readonly agvId?: string;
 }
 
 /**
@@ -460,13 +464,26 @@ export interface IncidentRecord {
  * de su clave de revisión (también dentro de una parte que junta varios con «+»), y las aristas que
  * entran o salen de ellos en los dos regímenes. Un hallazgo que no nombra ningún tag del anillo (un
  * AGV, una calle) no toca el grafo: se guarda como incidencia y el esperado no cambia por él.
+ *
+ * Con `tagIds` (el hallazgo trae sus sujetos explícitos, OQ-149) mandan ellos y la clave no se lee:
+ * cada uno que sea un vértice de la instantánea o esté en el anillo toca su vértice, y los del anillo
+ * también los tramos de entrada y salida en los dos regímenes. Vacío, no toca nada del grafo. Sin
+ * `tagIds` (instantáneas anteriores), como hasta ahora.
  */
-export function incidentSubjectsOf(findingKey: string, snapshot: CircuitSnapshot): readonly string[] {
+export function incidentSubjectsOf(findingKey: string, snapshot: CircuitSnapshot, tagIds?: readonly string[]): readonly string[] {
   const inRing = new Set(snapshot.ring);
   const index = new Map(snapshot.ring.map((tagId, at) => [tagId, at]));
-  // Una parte puede juntar varios tags con «+» (`punto-conflictivo|T1+T2`, `snapshot-findings.ts`).
-  const parts = findingKey.split("|").flatMap((part) => [part, ...part.split("+")]);
-  const tags = [...new Set(parts.filter((part) => inRing.has(part)))].sort((a, b) => (index.get(a) ?? 0) - (index.get(b) ?? 0));
+  const byRing = (a: string, b: string): number =>
+    (index.get(a) ?? Number.POSITIVE_INFINITY) - (index.get(b) ?? Number.POSITIVE_INFINITY) || a.localeCompare(b);
+  let tags: string[];
+  if (tagIds !== undefined) {
+    const known = new Set([...snapshot.ring, ...snapshot.vertices.map((vertex) => vertex.tagId)]);
+    tags = [...new Set(tagIds.filter((tagId) => known.has(tagId)))].sort(byRing);
+  } else {
+    // Una parte puede juntar varios tags con «+» (`punto-conflictivo|T1+T2`, `snapshot-findings.ts`).
+    const parts = findingKey.split("|").flatMap((part) => [part, ...part.split("+")]);
+    tags = [...new Set(parts.filter((part) => inRing.has(part)))].sort(byRing);
+  }
   const out = new Set<string>(tags.map((tagId) => subjectKey({ kind: "vertice", tagId })));
   for (const tagId of tags) for (const key of edgeSubjectsAround(tagId, snapshot.ring)) out.add(key);
   return [...out];

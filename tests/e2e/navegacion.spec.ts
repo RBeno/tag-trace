@@ -53,6 +53,32 @@ test.describe("pestañas y bandeja de hallazgos", () => {
     await page.locator("#source-file").setInputFiles(readings);
     await expect(page.locator(".finding", { hasText: "Nadie entró en" }).first()).toBeVisible({ timeout: 180_000 });
 
+    // Cada hallazgo que guarda la instantánea del fichero —los que cuentan al consolidar— tiene su
+    // tarjeta revisable en la bandeja, aunque su sección solo enseñe los primeros de su tipo (3.57.0).
+    // Sin ella quedaría pendiente para siempre y la consolidación no se podría hacer nunca.
+    const snapshotKeys = await page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("tag-trace");
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        const rows = await new Promise<{ circuitId: string; snapshot: { findings: { key: string }[] } }[]>((resolve, reject) => {
+          const request = db.transaction("snapshots", "readonly").objectStore("snapshots").getAll();
+          request.onsuccess = () => resolve(request.result as { circuitId: string; snapshot: { findings: { key: string }[] } }[]);
+          request.onerror = () => reject(request.error);
+        });
+        return rows.filter((row) => row.circuitId === "auditoria").flatMap((row) => row.snapshot.findings.map((item) => item.key));
+      } finally {
+        db.close();
+      }
+    });
+    expect(snapshotKeys.length).toBeGreaterThan(0);
+    const cardKeys = new Set(
+      await page.locator(".tray .finding.reviewable").evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset["reviewKey"] ?? "")),
+    );
+    expect(snapshotKeys.filter((key) => !cardKeys.has(key))).toEqual([]);
+
     // La bandeja tiene tantas tarjetas como hallazgos cuenta la barra, y ninguna queda en su sección.
     const bar = page.locator(".review-bar");
     await expect(bar).toContainText(/Revisados 0 de \d+/);

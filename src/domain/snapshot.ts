@@ -124,6 +124,21 @@ export interface SnapshotFinding {
   readonly title: string;
   readonly figure: string;
   readonly review: ReviewState | null;
+  /**
+   * Opcionales, añadidos con OQ-149 (propietario 2026-09-27) sin renombrar nada: las instantáneas
+   * anteriores no los traen y siguen valiendo. Un hallazgo que ocurre en un instante (bloqueo, parada
+   * o paso de la línea, «deja de leer», producción parada, rotura) lleva su ventana de tiempo.
+   */
+  readonly window?: Interval;
+  /** Solo la producción parada: una ventana por parada, en el orden de la tarjeta; `window` las abarca. */
+  readonly windows?: readonly Interval[];
+  /** El AGV del hallazgo cuando es de un AGV y no de un sitio («deja de leer», rotura de un AGV). */
+  readonly agvId?: string;
+  /**
+   * Los tags que toca, explícitos. Presente, manda sobre lo que se lea de la clave (`incidentSubjectsOf`):
+   * vacío dice que no toca ningún tag del grafo. Ausente, los tags salen de las partes de la clave.
+   */
+  readonly tagIds?: readonly string[];
 }
 
 export interface SnapshotFleet {

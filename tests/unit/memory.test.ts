@@ -291,6 +291,69 @@ describe("consolidar · §6 paso G, §10 cadena de hashes", () => {
     expect(v2b.changes).toHaveLength(1);
   });
 
+  it("OQ-150 (2): un pendiente de la vigente que ya no está en el último fichero sale como evento puntual, una sola vez", async () => {
+    const v1 = await version1();
+    const ring7 = [...RING, "T007"];
+    const thresholds = { ...THRESHOLDS, changeClass: { sustainedFiles: 3, collectiveShare: 0.5 } };
+    const f2 = snap({ sourceId: "f2", day: 30, ring: ring7 });
+    const v2 = await consolidate(previewConsolidation(input({ snapshot: f2, versions: [v1], history: [f2], thresholds })), { ...CONTEXT, snapshot: f2, now: 40 * DAY });
+    expect(v2.changes?.map((change) => [change.key, change.cls, change.files])).toEqual([["vertice|T007|aparece", "deriva-pendiente", 1]]);
+
+    // T007 ya no está en el fichero siguiente: «se vio en v2 y volvió», informativo y sin adoptar.
+    const f3 = snap({ sourceId: "f3", day: 41 });
+    const back = previewConsolidation(input({ snapshot: f3, versions: [v1, v2], history: [f3], thresholds }));
+    expect(back.changes).toEqual([
+      {
+        key: "vertice|T007|aparece",
+        subject: { kind: "vertice", tagId: "T007" },
+        change: "aparece",
+        detail: v2.changes?.[0]?.detail,
+        cls: "evento-puntual",
+        files: 0,
+        collective: { share: null, affected: null, passing: null },
+        reason: "Se vio en v2 y volvió: quedó pendiente allí tras 1 fichero y no está en el último del periodo (f3.csv). No cambia el esperado.",
+        adopted: false,
+      },
+    ]);
+    // Sin historia explícita el criterio es el mismo: el último fichero es el que se consolida.
+    expect(previewConsolidation(input({ snapshot: f3, versions: [v1, v2], thresholds })).changes?.map((change) => change.cls)).toEqual(["evento-puntual"]);
+    // Sigue en el último fichero: no vuelve, sigue pendiente.
+    const f3b = snap({ sourceId: "f3b", day: 41, ring: ring7 });
+    expect(previewConsolidation(input({ snapshot: f3b, versions: [v1, v2], history: [f3b], thresholds })).changes?.map((change) => change.cls)).toEqual(["deriva-pendiente"]);
+    // Visto en un fichero de la propia historia y ausente del último: `classifyChanges` ya da el evento
+    // puntual y no se duplica.
+    const within = previewConsolidation(input({ snapshot: f3, versions: [v1, v2], history: [f3b, f3], thresholds }));
+    expect(within.changes?.filter((change) => change.key === "vertice|T007|aparece")).toHaveLength(1);
+    expect(within.changes?.[0]?.reason).toMatch(/^Se vio en 1 de los 1 fichero anteriores del periodo/);
+  });
+
+  it("OQ-149: la incidencia lleva la ventana, el AGV y los tags explícitos del hallazgo", () => {
+    const window = { from: 2 * DAY, to: 2 * DAY + 600 * SECOND };
+    const snapshot = snap({
+      findings: [
+        { ...finding("deja-de-leer", "AGV-01 T003 172800000"), window, agvId: "AGV-01", tagIds: [] },
+        { ...finding("bloqueo", "AGV-02 T004 172800000"), window, tagIds: ["T004"] },
+        { ...finding("produccion-parada", "circuito"), window, windows: [window], tagIds: [] },
+      ],
+    });
+    const reviews = new Map([
+      review("deja-de-leer|AGV-01 T003 172800000", "confirmado"),
+      review("bloqueo|AGV-02 T004 172800000", "confirmado"),
+      review("produccion-parada|circuito", "confirmado"),
+    ]);
+    const rank1 = (): number => 1;
+    const preview = previewConsolidation(input({ snapshot, reviews, rankOf: rank1 }));
+    expect(preview.blockers).toEqual([]);
+    const byKind = new Map((preview.incidents ?? []).map((incident) => [incident.kind, incident]));
+    expect(byKind.get("deja-de-leer")).toMatchObject({ subjects: [], window, agvId: "AGV-01" });
+    expect(byKind.get("bloqueo")).toMatchObject({
+      subjects: ["vertice|T004", "arista|T003|T004|produccion", "arista|T003|T004|noche", "arista|T004|T005|produccion", "arista|T004|T005|noche"],
+      window,
+    });
+    expect(byKind.get("bloqueo")?.agvId).toBeUndefined();
+    expect(byKind.get("produccion-parada")).toMatchObject({ subjects: [], window, windows: [window] });
+  });
+
   it("el delta de la versión siguiente es contra el esperado de la vigente, no contra su instantánea", async () => {
     const snapshot = snap({ findings: [finding("tag-rotura", "T005")] });
     const reviews = new Map([review("tag-rotura|T005", "confirmado")]);

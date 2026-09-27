@@ -303,6 +303,32 @@ describe("sujetos de incidencias y confirmaciones", () => {
     expect(incidentSubjectsOf("tag-rotura|T099", EXPECTED)).toEqual([]);
   });
 
+  it("incidentSubjectsOf con tagIds (OQ-149): mandan los tags explícitos, con sus tramos de entrada y salida en los dos regímenes", () => {
+    // La clave de un bloqueo junta AGV, tag e instante en una parte: sin tagIds no se lee ningún tag.
+    expect(incidentSubjectsOf("bloqueo|AGV-01 T004 1000", EXPECTED)).toEqual([]);
+    expect(incidentSubjectsOf("bloqueo|AGV-01 T004 1000", EXPECTED, ["T004"])).toEqual([
+      "vertice|T004",
+      "arista|T003|T004|produccion",
+      "arista|T003|T004|noche",
+      "arista|T004|T005|produccion",
+      "arista|T004|T005|noche",
+    ]);
+    // El primero del anillo: su tramo de entrada viene del último.
+    expect(incidentSubjectsOf("linea|AGV-02", EXPECTED, ["T001"])).toEqual([
+      "vertice|T001",
+      "arista|T006|T001|produccion",
+      "arista|T006|T001|noche",
+      "arista|T001|T002|produccion",
+      "arista|T001|T002|noche",
+    ]);
+    // Vacío: no toca nada del grafo aunque la clave nombre un tag del anillo.
+    expect(incidentSubjectsOf("tag-rotura|T003", EXPECTED, [])).toEqual([]);
+    // Un AGV que se llamara como un tag no lo toca si el hallazgo dice que no tiene tags.
+    expect(incidentSubjectsOf("agv-rotura|T002", EXPECTED, [])).toEqual([]);
+    // Un tag que la instantánea no conoce no toca nada.
+    expect(incidentSubjectsOf("bloqueo|AGV-01 T099 1000", EXPECTED, ["T099"])).toEqual([]);
+  });
+
   it("confirmedSubjectsOf: los tags de los eventos del plano con fecha efectiva en el periodo", () => {
     const base = { circuitId: "circuito-sintetico", recordedAt: 0, reason: "prueba", evidence: null, origin: "manual" as const };
     const events: PlanEvent[] = [

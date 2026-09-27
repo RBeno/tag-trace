@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.43.0
+version: 0.44.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -36,6 +36,11 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 | **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
 | **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje; debajo, el **plano del circuito** (§6.1). |
 | **Datos** | Listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
+
+**Más hallazgos del periodo (3.57.0).** Los hallazgos que guarda la instantánea del fichero y que
+ninguna sección pinta —cada sección enseña los primeros de cada tipo— van a la bandeja con su propia
+tarjeta, bajo ese título: cuentan al consolidar y tienen que poder revisarse. Cada tarjeta lleva su
+clave de revisión como atributo (`data-review-key`).
 
 La barra fija de la revisión parte su fila en dos si el título y «Siguiente pendiente» no caben, y
 sin hallazgos no ofrece el botón (3.54.0).
@@ -693,7 +698,9 @@ Desde 3.55.0 la previsualización añade «Incidencias excluidas del esperado» 
 confirmado con lo que toca— y «Cambios frente al esperado», agrupados por clase con su razón y si
 pasan o no al esperado, plegados si son muchos; la lista de versiones resume cada una («3 cambios
 adoptados, 5 pendientes, 1 incidencia excluida»). La condición de incidencias ya no impide
-consolidar.
+consolidar. Una incidencia enseña su ventana («de lun., 12:05 a lun., 12:40») y, si es de un AGV,
+«AGV X: no toca el grafo; queda registrada con su ventana»; un cambio que vuelve, «Se vio en vN y
+volvió…» (3.57.0).
 
 **Comparar versiones (3.56.0)**: con dos o más versiones, dos selectores —de, a; por defecto la
 primera y la vigente—, «Comparar» y el resultado: las dos versiones con su fichero y su ventana, si

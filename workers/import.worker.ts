@@ -1564,6 +1564,10 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
             state: circuitStateCohorts[0]?.state ?? null,
             undeclaredTags: undeclared.evaluated ? undeclared.tags : [],
             reviews,
+            // OQ-149: los de rango 1 con instante, de lo mismo que reciben las vistas (sin medir nada).
+            flow: { vehicles: fleet.vehicles.length, production: productionView, blockages },
+            lineFeed: listViews.lineFeed ?? null,
+            abandoned: listViews.incidents?.abandoned ?? [],
           }),
         }),
       ),
@@ -1662,6 +1666,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       .sort((a, b) => a.window.from - b.window.from || a.window.to - b.window.to),
     deltas,
     problems: [...notes, ...failures],
+    workingFindings: (snapshot ?? snapshotOf.get(importedSource.sourceId) ?? null)?.findings ?? [],
   };
 
   // La memoria consolidada (F4): solo si el circuito tiene versiones. Lo observado es la instantánea

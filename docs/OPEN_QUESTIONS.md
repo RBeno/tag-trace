@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.53.0
+version: 0.54.0
 status: active
 last_updated: 2026-09-27
 ---
@@ -34,8 +34,6 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 
 | ID | Pregunta | Tratamiento mientras esté abierta |
 |---|---|---|
-| OQ-149 | **Los hallazgos graves con instante no llegan a la instantánea.** Los de rango 1 que ocurren en un momento —AGV que deja de leer, primero de cola sin avanzar, parada de la línea, producción parada— no están entre los hallazgos que guarda la instantánea de un fichero, así que al consolidar nunca se excluyen como incidencia (OQ-148), igual que antes nunca bloqueaban. La bandeja los cuenta; la previsualización no los ve. ¿Deben entrar en la instantánea para excluirse del esperado, y con qué sujeto (el AGV, el tag, el tramo)? | La previsualización no promete excluirlos: su texto habla solo de los hallazgos que la instantánea guarda. |
-| OQ-150 | **Cuenta de ficheros seguidos y eventos puntuales cuando se consolida cada periodo** (`MEMORY_CONSOLIDATION.md` §8). Desde 3.56.0 la cuenta de «tres ficheros seguidos» continúa a través de las consolidaciones: un cambio visto en v2 y v3 que sigue en el fichero de v4 cuenta tres. ¿Es la lectura que el propietario quería? Y con esa cadencia, un cambio de un solo periodo sale en su versión como «deriva pendiente» (aún no se sabe si volverá) y no se reclasifica después como «evento puntual»; ¿hace falta que la versión siguiente lo reclasifique? | La cuenta continúa entre consolidaciones; un cambio de un periodo no se adopta en ningún caso. |
 | OQ-101 | ¿Qué modelos de lector/AGV existen y cuáles suprimen tag repetido? | Regla R-OPP-002 sigue candidate |
 | OQ-102 | ¿Qué evento o secuencia identifica con fiabilidad una vuelta? **El mecanismo para cuando se responda ya existe** (`lap_anchors`, R-GRA-009, 2026-09-22): una ancla declarada rota el ciclo ya reconstruido y una vuelta completa cortada por ella sale `observed`. Sigue faltando el tag real. | Conservar vueltas parciales/desconocidas; sin ancla declarada, el ancla es el ciclo dominante e `inferred` |
 | OQ-103 | ¿Cómo distinguir mantenimiento/asistencia/pastor en los CSV? | Catálogo parcial y exclusión explícita |
@@ -85,6 +83,8 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 
 | ID | Pregunta | Respuesta | Fecha | Documentos |
 |---|---|---|---|---|
+| OQ-149 | ¿Los hallazgos graves con instante entran en la instantánea para excluirse como incidencia, y con qué sujeto? | Sí, con su ventana de tiempo (propietario, 2026-09-27, «De acuerdo con las dos, adelante»). Primero de cola sin avanzar: el tag donde ocurre y sus tramos. Parada de la línea y paso por la línea: el tag de entrada de la línea y sus tramos. AGV que deja de leer y rotura de un AGV: nada del grafo, con el AGV y su ventana. Producción parada: nada del grafo, con una ventana por parada. La ventana permitirá recortar el periodo desde el archivo de originales. | 2026-09-27 | `MEMORY_CONSOLIDATION.md` §8, R-INC-004 |
+| OQ-150 | ¿La cuenta de ficheros seguidos continúa entre consolidaciones? ¿Se reclasifica como evento puntual un cambio pendiente que vuelve? | Sí a las dos. La cuenta continúa; un cambio que la versión vigente dejó pendiente y ya no está en el último fichero del periodo sale en la previsualización siguiente como evento puntual, «se vio en vN y volvió», sin cambiar el esperado. | 2026-09-27 | `MEMORY_CONSOLIDATION.md` §8, R-MEM-005 |
 | OQ-145 | Presupuesto de la memoria: ¿5 % sobre el CSV con versiones comprimidas? ¿Todas las lecturas originales comprimidas? ¿Lecturas retenidas comprimidas? | Sí a las tres (propietario, 2026-09-27, «De acuerdo con las cuatro recomendaciones, adelante»). Las versiones y las lecturas retenidas se guardan comprimidas, y cada fichero original queda archivado comprimido con su huella (almacén 9). | 2026-09-27 | `MEMORY_CONSOLIDATION.md` §9, `DATA_CONTRACTS.md` §10 y §13 |
 | OQ-146 | ¿Cuándo es sostenido un cambio? | Cuando se mantiene en tres ficheros seguidos frente al esperado, en configuración (`change_class.sustained_files`). | 2026-09-27 | `MEMORY_CONSOLIDATION.md` §8, R-MEM-005 |
 | OQ-147 | ¿Cuándo es colectivo? | Cuando lo muestra más de la mitad de los AGV que pasan por el sitio (`change_class.collective_share`). En un tramo, la instantánea no guarda tiempos por AGV y se lee como más de la mitad de las pasadas: que se mueva su mediana. | 2026-09-27 | `MEMORY_CONSOLIDATION.md` §8, R-MEM-005 |

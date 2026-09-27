@@ -167,6 +167,21 @@ describe("construcción de la instantánea", () => {
     expect(built).toEqual(buildSnapshot({ ...input({ vertices: [vertex("TG50", RING), vertex("TG99", RING), ...shuffled.map((entry) => ({ ...entry, nonReaders: ["V1", "V3"] }))] }), findings: [...built.findings].reverse() }));
   });
 
+  it("los campos de OQ-149 (ventana, ventanas, AGV, tags) son opcionales: se guardan si vienen y un hallazgo sin ellos sigue valiendo", () => {
+    const built = buildSnapshot({
+      ...input({}),
+      findings: [
+        { key: "deja-de-leer|V1 TG02 5", kind: "deja-de-leer", title: "", figure: "", review: null, window: { from: 5, to: 50 }, agvId: "V1", tagIds: [] },
+        { key: "produccion-parada|circuito", kind: "produccion-parada", title: "", figure: "", review: null, window: { from: 1, to: 9 }, windows: [{ from: 1, to: 2 }, { from: 8, to: 9 }], tagIds: [] },
+        { key: "tag-deja|TG03", kind: "tag-deja", title: "", figure: "", review: null },
+      ],
+    });
+    expect(built.findings.map((entry) => entry.key)).toEqual(["deja-de-leer|V1 TG02 5", "produccion-parada|circuito", "tag-deja|TG03"]);
+    expect(built.findings[0]).toMatchObject({ window: { from: 5, to: 50 }, agvId: "V1", tagIds: [] });
+    expect(built.findings[1]?.windows).toHaveLength(2);
+    expect(Object.keys(built.findings[2] ?? {}).sort()).toEqual(["figure", "key", "kind", "review", "title"]);
+  });
+
   it("no mide nada: lo que le llega es lo que guarda", () => {
     const built = snap({ lapMs: 123 * SECOND });
     expect(built.lapMs).toBe(123 * SECOND);

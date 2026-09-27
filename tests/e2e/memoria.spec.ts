@@ -300,6 +300,53 @@ test.describe("memoria consolidada", () => {
     await expect(version.locator(".memory-version-changes")).toHaveText(/^0 cambios adoptados, 0 pendientes, \d+ incidencias? excluidas?\.$/);
   });
 
+  // OQ-149 (propietario 2026-09-27): los de rango 1 con instante viajan en la instantánea con su ventana.
+  test("un «deja de leer» de rango 1 confirmado sale en las incidencias con su AGV y su ventana, y el periodo se consolida", async ({ page }) => {
+    await freshPage(page);
+    await prepareCircuit(page);
+    // `periodo-1` con listas tiene un AGV que deja de leer (rango 1). Se confirma; el resto de rango 1
+    // se descarta y lo demás se confirma, para que la única incidencia sea esa.
+    const cards = page.locator(".finding.reviewable");
+    const total = await cards.count();
+    let abandoned = 0;
+    for (let index = 0; index < total; index += 1) {
+      const card = cards.nth(index);
+      const isAbandoned = (await card.getAttribute("data-kind")) === "deja-de-leer";
+      const critical = (await card.locator("xpath=ancestor::*[contains(@class,'tray-group')]").getAttribute("data-rank")) === "1";
+      const state = isAbandoned || !critical ? "confirmado" : "descartado";
+      if (isAbandoned) abandoned += 1;
+      await card.getByRole("button", { name: /Revisión en campo/ }).click();
+      await card.getByRole("menuitemradio", { name: state === "confirmado" ? /Confirmado/ : /Descartado/ }).click();
+      await page.keyboard.press("Escape");
+      await expect(card).toHaveAttribute("data-review", state);
+    }
+    expect(abandoned).toBe(1);
+    const title = (await page.locator(".finding.reviewable[data-kind='deja-de-leer'] .finding-title").textContent()) ?? "";
+    const agv = title.split(":")[0] ?? "";
+    expect(agv).not.toBe("");
+
+    await openTab(page, "Memoria");
+    const panel = page.locator(".memory-panel");
+    await expect(panel.locator(".memory-check[data-ok='no']")).toHaveCount(0);
+    await panel.getByRole("button", { name: "Previsualizar v1" }).click();
+    const preview = panel.locator(".memory-preview");
+    await expect(preview).toBeVisible({ timeout: 15_000 });
+    // Antes de OQ-149 la instantánea no lo traía y la previsualización no lo veía: ahora es una incidencia.
+    await expect(preview.locator(".memory-blockers")).toHaveCount(0);
+    const incidents = preview.getByRole("region", { name: "Incidencias excluidas del esperado" });
+    const item = incidents.locator(".memory-items li", { hasText: title });
+    await expect(item).toHaveCount(1);
+    await expect(item).not.toContainText("|");
+    // Su ventana, de cuando deja de leer a su siguiente lectura o al final de lo cargado.
+    await expect(item.locator(".memory-incident-window")).toHaveText(/^de .+ a .+$/);
+    // Es de un AGV: no toca el grafo y queda registrada con su ventana.
+    await expect(item).toContainText(`AGV ${agv}: no toca el grafo; queda registrada con su ventana`);
+
+    await preview.getByRole("button", { name: "Confirmar y consolidar" }).click();
+    await expect(panel.locator(".memory-status")).toContainText("Versión v1 consolidada", { timeout: 15_000 });
+    await expect(panel.locator(".memory-version[data-version='1'] .memory-version-changes")).toHaveText(/^0 cambios adoptados, 0 pendientes, 1 incidencia excluida\.$/);
+  });
+
   test("revocar v1 exige razón, la deja marcada en la lista y el circuito queda sin vigente", async ({ page }) => {
     await freshPage(page);
     await prepareCircuit(page);

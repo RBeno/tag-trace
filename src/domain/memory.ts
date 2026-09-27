@@ -243,6 +243,40 @@ function carryConsecutive(
 }
 
 /**
+ * Lo que la versión vigente guardó pendiente y ya no está (OQ-150 (2), propietario 2026-09-27). Un
+ * cambio que vN guardó sin adoptar, de clase `deriva-pendiente` y con `files > 0`, y que **no está en
+ * el último fichero de la historia** —el que se consolida— volvió: se lista como `evento-puntual`,
+ * informativo, sin adoptarse, con la razón «se vio en vN y volvió». El criterio es el último fichero,
+ * no «ninguno de la historia»: es el mismo que `classifyChanges` aplica dentro del periodo (lo que no
+ * está en el actual es un evento puntual), y un cambio que va y viene dentro del periodo pero ya no
+ * está al final también volvió. No duplica: si la clave ya sale en `changes` —presente en el último
+ * fichero con cualquier clase, o como evento puntual que `classifyChanges` produjo porque se vio en un
+ * fichero anterior de la propia historia—, no se añade. Sin esperado vigente no hay nada que volver.
+ */
+function returnedPending(changes: readonly ClassifiedChange[], previous: ConsolidatedVersion, lastFile: string): readonly ClassifiedChange[] {
+  const listed = new Set(changes.map((change) => change.key));
+  const out: ClassifiedChange[] = [];
+  for (const change of previous.changes ?? []) {
+    if (change.adopted || change.cls !== "deriva-pendiente" || change.files <= 0 || listed.has(change.key)) continue;
+    listed.add(change.key);
+    out.push({
+      key: change.key,
+      subject: change.subject,
+      change: change.change,
+      detail: change.detail,
+      cls: "evento-puntual",
+      files: 0,
+      collective: { share: null, affected: null, passing: null },
+      reason:
+        `Se vio en v${previous.version} y volvió: quedó pendiente allí tras ${change.files === 1 ? "1 fichero" : `${change.files} ficheros seguidos`} ` +
+        `y no está en el último del periodo (${lastFile}). No cambia el esperado.`,
+      adopted: false,
+    });
+  }
+  return out.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/**
  * Qué pasaría al consolidar: la previsualización de vN+1 (§6, paso E). No escribe nada.
  *
  * Bloquea **solo lo pendiente** (propietario, 2026-09-23): un hallazgo confirmado, descartado o
@@ -270,16 +304,24 @@ export function previewConsolidation(input: ConsolidationInput): ConsolidationPr
     });
   }
 
-  // OQ-148: un rango 1 confirmado no bloquea; se excluye del esperado lo que toca.
+  // OQ-148: un rango 1 confirmado no bloquea; se excluye del esperado lo que toca. OQ-149: con su
+  // ventana, su AGV si es de un AGV, y los tags explícitos del hallazgo si los trae.
+  const findingOf = new Map(snapshot.findings.map((finding) => [finding.key, finding]));
   const incidents: IncidentRecord[] = decisions
     .filter((decision) => decision.state === "confirmado" && input.rankOf(decision.kind) === 1)
-    .map((decision) => ({
-      key: decision.key,
-      kind: decision.kind,
-      title: decision.title,
-      figure: decision.figure,
-      subjects: incidentSubjectsOf(decision.key, snapshot),
-    }));
+    .map((decision) => {
+      const finding = findingOf.get(decision.key);
+      return {
+        key: decision.key,
+        kind: decision.kind,
+        title: decision.title,
+        figure: decision.figure,
+        subjects: incidentSubjectsOf(decision.key, snapshot, finding?.tagIds),
+        ...(finding?.window === undefined ? {} : { window: { from: finding.window.from, to: finding.window.to } }),
+        ...(finding?.windows === undefined ? {} : { windows: finding.windows.map((window) => ({ from: window.from, to: window.to })) }),
+        ...(finding?.agvId === undefined ? {} : { agvId: finding.agvId }),
+      };
+    });
 
   const twin = versions.filter((version) => version.revoked === null && version.basedOn.sourceHash === snapshot.sourceHash);
   if (twin.length > 0) {
@@ -339,6 +381,7 @@ export function previewConsolidation(input: ConsolidationInput): ConsolidationPr
     if (previous !== null && input.history !== undefined) {
       changes = carryConsecutive(changes, previous, history.length, changeClass.sustainedFiles, classify);
     }
+    if (previous !== null) changes = [...changes, ...returnedPending(changes, previous, snapshot.fileName)];
   }
 
   // El tamaño se estima sobre una versión provisional con el hash vacío: el hash real tiene siempre

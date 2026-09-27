@@ -206,9 +206,27 @@ describe("prueba de oro: cambios plantados a lo largo de seis periodos", () => {
 
   it("(b) el tramo lento de un solo periodo no se adopta nunca", () => {
     expect(changeOf(v(3), B)).toMatchObject({ cls: "deriva-pendiente", files: 1, adopted: false });
-    for (const number of [1, 2, 4, 5, 6]) expect(changeOf(v(number), B)).toBeUndefined();
+    // 2026-09-27, OQ-150 (2): antes, en v4 el tramo no salía (`toBeUndefined`). Ahora v3 lo guardó
+    // pendiente y en periodo-4 ya no está: v4 lo lista como evento puntual, sin adoptarlo.
+    expect(changeOf(v(4), B)).toMatchObject({ cls: "evento-puntual", files: 0, adopted: false });
+    for (const number of [1, 2, 5, 6]) expect(changeOf(v(number), B)).toBeUndefined();
     const edge = expectedOf(v(3)).edges.find((entry) => entry.from === "S07" && entry.to === "S08");
     expect(edge?.produccion).toEqual(NORMAL);
+  });
+
+  it("OQ-150 (2): un pendiente de v3 que ya no está en el fichero siguiente sale en v4 como evento puntual «se vio en v3 y volvió»", () => {
+    const returned = changeOf(v(4), B);
+    expect(returned).toMatchObject({ cls: "evento-puntual", files: 0, adopted: false, subject: { kind: "arista", from: "S07", to: "S08", regime: "produccion" } });
+    expect(returned?.reason).toMatch(/^Se vio en v3 y volvió: quedó pendiente allí tras 1 fichero y no está en el último del periodo \(periodo-4\.csv\)\. No cambia el esperado\.$/);
+    // Una sola vez: ni duplicado en v4 ni arrastrado a v5 (v4 no lo guarda como pendiente).
+    expect((v(4).changes ?? []).filter((change) => change.key === B)).toHaveLength(1);
+    expect(changeOf(v(5), B)).toBeUndefined();
+    // No toca el esperado: el tramo sigue con su horquilla normal.
+    expect(expectedOf(v(4)).edges.find((entry) => entry.from === "S07" && entry.to === "S08")?.produccion).toEqual(NORMAL);
+    // Un pendiente que sigue en el último fichero no vuelve: (c) sigue pendiente en v5.
+    expect(changeOf(v(5), C)?.cls).toBe("deriva-pendiente");
+    // La incidencia de v5 no era pendiente: en v6 no sale como evento puntual.
+    expect(changeOf(v(6), "vertice|S03|deja-de-leerse")).toBeUndefined();
   });
 
   it("(c) el tag nuevo que lee una minoría no se adopta nunca, aunque sea sostenido", () => {

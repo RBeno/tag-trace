@@ -61,13 +61,23 @@ export function changeSummaryLine(summary: ChangeSummary): string {
   );
 }
 
-/** Lo que toca una incidencia, en palabras: sus tags y cuántos tramos. */
+/** Lo que toca una incidencia, en palabras: sus tags y cuántos tramos; la de un AGV, que no toca el grafo. */
 export function incidentReach(incident: IncidentRecord): string {
   const tags = incident.subjects.filter((key) => key.startsWith("vertice|")).map((key) => key.slice("vertice|".length));
   // Un tramo en dos regímenes es el mismo tramo.
   const edges = new Set(incident.subjects.filter((key) => key.startsWith("arista|")).map((key) => key.split("|").slice(1, 3).join("→"))).size;
+  if (tags.length === 0 && incident.agvId !== undefined) return `AGV ${incident.agvId}: no toca el grafo; queda registrada con su ventana`;
   if (tags.length === 0) return "no toca ningún tag del anillo: el esperado no cambia por ella";
   return `toca ${tags.join(", ")} y ${edges} ${edges === 1 ? "tramo" : "tramos"}: quedan fuera de las estadísticas del esperado`;
+}
+
+/**
+ * Cuándo ocurrió una incidencia (OQ-149): «de lun 12:05 a lun 12:40», «en lun 12:05» si es un instante,
+ * y una por parada si hubo varias. Vacío en las incidencias guardadas antes, que no traen ventana.
+ */
+export function incidentWhen(incident: IncidentRecord, format: (utcMs: number) => string): string {
+  const windows = incident.windows ?? (incident.window === undefined ? [] : [incident.window]);
+  return windows.map((window) => (window.from === window.to ? `en ${format(window.from)}` : `de ${format(window.from)} a ${format(window.to)}`)).join(" · ");
 }
 
 /** La relación entre la memoria local y la del `.agvproj` abierto (§10), dicha en una frase. */
@@ -139,6 +149,8 @@ export interface MemoryContext {
 export interface MemoryPanelInput {
   readonly formatInstant: (utcMs: number) => string;
   readonly formatWindow: (window: { readonly from: number; readonly to: number }) => string;
+  /** El instante corto (día de la semana y hora) de la ventana de una incidencia; sin él, `formatInstant`. */
+  readonly formatTick?: (utcMs: number) => string;
   readonly findings: () => FindingsStatus | null;
   /** Lleva a la bandeja del Resumen, filtrada por pendientes si se puede. */
   readonly goToPending: () => void;
@@ -386,7 +398,10 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     for (const incident of incidents) {
       const item = node("li");
       item.dataset["key"] = incident.key;
-      item.append(node("strong", undefined, incident.title), " ", node("span", "muted", incident.figure), " — ", node("span", undefined, incidentReach(incident)));
+      item.append(node("strong", undefined, incident.title), " ", node("span", "muted", incident.figure), " — ");
+      const when = incidentWhen(incident, input.formatTick ?? input.formatInstant);
+      if (when !== "") item.append(node("span", "memory-incident-window", when), " · ");
+      item.append(node("span", undefined, incidentReach(incident)));
       list.append(item);
     }
     box.append(list);

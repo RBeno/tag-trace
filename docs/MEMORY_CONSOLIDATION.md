@@ -1,6 +1,6 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -148,8 +148,11 @@ observado frente a la memoria se compara con él. Lo que la instantánea no perm
 
 **Incidencias (OQ-148).** Un hallazgo grave confirmado ya no bloquea: el periodo se consolida entero
 y la incidencia queda en la versión, aparte del esperado, con lo que toca —los tags que nombra y
-sus tramos—, que conserva el valor anterior o queda sin medida. Los hallazgos graves que ocurren en
-un instante no están en la instantánea y todavía no se excluyen (OQ-149). El plano físico se crea
+sus tramos—, que conserva el valor anterior o queda sin medida. Desde 3.57.0 (OQ-149) también los
+hallazgos graves que ocurren en un instante, con su ventana: el primero de cola sin avanzar toca su
+tag; la parada de la línea y el paso por la línea, el tag de entrada de la línea; el AGV que deja de
+leer, la rotura de un AGV y la producción parada no tocan el grafo y quedan registrados con su AGV y
+su ventana. La ventana es lo que permitirá recortar el periodo desde el archivo de originales. El plano físico se crea
 desde el esperado de la versión, no desde lo observado.
 
 **Ficheros seguidos a través de las consolidaciones (3.56.0).** La prueba de oro encontró que, si
@@ -159,8 +162,14 @@ vigente guardó un cambio sin adoptar y ese cambio sigue en todos los ficheros n
 continúa, y la razón lo dice («contando 2 de periodos ya consolidados»). Es la lectura literal de
 «tres ficheros seguidos» (OQ-146), que no depende de cada cuánto se consolide; queda a la vista del
 propietario. Con esa misma cadencia, un cambio de un solo periodo sale en su versión como «deriva
-pendiente» y no como «evento puntual», porque en ese momento no se sabe aún si volverá: no se
-adopta, que es lo que importa (OQ-150).
+pendiente», porque en ese momento no se sabe aún si volverá; desde 3.57.0 (OQ-150), si en el último
+fichero del periodo siguiente ya no está, la previsualización lo lista como evento puntual, «se vio
+en vN y volvió», sin cambiar el esperado.
+
+**Todo hallazgo que cuenta al consolidar se puede revisar (3.57.0).** Cada sección enseña los
+primeros de cada tipo y el resto en su tabla, pero la instantánea guarda todos: en el circuito de
+auditoría quedaban hallazgos sin tarjeta —tags fuera de la lista, roturas— que habrían dejado la
+consolidación pendiente para siempre. La bandeja los enseña ahora en «Más hallazgos del periodo».
 
 **Comparador entre versiones (3.56.0).** `compareVersions` compara el esperado de dos versiones
 cualesquiera del linaje activo —en cualquier orden—, dice cuántas versiones hay entre medias y

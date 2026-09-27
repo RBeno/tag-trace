@@ -44,6 +44,8 @@ export interface ReviewSession {
   readonly panel: HTMLElement;
   /** Actualiza el progreso; se llama cuando ya están todas las tarjetas. */
   refresh(): void;
+  /** ¿Hay ya una tarjeta con esta clave de revisión? */
+  has(key: string): boolean;
   /** El filtro de estado activo («» es todos). La bandeja lo combina con el suyo por tema. */
   filter(): string;
   /** Se avisa cada vez que cambia el filtro de estado o una marca, para que la bandeja se rehaga. */
@@ -252,6 +254,8 @@ export function createReviewSession(
     const changed = node("p", "review-changed");
     changed.hidden = true;
     const control: CardControl = { key, card, title, figure, toggle, popup, items, note, changed };
+    // La clave queda en la tarjeta: es lo que casa la tarjeta con el hallazgo de la instantánea.
+    card.dataset["reviewKey"] = key;
 
     const open = (focusItem: boolean): void => {
       if (openControl !== null && openControl !== control) closeMenu(openControl, false);
@@ -368,6 +372,7 @@ export function createReviewSession(
     bar,
     panel,
     refresh,
+    has: (key) => controls.has(key),
     filter: () => container.dataset["reviewFilter"] ?? "",
     onChange: (listener) => {
       listeners.push(listener);

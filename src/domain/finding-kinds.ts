@@ -23,6 +23,19 @@ export const RANK_LABEL: Readonly<Record<FindingRank, string>> = {
   3: "Limpieza y contexto",
 };
 
+/**
+ * Cuántas tarjetas de cada lista se enseñan de entrada. Son parámetros de pantalla, no magnitudes de
+ * planta, y viven aquí porque la instantánea (`snapshot-findings.ts`, en el Worker) tiene que llevar
+ * exactamente las tarjetas revisables que la interfaz pinta: una que no se ve quedaría pendiente para
+ * siempre y bloquearía la consolidación (OQ-149). `main.ts` los lee de aquí.
+ */
+export const CARDS_SHOWN = {
+  /** Casos destacados de una lista (`HIGHLIGHTS` de `main.ts`). */
+  highlights: 8,
+  /** Tarjetas por tipo (`PER_KIND` de `main.ts`). */
+  perKind: 5,
+} as const;
+
 export interface FindingKind {
   readonly theme: Theme;
   readonly label: string;
