@@ -121,6 +121,7 @@ import {
   loadCircuit,
   loadMemoryState,
   loadPlanEvents,
+  archiveSource,
   loadRetainedReadings,
   loadReviews,
   loadSnapshots,
@@ -1816,6 +1817,21 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         ? undefined
         : await accumulate(message.circuitId, message.circuitName ?? message.circuitId, zone, result);
 
+    // El fichero original, comprimido, queda archivado con su huella (OQ-145): es la evidencia para
+    // revisar o volver a medir el pasado con reglas nuevas cuando sus lecturas ya no estén retenidas.
+    // Un fallo aquí no invalida la importación, pero se dice.
+    const archiveProblems: string[] = [];
+    if (accumulated?.stored !== undefined && message.circuitId !== undefined) {
+      try {
+        await archiveSource(
+          { circuitId: message.circuitId, sourceHash, sourceId: result.summary.sourceId, fileName: file.name, importedAt: Date.now() },
+          bytes,
+        );
+      } catch (error) {
+        archiveProblems.push(`No se pudo archivar el fichero original: ${error instanceof Error ? error.message : String(error)}.`);
+      }
+    }
+
     // Las vistas se calculan sobre lo que se está mirando: la ventana de trabajo del circuito si la
     // fuente se acumuló, y solo esta fuente si no. Calcularlas siempre sobre el circuito sería mentir
     // cuando la afinidad ha impedido acumular, porque el usuario estaría viendo un conjunto que no
@@ -1856,7 +1872,7 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         readings: result.readings,
         quarantine: result.quarantine,
         // Lo que no se pudo construir o comparar se dice con el resto de advertencias (R-EVI-006).
-        warnings: [...result.warnings, ...(built?.problems ?? [])],
+        warnings: [...result.warnings, ...(built?.problems ?? []), ...archiveProblems],
         ...(accumulation === undefined ? {} : { accumulation }),
         ...(built === undefined ? {} : { views: built.views }),
       },

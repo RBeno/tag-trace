@@ -33,10 +33,11 @@ import { sortVersions, type ConsolidatedVersion, type LineageState } from "../do
 import type { Reading } from "../domain/reading.js";
 import type { ReviewEntry } from "../domain/review.js";
 import type { CircuitSnapshot } from "../domain/snapshot.js";
+import { gunzip, gunzipJson, gzip, gzipJson } from "./compression.js";
 import { splitLegacyCircuit, type LegacyCircuitRecord } from "./retention.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 8;
+export const STORE_VERSION = 9;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
@@ -56,6 +57,12 @@ const MEMORY = "memory";
 const MEMORY_STATE = "memoryState";
 /** Los eventos del plano físico (ADR-0016), append-only: clave `[circuitId, seq]`. */
 const PLAN = "plan";
+/**
+ * El archivo de ficheros originales, comprimidos, uno por huella (OQ-145): clave
+ * `[circuitId, sourceHash]`. Es la evidencia para revisar o volver a medir el pasado con reglas
+ * nuevas; no viaja en el `.agvproj` (ADR-0012: el bruto no sale del dispositivo por defecto).
+ */
+const ARCHIVE = "archive";
 
 /** Las marcas de revisión de un circuito, por clave de hallazgo (`src/domain/review.ts`). */
 export interface StoredReviews {
@@ -146,6 +153,59 @@ export interface StoredSourceReadings {
   readonly circuitId: string;
   readonly sourceId: string;
   readonly readings: readonly Reading[];
+}
+
+/**
+ * Cómo se guarda de verdad un registro de lecturas: desde la versión 9, comprimido (`gz`, OQ-145).
+ * Los guardados antes siguen con `readings` en claro y se leen igual; la siguiente escritura de esa
+ * fuente ya los comprime. No hay migración que los reescriba: comprimir es asíncrono y una
+ * transacción de migración de IndexedDB no puede esperar a nada que no sea el propio almacén.
+ */
+interface SourceReadingsRow {
+  readonly circuitId: string;
+  readonly sourceId: string;
+  readonly readings?: readonly Reading[];
+  readonly gz?: Uint8Array;
+}
+
+/** Una versión consolidada tal como se guarda desde la versión 9: su clave y el JSON comprimido. */
+interface VersionRow {
+  readonly circuitId: string;
+  readonly hash: string;
+  readonly gz: Uint8Array;
+}
+
+/** Un fichero original archivado (OQ-145). */
+export interface ArchivedSource {
+  readonly circuitId: string;
+  readonly sourceHash: string;
+  readonly sourceId: string;
+  readonly fileName: string;
+  readonly importedAt: number;
+  /** Bytes del fichero sin comprimir. */
+  readonly originalBytes: number;
+}
+
+interface ArchiveRow extends ArchivedSource {
+  readonly gz: Uint8Array;
+}
+
+async function readingsRow(circuitId: string, sourceId: string, readings: readonly Reading[]): Promise<SourceReadingsRow> {
+  return { circuitId, sourceId, gz: await gzipJson(readings) };
+}
+
+async function readingsOf(row: SourceReadingsRow): Promise<StoredSourceReadings> {
+  const readings = row.gz !== undefined ? await gunzipJson<Reading[]>(row.gz) : (row.readings ?? []);
+  return { circuitId: row.circuitId, sourceId: row.sourceId, readings };
+}
+
+async function versionRow(version: ConsolidatedVersion): Promise<VersionRow> {
+  return { circuitId: version.circuitId, hash: version.hash, gz: await gzipJson(version) };
+}
+
+/** Una fila de `memory`: comprimida desde la versión 9, o la propia versión si se guardó antes. */
+function isVersionRow(row: VersionRow | ConsolidatedVersion): row is VersionRow {
+  return (row as VersionRow).gz instanceof Uint8Array;
 }
 
 export interface StoredSnapshot {
@@ -271,6 +331,14 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
       db.createObjectStore(PLAN, { keyPath: ["circuitId", "seq"] });
     },
   },
+  {
+    to: 9,
+    // El archivo de ficheros originales comprimidos (OQ-145): una tabla nueva. Las lecturas retenidas
+    // y las versiones pasan a guardarse comprimidas en su próxima escritura; las de antes se leen igual.
+    apply: (db) => {
+      db.createObjectStore(ARCHIVE, { keyPath: ["circuitId", "sourceHash"] });
+    },
+  },
 ];
 
 if (MIGRATIONS[MIGRATIONS.length - 1]?.to !== STORE_VERSION) {
@@ -373,14 +441,15 @@ export async function saveAccumulation(input: {
   readonly readings: readonly { readonly sourceId: string; readonly readings: readonly Reading[] }[];
   readonly drop: readonly string[];
 }): Promise<void> {
+  // Se comprime antes de abrir la transacción: una transacción de IndexedDB se cierra sola en cuanto
+  // se espera algo que no sea el propio almacén.
+  const rows = await Promise.all(input.readings.map((entry) => readingsRow(input.circuit.circuitId, entry.sourceId, entry.readings)));
   const db = await open();
   try {
     const tx = db.transaction([CIRCUITS, SOURCES], "readwrite");
     tx.objectStore(CIRCUITS).put(input.circuit);
     const sources = tx.objectStore(SOURCES);
-    for (const entry of input.readings) {
-      sources.put({ circuitId: input.circuit.circuitId, sourceId: entry.sourceId, readings: entry.readings } satisfies StoredSourceReadings);
-    }
+    for (const row of rows) sources.put(row);
     for (const sourceId of input.drop) sources.delete([input.circuit.circuitId, sourceId]);
     await settle(tx, "No se pudo guardar la importación.");
   } finally {
@@ -394,17 +463,20 @@ export async function loadRetainedReadings(circuitId: string): Promise<readonly 
   try {
     const tx = db.transaction(SOURCES, "readonly");
     const store = tx.objectStore(SOURCES);
-    return await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<StoredSourceReadings[]>);
+    const rows = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<SourceReadingsRow[]>);
+    db.close();
+    return await Promise.all(rows.map(readingsOf));
   } finally {
     db.close();
   }
 }
 
 export async function saveSourceReadings(circuitId: string, sourceId: string, readings: readonly Reading[]): Promise<void> {
+  const row = await readingsRow(circuitId, sourceId, readings);
   const db = await open();
   try {
     const tx = db.transaction(SOURCES, "readwrite");
-    tx.objectStore(SOURCES).put({ circuitId, sourceId, readings } satisfies StoredSourceReadings);
+    tx.objectStore(SOURCES).put(row);
     await settle(tx, "No se pudieron guardar las lecturas de la fuente.");
   } finally {
     db.close();
@@ -456,7 +528,7 @@ export async function deleteCircuit(circuitId: string): Promise<void> {
   try {
     // El circuito, sus lecturas, sus instantáneas, su revisión, su memoria y su plano se van juntos:
     // una marca, una instantánea, una versión o un evento del plano sin su circuito no significan nada.
-    const tx = db.transaction([CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS, MEMORY, MEMORY_STATE, PLAN], "readwrite");
+    const tx = db.transaction([CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS, MEMORY, MEMORY_STATE, PLAN, ARCHIVE], "readwrite");
     tx.objectStore(CIRCUITS).delete(circuitId);
     tx.objectStore(REVIEWS).delete(circuitId);
     tx.objectStore(SOURCES).delete(circuitRange(circuitId));
@@ -464,6 +536,7 @@ export async function deleteCircuit(circuitId: string): Promise<void> {
     tx.objectStore(MEMORY).delete(circuitRange(circuitId));
     tx.objectStore(MEMORY_STATE).delete(circuitId);
     tx.objectStore(PLAN).delete(circuitRange(circuitId));
+    tx.objectStore(ARCHIVE).delete(circuitRange(circuitId));
     await settle(tx, "No se pudo borrar el circuito.");
   } finally {
     db.close();
@@ -517,10 +590,11 @@ export async function saveReview(circuitId: string, key: string, entry: ReviewEn
  * que la clave es la misma y lo demás de la versión también.
  */
 export async function saveVersion(version: ConsolidatedVersion): Promise<void> {
+  const row = await versionRow(version);
   const db = await open();
   try {
     const tx = db.transaction(MEMORY, "readwrite");
-    tx.objectStore(MEMORY).put(version satisfies StoredVersion);
+    tx.objectStore(MEMORY).put(row);
     await settle(tx, "No se pudo guardar la versión consolidada.");
   } finally {
     db.close();
@@ -537,11 +611,12 @@ export async function saveMemory(input: {
   readonly versions: readonly ConsolidatedVersion[];
   readonly state: StoredMemoryState;
 }): Promise<void> {
+  const rows = await Promise.all(input.versions.map(versionRow));
   const db = await open();
   try {
     const tx = db.transaction([MEMORY, MEMORY_STATE], "readwrite");
     const memory = tx.objectStore(MEMORY);
-    for (const version of input.versions) memory.put(version satisfies StoredVersion);
+    for (const row of rows) memory.put(row);
     tx.objectStore(MEMORY_STATE).put(input.state);
     await settle(tx, "No se pudo guardar la memoria del circuito.");
   } finally {
@@ -555,10 +630,82 @@ export async function loadVersions(circuitId: string): Promise<readonly Consolid
   try {
     const tx = db.transaction(MEMORY, "readonly");
     const store = tx.objectStore(MEMORY);
-    return sortVersions(await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<StoredVersion[]>));
+    const rows = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<(VersionRow | StoredVersion)[]>);
+    db.close();
+    const versions = await Promise.all(rows.map((row) => (isVersionRow(row) ? gunzipJson<ConsolidatedVersion>(row.gz) : row)));
+    return sortVersions(versions);
   } finally {
     db.close();
   }
+}
+
+/** Bytes que ocupan las versiones del circuito tal como están guardadas (comprimidas desde la versión 9). */
+export async function memoryStoredBytes(circuitId: string): Promise<number> {
+  const db = await open();
+  try {
+    const tx = db.transaction(MEMORY, "readonly");
+    const store = tx.objectStore(MEMORY);
+    const rows = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<(VersionRow | StoredVersion)[]>);
+    return rows.reduce((sum, row) => sum + (isVersionRow(row) ? row.gz.length : new TextEncoder().encode(JSON.stringify(row)).length), 0);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Archiva el fichero original comprimido (OQ-145). Si ya está archivado con esa huella no se vuelve
+ * a comprimir: es el mismo fichero, byte a byte.
+ */
+export async function archiveSource(entry: Omit<ArchivedSource, "originalBytes">, bytes: Uint8Array): Promise<boolean> {
+  if (await hasArchive(entry.circuitId, entry.sourceHash)) return false;
+  const row: ArchiveRow = { ...entry, originalBytes: bytes.length, gz: await gzip(bytes) };
+  const db = await open();
+  try {
+    const tx = db.transaction(ARCHIVE, "readwrite");
+    tx.objectStore(ARCHIVE).put(row);
+    await settle(tx, "No se pudo archivar el fichero original.");
+    return true;
+  } finally {
+    db.close();
+  }
+}
+
+async function hasArchive(circuitId: string, sourceHash: string): Promise<boolean> {
+  const db = await open();
+  try {
+    const tx = db.transaction(ARCHIVE, "readonly");
+    const store = tx.objectStore(ARCHIVE);
+    return (await run(store, store.count([circuitId, sourceHash]))) > 0;
+  } finally {
+    db.close();
+  }
+}
+
+/** Los ficheros archivados de un circuito, sin su contenido, con lo que ocupan comprimidos. */
+export async function listArchive(circuitId: string): Promise<readonly (ArchivedSource & { readonly storedBytes: number })[]> {
+  const db = await open();
+  try {
+    const tx = db.transaction(ARCHIVE, "readonly");
+    const store = tx.objectStore(ARCHIVE);
+    const rows = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<ArchiveRow[]>);
+    return rows.map(({ gz, ...entry }) => ({ ...entry, storedBytes: gz.length }));
+  } finally {
+    db.close();
+  }
+}
+
+/** El fichero original, descomprimido, o `undefined` si no está archivado. */
+export async function loadArchivedSource(circuitId: string, sourceHash: string): Promise<Uint8Array | undefined> {
+  const db = await open();
+  let row: ArchiveRow | undefined;
+  try {
+    const tx = db.transaction(ARCHIVE, "readonly");
+    const store = tx.objectStore(ARCHIVE);
+    row = await run(store, store.get([circuitId, sourceHash]) as IDBRequest<ArchiveRow | undefined>);
+  } finally {
+    db.close();
+  }
+  return row === undefined ? undefined : gunzip(row.gz);
 }
 
 /** El estado de linaje del circuito, o `undefined` si nunca consolidó ni abrió un proyecto con memoria. */

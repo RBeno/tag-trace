@@ -60,12 +60,22 @@ async function storedReadings(page: Page, circuitId: string): Promise<number | n
         request.onerror = () => reject(request.error);
       });
       if (record === undefined) return null;
-      const rows = await new Promise<{ circuitId: string; readings: unknown[] }[]>((resolve, reject) => {
+      const rows = await new Promise<{ circuitId: string; readings?: unknown[]; gz?: Uint8Array }[]>((resolve, reject) => {
         const request = db.transaction("sources", "readonly").objectStore("sources").getAll();
-        request.onsuccess = () => resolve(request.result as { circuitId: string; readings: unknown[] }[]);
+        request.onsuccess = () => resolve(request.result as { circuitId: string; readings?: unknown[]; gz?: Uint8Array }[]);
         request.onerror = () => reject(request.error);
       });
-      return rows.filter((row) => row.circuitId === id).reduce((sum, row) => sum + row.readings.length, 0);
+      // Desde la versión 9 del almacén las lecturas se guardan comprimidas (`gz`, OQ-145).
+      let total = 0;
+      for (const row of rows.filter((entry) => entry.circuitId === id)) {
+        if (row.gz === undefined) {
+          total += row.readings?.length ?? 0;
+          continue;
+        }
+        const stream = new Blob([row.gz as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
+        total += (JSON.parse(new TextDecoder().decode(await new Response(stream).arrayBuffer())) as unknown[]).length;
+      }
+      return total;
     } finally {
       db.close();
     }

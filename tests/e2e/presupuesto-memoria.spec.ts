@@ -65,6 +65,8 @@ interface StoredSizes {
   readonly readingsJson: number;
   readonly readingsGzip: number;
   readonly readings: number;
+  /** El fichero original archivado, comprimido (OQ-145); `null` si no se archivó. */
+  readonly archiveGzip: number | null;
 }
 
 test.describe("presupuesto de la memoria (MEMORY_CONSOLIDATION §9)", () => {
@@ -114,12 +116,20 @@ test.describe("presupuesto de la memoria (MEMORY_CONSOLIDATION §9)", () => {
           const snapshots = await all<{ circuitId: string; sourceId: string; snapshot: CircuitSnapshot }>("snapshots");
           const row = snapshots.find((entry) => entry.circuitId === "presupuesto" && entry.snapshot.fileName === fileName);
           if (row === undefined) return null;
-          const sources = await all<{ circuitId: string; sourceId: string; readings: unknown[] }>("sources");
-          const readings = sources.find((entry) => entry.circuitId === "presupuesto" && entry.sourceId === row.sourceId)?.readings ?? [];
+          const sources = await all<{ circuitId: string; sourceId: string; readings?: unknown[]; gz?: Uint8Array }>("sources");
+          const stored = sources.find((entry) => entry.circuitId === "presupuesto" && entry.sourceId === row.sourceId);
+          // Desde la versión 9 del almacén se guardan comprimidas (OQ-145): lo guardado es `gz`.
+          let readings: unknown[] = stored?.readings ?? [];
+          if (stored?.gz !== undefined) {
+            const stream = new Blob([stored.gz as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
+            readings = JSON.parse(new TextDecoder().decode(await new Response(stream).arrayBuffer())) as unknown[];
+          }
           const json = new TextEncoder().encode(JSON.stringify(readings));
           const gzip = new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"));
-          const compressed = new Uint8Array(await new Response(gzip).arrayBuffer());
-          return { snapshot: row.snapshot, readingsJson: json.length, readingsGzip: compressed.length, readings: readings.length };
+          const compressed = stored?.gz?.length ?? new Uint8Array(await new Response(gzip).arrayBuffer()).length;
+          const archived = await all<{ circuitId: string; fileName: string; gz: Uint8Array }>("archive");
+          const original = archived.find((entry) => entry.circuitId === "presupuesto" && entry.fileName === fileName)?.gz.length ?? null;
+          return { snapshot: row.snapshot, readingsJson: json.length, readingsGzip: compressed, readings: readings.length, archiveGzip: original };
         } finally {
           db.close();
         }
@@ -162,6 +172,7 @@ test.describe("presupuesto de la memoria (MEMORY_CONSOLIDATION §9)", () => {
         bruto_csv: raw,
         lecturas_json: sizes.readingsJson,
         lecturas_gzip: sizes.readingsGzip,
+        original_archivado_gzip: sizes.archiveGzip ?? -1,
         instantanea: bytes(snapshot),
         delta: bytes(delta),
         decisiones: bytes(version.decisions),
@@ -185,6 +196,9 @@ test.describe("presupuesto de la memoria (MEMORY_CONSOLIDATION §9)", () => {
       // y conservar las lecturas comprimidas cuesta menos que el CSV.
       expect(consolidated).toBeLessThan(raw);
       expect(sizes.readingsGzip).toBeLessThan(raw);
+      // El original queda archivado comprimido (OQ-145).
+      expect(sizes.archiveGzip).not.toBeNull();
+      expect(sizes.archiveGzip ?? raw).toBeLessThan(raw);
       previous = snapshot;
     }
 

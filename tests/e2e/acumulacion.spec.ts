@@ -63,6 +63,10 @@ interface StoredShape {
   /** El registro del circuito, ¿lleva todavía `readings`? Desde la versión 6, nunca. */
   readonly circuitHasReadings: boolean;
   readonly version: number;
+  /** Si todos los registros de lecturas están comprimidos (almacén 9, OQ-145). */
+  readonly compressed: boolean;
+  /** Los ficheros originales archivados, por nombre (almacén 9, OQ-145). */
+  readonly archived: readonly string[];
   /** Las tablas de la memoria consolidada (almacén 7): `memory` y `memoryState`. */
   readonly memoryStores: boolean;
 }
@@ -96,12 +100,22 @@ async function storedCircuit(page: Page, circuitId: string): Promise<StoredShape
       });
       if (record === undefined) return null;
       const nameOf = new Map(record.sources.map((source) => [source.sourceId, source.fileName]));
-      const sources = (await all<{ circuitId: string; sourceId: string; readings: unknown[] }>("sources")).filter((row) => row.circuitId === id);
+      // Desde la versión 9 del almacén las lecturas se guardan comprimidas (`gz`, OQ-145); antes, en claro.
+      const readingsIn = async (row: { readings?: unknown[]; gz?: Uint8Array }): Promise<unknown[]> => {
+        if (row.gz === undefined) return row.readings ?? [];
+        const stream = new Blob([row.gz as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
+        return JSON.parse(new TextDecoder().decode(await new Response(stream).arrayBuffer())) as unknown[];
+      };
+      const sources = (await all<{ circuitId: string; sourceId: string; readings?: unknown[]; gz?: Uint8Array }>("sources")).filter((row) => row.circuitId === id);
+      const counts = await Promise.all(sources.map(async (row) => (await readingsIn(row)).length));
+      const archive = (await all<{ circuitId: string; fileName: string }>("archive")).filter((row) => row.circuitId === id);
       const snapshots = (await all<{ circuitId: string; sourceId: string; snapshot: { fileName: string; window: { from: number } } }>("snapshots")).filter(
         (row) => row.circuitId === id,
       );
       return {
-        readings: sources.reduce((sum, row) => sum + row.readings.length, 0),
+        readings: counts.reduce((sum, count) => sum + count, 0),
+        compressed: sources.every((row) => row.gz !== undefined),
+        archived: archive.map((row) => row.fileName).sort(),
         sources: record.sources.length,
         coverage: record.coverage.length,
         retained: record.sources.filter((source) => sources.some((row) => row.sourceId === source.sourceId)).map((source) => source.fileName),
@@ -209,6 +223,10 @@ test.describe("acumular un circuito", () => {
       coverage: 1,
       retained: ["ventana-2.csv", "ventana-3.csv"],
       snapshots: ["ventana-1.csv", "ventana-2.csv", "ventana-3.csv"],
+      // Las lecturas retenidas se guardan comprimidas, y los tres originales quedan archivados aunque
+      // el primero ya no tenga lecturas retenidas (OQ-145, propietario 2026-09-27).
+      compressed: true,
+      archived: ["ventana-1.csv", "ventana-2.csv", "ventana-3.csv"],
       circuitHasReadings: false,
       version: STORE_VERSION,
       memoryStores: true,
