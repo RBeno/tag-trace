@@ -98,6 +98,13 @@ export interface AnalysisConfig {
    * medirlos, y viven aquí para que ningún número de la definición quede escrito en el código.
    */
   readonly plantEstimators: PlantEstimatorThresholds;
+  /**
+   * La onda de una incidencia (ADR-0017 §4, OQ-159; propietario, 2026-09-27): la calma exige aguantar
+   * `calmLaps` vueltas p50 dentro de la horquilla, y el «después» no pasa de `maxAfterLaps` vueltas
+   * desde el fin del epicentro. En vueltas medidas, no en minutos: la vuelta sale de las horquillas de
+   * cada circuito. Provisionales (`draft`) hasta calibrarlos con planta.
+   */
+  readonly incidentWave: { readonly calmLaps: number; readonly maxAfterLaps: number };
 }
 
 /**
@@ -309,6 +316,8 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     // planta mayor que la vigente; solo para estimar (OQ-154).
     sameTimeMeasureToleranceMs: 60 * 60_000,
   },
+  // Una vuelta p50 de estabilización (recomendación aceptada en OQ-159) y tres de tope.
+  incidentWave: { calmLaps: 1, maxAfterLaps: 3 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

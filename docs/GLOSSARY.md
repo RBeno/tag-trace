@@ -1,8 +1,8 @@
 ---
 document_id: TT-GLOSSARY-001
-version: 0.36.0
+version: 0.37.0
 status: baseline-candidate
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Glosario controlado
@@ -28,6 +28,10 @@ last_updated: 2026-09-26
 | Lecturas que llegaron juntas | Varias lecturas de un AGV que el servidor recibe casi a la vez tras un hueco: un volcado al recuperar la comunicación, porque la hora del fichero es la de llegada. Con la suma del recorrido normal, el AGV no paró (R-DAT-020). También «entrega agrupada». |
 | Franja | Un fichero de lecturas cargado, medido por separado en su ventana completa (R-TIM-011). Dos exportaciones que se solapan son dos franjas; un fichero repetido, una sola. |
 | Ritmo de un AGV | La mitad de sus tramos, cada uno medido contra lo habitual de ese tramo, frente a lo mismo de toda la flota; sin paradas ni esperas detrás de otro. Un 1,10 es un 10 % más lento (R-AGV-019). |
+| Onda de repercusión | Cómo se extiende una incidencia desde su epicentro: la cola que crece detrás, el hueco que avanza delante hasta la línea, lo que absorbe el pulmón, lo que cuesta en AGV·minutos, cómo se atenúa con la distancia y cuándo vuelve la calma (R-INC-005, ADR-0017). Es una medición de lo leído, no una simulación. |
+| Epicentro | El AGV y el tag donde empieza una onda: una parada sin explicación, el primero de una cola sin avanzar, un AGV que deja de leer o una parada de la línea. |
+| Vuelta a la calma | El primer instante, tras reanudar el epicentro, desde el que la cola está descargada, cada AGV afectado ha hecho una transición libre y la línea y los afectados aguantan dentro de su valla durante una vuelta p50 (OQ-159). Si una parada de la producción o la noche cae dentro, queda sin medir; si la cobertura acaba antes, es «al menos». |
+| Expediente de incidencia | Registro append-only de una incidencia: síntoma, ventana, recorte de lecturas de toda la flota con sus versiones, mediciones, hipótesis, contramedidas, verificaciones y conclusión. El programa propone y mide; decide una persona (R-INC-006). |
 | Retener | Ir delante de otro AGV, más despacio de lo habitual en ese tramo, mientras el de detrás espera. Quien retiene no tiene por qué pararse (R-AGV-020). |
 | Suma entre anclas | El tiempo entre dos tags que siguen en su sitio a los dos lados de un cambio (las anclas). Es del recorrido: si entre ellas se pone, se quita o se cambia un tag y la suma sigue igual, solo cambió lo de en medio (R-DAT-021). |
 | Orden declarado | El orden de la lista `circuito`. Es `expected`: puede tener erratas al transcribir o ser distinto al real, y no sitúa a ningún tag que se lea (R-GRA-015). |

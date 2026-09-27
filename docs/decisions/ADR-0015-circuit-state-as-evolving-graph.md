@@ -57,6 +57,9 @@ para la memoria normal; lo que faltaba era hacerlo desde el primer fichero.
 
 5. **El `.agvproj` lleva las instantáneas y no las lecturas** (ADR-0012): es lo que hace que el
    circuito viaje entre dispositivos con toda su evolución y sin su bruto.
+   **Enmienda (propietario, 2026-09-27, OQ-161, ADR-0017 §3):** la única excepción son los recortes
+   de los expedientes de incidencia, que viajan en una sección `incidencias`: sin ellos un expediente
+   no se reproduce en otro dispositivo.
 
 ## Consecuencias
 

@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.59.0
+version: 0.60.0
 status: active
 last_updated: 2026-09-27
 ---
@@ -67,25 +67,11 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? **Nota (2026-09-24):** ya se puede auditar con los datos: las paradas de la producción salen de los tags críticos (R-AGV-018) y se marca cuáles se repiten a la misma hora otro día; el propietario espera franjas como 8:00–8:10, 10:00–10:15, 12:00–12:10, 16:00–16:10 y 18:00–18:15. **Nota (2026-09-25):** una exportación real de otro circuito muestra también una parada de toda la producción en esa frontera —ningún tag crítico leído y ningún AGV leyendo durante unos tres cuartos de hora—, y las franjas que espera el propietario salen de los datos sin declararlas. Siguen siendo dos observaciones, de circuitos distintos y de un solo día cada una. | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
 
 
-## Necesarias durante F5
-
-Abiertas por ADR-0017 (propuesta, 2026-09-27). La columna de recomendación es de la IA; decide el
-propietario.
-
-| ID | Pregunta | Recomendación | Documentos |
-|---|---|---|---|
-| OQ-159 | ¿Cuándo se da por **vuelta a la calma** la zona afectada por una onda? | Cola descargada, cada AGV afectado con una transición libre por debajo del p80 de su tramo, y la cadencia y las separaciones de la línea dentro de su valla durante un tramo de estabilización. La longitud de ese tramo va a configuración como `draft` (propuesta: una vuelta p50 del circuito), hasta calibrarla con planta. | ADR-0017 §4 |
-| OQ-160 | ¿La onda se mide para cada incidencia de la batería (R-AGV-021) o solo al abrir un expediente? | Para cada incidencia de la batería, como columnas más de su CSV (profundidad, alcance, coste, recuperación), y con todo el detalle solo en el expediente. Así la biblioteca de casos tiene firmas desde el primer fichero. | ADR-0017 §4, §7 |
-| OQ-161 | ¿El recorte de lecturas de un expediente viaja en el `.agvproj`? | Sí, en una sección `incidencias`: es un fichero local que no pasa por GitHub, y sin el recorte el expediente no se reproduce en otro dispositivo. Enmienda a ADR-0015 §5, que hoy dice que el `.agvproj` no lleva lecturas. | ADR-0017 §3, ADR-0012, ADR-0015 |
-| OQ-162 | ¿Qué cifra encabeza el impacto de una incidencia? | Con línea declarada, los pasos que faltaron en la línea frente a su ciclo local y el tiempo sin paso; sin línea, los AGV·minutos por encima del p50. Las demás medidas, debajo. | ADR-0017 §4 |
-| OQ-163 | ¿«AGV cargado» se deduce solo de la zona (cargada o vacía) en la que está, o hay otra señal? | De la zona declarada (R-FLO-001 a R-FLO-003), diciendo que es una deducción por la zona y no una lectura del carro. | ADR-0017 §4 |
-
 ## Decisiones de producto posteriores
 
 | ID | Pregunta | Fase |
 |---|---|---:|
 | OQ-P01 | ¿Debe `.agvproj` admitir cifrado con contraseña y cómo se recupera una clave perdida? | F4 |
-| OQ-P02 | ¿Cuánto recorte de eventos debe conservar una incidencia por defecto? | F5 |
 | OQ-P03 | ¿Qué formatos de informe se necesitan además de HTML/CSV? | F5 |
 | OQ-P04 | ¿Qué librería/tecnología de grafo cumple mejor rendimiento y UX móvil? | F2/F6 |
 | OQ-P05 | ¿Qué framework UI ofrece mejor equilibrio tras un prototipo comparativo? | F1 |
@@ -96,6 +82,12 @@ propietario.
 
 | ID | Pregunta | Respuesta | Fecha | Documentos |
 |---|---|---|---|---|
+| OQ-159 | ¿Cuándo se da por vuelta a la calma la zona afectada por una onda? | Cola descargada, cada AGV afectado con una transición libre por debajo del p80 de su tramo, y la cadencia de la línea y las transiciones de los afectados dentro de su valla durante un tramo de estabilización de `incident_wave.calm_laps` vueltas p50 (1, `draft`). Recomendación aceptada por el propietario. | 2026-09-27 | ADR-0017 §4, R-INC-005, `CONFIG_SCHEMA.md` §3.5 |
+| OQ-160 | ¿La onda se mide para cada incidencia de la batería o solo al abrir un expediente? | Para cada incidencia de la batería, como columnas de su CSV (profundidad, alcance, coste, recuperación), y con todo el detalle en el expediente. Recomendación aceptada; las columnas son la entrega siguiente. | 2026-09-27 | ADR-0017 §4, §7, R-AGV-021 |
+| OQ-161 | ¿El recorte de lecturas de un expediente viaja en el `.agvproj`? | Sí, en una sección `incidencias`. Enmienda ADR-0015 §5. Recomendación aceptada; la sección llega con el almacén de expedientes. | 2026-09-27 | ADR-0017 §3, ADR-0012, ADR-0015 |
+| OQ-162 | ¿Qué cifra encabeza el impacto de una incidencia? | Con línea declarada, los pasos que faltaron frente a su ciclo local y el tiempo sin paso; sin línea, los AGV·minutos por encima del p50. Recomendación aceptada. | 2026-09-27 | ADR-0017 §4, R-INC-005 |
+| OQ-163 | ¿«AGV cargado» se deduce solo de la zona? | Sí, de la zona declarada (R-FLO-001 a R-FLO-003), diciendo que es una deducción por la zona y no una lectura del carro. Recomendación aceptada. | 2026-09-27 | ADR-0017 §4 |
+| OQ-P02 | ¿Cuánto recorte de eventos debe conservar una incidencia por defecto? | La ventana del expediente —una vuelta p50 antes del epicentro, hasta la calma más una vuelta después— con las lecturas de toda la flota y las versiones congeladas (ADR-0017 §2–§3, aceptada el 2026-09-27). | 2026-09-27 | ADR-0017, R-INC-006 |
 | OQ-151 | ¿Cómo mide la memoria los valores provisionales de planta? | Con los estimadores propuestos (propietario, 2026-09-27, «OQ-151 usa la propuesta pero si no coinciden que los valores los introduzca una persona»): régimen de noche por las horas con menos de la mitad de las lecturas de la mediana de producción; horas de turno por las paradas de producción que se repiten a la misma hora en dos días o más; desconexión por el percentil 99 de los huecos de los AGV que volvieron; bloqueo por el percentil 95 de las esperas del primero de cola que acabaron avanzando; «a la misma hora» por la mayor diferencia entre repeticiones; margen FIFO por percentil 95 menos mediana del tránsito del tramo cargado; parada precisa por el percentil 5 de sus esperas. El hueco entre periodos distantes sale de la lista. Se estima en cada una de las últimas tres versiones consolidadas y, redondeado a la unidad del valor, si todas coinciden se propone y la persona lo confirma; si no coinciden, no se propone nada y el valor lo introduce una persona. | 2026-09-27 | `CONFIG_SCHEMA.md` §3.5 |
 | OQ-152 | ¿Se permite consolidar con la configuración provisional (`draft`)? | Sí (propietario, 2026-09-27, «OQ-152 permite consolidar»). `CONFIG_SCHEMA.md` §4 cambia; cada instantánea guarda su `configVersion`. | 2026-09-27 | `CONFIG_SCHEMA.md` §4 |
 | OQ-153 | ¿Qué se hace con dos vigencias en la ventana de trabajo? | Quedarse con el aviso (propietario, 2026-09-27, «OQ-153 quedarnos con el aviso»). | 2026-09-27 | `CONFIG_SCHEMA.md` §4 |

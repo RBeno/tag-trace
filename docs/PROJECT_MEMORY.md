@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.46.0
+version: 0.47.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -410,16 +410,22 @@ síntoma, intervalo o hallazgo; retroceso temporal y topológico; replay multi-A
 incertidumbre; biblioteca de casos y similitud explicada; informe vivo y exportación local;
 contramedidas y verificación antes/después.
 
-## El expediente y la onda (2026-09-27, propuesta)
+## El expediente y la onda (2026-09-27, aceptada)
 
-Primera entrega de F5: ADR-0017, **`Proposed`**. El propietario: «en vez de medir una cantidad,
+Primera entrega de F5: ADR-0017, propuesta por la IA. El propietario: «en vez de medir una cantidad,
 medir la repercusión como una onda en un estanque. Ejemplo: un AGV cargado que se detiene durante
 7 minutos, cómo se propaga, cómo afecta, cuándo se vuelve a la calma». La propuesta: expediente
 append-only con recorte de lecturas de toda la flota y versiones congeladas; la onda se mide con
 piezas que ya existen (cadena de cola, horquillas, cadencia, pulmón); la calma, el coste y el eco
-son medidas nuevas; y un lenguaje de causalidad con cuatro niveles, el último solo humano. Pendiente:
-que el propietario acepte o corrija ADR-0017 y responda OQ-159 a OQ-163. Hasta entonces no hay
-código de F5.
+son medidas nuevas; y un lenguaje de causalidad con cuatro niveles, el último solo humano.
+
+**Aceptada el mismo día** («Acepto ADR-0017, usa tu recomendación en las preguntas»), con OQ-159 a
+OQ-163 cerradas con la recomendación. 3.65.0 entrega el dominio: `incident-wave.ts` (R-INC-005) e
+`incident-case.ts` (R-INC-006, R-INC-007), con un caso sintético de un AGV cargado parado 7 min. Una
+lección del caso: la cola del epicentro no es toda cola en la que acaben sus AGV; el grupo liberado
+hace otra cola en la entrada de la línea, y sin exigir que la retención coincida con la de su
+retenedor la cola «llegaba» a 14 tags en vez de 8. Pendiente: almacén y `.agvproj`, columnas de la
+batería (OQ-160), Worker, interfaz y la clase de auditoría.
 
 ## Estado al 2026-09-27 (relevo a un chat nuevo)
 
@@ -429,8 +435,8 @@ conversación siguiente.
 
 - **Fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
-  6` (ADR-0010). **Primera entrega de F5: ADR-0017 propuesto** (expediente y onda, sección de
-  arriba), pendiente del propietario; el resto del alcance está en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes
+  6` (ADR-0010). **F5 en curso: ADR-0017 aceptado y su dominio entregado en 3.65.0**
+  (expediente y onda, sección de arriba); el resto del alcance está en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes
   de tocar nada. Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**
   (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su

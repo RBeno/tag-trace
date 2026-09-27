@@ -1,6 +1,6 @@
 ---
 adr: ADR-0017
-status: proposed
+status: accepted
 date: 2026-09-27
 ---
 
@@ -47,7 +47,11 @@ dos frentes que se alejan, una amortiguación y, en un anillo, un eco. Todo se p
 que ya hay —horquillas por tramo y régimen, cadencia y ciclo local de la línea, pulmón minuto a
 minuto, cadena de cola—, sin constantes nuevas de planta.
 
-## Decisión (propuesta, pendiente del propietario)
+## Decisión
+
+**Aceptada por el propietario el 2026-09-27** («Acepto ADR-0017, usa tu recomendación en las
+preguntas»): tal como está redactada, con las recomendaciones de OQ-159 a OQ-163 como respuestas
+(`OPEN_QUESTIONS.md`, preguntas cerradas).
 
 ### 1. El expediente es un registro de eventos append-only
 
@@ -175,7 +179,10 @@ La onda se diseña para que cada fuente nueva la afine sin cambiar su definició
   recortes (OQ-161). Los esquemas anteriores se siguen abriendo.
 - Los parámetros que no salen de las medidas —el tramo de estabilización de la calma y el tope de
   la ventana— van a configuración versionada con estado `draft` hasta calibrarlos con planta.
-- Nada de esto se implementa mientras la ADR esté `Proposed`.
+- Implementado en 3.65.0: la onda (`src/domain/incident-wave.ts`, R-INC-005, ALG-024) y el registro
+  del expediente con su recorte (`src/domain/incident-case.ts`, R-INC-006, R-INC-007). El almacén,
+  la sección del `.agvproj`, las columnas de la batería (OQ-160) y la interfaz son las entregas
+  siguientes de F5.
 
 ## Alternativas descartadas
 

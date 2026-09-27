@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.46.3
+version: 0.47.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -64,6 +64,7 @@ flowchart TD
 | ALG-021 | Candidatos a punto crítico | Reparto de sucesores sostenido (bifurcación/cruce), coeficiente de variación (parada precisa), mayor salto proporcional (semáforo) | Candidatos por clase con evidencia y soporte, nunca asignación | O(n) | F3 |
 | ALG-022 | Cambios de tag dentro de un periodo | Pasadas por el sitio del tag; racha fuera de su vida larga e improbable por azar; pareja unívoca por vecino compartido | Cambios, tags que dejan o empiezan a leerse, su vida, y la diferencia de cada AGV frente al nuevo | O(n) sobre las lecturas | F3 |
 | ALG-023 | Lectura por AGV | Celdas dentro de la vida del tag; nunca, desde una hora, poco con cola binomial frente al resto | Por AGV y por tag, la diferencia medida y si pasa en muchos o en pocos tags | O(celdas) | F3 |
+| ALG-024 | Repercusión como onda | Cola aguas arriba por cadena de retenciones, hueco aguas abajo por separaciones en puntos vigilados, ciclo local de la línea, pulmón por minuto, exceso sobre p50 por distancia, eco y calma con tramo de estabilización | Firma de la onda con sus límites declarados (ADR-0017, R-INC-005) | O(n·v) en la ventana, v vehículos | F5 |
 
 ## 4. Oportunidades y salud
 
@@ -1235,3 +1236,38 @@ Límite conocido (OQ-154), solo la noche: se estima frente a la noche **vigente*
 producción es la de fuera de ella). El estimador no cambia (es la definición aprobada en OQ-151); cada
 estimación lo dice en su explicación.
 
+## 6.28 La repercusión como onda, implementado (ADR-0017, R-INC-005, ALG-024)
+
+`measureWave` y `lapP50Ms` (`src/domain/incident-wave.ts`). Entrada: las transiciones, la cobertura,
+las horquillas, las paradas y retenciones de `flowStops`, las paradas de la producción, los pasos por
+la entrada de la línea y los tags del pulmón (de `measureLineFeed`), los puntos vigilados y la zona de
+cada tag. Nada se recalcula de otra forma: la cola es la de R-FLO-008, lo habitual de un tramo es su
+horquilla y la valla de la línea es la de su cadencia trasladada al ciclo local, como en R-FLO-010.
+
+1. **Vuelta p50**: la suma de las medianas de producción de los tramos del anillo. Sin la horquilla de
+   alguno no hay vuelta, y la calma y la ventana quedan sin medir.
+2. **Cola**: cierre sobre las retenciones. Entra una retención si su retenedor es el epicentro durante
+   su parada, o un miembro de la cola durante una retención suya ya elegida. Así la cola que el grupo
+   forma después en otro sitio no se suma a esta (hallado con el caso sintético: el grupo liberado
+   hacía cola en la entrada de la línea y la cola «llegaba» a 14 tags).
+3. **Hueco**: en cada punto por delante, el paso anterior de otro AGV y el primero del epicentro después
+   de su parada; lo habitual son los tiempos entre pasos seguidos del punto, de producción, fuera de la
+   ventana, fuera de paradas de la producción y en el mismo tramo de cobertura (`bandOf`).
+4. **Línea**: el ciclo local es la mediana de los `bands.min_band_samples` tiempos entre pasos justo
+   antes del epicentro; la valla local, ese ciclo más `fence − p50` de la cadencia.
+5. **Calma**: el candidato es el último de: fin del epicentro, salida del último de la cola y primera
+   transición libre (≤ p80) de cada afectado. Se busca después un tramo de `calm_laps` vueltas sin
+   ningún tiempo entre pasos de la línea por encima de la valla local ni transiciones de los afectados
+   por encima de su valla; cada una que aparece mueve el candidato a su final. Una parada de la
+   producción o la noche dentro: `interrumpida`. La cobertura acaba antes: `fuera-de-cobertura`, con
+   `atLeastMs`. Más allá de `max_after_laps` vueltas: `sin-medir`.
+6. **Coste**: transiciones medibles de producción con el punto medio en el impacto; el exceso sobre el
+   p50 se suma por grupo, y las transiciones sin horquilla se cuentan como desconocidas.
+7. **Eco**: del epicentro y su cola, el siguiente paso por el tag del epicentro entre media vuelta y
+   vuelta y media después de salir; siguen juntos si la mediana de sus separaciones queda por debajo
+   del 20 % de las separaciones habituales del tag.
+8. **Superpuestas**: paradas sin explicación de AGV fuera de la cola que se solapan con el impacto y
+   caen entre `reach + reach_tags` tags detrás y el punto más lejano donde el hueco pasó la valla.
+
+El expediente (`src/domain/incident-case.ts`, R-INC-006) guarda la medición como un evento con la
+versión del algoritmo y el hash del resultado.

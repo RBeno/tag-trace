@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.29.2
+version: 0.30.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -283,6 +283,7 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `drift.max_chance` | R-DAT-016 (OQ-138): azar máximo para afirmar un `desaparecido` o un `nuevo` entre periodos. Provisional: 0,001, el mismo que `tag_changes.max_chance`. |
 | `plant_estimators.night_low_share`, `plant_estimators.return_gap_quantile`, `plant_estimators.head_wait_quantile`, `plant_estimators.precise_pause_quantile` | OQ-151: los números de la definición aprobada de los estimadores de los valores de planta —la mitad de la mediana de producción para que una hora sea de noche (0,5), y los cuantiles de los huecos que volvieron (0,99), de las esperas del primero de cola (0,95) y de las esperas en una parada precisa (0,05)—. No son valores de planta: son cómo se miden. El percentil 95 del tránsito de un tramo cargado (margen del FIFO) lo da `fifo.ts` con su mediana y no está aquí. |
 | `plant_estimators.same_time_measure_tolerance_ms` | OQ-154 (propietario, 2026-09-27): margen de hora local con que `measurePlantValues` empareja, **solo para medir**, las paradas de la producción que se repiten otro día. Provisional: 60 min. Es una tolerancia de medida, no operativa: ancha para que la estimación de «a la misma hora» pueda ver una tolerancia de planta mayor que la vigente (`flow_stops.same_time_tolerance_ms`, 15 min), con la que nunca podría salir un valor mayor que ella. El análisis (`productionStops`) sigue emparejando con la vigente; esta no cambia ningún resultado del análisis. |
+| `incident_wave.calm_laps`, `incident_wave.max_after_laps` | R-INC-005 (ADR-0017, OQ-159): vueltas p50 que la zona afectada por una onda tiene que aguantar dentro de su horquilla para dar la calma (1), y tope del «después» en vueltas desde el fin del epicentro (3). En vueltas medidas del propio circuito, no en minutos. Provisionales (`draft`) hasta calibrarlos con planta. |
 
 Los valores que hoy viven en `PROVISIONAL_CONFIG` con aspecto de dato de planta —horas de arranque de
 turno, regímenes, la hora sin leer que hace una desconexión, los dos minutos del bloqueo, la

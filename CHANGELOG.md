@@ -2,6 +2,52 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.65.0] - 2026-09-27
+
+El propietario acepta ADR-0017 y las recomendaciones de OQ-159 a OQ-163 («Acepto ADR-0017, usa tu
+recomendación en las preguntas»). Primera entrega de código de F5: la onda y el registro del
+expediente, en el dominio y con sus pruebas.
+
+### Añadido
+
+- **La repercusión como onda** (`src/domain/incident-wave.ts`, R-INC-005, ALG-024,
+  `ALGORITHM_CATALOG.md` §6.28): desde un epicentro, la cola aguas arriba (retenciones encadenadas
+  mientras quien retiene está retenido), el hueco aguas abajo en anclas, críticos y entrada de la
+  línea, los pasos que faltan y el tiempo sin paso de la línea frente a su ciclo local, el pulmón
+  minuto a minuto, el coste en AGV·minutos por grupo, la atenuación por distancia, el eco y la
+  vuelta a la calma, con la ventana propuesta. Declara ondas superpuestas, interrupciones, fin de
+  cobertura, zona vacía y tramos sin horquilla en vez de dar una cifra.
+- **El expediente como registro append-only** (`src/domain/incident-case.ts`, R-INC-006, R-INC-007):
+  eventos con número, fecha, autor y razón; el programa propone y mide, una persona decide; las
+  transiciones de `INCIDENTS_REPORTING.md` §7 con conclusión para cerrar y verificación para eficaz;
+  `confirmado-como-causa` solo humano. Recorte de evidencia de toda la flota en la ventana, en el
+  orden de ADR-0013, con versiones congeladas y hash reproducible.
+- Configuración `incident_wave.calm_laps` (1) e `incident_wave.max_after_laps` (3), en vueltas p50,
+  `draft` (`CONFIG_SCHEMA.md` §3.5).
+- Glosario: onda de repercusión, epicentro, vuelta a la calma, expediente de incidencia.
+
+### Cambiado
+
+- ADR-0017 pasa a `Accepted`. ADR-0015 §5 gana una enmienda: los recortes de los expedientes viajan
+  en el `.agvproj` (OQ-161).
+- `OPEN_QUESTIONS.md`: OQ-159 a OQ-163 y OQ-P02 cerradas con la recomendación aceptada.
+- `INCIDENTS_REPORTING.md` §10 deja de ser propuesta.
+
+### Pruebas
+
+- TC-321 a TC-325 (`incident-wave.test.ts`, `incident-case.test.ts`): un AGV cargado parado 7 min en
+  una guía sintética de 40 tags y nueve AGV con línea, sus límites, las ondas superpuestas y el
+  registro del expediente. El caso sintético destapó que la cola sumaba la que el grupo liberado
+  formaba después en la entrada de la línea (14 tags de alcance en vez de 8); se corrigió antes de
+  entregar exigiendo que la retención coincida con la de su retenedor.
+
+### Pendiente en F5
+
+- Almacén local de expedientes, sección `incidencias` del `.agvproj` y su migración.
+- Columnas de la onda en el CSV de la batería (OQ-160) y el cálculo en el Worker.
+- Interfaz del expediente, diagrama espacio-tiempo y replay con la onda.
+- Clase plantada en la auditoría sintética.
+
 ## [3.64.0] - 2026-09-27
 
 Primera entrega de F5: la decisión del expediente, **propuesta** y pendiente del propietario. El
