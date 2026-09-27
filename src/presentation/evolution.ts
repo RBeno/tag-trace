@@ -235,11 +235,21 @@ export function evolutionSection(input: EvolutionSectionInput): HTMLElement {
         : `«${current.fileName}» es la primera instantánea: lo que cambió después, hasta «${otherName}». Hechos, no causas.`,
     ),
   );
-  box.append(figuresOf(delta));
+  box.append(...deltaView(delta, "Nada cambió entre las dos instantáneas: mismos tags, en el mismo sitio, con las mismas horquillas."));
+  return box;
+}
+
+/**
+ * Un `SnapshotDelta` pintado: la línea de cifras, los primeros cambios en lista y el cajón con la
+ * tabla completa. Lo usan «Evolución» (entre dos instantáneas) y la pestaña Memoria (lo observado
+ * frente a la versión vigente): el mismo hecho se enseña igual venga de donde venga.
+ */
+export function deltaView(delta: SnapshotDelta, emptyText: string): readonly HTMLElement[] {
+  const out: HTMLElement[] = [figuresOf(delta)];
   const rows = deltaRows(delta);
   if (rows.length === 0) {
-    box.append(node("p", "muted", "Nada cambió entre las dos instantáneas: mismos tags, en el mismo sitio, con las mismas horquillas."));
-    return box;
+    out.push(node("p", "muted", emptyText));
+    return out;
   }
   const list = node("ul", "evo-list");
   for (const row of rows.slice(0, DELTA_ROWS)) {
@@ -247,9 +257,9 @@ export function evolutionSection(input: EvolutionSectionInput): HTMLElement {
     item.append(node("span", "chip", row.what), " ", node("span", "mono", row.subject), " ", node("span", "muted", row.detail));
     list.append(item);
   }
-  box.append(list);
-  if (rows.length > DELTA_ROWS) box.append(node("p", "muted", `${rows.length - DELTA_ROWS} cambios más en la tabla.`));
-  box.append(
+  out.push(list);
+  if (rows.length > DELTA_ROWS) out.push(node("p", "muted", `${rows.length - DELTA_ROWS} cambios más en la tabla.`));
+  out.push(
     tableDrawer(`Ver todos los cambios (${rows.length})`, () =>
       plainTable(
         ["Qué", "Tag o tramo", "Detalle"],
@@ -257,7 +267,7 @@ export function evolutionSection(input: EvolutionSectionInput): HTMLElement {
       ),
     ),
   );
-  return box;
+  return out;
 }
 
 // --- 3. El control de tiempo --------------------------------------------------------------------

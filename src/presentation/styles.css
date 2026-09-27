@@ -408,7 +408,8 @@ table.data th { color: var(--muted); font-weight: 600; }
 .tile.attn .tile-value { color: var(--viz-accent); }
 .tile-note { font-size: 0.8rem; color: var(--muted); line-height: 1.35; overflow-wrap: anywhere; }
 @media (min-width: 700px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (min-width: 1100px) { .tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+/* Siete desde F4: la memoria consolidada va en la tira, junto a las seis cifras del análisis. */
+@media (min-width: 1100px) { .tiles { grid-template-columns: repeat(7, minmax(0, 1fr)); } }
 
 /* El selector de capas del anillo y el foco de teclado sobre un segmento. */
 .chart .seg[role="radiogroup"] button[aria-checked="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
@@ -489,3 +490,49 @@ table.data th { color: var(--muted); font-weight: 600; }
   .time-row .time-range { flex-basis: 100%; order: -1; }
   .time-row .time-select { flex: 1 1 100%; }
 }
+
+/* --- Memoria consolidada (F4, MEMORY_CONSOLIDATION.md §6-§11) ----------------------------------------
+   Misma tarjeta que el resto de paneles; lo que se añade es la lista de condiciones, la
+   previsualización enmarcada y las versiones con su marca (vigente, revocada), nunca solo por color. */
+.memory-panel h3 { margin: 20px 0 4px; }
+.memory-panel h4 { margin: 12px 0 4px; font-size: 1rem; }
+.memory-status[role="status"]:empty { display: none; }
+.memory-status { margin: 8px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+.memory-status p { margin: 2px 0; }
+.memory-status.error { border-color: var(--error); }
+.memory-status.error p:first-child { color: var(--error); font-weight: 600; }
+.memory-none { font-weight: 600; margin: 4px 0 0; }
+.memory-current-line { margin: 4px 0 0; }
+.memory-checks { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
+.memory-check { display: flex; align-items: baseline; gap: 8px; }
+.memory-check-mark { flex: none; width: 1.2em; text-align: center; font-weight: 600; color: var(--muted); }
+.memory-check[data-ok="si"] .memory-check-mark { color: var(--viz-series); }
+.memory-check[data-ok="no"] .memory-check-mark { color: var(--warn); }
+.memory-preview { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.memory-preview h4:first-child { margin-top: 0; }
+.memory-blockers { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--warn); }
+.memory-blockers-title { font-weight: 600; color: var(--warn); margin: 0 0 4px; }
+.memory-blockers ul, .memory-warnings ul { margin: 4px 0; padding-left: 18px; }
+.memory-items { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.85rem; }
+.memory-decisions details { margin: 4px 0; }
+.memory-decisions .memory-items { display: grid; gap: 2px; }
+.memory-note, .memory-revoke-reason, .memory-fork-reason { font: inherit; width: 100%; max-width: 40rem; padding: 6px 10px; min-height: 24px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); margin: 4px 0 8px; box-sizing: border-box; }
+.memory-panel label { display: block; margin-top: 8px; }
+.link-button { border: 0; background: transparent; padding: 0; color: var(--viz-series); text-decoration: underline; text-underline-offset: 2px; min-height: 0; border-radius: 0; }
+.memory-versions { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.memory-version { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.memory-version.revoked { border-style: dashed; color: var(--muted); }
+.memory-version-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.memory-version-head .muted { margin: 0; }
+.memory-vn { font-weight: 600; }
+.memory-version .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.memory-version .chip.current { border-color: var(--viz-series); color: var(--ink); }
+.memory-version .chip.revoked { border-color: var(--warn); color: var(--warn); }
+.memory-revoked-reason { margin: 4px 0 0; color: var(--warn); }
+.memory-revoke { margin-top: 6px; }
+.memory-revoke button.danger { margin-top: 0; }
+.memory-fork { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--warn); background: var(--bg); }
+.memory-fork-columns { display: grid; gap: 12px; }
+@media (min-width: 900px) { .memory-fork-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.memory-lineage-events { margin: 4px 0; padding-left: 18px; }

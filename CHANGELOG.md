@@ -2,6 +2,46 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.51.0] - 2026-09-27
+
+Primera entrega de F4: la memoria consolidada del circuito, con versiones que aprueba una persona
+(R-MEM-001..003, ALG-014, `MEMORY_CONSOLIDATION.md` §6-§10).
+
+### Añadido
+
+- **Versiones vN append-only** (`src/domain/memory.ts`, `DATA_CONTRACTS.md` §13): una versión es la
+  instantánea de un fichero elegida como referencia, con las decisiones de la revisión, la nota
+  humana, el delta frente a la vigente anterior, su hash semántico y el de la anterior. Revocar
+  añade fecha y razón y no cambia el hash; la vigente es la última no revocada.
+- **Consolidar periodo** en una pestaña nueva, **Memoria** (`UX_SPEC.md` §6): previsualización con
+  bloqueos en palabras —hallazgos pendientes, periodo de incidencia (rango 1 confirmado), fichero ya
+  consolidado, sin instantánea, bifurcación sin resolver—, avisos que no bloquean (pospuestos que
+  volverán como pendientes), decisiones por estado, delta y tamaño estimado; «Confirmar y
+  consolidar» solo sin bloqueos. Lista de versiones con revocación por razón obligatoria, y el
+  presupuesto: cuánto ocupa la memoria.
+- **Lo observado frente a la memoria**: cada importación compara el fichero de trabajo con la
+  versión vigente y lo enseña como «Evolución». En el Resumen, un séptimo tile, «Memoria».
+- **Linaje entre dispositivos** (§10): al abrir un `.agvproj`, la memoria entrante se clasifica
+  como idéntica, local adelantada, entrante adelantada (se adopta) o bifurcada (hay que elegir
+  conservar o adoptar, con razón; el otro linaje queda archivado).
+- Fixture sintético `memoria/1` para el flujo en el navegador.
+
+### Cambiado
+
+- **Almacén local, versión 7**: tablas `memory` y `memoryState`; la migración desde la 6 solo las
+  crea. **`.agvproj` esquema 3** con la sección `memoria`; los esquemas 1 y 2 se siguen abriendo.
+- El catálogo de tipos de hallazgo y sus rangos pasa al dominio (`src/domain/finding-kinds.ts`), para
+  que el Worker decida el periodo de incidencia con el mismo rango que ordena la bandeja.
+- Protocolo del Worker: mensajes `consolidate`, `revoke`, `resolve-fork` y sus respuestas
+  (`WORKER_PROTOCOL.md` §4). Las pruebas de navegador de navegación y portada cuentan siete
+  pestañas y siete tiles, y las de acumulación comparan con la versión vigente del almacén en lugar
+  de un 6 fijo: la migración desde la 5 pasa ahora por la 6 hasta la 7, con las tablas de memoria.
+
+### Abierto
+
+- OQ-144: qué se sincroniza al abrir un `.agvproj` con la misma memoria y si hace falta volver al
+  ancestro común como acción propia.
+
 ## [3.50.0] - 2026-09-26
 
 El estado del circuito es un grafo que evoluciona (ADR-0015, R-DAT-023; decisión del propietario).

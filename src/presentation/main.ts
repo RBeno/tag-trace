@@ -14,6 +14,7 @@ import {
   type AccumulationReport,
   type CircuitViews,
   type FromWorker,
+  type MemoryViews,
   type SourceSummary,
   type ToWorker,
 } from "../application/protocol.js";
@@ -64,9 +65,11 @@ import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
 import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
-import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
+import { ProjectError, readMemorySection, readProject, writeProject } from "../persistence/agvproj.js";
+import { exportProjectMemory, importProjectMemory } from "../persistence/project-memory.js";
 import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
+import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
 import {
   RANK_LABEL,
   THEMES,
@@ -113,6 +116,8 @@ interface State {
   sources: number;
   /** Las instantáneas del circuito (ADR-0015), en orden de ventana, leídas del almacén tras cada importación. */
   snapshots: readonly CircuitSnapshot[];
+  /** Qué operación de memoria (F4) espera respuesta del Worker, para saber a quién contarle el error. */
+  memoryJob: "preview" | "commit" | "revoke" | "resolve-fork" | null;
 }
 
 const state: State = {
@@ -131,6 +136,7 @@ const state: State = {
   circuitId: null,
   sources: 0,
   snapshots: [],
+  memoryJob: null,
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -335,6 +341,7 @@ const TABS = [
   ["agv", "AGV"],
   ["tiempos", "Tiempos"],
   ["linea", "Línea y calles"],
+  ["memoria", "Memoria"],
   ["datos", "Datos"],
 ] as const;
 type TabId = (typeof TABS)[number][0];
@@ -418,6 +425,9 @@ reviewHost.hidden = true;
 
 let activeTab: TabId = "resumen";
 
+/** La revisión en campo de las vistas que se están enseñando (`review-ui.ts`). Va antes de la pestaña Memoria, que la consulta al construirse. */
+let reviewSession: ReviewSession | null = null;
+
 function isTabId(value: string): value is TabId {
   return (TAB_IDS as readonly string[]).includes(value);
 }
@@ -486,6 +496,27 @@ const tiles = element("div", "tiles");
 tiles.setAttribute("role", "list");
 tiles.setAttribute("aria-label", "Cifras del circuito");
 
+/**
+ * La pestaña «Memoria» (F4). Se construye una vez y se rehace con cada análisis (`views.memory`) y con
+ * cada respuesta del Worker. Sus botones envían mensajes; ninguno consolida por su cuenta: el `commit`
+ * solo sale de «Confirmar y consolidar», tras una previsualización sin bloqueos.
+ */
+const memoryPanel = createMemoryPanel({
+  formatInstant,
+  formatWindow: (window) => `${formatTick(window.from)} → ${formatTick(window.to)}`,
+  findings: findingsStatus,
+  goToPending: () => {
+    activateTab("resumen");
+    trayPanel.scrollIntoView({ block: "start" });
+    trayPanel.tabIndex = -1;
+    trayPanel.focus({ preventScroll: true });
+  },
+  preview: (sourceId) => startMemory({ type: "consolidate", sourceId, mode: "preview" }),
+  commit: (sourceId, note) => startMemory({ type: "consolidate", sourceId, mode: "commit", ...(note === null ? {} : { note }) }),
+  revoke: (version, reason) => startMemory({ type: "revoke", version, reason }),
+  resolveFork: (choice, reason) => startMemory({ type: "resolve-fork", choice, reason }),
+});
+
 {
   const get = (id: TabId): HTMLElement => tabPanels.get(id) as HTMLElement;
   const views = (id: TabId): HTMLElement => viewsOf.get(id) as HTMLElement;
@@ -496,6 +527,8 @@ tiles.setAttribute("aria-label", "Cifras del circuito");
   get("agv").append(views("agv"), dossierPanel);
   get("tiempos").append(views("tiempos"));
   get("linea").append(views("linea"));
+  // Memoria: la memoria consolidada del circuito, sus versiones y el flujo de consolidar (F4).
+  get("memoria").append(memoryPanel.node);
   // Datos: lo que se carga y lo que entró, tal cual: listas, copia, fuente, cobertura y perfil,
   // replay y lecturas.
   get("datos").append(listsPanel, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel);
@@ -814,6 +847,11 @@ function handleMessage(message: FromWorker): void {
       }
       if (message.views !== undefined) renderViews(message.views);
       state.views = message.views ?? null;
+      memoryPanel.update({
+        circuitId: state.circuitId,
+        memory: message.views?.memory ?? null,
+        working: message.views === undefined ? null : workingFileOf(message.views),
+      });
       if (message.views !== undefined) loadEvolution(message.views);
       renderDossier();
       renderReplaySkeleton();
@@ -828,6 +866,15 @@ function handleMessage(message: FromWorker): void {
     }
 
     case "error": {
+      // Un error de una operación de memoria se cuenta en su pestaña, no como fallo de importación.
+      if (state.memoryJob !== null) {
+        state.memoryJob = null;
+        memoryPanel.showError(message.cause, message.recovery);
+        memoryPanel.setBusy(false);
+        setBusy(false);
+        disposeWorker();
+        return;
+      }
       // WP-005: cero filas es una respuesta legítima, y llega siempre con causa y recuperación.
       const lines = [message.cause, message.recovery];
       if (message.detectedSchema !== undefined) {
@@ -921,7 +968,103 @@ function handleMessage(message: FromWorker): void {
       setBusy(false);
       disposeWorker();
       return;
+
+    // --- Memoria consolidada (F4): las respuestas se pintan en su pestaña ---------------------------
+    case "consolidation-preview":
+      finishMemoryJob();
+      memoryPanel.showPreview(message.preview);
+      return;
+
+    case "consolidated":
+      finishMemoryJob();
+      memoryPanel.showConsolidated(message.version, message.memory);
+      renderMemoryTile(message.memory);
+      return;
+
+    case "revoked":
+      finishMemoryJob();
+      memoryPanel.showRevoked(message.version, message.memory);
+      renderMemoryTile(message.memory);
+      return;
+
+    case "fork-resolved":
+      finishMemoryJob();
+      memoryPanel.showForkResolved(message.memory);
+      renderMemoryTile(message.memory);
+      return;
   }
+}
+
+function finishMemoryJob(): void {
+  state.memoryJob = null;
+  memoryPanel.setBusy(false);
+  setBusy(false);
+  disposeWorker();
+}
+
+/**
+ * Envía una operación de memoria al Worker (F4): previsualizar o confirmar una consolidación, revocar
+ * una versión o elegir linaje. Mismo Worker, mismo protocolo y `jobId` propio, como las listas y la
+ * flota: la memoria se lee y se escribe fuera del hilo principal, y la presentación solo pide.
+ */
+function startMemory(
+  request:
+    | { readonly type: "consolidate"; readonly sourceId: string; readonly mode: "preview" | "commit"; readonly note?: string }
+    | { readonly type: "revoke"; readonly version: number; readonly reason: string }
+    | { readonly type: "resolve-fork"; readonly choice: "conservar-local" | "adoptar-entrante"; readonly reason: string },
+): void {
+  const circuitId = state.circuitId;
+  if (circuitId === null) {
+    memoryPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");
+    return;
+  }
+  disposeWorker();
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  state.memoryJob = request.type === "consolidate" ? request.mode : request.type;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    state.memoryJob = null;
+    memoryPanel.showError("el proceso auxiliar se detuvo.", "La memoria no se ha modificado. Vuelve a intentarlo.");
+    memoryPanel.setBusy(false);
+    setBusy(false);
+    disposeWorker();
+  };
+  setBusy(true);
+  memoryPanel.setBusy(true);
+  progressNote.textContent =
+    request.type === "consolidate" ? (request.mode === "preview" ? "Previsualizando la consolidación" : "Consolidando") : request.type === "revoke" ? "Revocando la versión" : "Registrando la elección de linaje";
+  progressBar.value = 0;
+  const message: ToWorker = { ...request, protocolVersion: PROTOCOL_VERSION, jobId, circuitId };
+  worker.postMessage(message);
+}
+
+/** El fichero de trabajo del análisis en pantalla, con si tiene instantánea, según lo que dicen las vistas. */
+function workingFileOf(views: CircuitViews): MemoryWorkingFile | null {
+  const summary = state.summary;
+  if (summary === null) return null;
+  const list = views.snapshots.list;
+  // El mismo fichero cargado dos veces es una fuente nueva sin instantánea propia (R-DAT-005): vale la
+  // del primero, que es el mismo contenido.
+  const entry = list.find((item) => item.sourceId === summary.sourceId) ?? [...list].reverse().find((item) => item.fileName === summary.fileName && item.hasSnapshot);
+  if (entry === undefined) return { sourceId: summary.sourceId, fileName: summary.fileName, hasSnapshot: false };
+  return { sourceId: entry.sourceId, fileName: entry.fileName, hasSnapshot: entry.hasSnapshot };
+}
+
+/** Lo que la bandeja dice de la revisión, contado en sus tarjetas: es la unidad de revisión (R-EVI-007). */
+function findingsStatus(): FindingsStatus | null {
+  if (reviewSession === null) return null;
+  const cards = [...tray.querySelectorAll<HTMLElement>(".finding.reviewable")];
+  const stateOf = (card: HTMLElement): string => card.dataset["review"] ?? "pendiente";
+  return {
+    total: cards.length,
+    pending: cards.filter((card) => stateOf(card) === "pendiente").length,
+    confirmedCritical: cards.filter((card) => stateOf(card) === "confirmado" && card.closest<HTMLElement>(".tray-group")?.dataset["rank"] === "1").length,
+  };
 }
 
 function startImport(file: File, fieldOrder?: FieldOrder): void {
@@ -1380,7 +1523,11 @@ function renderViews(views: CircuitViews): void {
   buildTray();
   reviewSession?.refresh();
   renderTiles(views);
-  reviewSession?.onChange(() => renderFindingsTile());
+  reviewSession?.onChange(() => {
+    renderFindingsTile();
+    // La lista de condiciones de «Consolidar periodo» cuenta las tarjetas de la bandeja.
+    memoryPanel.refresh();
+  });
 }
 
 /**
@@ -1729,8 +1876,6 @@ function renderUndeclaredTags(views: CircuitViews): void {
   }
 }
 
-/** La revisión en campo de las vistas que se están enseñando (`review-ui.ts`). */
-let reviewSession: ReviewSession | null = null;
 
 /**
  * La flota del circuito a lo largo del tiempo (DS-012, R-AGV-014, R-AGV-015): el recuento N de M y
@@ -3962,7 +4107,7 @@ function tile(
   value: string | null,
   note: string,
   go: () => void,
-  options: { readonly accent?: boolean; readonly id?: string } = {},
+  options: { readonly accent?: boolean; readonly id?: string; readonly empty?: string } = {},
 ): HTMLElement {
   const item = element("div", "tile-item");
   item.setAttribute("role", "listitem");
@@ -3972,7 +4117,7 @@ function tile(
   if (options.accent === true) button.classList.add("attn");
   button.append(
     element("p", "tile-label", label),
-    element("p", value === null ? "tile-value tile-empty" : "tile-value", value ?? "sin datos"),
+    element("p", value === null ? "tile-value tile-empty" : "tile-value", value ?? options.empty ?? "sin datos"),
     element("p", "tile-note", note),
   );
   button.addEventListener("click", go);
@@ -4088,6 +4233,37 @@ function renderTiles(views: CircuitViews): void {
       () => jumpTo("linea", "Alimentación de la línea"),
       { id: "linea" },
     ),
+  );
+
+  // Memoria (F4): la versión vigente de la memoria consolidada, o «sin consolidar». Se rellena aparte
+  // porque cambia al consolidar o revocar sin que haya una importación nueva.
+  const memorySlot = element("div", "tile-item");
+  memorySlot.setAttribute("role", "listitem");
+  memorySlot.dataset["slot"] = "memoria";
+  tiles.append(memorySlot);
+  renderMemoryTile(views.memory ?? null);
+}
+
+/** El tile de la memoria: «vN» de la vigente o «sin consolidar»; lleva a la pestaña Memoria. */
+function renderMemoryTile(memory: MemoryViews | null): void {
+  const slot = tiles.querySelector<HTMLElement>("[data-slot='memoria']");
+  if (slot === null) return;
+  const versions = memory?.versions.length ?? 0;
+  const current = memory?.current ?? null;
+  slot.replaceChildren(
+    ...tile(
+      "Memoria",
+      current === null ? null : `v${current}`,
+      state.circuitId === null
+        ? "sin circuito"
+        : current === null
+          ? versions === 0
+            ? "ninguna versión consolidada"
+            : `${versions} ${versions === 1 ? "versión revocada" : "versiones, todas revocadas"}`
+          : `${versions} ${versions === 1 ? "versión" : "versiones"}; vigente de ${memory?.versions.find((entry) => entry.version === current)?.basedOnFileName ?? "—"}`,
+      () => jumpTo("memoria", "Memoria del circuito"),
+      { id: "memoria", empty: "sin consolidar" },
+    ).children,
   );
 }
 
@@ -4592,6 +4768,9 @@ exportButton.addEventListener("click", () => {
     const reviews = [...(await loadReviews(circuitId)).values()];
     // Y las instantáneas de cada fichero (ADR-0015 §5): el circuito viaja con su evolución y sin su bruto.
     const snapshots = await loadSnapshots(circuitId);
+    // Y la memoria consolidada (F4, §10-§11): las versiones con su cadena de hashes, para que el
+    // destino clasifique el linaje al abrirlo. Sin versiones, la sección no viaja.
+    const memoria = await exportProjectMemory(circuitId);
     const bytes = await writeProject(
       circuitId,
       {
@@ -4600,6 +4779,7 @@ exportButton.addEventListener("click", () => {
         cobertura: circuit.coverage,
         instantaneas: snapshots,
         ...(reviews.length === 0 ? {} : { revision: reviews }),
+        ...(memoria === undefined ? {} : { memoria }),
       },
       Date.now(),
     );
@@ -4611,6 +4791,7 @@ exportButton.addEventListener("click", () => {
       `${circuit.sources.length} ficheros y sus periodos, con ${snapshots.length} ${snapshots.length === 1 ? "instantánea" : "instantáneas"}. ` +
         "Las lecturas se quedan en este dispositivo.",
       ...(reviews.length === 0 ? [] : [`Incluye ${reviews.length} hallazgos revisados en campo.`]),
+      ...(memoria === undefined ? [] : [`Incluye la memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.`]),
     ]);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
     const link = element("a");
@@ -4635,12 +4816,22 @@ projectInput.addEventListener("change", () => {
         | undefined;
       const revision = project.sections["revision"] as readonly { state?: string }[] | undefined;
       const instantaneas = project.sections["instantaneas"] as readonly unknown[] | undefined;
+      // La memoria consolidada que trae (F4, §10): su forma se comprueba antes de tocar nada, y la
+      // relación con la local —idéntica, local por delante, entrante por delante (se adopta) o
+      // bifurcada (hay que elegir)— la clasifica y la guarda la persistencia. Nada se fusiona.
+      const memoria = readMemorySection(project);
+      const lineage = isAvailable() ? await importProjectMemory(project.manifest.circuit_id, memoria) : null;
       showMessage("info", `Proyecto «${circuito?.nombre ?? project.manifest.circuit_id}»`, [
         `${fuentes?.length ?? 0} fuentes declaradas, exportado el ${formatInstant(project.manifest.exported_at)}.`,
         // Un proyecto del esquema 1 no traía instantáneas: se abre igual y se dice (ADR-0015 §5).
         instantaneas === undefined
           ? "Sin instantáneas: el proyecto es de una versión anterior."
           : `${instantaneas.length} ${instantaneas.length === 1 ? "instantánea" : "instantáneas"} del circuito.`,
+        memoria === undefined
+          ? "Sin memoria consolidada: el proyecto es de una versión anterior o el circuito no tenía versiones."
+          : `Memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.` +
+            (lineage === null ? " Sin almacén local no se puede comparar con la de este dispositivo." : ` ${LINEAGE_LABEL[lineage]}`) +
+            (lineage === "bifurcada" ? " Elige cuál sigue en la pestaña Memoria, al importar las lecturas del circuito." : lineage === "entrante-adelantada" ? " Se verá al volver a importar las lecturas del circuito." : ""),
         cobertura === undefined || cobertura.length === 0
           ? "Sin cobertura declarada."
           : `Cobertura: ${cobertura.map((span) => formatSpan(span.from, span.to)).join("  ·  ")}`,

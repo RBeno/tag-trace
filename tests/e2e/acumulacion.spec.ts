@@ -14,6 +14,7 @@ import { openTab } from "./pestanas.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { STORE_VERSION } from "../../src/persistence/store.js";
 import { writeXlsx } from "../support/xlsx-writer.js";
 
 const FIXTURES = fileURLToPath(new URL("../../fixtures/synthetic/acumulacion/", import.meta.url));
@@ -62,6 +63,8 @@ interface StoredShape {
   /** El registro del circuito, ¿lleva todavía `readings`? Desde la versión 6, nunca. */
   readonly circuitHasReadings: boolean;
   readonly version: number;
+  /** Las tablas de la memoria consolidada (almacén 7): `memory` y `memoryState`. */
+  readonly memoryStores: boolean;
 }
 
 /** Lo que el almacén tiene de verdad, leído del almacén y no del mensaje que la interfaz muestra. */
@@ -107,6 +110,7 @@ async function storedCircuit(page: Page, circuitId: string): Promise<StoredShape
           .map((row) => nameOf.get(row.sourceId) ?? row.snapshot.fileName),
         circuitHasReadings: record.readings !== undefined,
         version: db.version,
+        memoryStores: db.objectStoreNames.contains("memory") && db.objectStoreNames.contains("memoryState"),
       };
     } finally {
       db.close();
@@ -205,7 +209,8 @@ test.describe("acumular un circuito", () => {
       retained: ["ventana-2.csv", "ventana-3.csv"],
       snapshots: ["ventana-1.csv", "ventana-2.csv", "ventana-3.csv"],
       circuitHasReadings: false,
-      version: 6,
+      version: STORE_VERSION,
+      memoryStores: true,
     });
     await openTab(page, "Datos");
     // 6 + 6 filas de las dos retenidas, tres eventos comunes: 9 en la ventana de trabajo.
@@ -272,10 +277,12 @@ test.describe("acumular un circuito", () => {
       db.close();
     });
 
-    // Al abrir la aplicación se abre el almacén y la migración 5→6 se hace sola.
+    // Al abrir la aplicación se abre el almacén y las migraciones 5→6 y 6→7 se hacen solas, en orden:
+    // la 6 parte el circuito por fuentes y la 7 añade las tablas de la memoria consolidada.
     await page.reload();
-    await expect.poll(async () => (await storedCircuit(page, "antiguo"))?.version, { timeout: 15_000 }).toBe(6);
+    await expect.poll(async () => (await storedCircuit(page, "antiguo"))?.version, { timeout: 15_000 }).toBe(STORE_VERSION);
     expect(await storedCircuit(page, "antiguo")).toMatchObject({
+      memoryStores: true,
       readings: 3,
       sources: 2,
       coverage: 2,

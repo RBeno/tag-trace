@@ -1,8 +1,8 @@
 ---
 document_id: TT-GATES-001
-version: 0.18.0
+version: 0.19.0
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-27
 ---
 
 # Puertas de fase
@@ -129,12 +129,18 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
 
 ## G4 — Autorizar F5
 
-- [ ] Consolidación solo humana y transaccional.
-- [ ] vN permanece intacta al crear vN+1.
-- [ ] Revocación y migración probadas.
+- [ ] Consolidación solo humana y transaccional. **Evidencia (3.51.0)**: el Worker solo escribe con
+      `consolidate` en modo `commit`, que la interfaz envía desde «Confirmar y consolidar», y vuelve a
+      calcular la previsualización desde el almacén antes de escribir; versión y estado de linaje van
+      en una transacción (TC-283, TC-286). Sin marcar: la decide el propietario.
+- [ ] vN permanece intacta al crear vN+1. **Evidencia**: almacén por `[circuitId, hash]`, cadena de
+      hashes y prueba de que revocar no muta la original ni cambia su hash (TC-283).
+- [ ] Revocación y migración probadas. **Evidencia**: revocación en unitaria y navegador (TC-283,
+      TC-286); migración del almacén 6→7 y lectura de `.agvproj` 1, 2 y 3 (TC-285). La migración
+      en el navegador desde una base de la versión 5 hasta la 7, con las tablas de memoria (TC-280).
 - [ ] Incidencias excluidas del esperado.
 - [ ] Crecimiento normal dentro del presupuesto o desviación aceptada.
-- [ ] Reapertura y round-trip de `.agvproj`.
+- [ ] Reapertura y round-trip de `.agvproj`. **Evidencia**: ida y vuelta con memoria y relación «idéntica»; adopción en almacén vacío (TC-285, TC-286). La bifurcación solo tiene prueba unitaria (TC-284).
 - [ ] Comparación histórica reproduce deltas correctos.
 
 ## G5 — Autorizar F6

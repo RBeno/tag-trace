@@ -39,7 +39,7 @@ test.describe("pestañas y bandeja de hallazgos", () => {
     await freshPage(page);
     // Sin nada cargado ya hay pestañas, y la de entrada es el Resumen.
     const tabs = page.getByRole("tab");
-    await expect(tabs).toHaveText(["Resumen", "Tags", "AGV", "Tiempos", "Línea y calles", "Datos"]);
+    await expect(tabs).toHaveText(["Resumen", "Tags", "AGV", "Tiempos", "Línea y calles", "Memoria", "Datos"]);
     await expect(page.getByRole("tab", { name: "Resumen" })).toHaveAttribute("aria-selected", "true");
 
     await page.locator("#circuit-name").fill("auditoria");
