@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.54.0
+version: 0.55.0
 status: active
 last_updated: 2026-09-27
 ---
@@ -34,6 +34,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 
 | ID | Pregunta | Tratamiento mientras esté abierta |
 |---|---|---|
+| OQ-151 | **Cómo mide la memoria los valores provisionales de planta** (OQ-140: «tendría que salir del análisis y la consolidación continua»). Para proponer un valor hace falta un estimador por constante, que es una regla de dominio. Propuesta, cada una sobre las versiones consolidadas (tres como mínimo, el mismo criterio que «sostenido») y siempre como **propuesta con su evidencia que el propietario confirma**, nunca aplicada sola: (1) **régimen de noche** (hoy 22 a 5 h): las horas seguidas en que las lecturas de la flota por hora quedan por debajo de la mitad de la mediana de las horas de producción; (2) **horas de arranque de turno** (hoy 6, 14 y 22 h): la hora de inicio de las paradas de la producción que se repiten a la misma hora en al menos dos días (R-AGV-018); (3) **hora sin leer que hace una desconexión** (hoy 60 min): el percentil 99 de los huecos de AGV que volvieron a leer; (4) **bloqueo del primero de cola** (hoy 2 min): el percentil 95 de las esperas del primero de cola que acabaron avanzando; (5) **tolerancia de «a la misma hora»** (hoy 15 min): la mayor diferencia de hora entre repeticiones de una misma parada; (6) **margen del FIFO** (hoy 3 min): el percentil 95 menos la mediana del tránsito del tramo cargado; (7) **duración mínima de una parada precisa** (hoy 30 s): el percentil 5 de las esperas en las paradas precisas declaradas; (8) **hueco entre periodos distantes** (hoy 30 min): no es un dato de planta sino de análisis, y se sacaría de esta lista. ¿Se aceptan estos estimadores, o cuáles cambian? | Mientras tanto, la aplicación guarda por circuito los valores que la persona confirma, con su fecha y su razón, junto a lo que ya mide de cada uno; sin confirmación rige el valor provisional. |
 | OQ-101 | ¿Qué modelos de lector/AGV existen y cuáles suprimen tag repetido? | Regla R-OPP-002 sigue candidate |
 | OQ-102 | ¿Qué evento o secuencia identifica con fiabilidad una vuelta? **El mecanismo para cuando se responda ya existe** (`lap_anchors`, R-GRA-009, 2026-09-22): una ancla declarada rota el ciclo ya reconstruido y una vuelta completa cortada por ella sale `observed`. Sigue faltando el tag real. | Conservar vueltas parciales/desconocidas; sin ancla declarada, el ancla es el ciclo dominante e `inferred` |
 | OQ-103 | ¿Cómo distinguir mantenimiento/asistencia/pastor en los CSV? | Catálogo parcial y exclusión explícita |
