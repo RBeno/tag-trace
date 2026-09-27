@@ -211,7 +211,9 @@ export interface SnapshotPlantMeasures {
   /**
    * Las paradas de la producción que empiezan en la ventana (`productionStops`, `flow-stops.ts`): día
    * local, minuto local de inicio (0–1439) y, por índice en esta lista, con cuáles se repiten a la misma
-   * hora otro día (`sameTimeOn`, solo las de este fichero).
+   * hora otro día (`sameTimeAs`, solo las de este fichero). Se emparejan al medir con la tolerancia
+   * de medida `plantEstimators.sameTimeMeasureToleranceMs` (OQ-154); las medidas anteriores a 3.62.0
+   * se emparejaron con la tolerancia vigente y se conservan tal cual.
    */
   readonly productionStops: readonly {
     readonly day: string;

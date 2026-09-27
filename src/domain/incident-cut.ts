@@ -33,8 +33,8 @@ export interface AppliedCut extends IncidentCut {
 }
 
 /**
- * Quita las lecturas de cada recorte. Una lectura que cae en dos recortes cuenta en el primero. Las
- * que quedan conservan su orden.
+ * Quita las lecturas de cada recorte. Una lectura que cae en dos recortes (de incidencias distintas:
+ * los de una misma no se solapan, `checkCuts`) cuenta en el primero. Las que quedan conservan su orden.
  */
 export function cutReadings(
   readings: readonly Reading[],
@@ -86,22 +86,20 @@ export interface CuttableIncident {
  *
  * No exige que el recorte se solape con la ventana de la incidencia: el principio y el fin los elige la
  * persona (OQ-148) y pueden quedar fuera de lo que el hallazgo midió. Eso se avisa, no se bloquea:
- * `cutWarnings`. Se admite un recorte por incidencia; con varias paradas (`windows`), si se recorta cada
- * una o la envolvente está abierto (OQ-155).
+ * `cutWarnings`. Una incidencia admite varios recortes (OQ-155, propietario 2026-09-27: uno por parada
+ * con varias `windows`), siempre que no se solapen entre sí: una lectura no puede caer en dos recortes
+ * de la misma incidencia, porque contaría en uno solo y el otro diría lo que no quitó.
  */
 export function checkCuts(cuts: readonly IncidentCut[], incidents: readonly CuttableIncident[], fileWindow: Interval): readonly IncidentCut[] {
   const byKey = new Map(incidents.map((incident) => [incident.key, incident]));
-  const seen = new Set<string>();
-  return cuts.map((cut) => {
+  const checked = cuts.map((cut) => {
     const incident = byKey.get(cut.incidentKey);
     if (incident === undefined) {
       throw new Error("Solo se recorta la ventana de una incidencia del periodo: un hallazgo grave confirmado.");
     }
-    if (incident.window === undefined && (incident.windows ?? []).length === 0) {
+    if (windowsOf(incident).length === 0) {
       throw new Error(`La incidencia «${incident.title}» no tiene ventana: no hay nada que recortar.`);
     }
-    if (seen.has(cut.incidentKey)) throw new Error(`La incidencia «${incident.title}» tiene dos recortes: elige uno.`);
-    seen.add(cut.incidentKey);
     if (!Number.isFinite(cut.from) || !Number.isFinite(cut.to) || cut.from > cut.to) {
       throw new Error(`El recorte de «${incident.title}» necesita un principio anterior o igual a su fin.`);
     }
@@ -113,6 +111,18 @@ export function checkCuts(cuts: readonly IncidentCut[], incidents: readonly Cutt
     }
     return { incidentKey: cut.incidentKey, from: cut.from, to: cut.to, ...(incident.agvId === undefined ? {} : { agvId: incident.agvId }) };
   });
+  // Varios recortes de una incidencia, sí; que compartan un instante (ambos extremos incluidos), no.
+  for (let index = 0; index < checked.length; index += 1) {
+    const cut = checked[index] as IncidentCut;
+    for (let other = index + 1; other < checked.length; other += 1) {
+      const next = checked[other] as IncidentCut;
+      if (next.incidentKey === cut.incidentKey && cut.from <= next.to && cut.to >= next.from) {
+        const title = byKey.get(cut.incidentKey)?.title ?? cut.incidentKey;
+        throw new Error(`Los recortes de «${title}» se solapan: sepáralos o une los dos en uno.`);
+      }
+    }
+  }
+  return checked;
 }
 
 /** Las ventanas de una incidencia: `windows` si las trae, si no `window`; ninguna si no tiene. */

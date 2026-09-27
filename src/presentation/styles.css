@@ -522,6 +522,9 @@ table.data th { color: var(--muted); font-weight: 600; }
 .memory-decisions details { margin: 4px 0; }
 .memory-incident-list { display: grid; gap: 6px; }
 .memory-cut { margin-top: 4px; }
+/* Varias paradas (OQ-155): una fila por parada, separadas entre sí; la fila cabe en 390 px porque sus campos ya envuelven. */
+.memory-cut-rows .memory-cut + .memory-cut { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.memory-cut-which { margin: 2px 0 0; }
 .memory-panel .memory-cut-label { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; }
 .memory-cut-fields { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .memory-cut-fields p { flex-basis: 100%; margin: 2px 0 0; }

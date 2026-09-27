@@ -1,6 +1,6 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.12.1
+version: 0.12.2
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -177,6 +177,14 @@ pendiente», porque en ese momento no se sabe aún si volverá; desde 3.57.0 (OQ
 fichero del periodo siguiente ya no está, la previsualización lo lista como evento puntual, «se vio
 en vN y volvió», sin cambiar el esperado.
 
+**Lo que no continúa la cuenta (3.62.0, OQ-158; propietario, 2026-09-27).** Solo se arrastra lo que
+la versión vigente guardó como **deriva pendiente** sin adoptar. Lo que guardó como **incidencia** no
+cuenta hacia sostenido: la medida de un tag o un tramo bajo un hallazgo grave confirmado no es prueba
+de un cambio permanente. Si el cambio sigue en el periodo siguiente, su cuenta de ficheros seguidos
+empieza con la historia nueva (un fichero, no tres), y sigue pendiente; tampoco sale como «se vio en
+vN y volvió» si ya no está, porque nunca fue pendiente. Un evento puntual no guarda ficheros y no se
+arrastra.
+
 **Recorte de ventana (3.58.0).** Cierra OQ-148: al previsualizar, cada incidencia con ventana ofrece
 «Recortar su ventana al consolidar», con principio y fin editables. La versión se construye desde
 el fichero original archivado sin esas lecturas —las de un AGV, si la incidencia es suya; todas, si
@@ -320,8 +328,12 @@ El `.agvproj` contiene manifiesto, versión, hashes e integridad. Al abrirlo:
   trae tiene que ser la que dice ser** (2026-09-27, `verifyProjectMemory`): cada versión vuelve a dar
   su `hash` al calcularlo (`versionHash`), y cada linaje —activo y archivados— encadena versiones
   presentes cuyo `previousHash` apunta a una anterior del mismo linaje (la vigente al consolidar, que
-  no es siempre la inmediata si esta estaba revocada). Una que falle rechaza la carga entera con
-  `ProjectError`, sin tocar nada. Vale para cualquier versión desde la primera consolidación (F4): la
+  no es siempre la inmediata si esta estaba revocada), y **no tiene dos versiones con el mismo
+  número** (3.62.0, OQ-157; propietario, 2026-09-27): el número lo da siempre «uno más que el mayor
+  guardado, revocadas incluidas», así que un linaje con dos versiones vN de distinto hash no lo
+  escribió esta regla y se rechaza como cadena rota («el linaje «id» tiene dos versiones vN»), igual
+  que uno que repite un hash. Una que falle rechaza la carga entera con `ProjectError`, sin tocar
+  nada. Vale para cualquier versión desde la primera consolidación (F4): la
   regla del hash y `CANONICAL_VERSION` no han cambiado, y los campos añadidos después (`expected`,
   `changes`, `incidents`, `cuts`) son opcionales y no se escriben cuando faltan, así que una versión
   antigua vuelve a dar el hash con el que nació;

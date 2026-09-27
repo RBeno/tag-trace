@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.47.1
+version: 0.47.2
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -709,7 +709,13 @@ original archivado la casilla sale deshabilitada con el motivo. Si después de p
 una casilla o un campo del recorte, «Confirmar y consolidar» se apaga y debajo de la nota se lee
 «Vuelve a previsualizar con el recorte para confirmar»: se consolida lo que se ve, no lo que se tocó
 después. Un recorte que no toca ninguna ventana de su incidencia sale como aviso junto a los recortes
-(«Avisos (no bloquean):») y no impide confirmar. Al confirmar, la interfaz devuelve al Worker la huella
+(«Avisos (no bloquean):») y no impide confirmar. Una incidencia con varias paradas (`windows`, «La
+producción se paró N veces») ofrece **una fila por parada** (OQ-155, propietario 2026-09-27): «Parada
+k de N: de … a …», la casilla «Recortar esta parada al consolidar» y sus «Desde» y «Hasta» propuestos
+con esa parada, no con la envolvente; cada fila se marca por su cuenta y la previsualización enseña un
+recorte por fila marcada. Dos recortes de la misma incidencia que compartan un instante los rechaza el
+Worker («Los recortes de «…» se solapan: sepáralos o une los dos en uno.»). Con una sola ventana la
+fila es la de siempre. Al confirmar, la interfaz devuelve al Worker la huella
 de la previsualización que enseñó; si lo recalculado ya no coincide (otra marca de revisión, otra
 versión llegada en un `.agvproj`), no se escribe nada y se lee «La previsualización ha cambiado desde
 que se mostró. Vuelve a previsualizar y confirma lo que veas.».

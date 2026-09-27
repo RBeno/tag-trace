@@ -23,11 +23,18 @@
  * Los números de la definición (la mitad de la mediana, los percentiles 99, 95 y 5) no están aquí:
  * viven en `AnalysisConfig.plantEstimators` con su razón.
  *
- * **Límite conocido (OQ-154).** Las repeticiones de una parada (`sameTimeAs`) se emparejan en
- * `flow-stops.ts` con la tolerancia **vigente** de «a la misma hora», y la noche se estima frente a la
- * noche **vigente**: el estimador de la tolerancia nunca propondrá un valor mayor que el vigente, y el
- * de las horas de turno solo ve las repeticiones que esa tolerancia dejó emparejar. Se dice en el
- * `why` de cada estimación; el estimador no cambia porque es la definición aprobada (OQ-151).
+ * **Tolerancia de medida (OQ-154, propietario 2026-09-27).** Las repeticiones de una parada
+ * (`sameTimeAs`) se emparejan aquí, solo para medir, con `plantEstimators.sameTimeMeasureToleranceMs`
+ * (60 min), ancha a propósito: si se emparejaran con la tolerancia **vigente** de «a la misma hora»
+ * (15 min), el estimador de la tolerancia nunca podría proponer un valor mayor que el vigente, y el de
+ * las horas de turno solo vería las repeticiones que esa tolerancia dejó emparejar. El emparejamiento
+ * operativo (`productionStops`, `flow-stops.ts`) sigue con la vigente: la medida no cambia el análisis.
+ * Las medidas guardadas antes de 3.62.0 se emparejaron con la vigente y quedan como están (append-only):
+ * la propuesta recalcula las estimaciones desde las medidas guardadas, no las medidas.
+ *
+ * **Límite conocido (OQ-154), solo la noche.** La noche se estima frente a la noche **vigente** (la
+ * mediana de producción es la de fuera de ella); se dice en el `why` y el estimador no cambia porque es
+ * la definición aprobada (OQ-151).
  *
  * `drift.minGapMs` (hueco entre periodos distantes) no está: OQ-151 lo sacó de la lista porque es de
  * análisis, no de planta.
@@ -40,7 +47,7 @@ import type { AnalysisConfig } from "./config.js";
 import type { Interval } from "./coverage.js";
 import type { InactivityPeriod } from "./dossier.js";
 import type { SpanReport } from "./fifo.js";
-import type { ProductionStop, VehicleStop } from "./flow-stops.js";
+import { sameTimeRepetitions, type ProductionStop, type VehicleStop } from "./flow-stops.js";
 import { quantile } from "./graph.js";
 import { sortVersions, type ConsolidatedVersion } from "./memory.js";
 import { canonicalise } from "./semantic-hash.js";
@@ -332,13 +339,20 @@ const DAY_MINUTES = 24 * 60;
 /**
  * Los números de la definición de los estimadores (OQ-151), en configuración (`PROVISIONAL_CONFIG.plantEstimators`):
  * la parte de la mediana de producción por debajo de la cual una hora es de noche, y los cuantiles de
- * los huecos que volvieron, de las esperas del primero de cola y de las esperas en una parada precisa.
+ * los huecos que volvieron, de las esperas del primero de cola y de las esperas en una parada precisa;
+ * y la tolerancia **de medida** con que se emparejan las repeticiones de una parada al medir (OQ-154).
  */
 export interface PlantEstimatorThresholds {
   readonly nightLowShare: number;
   readonly returnGapQuantile: number;
   readonly headWaitQuantile: number;
   readonly precisePauseQuantile: number;
+  /**
+   * Margen de hora local con que se emparejan, **solo para medir**, las paradas que se repiten otro
+   * día. No es la tolerancia operativa (`flowStops.sameTimeToleranceMs`): es más ancha, para que la
+   * estimación pueda ver una tolerancia de planta mayor que la vigente (OQ-154).
+   */
+  readonly sameTimeMeasureToleranceMs: number;
 }
 
 /** «percentil 99». */
@@ -359,8 +373,8 @@ export interface PlantMeasureInput {
   readonly estimators: PlantEstimatorThresholds;
   /** `hourlyProfile` sobre las lecturas de la flota en la ventana del fichero. */
   readonly hourly: Pick<HourlyProfile, "counts" | "days">;
-  /** `productionStops(...).stops` de la ventana de trabajo. */
-  readonly productionStops: readonly ProductionStop[];
+  /** `productionStops(...).stops` de la ventana de trabajo; sus `sameTimeOn` no se usan: se vuelve a emparejar con la tolerancia de medida. */
+  readonly productionStops: readonly Pick<ProductionStop, "fromUtcMs" | "toUtcMs">[];
   /** `AgvDossier.inactivity` de todos los AGV. */
   readonly gaps: readonly Pick<InactivityPeriod, "fromUtcMs" | "toUtcMs" | "durationMs" | "cause">[];
   /** `flowStops(...).stops` de todos los cohortes. */
@@ -425,8 +439,10 @@ function hourlyCoverage(window: Interval, zone: string): readonly number[] {
  *   cuantil `estimators.headWaitQuantile` (95);
  * - esperas en las paradas precisas declaradas: cuantil `estimators.precisePauseQuantile` (5).
  *
- * Las repeticiones de cada parada (`sameTimeAs`) son las que `flow-stops.ts` emparejó con la
- * tolerancia vigente de «a la misma hora»: la medida hereda ese límite (OQ-154).
+ * Las repeticiones de cada parada (`sameTimeAs`) se emparejan aquí otra vez (`sameTimeRepetitions`, la
+ * misma regla que `productionStops`) con la tolerancia de medida `estimators.sameTimeMeasureToleranceMs`,
+ * no con la vigente de «a la misma hora»: así la estimación puede ver una tolerancia mayor que la que
+ * rige (OQ-154). Solo entre paradas de este fichero.
  */
 export function measurePlantValues(input: PlantMeasureInput): SnapshotPlantMeasures {
   const { window, estimators } = input;
@@ -434,12 +450,17 @@ export function measurePlantValues(input: PlantMeasureInput): SnapshotPlantMeasu
   const local = localDayMinute(input.zone);
   const stops = input.productionStops.filter((stop) => stop.fromUtcMs >= window.from && stop.fromUtcMs <= window.to);
   const indexOf = new Map(stops.map((stop, index) => [stop.fromUtcMs, index]));
+  const repeats = sameTimeRepetitions(
+    stops.map((stop) => stop.fromUtcMs),
+    input.zone,
+    estimators.sameTimeMeasureToleranceMs,
+  );
   return {
     hourly: { readings: [...input.hourly.counts], coveredMs: hourlyCoverage(window, input.zone) },
     days: input.hourly.days,
-    productionStops: stops.map((stop) => ({
+    productionStops: stops.map((stop, index) => ({
       ...local(stop.fromUtcMs),
-      sameTimeAs: stop.sameTimeOn
+      sameTimeAs: (repeats[index] as readonly number[])
         .map((from) => indexOf.get(from))
         .filter((index): index is number => index !== undefined)
         .sort((a, b) => a - b),
@@ -594,16 +615,16 @@ export function estimatePlantValue(key: PlantValueKey, measures: SnapshotPlantMe
       if (measures.days < 2) return { value: null, why: "sin datos: el fichero es de un solo día y hacen falta dos para ver una parada que se repite" };
       const stops = measures.productionStops;
       const repeating = stops.map((stop, index) => ({ stop, index })).filter(({ stop }) => stop.sameTimeAs.length > 0);
-      // OQ-154: las repeticiones se emparejaron con la tolerancia vigente, así que la estimación hereda ese límite.
-      const tolerance = formatPlantValue("duracion", "min", currentConfig.flowStops.sameTimeToleranceMs);
+      // OQ-154: las repeticiones se emparejaron al medir con la tolerancia de medida, no con la vigente.
+      const tolerance = formatPlantValue("duracion", "min", currentConfig.plantEstimators.sameTimeMeasureToleranceMs);
       if (repeating.length === 0) {
-        return { value: null, why: `sin datos: ninguna parada de la producción se repite a la misma hora otro día (con la tolerancia vigente de ${tolerance}; OQ-154)` };
+        return { value: null, why: `sin datos: ninguna parada de la producción se repite a la misma hora otro día (con una tolerancia de medida de ${tolerance}; OQ-154)` };
       }
       if (key === "arranque-turnos") {
         const hours = [...new Set(repeating.map(({ index }) => Math.round(repeatCentre(stops, index) / 60) % 24))].sort((a, b) => a - b);
         return {
           value: hours,
-          why: `${fmtCount(repeating.length)} paradas de la producción que se repiten a la misma hora otro día (emparejadas con la tolerancia vigente de ${tolerance}; OQ-154)`,
+          why: `${fmtCount(repeating.length)} paradas de la producción que se repiten a la misma hora otro día (emparejadas con una tolerancia de medida de ${tolerance}; OQ-154)`,
         };
       }
       let widest = 0;
@@ -615,7 +636,7 @@ export function estimatePlantValue(key: PlantValueKey, measures: SnapshotPlantMe
       return durationEstimate(
         definition,
         widest * 60_000,
-        `mayor diferencia de hora entre ${fmtCount(repeating.length)} repeticiones, emparejadas con la tolerancia vigente de ${tolerance}: no puede salir un valor mayor que ella (OQ-154)`,
+        `mayor diferencia de hora entre ${fmtCount(repeating.length)} repeticiones, emparejadas con una tolerancia de medida de ${tolerance} (OQ-154)`,
       );
     }
     case "desconexion":

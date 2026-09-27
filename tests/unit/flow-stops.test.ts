@@ -19,6 +19,7 @@ import {
   flowStops,
   outsideProductionStops,
   productionStops,
+  sameTimeRepetitions,
   type FlowStopThresholds,
 } from "../../src/domain/flow-stops.js";
 import type { Interval } from "../../src/domain/coverage.js";
@@ -231,6 +232,35 @@ describe("paradas contra el flujo", () => {
     expect(report.stops).toHaveLength(2);
     expect(report.stops[0]?.sameTimeOn).toEqual([report.stops[1]?.fromUtcMs]);
     expect(report.stops[1]?.sameTimeOn).toEqual([report.stops[0]?.fromUtcMs]);
+  });
+
+  it("OQ-154: el análisis empareja con la tolerancia vigente (15 min); la de medida, ancha, es solo para estimar", () => {
+    const day = 86_400_000;
+    const at = (d: number, hour: number, minute: number) => d * day + hour * 3_600_000 + minute * 60_000;
+    // Tres días con un descanso que empieza a las 10:00, 10:20 y 10:40: 20 y 40 min de diferencia.
+    const breaks = [at(0, 10, 0), at(1, 10, 20), at(2, 10, 40)];
+    const readings: Reading[] = [];
+    for (let time = 0; time < 3 * day; time += 30_000) {
+      if (breaks.some((start) => time >= start && time < start + 20 * 60_000)) continue;
+      readings.push({
+        time: { utcMs: time, raw: String(time), zone: ZONE, flag: "ok" },
+        agvId: "A",
+        tagId: "T15",
+        provenance: { sourceId: "s", sourceHash: "h", sourceRow: readings.length + 1 },
+      });
+    }
+    const report = productionStops(readings, CRITICAL, [{ from: 0, to: 3 * day }], ZONE, SHIFTS, THRESHOLDS);
+    // Cada parada empieza en la última lectura crítica antes del hueco (30 s antes del descanso).
+    const starts = report.stops.map((stop) => stop.fromUtcMs);
+    expect(starts).toEqual(breaks.map((start) => start - 30_000));
+    // Operativo: con 15 min ninguna se repite. La regla del análisis no cambia.
+    expect(report.stops.map((stop) => stop.sameTimeOn)).toEqual([[], [], []]);
+    // La función pura con la tolerancia de medida de 60 min ve las tres como repeticiones entre sí.
+    expect(sameTimeRepetitions(starts, ZONE, 60 * 60_000)).toEqual([[starts[1], starts[2]], [starts[0], starts[2]], [starts[0], starts[1]]]);
+    // Y con la vigente da lo mismo que `productionStops`: es la misma regla extraída.
+    expect(sameTimeRepetitions(starts, ZONE, THRESHOLDS.sameTimeToleranceMs)).toEqual([[], [], []]);
+    // Dos paradas del mismo día local nunca se emparejan, por ancha que sea la tolerancia.
+    expect(sameTimeRepetitions([at(0, 10, 0), at(0, 10, 5)], ZONE, 60 * 60_000)).toEqual([[], []]);
   });
 
   it("una transición que salta el hueco entre dos exportaciones no es una parada de nadie", () => {

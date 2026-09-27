@@ -15,6 +15,7 @@ import {
   emptyLineageState,
   previewConsolidation,
   resolveFork,
+  versionHash,
   versionsOfLineage,
   withConsolidated,
   withIncoming,
@@ -258,5 +259,19 @@ describe("verifyProjectMemory · lo que llega tiene que ser lo que dice ser (§1
     const missing: ProjectMemorySection = { versiones: local, linaje: { activo: refOf(local), archivados: [{ id: "B", hashes: ["no-viene"] }], eventos: [] } };
     await expect(verifyProjectMemory(CIRCUIT, missing)).rejects.toThrow(/no viene en el proyecto/);
     await expect(verifyProjectMemory(CIRCUIT, EXPORT_A)).rejects.toThrow(/v1 .* no coincide con su hash/);
+  });
+
+  it("OQ-157: un linaje con dos versiones del mismo número se rechaza aunque cada una dé su hash", async () => {
+    const [v1, v2, v3] = (await chain("A", 3)) as [ConsolidatedVersion, ConsolidatedVersion, ConsolidatedVersion];
+    // Otra v2 del mismo linaje, con contenido distinto y su hash bien calculado: la regla del hash no la ve.
+    const draft = { ...v2, note: "otra v2", hash: "" };
+    const twin: ConsolidatedVersion = { ...draft, hash: await versionHash(draft) };
+    expect(twin.hash).not.toBe(v2.hash);
+    const section: ProjectMemorySection = {
+      versiones: [v1, v2, twin, v3],
+      linaje: { activo: { id: "A", hashes: [v1.hash, v2.hash, twin.hash, v3.hash] }, archivados: [], eventos: [] },
+    };
+    await expect(verifyProjectMemory(CIRCUIT, section)).rejects.toBeInstanceOf(ProjectError);
+    await expect(verifyProjectMemory(CIRCUIT, section)).rejects.toThrow(/el linaje «A» tiene dos versiones v2/);
   });
 });

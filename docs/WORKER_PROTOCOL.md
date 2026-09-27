@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.6.1
+version: 0.6.2
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -74,7 +74,7 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `cancel` | motivo | El Worker debe atenderla en el siguiente punto de control. |
 | `lists` | fichero de listas de tags, circuito | Sustituye las listas del circuito por las del fichero. |
 | `fleet` | fichero de historial de flota (DS-012), circuito, valor de `circuito` elegido si ya lo hay | Se **fusiona** con lo guardado por (AGV, `desde`); no sustituye. |
-| `consolidate` | circuito, fichero base (`sourceId`), `mode: "preview" \| "commit"`, nota opcional (`commit`), `cuts` opcional (los recortes de ventana elegidos, con su incidencia, `from`, `to` y el AGV si es de uno; OQ-148), `previewHash` (`commit`) | `preview` no escribe nada. `commit` solo se envía tras la confirmación humana, y el Worker vuelve a calcular la previsualización desde el almacén antes de escribir: con bloqueos responde `error` (R-MEM-001); si la huella de lo recalculado no es la `previewHash` que la interfaz enseñó —o no viene—, responde `error` («La previsualización ha cambiado desde que se mostró.») sin escribir. Justo antes de escribir mira si hay `cancel` pendiente y, si lo hay, responde `cancelled`. |
+| `consolidate` | circuito, fichero base (`sourceId`), `mode: "preview" \| "commit"`, nota opcional (`commit`), `cuts` opcional (los recortes de ventana elegidos, con su incidencia, `from`, `to` y el AGV si es de uno; OQ-148; una incidencia puede llevar varios —uno por parada, OQ-155— siempre que no se solapen entre sí, o el Worker responde `error`), `previewHash` (`commit`) | `preview` no escribe nada. `commit` solo se envía tras la confirmación humana, y el Worker vuelve a calcular la previsualización desde el almacén antes de escribir: con bloqueos responde `error` (R-MEM-001); si la huella de lo recalculado no es la `previewHash` que la interfaz enseñó —o no viene—, responde `error` («La previsualización ha cambiado desde que se mostró.») sin escribir. Justo antes de escribir mira si hay `cancel` pendiente y, si lo hay, responde `cancelled`. |
 | `revoke` | circuito, número de versión, razón | Marca la versión con fecha y razón; no la borra (R-MEM-002). |
 | `compare-versions` | circuito, dos números de versión | Solo lee: compara los esperados de dos versiones del linaje activo. |
 | `plant-value` | circuito, clave, valor, fecha efectiva, razón | Valida y escribe un valor de planta confirmado; rige al volver a analizar los ficheros de su vigencia. |

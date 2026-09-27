@@ -2,6 +2,35 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.62.0] - 2026-09-27
+
+El propietario pidió aplicar la recomendación de la IA a OQ-154 a OQ-158 («En las respuestas utiliza tu
+recomendación»). Las cinco quedan cerradas en `OPEN_QUESTIONS.md`.
+
+### Cambiado
+
+- **Tolerancia de medida para estimar** (OQ-154, `CONFIG_SCHEMA.md` §3.5): las repeticiones de parada
+  se emparejan, solo para estimar «a la misma hora» y las horas de turno, con
+  `plant_estimators.same_time_measure_tolerance_ms` (60 min), separada de la operativa. Antes el
+  estimador nunca podía proponer una tolerancia mayor que la vigente. La noche sigue estimándose frente
+  a la noche vigente, límite documentado. Las medidas guardadas antes de esta versión conservan su
+  emparejamiento estrecho.
+- **Un recorte por parada** (OQ-155, `UX_SPEC.md`, `ALGORITHM_CATALOG.md` §6.26): una incidencia con
+  varias paradas enseña una fila por parada, prellenada con esa ventana; se admiten varios recortes por
+  incidencia si no se solapan. Ya no se propone la envolvente.
+- **Un linaje con dos versiones del mismo número se rechaza al abrir el proyecto** (OQ-157,
+  `MEMORY_CONSOLIDATION.md` §11).
+- **La medida de una incidencia no cuenta hacia sostenido** (OQ-158, §8): `carryConsecutive` solo
+  arrastra la cuenta de una `deriva-pendiente`.
+- **Las revocaciones importadas siguen aplicándose solas** (OQ-156, §10): son una decisión humana con
+  razón en el otro dispositivo; se anuncian una por una.
+
+### Pruebas
+
+- TC-317 a TC-320 (`TEST_STRATEGY.md`). Una expectativa cambiada por decisión, con su motivo escrito:
+  dos recortes no solapados de una incidencia ya no se rechazan (OQ-155); y un fixture de medidas
+  llevaba repeticiones cruzadas del mismo día que el emparejamiento real nunca produce (OQ-154).
+
 ## [3.61.0] - 2026-09-27
 
 Revisión de la interfaz, la lógica y la consolidación de F4 pedida por el propietario («Haz una revisión de

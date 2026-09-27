@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.46.1
+version: 0.46.3
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -1192,8 +1192,10 @@ uno de cinco AGV no se adopta, y un hallazgo grave confirmado queda como inciden
   recortado (de un AGV o de todos) y `coverageWithoutCuts` quita ese tiempo de la cobertura cuando
   el recorte es de todos. `checkCuts` **no exige** que el recorte se solape con la ventana de la
   incidencia —el principio y el fin los elige la persona—; `cutWarnings` da un aviso, no un bloqueo,
-  por cada recorte que no toca ninguna ventana de su incidencia. Se admite un recorte por incidencia;
-  con varias paradas (`windows`), si se recorta cada una o la envolvente está abierto (OQ-155). El Worker reimporta el original archivado, verifica su SHA-256 contra la
+  por cada recorte que no toca ninguna ventana de su incidencia. Una incidencia admite varios recortes
+  —uno por parada con varias `windows` (OQ-155, propietario 2026-09-27)— y `checkCuts` rechaza solo
+  que dos recortes de la misma incidencia compartan un instante (ambos extremos incluidos), porque la
+  lectura contaría en uno y el otro diría lo que no quitó. El Worker reimporta el original archivado, verifica su SHA-256 contra la
   huella y pasa las lecturas por el mismo camino de análisis que una importación, sin escribir nada.
   Limitación conocida: en un recorte de un AGV, el paso que cruza la ventana queda como una
   transición larga de ese AGV, porque la cobertura no es por AGV.
@@ -1217,8 +1219,19 @@ es `change_class.sustained_files` (3): el Worker pasa ese mismo valor, y no hay 
 coincidencia se decide sobre las estimaciones redondeadas a la unidad del valor; al confirmar, el
 Worker vuelve a calcular la propuesta y rechaza si ya no existe o si cambió.
 
-Límite conocido (OQ-154): las repeticiones de una parada las empareja `flow-stops.ts` con la
-tolerancia **vigente** de «a la misma hora», y la noche se estima frente a la noche **vigente**; el
-estimador de la tolerancia está acotado por el valor que rige y nunca propondrá uno mayor. El
-estimador no cambia (es la definición aprobada en OQ-151); cada estimación lo dice en su explicación.
+Tolerancia de medida (OQ-154, resuelto para «a la misma hora» y las horas de turno; propietario,
+2026-09-27, 3.62.0): hasta 3.61.0 las repeticiones de una parada eran las que `flow-stops.ts`
+emparejó con la tolerancia **vigente** de «a la misma hora», y el estimador de esa tolerancia nunca
+podía proponer un valor mayor que el que regía. Ahora el emparejamiento es una función pura de
+`flow-stops.ts` (`sameTimeRepetitions`: misma hora local otro día, con un margen), que
+`productionStops` sigue llamando con la tolerancia vigente —el análisis no cambia— y que
+`measurePlantValues` llama otra vez, solo para medir, con
+`plant_estimators.same_time_measure_tolerance_ms` (60 min, `CONFIG_SCHEMA.md` §3.5). Cada estimación
+dice con qué tolerancia de medida se emparejaron sus repeticiones. Las medidas guardadas antes de
+3.62.0 conservan su emparejamiento estrecho (append-only; la propuesta recalcula estimaciones desde
+las medidas guardadas, no las medidas).
+
+Límite conocido (OQ-154), solo la noche: se estima frente a la noche **vigente** (la mediana de
+producción es la de fuera de ella). El estimador no cambia (es la definición aprobada en OQ-151); cada
+estimación lo dice en su explicación.
 

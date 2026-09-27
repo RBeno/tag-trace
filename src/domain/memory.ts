@@ -231,6 +231,12 @@ function consecutiveClause(total: number, carried: number, sustained: number): s
  * adoptar, con `files > 0`, y que sigue en **todos** los ficheros de la historia, suma los de esa
  * versión. Si con la suma llega a sostenido, la clase la decide otra vez `classifyChanges` pidiendo
  * los ficheros que faltan, con su misma medida colectiva; solo se reescribe la cuenta de la razón.
+ *
+ * No se arrastra lo que la versión vigente guardó como `incidencia` (OQ-158, propietario 2026-09-27):
+ * la medida de un tag o un tramo bajo un hallazgo grave confirmado no es prueba de un cambio permanente,
+ * así que sus ficheros no cuentan hacia sostenido; si el cambio sigue después, la cuenta empieza con la
+ * historia nueva. Tampoco se arrastra un `evento-puntual` (tiene `files` 0). Solo continúa la cuenta de
+ * una `deriva-pendiente`, la única clase que guarda ficheros seguidos sin adoptar.
  */
 function carryConsecutive(
   changes: readonly ClassifiedChange[],
@@ -241,7 +247,7 @@ function carryConsecutive(
 ): readonly ClassifiedChange[] {
   const carried = new Map<string, number>();
   for (const change of previous.changes ?? []) {
-    if (!change.adopted && change.files > 0) carried.set(change.key, change.files);
+    if (!change.adopted && change.cls === "deriva-pendiente" && change.files > 0) carried.set(change.key, change.files);
   }
   if (carried.size === 0) return changes;
   const reruns = new Map<number, ReadonlyMap<string, ClassifiedChange>>();
@@ -811,16 +817,22 @@ export function withArchivedLineages(state: LineageState, incoming: readonly Lin
  * ser el de una versión presente, y cada `previousHash` tiene que apuntar a una versión **anterior
  * del mismo linaje**: la vigente al consolidar, que no es siempre la inmediata anterior porque la
  * anterior pudo estar revocada. La primera versión no tiene anterior; una posterior solo puede no
- * tenerla si todas las anteriores estaban revocadas.
+ * tenerla si todas las anteriores estaban revocadas. Y un linaje no puede tener dos versiones con el
+ * mismo número (OQ-157, propietario 2026-09-27): el número lo da `nextVersionNumber` —uno más que el
+ * mayor guardado, revocadas incluidas—, así que dos versiones vN con distinto hash en un mismo linaje
+ * no las escribió esta regla, y se rechazan como cadena rota.
  */
 export function lineageChainProblem(versions: readonly ConsolidatedVersion[], lineage: LineageRef): string | null {
   const byHash = new Map(versions.map((version) => [version.hash, version]));
   const seen = new Set<string>();
+  const numbers = new Set<number>();
   for (let index = 0; index < lineage.hashes.length; index += 1) {
     const hash = lineage.hashes[index] as string;
     const version = byHash.get(hash);
     if (version === undefined) return `el linaje «${lineage.id}» apunta a una versión que no viene en el proyecto`;
     if (seen.has(hash)) return `el linaje «${lineage.id}» repite la versión v${version.version}`;
+    if (numbers.has(version.version)) return `el linaje «${lineage.id}» tiene dos versiones v${version.version}`;
+    numbers.add(version.version);
     if (index === 0) {
       if (version.previousHash !== null) return `la primera versión del linaje «${lineage.id}» (v${version.version}) declara una anterior`;
     } else if (version.previousHash === null) {

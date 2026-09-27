@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.43.0
+version: 0.44.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -392,7 +392,10 @@ la confirmación lleva la huella de la previsualización, la memoria no se escri
 guarda su configuración (desde 3.60.0 se duplicaba en cada versión), la integridad de la memoria se
 verifica al abrir un proyecto y la sustitución en el plano exige dos AGV. Quedan abiertas OQ-154 a
 OQ-158 (estimadores acotados por el valor vigente, recortes por parada, aceptar revocaciones, linajes
-antiguos con números repetidos y la cuenta arrastrada de una incidencia).
+antiguos con números repetidos y la cuenta arrastrada de una incidencia). El propietario pidió
+aplicar la recomendación a las cinco (`[3.62.0]`): tolerancia de medida ancha solo para estimar, un
+recorte por parada, rechazar un linaje con dos versiones del mismo número, no arrastrar la cuenta de
+una incidencia, y dejar las revocaciones importadas como están.
 
 ## Estado al 2026-09-26 (relevo a un chat nuevo)
 
@@ -401,7 +404,7 @@ El trabajo sigue en otra conversación por el límite de contexto. Todo lo que d
 conversación siguiente.
 
 - **Fase F4** (memoria longitudinal y consolidación), abierta el 2026-09-26 por el propietario
-  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): revisión de interfaz, lógica y consolidación** (`[3.61.0]`), tras las propuestas de valores de planta (`[3.60.0]`), tras los valores de planta por circuito (`[3.59.0]`), tras el recorte de ventana y la tasa por AGV (`[3.58.0]`), tras las incidencias con instante (`[3.57.0]`), tras el comparador entre versiones y la prueba de oro (`[3.56.0]`), tras la clasificación de cambios, las incidencias fuera del esperado y el almacén comprimido (`[3.55.0]`), tras el plano físico (`[3.53.0]`), tras la consolidación humana con versiones (`[3.51.0]`, `[3.52.0]`). Anterior: **revisión de toda la lógica de medición y análisis**
+  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): OQ-154 a OQ-158 con la recomendación aplicada** (`[3.62.0]`), tras la revisión de interfaz, lógica y consolidación (`[3.61.0]`), tras las propuestas de valores de planta (`[3.60.0]`), tras los valores de planta por circuito (`[3.59.0]`), tras el recorte de ventana y la tasa por AGV (`[3.58.0]`), tras las incidencias con instante (`[3.57.0]`), tras el comparador entre versiones y la prueba de oro (`[3.56.0]`), tras la clasificación de cambios, las incidencias fuera del esperado y el almacén comprimido (`[3.55.0]`), tras el plano físico (`[3.53.0]`), tras la consolidación humana con versiones (`[3.51.0]`, `[3.52.0]`). Anterior: **revisión de toda la lógica de medición y análisis**
   (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
   regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
   (OQ-135 a OQ-141), dos de ellas contradicciones código↔documento que no se tocan hasta que decida.

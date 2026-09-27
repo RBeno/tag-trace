@@ -332,6 +332,41 @@ describe("consolidar · §6 paso G, §10 cadena de hashes", () => {
     expect(within.changes?.[0]?.reason).toMatch(/^Se vio en 1 de los 1 fichero anteriores del periodo/);
   });
 
+  it("OQ-158: la medida de una incidencia no cuenta hacia sostenido; una deriva pendiente sí (guarda de regresión)", async () => {
+    const v1 = await version1();
+    const ring7 = [...RING, "T007"];
+    const thresholds = { ...THRESHOLDS, changeClass: { sustainedFiles: 3, collectiveShare: 0.5 } };
+    const key = "vertice|T007|aparece";
+    const f2 = snap({ sourceId: "f2", day: 30, ring: ring7 });
+    const v2 = await consolidate(previewConsolidation(input({ snapshot: f2, versions: [v1], history: [f2], thresholds })), { ...CONTEXT, snapshot: f2, now: 40 * DAY });
+    const pendingOf = (version: ConsolidatedVersion) => version.changes?.find((change) => change.key === key);
+    expect(pendingOf(v2)).toMatchObject({ cls: "deriva-pendiente", files: 1, adopted: false });
+    // La misma versión, guardada como si T007 hubiera estado bajo un hallazgo grave confirmado dos ficheros.
+    const asIncident = (version: ConsolidatedVersion): ConsolidatedVersion => ({
+      ...version,
+      changes: (version.changes ?? []).map((change) => (change.key === key ? { ...change, cls: "incidencia" as const, files: 2 } : change)),
+    });
+    const asPending = (version: ConsolidatedVersion): ConsolidatedVersion => ({
+      ...version,
+      changes: (version.changes ?? []).map((change) => (change.key === key ? { ...change, files: 2 } : change)),
+    });
+    const f3 = snap({ sourceId: "f3", day: 41, ring: ring7 });
+    // Tras una incidencia, la cuenta empieza con la historia nueva: 1 fichero, no 3, y sin adoptar.
+    const afterIncident = previewConsolidation(input({ snapshot: f3, versions: [v1, asIncident(v2)], history: [f3], thresholds })).changes?.find((change) => change.key === key);
+    expect(afterIncident).toMatchObject({ cls: "deriva-pendiente", files: 1, adopted: false });
+    expect(afterIncident?.reason).not.toMatch(/periodos ya consolidados/);
+    // Tras una deriva pendiente de dos ficheros sigue contando: 3 ficheros seguidos.
+    const afterPending = previewConsolidation(input({ snapshot: f3, versions: [v1, asPending(v2)], history: [f3], thresholds })).changes?.find((change) => change.key === key);
+    // (Sigue pendiente porque esta instantánea sintética no trae secciones y no se sabe si es colectivo;
+    // lo que se guarda aquí es que la cuenta continúa.)
+    expect(afterPending).toMatchObject({ cls: "deriva-pendiente", files: 3, adopted: false });
+    expect(afterPending?.reason).toMatch(/^Se mantiene en 3 ficheros seguidos, contando 2 de periodos ya consolidados \(hacen falta 3\)/);
+    // Y una incidencia que ya no está en el fichero siguiente tampoco «volvió»: no era pendiente.
+    const gone = snap({ sourceId: "f3g", day: 41 });
+    expect(previewConsolidation(input({ snapshot: gone, versions: [v1, asIncident(v2)], history: [gone], thresholds })).changes?.filter((change) => change.key === key)).toEqual([]);
+    expect(previewConsolidation(input({ snapshot: gone, versions: [v1, v2], history: [gone], thresholds })).changes?.map((change) => change.cls)).toEqual(["evento-puntual"]);
+  });
+
   it("OQ-149: la incidencia lleva la ventana, el AGV y los tags explícitos del hallazgo", () => {
     const window = { from: 2 * DAY, to: 2 * DAY + 600 * SECOND };
     const snapshot = snap({
@@ -502,6 +537,11 @@ describe("linajes · §10", () => {
     expect(lineageChainProblem(local, { id: "A", hashes: [hashes[0] as string, hashes[1] as string, hashes[1] as string] })).toMatch(/repite la versión v2/);
     expect(lineageChainProblem(local, { id: "A", hashes: [hashes[0] as string, hashes[2] as string] })).toMatch(/v3 .* no encadena/);
     expect(lineageChainProblem(local, { id: "A", hashes: [hashes[1] as string] })).toMatch(/primera versión .* declara una anterior/);
+    // OQ-157: dos versiones con el mismo número y distinto hash en un linaje ([v1, v2, v2', v3]) son una cadena rota.
+    const twin = { ...(local[1] as ConsolidatedVersion), hash: "otro-hash-v2" };
+    expect(lineageChainProblem([...local, twin], { id: "A", hashes: [hashes[0] as string, hashes[1] as string, twin.hash, hashes[2] as string] })).toMatch(
+      /el linaje «A» tiene dos versiones v2/,
+    );
 
     // Con la anterior revocada al consolidar, la siguiente encadena con la vigente: no con la inmediata.
     const revoked = [local[0] as ConsolidatedVersion, revokeVersion(local[1] as ConsolidatedVersion, "error", 1)];

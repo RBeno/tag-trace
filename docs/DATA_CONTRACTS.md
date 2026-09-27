@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.31.1
+version: 0.31.2
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -636,7 +636,9 @@ una incidencia —principio y fin, por defecto los de la incidencia—: la versi
 fichero original archivado, verificado por su huella, sin las lecturas de ese tiempo; si la
 incidencia es de un AGV, solo las de ese AGV. El tiempo recortado queda sin cobertura, no como
 silencio. La instantánea guardada del fichero no cambia. La versión guarda los recortes (`cuts`,
-con cuántas lecturas quitó cada uno) y entran en su hash.
+con cuántas lecturas quitó cada uno) y entran en su hash. Una incidencia puede tener varios recortes
+en `cuts` —uno por parada, OQ-155— que no se solapan entre sí; dos incidencias distintas sí pueden
+recortar el mismo tiempo.
 
 **Desde 3.55.0** la versión guarda además `changes` (cada cambio frente al esperado anterior con su
 clase, R-MEM-005), `incidents` (las incidencias del periodo con lo que tocan, R-INC-004) y, si

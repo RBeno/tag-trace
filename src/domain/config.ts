@@ -239,6 +239,10 @@ export interface AnalysisConfig {
  *   una parada precisa son la definición que el propietario aprobó, no una medida de planta: el 99 y
  *   el 95 dejan fuera lo raro sin dejar fuera lo habitual, y el 5 es la espera corta que casi todas
  *   superan. Cambiarlos es cambiar la definición, y se hace aquí con su razón, no en el estimador.
+ *   `sameTimeMeasureToleranceMs` (60 min; OQ-154, propietario 2026-09-27) es una tolerancia de medida,
+ *   no operativa: ancha para que la estimación de «a la misma hora» pueda ver una tolerancia de planta
+ *   mayor que la vigente (15 min), con la que nunca podría salir un valor mayor que ella. Solo sirve
+ *   para estimar; el análisis sigue emparejando con `flowStops.sameTimeToleranceMs`.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -296,7 +300,15 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   // El mismo «al menos dos AGV distintos» que R-DAT-021 exige para afirmar una ausencia.
   plan: { minVehiclesForProposal: 2 },
   changeClass: { sustainedFiles: 3, collectiveShare: 0.5 },
-  plantEstimators: { nightLowShare: 0.5, returnGapQuantile: 0.99, headWaitQuantile: 0.95, precisePauseQuantile: 0.05 },
+  plantEstimators: {
+    nightLowShare: 0.5,
+    returnGapQuantile: 0.99,
+    headWaitQuantile: 0.95,
+    precisePauseQuantile: 0.05,
+    // Tolerancia de medida, no operativa: ancha para que la estimación pueda ver una tolerancia de
+    // planta mayor que la vigente; solo para estimar (OQ-154).
+    sameTimeMeasureToleranceMs: 60 * 60_000,
+  },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

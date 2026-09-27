@@ -82,11 +82,17 @@ export function incidentWhen(incident: IncidentRecord, format: (utcMs: number) =
   return windows.map((window) => (window.from === window.to ? `en ${format(window.from)}` : `de ${format(window.from)} a ${format(window.to)}`)).join(" · ");
 }
 
-/** La ventana que se propone recortar de una incidencia: la suya; con varias paradas, de la primera a la última. */
-export function incidentSpan(incident: IncidentRecord): { readonly from: number; readonly to: number } | null {
-  const windows = incident.windows ?? (incident.window === undefined ? [] : [incident.window]);
-  if (windows.length === 0) return null;
-  return { from: Math.min(...windows.map((window) => window.from)), to: Math.max(...windows.map((window) => window.to)) };
+/**
+ * Las ventanas que se ofrecen recortar de una incidencia, una fila por cada una (OQ-155, propietario
+ * 2026-09-27): `windows` si las trae (una por parada), si no su `window`; ninguna si no tiene.
+ */
+export function incidentWindows(incident: IncidentRecord): readonly { readonly from: number; readonly to: number }[] {
+  return incident.windows ?? (incident.window === undefined ? [] : [incident.window]);
+}
+
+/** La clave de una fila de recorte: la incidencia y cuál de sus ventanas. */
+function cutChoiceKey(incidentKey: string, windowIndex: number): string {
+  return `${incidentKey}#${windowIndex}`;
 }
 
 /** Un recorte aplicado, en palabras (OQ-148): «de lun 12:05 a lun 12:40, solo el AGV 0007: quita 3 lecturas». */
@@ -236,8 +242,9 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
   /** Los botones que hablan con el Worker, para apagarlos mientras responde. */
   const senders: HTMLButtonElement[] = [];
   /**
-   * Lo que la persona eligió recortar de cada incidencia (OQ-148), por clave: la casilla y los dos
-   * campos tal como los escribió. Se conserva entre previsualizaciones y se olvida con otro análisis.
+   * Lo que la persona eligió recortar de cada ventana de cada incidencia (OQ-148; una fila por parada,
+   * OQ-155), por `cutChoiceKey`: la casilla y los dos campos tal como los escribió. Se conserva entre
+   * previsualizaciones y se olvida con otro análisis.
    */
   const cutChoices = new Map<string, { enabled: boolean; from: string; to: string }>();
 
@@ -433,8 +440,9 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
   }
 
   /**
-   * Los recortes marcados (OQ-148), leídos de sus campos. Un campo que conserva el valor propuesto da
-   * el instante exacto de la ventana, sin redondear al segundo. Devuelve el motivo si alguno no se entiende.
+   * Los recortes marcados (OQ-148), leídos de sus campos: uno por fila encendida, que con varias paradas
+   * es uno por parada (OQ-155). Un campo que conserva el valor propuesto da el instante exacto de la
+   * ventana, sin redondear al segundo. Devuelve el motivo si alguno no se entiende.
    */
   function chosenCuts(shown: ConsolidationPreview): { readonly cuts: readonly IncidentCut[] } | { readonly error: string } {
     const toInput = input.toDateTimeInput;
@@ -442,64 +450,94 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     if (toInput === undefined || fromInput === undefined) return { cuts: [] };
     const cuts: IncidentCut[] = [];
     for (const incident of shown.incidents ?? []) {
-      const choice = cutChoices.get(incident.key);
-      const span = incidentSpan(incident);
-      if (choice === undefined || !choice.enabled || span === null) continue;
-      const applied = (shown.cuts ?? []).find((cut) => cut.incidentKey === incident.key);
-      const exact = (value: string): number | null => {
-        for (const known of [span.from, span.to, applied?.from, applied?.to]) {
-          if (known !== undefined && toInput(known) === value) return known;
-        }
-        return fromInput(value);
-      };
-      const from = exact(choice.from);
-      const to = exact(choice.to);
-      if (from === null || to === null) return { error: `El recorte de «${incident.title}» necesita un principio y un fin con fecha y hora.` };
-      if (from > to) return { error: `El recorte de «${incident.title}» empieza después de terminar.` };
-      cuts.push({ incidentKey: incident.key, from, to, ...(incident.agvId === undefined ? {} : { agvId: incident.agvId }) });
+      const applied = (shown.cuts ?? []).filter((cut) => cut.incidentKey === incident.key);
+      const windows = incidentWindows(incident);
+      for (let windowIndex = 0; windowIndex < windows.length; windowIndex += 1) {
+        const window = windows[windowIndex] as { readonly from: number; readonly to: number };
+        const choice = cutChoices.get(cutChoiceKey(incident.key, windowIndex));
+        if (choice === undefined || !choice.enabled) continue;
+        const exact = (value: string): number | null => {
+          for (const known of [window.from, window.to, ...applied.flatMap((cut) => [cut.from, cut.to])]) {
+            if (toInput(known) === value) return known;
+          }
+          return fromInput(value);
+        };
+        const from = exact(choice.from);
+        const to = exact(choice.to);
+        const which = windows.length === 1 ? `El recorte de «${incident.title}»` : `El recorte ${windowIndex + 1} de «${incident.title}»`;
+        if (from === null || to === null) return { error: `${which} necesita un principio y un fin con fecha y hora.` };
+        if (from > to) return { error: `${which} empieza después de terminar.` };
+        cuts.push({ incidentKey: incident.key, from, to, ...(incident.agvId === undefined ? {} : { agvId: incident.agvId }) });
+      }
     }
     return { cuts };
   }
 
   /**
    * ¿Lo marcado en las casillas y los campos es lo que esta previsualización aplicó? Si no, confirmar
-   * escribiría otra cosa que la que se ve: el botón se apaga hasta volver a previsualizar.
+   * escribiría otra cosa que la que se ve: el botón se apaga hasta volver a previsualizar. Se comparan
+   * como conjuntos, ordenados: con varios recortes de una incidencia el orden de las filas no importa.
    */
   function cutsMatchShown(shown: ConsolidationPreview): boolean {
     const chosen = chosenCuts(shown);
     if ("error" in chosen) return false;
     const applied = shown.cuts ?? [];
     if (chosen.cuts.length !== applied.length) return false;
-    return chosen.cuts.every((cut) =>
-      applied.some((other) => other.incidentKey === cut.incidentKey && other.from === cut.from && other.to === cut.to && other.agvId === cut.agvId),
-    );
+    const key = (cut: IncidentCut): string => `${cut.incidentKey}\u0000${cut.from}\u0000${cut.to}\u0000${cut.agvId ?? ""}`;
+    const left = chosen.cuts.map(key).sort();
+    const right = applied.map(key).sort();
+    return left.every((entry, index) => entry === right[index]);
   }
 
   /** Se fija al pintar la previsualización; cada cambio en un recorte lo llama para apagar o encender «Confirmar». */
   let syncConfirm: () => void = () => {};
 
-  /** La casilla «Recortar su ventana al consolidar» de una incidencia con ventana, y sus dos campos. */
-  function cutControls(incident: IncidentRecord, span: { readonly from: number; readonly to: number }, shown: ConsolidationPreview, index: number): HTMLElement {
+  /**
+   * Una fila de recorte de una incidencia con ventana: la casilla («Recortar su ventana al consolidar»
+   * con una sola ventana; «Recortar esta parada al consolidar» con varias, OQ-155) y sus dos campos,
+   * propuestos con esa ventana. `windowIndex` dice cuál de las `count` ventanas de la incidencia es.
+   */
+  function cutControls(
+    incident: IncidentRecord,
+    window: { readonly from: number; readonly to: number },
+    shown: ConsolidationPreview,
+    index: number,
+    windowIndex: number,
+    count: number,
+  ): HTMLElement {
     const holder = node("div", "memory-cut");
+    holder.dataset["window"] = String(windowIndex);
     const toInput = input.toDateTimeInput;
     const available = shown.originalArchived === true && toInput !== undefined && input.fromDateTimeInput !== undefined;
     const toggle = node("input", "memory-cut-toggle");
     toggle.type = "checkbox";
-    toggle.id = `memory-cut-${index}`;
+    toggle.id = `memory-cut-${index}-${windowIndex}`;
     const label = node("label", "memory-cut-label");
     label.htmlFor = toggle.id;
-    label.append(toggle, " Recortar su ventana al consolidar");
+    if (count > 1) {
+      const format = input.formatTick ?? input.formatInstant;
+      const when = window.from === window.to ? `en ${format(window.from)}` : `de ${format(window.from)} a ${format(window.to)}`;
+      holder.append(node("p", "muted memory-cut-which", `Parada ${windowIndex + 1} de ${count}: ${when}`));
+    }
+    label.append(toggle, count > 1 ? " Recortar esta parada al consolidar" : " Recortar su ventana al consolidar");
     holder.append(label);
     if (!available || toInput === undefined) {
       toggle.disabled = true;
-      holder.append(node("p", "muted memory-cut-unavailable", shown.cutUnavailable ?? "Sin el fichero original archivado no se puede recortar: vuelve a cargarlo."));
+      // Con varias paradas el motivo se dice una vez, en la primera fila.
+      if (windowIndex === 0) {
+        holder.append(node("p", "muted memory-cut-unavailable", shown.cutUnavailable ?? "Sin el fichero original archivado no se puede recortar: vuelve a cargarlo."));
+      }
       return holder;
     }
-    const applied = (shown.cuts ?? []).find((cut) => cut.incidentKey === incident.key);
-    let choice = cutChoices.get(incident.key);
+    // Sin elección guardada, la fila arranca con el recorte que esta previsualización aplicó a esa
+    // ventana (el que la toca), y si no hay, apagada y con la ventana propuesta.
+    const appliedAll = (shown.cuts ?? []).filter((cut) => cut.incidentKey === incident.key);
+    const applied = count === 1 ? appliedAll[0] : appliedAll.find((cut) => cut.from <= window.to && cut.to >= window.from);
+    const choiceKey = cutChoiceKey(incident.key, windowIndex);
+    let choice = cutChoices.get(choiceKey);
     if (choice === undefined) {
-      choice = { enabled: applied !== undefined, from: toInput(applied?.from ?? span.from), to: toInput(applied?.to ?? span.to) };
-      cutChoices.set(incident.key, choice);
+      choice = { enabled: applied !== undefined, from: toInput(applied?.from ?? window.from), to: toInput(applied?.to ?? window.to) };
+      cutChoices.set(choiceKey, choice);
     }
     const current = choice;
     toggle.checked = current.enabled;
@@ -510,7 +548,7 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       ["from", "Desde"],
       ["to", "Hasta"],
     ] as const) {
-      const id = `memory-cut-${index}-${side}`;
+      const id = `memory-cut-${index}-${windowIndex}-${side}`;
       const fieldLabel = node("label", undefined, text);
       fieldLabel.htmlFor = id;
       const field = node("input", `memory-cut-${side}`);
@@ -601,10 +639,13 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       const when = incidentWhen(incident, input.formatTick ?? input.formatInstant);
       if (when !== "") item.append(node("span", "memory-incident-window", when), " · ");
       item.append(node("span", undefined, incidentReach(incident)));
-      const span = incidentSpan(incident);
-      if (span !== null) {
+      const windows = incidentWindows(incident);
+      if (windows.length > 0) {
         withWindow += 1;
-        item.append(cutControls(incident, span, shown, index));
+        // Una fila por ventana: con varias paradas, cada una se recorta (o no) por su cuenta (OQ-155).
+        const rows = node("div", "memory-cut-rows");
+        windows.forEach((window, windowIndex) => rows.append(cutControls(incident, window, shown, index, windowIndex, windows.length)));
+        item.append(rows);
       }
       list.append(item);
     });

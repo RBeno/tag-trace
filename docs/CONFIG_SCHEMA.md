@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.29.1
+version: 0.29.2
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -282,6 +282,7 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `change_class.sustained_files`, `change_class.collective_share` | R-MEM-005 (OQ-146, OQ-147): ficheros seguidos para que un cambio sea sostenido (3) y parte de los AGV que pasan por el sitio que tiene que superarse para que sea colectivo (0,5, «la mayoría»). Decididos por el propietario el 2026-09-27. |
 | `drift.max_chance` | R-DAT-016 (OQ-138): azar máximo para afirmar un `desaparecido` o un `nuevo` entre periodos. Provisional: 0,001, el mismo que `tag_changes.max_chance`. |
 | `plant_estimators.night_low_share`, `plant_estimators.return_gap_quantile`, `plant_estimators.head_wait_quantile`, `plant_estimators.precise_pause_quantile` | OQ-151: los números de la definición aprobada de los estimadores de los valores de planta —la mitad de la mediana de producción para que una hora sea de noche (0,5), y los cuantiles de los huecos que volvieron (0,99), de las esperas del primero de cola (0,95) y de las esperas en una parada precisa (0,05)—. No son valores de planta: son cómo se miden. El percentil 95 del tránsito de un tramo cargado (margen del FIFO) lo da `fifo.ts` con su mediana y no está aquí. |
+| `plant_estimators.same_time_measure_tolerance_ms` | OQ-154 (propietario, 2026-09-27): margen de hora local con que `measurePlantValues` empareja, **solo para medir**, las paradas de la producción que se repiten otro día. Provisional: 60 min. Es una tolerancia de medida, no operativa: ancha para que la estimación de «a la misma hora» pueda ver una tolerancia de planta mayor que la vigente (`flow_stops.same_time_tolerance_ms`, 15 min), con la que nunca podría salir un valor mayor que ella. El análisis (`productionStops`) sigue emparejando con la vigente; esta no cambia ningún resultado del análisis. |
 
 Los valores que hoy viven en `PROVISIONAL_CONFIG` con aspecto de dato de planta —horas de arranque de
 turno, regímenes, la hora sin leer que hace una desconexión, los dos minutos del bloqueo, la
@@ -315,12 +316,24 @@ definición (la mitad, los percentiles) están en `plant_estimators`. Cómo mide
 | Valor | De qué análisis | Estimador |
 |---|---|---|
 | Régimen de noche | perfil horario de toda la flota, por hora cubierta | tramo circular de horas con menos de `night_low_share` (la mitad) de la mediana de las horas de fuera de la **noche vigente**; exige cada hora del día cubierta entera al menos una vez (el día del cambio de hora le falta una y no estima), y dos tramos igual de largos no se eligen |
-| Horas de turno | paradas de la producción del fichero | hora de inicio de las que se repiten otro día (la de dos repeticiones a las 13:29 y 13:31 es las 14); con un solo día, no estima. Las repeticiones son las que emparejó la **tolerancia vigente** de «a la misma hora» (OQ-154) |
-| «A la misma hora» | las mismas paradas | mayor diferencia en minutos entre repeticiones. **Acotado por el valor vigente (OQ-154):** las repeticiones se emparejan en el análisis con la tolerancia vigente, así que el estimador nunca propondrá una tolerancia mayor que la que rige; lo dice en su explicación |
+| Horas de turno | paradas de la producción del fichero | hora de inicio de las que se repiten otro día (la de dos repeticiones a las 13:29 y 13:31 es las 14); con un solo día, no estima. Las repeticiones se emparejan al medir con la **tolerancia de medida** `plant_estimators.same_time_measure_tolerance_ms` (60 min; OQ-154), no con la vigente |
+| «A la misma hora» | las mismas paradas | mayor diferencia en minutos entre repeticiones, emparejadas al medir con la **tolerancia de medida** (60 min; OQ-154), así que puede proponer una tolerancia mayor que la que rige; lo dice en su explicación |
 | Desconexión | huecos de cada AGV que terminan en una lectura, sin los de carga online | cuantil `return_gap_quantile` (percentil 99), con al menos `bands.min_band_samples` huecos |
 | Bloqueo del primero de cola | paradas sin explicación del primero de cola que acabaron avanzando | cuantil `head_wait_quantile` (percentil 95) de su exceso, con al menos `bands.min_band_samples` |
 | Margen del FIFO | tránsito de cada tramo cargado | el mayor percentil 95 menos mediana (el percentil lo da `fifo.ts`) |
 | Parada precisa | esperas en las paradas precisas declaradas | cuantil `precise_pause_quantile` (percentil 5), con al menos `critical_points.parada_precisa.min_samples` |
+
+**Tolerancia de medida (3.62.0, OQ-154; propietario, 2026-09-27).** Hasta 3.61.0 las repeticiones de
+una parada eran las que el análisis emparejó con la tolerancia vigente de «a la misma hora», y el
+estimador de esa tolerancia —y el de las horas de turno, que depende del mismo emparejamiento— no
+podía proponer un valor mayor que el vigente. Desde 3.62.0 `measurePlantValues` vuelve a emparejar las
+paradas del fichero con `plant_estimators.same_time_measure_tolerance_ms` (60 min), solo para medir; el
+emparejamiento operativo del análisis no cambia. Las medidas (`plantMeasures`) guardadas en
+instantáneas anteriores a 3.62.0 se emparejaron con la vigente y **quedan como están** (append-only,
+sin corrección): la propuesta recalcula las estimaciones desde las medidas guardadas, no las medidas,
+así que hasta que haya `change_class.sustained_files` versiones medidas con 3.62.0 la coincidencia
+puede no darse, y se enseña la estimación de cada versión. El límite se mantiene solo para la noche,
+que se estima frente a la noche vigente (la mediana de producción es la de fuera de ella).
 
 ### 3.6 Cohortes
 

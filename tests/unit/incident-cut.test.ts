@@ -4,7 +4,8 @@
  * Lo que se fija: dentro de `[from, to]` se quitan las lecturas, ambos extremos incluidos; con AGV,
  * solo las de ese AGV; cada recorte cuenta lo que quitó; el tiempo de un recorte de todo el circuito
  * sale de la cobertura (sin cobertura, no silencio) y el de un AGV no; y los recortes pedidos se
- * comprueban contra las incidencias y la ventana del fichero, con el AGV de la incidencia.
+ * comprueban contra las incidencias y la ventana del fichero, con el AGV de la incidencia. Una
+ * incidencia admite varios recortes, uno por parada, siempre que no se solapen (OQ-155).
  */
 
 import { describe, expect, it } from "vitest";
@@ -108,16 +109,93 @@ describe("checkCuts · contra las incidencias y la ventana del fichero", () => {
     expect(() => checkCuts([{ incidentKey: "parada|linea", from: 30 * SECOND, to: 20 * SECOND }], incidents, file)).toThrow(/principio anterior o igual/);
     expect(() => checkCuts([{ incidentKey: "parada|linea", from: 0, to: 200 * SECOND }], incidents, file)).toThrow(/se sale de la ventana del fichero/);
     expect(() => checkCuts([{ incidentKey: "deja-de-leer|0007", from: 20 * SECOND, to: 30 * SECOND, agvId: "0042" }], incidents, file)).toThrow(/no es del AGV/);
+  });
+
+  // OQ-155 (propietario 2026-09-27): varios recortes por incidencia, uno por parada; nunca solapados.
+  it("dos recortes de una incidencia que no se solapan pasan, y `cutReadings` quita los dos", () => {
+    const cuts = checkCuts(
+      [
+        { incidentKey: "parada|linea", from: 10 * SECOND, to: 12 * SECOND },
+        { incidentKey: "parada|linea", from: 14 * SECOND, to: 16 * SECOND },
+      ],
+      incidents,
+      file,
+    );
+    expect(cuts).toEqual([
+      { incidentKey: "parada|linea", from: 10 * SECOND, to: 12 * SECOND },
+      { incidentKey: "parada|linea", from: 14 * SECOND, to: 16 * SECOND },
+    ]);
+    // Lecturas a 10, 11, 12 s y a 14, 15, 16 s: cada recorte quita las suyas, y las de en medio (13 s) se quedan.
+    const readings = [10, 11, 12, 13, 14, 15, 16, 17].map((second) => reading("0007", "T1", second * SECOND));
+    const { kept, applied } = cutReadings(readings, cuts);
+    expect(applied.map((cut) => cut.removed)).toEqual([3, 3]);
+    expect(kept.map((entry) => entry.time.utcMs / SECOND)).toEqual([13, 17]);
+    // Tocarse en un extremo ya es solaparse (ambos incluidos): 12 s caería en los dos.
     expect(() =>
       checkCuts(
         [
           { incidentKey: "parada|linea", from: 10 * SECOND, to: 12 * SECOND },
-          { incidentKey: "parada|linea", from: 14 * SECOND, to: 16 * SECOND },
+          { incidentKey: "parada|linea", from: 12 * SECOND, to: 16 * SECOND },
         ],
         incidents,
         file,
       ),
-    ).toThrow(/dos recortes/);
+    ).toThrow(/Los recortes de «Producción parada» se solapan: sepáralos o une los dos en uno/);
+    // Uno dentro del otro también; y el orden en que llegan no importa.
+    expect(() =>
+      checkCuts(
+        [
+          { incidentKey: "parada|linea", from: 14 * SECOND, to: 15 * SECOND },
+          { incidentKey: "parada|linea", from: 10 * SECOND, to: 16 * SECOND },
+        ],
+        incidents,
+        file,
+      ),
+    ).toThrow(/se solapan/);
+    // Dos incidencias distintas sí pueden recortar el mismo tiempo: la de un AGV y la del circuito.
+    expect(
+      checkCuts(
+        [
+          { incidentKey: "deja-de-leer|0007", from: 10 * SECOND, to: 16 * SECOND },
+          { incidentKey: "parada|linea", from: 10 * SECOND, to: 16 * SECOND },
+        ],
+        incidents,
+        file,
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("con tres paradas (`windows`) se admite un recorte por parada, cada uno con la suya, y `cutWarnings` no avisa", () => {
+    const three = [
+      {
+        key: "parada|linea",
+        title: "La producción se paró 3 veces",
+        windows: [
+          { from: 10 * SECOND, to: 20 * SECOND },
+          { from: 40 * SECOND, to: 45 * SECOND },
+          { from: 70 * SECOND, to: 90 * SECOND },
+        ],
+      },
+    ];
+    const requested = three[0]!.windows.map((window) => ({ incidentKey: "parada|linea", from: window.from, to: window.to }));
+    const cuts = checkCuts(requested, three, file);
+    expect(cuts).toEqual(requested);
+    expect(cutWarnings(cuts, three)).toEqual([]);
+    // Recortar solo la segunda y la tercera también vale: la persona elige cuáles.
+    expect(checkCuts(requested.slice(1), three, file)).toHaveLength(2);
+    // Con los tres recortes, las lecturas de fuera de las paradas se quedan y las de dentro se van, cada una
+    // a su recorte: 10 y 20 s de 0007 más 10 s + 1 ms de 0042 (la de 20 s + 1 ms queda fuera); 40 s de los dos;
+    // 70, 80 y 90 s de 0007 más 70 y 80 s + 1 ms de 0042.
+    const { kept, applied } = cutReadings(READINGS, cuts);
+    expect(applied.map((cut) => cut.removed)).toEqual([3, 2, 5]);
+    expect(kept.filter((entry) => entry.agvId === "0007").map((entry) => entry.time.utcMs / SECOND)).toEqual([0, 30, 50, 60, 100]);
+    // Y la cobertura pierde los tres tramos, no la envolvente.
+    expect(coverageWithoutCuts([file], cuts)).toEqual([
+      { from: 0, to: 10 * SECOND - 1 },
+      { from: 20 * SECOND + 1, to: 40 * SECOND - 1 },
+      { from: 45 * SECOND + 1, to: 70 * SECOND - 1 },
+      { from: 90 * SECOND + 1, to: 100 * SECOND },
+    ]);
   });
 
   it("un recorte fuera de la ventana de su incidencia pasa, pero `cutWarnings` lo avisa; uno que la toca, no", () => {

@@ -194,9 +194,9 @@ describe("measurePlantValues · recorta a la ventana del fichero lo que ya se an
       estimators: PROVISIONAL_CONFIG.plantEstimators,
       hourly: { counts: Array.from({ length: 24 }, (_, hour) => hour), days: 1 },
       productionStops: [
-        { fromUtcMs: from + 10 * MINUTE, toUtcMs: from + 20 * MINUTE, sameTimeOn: [from + 30 * MINUTE, from - DAY] },
-        { fromUtcMs: from + 30 * MINUTE, toUtcMs: from + 40 * MINUTE, sameTimeOn: [from + 10 * MINUTE] },
-        { fromUtcMs: from - DAY, toUtcMs: from - DAY + 10 * MINUTE, sameTimeOn: [from + 10 * MINUTE] },
+        { fromUtcMs: from + 10 * MINUTE, toUtcMs: from + 20 * MINUTE },
+        { fromUtcMs: from + 30 * MINUTE, toUtcMs: from + 40 * MINUTE },
+        { fromUtcMs: from - DAY, toUtcMs: from - DAY + 10 * MINUTE },
       ],
       gaps: [
         { fromUtcMs: from, toUtcMs: from + 5 * MINUTE, durationMs: 5 * MINUTE, cause: "silencio" },
@@ -219,16 +219,50 @@ describe("measurePlantValues · recorta a la ventana del fichero lo que ya se an
     expect(out.hourly.coveredMs[8]).toBe(HOUR);
     expect(out.hourly.coveredMs[9]).toBe(30 * MINUTE);
     expect(out.hourly.coveredMs.reduce((sum, ms) => sum + ms, 0)).toBe(90 * MINUTE);
-    // La del día anterior no es de este fichero: ni está ni cuenta como repetición.
+    // La del día anterior no es de este fichero: ni está ni cuenta como repetición. Las dos del fichero
+    // son del mismo día local: no se repiten «otro día» (hasta 3.61.0 la medida copiaba `sameTimeOn`).
     expect(out.productionStops).toEqual([
-      { day: "2026-01-24", minute: 8 * 60 + 10, sameTimeAs: [1] },
-      { day: "2026-01-24", minute: 8 * 60 + 30, sameTimeAs: [0] },
+      { day: "2026-01-24", minute: 8 * 60 + 10, sameTimeAs: [] },
+      { day: "2026-01-24", minute: 8 * 60 + 30, sameTimeAs: [] },
     ]);
     expect(out.returnGaps).toEqual({ n: 1, valueMs: 5 * MINUTE });
     expect(out.headWaits).toEqual({ n: 1, valueMs: 40_000 });
     expect(out.loadedSpans).toEqual([{ spanId: "cargado-1", passes: 3, medianTransitMs: 100, p95TransitMs: 150 }]);
     // Con la hora al minuto no se miden esperas: ninguna muestra.
     expect(out.precisePauses).toEqual({ declared: 1, measurable: false, n: 0, valueMs: null });
+  });
+
+  it("OQ-154: las repeticiones se emparejan con la tolerancia de medida (60 min), no con la vigente (15 min)", () => {
+    const from = Date.UTC(2026, 0, 24, 0, 0);
+    // Tres días con una parada a las 10:00, 10:20 y 10:40: con 15 min no se repetiría ninguna.
+    const starts = [from + 10 * HOUR, from + DAY + 10 * HOUR + 20 * MINUTE, from + 2 * DAY + 10 * HOUR + 40 * MINUTE];
+    const input: PlantMeasureInput = {
+      window: { from, to: from + 3 * DAY },
+      zone: "UTC",
+      estimators: PROVISIONAL_CONFIG.plantEstimators,
+      hourly: { counts: new Array<number>(24).fill(100), days: 3 },
+      productionStops: starts.map((start) => ({ fromUtcMs: start, toUtcMs: start + 20 * MINUTE })),
+      gaps: [],
+      vehicleStops: [],
+      loadedSpans: null,
+      precisePauses: { declared: 0, measurable: true, durationsMs: [] },
+    };
+    expect(PROVISIONAL_CONFIG.flowStops.sameTimeToleranceMs).toBe(15 * MINUTE);
+    expect(PROVISIONAL_CONFIG.plantEstimators.sameTimeMeasureToleranceMs).toBe(60 * MINUTE);
+    const out = measurePlantValues(input);
+    expect(out.productionStops).toEqual([
+      { day: "2026-01-24", minute: 600, sameTimeAs: [1, 2] },
+      { day: "2026-01-25", minute: 620, sameTimeAs: [0, 2] },
+      { day: "2026-01-26", minute: 640, sameTimeAs: [0, 1] },
+    ]);
+    // La estimación ve 40 min con la vigente en 15: hasta 3.61.0 no podía salir un valor mayor que ella.
+    const estimate = estimatePlantValue("misma-hora", out, PROVISIONAL_CONFIG);
+    expect(estimate.value).toBe(40 * MINUTE);
+    expect(estimate.why).toMatch(/tolerancia de medida de 60 min/);
+    expect(estimatePlantValue("arranque-turnos", out, PROVISIONAL_CONFIG).value).toEqual([10]);
+    // Con la tolerancia de medida en la vigente se vuelve al límite antiguo: nada se repite.
+    const narrow = measurePlantValues({ ...input, estimators: { ...input.estimators, sameTimeMeasureToleranceMs: 15 * MINUTE } });
+    expect(narrow.productionStops.map((stop) => stop.sameTimeAs)).toEqual([[], [], []]);
   });
 
   it("los cuantiles son los de la configuración, no del código: con otros, otra medida", () => {
@@ -279,13 +313,16 @@ describe("estimatePlantValue · lo que hereda de la configuración vigente lo di
     { day: "2026-01-25", minute: 14 * 60 + 3, sameTimeAs: [0] },
   ];
 
-  it("«a la misma hora» y las horas de turno dicen la tolerancia vigente con que se emparejaron las repeticiones", () => {
+  it("«a la misma hora» y las horas de turno dicen la tolerancia de medida con que se emparejaron las repeticiones, no la vigente", () => {
     const tolerance = estimatePlantValue("misma-hora", measures({ days: 2, productionStops: stops }), PROVISIONAL_CONFIG);
     expect(tolerance.value).toBe(5 * MINUTE);
-    expect(tolerance.why).toMatch(/tolerancia vigente de 15 min/);
-    expect(tolerance.why).toMatch(/no puede salir un valor mayor/);
-    expect(estimatePlantValue("arranque-turnos", measures({ days: 2, productionStops: stops }), PROVISIONAL_CONFIG).why).toMatch(/tolerancia vigente de 15 min/);
-    expect(estimatePlantValue("misma-hora", measures({ days: 2 }), PROVISIONAL_CONFIG).why).toMatch(/tolerancia vigente de 15 min/);
+    expect(tolerance.why).toMatch(/tolerancia de medida de 60 min/);
+    expect(tolerance.why).not.toMatch(/vigente|no puede salir un valor mayor/);
+    expect(estimatePlantValue("arranque-turnos", measures({ days: 2, productionStops: stops }), PROVISIONAL_CONFIG).why).toMatch(/tolerancia de medida de 60 min/);
+    expect(estimatePlantValue("misma-hora", measures({ days: 2 }), PROVISIONAL_CONFIG).why).toMatch(/tolerancia de medida de 60 min/);
+    // Es la de `plantEstimators`, no la operativa: cambiarla cambia lo que dice.
+    const other = { ...PROVISIONAL_CONFIG, plantEstimators: { ...PROVISIONAL_CONFIG.plantEstimators, sameTimeMeasureToleranceMs: 45 * MINUTE } };
+    expect(estimatePlantValue("misma-hora", measures({ days: 2, productionStops: stops }), other).why).toMatch(/tolerancia de medida de 45 min/);
   });
 
   it("la noche dice frente a qué noche vigente se midió la mediana de producción", () => {
