@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.21.0
+version: 0.22.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -141,7 +141,7 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
 - [ ] Incidencias excluidas del esperado. **Evidencia (3.55.0)**: un hallazgo grave confirmado se guarda como incidencia de la versión y lo que toca conserva en el esperado su valor anterior (R-INC-004, TC-293, TC-294). Falta: los hallazgos graves con instante no llegan a la instantánea (OQ-149).
 - [ ] Crecimiento normal dentro del presupuesto o desviación aceptada. **Evidencia (3.54.1, 3.55.0)**: medido con cuatro periodos del circuito de auditoría; el propietario aceptó el 5 % sobre el CSV con versiones comprimidas, que ocupan menos del 1 % (OQ-145, TC-292, TC-295).
 - [ ] Reapertura y round-trip de `.agvproj`. **Evidencia**: ida y vuelta con memoria y relación «idéntica»; adopción en almacén vacío (TC-285, TC-286). La bifurcación solo tiene prueba unitaria (TC-284).
-- [ ] Comparación histórica reproduce deltas correctos. **Evidencia parcial (3.53.0)**: con plano, un tag instalado sin leer ya no sale como «desaparece» sino «sin leer en su ubicación», y las estadísticas de dos periodos se combinan igual que medidas juntas (TC-288, TC-290).
+- [ ] Comparación histórica reproduce deltas correctos. **Evidencia (3.53.0, 3.56.0)**: con plano, un tag instalado sin leer ya no sale como «desaparece» sino «sin leer en su ubicación», y las estadísticas de dos periodos se combinan igual que medidas juntas (TC-288, TC-290). El comparador entre dos versiones cualesquiera y la prueba de oro de seis periodos con cambios plantados dan exactamente lo adoptado (TC-296, TC-297).
 
 ## G5 — Autorizar F6
 

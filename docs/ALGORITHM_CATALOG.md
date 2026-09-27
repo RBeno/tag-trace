@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.43.0
+version: 0.44.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -1169,4 +1169,15 @@ propone.
 - **`incidentSubjectsOf`**: los tags del anillo que nombran las partes de la clave del hallazgo
   (separadas por «|» o «+») y sus aristas de entrada y salida en los dos regímenes.
 - **`confirmedSubjectsOf`**: los tags de los eventos del plano con fecha efectiva dentro del periodo.
+
+## 6.25 Comparador entre versiones y prueba de oro, implementado (G4)
+
+`compareVersions` (`src/domain/memory.ts`): `compareSnapshots` entre los esperados de dos versiones,
+las versiones de entre medias con cuántas revocadas, y las claves que adoptó cada versión posterior a
+la menor hasta la mayor. `carryConsecutive`, usada por `previewConsolidation` cuando recibe la
+historia: un cambio no adoptado de la versión vigente que sigue en todos los ficheros nuevos suma sus
+ficheros, y `classifyChanges` vuelve a decidir su clase con la misma medida colectiva. La prueba de
+oro (`historia-oro.test.ts`): anillo de diez tags, cinco AGV y seis periodos; un tag que deja de
+leerse para todos se adopta en v4, un tramo lento de un periodo no se adopta, un tag nuevo que lee
+uno de cinco AGV no se adopta, y un hallazgo grave confirmado queda como incidencia.
 

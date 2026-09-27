@@ -4,7 +4,7 @@
  * Aquí no se decide nada: la memoria consolidada llega hecha del Worker (`MemoryViews`,
  * `ConsolidationPreview`, `ConsolidatedVersion`) y este módulo la traduce a texto y botones. Lo único
  * que sale de aquí son los mensajes que la persona pide con un botón: previsualizar, confirmar,
- * revocar y elegir linaje. La aplicación nunca consolida sola: el `commit` solo se envía desde el
+ * revocar, elegir linaje y comparar dos versiones. La aplicación nunca consolida sola: el `commit` solo se envía desde el
  * botón «Confirmar y consolidar», y solo cuando la previsualización no tiene bloqueos (R-MEM-001).
  *
  * Todo texto del dato entra por `textContent` (TH-007).
@@ -12,7 +12,7 @@
 
 import type { MemoryViews, VersionSummary } from "../application/protocol.js";
 import { CHANGE_CLASSES, type ChangeClass, type ChangeSummary, type ClassifiedChange, type IncidentRecord } from "../domain/change-class.js";
-import type { BlockerCode, ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryDecision } from "../domain/memory.js";
+import type { BlockerCode, ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryDecision, VersionComparison } from "../domain/memory.js";
 import { REVIEW_LABEL, REVIEW_STATES, type ReviewState } from "../domain/review.js";
 import { deltaView } from "./evolution.js";
 
@@ -79,6 +79,37 @@ export const LINEAGE_LABEL: Readonly<Record<LineageRelation, string>> = {
   bifurcada: "Las dos memorias están bifurcadas: hay que elegir cuál sigue.",
 };
 
+/** Un cambio adoptado, por su clave (`vertice|T|tipo` o `arista|A|B|régimen|sentido`), dicho en palabras. */
+const CHANGE_WORDS: Readonly<Record<string, string>> = {
+  aparece: "aparece",
+  desaparece: "desaparece",
+  "se-mueve": "se mueve",
+  "cambia-de-clase": "cambia de clase",
+  "deja-de-leerse": "deja de leerse",
+  "empieza-a-leerse": "empieza a leerse",
+  "no-observado": "sin leer en su ubicación",
+  "mas-lento": "más lento",
+  "mas-rapido": "más rápido",
+};
+const REGIME_WORDS: Readonly<Record<string, string>> = { produccion: "producción", noche: "noche" };
+
+export function adoptedChangeText(key: string): string {
+  const parts = key.split("|");
+  if (parts[0] === "vertice" && parts.length === 3) return `${parts[1]} ${CHANGE_WORDS[parts[2] as string] ?? parts[2]}`;
+  if (parts[0] === "arista" && parts.length === 5) {
+    return `tramo ${parts[1]} → ${parts[2]} ${CHANGE_WORDS[parts[4] as string] ?? parts[4]} (${REGIME_WORDS[parts[3] as string] ?? parts[3]})`;
+  }
+  return key;
+}
+
+/** «Entre medias: 2 versiones, 1 revocada.» */
+export function betweenLine(between: VersionComparison["between"]): string {
+  if (between.versions === 0) return "Entre medias: ninguna versión.";
+  const count = `${between.versions} ${between.versions === 1 ? "versión" : "versiones"}`;
+  const revoked = between.revoked === 0 ? "ninguna revocada" : `${between.revoked} ${between.revoked === 1 ? "revocada" : "revocadas"}`;
+  return `Entre medias: ${count}, ${revoked}.`;
+}
+
 const CHOICE_LABEL = {
   "conservar-local": "se conservó la memoria local",
   "adoptar-entrante": "se adoptó la memoria entrante; la local quedó archivada",
@@ -116,6 +147,8 @@ export interface MemoryPanelInput {
   readonly commit: (sourceId: string, note: string | null) => void;
   readonly revoke: (version: number, reason: string) => void;
   readonly resolveFork: (choice: "conservar-local" | "adoptar-entrante", reason: string) => void;
+  /** Pide al Worker el esperado de `from` frente al de `to`. Solo lee. */
+  readonly compare: (from: number, to: number) => void;
 }
 
 export interface MemoryPanel {
@@ -128,6 +161,7 @@ export interface MemoryPanel {
   showConsolidated(version: ConsolidatedVersion, memory: MemoryViews): void;
   showRevoked(version: number, memory: MemoryViews): void;
   showForkResolved(memory: MemoryViews): void;
+  showComparison(comparison: VersionComparison): void;
   showError(cause: string, recovery: string): void;
   /** Mientras el Worker trabaja, los botones que envían mensajes se apagan. */
   setBusy(busy: boolean): void;
@@ -143,6 +177,10 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
   let preview: ConsolidationPreview | null = null;
   let status: { readonly kind: "info" | "error"; readonly lines: readonly string[] } | null = null;
   let busy = false;
+  /** Lo elegido en «Comparar versiones» y la última comparación recibida. */
+  let compareFrom: number | null = null;
+  let compareTo: number | null = null;
+  let comparison: VersionComparison | null = null;
   /** Los botones que hablan con el Worker, para apagarlos mientras responde. */
   const senders: HTMLButtonElement[] = [];
 
@@ -579,6 +617,109 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     return out;
   }
 
+  // --- 5. Comparar versiones ----------------------------------------------------------------------
+
+  /** Por defecto, la primera y la vigente; si coinciden, la primera y la última. Lo elegido se conserva si sigue en la lista. */
+  function compareChoices(versions: readonly VersionSummary[], current: number | null): { readonly from: number; readonly to: number } {
+    const numbers = versions.map((entry) => entry.version).sort((a, b) => a - b);
+    const first = numbers[0] as number;
+    const last = numbers[numbers.length - 1] as number;
+    const from = compareFrom !== null && numbers.includes(compareFrom) ? compareFrom : first;
+    const defaultTo = current !== null && current !== first ? current : last;
+    const to = compareTo !== null && numbers.includes(compareTo) ? compareTo : defaultTo;
+    return { from, to };
+  }
+
+  function versionSelect(id: string, text: string, versions: readonly VersionSummary[], value: number, onChange: (value: number) => void): readonly HTMLElement[] {
+    const label = node("label", undefined, text);
+    label.htmlFor = id;
+    const select = node("select", "memory-compare-select");
+    select.id = id;
+    for (const entry of [...versions].sort((a, b) => a.version - b.version)) {
+      const option = node("option", undefined, `v${entry.version} — ${entry.basedOnFileName}${entry.revoked === null ? "" : " (revocada)"}`);
+      option.value = String(entry.version);
+      select.append(option);
+    }
+    select.value = String(value);
+    select.addEventListener("change", () => onChange(Number(select.value)));
+    return [label, select];
+  }
+
+  function compareBlock(memory: MemoryViews | null): readonly HTMLElement[] {
+    if (memory === null || memory.versions.length < 2) return [];
+    const box = node("div", "memory-compare");
+    box.setAttribute("role", "region");
+    box.setAttribute("aria-label", "Comparar versiones");
+    box.append(node("h3", undefined, "Comparar versiones"));
+    box.append(node("p", "muted", "El esperado de una versión frente al de otra, y lo que se adoptó entre medias. Solo se lee: no cambia la memoria."));
+    const choice = compareChoices(memory.versions, memory.current);
+    const go = sender("Comparar", "memory-compare-button");
+    const sync = (): void => {
+      go.disabled = busy || compareFrom === compareTo;
+    };
+    compareFrom = choice.from;
+    compareTo = choice.to;
+    const row = node("div", "button-row memory-compare-row");
+    row.append(
+      ...versionSelect("memory-compare-from", "De", memory.versions, choice.from, (value) => {
+        compareFrom = value;
+        sync();
+      }),
+      ...versionSelect("memory-compare-to", "a", memory.versions, choice.to, (value) => {
+        compareTo = value;
+        sync();
+      }),
+      go,
+    );
+    sync();
+    go.addEventListener("click", () => {
+      if (compareFrom === null || compareTo === null || compareFrom === compareTo) return;
+      status = null;
+      paintStatus();
+      input.compare(compareFrom, compareTo);
+    });
+    box.append(row);
+    if (comparison !== null) box.append(comparisonResult(comparison));
+    return [box];
+  }
+
+  function comparisonResult(shown: VersionComparison): HTMLElement {
+    const box = node("div", "memory-compare-result");
+    const end = (side: VersionComparison["from"]): string => `v${side.version} (${side.fileName}, ${input.formatWindow(side.window)})`;
+    box.append(node("h4", undefined, `De ${end(shown.from)} a ${end(shown.to)}`));
+    const revoked = [shown.from, shown.to].filter((side) => side.revoked).map((side) => `v${side.version}`);
+    if (revoked.length > 0) {
+      box.append(
+        node(
+          "p",
+          "memory-compare-revoked",
+          `${revoked.join(" y ")} ${revoked.length === 1 ? "está revocada" : "están revocadas"}: su esperado no forma parte de la cadena vigente.`,
+        ),
+      );
+    }
+    box.append(node("p", "muted memory-compare-between", betweenLine(shown.between)));
+    box.append(node("p", "muted", `Del esperado de v${shown.from.version} al de v${shown.to.version}. Hechos, no causas.`));
+    box.append(...deltaView(shown.delta, "Mismo esperado en las dos versiones: mismos tags, en el mismo sitio, con las mismas horquillas."));
+    box.append(adoptedHistory(shown.adoptedAlongTheWay));
+    return box;
+  }
+
+  /** «Adoptado en v2: …; en v3: …». Plegado si es largo. */
+  function adoptedHistory(steps: VersionComparison["adoptedAlongTheWay"]): HTMLElement {
+    const withChanges = steps.filter((step) => step.keys.length > 0);
+    if (withChanges.length === 0) return node("p", "memory-compare-history", "Ninguna versión adoptó cambios por el camino.");
+    const phrases = withChanges.map(
+      (step, index) => `${index === 0 ? "Adoptado en" : "en"} v${step.version}${step.revoked === true ? " (revocada)" : ""}: ${step.keys.map(adoptedChangeText).join(", ")}`,
+    );
+    const text = `${phrases.join("; ")}.`;
+    const total = withChanges.reduce((sum, step) => sum + step.keys.length, 0);
+    if (total <= 5) return node("p", "memory-compare-history", text);
+    const details = node("details", "memory-compare-history");
+    details.append(node("summary", undefined, `Adoptado por el camino: ${total} cambios en ${withChanges.length} ${withChanges.length === 1 ? "versión" : "versiones"}`));
+    details.append(node("p", undefined, text));
+    return details;
+  }
+
   function budgetLine(memory: MemoryViews | null): HTMLElement {
     const count = memory?.versions.length ?? 0;
     return node(
@@ -678,6 +819,7 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       ...comparisonBlock(memory),
       ...consolidateBlock(memory),
       ...versionsBlock(memory),
+      ...compareBlock(memory),
       budgetLine(memory),
       ...lineageEventsBlock(memory),
     );
@@ -691,6 +833,7 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     update(next) {
       context = next;
       preview = null;
+      comparison = null;
       render();
     },
     refresh() {
@@ -704,12 +847,14 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     showConsolidated(version, memory) {
       context = { ...context, memory };
       preview = null;
+      comparison = null;
       status = { kind: "info", lines: [`Versión v${version.version} consolidada.`, `Base: ${version.basedOn.fileName}; ${version.decisions.length} decisiones; ${kilobytes(memory.budgetBytes)} en total.`] };
       render();
     },
     showRevoked(version, memory) {
       context = { ...context, memory };
       preview = null;
+      comparison = null;
       status = {
         kind: "info",
         lines: [`Versión v${version} revocada.`, memory.current === null ? "No queda ninguna versión vigente." : `La vigente pasa a ser v${memory.current}.`],
@@ -719,8 +864,16 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     showForkResolved(memory) {
       context = { ...context, memory };
       preview = null;
+      comparison = null;
       status = { kind: "info", lines: ["Linaje elegido. La elección y su razón quedan en el historial."] };
       render();
+    },
+    showComparison(next) {
+      comparison = next;
+      compareFrom = next.from.version;
+      compareTo = next.to.version;
+      render();
+      body.querySelector<HTMLElement>(".memory-compare-result h4")?.scrollIntoView({ block: "start" });
     },
     showError(cause, recovery) {
       status = { kind: "error", lines: [`No se pudo completar la operación: ${cause}`, recovery] };
@@ -739,6 +892,8 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       if (control.classList.contains("memory-revoke-send") || control.classList.contains("memory-fork-keep") || control.classList.contains("memory-fork-adopt")) {
         const reason = control.closest(".memory-revoke-form, .memory-fork")?.querySelector<HTMLInputElement>("input");
         control.disabled = next || (reason?.value.trim() ?? "") === "";
+      } else if (control.classList.contains("memory-compare-button")) {
+        control.disabled = next || compareFrom === compareTo;
       } else if (control.classList.contains("memory-preview-button")) {
         control.disabled = next || context.circuitId === null || context.working === null || !context.working.hasSnapshot;
       } else {

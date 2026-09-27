@@ -208,6 +208,55 @@ test.describe("memoria consolidada", () => {
     await expect(page.locator(".tile[data-tile='memoria'] .tile-value")).toHaveText("v1");
   });
 
+  test("con dos versiones, «Comparar versiones» enseña el esperado de v1 frente al de v2", async ({ page }) => {
+    await freshPage(page);
+    await prepareCircuit(page);
+    await reviewAll(page);
+    await consolidateFirst(page);
+    const panel = page.locator(".memory-panel");
+    // Con una sola versión no hay nada que comparar.
+    await expect(panel.getByRole("region", { name: "Comparar versiones" })).toHaveCount(0);
+
+    // Segundo periodo, revisado y consolidado como v2 por la persona.
+    await importInto(page, "memoria", `${MEMORIA}periodo-2.csv`);
+    await reviewAll(page);
+    await openTab(page, "Memoria");
+    await panel.getByRole("button", { name: "Previsualizar v2" }).click();
+    const preview = panel.locator(".memory-preview");
+    await expect(preview).toBeVisible({ timeout: 15_000 });
+    await expect(preview.locator(".memory-blockers")).toHaveCount(0);
+    await preview.getByRole("button", { name: "Confirmar y consolidar" }).click();
+    await expect(panel.locator(".memory-status")).toContainText("Versión v2 consolidada", { timeout: 15_000 });
+
+    const compare = panel.getByRole("region", { name: "Comparar versiones" });
+    await expect(compare.getByRole("heading", { name: "Comparar versiones" })).toBeVisible();
+    // Por defecto, la primera y la vigente.
+    await expect(compare.getByLabel("De")).toHaveValue("1");
+    await expect(compare.getByLabel("a", { exact: true })).toHaveValue("2");
+    // La misma versión a los dos lados no se puede comparar.
+    await compare.getByLabel("a", { exact: true }).selectOption("1");
+    await expect(compare.getByRole("button", { name: "Comparar" })).toBeDisabled();
+    await compare.getByLabel("De").selectOption("1");
+    await compare.getByLabel("a", { exact: true }).selectOption("2");
+    await expect(compare.getByRole("button", { name: "Comparar" })).toBeEnabled();
+    await compare.getByRole("button", { name: "Comparar" }).click();
+
+    const result = compare.locator(".memory-compare-result");
+    await expect(result).toBeVisible({ timeout: 15_000 });
+    await expect(result.getByRole("heading", { level: 4 })).toHaveText(/^De v1 \(periodo-1\.csv, .+\) a v2 \(periodo-2\.csv, .+\)$/);
+    await expect(result.locator(".memory-compare-between")).toHaveText("Entre medias: ninguna versión.");
+    await expect(result.locator(".memory-compare-revoked")).toHaveCount(0);
+    // El delta, con el mismo aspecto que «Evolución»: la línea de cifras.
+    const figures = result.locator(".evo-figures");
+    await expect(figures).toBeVisible();
+    await expect(figures.locator(".evo-figure")).toHaveCount(9);
+    await expect(figures).toContainText("dejan de leerse");
+    await expect(result.locator(".memory-compare-history")).toBeVisible();
+    // Comparar solo lee: la memoria sigue igual.
+    await expect(panel).toContainText("Versión vigente: v2");
+    await expect(page.locator(".tile[data-tile='memoria'] .tile-value")).toHaveText("v2");
+  });
+
   // Desde 3.55.0 (OQ-148, propietario 2026-09-27): un hallazgo de rango 1 confirmado ya no bloquea.
   test("un hallazgo de rango 1 confirmado sale en «Incidencias excluidas del esperado» y el periodo se consolida", async ({ page }) => {
     await freshPage(page);

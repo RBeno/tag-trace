@@ -2,6 +2,23 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.56.0] - 2026-09-27
+
+### Añadido
+
+- **Comparar versiones** (pestaña Memoria, `UX_SPEC.md` §6): el esperado de dos versiones
+  consolidadas cualesquiera, en cualquier orden, con las versiones de entre medias, las revocadas y
+  lo que adoptó cada una por el camino. Solo lee.
+- **Prueba de oro de la historia** (TC-296): seis periodos consolidados en cadena con cuatro cambios
+  plantados; la comparación de la primera versión a la última da exactamente lo adoptado.
+
+### Corregido
+
+- **Un cambio permanente no se adoptaba nunca si se consolidaba cada periodo**: la cuenta de ficheros
+  seguidos volvía a uno en cada versión. Ahora continúa a través de las consolidaciones mientras el
+  cambio siga presente, y la razón lo dice. Lo encontró la prueba de oro. OQ-150 pide al propietario
+  que valide la lectura.
+
 ## [3.55.0] - 2026-09-27
 
 El propietario aceptó las cuatro recomendaciones sobre el presupuesto, la clasificación de cambios y

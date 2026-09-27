@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.42.0
+version: 0.43.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -694,6 +694,11 @@ confirmado con lo que toca— y «Cambios frente al esperado», agrupados por cl
 pasan o no al esperado, plegados si son muchos; la lista de versiones resume cada una («3 cambios
 adoptados, 5 pendientes, 1 incidencia excluida»). La condición de incidencias ya no impide
 consolidar.
+
+**Comparar versiones (3.56.0)**: con dos o más versiones, dos selectores —de, a; por defecto la
+primera y la vigente—, «Comparar» y el resultado: las dos versiones con su fichero y su ventana, si
+alguna está revocada, cuántas hay entre medias, el delta pintado como en «Evolución» y lo que adoptó
+cada versión por el camino, plegado si es largo. Solo lee: no cambia la memoria.
 6. **Dos linajes**, solo con una bifurcación sin resolver: las dos listas y «Conservar la memoria
    local» / «Adoptar la entrante (la local queda archivada)», con razón obligatoria; debajo,
    «Elecciones de linaje».

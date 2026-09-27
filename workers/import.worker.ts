@@ -138,6 +138,7 @@ import {
 } from "../src/persistence/store.js";
 import {
   compareToMemory,
+  compareVersions,
   consolidate,
   currentVersion,
   emptyLineageState,
@@ -2285,6 +2286,44 @@ async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Pro
 }
 
 /**
+ * Comparar dos versiones consolidadas del linaje activo (F4, puerta G4). Solo lee: el esperado de una
+ * frente al de la otra, lo que hay entre medias y lo que se adoptó por el camino (`compareVersions`).
+ */
+async function runCompareVersions(message: Extract<ToWorker, { type: "compare-versions" }>): Promise<void> {
+  const { jobId, circuitId } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  if (!isAvailable()) {
+    fail("No hay almacén local: la memoria consolidada necesita IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
+    return;
+  }
+  try {
+    const { active } = await loadMemory(circuitId);
+    const missing = [message.from, message.to].filter((number) => !active.some((version) => version.version === number));
+    if (missing.length > 0) {
+      fail(
+        `${missing.length === 1 ? "La versión" : "Las versiones"} v${missing.join(" y v")} no ${missing.length === 1 ? "está" : "están"} en el linaje activo del circuito.`,
+        "Elige dos versiones de la lista de versiones.",
+      );
+      return;
+    }
+    if (message.from === message.to) {
+      fail(`Las dos versiones son la misma (v${message.from}).`, "Elige dos versiones distintas.");
+      return;
+    }
+    const comparison = compareVersions(active, message.from, message.to, MEMORY_THRESHOLDS);
+    emit({ type: "versions-compared", circuitId, comparison }, jobId);
+  } catch (error) {
+    // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
+    fail(
+      `La comparación de versiones falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
+    );
+  }
+}
+
+/**
  * Carga las listas de tags de un circuito y las guarda **con él**.
  *
  * Con el circuito y no aparte porque son parte de su estado en el momento del análisis: repetir un
@@ -2292,19 +2331,6 @@ async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Pro
  * los cambios propuestos y vuelve a cargarlas, el análisis siguiente las recoge ya actualizadas y
  * el anterior sigue explicándose con las suyas.
  */
-/** Comparar dos versiones (F4). Pendiente de implementar: hoy responde con error. */
-async function runCompareVersions(message: Extract<ToWorker, { type: "compare-versions" }>): Promise<void> {
-  emit(
-    {
-      type: "error",
-      code: "INTERNAL",
-      cause: `El comparador entre versiones aún no está disponible (v${message.from} y v${message.to}).`,
-      recovery: "Espera a la entrega del comparador.",
-    },
-    message.jobId,
-  );
-}
-
 async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<void> {
   const { jobId, file, circuitId } = message;
   if (!isAvailable()) {

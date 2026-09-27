@@ -1,6 +1,6 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -151,6 +151,23 @@ y la incidencia queda en la versión, aparte del esperado, con lo que toca —lo
 sus tramos—, que conserva el valor anterior o queda sin medida. Los hallazgos graves que ocurren en
 un instante no están en la instantánea y todavía no se excluyen (OQ-149). El plano físico se crea
 desde el esperado de la versión, no desde lo observado.
+
+**Ficheros seguidos a través de las consolidaciones (3.56.0).** La prueba de oro encontró que, si
+se consolida cada periodo, un cambio permanente no llegaba nunca a tres ficheros: la historia de
+cada consolidación empieza tras la versión vigente y solo tiene un fichero. Ahora, si la versión
+vigente guardó un cambio sin adoptar y ese cambio sigue en todos los ficheros nuevos, su cuenta
+continúa, y la razón lo dice («contando 2 de periodos ya consolidados»). Es la lectura literal de
+«tres ficheros seguidos» (OQ-146), que no depende de cada cuánto se consolide; queda a la vista del
+propietario. Con esa misma cadencia, un cambio de un solo periodo sale en su versión como «deriva
+pendiente» y no como «evento puntual», porque en ese momento no se sabe aún si volverá: no se
+adopta, que es lo que importa (OQ-150).
+
+**Comparador entre versiones (3.56.0).** `compareVersions` compara el esperado de dos versiones
+cualesquiera del linaje activo —en cualquier orden—, dice cuántas versiones hay entre medias y
+cuántas revocadas, y lista lo que adoptó cada una por el camino. La pestaña Memoria lo ofrece como
+«Comparar versiones». La prueba de oro (`tests/unit/historia-oro.test.ts`) consolida seis periodos
+con cambios plantados y comprueba que la comparación de la primera a la última da exactamente lo
+adoptado.
 
 ## 9. Crecimiento y presupuesto
 

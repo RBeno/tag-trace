@@ -192,6 +192,56 @@ function nextVersionNumber(versions: readonly ConsolidatedVersion[]): number {
   return versions.reduce((max, version) => Math.max(max, version.version), 0) + 1;
 }
 
+/** El principio de la razón que habla de ficheros seguidos, tal como lo escribe `classifyChanges`. */
+const CONSECUTIVE_CLAUSE = /^(?:Se mantiene en \d+ ficheros? seguidos \(hacen falta \d+\)|Lleva \d+ de \d+ ficheros seguidos: todavía no es sostenido)/;
+
+function consecutiveClause(total: number, carried: number, sustained: number): string {
+  const from = `contando ${carried} de periodos ya consolidados`;
+  return total >= sustained
+    ? `Se mantiene en ${total} ficheros seguidos, ${from} (hacen falta ${sustained})`
+    : `Lleva ${total} de ${sustained} ficheros seguidos, ${from}: todavía no es sostenido`;
+}
+
+/**
+ * Los ficheros seguidos continúan entre consolidaciones (OQ-146, «tres ficheros seguidos»). La
+ * historia de una consolidación empieza después de la versión vigente, así que, consolidando cada
+ * periodo, `classifyChanges` contaría siempre un fichero y un cambio permanente no se adoptaría nunca
+ * (lo encontró la prueba de oro, `historia-oro.test.ts`). Un cambio que la versión vigente guardó sin
+ * adoptar, con `files > 0`, y que sigue en **todos** los ficheros de la historia, suma los de esa
+ * versión. Si con la suma llega a sostenido, la clase la decide otra vez `classifyChanges` pidiendo
+ * los ficheros que faltan, con su misma medida colectiva; solo se reescribe la cuenta de la razón.
+ */
+function carryConsecutive(
+  changes: readonly ClassifiedChange[],
+  previous: ConsolidatedVersion,
+  historyLength: number,
+  sustained: number,
+  classify: (sustainedFiles: number) => readonly ClassifiedChange[],
+): readonly ClassifiedChange[] {
+  const carried = new Map<string, number>();
+  for (const change of previous.changes ?? []) {
+    if (!change.adopted && change.files > 0) carried.set(change.key, change.files);
+  }
+  if (carried.size === 0) return changes;
+  const reruns = new Map<number, ReadonlyMap<string, ClassifiedChange>>();
+  const rerun = (sustainedFiles: number): ReadonlyMap<string, ClassifiedChange> => {
+    let found = reruns.get(sustainedFiles);
+    if (found === undefined) {
+      found = new Map(classify(sustainedFiles).map((change) => [change.key, change]));
+      reruns.set(sustainedFiles, found);
+    }
+    return found;
+  };
+  return changes.map((change) => {
+    const before = carried.get(change.key);
+    if (before === undefined || change.files !== historyLength || change.cls === "evento-puntual") return change;
+    const total = change.files + before;
+    if (change.cls !== "deriva-pendiente") return { ...change, files: total };
+    const decided = total >= sustained ? (rerun(Math.max(1, sustained - before)).get(change.key) ?? change) : change;
+    return { ...decided, files: total, reason: decided.reason.replace(CONSECUTIVE_CLAUSE, consecutiveClause(total, before, sustained)) };
+  });
+}
+
 /**
  * Qué pasaría al consolidar: la previsualización de vN+1 (§6, paso E). No escribe nada.
  *
@@ -275,13 +325,20 @@ export function previewConsolidation(input: ConsolidationInput): ConsolidationPr
   if (changeClass !== undefined) {
     const given = input.history ?? [];
     const history = given[given.length - 1]?.sourceId === snapshot.sourceId ? given : [...given.filter((entry) => entry.sourceId !== snapshot.sourceId), snapshot];
-    changes = classifyChanges({
-      expected,
-      history,
-      incidentSubjects: incidentSubjectSet(incidents),
-      confirmedSubjects: input.confirmedSubjects ?? new Set(),
-      thresholds: { ...changeClass, maxChance: input.thresholds.maxChance },
-    });
+    const classify = (sustainedFiles: number): readonly ClassifiedChange[] =>
+      classifyChanges({
+        expected,
+        history,
+        incidentSubjects: incidentSubjectSet(incidents),
+        confirmedSubjects: input.confirmedSubjects ?? new Set(),
+        thresholds: { ...changeClass, sustainedFiles, maxChance: input.thresholds.maxChance },
+      });
+    changes = classify(changeClass.sustainedFiles);
+    // La cuenta de ficheros seguidos no empieza de cero en cada consolidación (OQ-146): sin historia
+    // explícita no se sabe si los ficheros son contiguos, y no se arrastra nada.
+    if (previous !== null && input.history !== undefined) {
+      changes = carryConsecutive(changes, previous, history.length, changeClass.sustainedFiles, classify);
+    }
   }
 
   // El tamaño se estima sobre una versión provisional con el hash vacío: el hash real tiene siempre
@@ -434,15 +491,20 @@ export interface VersionComparison {
   readonly to: { readonly version: number; readonly fileName: string; readonly window: { readonly from: number; readonly to: number }; readonly revoked: boolean };
   /** Versiones del mismo linaje entre las dos, sin contarlas, y cuántas de ellas están revocadas. */
   readonly between: { readonly versions: number; readonly revoked: number };
-  /** Los cambios que cada versión intermedia y `to` adoptaron, en orden: la historia de cómo se llegó. */
-  readonly adoptedAlongTheWay: readonly { readonly version: number; readonly keys: readonly string[] }[];
+  /**
+   * Los cambios que cada versión posterior a la menor, hasta la mayor, adoptó, en orden de número: la
+   * historia de cómo se llegó. `revoked` (añadido con la implementación) dice si esa versión está
+   * revocada: lo que adoptó no forma parte de la cadena vigente.
+   */
+  readonly adoptedAlongTheWay: readonly { readonly version: number; readonly keys: readonly string[]; readonly revoked?: boolean }[];
   readonly delta: SnapshotDelta;
 }
 
 /**
  * `from` y `to` son números de versión del conjunto dado (normalmente el linaje activo). Lanza si
- * alguno no existe o si son la misma. El orden importa: el delta va de `from` a `to`, y `from` puede
- * ser posterior a `to` para ver el cambio al revés.
+ * alguno no existe, si está repetido o si son la misma. El orden importa: el delta va del esperado de
+ * `from` al de `to`, y `from` puede ser posterior a `to` para ver el cambio al revés. La historia de
+ * adopciones va siempre en orden de número, de la menor (sin incluirla) a la mayor.
  */
 export function compareVersions(
   versions: readonly ConsolidatedVersion[],
@@ -450,7 +512,40 @@ export function compareVersions(
   to: number,
   thresholds: Pick<TagChangeThresholds, "maxChance">,
 ): VersionComparison {
-  throw new Error(`compareVersions: pendiente de implementar (${versions.length}, v${from}, v${to}, ${thresholds.maxChance})`);
+  if (from === to) {
+    throw new Error(`No se compara una versión consigo misma (v${from}): elige dos versiones distintas.`);
+  }
+  const ordered = sortVersions(versions);
+  const find = (number: number): ConsolidatedVersion => {
+    const found = ordered.filter((version) => version.version === number);
+    if (found.length === 0) throw new Error(`La versión v${number} no está entre las versiones del linaje.`);
+    if (found.length > 1) throw new Error(`Hay ${found.length} versiones v${number}: compara dentro de un solo linaje.`);
+    return found[0] as ConsolidatedVersion;
+  };
+  const a = find(from);
+  const b = find(to);
+  const low = Math.min(from, to);
+  const high = Math.max(from, to);
+  const inside = ordered.filter((version) => version.version > low && version.version < high);
+  const side = (version: ConsolidatedVersion): VersionComparison["from"] => ({
+    version: version.version,
+    fileName: version.basedOn.fileName,
+    window: { from: version.basedOn.window.from, to: version.basedOn.window.to },
+    revoked: version.revoked !== null,
+  });
+  return {
+    from: side(a),
+    to: side(b),
+    between: { versions: inside.length, revoked: inside.filter((version) => version.revoked !== null).length },
+    adoptedAlongTheWay: ordered
+      .filter((version) => version.version > low && version.version <= high)
+      .map((version) => ({
+        version: version.version,
+        keys: (version.changes ?? []).filter((change) => change.adopted).map((change) => change.key),
+        revoked: version.revoked !== null,
+      })),
+    delta: compareSnapshots(expectedOf(a), expectedOf(b), { maxChance: thresholds.maxChance }),
+  };
 }
 
 export function compareToMemory(

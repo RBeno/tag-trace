@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.52.0
+version: 0.53.0
 status: active
 last_updated: 2026-09-27
 ---
@@ -35,6 +35,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | ID | Pregunta | Tratamiento mientras esté abierta |
 |---|---|---|
 | OQ-149 | **Los hallazgos graves con instante no llegan a la instantánea.** Los de rango 1 que ocurren en un momento —AGV que deja de leer, primero de cola sin avanzar, parada de la línea, producción parada— no están entre los hallazgos que guarda la instantánea de un fichero, así que al consolidar nunca se excluyen como incidencia (OQ-148), igual que antes nunca bloqueaban. La bandeja los cuenta; la previsualización no los ve. ¿Deben entrar en la instantánea para excluirse del esperado, y con qué sujeto (el AGV, el tag, el tramo)? | La previsualización no promete excluirlos: su texto habla solo de los hallazgos que la instantánea guarda. |
+| OQ-150 | **Cuenta de ficheros seguidos y eventos puntuales cuando se consolida cada periodo** (`MEMORY_CONSOLIDATION.md` §8). Desde 3.56.0 la cuenta de «tres ficheros seguidos» continúa a través de las consolidaciones: un cambio visto en v2 y v3 que sigue en el fichero de v4 cuenta tres. ¿Es la lectura que el propietario quería? Y con esa cadencia, un cambio de un solo periodo sale en su versión como «deriva pendiente» (aún no se sabe si volverá) y no se reclasifica después como «evento puntual»; ¿hace falta que la versión siguiente lo reclasifique? | La cuenta continúa entre consolidaciones; un cambio de un periodo no se adopta en ningún caso. |
 | OQ-101 | ¿Qué modelos de lector/AGV existen y cuáles suprimen tag repetido? | Regla R-OPP-002 sigue candidate |
 | OQ-102 | ¿Qué evento o secuencia identifica con fiabilidad una vuelta? **El mecanismo para cuando se responda ya existe** (`lap_anchors`, R-GRA-009, 2026-09-22): una ancla declarada rota el ciclo ya reconstruido y una vuelta completa cortada por ella sale `observed`. Sigue faltando el tag real. | Conservar vueltas parciales/desconocidas; sin ancla declarada, el ancla es el ciclo dominante e `inferred` |
 | OQ-103 | ¿Cómo distinguir mantenimiento/asistencia/pastor en los CSV? | Catálogo parcial y exclusión explícita |

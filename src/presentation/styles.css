@@ -540,6 +540,12 @@ table.data th { color: var(--muted); font-weight: 600; }
 .memory-fork-columns { display: grid; gap: 12px; }
 @media (min-width: 900px) { .memory-fork-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .memory-lineage-events { margin: 4px 0; padding-left: 18px; }
+.memory-compare-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.memory-compare-row label { display: inline; margin-top: 0; }
+.memory-compare-select { font: inherit; padding: 4px 8px; min-height: 24px; border-radius: 8px; }
+.memory-compare-result { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.memory-compare-result h4:first-child { margin-top: 0; }
+.memory-compare-revoked { margin: 4px 0; color: var(--warn); }
 
 /* --- Plano del circuito (ADR-0016) ----------------------------------------------------------------
    Debajo de la memoria, en la misma pestaña. Las ubicaciones son una lista compacta: id, tag, estado

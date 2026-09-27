@@ -120,7 +120,7 @@ interface State {
   /** Las instantáneas del circuito (ADR-0015), en orden de ventana, leídas del almacén tras cada importación. */
   snapshots: readonly CircuitSnapshot[];
   /** Qué operación de memoria (F4) espera respuesta del Worker, para saber a quién contarle el error. */
-  memoryJob: "preview" | "commit" | "revoke" | "resolve-fork" | null;
+  memoryJob: "preview" | "commit" | "revoke" | "resolve-fork" | "compare-versions" | null;
   /** Una acción sobre el plano físico (ADR-0016) espera respuesta del Worker. */
   planJob: boolean;
 }
@@ -521,6 +521,7 @@ const memoryPanel = createMemoryPanel({
   commit: (sourceId, note) => startMemory({ type: "consolidate", sourceId, mode: "commit", ...(note === null ? {} : { note }) }),
   revoke: (version, reason) => startMemory({ type: "revoke", version, reason }),
   resolveFork: (choice, reason) => startMemory({ type: "resolve-fork", choice, reason }),
+  compare: (from, to) => startMemory({ type: "compare-versions", from, to }),
 });
 
 /**
@@ -1023,6 +1024,11 @@ function handleMessage(message: FromWorker): void {
       renderMemoryTile(message.memory);
       return;
 
+    case "versions-compared":
+      finishMemoryJob();
+      memoryPanel.showComparison(message.comparison);
+      return;
+
     // --- Plano físico (ADR-0016): la respuesta se pinta en su sección --------------------------------
     case "plan-updated":
       finishPlanJob();
@@ -1089,14 +1095,15 @@ function finishMemoryJob(): void {
 
 /**
  * Envía una operación de memoria al Worker (F4): previsualizar o confirmar una consolidación, revocar
- * una versión o elegir linaje. Mismo Worker, mismo protocolo y `jobId` propio, como las listas y la
+ * una versión, elegir linaje o comparar dos versiones. Mismo Worker, mismo protocolo y `jobId` propio, como las listas y la
  * flota: la memoria se lee y se escribe fuera del hilo principal, y la presentación solo pide.
  */
 function startMemory(
   request:
     | { readonly type: "consolidate"; readonly sourceId: string; readonly mode: "preview" | "commit"; readonly note?: string }
     | { readonly type: "revoke"; readonly version: number; readonly reason: string }
-    | { readonly type: "resolve-fork"; readonly choice: "conservar-local" | "adoptar-entrante"; readonly reason: string },
+    | { readonly type: "resolve-fork"; readonly choice: "conservar-local" | "adoptar-entrante"; readonly reason: string }
+    | { readonly type: "compare-versions"; readonly from: number; readonly to: number },
 ): void {
   const circuitId = state.circuitId;
   if (circuitId === null) {
@@ -1122,7 +1129,15 @@ function startMemory(
   setBusy(true);
   memoryPanel.setBusy(true);
   progressNote.textContent =
-    request.type === "consolidate" ? (request.mode === "preview" ? "Previsualizando la consolidación" : "Consolidando") : request.type === "revoke" ? "Revocando la versión" : "Registrando la elección de linaje";
+    request.type === "consolidate"
+      ? request.mode === "preview"
+        ? "Previsualizando la consolidación"
+        : "Consolidando"
+      : request.type === "revoke"
+        ? "Revocando la versión"
+        : request.type === "compare-versions"
+          ? "Comparando versiones"
+          : "Registrando la elección de linaje";
   progressBar.value = 0;
   const message: ToWorker = { ...request, protocolVersion: PROTOCOL_VERSION, jobId, circuitId };
   worker.postMessage(message);
