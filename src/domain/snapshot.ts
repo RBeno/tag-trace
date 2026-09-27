@@ -198,6 +198,12 @@ export interface CircuitSnapshot {
   readonly capturedAt: number;
   /** Versión de la aplicación y del catálogo de algoritmos con que se calculó. */
   readonly appVersion: string;
+  /**
+   * Con qué configuración se midió (FR-031): la provisional o la provisional con los valores de planta
+   * confirmados vigentes, p. ej. `provisional-0+planta(noche-desde#1)`. Ausente en las instantáneas
+   * anteriores a 3.59.0.
+   */
+  readonly configVersion?: string;
   readonly acceptedRows: number;
   /** Exposición por régimen dentro de la ventana, en ms. */
   readonly exposure: Readonly<Record<Regime, number>>;
@@ -233,6 +239,7 @@ export interface SnapshotInput {
   };
   readonly capturedAt: number;
   readonly appVersion: string;
+  readonly configVersion?: string;
   readonly exposure: Readonly<Record<Regime, number>>;
   readonly cohortId: number;
   readonly anchorTagId: string | null;
@@ -377,6 +384,7 @@ export function buildSnapshot(input: SnapshotInput): CircuitSnapshot {
     window: { from: window.from, to: window.to },
     capturedAt: input.capturedAt,
     appVersion: input.appVersion,
+    ...(input.configVersion === undefined ? {} : { configVersion: input.configVersion }),
     acceptedRows: input.source.acceptedRows,
     exposure: { produccion: input.exposure.produccion, noche: input.exposure.noche },
     cohortId: input.cohortId,

@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.26.0
+version: 0.27.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -290,6 +290,17 @@ mínimo entre periodos distantes— **no se fijan como configuración de planta*
 Son provisionales hasta que la memoria del circuito (F4) los mida y los consolide con confirmación
 humana (ADR-0010).
 
+**Valores de planta del circuito (3.59.0, `src/domain/plant-values.ts`).** Siete de ellos —inicio y
+fin del régimen de noche, horas de arranque de turno, tiempo sin leer que es desconexión, bloqueo del
+primero de cola, tolerancia de «a la misma hora», margen del FIFO y duración mínima de una parada
+precisa— se pueden confirmar por circuito. Cada confirmación es un evento append-only con valor,
+fecha efectiva, fecha de registro, razón obligatoria y origen `manual`; al analizar un fichero rige el
+último valor efectivo al inicio de su ventana, y sin ninguno rige el provisional. La versión de
+configuración lo dice (`provisional-0+planta(clave#n,…)`) y cada instantánea la guarda (FR-031). El
+hueco entre periodos distantes no entra: es de análisis (OQ-151). Las horas son enteras de 0 a 23;
+las duraciones, mayores que cero y como mucho 24 h, que es un control de errores de tecleo y no un
+dato de planta. Los estimadores con que la memoria propondrá valores siguen abiertos (OQ-151).
+
 ### 3.6 Cohortes
 
 Agrupaciones de AGV o de modelos de lector cuyo comportamiento difiere de forma material
@@ -380,6 +391,8 @@ state          : draft | active | superseded
 
 Una configuración `draft` permite analizar en modo exploratorio pero **no** consolidar. Un análisis
 que abarque dos vigencias distintas debe separarse por tramos o declararse `unknown` en la frontera.
+**Pendiente de decisión (2026-09-27):** la aplicación consolida con la configuración provisional
+(`draft`) desde 3.51.0 (OQ-152), y ante dos vigencias en la ventana de trabajo solo avisa (OQ-153).
 
 ## 5. Privacidad
 

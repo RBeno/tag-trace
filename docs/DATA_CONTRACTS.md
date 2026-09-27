@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.29.0
+version: 0.30.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -551,6 +551,12 @@ El usuario debe poder eliminar lo que ha creado, y esa eliminación debe ser ver
   alcanzan las lecturas retenidas, y la vista lo dice. Volver a cargar un fichero retirado lo pone el
   último: sus lecturas vuelven, guardadas bajo el identificador de su primera carga, y no se crea
   fuente ni instantánea nuevas.
+
+**Almacén local, versión 10 (3.59.0).** Tabla `plantValues` con clave `[circuitId, seq]`, append-only
+con `add`: los valores de planta confirmados del circuito (`CONFIG_SCHEMA.md` §3.5). Borrar el
+circuito la borra. El `.agvproj` pasa al **esquema 5** con la sección `valores` (los eventos, con su
+hash); se leen los esquemas 1 a 5; al abrir, un local que es prefijo del entrante recibe lo que falta
+y dos historiales distintos no se mezclan. Cada instantánea guarda `configVersion` (FR-031).
 
 **Almacén local, versión 9 (OQ-145).** Las lecturas retenidas (`sources`) y las versiones
 (`memory`) se guardan comprimidas con el gzip del navegador (`gz`); las guardadas antes se leen igual

@@ -33,6 +33,7 @@ import type {
   PlanProposal,
 } from "../domain/plan.js";
 import type { Interval } from "../domain/coverage.js";
+import type { PlantValue, PlantValueKey, PlantValuesView } from "../domain/plant-values.js";
 import type { PaceReport } from "../domain/vehicle-pace.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AnchorSection } from "../domain/anchor-sections.js";
@@ -274,6 +275,24 @@ export interface PlanActionMessage {
   readonly workingSourceId: string | null;
 }
 
+/**
+ * Confirmar un valor de planta del circuito (OQ-140). Lo pide una persona con el valor, la fecha desde
+ * la que rige y una razón obligatoria; el Worker lo valida y lo añade al registro append-only. No
+ * vuelve a analizar nada: el valor se aplica al volver a analizar los ficheros de su vigencia.
+ */
+export interface PlantValueMessage {
+  readonly type: "plant-value";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly key: PlantValueKey;
+  readonly value: PlantValue;
+  readonly effectiveAt: number;
+  readonly reason: string;
+  /** El fichero de trabajo que la interfaz enseña: la respuesta dice lo vigente para él. */
+  readonly workingSourceId: string | null;
+}
+
 /** Comparar dos versiones consolidadas del linaje activo (F4). Solo lee: no escribe nada. */
 export interface CompareVersionsMessage {
   readonly type: "compare-versions";
@@ -286,6 +305,7 @@ export interface CompareVersionsMessage {
 
 export type ToWorker =
   | CompareVersionsMessage
+  | PlantValueMessage
   | PlanActionMessage
   | StartMessage
   | CancelMessage
@@ -767,6 +787,12 @@ export interface CircuitViews {
    */
   readonly plan?: PlanViews;
   /**
+   * Los valores de planta del circuito (OQ-140): por valor, el provisional, el confirmado que rige
+   * para el fichero de trabajo (o ninguno), el historial y dónde mide el programa algo relacionado.
+   * El Worker lo manda en cada importación.
+   */
+  readonly plantValues?: PlantValuesView;
+  /**
    * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando
    * el circuito tiene listas de planta cargadas **y** al menos dos periodos distantes: con una sola
    * fuente cargada no hay con qué comparar, y no mostrar nada es más honesto que un aviso permanente.
@@ -870,6 +896,17 @@ export interface PlanUpdatedMessage extends Envelope {
   readonly plan: PlanViews;
 }
 
+/** Respuesta a `plant-value`: el valor ya está en el almacén; nada se ha vuelto a analizar. */
+export interface PlantValuesUpdatedMessage extends Envelope {
+  readonly type: "plant-values-updated";
+  readonly circuitId: string;
+  /** Lo escrito, en palabras. */
+  readonly written: string;
+  /** Si el valor escrito rige ya para el fichero de trabajo (su fecha efectiva no pasa de su inicio). */
+  readonly appliesToWorking: boolean;
+  readonly plantValues: PlantValuesView;
+}
+
 /** Respuesta a `consolidate` en modo `preview`: nada se ha escrito. */
 export interface ConsolidationPreviewMessage extends Envelope {
   readonly type: "consolidation-preview";
@@ -945,6 +982,7 @@ export type FromWorker =
   | RevokedMessage
   | ForkResolvedMessage
   | PlanUpdatedMessage
+  | PlantValuesUpdatedMessage
   | VersionsComparedMessage;
 
 /**

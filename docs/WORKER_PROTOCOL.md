@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -74,6 +74,7 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `consolidate` | circuito, fichero base (`sourceId`), `mode: "preview" \| "commit"`, nota opcional | `preview` no escribe nada. `commit` solo se envía tras la confirmación humana, y el Worker vuelve a calcular la previsualización desde el almacén antes de escribir: con bloqueos responde `error` (R-MEM-001). |
 | `revoke` | circuito, número de versión, razón | Marca la versión con fecha y razón; no la borra (R-MEM-002). |
 | `compare-versions` | circuito, dos números de versión | Solo lee: compara los esperados de dos versiones del linaje activo. |
+| `plant-value` | circuito, clave, valor, fecha efectiva, razón | Valida y escribe un valor de planta confirmado; rige al volver a analizar los ficheros de su vigencia. |
 | `plan-action` | circuito, fichero de trabajo, acción: `crear-plano` (desde una versión), `aceptar-propuesta` (id y fichero de la propuesta; en una salida, de qué ubicación cuelga) o `evento` (uno registrado a mano), siempre con razón | El Worker recalcula la propuesta desde la instantánea de su fichero antes de escribirla, valida todos los eventos en orden y los escribe en una transacción (ADR-0016). |
 | `resolve-fork` | circuito, elección (`conservar-local` \| `adoptar-entrante`), razón | Resuelve una bifurcación de linaje; el linaje no elegido queda archivado y la elección, en el historial (`MEMORY_CONSOLIDATION.md` §10). |
 
@@ -95,6 +96,7 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `revoked` | número revocado y la memoria del circuito | |
 | `fork-resolved` | la memoria del circuito tras la elección | |
 | `versions-compared` | la comparación: las dos versiones, las de entre medias, lo adoptado por el camino y el delta | |
+| `plant-values-updated` | los valores de planta del circuito: provisional, vigente para el fichero de trabajo, historial y dónde se mide | |
 | `plan-updated` | los eventos escritos en palabras y el plano (`PlanViews`) leído contra el fichero de trabajo | |
 
 Las vistas de una importación (`complete.views`) llevan `memory` cuando el circuito tiene versiones:

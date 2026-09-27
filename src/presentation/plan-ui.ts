@@ -114,12 +114,12 @@ export interface PlanPanel {
 }
 
 /** «2026-01-27» del instante, en la zona del circuito: lo que un `input[type=date]` entiende. */
-function isoDay(utcMs: number, zone: string): string {
+export function isoDay(utcMs: number, zone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(utcMs));
 }
 
 /** Las 00:00 de un día en la zona del circuito, como instante UTC. */
-function zoneMidnight(day: string, zone: string): number | null {
+export function zoneMidnight(day: string, zone: string): number | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
   if (match === null) return null;
   const guess = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));

@@ -2,6 +2,23 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.59.0] - 2026-09-27
+
+### Añadido
+
+- **Valores de planta del circuito** (OQ-140, `CONFIG_SCHEMA.md` §3.5): en la pestaña Datos, cada uno
+  de los siete valores provisionales de planta se puede confirmar para el circuito con su fecha
+  efectiva y una razón obligatoria. Rige al analizar los ficheros de su vigencia; sin confirmación,
+  el provisional. Viajan en el `.agvproj` (esquema 5) y se guardan en el almacén (versión 10). Los
+  estimadores con que la memoria los propondrá siguen abiertos (OQ-151).
+- **Cada instantánea guarda con qué configuración se midió** (`configVersion`, FR-031).
+
+### Abierto
+
+- OQ-152: `CONFIG_SCHEMA.md` §4 dice que una configuración `draft` no permite consolidar, y la
+  aplicación consolida con la provisional desde 3.51.0. Hace falta decidir.
+- OQ-153: con dos vigencias en la ventana de trabajo, hoy solo se avisa.
+
 ## [3.58.0] - 2026-09-27
 
 Lo que quedaba de F4 salvo los valores de planta (OQ-151).

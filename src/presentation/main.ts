@@ -68,13 +68,16 @@ import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import { wallClockToUtc, type FieldOrder } from "../domain/time.js";
 import type { IncidentCut } from "../domain/incident-cut.js";
-import { ProjectError, readMemorySection, readPlanSection, readProject, writeProject } from "../persistence/agvproj.js";
+import { ProjectError, readMemorySection, readPlanSection, readPlantValuesSection, readProject, writeProject } from "../persistence/agvproj.js";
 import { exportProjectMemory, importProjectMemory } from "../persistence/project-memory.js";
 import { exportProjectPlan, importProjectPlan } from "../persistence/project-plan.js";
+import { exportProjectPlantValues, importProjectPlantValues } from "../persistence/project-plant-values.js";
 import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
 import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
 import { createPlanPanel, planRelationText } from "./plan-ui.js";
+import { createPlantValuesPanel, plantValuesRelationText } from "./plant-values-ui.js";
+import type { PlantValue, PlantValueKey } from "../domain/plant-values.js";
 import {
   RANK_LABEL,
   THEMES,
@@ -125,6 +128,8 @@ interface State {
   memoryJob: "preview" | "commit" | "revoke" | "resolve-fork" | "compare-versions" | null;
   /** Una acción sobre el plano físico (ADR-0016) espera respuesta del Worker. */
   planJob: boolean;
+  /** Un valor de planta confirmado (OQ-140) espera respuesta del Worker. */
+  plantValueJob: boolean;
 }
 
 const state: State = {
@@ -145,6 +150,7 @@ const state: State = {
   snapshots: [],
   memoryJob: null,
   planJob: false,
+  plantValueJob: false,
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -571,6 +577,21 @@ const planPanel = createPlanPanel({
   send: (action) => startPlan(action),
 });
 
+/**
+ * La sección «Valores de planta del circuito» (OQ-140), en la pestaña Datos. Se rehace con cada análisis
+ * (`views.plantValues`) y con cada `plant-values-updated`. Cada valor lo confirma una persona con su
+ * fecha efectiva y su razón; el Worker lo valida y lo escribe, y se aplica al volver a analizar.
+ */
+const plantValuesPanel = createPlantValuesPanel({
+  formatInstant,
+  zone: ZONE,
+  send: (request) => startPlantValue(request),
+  goTo: (section) => {
+    const tab = TABS.find(([, label]) => label === section.tab)?.[0];
+    if (tab !== undefined) jumpTo(tab, section.heading);
+  },
+});
+
 {
   const get = (id: TabId): HTMLElement => tabPanels.get(id) as HTMLElement;
   const views = (id: TabId): HTMLElement => viewsOf.get(id) as HTMLElement;
@@ -585,7 +606,7 @@ const planPanel = createPlanPanel({
   get("memoria").append(memoryPanel.node, planPanel.node);
   // Datos: lo que se carga y lo que entró, tal cual: listas, copia, fuente, cobertura y perfil,
   // replay y lecturas.
-  get("datos").append(listsPanel, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel);
+  get("datos").append(listsPanel, plantValuesPanel.node, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel);
   const empty = element("p", "muted tab-empty", "Todavía no hay análisis: elige un fichero de lecturas y escribe el circuito.");
   get("resumen").prepend(empty);
 }
@@ -904,6 +925,7 @@ function handleMessage(message: FromWorker): void {
       const working = message.views === undefined ? null : workingFileOf(message.views);
       memoryPanel.update({ circuitId: state.circuitId, memory: message.views?.memory ?? null, working });
       planPanel.update({ circuitId: state.circuitId, plan: message.views?.plan ?? null, working });
+      plantValuesPanel.update({ circuitId: state.circuitId, view: message.views?.plantValues ?? null });
       if (message.views !== undefined) loadEvolution(message.views);
       renderDossier();
       renderReplaySkeleton();
@@ -925,6 +947,12 @@ function handleMessage(message: FromWorker): void {
         memoryPanel.setBusy(false);
         setBusy(false);
         disposeWorker();
+        return;
+      }
+      // Y el de un valor de planta, en la suya.
+      if (state.plantValueJob) {
+        finishPlantValueJob();
+        plantValuesPanel.showError(message.cause, message.recovery);
         return;
       }
       // Y el de una acción del plano, en su sección.
@@ -1064,7 +1092,60 @@ function handleMessage(message: FromWorker): void {
       finishPlanJob();
       planPanel.showUpdated(message.written, message.plan);
       return;
+
+    // --- Valores de planta (OQ-140): la respuesta se pinta en su sección ----------------------------
+    case "plant-values-updated":
+      finishPlantValueJob();
+      plantValuesPanel.showUpdated(message.written, message.appliesToWorking, message.plantValues);
+      return;
   }
+}
+
+function finishPlantValueJob(): void {
+  state.plantValueJob = false;
+  plantValuesPanel.setBusy(false);
+  setBusy(false);
+  disposeWorker();
+}
+
+/**
+ * Envía un valor de planta confirmado al Worker (OQ-140). Como `startPlan`: mismo Worker, `jobId`
+ * propio, y la presentación solo pide. No vuelve a analizar nada: el valor se aplica al volver a
+ * cargar los ficheros de su vigencia.
+ */
+function startPlantValue(request: { readonly key: PlantValueKey; readonly value: PlantValue; readonly effectiveAt: number; readonly reason: string }): void {
+  const circuitId = state.circuitId;
+  if (circuitId === null) {
+    plantValuesPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");
+    return;
+  }
+  disposeWorker();
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  state.plantValueJob = true;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    finishPlantValueJob();
+    plantValuesPanel.showError("el proceso auxiliar se detuvo.", "No se ha guardado nada. Vuelve a intentarlo.");
+  };
+  setBusy(true);
+  plantValuesPanel.setBusy(true);
+  progressNote.textContent = "Guardando el valor de planta";
+  progressBar.value = 0;
+  const working = state.views === null ? null : workingFileOf(state.views);
+  const message: ToWorker = {
+    type: "plant-value",
+    protocolVersion: PROTOCOL_VERSION,
+    jobId,
+    circuitId,
+    ...request,
+    workingSourceId: working === null ? null : working.sourceId,
+  };
+  worker.postMessage(message);
 }
 
 function finishPlanJob(): void {
@@ -4937,6 +5018,8 @@ exportButton.addEventListener("click", () => {
     const memoria = await exportProjectMemory(circuitId);
     // Y el plano físico (ADR-0016, esquema 4): sus eventos append-only. Sin plano, la sección no viaja.
     const plano = await exportProjectPlan(circuitId);
+    // Y los valores de planta confirmados (OQ-140, esquema 5). Sin ninguno, la sección no viaja.
+    const valores = await exportProjectPlantValues(circuitId);
     const bytes = await writeProject(
       circuitId,
       {
@@ -4947,6 +5030,7 @@ exportButton.addEventListener("click", () => {
         ...(reviews.length === 0 ? {} : { revision: reviews }),
         ...(memoria === undefined ? {} : { memoria }),
         ...(plano === undefined ? {} : { plano }),
+        ...(valores === undefined ? {} : { valores }),
       },
       Date.now(),
     );
@@ -4960,6 +5044,7 @@ exportButton.addEventListener("click", () => {
       ...(reviews.length === 0 ? [] : [`Incluye ${reviews.length} hallazgos revisados en campo.`]),
       ...(memoria === undefined ? [] : [`Incluye la memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.`]),
       ...(plano === undefined ? [] : [`Incluye el plano del circuito: ${plano.eventos.length} ${plano.eventos.length === 1 ? "cambio registrado" : "cambios registrados"}.`]),
+      ...(valores === undefined ? [] : [`Incluye los valores de planta confirmados: ${valores.eventos.length} ${valores.eventos.length === 1 ? "valor" : "valores"}.`]),
     ]);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
     const link = element("a");
@@ -4994,6 +5079,9 @@ projectInput.addEventListener("change", () => {
       // si el plano local es un prefijo exacto del entrante. Dos planos distintos no se mezclan.
       const plano = readPlanSection(project);
       const planImport = isAvailable() ? await importProjectPlan(project.manifest.circuit_id, plano) : null;
+      // Y los valores de planta confirmados (OQ-140): mismo criterio que el plano, nada se mezcla.
+      const valores = readPlantValuesSection(project);
+      const valuesImport = isAvailable() ? await importProjectPlantValues(project.manifest.circuit_id, valores) : null;
       showMessage("info", `Proyecto «${circuito?.nombre ?? project.manifest.circuit_id}»`, [
         `${fuentes?.length ?? 0} fuentes declaradas, exportado el ${formatInstant(project.manifest.exported_at)}.`,
         // Un proyecto del esquema 1 no traía instantáneas: se abre igual y se dice (ADR-0015 §5).
@@ -5011,6 +5099,12 @@ projectInput.addEventListener("change", () => {
             : "Trae el plano del circuito. Sin almacén local no se puede comparar con el de este dispositivo."
           : planRelationText(planImport.relation, planImport.added) +
             (planImport.added > 0 ? " Se verá al volver a importar las lecturas del circuito." : ""),
+        valuesImport === null
+          ? valores === undefined
+            ? "El proyecto no traía valores de planta confirmados."
+            : "Trae valores de planta confirmados. Sin almacén local no se pueden comparar con los de este dispositivo."
+          : plantValuesRelationText(valuesImport.relation, valuesImport.added) +
+            (valuesImport.added > 0 ? " Se aplicarán al volver a importar las lecturas del circuito." : ""),
         // Una revocación que llega cambia la versión vigente: se dice, versión por versión (OQ-144).
         ...(imported?.revocations ?? []).map(
           (entry) => `El proyecto trae la revocación de v${entry.version} (${formatInstant(entry.at)}): ${entry.reason}. Aquí queda revocada.`,

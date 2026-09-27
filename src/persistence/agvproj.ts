@@ -11,18 +11,20 @@
  * su evolución. Desde el esquema 3 lleva además **la memoria consolidada** (sección `memoria`, F4,
  * `MEMORY_CONSOLIDATION.md` §10 y §11): las versiones y el estado de linaje, para que al abrirlo se
  * compare la cadena de hashes con la local. Desde el esquema 4 lleva **el plano físico** (sección
- * `plano`, ADR-0016): sus eventos append-only. **No lleva el bruto**, por decisión de ADR-0012. Las lecturas se acumulan en el
+ * `plano`, ADR-0016): sus eventos append-only. Desde el esquema 5 lleva **los valores de planta
+ * confirmados** (sección `valores`, OQ-140): sus eventos append-only. **No lleva el bruto**, por decisión de ADR-0012. Las lecturas se acumulan en el
  * dispositivo; el fichero es lo que viaja entre dispositivos, que además es un intercambio manual
  * (CON-002).
  */
 
 import { sortVersions, type ConsolidatedVersion, type LineageEvent, type LineageRef, type LineageState } from "../domain/memory.js";
 import type { PlanEvent } from "../domain/plan.js";
+import { plantValueEventProblem, type PlantValueEvent } from "../domain/plant-values.js";
 import { canonicalise, semanticHash } from "../domain/semantic-hash.js";
 import { readZip, writeZip, ZipError } from "./zip.js";
 
 /** Un número desconocido se rechaza sin tocar nada. Subirlo obliga a escribir su migración. */
-export const AGVPROJ_SCHEMA_VERSION = 4;
+export const AGVPROJ_SCHEMA_VERSION = 5;
 
 /**
  * Los esquemas anteriores que esta versión sigue abriendo, con lo que hay que hacer con cada uno.
@@ -30,11 +32,12 @@ export const AGVPROJ_SCHEMA_VERSION = 4;
  * El 1 no llevaba la sección `instantaneas`: un proyecto de entonces se abre tal cual, sin
  * instantáneas, y lo dice quien lo enseña (`instantaneas` ausente). El 2 no llevaba `memoria`: se
  * abre igual, sin memoria (`memoria` ausente, que es «sin-memoria» al clasificar el linaje). El 3 no
- * llevaba `plano`: se abre igual, sin plano (`plano` ausente, que es «sin-plano» al importarlo). No hay
+ * llevaba `plano`: se abre igual, sin plano (`plano` ausente, que es «sin-plano» al importarlo). El 4
+ * no llevaba `valores`: se abre igual, sin valores confirmados (rigen los provisionales). No hay
  * nada que reescribir: las secciones que traían significan lo mismo. Un esquema que no esté aquí ni
  * sea el vigente se rechaza.
  */
-export const AGVPROJ_READABLE_VERSIONS: readonly number[] = [1, 2, 3, AGVPROJ_SCHEMA_VERSION];
+export const AGVPROJ_READABLE_VERSIONS: readonly number[] = [1, 2, 3, 4, AGVPROJ_SCHEMA_VERSION];
 
 const MANIFEST = "manifest.json";
 
@@ -130,8 +133,8 @@ export async function readProject(bytes: Uint8Array): Promise<Project> {
   const manifest = JSON.parse(new TextDecoder().decode(manifestEntry.data)) as ProjectManifest;
 
   // 2. Una versión desconocida se rechaza sin tocar el almacenamiento local. Las anteriores conocidas
-  //    se abren: el esquema 1 es el 2 sin la sección `instantaneas`, el 2 es el 3 sin `memoria` y el 3
-  //    es el 4 sin `plano`.
+  //    se abren: el esquema 1 es el 2 sin la sección `instantaneas`, el 2 es el 3 sin `memoria`, el 3
+  //    es el 4 sin `plano` y el 4 es el 5 sin `valores`.
   if (!AGVPROJ_READABLE_VERSIONS.includes(manifest.schema_version)) {
     throw new ProjectError(
       `El proyecto usa el esquema ${manifest.schema_version} y esta versión entiende el ` +
@@ -317,4 +320,40 @@ export function readPlanSection(project: Project): ProjectPlanSection | undefine
     if (problem !== null) throw malformed(problem);
   }
   return { eventos: eventos as readonly PlanEvent[] };
+}
+
+// --- Sección `valores` (esquema 5) -----------------------------------------------------------------
+
+/** El nombre de la sección de valores de planta confirmados en el contenedor. */
+export const PLANT_VALUES_SECTION = "valores";
+
+/** Lo que viaja de los valores de planta confirmados (OQ-140): sus eventos, tal cual, en orden de registro. */
+export interface ProjectPlantValuesSection {
+  readonly eventos: readonly PlantValueEvent[];
+}
+
+/** Construye la sección `valores`. `undefined` si el circuito no tiene ningún valor confirmado. */
+export function plantValuesSection(events: readonly PlantValueEvent[]): ProjectPlantValuesSection | undefined {
+  if (events.length === 0) return undefined;
+  return { eventos: [...events].sort((a, b) => a.seq - b.seq) };
+}
+
+/**
+ * La sección `valores` de un proyecto ya validado por hash, con su forma comprobada —cada valor contra
+ * su validación, como si lo hubiera escrito una persona aquí—; `undefined` si el proyecto no la trae
+ * (esquemas 1 a 4). Una forma que no sea la esperada se rechaza.
+ */
+export function readPlantValuesSection(project: Project): ProjectPlantValuesSection | undefined {
+  const raw = project.sections[PLANT_VALUES_SECTION];
+  if (raw === undefined) return undefined;
+  const malformed = (what: string): ProjectError =>
+    new ProjectError(`La sección «${PLANT_VALUES_SECTION}» no tiene la forma esperada: ${what}.`, "El proyecto se creó con otra versión de la aplicación. No se ha cargado nada.");
+  if (!isRecord(raw)) throw malformed("no es un objeto");
+  const eventos = raw["eventos"];
+  if (!Array.isArray(eventos)) throw malformed("faltan los eventos");
+  for (const event of eventos as unknown[]) {
+    const problem = plantValueEventProblem(event);
+    if (problem !== null) throw malformed(problem);
+  }
+  return { eventos: eventos as readonly PlantValueEvent[] };
 }

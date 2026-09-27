@@ -609,3 +609,29 @@ table.data th { color: var(--muted); font-weight: 600; }
   .plan-menu > summary, .plan-vehicles > summary, .plan-vehicles-rest > summary { min-height: 44px; display: flex; align-items: center; }
   .plan-menu-items button, .plan-location-actions > button, .plan-input { min-height: 44px; }
 }
+
+/* --- Valores de planta del circuito (OQ-140) --------------------------------------------------------
+   En la pestaña Datos. Una fila por valor: el provisional, lo que rige para el fichero de trabajo con
+   su fecha y su razón, dónde mide el programa algo relacionado y «Cambiar…», que abre el formulario en
+   su sitio. El estado nunca va solo por color: la etiqueta dice «provisional» o «confirmado». */
+.plant-values-panel label { display: block; margin-top: 8px; }
+.plant-values-note { margin: 8px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--warn); background: var(--bg); }
+.plant-values { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.plant-value { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.plant-value[data-state="confirmado"] { border-left: 3px solid var(--viz-series); }
+.plant-value p { margin: 2px 0 0; }
+.plant-value .muted { font-size: 0.85rem; }
+.plant-value-label { font-weight: 600; }
+.plant-value .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.plant-value .chip.confirmed { border-color: var(--viz-series); color: var(--ink); }
+.plant-value-boundary { color: var(--warn); }
+.plant-value-problem:empty { display: none; }
+.plant-value-problem { color: var(--warn); }
+.plant-value-actions { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; }
+.plant-value-actions > button { padding: 4px 10px; font-size: 0.9rem; }
+.plant-value-history { margin-top: 4px; font-size: 0.9rem; }
+.plant-value-history > summary { cursor: pointer; color: var(--viz-series); padding: 2px 0; }
+@media (any-pointer: coarse) {
+  .plant-value-history > summary { min-height: 44px; display: flex; align-items: center; }
+  .plant-value-actions > button, .plant-value-link { min-height: 44px; }
+}

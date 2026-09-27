@@ -203,6 +203,15 @@ describe("construcción de la instantánea", () => {
   });
 });
 
+describe("FR-031 · con qué configuración se midió", () => {
+  it("la instantánea guarda la versión de configuración si viene, y sin ella sigue valiendo", () => {
+    expect(buildSnapshot({ ...input(), configVersion: "provisional-0+planta(noche-desde#1)" }).configVersion).toBe(
+      "provisional-0+planta(noche-desde#1)",
+    );
+    expect("configVersion" in snap()).toBe(false);
+  });
+});
+
 describe("desglose por AGV de cada vértice (R-MEM-004)", () => {
   it("guarda pasadas y aciertos por AGV en orden canónico y solo los pares con pasadas", () => {
     const cells: Record<string, SnapshotVehicleCell> = { V3: [10, 9], V1: [12, 12], V2: [0, 0] };

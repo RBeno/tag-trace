@@ -113,14 +113,27 @@ import {
 import { buildAllAgvDossiers, buildAllTagDossiers } from "../src/domain/dossier.js";
 import { compareAgainstVsystem } from "../src/domain/vsystem.js";
 import { buildReplayFrames } from "../src/domain/replay.js";
-import { PROVISIONAL_CONFIG } from "../src/domain/config.js";
+import { PROVISIONAL_CONFIG, type AnalysisConfig } from "../src/domain/config.js";
+import {
+  formatPlantValue,
+  isPlantValueKey,
+  plantValueDefinition,
+  plantValuesAt,
+  plantValuesView,
+  resolveAnalysisConfig,
+  validatePlantValue,
+  type PlantValueEvent,
+  type PlantValuesView,
+} from "../src/domain/plant-values.js";
 import type { CircuitViews, MemoryViews, PlanViews, VersionSummary } from "../src/application/protocol.js";
 import {
   appendPlanEvents,
+  appendPlantValue,
   isAvailable,
   loadCircuit,
   loadMemoryState,
   loadPlanEvents,
+  loadPlantValues,
   archiveSource,
   listArchive,
   loadArchivedSource,
@@ -281,6 +294,7 @@ async function accumulate(
   zone: string,
   result: { summary: { sourceId: string; sourceHash: string; fileName: string; acceptedRows: number };
     readings: readonly Reading[] },
+  config: AnalysisConfig,
 ): Promise<Accumulated | undefined> {
   if (!isAvailable()) return undefined;
 
@@ -297,7 +311,7 @@ async function accumulate(
   // leyó en un fichero ya retirado sigue siendo del circuito.
   const knownTags = new Set(tagsOf(previous));
   for (const snapshot of snapshots) for (const vertex of snapshot.vertices) if (vertex.readings > 0) knownTags.add(vertex.tagId);
-  const affinity = assessAffinity(tagsOf(result.readings), knownTags, PROVISIONAL_CONFIG.affinity);
+  const affinity = assessAffinity(tagsOf(result.readings), knownTags, config.affinity);
   if (!affinity.mayAccumulate) {
     return {
       report: unchangedReport(circuitId, existing, previous, affinity),
@@ -396,6 +410,24 @@ async function accumulate(
   };
 }
 
+// --- Valores de planta confirmados (OQ-140) -------------------------------------------------------
+
+/** El inicio de la ventana de un fichero: su tramo completo o, con un solo instante, ese instante. */
+function fileStartOf(readings: readonly Reading[]): number | null {
+  const coverage = sourceCoverage(readings);
+  return coverage.complete?.from ?? coverage.partialFrom;
+}
+
+/**
+ * La configuración con que se analiza un fichero del circuito que empieza en `at`: la provisional con
+ * los valores de planta que una persona confirmó y que rigen en ese instante (OQ-140). Sin valores
+ * confirmados, o sin almacén, `PROVISIONAL_CONFIG` tal cual.
+ */
+async function configForFile(circuitId: string, at: number | null): Promise<AnalysisConfig> {
+  if (at === null || !isAvailable()) return PROVISIONAL_CONFIG;
+  return resolveAnalysisConfig(PROVISIONAL_CONFIG, await loadPlantValues(circuitId), at);
+}
+
 /** Tramos de la banda de actividad. Bastantes para ver la forma, pocos para que quepa en pantalla. */
 const ACTIVITY_BINS = 96;
 
@@ -451,6 +483,15 @@ interface ViewsContext {
   readonly zone: string;
   readonly direction: SourceDirection;
   readonly importedSource: { readonly sourceId: string; readonly sourceHash: string; readonly fileName: string; readonly acceptedRows: number };
+  /**
+   * La configuración con que se analiza este fichero (OQ-140): la provisional con los valores de planta
+   * confirmados vigentes al inicio de su ventana (`configForFile`). Sin valores confirmados es
+   * `PROVISIONAL_CONFIG` tal cual. Todo lo que `buildViews` mide —vistas, instantánea, memoria y plano—
+   * usa esta y ninguna otra.
+   */
+  readonly config: AnalysisConfig;
+  /** Lo que la pestaña Datos enseña de los valores de planta para este fichero. */
+  readonly plantValues: PlantValuesView;
 }
 
 interface ViewsResult {
@@ -506,7 +547,7 @@ function attempt<T>(what: string, problems: string[], fallback: T, compute: () =
 }
 
 async function buildViews(context: ViewsContext): Promise<ViewsResult | undefined> {
-  const { stored, imported, zone, direction, importedSource } = context;
+  const { stored, imported, zone, direction, importedSource, config } = context;
   const readings = context.working;
   const coverage = context.workingCoverage;
   if (readings.length === 0) return undefined;
@@ -546,7 +587,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     readings,
     laneConfig.lanes,
     coverage,
-    PROVISIONAL_CONFIG.charging,
+    config.charging,
   );
 
   // --- Grafo, cohortes y vueltas (F2) -------------------------------------------------------
@@ -555,7 +596,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
   // mezclados no comparten ancla, y buscar un ciclo dominante sobre los dos a la vez produciría un
   // ancla sin sentido para ninguno.
   const { transitions } = buildTransitions(readings, direction, coverage);
-  const cohortAssignment = assignCohorts(readings, transitions, PROVISIONAL_CONFIG.cohorts);
+  const cohortAssignment = assignCohorts(readings, transitions, config.cohorts);
 
   const laps: Lap[] = [];
   const shapes: CircuitViews["shapes"][number][] = [];
@@ -564,7 +605,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
   // Cambios de tag dentro de un mismo periodo (R-DAT-019), antes que la matriz: cuándo empezó o dejó
   // de leerse cada tag es lo que hace falta para medirlo solo dentro de su vida (R-OPP-016).
   // Régimen de cada instante (R-TIM-009): la noche se mide aparte y no altera el estado normal.
-  const regimeOf = regimeReader(zone, PROVISIONAL_CONFIG.regimes);
+  const regimeOf = regimeReader(zone, config.regimes);
   // Los tags que se leen y no están en la lista del circuito: dónde y cuándo se leen (R-DAT-022). Va
   // antes que los cambios de tag porque un tag de noche empieza y deja de leerse cada día por su
   // horario, no porque cambie: no es un cambio de tag ni parte la ventana en dos.
@@ -588,9 +629,9 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     new Set([...byName("carga-online"), ...byName("mantenimiento"), ...byName("emergencia")]),
     regimeOf,
     {
-      minSlotPasses: PROVISIONAL_CONFIG.tagChanges.minSlotPasses,
-      maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
-      maxReadsBetween: PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
+      minSlotPasses: config.tagChanges.minSlotPasses,
+      maxChance: config.tagChanges.maxChance,
+      maxReadsBetween: config.tagChanges.maxReadsBetween,
     },
     byName("noche"),
   );
@@ -602,10 +643,10 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       .map((tag) => tag.tagId),
   );
   const tagChanges = withoutTags(
-    detectTagChanges(readings, direction, coverage, PROVISIONAL_CONFIG.tagChanges, {
-      minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
-      highRate: PROVISIONAL_CONFIG.readRate.highRate,
-      minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
+    detectTagChanges(readings, direction, coverage, config.tagChanges, {
+      minPassesForNever: config.vehicleReading.minPassesForNever,
+      highRate: config.readRate.highRate,
+      minAdoptionShare: config.drift.minAdoptionShare,
     }),
     nightTags,
   );
@@ -625,8 +666,8 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     new Set(criticalPointsConfig.funcionOf.keys()),
     coverage,
     zone,
-    PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
-    PROVISIONAL_CONFIG.flowStops,
+    config.silenceKind.shiftStartHours,
+    config.flowStops,
   );
   const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
   // Las paradas de la línea con AGV esperando (R-FLO-010), antes que cualquier tiempo habitual: la cola
@@ -634,8 +675,8 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
   // que es el que pasa por la línea, y sin saber aún quién retiene: eso no cambia las paradas.
   const lineTagList = lists.find((entry) => entry.list === "linea")?.tags ?? [];
   const lineFeedThresholds = {
-    minSamples: PROVISIONAL_CONFIG.bands.minBandSamples,
-    minMarginMs: PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+    minSamples: config.bands.minBandSamples,
+    minMarginMs: config.flowStops.minStopExcessMs,
   };
   const mainVehicleSet = new Set(cohortAssignment.cohorts[0]?.vehicles ?? []);
   const mainReadings = readings.filter((entry) => mainVehicleSet.has(entry.agvId));
@@ -735,16 +776,16 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       ),
       effective.cycle,
       regimeOf,
-      PROVISIONAL_CONFIG.bands,
-      PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+      config.bands,
+      config.flowStops.minStopExcessMs,
     );
     const grouped = collapseGroupedDeliveries(
       cohortTransitions,
       preliminaryBands,
       regimeOf,
-      PROVISIONAL_CONFIG.readRate.minTimeRatio,
+      config.readRate.minTimeRatio,
       laneTags,
-      PROVISIONAL_CONFIG.groupedDelivery,
+      config.groupedDelivery,
     );
     const cohortTimeline = grouped.transitions;
 
@@ -755,7 +796,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       timedTransitions,
       effective.cycle,
       zone,
-      PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
+      config.silenceKind.shiftStartHours,
     );
     for (const agvId of cohort.vehicles) usualByVehicle.set(agvId, usual);
     // La horquilla de cada tramo, por régimen (R-FLO-007): solo con transiciones que miden algo.
@@ -764,8 +805,8 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       measuredTimed,
       effective.cycle,
       regimeOf,
-      PROVISIONAL_CONFIG.bands,
-      PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+      config.bands,
+      config.flowStops.minStopExcessMs,
     );
     for (const [index, from] of bands.ring.entries()) {
       const to = bands.ring[(index + 1) % bands.ring.length];
@@ -785,7 +826,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         laneTags,
         functionOf: criticalPointsConfig.funcionOf,
       },
-      PROVISIONAL_CONFIG.flowStops,
+      config.flowStops,
     );
     flowReports.push(flow);
 
@@ -842,34 +883,34 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       coverage,
       effective.cycle,
       effective.tagId,
-      PROVISIONAL_CONFIG.readRate,
+      config.readRate,
       orderLimits,
-      PROVISIONAL_CONFIG.trend,
+      config.trend,
       tagChanges.lives,
     );
     matrices.push(matrix);
     vehicleReadings.push({
       cohortId: cohort.id,
-      ...describeVehicleReading(matrix, PROVISIONAL_CONFIG.readRate, PROVISIONAL_CONFIG.vehicleReading),
+      ...describeVehicleReading(matrix, config.readRate, config.vehicleReading),
     });
 
     // FIFO en zona cargada (R-FLO-001): los tramos son propiedad del anillo de este cohorte, así
     // que se derivan aquí, no una sola vez fuera del bucle como las calles (que son de circuito).
     if (zoneConfig.zoneOf.size > 0) {
       const { spans, problems: spanProblems } = loadedZoneSpans(effective.cycle, zoneConfig.zoneOf);
-      const fifoReport = buildFifoReport(cohort.id, cohortReadings, spans, PROVISIONAL_CONFIG.fifo, coverage);
+      const fifoReport = buildFifoReport(cohort.id, cohortReadings, spans, config.fifo, coverage);
       fifoCohorts.push({ cohortId: cohort.id, spans: fifoReport.spans, problems: spanProblems });
     }
 
     // Candidatos a punto crítico (R-GRA-007): sobre las transiciones del cohorte entero, no solo el
     // anillo — restringir a `anchor.cycle` escondería justo la rama fuera de él que la firma busca.
-    const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
-    const conCruces = classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce);
+    const bifurcaciones = findBifurcationCandidates(cohortTransitions, config.criticalPoints.bifurcacion);
+    const conCruces = classifyCrossings(bifurcaciones, cohortTransitions, config.criticalPoints.cruce);
     // Las firmas de tiempo, solo en producción: un descanso de 15 min rompería el coeficiente de
     // variación de una parada precisa (R-AGV-018), y la noche tiene su propio ritmo (R-TIM-009).
     const productionTimed = timedTransitions.filter((transition) => transitionRegime(transition, regimeOf) === "produccion");
-    const paradas = findPrecisePauseCandidates(productionTimed, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa);
-    const semaforos = findTrafficLightCandidates(productionTimed, PROVISIONAL_CONFIG.criticalPoints.semaforo);
+    const paradas = findPrecisePauseCandidates(productionTimed, config.criticalPoints.paradaPrecisa);
+    const semaforos = findTrafficLightCandidates(productionTimed, config.criticalPoints.semaforo);
     // Para dibujar la distribución que la firma resume: las duraciones de cada candidato de tiempo y
     // una muestra de referencia con todas las del cohorte (sin pares del mismo instante, R-DAT-013).
     const durations = transitionDurationsByTag(productionTimed);
@@ -899,10 +940,10 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     }
     // El ritmo de cada AGV y quién retiene (R-AGV-019, R-AGV-020), en todo lo cargado y en cada fichero.
     const paceThresholds: VehiclePaceThresholds = {
-      ...PROVISIONAL_CONFIG.pace,
-      minSamples: PROVISIONAL_CONFIG.bands.minBandSamples,
-      maxFalsePoints: PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
-      minVehiclesForContrast: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
+      ...config.pace,
+      minSamples: config.bands.minBandSamples,
+      maxFalsePoints: config.circuitState.maxFalsePoints,
+      minVehiclesForContrast: config.readRate.minVehiclesForContrast,
     };
     const paceInput = { transitions: measuredTimed, regimeOf, flow, zoneOf: zoneConfig.zoneOf };
     // La medición de cada fichero (R-TIM-011), con las mismas transiciones limpias: solo de los ficheros
@@ -912,10 +953,10 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         { cohortId: cohort.id, transitions: cohortTimeline, measured: measuredTimed, anchorTagId: effective.tagId },
         entry.window,
         regimeOf,
-        PROVISIONAL_CONFIG.bands,
-        PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
-        PROVISIONAL_CONFIG.franjas,
-        PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
+        config.bands,
+        config.flowStops.minStopExcessMs,
+        config.franjas,
+        config.tagChanges.maxReadsBetween,
       );
       return {
         sourceId: entry.source.sourceId,
@@ -924,8 +965,8 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
           paceInput,
           entry.window,
           measure.ring,
-          PROVISIONAL_CONFIG.bands,
-          PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+          config.bands,
+          config.flowStops.minStopExcessMs,
           paceThresholds,
         ),
       };
@@ -944,14 +985,14 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         fromUtcMs: delivery.fromUtcMs,
         toUtcMs: delivery.toUtcMs,
       })),
-      maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
+      maxChance: config.tagChanges.maxChance,
       resolutionMs: preliminaryBands.resolutionMs,
     };
     // Las secuencias se preparan una vez. Dentro de un tramo de cobertura se mira alrededor de los
     // cambios de tag por su sitio (R-DAT-019) y de donde un tag empieza o deja de leerse: un bloque de
     // tags seguidos cambiado a la vez no tiene sitio que comparar, porque sus vecinos también cambiaron.
     const sequences = anchorSequences(cohortReadings, direction, structureSpans);
-    const boundaries = structureBoundaries(sequences, structureSpans, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs, nightTags);
+    const boundaries = structureBoundaries(sequences, structureSpans, config.tagChanges.maxOverlapMs, nightTags);
     // Un mismo cambio se enseña una vez. Primero dentro de cada fichero, que dice a qué hora; entre
     // ficheros solo lo que no esté ya dicho: los mismos tags, o menos, de un cambio ya enseñado.
     const structure: StructureSet[] = [];
@@ -963,8 +1004,8 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         shown.push(tags);
         return true;
       });
-    for (const around of windowsAroundChanges([...changeTimes, ...boundaries], structureSpans, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs)) {
-      const gaps = keep(compareAnchorGaps(sequences, around.before, around.after, anchorContext, PROVISIONAL_CONFIG.anchorSums));
+    for (const around of windowsAroundChanges([...changeTimes, ...boundaries], structureSpans, config.tagChanges.maxOverlapMs)) {
+      const gaps = keep(compareAnchorGaps(sequences, around.before, around.after, anchorContext, config.anchorSums));
       if (gaps.length > 0) {
         structure.push({ source: "dentro-del-fichero", beforeSourceId: null, afterSourceId: null, atUtcMs: around.atUtcMs, gaps });
       }
@@ -1011,11 +1052,11 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
           timeCritical,
           declaredOrder,
           readTags: readTagSet,
-          reachTags: PROVISIONAL_CONFIG.flowStops.reachTags,
-          minVehicles: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
-          headStallMs: PROVISIONAL_CONFIG.flowStops.headStallMs,
+          reachTags: config.flowStops.reachTags,
+          minVehicles: config.readRate.minVehiclesForContrast,
+          headStallMs: config.flowStops.headStallMs,
         },
-        PROVISIONAL_CONFIG.circuitState,
+        config.circuitState,
       ),
       groupedDelivery: {
         evaluated: grouped.evaluated,
@@ -1025,7 +1066,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         ...summarizeDeliveries(
           grouped.deliveries,
           measurableTransitions(cohortTransitions, coverage, laneTags),
-          PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
+          config.circuitState.maxFalsePoints,
         ),
       },
       changes: bandChangesBetweenPeriods(
@@ -1033,9 +1074,9 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         coverage,
         effective.cycle,
         regimeOf,
-        PROVISIONAL_CONFIG.bands,
-        PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
-        PROVISIONAL_CONFIG.drift.minGapMs,
+        config.bands,
+        config.flowStops.minStopExcessMs,
+        config.drift.minGapMs,
       ),
     });
   }
@@ -1052,7 +1093,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     cohortAssignment,
     laps,
     dossierCoverage,
-    PROVISIONAL_CONFIG.silence.minGapMs,
+    config.silence.minGapMs,
     laneConfig.lanes,
   );
   const vehicleIds = agvDossiers.map((dossier) => dossier.agvId);
@@ -1080,11 +1121,11 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         .filter((entry) => withReadings.has(entry.source.sourceId))
         .map((entry) => ({ sourceId: entry.source.sourceId, window: entry.window })),
     },
-    PROVISIONAL_CONFIG.bands,
-    PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+    config.bands,
+    config.flowStops.minStopExcessMs,
   );
 
-  const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, PROVISIONAL_CONFIG.silence.minGapMs);
+  const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, config.silence.minGapMs);
 
   // La flota a lo largo del tiempo (DS-012, R-AGV-014): reutiliza las inactividades del expediente
   // y los arranques en frío de las calles, y recorta todo a la cobertura (R-DAT-007). Cada hueco sin
@@ -1130,7 +1171,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
             ...classifySilence(
               gap,
               { usual: usualByVehicle.get(dossier.agvId) ?? null, maintenance, justification },
-              PROVISIONAL_CONFIG.silenceKind,
+              config.silenceKind,
             ),
           };
         }),
@@ -1141,8 +1182,8 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         .filter((stay) => stay.leftUtcMs !== null)
         .map((stay) => [stay.agvId, stay.leftUtcMs as number]),
     ),
-    minGapMs: PROVISIONAL_CONFIG.silence.minGapMs,
-    longAbsenceMs: PROVISIONAL_CONFIG.silenceKind.longAbsenceMs,
+    minGapMs: config.silence.minGapMs,
+    longAbsenceMs: config.silenceKind.longAbsenceMs,
     productionStops: productionIntervals,
   });
 
@@ -1251,8 +1292,8 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     circuitState: {
       exposure: regimeExposure(dossierCoverage, productionIntervals, regimeOf),
       night: {
-        fromHour: PROVISIONAL_CONFIG.regimes.nightFromHour,
-        toHour: PROVISIONAL_CONFIG.regimes.nightToHour,
+        fromHour: config.regimes.nightFromHour,
+        toHour: config.regimes.nightToHour,
       },
       cohorts: circuitStateCohorts,
     },
@@ -1285,7 +1326,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       reinforcement,
       night: byName("noche"),
     },
-    PROVISIONAL_CONFIG.blindness,
+    config.blindness,
   );
 
   inventoryClassOf = new Map(inventory.rows.map((row) => [row.tagId, row.tagClass]));
@@ -1479,7 +1520,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
             criticalPointsConfig.funcionOf,
             productionIntervals,
           );
-    const fileCharging = laneConfig.lanes.length === 0 ? null : buildChargingReport(readings.filter(inWindow), laneConfig.lanes, [window], PROVISIONAL_CONFIG.charging);
+    const fileCharging = laneConfig.lanes.length === 0 ? null : buildChargingReport(readings.filter(inWindow), laneConfig.lanes, [window], config.charging);
     snapshot = attempt("La instantánea de este fichero no se pudo construir", failures, null, () =>
       buildSnapshot(
         assembleSnapshotInput({
@@ -1488,6 +1529,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
           source: { ...importedSource, window },
           capturedAt: Date.now(),
           appVersion: APP_VERSION,
+          configVersion: config.configVersion,
           exposure: regimeExposure([window], productionIntervals, regimeOf),
           cohortId: snapshotCohortId,
           anchorTagId: anchor?.tagId ?? null,
@@ -1503,9 +1545,9 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
                   [window],
                   ring,
                   ring[0] as string,
-                  PROVISIONAL_CONFIG.readRate,
+                  config.readRate,
                   orderLimits,
-                  PROVISIONAL_CONFIG.trend,
+                  config.trend,
                   tagChanges.lives,
                 ),
           readingsByTag,
@@ -1534,8 +1576,8 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
                     sectionOf: sections,
                     windows: [{ sourceId: importedSource.sourceId, window }],
                   },
-                  PROVISIONAL_CONFIG.bands,
-                  PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+                  config.bands,
+                  config.flowStops.minStopExcessMs,
                 ).sections,
           anchorGaps:
             ring.length === 0 || anchor === null
@@ -1601,14 +1643,14 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       const early = allSnapshots[index - 1] as CircuitSnapshot;
       const late = allSnapshots[index] as CircuitSnapshot;
       const set = attempt(`La estructura entre «${early.fileName}» y «${late.fileName}» no se pudo comparar`, failures, null, () =>
-        structureBetweenSnapshots(early, late, PROVISIONAL_CONFIG.tagChanges),
+        structureBetweenSnapshots(early, late, config.tagChanges),
       );
       if (set === null) continue;
       const gaps = keep(set.gaps);
       if (gaps.length > 0) structure.push({ ...set, gaps });
     }
     const histories = attempt("Las horquillas entre ficheros no se pudieron leer de las instantáneas", failures, cohort.histories, () =>
-      historiesFromSnapshots(allSnapshots, PROVISIONAL_CONFIG.franjas),
+      historiesFromSnapshots(allSnapshots, config.franjas),
     );
     return { cohortId: cohort.cohortId, measures, histories, structure };
   });
@@ -1632,7 +1674,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     const early = allSnapshots[index - 1] as CircuitSnapshot;
     const late = allSnapshots[index] as CircuitSnapshot;
     const delta = attempt(`El cambio entre «${early.fileName}» y «${late.fileName}» no se pudo calcular`, failures, null, () =>
-      compareSnapshots(early, late, PROVISIONAL_CONFIG.tagChanges),
+      compareSnapshots(early, late, config.tagChanges),
     );
     if (delta !== null) deltas.push(delta);
   }
@@ -1644,7 +1686,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     lists.length === 0 || first === undefined || last === undefined || first === last
       ? null
       : attempt("La deriva entre periodos no se pudo leer de las instantáneas", failures, null, () =>
-          driftBetweenSnapshots(first, last, PROVISIONAL_CONFIG.drift),
+          driftBetweenSnapshots(first, last, config.drift),
         );
   const retainedIds = new Set((stored?.sources ?? []).filter((source) => source.retained).map((source) => source.sourceId));
   const sourceList = (stored?.sources ?? []).length === 0 ? [{ ...importedSource, importedAt: Date.now(), complete: importedWindow?.window ?? null }] : distinctSources(stored?.sources ?? []);
@@ -1696,6 +1738,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         snapshots: allSnapshots,
         working: snapshot ?? snapshotOf.get(importedSource.sourceId) ?? null,
         declaredExits: declaredExitsOf(stored.lists),
+        config,
       });
       if (built !== undefined) {
         plan = built.views;
@@ -1721,6 +1764,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     snapshots: snapshotsFinal,
     ...(memory === undefined ? {} : { memory }),
     ...(plan === undefined ? {} : { plan }),
+    plantValues: context.plantValues,
     ...listViews,
     ...(drift === null || !drift.evaluated || drift.earlyPeriod === null || drift.latePeriod === null
       ? {}
@@ -1821,12 +1865,24 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         isCancelled: () => cancelRequested,
       },
     );
+    // Los valores de planta confirmados del circuito que rigen al inicio de este fichero (OQ-140):
+    // sustituyen a los provisionales en todo lo que se analiza de él. Sin ninguno, la provisional.
+    const fileStart = fileStartOf(result.readings);
+    const plantEvents = message.circuitId === undefined || !isAvailable() ? [] : await loadPlantValues(message.circuitId);
+    const circuitConfig = fileStart === null ? PROVISIONAL_CONFIG : resolveAnalysisConfig(PROVISIONAL_CONFIG, plantEvents, fileStart);
+
     // La acumulación ocurre **después** de que la importación haya terminado del todo, y en una
     // sola transacción: cancelar a mitad no deja nada escrito (INV-006).
     const accumulated =
       message.circuitId === undefined
         ? undefined
-        : await accumulate(message.circuitId, message.circuitName ?? message.circuitId, zone, result);
+        : await accumulate(message.circuitId, message.circuitName ?? message.circuitId, zone, result, circuitConfig);
+    // Un fichero que no se acumuló (afinidad) no es del circuito: se analiza con los provisionales.
+    const inCircuit = accumulated?.stored !== undefined;
+    const workingSpan = (accumulated?.workingCoverage ?? []).reduce<{ from: number; to: number } | null>(
+      (span, entry) => (span === null ? { from: entry.from, to: entry.to } : { from: Math.min(span.from, entry.from), to: Math.max(span.to, entry.to) }),
+      null,
+    );
 
     // El fichero original, comprimido, queda archivado con su huella (OQ-145): es la evidencia para
     // revisar o volver a medir el pasado con reglas nuevas cuando sus lecturas ya no estén retenidas.
@@ -1856,6 +1912,15 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
       zone,
       direction: result.summary.direction,
       importedSource: result.summary,
+      config: inCircuit ? circuitConfig : PROVISIONAL_CONFIG,
+      plantValues: plantValuesView({
+        events: inCircuit ? plantEvents : [],
+        provisional: PROVISIONAL_CONFIG,
+        at: fileStart,
+        fileName: file.name,
+        window: inCircuit ? workingSpan : null,
+        canConfirm: inCircuit,
+      }),
     });
 
     // La instantánea se guarda sola (ADR-0015 §4): es una medición con fecha, no memoria consolidada.
@@ -1930,7 +1995,11 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
 
 // --- Memoria consolidada (F4) ----------------------------------------------------------------------
 
-/** Los umbrales con que se comparan instantáneas: los mismos que los cambios de tag (OQ-138). */
+/**
+ * Los umbrales con que se comparan instantáneas: los mismos que los cambios de tag (OQ-138). Salen de
+ * `PROVISIONAL_CONFIG` y no de la configuración de cada fichero porque comparan versiones de ficheros
+ * distintos, y ninguno de los dos es un valor de planta (OQ-140): con valores confirmados son iguales.
+ */
 const MEMORY_THRESHOLDS = { maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance };
 
 /** Los mismos, más los de la clasificación de cambios frente al esperado (§8, OQ-146, OQ-147). */
@@ -2054,6 +2123,9 @@ async function snapshotFromReadings(
   direction: SourceDirection,
   snapshots: readonly CircuitSnapshot[],
 ): Promise<{ readonly snapshot: CircuitSnapshot | null; readonly problems: readonly string[] }> {
+  // La misma configuración con que se analizó el fichero al importarlo (OQ-140).
+  const at = source.complete?.from ?? fileStartOf(readings);
+  const events = isAvailable() ? await loadPlantValues(stored.circuitId) : [];
   const built = await buildViews({
     stored,
     working: readings,
@@ -2063,6 +2135,8 @@ async function snapshotFromReadings(
     zone: stored.zone,
     direction,
     importedSource: { sourceId: source.sourceId, sourceHash: source.sourceHash, fileName: source.fileName, acceptedRows: source.acceptedRows },
+    config: at === null ? PROVISIONAL_CONFIG : resolveAnalysisConfig(PROVISIONAL_CONFIG, events, at),
+    plantValues: plantValuesView({ events, provisional: PROVISIONAL_CONFIG, at, fileName: source.fileName, window: null, canConfirm: true }),
   });
   if (built === undefined) return { snapshot: null, problems: ["no queda ninguna lectura del fichero."] };
   return { snapshot: built.snapshot, problems: built.problems };
@@ -2285,6 +2359,8 @@ interface PlanInputs {
   /** La instantánea del fichero de trabajo, o `null`. */
   readonly working: CircuitSnapshot | null;
   readonly declaredExits: readonly string[];
+  /** La configuración del análisis (con los valores de planta del fichero de trabajo, si los hay). */
+  readonly config: AnalysisConfig;
 }
 
 /**
@@ -2301,17 +2377,17 @@ function planViewsFrom(input: PlanInputs): { readonly views: PlanViews; readonly
   for (const entry of sortSnapshots(input.snapshots)) {
     if (observations.has(entry.sourceId)) continue;
     const plan = planAt(events, entry.window.to);
-    if (plan !== null) observations.set(entry.sourceId, observeAgainstPlan(plan, entry, PROVISIONAL_CONFIG.readRate));
+    if (plan !== null) observations.set(entry.sourceId, observeAgainstPlan(plan, entry, input.config.readRate));
   }
   const workingPlan = working === null ? null : planAt(events, working.window.to);
-  const observation = working === null || workingPlan === null ? null : (observations.get(working.sourceId) ?? observeAgainstPlan(workingPlan, working, PROVISIONAL_CONFIG.readRate));
+  const observation = working === null || workingPlan === null ? null : (observations.get(working.sourceId) ?? observeAgainstPlan(workingPlan, working, input.config.readRate));
   if (working !== null && observation !== null) observations.set(working.sourceId, observation);
   const proposals =
     working === null || workingPlan === null || observation === null
       ? []
       : proposeChanges(workingPlan, observation, working, {
           declaredExits: input.declaredExits,
-          minVehicles: PROVISIONAL_CONFIG.plan.minVehiclesForProposal,
+          minVehicles: input.config.plan.minVehiclesForProposal,
         });
   return {
     views: {
@@ -2319,7 +2395,7 @@ function planViewsFrom(input: PlanInputs): { readonly views: PlanViews; readonly
       canBootstrap: hasPlan || current === null ? null : { version: current.version, fileName: current.basedOn.fileName },
       events: [...events].sort((a, b) => a.seq - b.seq).map((event) => ({ ...event, text: describeEvent(event, events) })),
       observation,
-      summary: observations.size === 0 ? null : summarizePlan([...observations.values()], PROVISIONAL_CONFIG.readRate),
+      summary: observations.size === 0 ? null : summarizePlan([...observations.values()], input.config.readRate),
       proposals,
     },
     observations,
@@ -2376,8 +2452,10 @@ async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Pro
       if (snapshot === undefined) throw new PlanRefusal(`El fichero ${action.sourceId} no tiene instantánea: la propuesta no se puede volver a calcular.`, "Vuelve a cargar el fichero y revisa las propuestas.");
       const plan = planAt(events, snapshot.window.to);
       if (plan === null) throw new PlanRefusal(`Al final de la ventana de «${snapshot.fileName}» todavía no había plano.`, "Las propuestas salen de ficheros posteriores a la creación del plano.");
-      const observation = observeAgainstPlan(plan, snapshot, PROVISIONAL_CONFIG.readRate);
-      const proposal = proposeChanges(plan, observation, snapshot, { declaredExits, minVehicles: PROVISIONAL_CONFIG.plan.minVehiclesForProposal }).find(
+      // La misma configuración con que se analizó ese fichero (OQ-140).
+      const config = await configForFile(circuitId, snapshot.window.from);
+      const observation = observeAgainstPlan(plan, snapshot, config.readRate);
+      const proposal = proposeChanges(plan, observation, snapshot, { declaredExits, minVehicles: config.plan.minVehiclesForProposal }).find(
         (entry) => entry.id === action.proposalId,
       );
       if (proposal === undefined) {
@@ -2418,7 +2496,8 @@ async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Pro
       message.workingSourceId === null
         ? (ordered[ordered.length - 1] ?? null)
         : (snapshots.find((entry) => entry.sourceId === message.workingSourceId) ?? null);
-    const built = planViewsFrom({ events: saved, current: currentVersion(memoryData.active), snapshots, working, declaredExits });
+    const config = working === null ? PROVISIONAL_CONFIG : await configForFile(circuitId, working.window.from);
+    const built = planViewsFrom({ events: saved, current: currentVersion(memoryData.active), snapshots, working, declaredExits, config });
     if (built === undefined) throw new Error("Los eventos se guardaron pero el plano no se pudo volver a leer.");
     emit({ type: "plan-updated", circuitId, written: toWrite.map((event) => describeEvent(event, saved)), plan: built.views }, jobId);
   } catch (error) {
@@ -2429,6 +2508,89 @@ async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Pro
     // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
     fail(
       `La operación del plano falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
+    );
+  }
+}
+
+// --- Valores de planta confirmados (OQ-140) -------------------------------------------------------
+
+/**
+ * Confirma un valor de planta del circuito. El Worker no decide nada ni estima nada (OQ-151 sigue
+ * abierta): valida lo que la persona escribió —clave conocida, valor válido, fecha y razón— y lo añade
+ * al registro append-only. No vuelve a analizar: el valor se aplica al volver a analizar los ficheros
+ * que empiezan desde su fecha efectiva. Responde con lo vigente para el fichero de trabajo.
+ */
+async function runPlantValue(message: Extract<ToWorker, { type: "plant-value" }>): Promise<void> {
+  const { jobId, circuitId } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  if (!isAvailable()) {
+    fail("No hay almacén local: los valores de planta necesitan IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
+    return;
+  }
+  try {
+    const reason = typeof message.reason === "string" ? message.reason.trim() : "";
+    if (reason === "") {
+      fail("La razón está vacía: ningún valor de planta se confirma sin su justificación.", "Escribe por qué es ese el valor de tu planta y vuelve a confirmarlo.");
+      return;
+    }
+    if (!isPlantValueKey(message.key)) {
+      fail(`«${String(message.key)}» no es un valor de planta.`, "Elige uno de la lista.");
+      return;
+    }
+    const problem = validatePlantValue(message.key, message.value);
+    if (problem !== null) {
+      fail(problem, "Corrige el valor y vuelve a confirmarlo.");
+      return;
+    }
+    if (typeof message.effectiveAt !== "number" || !Number.isFinite(message.effectiveAt)) {
+      fail("Falta la fecha desde la que rige el valor.", "Elige la fecha efectiva y vuelve a confirmarlo.");
+      return;
+    }
+    const stored = await loadCircuit(circuitId);
+    if (stored === undefined) {
+      fail(`El circuito ${circuitId} no está en el almacén.`, "Carga antes un fichero del circuito.");
+      return;
+    }
+    const events = await loadPlantValues(circuitId);
+    const definition = plantValueDefinition(message.key);
+    const event: PlantValueEvent = {
+      circuitId,
+      seq: events.reduce((max, entry) => Math.max(max, entry.seq), 0) + 1,
+      key: message.key,
+      value: typeof message.value === "number" ? message.value : [...message.value],
+      effectiveAt: message.effectiveAt,
+      recordedAt: Date.now(),
+      reason,
+      origin: "manual",
+    };
+    await appendPlantValue(event);
+
+    const saved = await loadPlantValues(circuitId);
+    const distinct = distinctSources(stored.sources);
+    const workingSource =
+      (message.workingSourceId === null ? undefined : stored.sources.find((source) => source.sourceId === message.workingSourceId)) ??
+      [...distinct].sort((a, b) => a.importedAt - b.importedAt)[distinct.length - 1];
+    const at = workingSource?.complete?.from ?? null;
+    const retained = stored.sources.filter((source) => source.retained && source.complete !== null).map((source) => source.complete as Interval);
+    const window = retained.length === 0 ? null : { from: Math.min(...retained.map((span) => span.from)), to: Math.max(...retained.map((span) => span.to)) };
+    const plantValues = plantValuesView({ events: saved, provisional: PROVISIONAL_CONFIG, at, fileName: workingSource?.fileName ?? null, window, canConfirm: true });
+    emit(
+      {
+        type: "plant-values-updated",
+        circuitId,
+        written: `${definition?.label ?? event.key}: ${formatPlantValue(definition?.kind ?? "duracion", definition?.inputUnit, event.value)}.`,
+        appliesToWorking: at !== null && plantValuesAt(saved, at).get(event.key)?.seq === event.seq,
+        plantValues,
+      },
+      jobId,
+    );
+  } catch (error) {
+    // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
+    fail(
+      `No se pudo guardar el valor de planta (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
       "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
     );
   }
@@ -2700,6 +2862,13 @@ scope.onmessage = (event: MessageEvent<ToWorker>): void => {
     currentJobId = message.jobId;
     seq = 0;
     void runCompareVersions(message);
+    return;
+  }
+
+  if (message.type === "plant-value") {
+    currentJobId = message.jobId;
+    seq = 0;
+    void runPlantValue(message);
     return;
   }
 

@@ -12,14 +12,17 @@ import {
   AGVPROJ_SCHEMA_VERSION,
   memorySection,
   planSection,
+  plantValuesSection,
   ProjectError,
   readMemorySection,
   readPlanSection,
+  readPlantValuesSection,
   readProject,
   writeProject,
 } from "../../src/persistence/agvproj.js";
 import { emptyLineageState, withConsolidated, type ConsolidatedVersion } from "../../src/domain/memory.js";
 import type { PlanEvent } from "../../src/domain/plan.js";
+import type { PlantValueEvent } from "../../src/domain/plant-values.js";
 import { readZip, writeZip, ZipError, ZIP_LIMITS } from "../../src/persistence/zip.js";
 
 const EXPORTED_AT = 1_758_000_000_000;
@@ -142,12 +145,13 @@ describe("apertura defensiva · ADR-0012", () => {
 });
 
 describe("ADR-0015 §5 · el proyecto lleva las instantáneas y abre las versiones anteriores", () => {
-  // ADR-0016 subió el esquema al 4 (sección `plano`): el número vigente cambia por decisión, no para
-  // que la prueba pase; lo que fija esta prueba —que `instantaneas` viaja con su hash— no cambia.
-  it("el esquema vigente es el 4 y la sección `instantaneas` viaja como cualquier otra, con su hash", async () => {
+  // ADR-0016 subió el esquema al 4 (sección `plano`) y los valores de planta confirmados (OQ-140) al 5
+  // (sección `valores`): el número vigente cambia por decisión, no para que la prueba pase; lo que fija
+  // esta prueba —que `instantaneas` viaja con su hash— no cambia.
+  it("el esquema vigente es el 5 y la sección `instantaneas` viaja como cualquier otra, con su hash", async () => {
     const instantaneas = [{ schemaVersion: 1, sourceId: "s1", ring: ["T1", "T2"], vertices: [] }];
     const project = await readProject(await writeProject("c1", { ...sections, instantaneas }, EXPORTED_AT));
-    expect(project.manifest.schema_version).toBe(4);
+    expect(project.manifest.schema_version).toBe(5);
     expect(project.sections["instantaneas"]).toEqual(instantaneas);
     expect(project.manifest.sections.map((digest) => digest.name)).toContain("instantaneas");
   });
@@ -298,5 +302,49 @@ describe("ADR-0016 · esquema 4: el plano físico viaja en la sección `plano` y
     expect(readMemorySection(proyecto)).toEqual(memoria);
     expect(proyecto.sections["plano"]).toBeUndefined();
     expect(readPlanSection(proyecto)).toBeUndefined();
+  });
+});
+
+describe("OQ-140 · esquema 5: los valores de planta confirmados viajan en la sección `valores` y el 4 se sigue abriendo", () => {
+  const eventos: PlantValueEvent[] = [
+    { circuitId: "c1", seq: 1, key: "noche-desde", value: 20, effectiveAt: 1000, recordedAt: 2000, reason: "la noche empieza a las 20 en planta", origin: "manual" },
+    { circuitId: "c1", seq: 2, key: "arranque-turnos", value: [7, 19], effectiveAt: 3000, recordedAt: 4000, reason: "dos turnos desde enero", origin: "manual" },
+  ];
+
+  it("ida y vuelta: los eventos vuelven iguales y en orden, con su hash de sección", async () => {
+    const valores = plantValuesSection([...eventos].reverse());
+    expect(valores?.eventos.map((event) => event.seq)).toEqual([1, 2]);
+    const project = await readProject(await writeProject("c1", { ...sections, valores }, EXPORTED_AT));
+    expect(project.manifest.schema_version).toBe(AGVPROJ_SCHEMA_VERSION);
+    expect(AGVPROJ_SCHEMA_VERSION).toBe(5);
+    expect(project.manifest.sections.map((digest) => digest.name)).toContain("valores");
+    expect(readPlantValuesSection(project)).toEqual({ eventos });
+  });
+
+  it("sin valores confirmados no hay sección", () => {
+    expect(plantValuesSection([])).toBeUndefined();
+  });
+
+  it("una sección `valores` con otra forma o un valor inválido se rechaza diciendo qué falla", async () => {
+    const sinEventos = await readProject(await writeProject("c1", { ...sections, valores: { eventos: "no" } }, EXPORTED_AT));
+    expect(() => readPlantValuesSection(sinEventos)).toThrow(/eventos/);
+    const sinRazon = await readProject(await writeProject("c1", { ...sections, valores: { eventos: [{ ...eventos[0], reason: "" }] } }, EXPORTED_AT));
+    expect(() => readPlantValuesSection(sinRazon)).toThrow(ProjectError);
+    expect(() => readPlantValuesSection(sinRazon)).toThrow(/razón/);
+    const horaImposible = await readProject(await writeProject("c1", { ...sections, valores: { eventos: [{ ...eventos[0], value: 25 }] } }, EXPORTED_AT));
+    expect(() => readPlantValuesSection(horaImposible)).toThrow(/de 0 a 23/);
+    const claveRara = await readProject(await writeProject("c1", { ...sections, valores: { eventos: [{ ...eventos[0], key: "drift.minGapMs" }] } }, EXPORTED_AT));
+    expect(() => readPlantValuesSection(claveRara)).toThrow(/clave/);
+  });
+
+  it("un proyecto del esquema 4 —sin valores— se sigue abriendo tal cual, con su plano", async () => {
+    const plano = planSection([
+      { type: "sustituir", circuitId: "c1", seq: 1, effectiveAt: 3000, recordedAt: 4000, reason: "cambio en campo", evidence: null, origin: "manual", locationId: "U-0002", tagId: "T009" },
+    ]);
+    const proyecto = await readProject(await asSchema(await writeProject("c1", { ...sections, plano }, EXPORTED_AT), 4));
+    expect(proyecto.manifest.schema_version).toBe(4);
+    expect(readPlanSection(proyecto)).toEqual(plano);
+    expect(proyecto.sections["valores"]).toBeUndefined();
+    expect(readPlantValuesSection(proyecto)).toBeUndefined();
   });
 });

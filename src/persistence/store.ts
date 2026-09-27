@@ -24,10 +24,15 @@
  * **Versión 8 (ADR-0016).** La tabla `plan`: los eventos del plano físico de cada circuito, clave
  * `[circuitId, seq]`, **append-only** —se añaden con `add`, nunca se reescriben—. El plano de un
  * instante se reconstruye recorriéndolos (`planAt`).
+ *
+ * **Versión 10 (OQ-140, OQ-151).** La tabla `plantValues`: los valores de planta que una persona
+ * confirma para el circuito, clave `[circuitId, seq]`, **append-only** como el plano —se añaden con
+ * `add`, nunca se reescriben—. Lo vigente para un fichero se resuelve recorriéndolos (`plantValuesAt`).
  */
 
 import type { Interval } from "../domain/coverage.js";
 import type { PlanEvent } from "../domain/plan.js";
+import type { PlantValueEvent } from "../domain/plant-values.js";
 import type { FleetPeriod } from "../domain/fleet.js";
 import { sortVersions, type ConsolidatedVersion, type LineageState } from "../domain/memory.js";
 import type { Reading } from "../domain/reading.js";
@@ -37,7 +42,7 @@ import { gunzip, gunzipJson, gzip, gzipJson } from "./compression.js";
 import { splitLegacyCircuit, type LegacyCircuitRecord } from "./retention.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 9;
+export const STORE_VERSION = 10;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
@@ -63,6 +68,8 @@ const PLAN = "plan";
  * nuevas; no viaja en el `.agvproj` (ADR-0012: el bruto no sale del dispositivo por defecto).
  */
 const ARCHIVE = "archive";
+/** Los valores de planta confirmados (OQ-140), append-only: clave `[circuitId, seq]`. */
+const PLANT_VALUES = "plantValues";
 
 /** Las marcas de revisión de un circuito, por clave de hallazgo (`src/domain/review.ts`). */
 export interface StoredReviews {
@@ -339,6 +346,14 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
       db.createObjectStore(ARCHIVE, { keyPath: ["circuitId", "sourceHash"] });
     },
   },
+  {
+    to: 10,
+    // Los valores de planta confirmados (OQ-140): una tabla nueva y vacía. Nada que reescribir: sin
+    // eventos rige el provisional, que es exactamente lo que cada circuito anterior venía usando.
+    apply: (db) => {
+      db.createObjectStore(PLANT_VALUES, { keyPath: ["circuitId", "seq"] });
+    },
+  },
 ];
 
 if (MIGRATIONS[MIGRATIONS.length - 1]?.to !== STORE_VERSION) {
@@ -526,9 +541,9 @@ export async function loadSnapshots(circuitId: string): Promise<readonly Circuit
 export async function deleteCircuit(circuitId: string): Promise<void> {
   const db = await open();
   try {
-    // El circuito, sus lecturas, sus instantáneas, su revisión, su memoria y su plano se van juntos:
-    // una marca, una instantánea, una versión o un evento del plano sin su circuito no significan nada.
-    const tx = db.transaction([CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS, MEMORY, MEMORY_STATE, PLAN, ARCHIVE], "readwrite");
+    // El circuito, sus lecturas, sus instantáneas, su revisión, su memoria, su plano y sus valores de
+    // planta se van juntos: nada de eso sin su circuito significa nada.
+    const tx = db.transaction([CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS, MEMORY, MEMORY_STATE, PLAN, ARCHIVE, PLANT_VALUES], "readwrite");
     tx.objectStore(CIRCUITS).delete(circuitId);
     tx.objectStore(REVIEWS).delete(circuitId);
     tx.objectStore(SOURCES).delete(circuitRange(circuitId));
@@ -537,6 +552,7 @@ export async function deleteCircuit(circuitId: string): Promise<void> {
     tx.objectStore(MEMORY_STATE).delete(circuitId);
     tx.objectStore(PLAN).delete(circuitRange(circuitId));
     tx.objectStore(ARCHIVE).delete(circuitRange(circuitId));
+    tx.objectStore(PLANT_VALUES).delete(circuitRange(circuitId));
     await settle(tx, "No se pudo borrar el circuito.");
   } finally {
     db.close();
@@ -759,6 +775,44 @@ export async function loadPlanEvents(circuitId: string): Promise<readonly PlanEv
     const tx = db.transaction(PLAN, "readonly");
     const store = tx.objectStore(PLAN);
     const stored = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<PlanEvent[]>);
+    return [...stored].sort((a, b) => a.seq - b.seq);
+  } finally {
+    db.close();
+  }
+}
+
+// --- Valores de planta confirmados (OQ-140) -------------------------------------------------------
+
+/**
+ * Añade valores de planta en **una sola** transacción, con `add`: si alguno ya existe con ese
+ * `[circuitId, seq]`, la transacción se aborta y no queda ninguno. Un valor nunca se reescribe; una
+ * corrección es otro evento con su fecha y su razón.
+ */
+export async function appendPlantValues(events: readonly PlantValueEvent[]): Promise<void> {
+  if (events.length === 0) return;
+  const db = await open();
+  try {
+    const tx = db.transaction(PLANT_VALUES, "readwrite");
+    const store = tx.objectStore(PLANT_VALUES);
+    for (const event of events) store.add(event);
+    await settle(tx, "No se pudieron guardar los valores de planta (¿número de evento repetido?).");
+  } finally {
+    db.close();
+  }
+}
+
+/** Añade un valor de planta confirmado (append-only). */
+export async function appendPlantValue(event: PlantValueEvent): Promise<void> {
+  await appendPlantValues([event]);
+}
+
+/** Los valores de planta confirmados de un circuito, en orden de registro (`seq`); vacío si no tiene. */
+export async function loadPlantValues(circuitId: string): Promise<readonly PlantValueEvent[]> {
+  const db = await open();
+  try {
+    const tx = db.transaction(PLANT_VALUES, "readonly");
+    const store = tx.objectStore(PLANT_VALUES);
+    const stored = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<PlantValueEvent[]>);
     return [...stored].sort((a, b) => a.seq - b.seq);
   } finally {
     db.close();

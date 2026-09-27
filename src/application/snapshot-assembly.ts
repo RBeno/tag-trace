@@ -47,6 +47,8 @@ export interface SnapshotAssemblyInput {
   };
   readonly capturedAt: number;
   readonly appVersion: string;
+  /** La configuración con que se midió (FR-031). */
+  readonly configVersion?: string;
   /** `regimeExposure` sobre la ventana del fichero. */
   readonly exposure: RegimeExposure;
   /** El cohorte principal y su ancla efectiva (R-GRA-009). */
@@ -221,6 +223,7 @@ export function assembleSnapshotInput(input: SnapshotAssemblyInput): SnapshotInp
     source: input.source,
     capturedAt: input.capturedAt,
     appVersion: input.appVersion,
+    ...(input.configVersion === undefined ? {} : { configVersion: input.configVersion }),
     exposure: { produccion: input.exposure.produccionMs, noche: input.exposure.nocheMs },
     cohortId: input.cohortId,
     anchorTagId: input.anchorTagId,
