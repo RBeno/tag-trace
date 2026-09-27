@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.30.0
+version: 0.31.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -551,6 +551,12 @@ El usuario debe poder eliminar lo que ha creado, y esa eliminación debe ser ver
   alcanzan las lecturas retenidas, y la vista lo dice. Volver a cargar un fichero retirado lo pone el
   último: sus lecturas vuelven, guardadas bajo el identificador de su primera carga, y no se crea
   fuente ni instantánea nuevas.
+
+**Medidas de planta en la instantánea (3.60.0).** `plantMeasures` guarda por fichero lo que necesitan
+los estimadores de los valores de planta (lecturas y cobertura por hora local, paradas de producción
+con día y minuto, resúmenes de los huecos que vuelven, de las esperas del primero de cola, del
+tránsito del tramo cargado y de las paradas precisas). Unos cientos de bytes por fichero; las
+instantáneas anteriores no lo traen y esa versión no permite estimar.
 
 **Almacén local, versión 10 (3.59.0).** Tabla `plantValues` con clave `[circuitId, seq]`, append-only
 con `add`: los valores de planta confirmados del circuito (`CONFIG_SCHEMA.md` §3.5). Borrar el

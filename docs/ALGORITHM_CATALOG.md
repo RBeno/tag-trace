@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.45.0
+version: 0.46.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -1195,4 +1195,13 @@ uno de cinco AGV no se adopta, y un hallazgo grave confirmado queda como inciden
   «por debajo de la flota» se compara con todas las celdas de esa ubicación en la matriz (s·E < S·e,
   en enteros). Los periodos cuya instantánea no trae desglose no entran en las cifras por AGV y se
   dice en cuántos de cuántos periodos se midió.
+
+## 6.27 Propuestas de valores de planta, implementado (OQ-151)
+
+`measurePlantValues` (Worker, al montar la instantánea), `estimatePlantValue` y `proposePlantValues`
+(`src/domain/plant-values.ts`). Los estimadores y de qué análisis salen están en `CONFIG_SCHEMA.md`
+§3.5; los percentiles usan `quantile`, el mismo de las horquillas. La única medida nueva es el
+percentil 95 del tránsito de un tramo cargado, sacado de la misma lista de pasadas que su mediana
+(`fifo.ts`). La coincidencia se decide sobre las estimaciones redondeadas a la unidad del valor; al
+confirmar, el Worker vuelve a calcular la propuesta y rechaza si ya no existe o si cambió.
 

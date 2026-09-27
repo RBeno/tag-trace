@@ -186,6 +186,67 @@ export interface SnapshotLane {
   readonly medianStayMs: number | null;
 }
 
+/** Un resumen de muestras: cuántas hubo y el percentil que pide su estimador (`quantile` de `graph.ts`). */
+export interface SnapshotSampleSummary {
+  readonly n: number;
+  /** El percentil, en ms; `null` sin muestras. */
+  readonly valueMs: number | null;
+}
+
+/**
+ * Lo mínimo para estimar los valores de planta de un fichero (OQ-151, `CONFIG_SCHEMA.md` §3.5). Son
+ * proyecciones de análisis que el Worker ya hace, en la ventana del fichero; de dónde sale cada campo
+ * está en su comentario. Opcional: las instantáneas anteriores no lo traen, y esa versión «no permite
+ * estimar» (no se inventa).
+ */
+export interface SnapshotPlantMeasures {
+  /**
+   * Perfil horario del fichero (`hourlyProfile`, `activity.ts`, sobre todas las lecturas de la flota en
+   * su ventana): lecturas por hora local 0–23, y cuánto de esa hora cubre la ventana (ms), para no leer
+   * una hora sin datos como una hora sin actividad (R-DAT-007).
+   */
+  readonly hourly: { readonly readings: readonly number[]; readonly coveredMs: readonly number[] };
+  /** Días locales distintos con lecturas (`hourlyProfile().days`). */
+  readonly days: number;
+  /**
+   * Las paradas de la producción que empiezan en la ventana (`productionStops`, `flow-stops.ts`): día
+   * local, minuto local de inicio (0–1439) y, por índice en esta lista, con cuáles se repiten a la misma
+   * hora otro día (`sameTimeOn`, solo las de este fichero).
+   */
+  readonly productionStops: readonly {
+    readonly day: string;
+    readonly minute: number;
+    readonly sameTimeAs: readonly number[];
+  }[];
+  /**
+   * Huecos de los AGV que volvieron a leer (`AgvDossier.inactivity`, `dossier.ts`, sin los que explica
+   * una calle de carga), dentro de la ventana: su percentil 99.
+   */
+  readonly returnGaps: SnapshotSampleSummary;
+  /**
+   * Esperas del primero de cola que acabaron avanzando (`flowStops`, `flow-stops.ts`: paradas
+   * `sin-explicacion`, que son las que se comparan con `headStallMs`, cuyo tag siguiente es otro), su
+   * exceso sobre lo habitual del tramo: su percentil 95.
+   */
+  readonly headWaits: SnapshotSampleSummary;
+  /**
+   * Tramos de zona cargada evaluados del cohorte principal en la ventana (`buildFifoReport`, `fifo.ts`):
+   * mediana y percentil 95 del tránsito. `null` sin lista `zona`.
+   */
+  readonly loadedSpans: readonly {
+    readonly spanId: string;
+    readonly passes: number;
+    readonly medianTransitMs: number;
+    readonly p95TransitMs: number;
+  }[] | null;
+  /**
+   * Esperas en las paradas precisas declaradas (lista `critico` o `circuito`, función `parada-precisa`),
+   * en producción (`transitionDurationsByTag`, `critical-points.ts`): cuántos tags declarados, si la
+   * hora del fichero permite medir esperas (`timeSignaturesMeasurable`) y su percentil 5.
+   */
+  readonly precisePauses: { readonly declared: number; readonly measurable: boolean } & SnapshotSampleSummary;
+}
+
 export interface CircuitSnapshot {
   readonly schemaVersion: number;
   readonly circuitId: string;
@@ -221,6 +282,11 @@ export interface CircuitSnapshot {
   readonly line: SnapshotLine | null;
   readonly lanes: readonly SnapshotLane[];
   readonly findings: readonly SnapshotFinding[];
+  /**
+   * Las medidas para estimar los valores de planta (OQ-151). Ausente en las instantáneas anteriores a
+   * los estimadores: esa versión no permite estimar.
+   */
+  readonly plantMeasures?: SnapshotPlantMeasures;
 }
 
 /**
@@ -254,6 +320,7 @@ export interface SnapshotInput {
   readonly line: SnapshotLine | null;
   readonly lanes: readonly SnapshotLane[];
   readonly findings: readonly SnapshotFinding[];
+  readonly plantMeasures?: SnapshotPlantMeasures;
 }
 
 function invalid(reason: string): never {
@@ -400,6 +467,7 @@ export function buildSnapshot(input: SnapshotInput): CircuitSnapshot {
     line: input.line,
     lanes,
     findings,
+    ...(input.plantMeasures === undefined ? {} : { plantMeasures: input.plantMeasures }),
   };
 }
 

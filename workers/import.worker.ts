@@ -117,12 +117,15 @@ import { PROVISIONAL_CONFIG, type AnalysisConfig } from "../src/domain/config.js
 import {
   formatPlantValue,
   isPlantValueKey,
+  measurePlantValues,
   plantValueDefinition,
+  plantValueEventFor,
   plantValuesAt,
   plantValuesView,
+  proposePlantValues,
   resolveAnalysisConfig,
-  validatePlantValue,
   type PlantValueEvent,
+  type PlantValueProposals,
   type PlantValuesView,
 } from "../src/domain/plant-values.js";
 import type { CircuitViews, MemoryViews, PlanViews, VersionSummary } from "../src/application/protocol.js";
@@ -411,6 +414,22 @@ async function accumulate(
 }
 
 // --- Valores de planta confirmados (OQ-140) -------------------------------------------------------
+
+/**
+ * Las propuestas de la memoria para los valores de planta (OQ-151): las versiones consolidadas del
+ * linaje activo, con la configuración que rige hoy (la noche vigente y las muestras mínimas). La regla
+ * de coincidencia es la de `proposePlantValues`; aquí solo se leen las versiones. Si la memoria no se
+ * puede leer, no hay propuestas (`null`): nunca se propone a ciegas.
+ */
+async function plantProposalsOf(circuitId: string, events: readonly PlantValueEvent[]): Promise<PlantValueProposals | null> {
+  try {
+    const { active } = await loadMemory(circuitId);
+    const config = resolveAnalysisConfig(PROVISIONAL_CONFIG, events, Date.now());
+    return proposePlantValues(active, { sustainedFiles: config.changeClass.sustainedFiles, config });
+  } catch {
+    return null;
+  }
+}
 
 /** El inicio de la ventana de un fichero: su tramo completo o, con un solo instante, ese instante. */
 function fileStartOf(readings: readonly Reading[]): number | null {
@@ -739,6 +758,14 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       }
     | undefined;
 
+  // Las esperas en las paradas precisas declaradas del fichero importado, para estimar la duración
+  // mínima de una parada precisa (OQ-151): de las mismas transiciones de producción con que se buscan
+  // las firmas de tiempo, recortadas a la ventana del fichero.
+  const plantWindow = windows.find((entry) => entry.source.sourceId === importedSource.sourceId && entry.duplicateOf === null)?.window ?? null;
+  const declaredPauses = new Set([...criticalPointsConfig.funcionOf].filter(([, name]) => name === "parada-precisa").map(([tagId]) => tagId));
+  const declaredPauseWaits: number[] = [];
+  let declaredPausesMeasurable = true;
+
   for (const cohort of cohortAssignment.cohorts) {
     const vehicleSet = new Set(cohort.vehicles);
     const cohortTransitions = transitions.filter((entry) => vehicleSet.has(entry.agvId));
@@ -915,6 +942,15 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     // una muestra de referencia con todas las del cohorte (sin pares del mismo instante, R-DAT-013).
     const durations = transitionDurationsByTag(productionTimed);
     const allDurations = [...durations.values()].flat();
+    if (plantWindow !== null && declaredPauses.size > 0) {
+      const inFile = productionTimed.filter(
+        (transition) => declaredPauses.has(transition.from) && transition.fromTime >= plantWindow.from && transition.toTime <= plantWindow.to,
+      );
+      if (inFile.length > 0) {
+        if (timeSignaturesMeasurable(productionTimed)) declaredPauseWaits.push(...[...transitionDurationsByTag(inFile).values()].flat());
+        else declaredPausesMeasurable = false;
+      }
+    }
     criticalPointCohorts.push({
       cohortId: cohort.id,
       candidates: [
@@ -1597,6 +1633,20 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
                 }),
           fleet,
           line: fileLine,
+          plantMeasures: measurePlantValues({
+            window,
+            zone,
+            // La flota entera, no solo el cohorte principal: el régimen de noche es de toda la planta.
+            hourly: hourlyProfile(readings.filter(inWindow), zone),
+            productionStops: production.stops,
+            gaps: agvDossiers.flatMap((dossier) => dossier.inactivity),
+            vehicleStops: flowReports.flatMap((report) => report.stops),
+            loadedSpans:
+              zoneConfig.zoneOf.size === 0 || anchor === null
+                ? null
+                : buildFifoReport(snapshotCohortId, fileReadings, loadedZoneSpans(anchor.cycle, zoneConfig.zoneOf).spans, config.fifo, [window]).spans,
+            precisePauses: { declared: declaredPauses.size, measurable: declaredPausesMeasurable, durationsMs: declaredPauseWaits },
+          }),
           lanes: fileCharging?.lanes ?? [],
           laneUsage: fileCharging?.usage ?? [],
           findings: buildSnapshotFindings({
@@ -1920,6 +1970,7 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         fileName: file.name,
         window: inCircuit ? workingSpan : null,
         canConfirm: inCircuit,
+        proposals: inCircuit && message.circuitId !== undefined ? await plantProposalsOf(message.circuitId, plantEvents) : null,
       }),
     });
 
@@ -2136,7 +2187,15 @@ async function snapshotFromReadings(
     direction,
     importedSource: { sourceId: source.sourceId, sourceHash: source.sourceHash, fileName: source.fileName, acceptedRows: source.acceptedRows },
     config: at === null ? PROVISIONAL_CONFIG : resolveAnalysisConfig(PROVISIONAL_CONFIG, events, at),
-    plantValues: plantValuesView({ events, provisional: PROVISIONAL_CONFIG, at, fileName: source.fileName, window: null, canConfirm: true }),
+    plantValues: plantValuesView({
+      events,
+      provisional: PROVISIONAL_CONFIG,
+      at,
+      fileName: source.fileName,
+      window: null,
+      canConfirm: true,
+      proposals: isAvailable() ? await plantProposalsOf(stored.circuitId, events) : null,
+    }),
   });
   if (built === undefined) return { snapshot: null, problems: ["no queda ninguna lectura del fichero."] };
   return { snapshot: built.snapshot, problems: built.problems };
@@ -2299,7 +2358,7 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
       // Lo observado es la instantánea guardada del fichero, recortada o no la versión: es medición.
       const memory = await buildMemoryViews(circuitId, observed);
       if (memory === undefined) throw new Error("La versión se guardó pero no se pudo volver a leer.");
-      emit({ type: "consolidated", circuitId, version, memory }, jobId);
+      emit({ type: "consolidated", circuitId, version, memory, plantProposals: await plantProposalsOf(circuitId, await loadPlantValues(circuitId)) }, jobId);
       return;
     }
 
@@ -2314,7 +2373,10 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
       const snapshots = await loadSnapshots(circuitId);
       const memory = await buildMemoryViews(circuitId, snapshots[snapshots.length - 1] ?? null);
       if (memory === undefined) throw new Error("La revocación se guardó pero no se pudo volver a leer.");
-      emit({ type: "revoked", circuitId, version: message.version, memory }, jobId);
+      emit(
+        { type: "revoked", circuitId, version: message.version, memory, plantProposals: await plantProposalsOf(circuitId, await loadPlantValues(circuitId)) },
+        jobId,
+      );
       return;
     }
 
@@ -2324,7 +2386,7 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
     const snapshots = await loadSnapshots(circuitId);
     const memory = await buildMemoryViews(circuitId, snapshots[snapshots.length - 1] ?? null);
     if (memory === undefined) throw new Error("La elección se guardó pero no se pudo volver a leer.");
-    emit({ type: "fork-resolved", circuitId, memory }, jobId);
+    emit({ type: "fork-resolved", circuitId, memory, plantProposals: await plantProposalsOf(circuitId, await loadPlantValues(circuitId)) }, jobId);
   } catch (error) {
     // Un recorte que no se puede hacer se dice tal cual, con qué hacer (OQ-148).
     if (error instanceof CutRefused) {
@@ -2516,10 +2578,13 @@ async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Pro
 // --- Valores de planta confirmados (OQ-140) -------------------------------------------------------
 
 /**
- * Confirma un valor de planta del circuito. El Worker no decide nada ni estima nada (OQ-151 sigue
- * abierta): valida lo que la persona escribió —clave conocida, valor válido, fecha y razón— y lo añade
- * al registro append-only. No vuelve a analizar: el valor se aplica al volver a analizar los ficheros
- * que empiezan desde su fecha efectiva. Responde con lo vigente para el fichero de trabajo.
+ * Confirma un valor de planta del circuito. Lo pide una persona con su razón: a mano (`manual`), o
+ * confirmando la propuesta de la memoria (`propuesta`, OQ-151). En el segundo caso el Worker **vuelve a
+ * calcular** la propuesta con las versiones consolidadas antes de escribir, y rechaza el valor si ya no
+ * es el propuesto: no se fía de la interfaz. Valida lo pedido —clave conocida, valor válido, fecha y
+ * razón— y lo añade al registro append-only (`plantValueEventFor`). No vuelve a analizar: el valor se
+ * aplica al volver a analizar los ficheros que empiezan desde su fecha efectiva. Responde con lo vigente
+ * para el fichero de trabajo y las propuestas de ahora.
  */
 async function runPlantValue(message: Extract<ToWorker, { type: "plant-value" }>): Promise<void> {
   const { jobId, circuitId } = message;
@@ -2531,41 +2596,27 @@ async function runPlantValue(message: Extract<ToWorker, { type: "plant-value" }>
     return;
   }
   try {
-    const reason = typeof message.reason === "string" ? message.reason.trim() : "";
-    if (reason === "") {
-      fail("La razón está vacía: ningún valor de planta se confirma sin su justificación.", "Escribe por qué es ese el valor de tu planta y vuelve a confirmarlo.");
-      return;
-    }
-    if (!isPlantValueKey(message.key)) {
-      fail(`«${String(message.key)}» no es un valor de planta.`, "Elige uno de la lista.");
-      return;
-    }
-    const problem = validatePlantValue(message.key, message.value);
-    if (problem !== null) {
-      fail(problem, "Corrige el valor y vuelve a confirmarlo.");
-      return;
-    }
-    if (typeof message.effectiveAt !== "number" || !Number.isFinite(message.effectiveAt)) {
-      fail("Falta la fecha desde la que rige el valor.", "Elige la fecha efectiva y vuelve a confirmarlo.");
-      return;
-    }
     const stored = await loadCircuit(circuitId);
     if (stored === undefined) {
       fail(`El circuito ${circuitId} no está en el almacén.`, "Carga antes un fichero del circuito.");
       return;
     }
     const events = await loadPlantValues(circuitId);
-    const definition = plantValueDefinition(message.key);
-    const event: PlantValueEvent = {
+    const origin = message.origin === "propuesta" ? "propuesta" : "manual";
+    const proposals = origin === "propuesta" ? await plantProposalsOf(circuitId, events) : null;
+    const built = plantValueEventFor({
       circuitId,
-      seq: events.reduce((max, entry) => Math.max(max, entry.seq), 0) + 1,
-      key: message.key,
-      value: typeof message.value === "number" ? message.value : [...message.value],
-      effectiveAt: message.effectiveAt,
+      events,
+      request: { key: message.key, value: message.value, effectiveAt: message.effectiveAt, reason: message.reason, origin },
       recordedAt: Date.now(),
-      reason,
-      origin: "manual",
-    };
+      proposal: proposals === null || !isPlantValueKey(message.key) ? null : proposals[message.key],
+    });
+    if ("cause" in built) {
+      fail(built.cause, built.recovery);
+      return;
+    }
+    const { event } = built;
+    const definition = plantValueDefinition(event.key);
     await appendPlantValue(event);
 
     const saved = await loadPlantValues(circuitId);
@@ -2576,7 +2627,15 @@ async function runPlantValue(message: Extract<ToWorker, { type: "plant-value" }>
     const at = workingSource?.complete?.from ?? null;
     const retained = stored.sources.filter((source) => source.retained && source.complete !== null).map((source) => source.complete as Interval);
     const window = retained.length === 0 ? null : { from: Math.min(...retained.map((span) => span.from)), to: Math.max(...retained.map((span) => span.to)) };
-    const plantValues = plantValuesView({ events: saved, provisional: PROVISIONAL_CONFIG, at, fileName: workingSource?.fileName ?? null, window, canConfirm: true });
+    const plantValues = plantValuesView({
+      events: saved,
+      provisional: PROVISIONAL_CONFIG,
+      at,
+      fileName: workingSource?.fileName ?? null,
+      window,
+      canConfirm: true,
+      proposals: await plantProposalsOf(circuitId, saved),
+    });
     emit(
       {
         type: "plant-values-updated",

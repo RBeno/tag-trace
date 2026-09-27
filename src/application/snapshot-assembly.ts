@@ -4,8 +4,9 @@
  * No mide nada: proyecta al contrato de la instantánea resultados que existen para las vistas —el
  * anillo y las posiciones en tiempo de la franja del fichero (R-TIM-011), su matriz de lectura
  * (R-OPP-013), sus vecinos dominantes (R-DAT-019), sus secciones entre anclas (R-TIM-012), sus sumas
- * entre anclas (R-DAT-021), la flota, la línea, las calles y los hallazgos—. Vive en la capa de
- * aplicación porque junta módulos de dominio distintos; `buildSnapshot` valida y sella.
+ * entre anclas (R-DAT-021), la flota, la línea, las calles, los hallazgos y las medidas de los valores
+ * de planta (OQ-151)—. Vive en la capa de aplicación porque junta módulos de dominio distintos;
+ * `buildSnapshot` valida y sella.
  *
  * De dónde sale cada campo está en el tipo de entrada, campo por campo, para que quien cambie una
  * medición sepa qué parte de la instantánea toca.
@@ -28,6 +29,7 @@ import type {
   SnapshotInput,
   SnapshotLane,
   SnapshotLine,
+  SnapshotPlantMeasures,
   SnapshotSection,
   SnapshotVehicleCell,
   SnapshotVertex,
@@ -90,6 +92,8 @@ export interface SnapshotAssemblyInput {
   readonly lanes: readonly Pick<LaneReport, "laneId" | "served" | "stays" | "medianStayMs">[];
   readonly laneUsage: readonly Pick<LaneUsage, "laneId" | "share" | "verdict">[];
   readonly findings: readonly SnapshotFinding[];
+  /** Las medidas de los valores de planta en la ventana del fichero (`measurePlantValues`, OQ-151). */
+  readonly plantMeasures?: SnapshotPlantMeasures;
 }
 
 /** La mediana de una serie de recuentos ponderada por lo que duró cada uno. */
@@ -248,5 +252,6 @@ export function assembleSnapshotInput(input: SnapshotAssemblyInput): SnapshotInp
     line: buildLine(input),
     lanes: buildLanes(input),
     findings: input.findings,
+    ...(input.plantMeasures === undefined ? {} : { plantMeasures: input.plantMeasures }),
   };
 }

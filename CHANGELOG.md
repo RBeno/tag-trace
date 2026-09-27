@@ -2,6 +2,24 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.60.0] - 2026-09-27
+
+El propietario cerró OQ-151 a OQ-153 («OQ-152 permite consolidar / OQ-153 quedarnos con el aviso /
+OQ-151 usa la propuesta pero si no coinciden que los valores los introduzca una persona»).
+
+### Añadido
+
+- **La memoria propone valores de planta** (OQ-151, `CONFIG_SCHEMA.md` §3.5): siete estimadores
+  aprobados, medidos en cada instantánea (`plantMeasures`) y estimados en cada una de las últimas tres
+  versiones consolidadas. Si coinciden se propone y la persona lo confirma con razón; si no, se
+  enseña la estimación de cada versión y el valor lo introduce una persona.
+
+### Cambiado
+
+- **Se consolida con la configuración provisional** (OQ-152): `CONFIG_SCHEMA.md` §4 lo permite ya,
+  porque cada instantánea guarda con qué configuración se midió.
+- **Dos vigencias en la ventana de trabajo** (OQ-153): se queda el aviso.
+
 ## [3.59.0] - 2026-09-27
 
 ### Añadido
@@ -12,12 +30,6 @@ Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue 
   el provisional. Viajan en el `.agvproj` (esquema 5) y se guardan en el almacén (versión 10). Los
   estimadores con que la memoria los propondrá siguen abiertos (OQ-151).
 - **Cada instantánea guarda con qué configuración se midió** (`configVersion`, FR-031).
-
-### Abierto
-
-- OQ-152: `CONFIG_SCHEMA.md` §4 dice que una configuración `draft` no permite consolidar, y la
-  aplicación consolida con la provisional desde 3.51.0. Hace falta decidir.
-- OQ-153: con dos vigencias en la ventana de trabajo, hoy solo se avisa.
 
 ## [3.58.0] - 2026-09-27
 

@@ -10,6 +10,14 @@
  * con que se midió. Un valor con fecha efectiva posterior al fichero no rige para él.
  *
  * El fichero es `fixtures/synthetic/memoria/periodo-1.csv` (24/01/2026).
+ *
+ * Las propuestas de la memoria (OQ-151): con tres versiones consolidadas de `memoria/` (periodos 1 a 3,
+ * cada uno de unos minutos y de un solo día), ningún estimador tiene datos —ninguna hora del día está
+ * cubierta entera, no hay paradas de la producción que se repitan otro día, ni huecos, esperas, zona
+ * cargada o paradas precisas declaradas—, así que no hay ninguna propuesta: lo que se fija es que cada
+ * valor dice «Sin propuesta … Introduce el valor» con la estimación de cada versión y su porqué, y que
+ * el formulario manual sigue ahí. Los estimadores que coinciden se prueban con medidas sintéticas en
+ * `tests/unit/plant-value-estimates.test.ts`.
  */
 
 import { expect, test, type Page } from "@playwright/test";
@@ -44,6 +52,35 @@ async function importInto(page: Page, circuit: string, path: string): Promise<vo
   await expect(page.getByRole("heading", { name: `Circuito «${circuit}»`, exact: true })).toBeVisible({ timeout: 15_000 });
 }
 
+/**
+ * Marca todas las tarjetas de la bandeja (como `memoria.spec.ts`): las de rango 1 se descartan y el
+ * resto se confirma, para que el periodo se pueda consolidar.
+ */
+async function reviewAll(page: Page): Promise<void> {
+  const cards = page.locator(".finding.reviewable");
+  const total = await cards.count();
+  for (let index = 0; index < total; index += 1) {
+    const card = cards.nth(index);
+    const critical = (await card.locator("xpath=ancestor::*[contains(@class,'tray-group')]").getAttribute("data-rank")) === "1";
+    await card.getByRole("button", { name: /Revisión en campo/ }).click();
+    await card.getByRole("menuitemradio", { name: critical ? /Descartado/ : /Confirmado/ }).click();
+    await page.keyboard.press("Escape");
+    await expect(card).toHaveAttribute("data-review", critical ? "descartado" : "confirmado");
+  }
+}
+
+/** Previsualiza y confirma la versión `number` desde su botón, como lo haría la persona. */
+async function consolidate(page: Page, number: number): Promise<void> {
+  await openTab(page, "Memoria");
+  const panel = page.locator(".memory-panel");
+  await panel.getByRole("button", { name: `Previsualizar v${number}` }).click();
+  const preview = panel.locator(".memory-preview");
+  await expect(preview).toBeVisible({ timeout: 15_000 });
+  await expect(preview.locator(".memory-blockers")).toHaveCount(0);
+  await preview.getByRole("button", { name: "Confirmar y consolidar" }).click();
+  await expect(panel.locator(".memory-status")).toContainText(`Versión v${number} consolidada`, { timeout: 15_000 });
+}
+
 /** La línea de «Estado normal del circuito» que dice cuánto se cargó de noche y con qué régimen. */
 async function nightInUse(page: Page): Promise<string> {
   await openTab(page, "Tiempos");
@@ -67,6 +104,10 @@ test.describe("valores de planta", () => {
     await expect(panel.getByRole("heading", { name: "Valores de planta del circuito" })).toBeVisible();
     await expect(panel).toContainText("Rigen los provisionales hasta que confirmes el valor de tu planta.");
     await expect(panel).toContainText("OQ-151");
+    // Sin versiones consolidadas no hay propuesta, y se dice qué falta.
+    await expect(panel.locator('.plant-value[data-key="noche-desde"] .plant-value-proposal')).toHaveText(
+      "Sin propuesta: hacen falta 3 versiones consolidadas no revocadas y no hay ninguna. Introduce el valor.",
+    );
     await expect(panel.locator(".plant-value")).toHaveCount(8);
     const night = panel.locator('.plant-value[data-key="noche-desde"]');
     await expect(night).toHaveAttribute("data-state", "provisional");
@@ -136,5 +177,39 @@ test.describe("valores de planta", () => {
     await expect(panel.locator(".plant-values-status")).toContainText("No rige para el fichero de trabajo", { timeout: 15_000 });
     await expect(stall).toHaveAttribute("data-state", "provisional");
     await expect(stall.locator(".plant-value-history")).toContainText("3 min");
+  });
+
+  test("con tres versiones consolidadas y ninguna estimación posible, no hay propuesta: se enseña cada versión y se introduce a mano", async ({ page }) => {
+    await freshPage(page);
+    for (const [index, file] of ["periodo-1.csv", "periodo-2.csv", "periodo-3.csv"].entries()) {
+      await importInto(page, "propuestas", `${MEMORIA}${file}`);
+      await reviewAll(page);
+      await consolidate(page, index + 1);
+    }
+
+    // Consolidar ya trae las propuestas nuevas: no hace falta volver a cargar nada.
+    await openTab(page, "Datos");
+    const panel = page.locator(".plant-values-panel");
+    const night = panel.locator('.plant-value[data-key="noche-desde"]');
+    const proposal = night.locator(".plant-value-proposal");
+    await expect(proposal).toHaveAttribute("data-outcome", "no-coinciden");
+    await expect(proposal.locator(".plant-proposal-line")).toHaveText(
+      "Sin propuesta: ninguna versión permite estimarlo — v1: sin datos, v2: sin datos, v3: sin datos. Introduce el valor.",
+    );
+    // La estimación de cada versión, con su fichero y su porqué.
+    await proposal.locator(".plant-value-estimates > summary").click();
+    const estimates = proposal.locator(".plant-value-estimates li");
+    await expect(estimates).toHaveCount(3);
+    await expect(estimates.nth(0)).toContainText("v1 (periodo-1.csv): sin datos — sin datos: el fichero no cubre entera cada hora del día");
+    await expect(estimates.nth(2)).toContainText("v3 (periodo-3.csv)");
+    // Las horas de turno necesitan dos días: cada periodo es de uno solo.
+    await expect(panel.locator('.plant-value[data-key="arranque-turnos"] .plant-value-estimates li').first()).toContainText("un solo día");
+    // Los ocho valores dicen «Sin propuesta», ninguno ofrece confirmar una propuesta, y el formulario
+    // manual de siempre sigue ahí.
+    await expect(panel.locator(".plant-value-proposal")).toHaveCount(8);
+    await expect(panel.locator(".plant-proposal-line", { hasText: /^Sin propuesta: .+ Introduce el valor\.$/ })).toHaveCount(8);
+    await expect(panel.getByRole("button", { name: /^Confirmar la propuesta/ })).toHaveCount(0);
+    await night.getByRole("button", { name: "Cambiar «Empieza la noche (régimen de noche)»" }).click();
+    await expect(night.locator(".plant-value-form")).toBeVisible();
   });
 });

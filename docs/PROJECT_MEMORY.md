@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.41.0
+version: 0.42.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -378,9 +378,11 @@ F4: la instantánea guardaba hallazgos que ninguna sección pintaba, y habrían 
 consolidación; la bandeja los enseña ahora. Con esto, cada criterio de G4 tiene evidencia; marcarlos
 y escribir `CONTINÚA FASE 5` es del propietario. Después (`[3.58.0]`) entraron el recorte de ventana de
 una incidencia desde el original archivado y la tasa por AGV en cada ubicación del plano. Después (`[3.59.0]`)
-los valores de planta por circuito, confirmados por una persona. Quedan para el propietario: OQ-151
-(estimadores), OQ-152 (contradicción: `CONFIG_SCHEMA` §4 prohíbe consolidar con configuración
-`draft`, y la aplicación lo hace desde 3.51.0) y OQ-153 (dos vigencias en la ventana de trabajo).
+los valores de planta por circuito, confirmados por una persona. El propietario cerró OQ-151 a OQ-153 el
+mismo día: se consolida con la configuración provisional, ante dos vigencias basta el aviso, y los
+valores de planta se proponen con los estimadores aprobados solo si coinciden en las últimas tres
+versiones; si no, los introduce una persona (`[3.60.0]`). Con esto queda hecho lo previsto para F4;
+marcar G4, fusionar el PR y escribir `CONTINÚA FASE 5` son del propietario.
 
 ## Estado al 2026-09-26 (relevo a un chat nuevo)
 
@@ -389,7 +391,7 @@ El trabajo sigue en otra conversación por el límite de contexto. Todo lo que d
 conversación siguiente.
 
 - **Fase F4** (memoria longitudinal y consolidación), abierta el 2026-09-26 por el propietario
-  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): valores de planta por circuito** (`[3.59.0]`), tras el recorte de ventana y la tasa por AGV (`[3.58.0]`), tras las incidencias con instante (`[3.57.0]`), tras el comparador entre versiones y la prueba de oro (`[3.56.0]`), tras la clasificación de cambios, las incidencias fuera del esperado y el almacén comprimido (`[3.55.0]`), tras el plano físico (`[3.53.0]`), tras la consolidación humana con versiones (`[3.51.0]`, `[3.52.0]`). Anterior: **revisión de toda la lógica de medición y análisis**
+  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): propuestas de valores de planta** (`[3.60.0]`), tras los valores de planta por circuito (`[3.59.0]`), tras el recorte de ventana y la tasa por AGV (`[3.58.0]`), tras las incidencias con instante (`[3.57.0]`), tras el comparador entre versiones y la prueba de oro (`[3.56.0]`), tras la clasificación de cambios, las incidencias fuera del esperado y el almacén comprimido (`[3.55.0]`), tras el plano físico (`[3.53.0]`), tras la consolidación humana con versiones (`[3.51.0]`, `[3.52.0]`). Anterior: **revisión de toda la lógica de medición y análisis**
   (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
   regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
   (OQ-135 a OQ-141), dos de ellas contradicciones código↔documento que no se tocan hasta que decida.

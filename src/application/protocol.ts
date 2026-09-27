@@ -33,7 +33,7 @@ import type {
   PlanProposal,
 } from "../domain/plan.js";
 import type { Interval } from "../domain/coverage.js";
-import type { PlantValue, PlantValueKey, PlantValuesView } from "../domain/plant-values.js";
+import type { PlantValue, PlantValueKey, PlantValueProposals, PlantValuesView } from "../domain/plant-values.js";
 import type { PaceReport } from "../domain/vehicle-pace.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AnchorSection } from "../domain/anchor-sections.js";
@@ -289,6 +289,12 @@ export interface PlantValueMessage {
   readonly value: PlantValue;
   readonly effectiveAt: number;
   readonly reason: string;
+  /**
+   * `propuesta`: la persona confirma la propuesta de la memoria (OQ-151). El Worker la vuelve a calcular
+   * con las versiones consolidadas antes de escribir y rechaza el valor si ya no es el propuesto: no se
+   * fía de la interfaz. Sin él, o `manual`, el valor lo escribió la persona.
+   */
+  readonly origin?: "manual" | "propuesta";
   /** El fichero de trabajo que la interfaz enseña: la respuesta dice lo vigente para él. */
   readonly workingSourceId: string | null;
 }
@@ -920,6 +926,8 @@ export interface ConsolidatedMessage extends Envelope {
   readonly circuitId: string;
   readonly version: ConsolidatedVersion;
   readonly memory: MemoryViews;
+  /** Las propuestas de los valores de planta recalculadas con la memoria nueva (OQ-151); ausente sin almacén. */
+  readonly plantProposals?: PlantValueProposals | null;
 }
 
 export interface RevokedMessage extends Envelope {
@@ -927,12 +935,16 @@ export interface RevokedMessage extends Envelope {
   readonly circuitId: string;
   readonly version: number;
   readonly memory: MemoryViews;
+  /** Las propuestas de los valores de planta recalculadas con la memoria nueva (OQ-151); ausente sin almacén. */
+  readonly plantProposals?: PlantValueProposals | null;
 }
 
 export interface ForkResolvedMessage extends Envelope {
   readonly type: "fork-resolved";
   readonly circuitId: string;
   readonly memory: MemoryViews;
+  /** Las propuestas de los valores de planta recalculadas con la memoria nueva (OQ-151); ausente sin almacén. */
+  readonly plantProposals?: PlantValueProposals | null;
 }
 
 /** `ReplayFrame` tal como cruza el `postMessage`: el mapa de vehículos, ya como pares. */

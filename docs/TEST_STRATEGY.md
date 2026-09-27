@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.67.0
+version: 0.68.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -353,6 +353,7 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-302 | Desglose por AGV (`snapshot.test.ts`, `snapshot-assembly.test.ts`, `plan.test.ts`, `change-class.test.ts`, `plano.spec.ts`) | El desglose es canónico, solo con pasadas; una instantánea sin él sigue valiendo; el plano da tasa solo con muestra mínima y suma entre periodos; el esperado lleva el desglose del mismo periodo que sus cifras (lo encontró la revisión; sin el arreglo falla); en el navegador, una ubicación enseña «Por AGV» con cifras | Un desglose de un periodo junto a las pasadas de otro | Unitaria y navegador |
 | TC-303 | Valores de planta (`plant-values.test.ts`, `agvproj.test.ts`, `snapshot.test.ts`) | Validación por tipo; el vigente en cada instante por fecha efectiva y número; aplicar no muta; sin valores, la configuración es exactamente la provisional; el análisis ya no lee la provisional directamente; el `.agvproj` 5 lleva la sección `valores` y abre el 4; la instantánea guarda su `configVersion` | Un valor aplicado sin confirmación; una configuración distinta sin valores | Unitaria |
 | TC-304 | Valores de planta en el navegador (`valores-planta.spec.ts`) | Confirmar «Empieza la noche» = 20 con razón y fecha anterior al fichero lo deja vigente, y al volver a importar el estado normal dice «de 20:00 a 05:00»; un valor inválido y la razón vacía no se envían; una fecha posterior al fichero no rige para él | Un cambio que no llega al análisis | Navegador |
+| TC-305 | Propuestas de valores de planta (`plant-value-estimates.test.ts`, `fifo.test.ts`, `valores-planta.spec.ts`) | Cada estimador con medidas sintéticas conocidas; propone solo si las tres versiones coinciden, no si difieren, si falta una o si alguna está revocada; confirmar una propuesta escribe `origin: "propuesta"` con sus versiones; en el navegador, con tres versiones sin datos suficientes, cada valor dice «Sin propuesta … Introduce el valor» con la estimación de cada versión y el formulario manual sigue | Un valor aplicado sin confirmación; una propuesta con estimaciones que no coinciden | Unitaria y navegador |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las siete pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

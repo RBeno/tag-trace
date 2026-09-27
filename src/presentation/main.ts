@@ -76,8 +76,7 @@ import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots } fro
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
 import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
 import { createPlanPanel, planRelationText } from "./plan-ui.js";
-import { createPlantValuesPanel, plantValuesRelationText } from "./plant-values-ui.js";
-import type { PlantValue, PlantValueKey } from "../domain/plant-values.js";
+import { createPlantValuesPanel, plantValuesRelationText, type PlantValueSendRequest } from "./plant-values-ui.js";
 import {
   RANK_LABEL,
   THEMES,
@@ -1064,6 +1063,7 @@ function handleMessage(message: FromWorker): void {
     case "consolidated":
       finishMemoryJob();
       memoryPanel.showConsolidated(message.version, message.memory);
+      if (message.plantProposals !== undefined) plantValuesPanel.proposalsChanged(message.plantProposals);
       planPanel.memoryChanged(message.memory);
       renderMemoryTile(message.memory);
       return;
@@ -1071,6 +1071,7 @@ function handleMessage(message: FromWorker): void {
     case "revoked":
       finishMemoryJob();
       memoryPanel.showRevoked(message.version, message.memory);
+      if (message.plantProposals !== undefined) plantValuesPanel.proposalsChanged(message.plantProposals);
       planPanel.memoryChanged(message.memory);
       renderMemoryTile(message.memory);
       return;
@@ -1078,6 +1079,7 @@ function handleMessage(message: FromWorker): void {
     case "fork-resolved":
       finishMemoryJob();
       memoryPanel.showForkResolved(message.memory);
+      if (message.plantProposals !== undefined) plantValuesPanel.proposalsChanged(message.plantProposals);
       planPanel.memoryChanged(message.memory);
       renderMemoryTile(message.memory);
       return;
@@ -1113,7 +1115,7 @@ function finishPlantValueJob(): void {
  * propio, y la presentación solo pide. No vuelve a analizar nada: el valor se aplica al volver a
  * cargar los ficheros de su vigencia.
  */
-function startPlantValue(request: { readonly key: PlantValueKey; readonly value: PlantValue; readonly effectiveAt: number; readonly reason: string }): void {
+function startPlantValue(request: PlantValueSendRequest): void {
   const circuitId = state.circuitId;
   if (circuitId === null) {
     plantValuesPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");

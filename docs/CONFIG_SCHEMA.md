@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.28.0
+version: 0.29.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -299,7 +299,24 @@ fecha efectiva, fecha de registro, razón obligatoria y origen `manual`; al anal
 configuración lo dice (`provisional-0+planta(clave#n,…)`) y cada instantánea la guarda (FR-031). El
 hueco entre periodos distantes no entra: es de análisis (OQ-151). Las horas son enteras de 0 a 23;
 las duraciones, mayores que cero y como mucho 24 h, que es un control de errores de tecleo y no un
-dato de planta. Los estimadores con que la memoria propondrá valores siguen abiertos (OQ-151).
+dato de planta.
+
+**Propuestas de la memoria (3.60.0, OQ-151).** Cada instantánea guarda desde 3.60.0 lo que miden los
+estimadores (`plantMeasures`), y la memoria estima cada valor en cada una de las últimas tres versiones
+consolidadas no revocadas. Redondeadas a la unidad del valor, si las tres coinciden **se propone**
+y la persona lo confirma con razón (origen `propuesta`, con las versiones de las que sale); si no
+coinciden o alguna no permite estimar, no se propone nada, se enseña la estimación de cada versión
+y el valor lo introduce una persona. Cómo mide cada estimador:
+
+| Valor | De qué análisis | Estimador |
+|---|---|---|
+| Régimen de noche | perfil horario de toda la flota, por hora cubierta | tramo circular de horas con menos de la mitad de la mediana de las horas de fuera de la noche vigente; exige cada hora del día cubierta entera al menos una vez, y dos tramos igual de largos no se eligen |
+| Horas de turno | paradas de la producción del fichero | hora de inicio de las que se repiten otro día (la de dos repeticiones a las 13:29 y 13:31 es las 14); con un solo día, no estima |
+| «A la misma hora» | las mismas paradas | mayor diferencia en minutos entre repeticiones |
+| Desconexión | huecos de cada AGV que terminan en una lectura, sin los de carga online | percentil 99, con al menos `bands.min_band_samples` huecos |
+| Bloqueo del primero de cola | paradas sin explicación del primero de cola que acabaron avanzando | percentil 95 de su exceso, con al menos `bands.min_band_samples` |
+| Margen del FIFO | tránsito de cada tramo cargado | el mayor percentil 95 menos mediana |
+| Parada precisa | esperas en las paradas precisas declaradas | percentil 5, con al menos `critical_points.parada_precisa.min_samples` |
 
 ### 3.6 Cohortes
 

@@ -1,5 +1,6 @@
 /**
- * Valores de planta confirmados por una persona (OQ-140; OQ-151 abierta: aquí no hay estimadores).
+ * Valores de planta confirmados por una persona (OQ-140). Los estimadores de OQ-151 y su regla de
+ * coincidencia se prueban en `plant-value-estimates.test.ts`.
  *
  * Lo que se fija: que cada valor se valida con su unidad; que lo vigente en un instante es el último
  * confirmado con fecha efectiva no posterior, en orden (fecha efectiva, número de evento); que aplicar

@@ -1,10 +1,12 @@
 /**
  * La sección «Valores de planta del circuito» de la pestaña Datos (OQ-140, OQ-151).
  *
- * Aquí no se decide ni se mide nada: lo vigente para el fichero de trabajo, el historial y dónde mide
- * el programa algo relacionado llegan hechos del Worker (`PlantValuesView`). Este módulo los pone en
- * palabras y en un formulario. Lo único que sale de aquí es lo que una persona confirma con un botón:
- * el valor, la fecha desde la que rige y una razón escrita. Sin razón, el botón que envía está apagado.
+ * Aquí no se decide ni se mide nada: lo vigente para el fichero de trabajo, el historial, dónde mide
+ * el programa algo relacionado y lo que propone la memoria —la propuesta, o por qué no la hay, con la
+ * estimación de cada versión consolidada— llegan hechos del Worker (`PlantValuesView`). Este módulo los
+ * pone en palabras y en un formulario. Lo único que sale de aquí es lo que una persona confirma con un
+ * botón: el valor (o la propuesta), la fecha desde la que rige y una razón escrita. Sin razón, el botón
+ * que envía está apagado. Una propuesta no se aplica sola: el Worker la vuelve a comprobar al escribir.
  *
  * Leer lo que se escribe en el formulario —«6, 14, 22», «2», «1,5»— es formato de entrada, no análisis;
  * la validación que se enseña es la misma del dominio, y el Worker la repite antes de escribir.
@@ -18,6 +20,8 @@ import {
   type PlantValue,
   type PlantValueEvent,
   type PlantValueKey,
+  type PlantValueProposal,
+  type PlantValueProposals,
   type PlantValueSection,
   type PlantValueView,
   type PlantValuesRelation,
@@ -54,6 +58,14 @@ export function plantValuesRelationText(relation: PlantValuesRelation, added: nu
   }
 }
 
+export interface PlantValueSendRequest {
+  readonly key: PlantValueKey;
+  readonly value: PlantValue;
+  readonly effectiveAt: number;
+  readonly reason: string;
+  readonly origin: "manual" | "propuesta";
+}
+
 export interface PlantValuesContext {
   readonly circuitId: string | null;
   /** `null` si todavía no hay análisis. */
@@ -64,8 +76,11 @@ export interface PlantValuesPanelInput {
   readonly formatInstant: (utcMs: number) => string;
   /** La zona del circuito: la fecha efectiva que se elige es un día en esa zona. */
   readonly zone: string;
-  /** Solo lo llama el botón de confirmar, con la razón escrita. */
-  readonly send: (request: { readonly key: PlantValueKey; readonly value: PlantValue; readonly effectiveAt: number; readonly reason: string }) => void;
+  /**
+   * Solo lo llama un botón de confirmar, con la razón escrita: `manual` si el valor lo escribió la
+   * persona, `propuesta` si confirma la propuesta de la memoria.
+   */
+  readonly send: (request: PlantValueSendRequest) => void;
   /** Lleva a la sección donde el programa mide algo relacionado. */
   readonly goTo: (section: PlantValueSection) => void;
 }
@@ -76,6 +91,8 @@ export interface PlantValuesPanel {
   showUpdated(written: string, appliesToWorking: boolean, view: PlantValuesView): void;
   showError(cause: string, recovery: string): void;
   setBusy(busy: boolean): void;
+  /** Las propuestas nuevas tras consolidar, revocar o elegir linaje; lo demás de la vista no cambia. */
+  proposalsChanged(proposals: PlantValueProposals | null): void;
 }
 
 /** Lo escrito en el campo, leído como valor; o el motivo de que no se pueda leer. */
@@ -116,7 +133,8 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
   const intro = node(
     "p",
     "muted",
-    "Rigen los provisionales hasta que confirmes el valor de tu planta. La memoria propondrá valores cuando se decida cómo medirlos (OQ-151).",
+    "Rigen los provisionales hasta que confirmes el valor de tu planta. La memoria propone un valor cuando lo estima igual en las " +
+      "últimas versiones consolidadas (OQ-151); si no coinciden, lo introduces tú. Nada se aplica sin tu confirmación.",
   );
   const statusBox = node("div", "plan-status plant-values-status");
   statusBox.setAttribute("role", "status");
@@ -207,7 +225,7 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
       if (!("value" in read) || at === null || reasonField.input.value.trim() === "") return;
       status = null;
       paintStatus();
-      input.send({ key: entry.key, value: read.value, effectiveAt: at, reason: reasonField.input.value.trim() });
+      input.send({ key: entry.key, value: read.value, effectiveAt: at, reason: reasonField.input.value.trim(), origin: "manual" });
     });
     const cancel = button("Cancelar");
     cancel.addEventListener("click", () => {
@@ -222,6 +240,106 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
     valueField.input.focus();
   }
 
+  /** «v4, v5 y v6». */
+  const versionNames = (versions: readonly number[]): string => {
+    const names = versions.map((version) => `v${version}`);
+    return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} y ${names[names.length - 1] as string}`;
+  };
+
+  /** Confirmar la propuesta de la memoria: fecha efectiva y razón obligatoria; el valor no se edita. */
+  function openProposalForm(entry: PlantValueView, proposed: PlantValue, holder: HTMLElement, opener: HTMLButtonElement): void {
+    holder.querySelector(".plan-form")?.remove();
+    opener.hidden = true;
+    const today = isoDay(Date.now(), input.zone);
+    const dateField = field("Desde (fecha efectiva)", "plan-date plant-value-date", "date");
+    dateField.input.value = today;
+    const effectiveAt = (): number | null => (dateField.input.value === today ? Date.now() : zoneMidnight(dateField.input.value, input.zone));
+    const reasonField = field("Razón (obligatoria)", "plan-reason plant-value-reason", "text");
+    reasonField.input.placeholder = "Por qué la propuesta es el valor de tu planta";
+    const ready = (): boolean => effectiveAt() !== null && reasonField.input.value.trim() !== "";
+
+    const form = node("div", "plan-form plant-value-form plant-proposal-form");
+    form.setAttribute("role", "group");
+    form.setAttribute("aria-label", `Confirmar la propuesta para «${entry.label}»`);
+    form.append(
+      node("p", "plan-form-title", `Confirmar la propuesta para «${entry.label}»: ${fmt(entry, proposed)}`),
+      dateField.box,
+      node(
+        "p",
+        "muted",
+        "Rige para los ficheros que empiezan desde esa fecha, y se aplica al volver a analizarlos: lo ya analizado no cambia hasta que vuelvas a cargarlo.",
+      ),
+      reasonField.box,
+    );
+    const send = button("Confirmar la propuesta", "plan-send plant-proposal-send");
+    senders.push({ control: send, ready });
+    send.disabled = busy || !ready();
+    send.addEventListener("click", () => {
+      const at = effectiveAt();
+      if (at === null || reasonField.input.value.trim() === "") return;
+      status = null;
+      paintStatus();
+      input.send({ key: entry.key, value: proposed, effectiveAt: at, reason: reasonField.input.value.trim(), origin: "propuesta" });
+    });
+    const cancel = button("Cancelar");
+    cancel.addEventListener("click", () => {
+      form.remove();
+      opener.hidden = false;
+      opener.focus();
+    });
+    const row = node("div", "button-row");
+    row.append(send, cancel);
+    form.append(row);
+    holder.append(form);
+    reasonField.input.focus();
+  }
+
+  /** La estimación de cada versión, con su porqué. */
+  function estimatesBlock(entry: PlantValueView, proposal: PlantValueProposal): HTMLElement | null {
+    if (proposal.estimates.length === 0) return null;
+    const box = node("details", "plant-value-estimates");
+    box.append(node("summary", undefined, "Estimación de cada versión"));
+    const list = node("ul");
+    for (const estimate of proposal.estimates) {
+      const item = node("li");
+      item.dataset["version"] = String(estimate.version);
+      item.textContent = `v${estimate.version} (${estimate.fileName}): ${estimate.value === null ? "sin datos" : fmt(entry, estimate.value)} — ${estimate.why}.`;
+      list.append(item);
+    }
+    box.append(list);
+    return box;
+  }
+
+  /** Lo que propone la memoria: la propuesta con su botón, o por qué no la hay y las estimaciones. */
+  function proposalBlock(entry: PlantValueView, canConfirm: boolean, actions: HTMLElement): HTMLElement | null {
+    const proposal = entry.proposal;
+    if (proposal === null) return null;
+    const box = node("div", "plant-value-proposal");
+    box.dataset["outcome"] = proposal.outcome;
+    const proposed = proposal.proposal;
+    if (proposed !== null) {
+      box.append(node("p", "plant-proposal-line", `Propuesta de la memoria: ${fmt(entry, proposed)} (${proposal.reason}).`));
+      if (canConfirm) {
+        const opener = button("Confirmar la propuesta…", "plant-proposal-open");
+        opener.setAttribute("aria-label", `Confirmar la propuesta para «${entry.label}»`);
+        opener.addEventListener("click", () => openProposalForm(entry, proposed, actions, opener));
+        actions.append(opener);
+      }
+    } else {
+      const each = proposal.estimates.map((estimate) => `v${estimate.version}: ${estimate.value === null ? "sin datos" : fmt(entry, estimate.value)}`);
+      box.append(
+        node(
+          "p",
+          "plant-proposal-line",
+          `Sin propuesta: ${proposal.reason}${each.length === 0 ? "" : ` — ${each.join(", ")}`}. Introduce el valor.`,
+        ),
+      );
+    }
+    const estimates = estimatesBlock(entry, proposal);
+    if (estimates !== null) box.append(estimates);
+    return box;
+  }
+
   function historyBlock(entry: PlantValueView): HTMLElement | null {
     if (entry.history.length === 0) return null;
     const box = node("details", "plant-value-history");
@@ -232,7 +350,11 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
       item.dataset["seq"] = String(event.seq);
       const head = node("div");
       head.append(node("span", "plan-event-when", `Desde ${input.formatInstant(event.effectiveAt)}`), " ", node("span", undefined, fmt(entry, event.value)));
-      item.append(head, node("p", "muted", `Razón: ${event.reason} · registrado el ${input.formatInstant(event.recordedAt)}`));
+      const origin =
+        event.origin === "propuesta"
+          ? ` · propuesta de la memoria${event.fromVersions === undefined || event.fromVersions.length === 0 ? "" : ` (${versionNames(event.fromVersions)})`}`
+          : "";
+      item.append(head, node("p", "muted", `Razón: ${event.reason} · registrado el ${input.formatInstant(event.recordedAt)}${origin}`));
       list.append(item);
     }
     box.append(list);
@@ -247,7 +369,8 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
       line.append(
         node("span", "chip confirmed", "confirmado"),
         " ",
-        `Rige ${fmt(entry, current.value)}, desde ${input.formatInstant(current.effectiveAt)}. Razón: ${current.reason}`,
+        `Rige ${fmt(entry, current.value)}, desde ${input.formatInstant(current.effectiveAt)}` +
+          `${current.origin === "propuesta" ? " (propuesta de la memoria)" : ""}. Razón: ${current.reason}`,
       );
     }
     return line;
@@ -281,6 +404,8 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
       item.append(line);
     }
     const actions = node("div", "plant-value-actions");
+    const proposal = proposalBlock(entry, canConfirm, actions);
+    if (proposal !== null) item.append(proposal);
     if (canConfirm) {
       const opener = button("Cambiar…", "plant-value-open");
       opener.setAttribute("aria-label", `Cambiar «${entry.label}»`);
@@ -354,6 +479,12 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
     setBusy(next) {
       busy = next;
       applyBusy();
+    },
+    proposalsChanged(proposals) {
+      const view = context.view;
+      if (view === null) return;
+      context = { ...context, view: { ...view, values: view.values.map((entry) => ({ ...entry, proposal: proposals?.[entry.key] ?? null })) } };
+      render();
     },
   };
 }
