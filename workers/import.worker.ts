@@ -1817,7 +1817,7 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
  * el anterior sigue explicándose con las suyas.
  */
 /** Consolidación y revocación de la memoria (F4). Pendiente de implementar: hoy responde con error. */
-async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "revoke" }>): Promise<void> {
+async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "revoke" | "resolve-fork" }>): Promise<void> {
   emit(
     {
       type: "error",
@@ -2045,7 +2045,7 @@ scope.onmessage = (event: MessageEvent<ToWorker>): void => {
     return;
   }
 
-  if (message.type === "consolidate" || message.type === "revoke") {
+  if (message.type === "consolidate" || message.type === "revoke" || message.type === "resolve-fork") {
     currentJobId = message.jobId;
     seq = 0;
     void runMemory(message);

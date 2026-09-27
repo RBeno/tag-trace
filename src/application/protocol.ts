@@ -216,7 +216,27 @@ export interface RevokeMessage {
   readonly reason: string;
 }
 
-export type ToWorker = StartMessage | CancelMessage | LoadListsMessage | LoadFleetMessage | ConsolidateMessage | RevokeMessage;
+/**
+ * Resolver una bifurcación de linaje (§10): conservar la memoria local o adoptar la entrante. El
+ * linaje que no se elige queda archivado, nunca borrado; la elección y su razón quedan en el historial.
+ */
+export interface ResolveForkMessage {
+  readonly type: "resolve-fork";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly choice: "conservar-local" | "adoptar-entrante";
+  readonly reason: string;
+}
+
+export type ToWorker =
+  | StartMessage
+  | CancelMessage
+  | LoadListsMessage
+  | LoadFleetMessage
+  | ConsolidateMessage
+  | RevokeMessage
+  | ResolveForkMessage;
 
 interface Envelope {
   readonly protocolVersion: number;
@@ -734,6 +754,10 @@ export interface MemoryViews {
   readonly budgetBytes: number;
   /** Relación con la memoria que traía el último `.agvproj` abierto, si hubo (§10). */
   readonly lineage: LineageRelation | null;
+  /** Bifurcación sin resolver: los dos linajes, para que la persona elija. `null` si no la hay. */
+  readonly fork: { readonly local: readonly VersionSummary[]; readonly incoming: readonly VersionSummary[] } | null;
+  /** Las elecciones de linaje registradas (§10), la más reciente al final. */
+  readonly lineageEvents: readonly { readonly at: number; readonly choice: "conservar-local" | "adoptar-entrante"; readonly reason: string }[];
 }
 
 /** Respuesta a `consolidate` en modo `preview`: nada se ha escrito. */
@@ -755,6 +779,12 @@ export interface RevokedMessage extends Envelope {
   readonly type: "revoked";
   readonly circuitId: string;
   readonly version: number;
+  readonly memory: MemoryViews;
+}
+
+export interface ForkResolvedMessage extends Envelope {
+  readonly type: "fork-resolved";
+  readonly circuitId: string;
   readonly memory: MemoryViews;
 }
 
@@ -802,7 +832,8 @@ export type FromWorker =
   | FleetChooseCircuitMessage
   | ConsolidationPreviewMessage
   | ConsolidatedMessage
-  | RevokedMessage;
+  | RevokedMessage
+  | ForkResolvedMessage;
 
 /**
  * `Omit` sobre una unión colapsa a las claves comunes y pierde el discriminante. Distribuyendo
