@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.23.0
+version: 0.24.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -129,19 +129,26 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
 
 ## G4 — Autorizar F5
 
-- [ ] Consolidación solo humana y transaccional. **Evidencia (3.51.0)**: el Worker solo escribe con
+Marcado por el propietario el 2026-09-27 («pasa a Fase 5»), tras fusionar el PR #12 (3.50.0–3.62.0,
+commit `551d4cd`), que reúne la evidencia de los siete criterios.
+
+- [x] Consolidación solo humana y transaccional. **Evidencia (3.51.0, 3.61.0)**: el Worker solo escribe con
       `consolidate` en modo `commit`, que la interfaz envía desde «Confirmar y consolidar», y vuelve a
       calcular la previsualización desde el almacén antes de escribir; versión y estado de linaje van
-      en una transacción (TC-283, TC-286). Sin marcar: la decide el propietario.
-- [ ] vN permanece intacta al crear vN+1. **Evidencia**: almacén por `[circuitId, hash]`, cadena de
+      en una transacción (TC-283, TC-286). Desde 3.61.0 la confirmación lleva la huella de la
+      previsualización y `saveMemory` rechaza si el linaje guardado cambió mientras se preparaba la
+      escritura (TC-315).
+- [x] vN permanece intacta al crear vN+1. **Evidencia**: almacén por `[circuitId, hash]`, cadena de
       hashes y prueba de que revocar no muta la original ni cambia su hash (TC-283).
-- [ ] Revocación y migración probadas. **Evidencia**: revocación en unitaria y navegador (TC-283,
+- [x] Revocación y migración probadas. **Evidencia**: revocación en unitaria y navegador (TC-283,
       TC-286); migración del almacén 6→7 y lectura de `.agvproj` 1, 2 y 3 (TC-285). La migración
-      en el navegador desde una base de la versión 5 hasta la 7, con las tablas de memoria (TC-280).
-- [ ] Incidencias excluidas del esperado. **Evidencia (3.55.0)**: un hallazgo grave confirmado se guarda como incidencia de la versión y lo que toca conserva en el esperado su valor anterior (R-INC-004, TC-293, TC-294). Desde 3.57.0 también los hallazgos graves con instante, con su ventana (OQ-149, TC-298, TC-300).
-- [ ] Crecimiento normal dentro del presupuesto o desviación aceptada. **Evidencia (3.54.1, 3.55.0)**: medido con cuatro periodos del circuito de auditoría; el propietario aceptó el 5 % sobre el CSV con versiones comprimidas, que ocupan menos del 1 % (OQ-145, TC-292, TC-295).
-- [ ] Reapertura y round-trip de `.agvproj`. **Evidencia**: ida y vuelta con memoria y relación «idéntica»; adopción en almacén vacío (TC-285, TC-286). La bifurcación solo tiene prueba unitaria (TC-284).
-- [ ] Comparación histórica reproduce deltas correctos. **Evidencia (3.53.0, 3.56.0)**: con plano, un tag instalado sin leer ya no sale como «desaparece» sino «sin leer en su ubicación», y las estadísticas de dos periodos se combinan igual que medidas juntas (TC-288, TC-290). El comparador entre dos versiones cualesquiera y la prueba de oro de seis periodos con cambios plantados dan exactamente lo adoptado (TC-296, TC-297).
+      en el navegador desde una base de la versión 5 hasta la 10, con las tablas de memoria (TC-280).
+      Desde 3.61.0 cada versión que llega vuelve a dar su hash y cada linaje encadena; un linaje con
+      dos versiones del mismo número se rechaza (TC-307, TC-319).
+- [x] Incidencias excluidas del esperado. **Evidencia (3.55.0)**: un hallazgo grave confirmado se guarda como incidencia de la versión y lo que toca conserva en el esperado su valor anterior (R-INC-004, TC-293, TC-294). Desde 3.57.0 también los hallazgos graves con instante, con su ventana (OQ-149, TC-298, TC-300). Desde 3.62.0 la medida de una incidencia tampoco cuenta hacia sostenido (TC-320).
+- [x] Crecimiento normal dentro del presupuesto o desviación aceptada. **Evidencia (3.54.1, 3.55.0)**: medido con cuatro periodos del circuito de auditoría; el propietario aceptó el 5 % sobre el CSV con versiones comprimidas, que ocupan menos del 1 % (OQ-145, TC-292, TC-295).
+- [x] Reapertura y round-trip de `.agvproj`. **Evidencia**: ida y vuelta con memoria y relación «idéntica»; adopción en almacén vacío (TC-285, TC-286). La bifurcación solo tiene prueba unitaria (TC-284). Desde 3.61.0 un linaje archivado viaja aparte del activo y no finge una bifurcación (TC-306).
+- [x] Comparación histórica reproduce deltas correctos. **Evidencia (3.53.0, 3.56.0)**: con plano, un tag instalado sin leer ya no sale como «desaparece» sino «sin leer en su ubicación», y las estadísticas de dos periodos se combinan igual que medidas juntas (TC-288, TC-290). El comparador entre dos versiones cualesquiera y la prueba de oro de seis periodos con cambios plantados dan exactamente lo adoptado (TC-296, TC-297).
 
 ## G5 — Autorizar F6
 
