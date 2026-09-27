@@ -22,7 +22,7 @@ import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { StructureSet } from "../domain/anchor-sums.js";
 import type { SnapshotDelta } from "../domain/snapshot.js";
 import type { ChangeSummary } from "../domain/change-class.js";
-import type { ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryComparison } from "../domain/memory.js";
+import type { ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryComparison, VersionComparison } from "../domain/memory.js";
 import type {
   EdgeSummary,
   LocationSummary,
@@ -268,7 +268,18 @@ export interface PlanActionMessage {
   readonly workingSourceId: string | null;
 }
 
+/** Comparar dos versiones consolidadas del linaje activo (F4). Solo lee: no escribe nada. */
+export interface CompareVersionsMessage {
+  readonly type: "compare-versions";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly from: number;
+  readonly to: number;
+}
+
 export type ToWorker =
+  | CompareVersionsMessage
   | PlanActionMessage
   | StartMessage
   | CancelMessage
@@ -833,6 +844,12 @@ export interface PlanViews {
   readonly proposals: readonly PlanProposal[];
 }
 
+export interface VersionsComparedMessage extends Envelope {
+  readonly type: "versions-compared";
+  readonly circuitId: string;
+  readonly comparison: VersionComparison;
+}
+
 export interface PlanUpdatedMessage extends Envelope {
   readonly type: "plan-updated";
   readonly circuitId: string;
@@ -915,7 +932,8 @@ export type FromWorker =
   | ConsolidatedMessage
   | RevokedMessage
   | ForkResolvedMessage
-  | PlanUpdatedMessage;
+  | PlanUpdatedMessage
+  | VersionsComparedMessage;
 
 /**
  * `Omit` sobre una unión colapsa a las claves comunes y pierde el discriminante. Distribuyendo

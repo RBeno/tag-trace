@@ -424,6 +424,35 @@ export interface MemoryComparison {
   readonly delta: SnapshotDelta;
 }
 
+/**
+ * Dos versiones consolidadas cualesquiera comparadas entre sí (F4, «comparador entre versiones»): el
+ * esperado de `from` frente al esperado de `to`, con lo que hay entre medias. Sirve para ver cómo
+ * evolucionó el circuito de v1 a v4 sin pasar por lo observado.
+ */
+export interface VersionComparison {
+  readonly from: { readonly version: number; readonly fileName: string; readonly window: { readonly from: number; readonly to: number }; readonly revoked: boolean };
+  readonly to: { readonly version: number; readonly fileName: string; readonly window: { readonly from: number; readonly to: number }; readonly revoked: boolean };
+  /** Versiones del mismo linaje entre las dos, sin contarlas, y cuántas de ellas están revocadas. */
+  readonly between: { readonly versions: number; readonly revoked: number };
+  /** Los cambios que cada versión intermedia y `to` adoptaron, en orden: la historia de cómo se llegó. */
+  readonly adoptedAlongTheWay: readonly { readonly version: number; readonly keys: readonly string[] }[];
+  readonly delta: SnapshotDelta;
+}
+
+/**
+ * `from` y `to` son números de versión del conjunto dado (normalmente el linaje activo). Lanza si
+ * alguno no existe o si son la misma. El orden importa: el delta va de `from` a `to`, y `from` puede
+ * ser posterior a `to` para ver el cambio al revés.
+ */
+export function compareVersions(
+  versions: readonly ConsolidatedVersion[],
+  from: number,
+  to: number,
+  thresholds: Pick<TagChangeThresholds, "maxChance">,
+): VersionComparison {
+  throw new Error(`compareVersions: pendiente de implementar (${versions.length}, v${from}, v${to}, ${thresholds.maxChance})`);
+}
+
 export function compareToMemory(
   current: CircuitSnapshot,
   memory: ConsolidatedVersion,
