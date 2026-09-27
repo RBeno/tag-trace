@@ -1,18 +1,18 @@
 {
   "project": "TAG TRACE",
   "repository": "RBeno/tag-trace",
-  "documentationVersion": "1.57.0",
-  "currentPhase": "F4",
-  "phaseName": "Memoria longitudinal y consolidación",
+  "documentationVersion": "1.58.0",
+  "currentPhase": "F5",
+  "phaseName": "Laboratorio de incidencias",
   "status": "in_progress",
   "baseline": "approved",
   "lastUpdated": "2026-09-27",
   "implementationStarted": true,
   "legacyRepository": "RBeno/tag-trace-agv",
   "nextTransition": {
-    "targetPhase": "F5",
-    "requiredApproval": "CONTINÚA FASE 5",
-    "gate": "G4"
+    "targetPhase": "F6",
+    "requiredApproval": "CONTINÚA FASE 6",
+    "gate": "G5"
   },
   "dataPolicy": {
     "processing": "local-only",

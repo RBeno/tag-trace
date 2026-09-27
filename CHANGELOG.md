@@ -2,6 +2,22 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.63.0] - 2026-09-27
+
+**F5 abierta** por el propietario («pasa a Fase 5»), tras fusionar el PR #12 (3.50.0 a 3.62.0,
+`551d4cd`) y marcar los siete criterios de G4 con la evidencia que ya tenían.
+
+### Gobierno
+
+- `docs/project_state.json` pasa a `F5 / Laboratorio de incidencias`, con `CONTINÚA FASE 6` como
+  siguiente transición (G5). La aprobación es del propietario; ninguna IA aprueba su propio cambio
+  de fase (ADR-0010).
+- `docs/PHASE_GATES.md` §G4: los siete criterios marcados, cada uno con su evidencia (3.51.0 a
+  3.62.0). F4 queda cerrada.
+- Sin cambios de código: F5 (creación de expedientes desde síntoma/intervalo/hallazgo, retroceso
+  temporal y topológico, replay multi-AGV, biblioteca de casos, informe local y contramedidas,
+  `ROADMAP.md` §F5) no tiene entregas todavía.
+
 ## [3.62.0] - 2026-09-27
 
 El propietario pidió aplicar la recomendación de la IA a OQ-154 a OQ-158 («En las respuestas utiliza tu

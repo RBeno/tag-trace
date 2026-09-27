@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.44.0
+version: 0.45.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -333,7 +333,9 @@ previsualización y el botón de confirmación humana, la revocación, y el pres
 medido. Ninguna IA consolida: la instantánea se guarda sola, la memoria la aprueba una persona
 (ADR-0010, `MEMORY_CONSOLIDATION.md` §6).
 
-La frase de transición a F5 es `CONTINÚA FASE 5`, y ninguna IA la escribe por el propietario.
+La frase de transición a F5 es `CONTINÚA FASE 5`, y ninguna IA la escribe por el propietario. El
+2026-09-27, con el PR #12 fusionado y los siete criterios de G4 con evidencia, el propietario dio la
+orden («pasa a Fase 5») y marcó G4 en `PHASE_GATES.md`; F4 queda cerrada.
 
 ## Consolidación con versiones (2026-09-27)
 
@@ -397,14 +399,30 @@ aplicar la recomendación a las cinco (`[3.62.0]`): tolerancia de medida ancha s
 recorte por parada, rechazar un linaje con dos versiones del mismo número, no arrastrar la cuenta de
 una incidencia, y dejar las revocaciones importadas como están.
 
-## Estado al 2026-09-26 (relevo a un chat nuevo)
+## F4 cerrada, F5 abierta (2026-09-27)
+
+El PR #12 (3.50.0 a 3.62.0) se fusionó en `main` (`551d4cd`, *squash*, por orden del propietario:
+«Haz PR y fusiona»). Con los siete criterios de G4 marcados, el propietario dio la orden de abrir F5
+(«pasa a Fase 5»): `project_state.json` pasa a `F5 / Laboratorio de incidencias`, con `CONTINÚA FASE 6`
+como siguiente transición (G5). Nada de F5 está implementado todavía; su alcance es el de
+`ROADMAP.md` («Se crea»/«Se formaliza»/«Salida demostrable»): creación de un expediente desde
+síntoma, intervalo o hallazgo; retroceso temporal y topológico; replay multi-AGV con esperado e
+incertidumbre; biblioteca de casos y similitud explicada; informe vivo y exportación local;
+contramedidas y verificación antes/después.
+
+## Estado al 2026-09-27 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
 `project_state.json` y en `CHANGELOG.md`; lo que no esté escrito en el repositorio no existe para la
 conversación siguiente.
 
-- **Fase F4** (memoria longitudinal y consolidación), abierta el 2026-09-26 por el propietario
-  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): OQ-154 a OQ-158 con la recomendación aplicada** (`[3.62.0]`), tras la revisión de interfaz, lógica y consolidación (`[3.61.0]`), tras las propuestas de valores de planta (`[3.60.0]`), tras los valores de planta por circuito (`[3.59.0]`), tras el recorte de ventana y la tasa por AGV (`[3.58.0]`), tras las incidencias con instante (`[3.57.0]`), tras el comparador entre versiones y la prueba de oro (`[3.56.0]`), tras la clasificación de cambios, las incidencias fuera del esperado y el almacén comprimido (`[3.55.0]`), tras el plano físico (`[3.53.0]`), tras la consolidación humana con versiones (`[3.51.0]`, `[3.52.0]`). Anterior: **revisión de toda la lógica de medición y análisis**
+- **Fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
+  5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
+  6` (ADR-0010). **Aún no hay ninguna entrega de F5**: el primer trabajo de esta fase es el punto de
+  partida en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
+  antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
+  en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**
   (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
   regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
   (OQ-135 a OQ-141), dos de ellas contradicciones código↔documento que no se tocan hasta que decida.
