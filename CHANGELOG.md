@@ -2,6 +2,17 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.54.0] - 2026-09-27
+
+### Corregido
+
+- **La barra de revisión desbordaba en el móvil.** En 390 px de ancho y con datos cargados,
+  «Siguiente pendiente» quedaba 146 px fuera de la pantalla y la página se desplazaba de lado: con
+  cero hallazgos, el título «Revisión: no hay hallazgos que revisar.» no se partía y lo empujaba.
+  Ahora la fila de la barra baja el botón a otra línea si no cabe, y el botón no aparece cuando no
+  hay hallazgos. Venía de 3.48.0; la prueba de navegación medía el desborde sin datos, con la barra
+  oculta, y ahora lo mide en las siete pestañas con y sin hallazgos (TC-291).
+
 ## [3.53.0] - 2026-09-27
 
 El plano físico del circuito (ADR-0016): tres ideas del esbozo inicial del propietario que se

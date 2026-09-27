@@ -328,6 +328,8 @@ export function createReviewSession(
       summary.total === 0
         ? "Revisión: no hay hallazgos que revisar."
         : `Revisados ${done} de ${summary.total}`;
+    // Sin hallazgos no hay nada a lo que saltar: el botón solo ocuparía sitio.
+    next.hidden = summary.total === 0;
     counts.textContent = REVIEW_STATES.filter((state) => state !== "pendiente")
       .map((state) => counted(summary[state], state))
       .concat(counted(summary.pendiente, "pendiente"))

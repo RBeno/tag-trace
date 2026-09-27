@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.60.0
+version: 0.61.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -339,6 +339,7 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-288 | Plano físico en el dominio (`plan.test.ts`) | Momentos combinados iguales a los de todo junto; el plano antes y después de una sustitución conserva la ubicación; inserción, salida y cierre; `validateEvent` con catorce motivos, incluido el retroactivo; identificadores sin reutilizar; observación leída, parcial, no observada con pasadas (inferida), sin ocasión, sin tag y salida con y sin revisión; propuestas de sustitución, tag nuevo con dos AGV, con uno y sin saberlo, y salida sin ubicar; «desaparece» pasa a «no-observado»; resumen de dos periodos igual al de uno; las cinco relaciones entre planos | Un tag averiado que saca su ubicación del plano; una propuesta sin evidencia suficiente | Unitaria |
 | TC-289 | `.agvproj` con plano (`agvproj.test.ts`) | Esquema 4 escribe la sección `plano` con su hash y la lee igual; una forma inválida se rechaza diciendo qué falla; el 3 se abre sin plano | Un plano que se abre a medias | Unitaria |
 | TC-290 | Plano en el navegador (`plano.spec.ts`, fixture `memoria/1`) | Crear el plano desde v1 exige razón y lista las ubicaciones; con un periodo sin leer 0300 su ubicación sale «sin leer» con pasadas y la evolución dice «sin leer en su ubicación»; la sustitución propuesta no escribe nada hasta confirmarla y la ubicación conserva la historia de 0300; la salida declarada se ubica eligiendo de dónde cuelga y registra su revisión; la tabla de tramos tiene pasadas y media; el plano viaja en el `.agvproj` | Un cambio escrito sin confirmación; «desaparece» para un tag instalado | Navegador |
+| TC-291 | Desborde en el móvil con datos (`navegacion.spec.ts`) | En 390 px con toque, con un fichero sin hallazgos y después con hallazgos, ninguna de las siete pestañas desborda; sin hallazgos la barra de revisión no ofrece «Siguiente pendiente» | Una barra fija que saca un botón de la pantalla | Navegador |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las siete pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

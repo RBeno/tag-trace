@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.40.0
+version: 0.41.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -36,6 +36,9 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 | **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
 | **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje; debajo, el **plano del circuito** (§6.1). |
 | **Datos** | Listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
+
+La barra fija de la revisión parte su fila en dos si el título y «Siguiente pendiente» no caben, y
+sin hallazgos no ofrece el botón (3.54.0).
 
 Lo que se ve en todas las pestañas: la cabecera, la barra de pestañas con el buscador, la barra fija
 de la revisión (§4.3), el selector de lecturas con el nombre del circuito, el progreso y los

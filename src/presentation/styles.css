@@ -353,7 +353,11 @@ table.data th { color: var(--muted); font-weight: 600; }
 
 .review-bar { position: sticky; top: 0; z-index: 3; background: var(--bg); border: 1px solid var(--line);
   border-radius: 10px; padding: 8px 12px; margin: 0 0 8px; }
-.review-bar-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Con `wrap`, si el título y el botón no caben en una fila el botón baja a la siguiente, en vez de
+   salirse de la pantalla: en 390 px, «Revisión: no hay hallazgos que revisar.» con `nowrap` lo
+   empujaba 146 px fuera (3.54.0). */
+.review-bar-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.review-heading { min-width: 0; }
 .review-bar-row button { min-height: 40px; flex: none; }
 .review-panel { margin: 0 0 16px; }
 .review-heading { font-weight: 600; margin: 0; }
