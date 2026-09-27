@@ -82,6 +82,12 @@ export interface AnalysisConfig {
    * valor de planta nuevo.
    */
   readonly plan: { readonly minVehiclesForProposal: number };
+  /**
+   * Clasificación de cambios frente al esperado (`MEMORY_CONSOLIDATION.md` §8; propietario,
+   * 2026-09-27): sostenido si dura `sustainedFiles` ficheros seguidos (OQ-146), colectivo si lo
+   * muestra más de `collectiveShare` de los AGV que pasan por el sitio (OQ-147).
+   */
+  readonly changeClass: { readonly sustainedFiles: number; readonly collectiveShare: number };
 }
 
 /**
@@ -273,6 +279,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   pace: { minPaceShift: 0.05 },
   // El mismo «al menos dos AGV distintos» que R-DAT-021 exige para afirmar una ausencia.
   plan: { minVehiclesForProposal: 2 },
+  changeClass: { sustainedFiles: 3, collectiveShare: 0.5 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

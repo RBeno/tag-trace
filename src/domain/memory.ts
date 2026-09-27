@@ -11,6 +11,7 @@
  * uno es subir `MEMORY_SCHEMA_VERSION` y escribir su migración.
  */
 
+import type { ClassifiedChange, IncidentRecord } from "./change-class.js";
 import type { ReviewEntry, ReviewState } from "./review.js";
 import { semanticHash } from "./semantic-hash.js";
 import { compareSnapshots, type CircuitSnapshot, type SnapshotDelta } from "./snapshot.js";
@@ -56,6 +57,15 @@ export interface ConsolidatedVersion {
   /** Justificación humana de la consolidación, opcional. */
   readonly note: string | null;
   readonly revoked: { readonly at: number; readonly reason: string } | null;
+  /**
+   * El esperado que deja esta versión (§8, OQ-146..148): lo observado salvo los cambios no adoptados
+   * y lo que toca una incidencia. Ausente en las versiones anteriores a 3.55.0, que usan `snapshot`.
+   */
+  readonly expected?: CircuitSnapshot;
+  /** Los cambios frente al esperado anterior, con su clase. */
+  readonly changes?: readonly ClassifiedChange[];
+  /** Las incidencias del periodo, guardadas aparte del esperado (R-INC-001). */
+  readonly incidents?: readonly IncidentRecord[];
   /** Versión de la aplicación que consolidó. */
   readonly appVersion: string;
 }
@@ -91,6 +101,10 @@ export interface ConsolidationPreview {
   readonly decisions: readonly MemoryDecision[];
   /** Tamaño estimado de la versión, en bytes, para el presupuesto (§9). */
   readonly estimatedBytes: number;
+  /** Los cambios frente al esperado vigente con su clase; vacío en la primera versión. */
+  readonly changes?: readonly ClassifiedChange[];
+  /** Las incidencias que se excluirán del esperado (OQ-148). */
+  readonly incidents?: readonly IncidentRecord[];
 }
 
 export interface ConsolidationInput {

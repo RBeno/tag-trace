@@ -794,8 +794,12 @@ export interface MemoryViews {
   /** Número de la versión vigente (última no revocada) o `null`. */
   readonly current: number | null;
   readonly comparison: MemoryComparison | null;
-  /** Bytes que ocupan todas las versiones guardadas, revocadas incluidas (§9). */
+  /** Bytes que ocupan todas las versiones guardadas, revocadas incluidas (§9), sin comprimir. */
   readonly budgetBytes: number;
+  /** Lo mismo tal como está guardado, comprimido (OQ-145). Ausente si el almacén no lo sabe. */
+  readonly storedBytes?: number;
+  /** Bytes del archivo de ficheros originales comprimidos del circuito (OQ-145). */
+  readonly archiveBytes?: number;
   /** Relación con la memoria que traía el último `.agvproj` abierto, si hubo (§10). */
   readonly lineage: LineageRelation | null;
   /** Bifurcación sin resolver: los dos linajes, para que la persona elija. `null` si no la hay. */
