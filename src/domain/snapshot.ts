@@ -13,7 +13,9 @@
  * añaden; no se renombran.
  *
  * Qué **no** guarda, a propósito (`MEMORY_CONSOLIDATION.md` §4): lecturas, matriz completa, replay,
- * expedientes, estados por instante. Todo eso se reconstruye cargando el fichero otra vez.
+ * expedientes, estados por instante. Todo eso se reconstruye cargando el fichero otra vez. De la
+ * matriz solo quedan, por vértice y AGV, las pasadas probadas y los aciertos (`byVehicle`), que es lo
+ * que se suma entre periodos (R-MEM-004); no las vías de prueba, las rachas ni las líneas temporales.
  */
 
 import {
@@ -69,7 +71,22 @@ export interface SnapshotVertex {
   readonly situation: "anillo" | "calle" | "linea" | "fuera" | "sin-lecturas";
   readonly laneId: string | null;
   readonly isAnchor: boolean;
+  /**
+   * Opcional, añadido sin renombrar nada (ADR-0016 §6, R-MEM-004): por AGV, las pasadas probadas por
+   * su sitio y en cuántas lo leyó (`read-matrix.ts`, cohorte principal, R-OPP-013). Solo los AGV con
+   * al menos una pasada: una celda sin pasadas es «no pasó», no un cero. Las instantáneas anteriores
+   * no lo traen y siguen valiendo; sin él no hay desglose por AGV, y no se inventa.
+   */
+  readonly byVehicle?: Readonly<Record<string, SnapshotVehicleCell>>;
 }
+
+/**
+ * Pasadas probadas de un AGV por el sitio de un tag y en cuántas lo leyó, como par `[pasadas,
+ * aciertos]`. Par y no objeto por tamaño: con 40 AGV y 145 tags son miles de celdas por instantánea,
+ * y los nombres de campo repetidos casi duplicaban lo que ocupan. Cada vértice se basta solo (sin
+ * índice de AGV compartido), para que un vértice copiado de otra instantánea siga siendo válido.
+ */
+export type SnapshotVehicleCell = readonly [passes: number, hits: number];
 
 /** Un tramo del anillo con su horquilla por régimen en este fichero (R-FLO-007, R-TIM-011). */
 export interface SnapshotEdge {
@@ -253,13 +270,28 @@ function sortedRecord<T>(record: Readonly<Record<string, T>>): Readonly<Record<s
 }
 
 /**
+ * Las celdas por AGV de un vértice en orden canónico: por identificador, solo las que tienen pasadas y
+ * con sus dos cifras, nada más. `null` si no queda ninguna: sin pasadas no hay desglose que guardar.
+ */
+function canonicalCells(byVehicle: SnapshotVertex["byVehicle"]): Readonly<Record<string, SnapshotVehicleCell>> | null {
+  if (byVehicle === undefined) return null;
+  const out: Record<string, SnapshotVehicleCell> = {};
+  for (const agvId of Object.keys(byVehicle).sort()) {
+    const [passes, hits] = byVehicle[agvId] as SnapshotVehicleCell;
+    if (passes > 0) out[agvId] = [passes, hits];
+  }
+  return Object.keys(out).length === 0 ? null : out;
+}
+
+/**
  * Construye la instantánea: valida, ordena de forma canónica y sella la versión del esquema. No mide
  * nada: el Worker ya calculó. Un input inválido lanza `TypeError` con el motivo, porque una
  * instantánea incoherente guardada se compararía durante meses sin que nadie lo notara.
  *
  * Orden canónico, para que dos instantáneas iguales sean bit a bit iguales (ADR-0013): vértices por
  * posición en el anillo y luego por id; aristas, secciones y huecos entre anclas en orden del anillo;
- * hallazgos por clave; `nonReaders`, `vehicles` y las claves de `readsByTag` ordenados.
+ * hallazgos por clave; `nonReaders`, `vehicles` y las claves de `readsByTag` y de `byVehicle` ordenados
+ * (en `byVehicle`, solo los AGV con pasadas).
  */
 export function buildSnapshot(input: SnapshotInput): CircuitSnapshot {
   requireId(input.circuitId, "circuitId");
@@ -293,6 +325,13 @@ export function buildSnapshot(input: SnapshotInput): CircuitSnapshot {
       invalid(`el vértice ${vertex.tagId} está en el anillo (posición ${expected}) y no declara posición`);
     }
     for (const agvId of vertex.nonReaders) requireId(agvId, `AGV en nonReaders de ${vertex.tagId}`);
+    for (const [agvId, cell] of Object.entries(vertex.byVehicle ?? {})) {
+      requireId(agvId, `AGV en byVehicle de ${vertex.tagId}`);
+      const [passes, hits] = Array.isArray(cell) && cell.length === 2 ? cell : [Number.NaN, Number.NaN];
+      if (!Number.isInteger(passes) || !Number.isInteger(hits) || passes < 0 || hits < 0 || hits > passes) {
+        invalid(`el vértice ${vertex.tagId} da a ${agvId} ${hits} aciertos en ${passes} pasadas`);
+      }
+    }
   }
 
   const edgeKeys = new Set<string>();
@@ -309,7 +348,11 @@ export function buildSnapshot(input: SnapshotInput): CircuitSnapshot {
 
   const byRing = ringOrder(positionOf);
   const vertices = [...input.vertices]
-    .map((vertex) => ({ ...vertex, nonReaders: [...vertex.nonReaders].sort() }))
+    .map((vertex) => {
+      const { byVehicle, ...rest } = vertex;
+      const cells = canonicalCells(byVehicle);
+      return { ...rest, nonReaders: [...vertex.nonReaders].sort(), ...(cells === null ? {} : { byVehicle: cells }) };
+    })
     .sort((a, b) => byRing(a.tagId, b.tagId));
   const edges = [...input.edges].sort((a, b) => byRing(a.from, b.from));
   const sections = [...input.sections].sort((a, b) => byRing(a.fromTagId, b.fromTagId) || a.name.localeCompare(b.name));

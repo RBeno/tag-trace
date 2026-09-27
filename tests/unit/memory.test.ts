@@ -464,3 +464,36 @@ describe("linajes · §10", () => {
     expect(withForeignEvents(state, []).state).toBe(state);
   });
 });
+
+describe("recortes de ventana · OQ-148", () => {
+  it("la versión con recortes los lleva, con las lecturas quitadas, y su hash cambia", async () => {
+    const snapshot = snap({ findings: [finding("tag-rotura", "T005")] });
+    const reviews = new Map([review("tag-rotura|T005", "confirmado")]);
+    const plain = previewConsolidation(input({ snapshot, reviews }));
+    expect(plain.cuts).toBeUndefined();
+    const cuts = [{ incidentKey: "tag-rotura|T005", from: 3600 * SECOND, to: 7200 * SECOND, removed: 42 }];
+    const cut = previewConsolidation(input({ snapshot, reviews, cuts }));
+    expect(cut.cuts).toEqual(cuts);
+    // Lo mismo que sin recorte en todo lo demás: el recorte solo se registra aquí.
+    expect(cut.incidents).toEqual(plain.incidents);
+    expect(cut.estimatedBytes).toBeGreaterThan(plain.estimatedBytes);
+
+    const without = await consolidate(plain, { ...CONTEXT, snapshot });
+    const withCuts = await consolidate(cut, { ...CONTEXT, snapshot });
+    expect(without.cuts).toBeUndefined();
+    expect(withCuts.cuts).toEqual(cuts);
+    expect(withCuts.incidents).toEqual(without.incidents);
+    expect(withCuts.hash).not.toBe(without.hash);
+    expect(await versionHash(withCuts)).toBe(withCuts.hash);
+    // Otro número de lecturas quitadas es otra versión.
+    const other = await consolidate(previewConsolidation(input({ snapshot, reviews, cuts: [{ ...cuts[0]!, removed: 41 }] })), { ...CONTEXT, snapshot });
+    expect(other.hash).not.toBe(withCuts.hash);
+  });
+
+  it("una lista de recortes vacía es lo mismo que ninguna", async () => {
+    const snapshot = snap();
+    const plain = await consolidate(previewConsolidation(input({ snapshot })), { ...CONTEXT, snapshot });
+    const empty = await consolidate(previewConsolidation(input({ snapshot, cuts: [] })), { ...CONTEXT, snapshot });
+    expect(empty.hash).toBe(plain.hash);
+  });
+});

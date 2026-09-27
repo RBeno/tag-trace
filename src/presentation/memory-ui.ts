@@ -12,6 +12,7 @@
 
 import type { MemoryViews, VersionSummary } from "../application/protocol.js";
 import { CHANGE_CLASSES, type ChangeClass, type ChangeSummary, type ClassifiedChange, type IncidentRecord } from "../domain/change-class.js";
+import type { AppliedCut, IncidentCut } from "../domain/incident-cut.js";
 import type { BlockerCode, ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryDecision, VersionComparison } from "../domain/memory.js";
 import { REVIEW_LABEL, REVIEW_STATES, type ReviewState } from "../domain/review.js";
 import { deltaView } from "./evolution.js";
@@ -78,6 +79,20 @@ export function incidentReach(incident: IncidentRecord): string {
 export function incidentWhen(incident: IncidentRecord, format: (utcMs: number) => string): string {
   const windows = incident.windows ?? (incident.window === undefined ? [] : [incident.window]);
   return windows.map((window) => (window.from === window.to ? `en ${format(window.from)}` : `de ${format(window.from)} a ${format(window.to)}`)).join(" · ");
+}
+
+/** La ventana que se propone recortar de una incidencia: la suya; con varias paradas, de la primera a la última. */
+export function incidentSpan(incident: IncidentRecord): { readonly from: number; readonly to: number } | null {
+  const windows = incident.windows ?? (incident.window === undefined ? [] : [incident.window]);
+  if (windows.length === 0) return null;
+  return { from: Math.min(...windows.map((window) => window.from)), to: Math.max(...windows.map((window) => window.to)) };
+}
+
+/** Un recorte aplicado, en palabras (OQ-148): «de lun 12:05 a lun 12:40, solo el AGV 0007: quita 3 lecturas». */
+export function cutLine(cut: AppliedCut, format: (utcMs: number) => string): string {
+  const who = cut.agvId === undefined ? "todas las lecturas del fichero" : `solo las lecturas del AGV ${cut.agvId}`;
+  const count = `${cut.removed} ${cut.removed === 1 ? "lectura" : "lecturas"}`;
+  return `de ${format(cut.from)} a ${format(cut.to)}, ${who}: quita ${count}`;
 }
 
 /** La relación entre la memoria local y la del `.agvproj` abierto (§10), dicha en una frase. */
@@ -154,9 +169,16 @@ export interface MemoryPanelInput {
   readonly findings: () => FindingsStatus | null;
   /** Lleva a la bandeja del Resumen, filtrada por pendientes si se puede. */
   readonly goToPending: () => void;
-  readonly preview: (sourceId: string) => void;
-  /** Solo lo llama el botón «Confirmar y consolidar». */
-  readonly commit: (sourceId: string, note: string | null) => void;
+  /** Con `cuts`, los recortes de ventana que la persona eligió (OQ-148). */
+  readonly preview: (sourceId: string, cuts?: readonly IncidentCut[]) => void;
+  /** Solo lo llama el botón «Confirmar y consolidar», con los recortes de la previsualización que se confirma. */
+  readonly commit: (sourceId: string, note: string | null, cuts?: readonly IncidentCut[]) => void;
+  /**
+   * Un instante como valor de un campo de fecha y hora (`aaaa-mm-ddThh:mm:ss`) en la zona del circuito,
+   * y al revés (`null` si no es una fecha válida). Sin ellos no se ofrece recortar.
+   */
+  readonly toDateTimeInput?: (utcMs: number) => string;
+  readonly fromDateTimeInput?: (value: string) => number | null;
   readonly revoke: (version: number, reason: string) => void;
   readonly resolveFork: (choice: "conservar-local" | "adoptar-entrante", reason: string) => void;
   /** Pide al Worker el esperado de `from` frente al de `to`. Solo lee. */
@@ -195,6 +217,11 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
   let comparison: VersionComparison | null = null;
   /** Los botones que hablan con el Worker, para apagarlos mientras responde. */
   const senders: HTMLButtonElement[] = [];
+  /**
+   * Lo que la persona eligió recortar de cada incidencia (OQ-148), por clave: la casilla y los dos
+   * campos tal como los escribió. Se conserva entre previsualizaciones y se olvida con otro análisis.
+   */
+  const cutChoices = new Map<string, { enabled: boolean; from: string; to: string }>();
 
   const heading = node("h2", undefined, "Memoria del circuito");
   const statusBox = node("div", "memory-status");
@@ -381,7 +408,129 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     return box;
   }
 
-  function incidentsBlock(incidents: readonly IncidentRecord[]): readonly HTMLElement[] {
+  /**
+   * Los recortes marcados (OQ-148), leídos de sus campos. Un campo que conserva el valor propuesto da
+   * el instante exacto de la ventana, sin redondear al segundo. Devuelve el motivo si alguno no se entiende.
+   */
+  function chosenCuts(shown: ConsolidationPreview): { readonly cuts: readonly IncidentCut[] } | { readonly error: string } {
+    const toInput = input.toDateTimeInput;
+    const fromInput = input.fromDateTimeInput;
+    if (toInput === undefined || fromInput === undefined) return { cuts: [] };
+    const cuts: IncidentCut[] = [];
+    for (const incident of shown.incidents ?? []) {
+      const choice = cutChoices.get(incident.key);
+      const span = incidentSpan(incident);
+      if (choice === undefined || !choice.enabled || span === null) continue;
+      const applied = (shown.cuts ?? []).find((cut) => cut.incidentKey === incident.key);
+      const exact = (value: string): number | null => {
+        for (const known of [span.from, span.to, applied?.from, applied?.to]) {
+          if (known !== undefined && toInput(known) === value) return known;
+        }
+        return fromInput(value);
+      };
+      const from = exact(choice.from);
+      const to = exact(choice.to);
+      if (from === null || to === null) return { error: `El recorte de «${incident.title}» necesita un principio y un fin con fecha y hora.` };
+      if (from > to) return { error: `El recorte de «${incident.title}» empieza después de terminar.` };
+      cuts.push({ incidentKey: incident.key, from, to, ...(incident.agvId === undefined ? {} : { agvId: incident.agvId }) });
+    }
+    return { cuts };
+  }
+
+  /** La casilla «Recortar su ventana al consolidar» de una incidencia con ventana, y sus dos campos. */
+  function cutControls(incident: IncidentRecord, span: { readonly from: number; readonly to: number }, shown: ConsolidationPreview, index: number): HTMLElement {
+    const holder = node("div", "memory-cut");
+    const toInput = input.toDateTimeInput;
+    const available = shown.originalArchived === true && toInput !== undefined && input.fromDateTimeInput !== undefined;
+    const toggle = node("input", "memory-cut-toggle");
+    toggle.type = "checkbox";
+    toggle.id = `memory-cut-${index}`;
+    const label = node("label", "memory-cut-label");
+    label.htmlFor = toggle.id;
+    label.append(toggle, " Recortar su ventana al consolidar");
+    holder.append(label);
+    if (!available || toInput === undefined) {
+      toggle.disabled = true;
+      holder.append(node("p", "muted memory-cut-unavailable", shown.cutUnavailable ?? "Sin el fichero original archivado no se puede recortar: vuelve a cargarlo."));
+      return holder;
+    }
+    const applied = (shown.cuts ?? []).find((cut) => cut.incidentKey === incident.key);
+    let choice = cutChoices.get(incident.key);
+    if (choice === undefined) {
+      choice = { enabled: applied !== undefined, from: toInput(applied?.from ?? span.from), to: toInput(applied?.to ?? span.to) };
+      cutChoices.set(incident.key, choice);
+    }
+    const current = choice;
+    toggle.checked = current.enabled;
+    const fields = node("div", "memory-cut-fields");
+    fields.hidden = !current.enabled;
+    const fileWindow = shown.basedOn.window;
+    for (const [side, text] of [
+      ["from", "Desde"],
+      ["to", "Hasta"],
+    ] as const) {
+      const id = `memory-cut-${index}-${side}`;
+      const fieldLabel = node("label", undefined, text);
+      fieldLabel.htmlFor = id;
+      const field = node("input", `memory-cut-${side}`);
+      field.type = "datetime-local";
+      field.id = id;
+      field.step = "1";
+      field.min = toInput(fileWindow.from);
+      field.max = toInput(fileWindow.to);
+      field.value = current[side];
+      field.addEventListener("change", () => {
+        current[side] = field.value;
+      });
+      fields.append(fieldLabel, field);
+    }
+    fields.append(
+      node(
+        "p",
+        "muted",
+        incident.agvId === undefined
+          ? "Se quitan todas las lecturas del fichero en ese tiempo, que queda sin cobertura: no cuenta como silencio."
+          : `Se quitan solo las lecturas del AGV ${incident.agvId} en ese tiempo; las de los demás AGV se quedan.`,
+      ),
+    );
+    toggle.addEventListener("change", () => {
+      current.enabled = toggle.checked;
+      fields.hidden = !toggle.checked;
+    });
+    holder.append(fields);
+    return holder;
+  }
+
+  /** Los recortes que aplicó esta previsualización (OQ-148), con cuántas lecturas quitó cada uno. */
+  function appliedCutsBlock(shown: ConsolidationPreview): readonly HTMLElement[] {
+    const cuts = shown.cuts ?? [];
+    if (cuts.length === 0) return [];
+    const box = node("div", "memory-cuts");
+    box.setAttribute("role", "region");
+    box.setAttribute("aria-label", "Recortes de ventana");
+    box.append(node("p", "memory-cuts-title", `Recortes de ventana en esta previsualización: ${cuts.length}`));
+    const list = node("ul", "memory-items memory-incident-list");
+    const format = input.formatTick ?? input.formatInstant;
+    for (const cut of cuts) {
+      const item = node("li");
+      item.dataset["key"] = cut.incidentKey;
+      const title = (shown.incidents ?? []).find((incident) => incident.key === cut.incidentKey)?.title ?? cut.incidentKey;
+      item.append(node("strong", undefined, title), " ", node("span", "memory-cut-applied", cutLine(cut, format)));
+      list.append(item);
+    }
+    box.append(list);
+    box.append(
+      node(
+        "p",
+        "muted",
+        "La versión se construye sin esas lecturas, desde el fichero original archivado; la instantánea guardada del fichero no cambia. Las incidencias recortadas siguen registradas en la versión.",
+      ),
+    );
+    return [box];
+  }
+
+  function incidentsBlock(shown: ConsolidationPreview): readonly HTMLElement[] {
+    const incidents = shown.incidents ?? [];
     if (incidents.length === 0) return [];
     const box = node("div", "memory-incidents");
     box.setAttribute("role", "region");
@@ -394,17 +543,39 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
         "Hallazgos confirmados que pueden parar la planta. El periodo se consolida entero; cada incidencia se guarda aparte y lo que toca no entra en las estadísticas del esperado, que conserva su valor anterior o queda sin medida.",
       ),
     );
-    const list = node("ul", "memory-items");
-    for (const incident of incidents) {
+    const list = node("ul", "memory-items memory-incident-list");
+    let withWindow = 0;
+    incidents.forEach((incident, index) => {
       const item = node("li");
       item.dataset["key"] = incident.key;
       item.append(node("strong", undefined, incident.title), " ", node("span", "muted", incident.figure), " — ");
       const when = incidentWhen(incident, input.formatTick ?? input.formatInstant);
       if (when !== "") item.append(node("span", "memory-incident-window", when), " · ");
       item.append(node("span", undefined, incidentReach(incident)));
+      const span = incidentSpan(incident);
+      if (span !== null) {
+        withWindow += 1;
+        item.append(cutControls(incident, span, shown, index));
+      }
       list.append(item);
-    }
+    });
     box.append(list);
+    if (withWindow > 0 && shown.originalArchived === true && input.toDateTimeInput !== undefined && input.fromDateTimeInput !== undefined) {
+      const again = sender("Volver a previsualizar con el recorte", "memory-cut-preview");
+      again.addEventListener("click", () => {
+        const chosen = chosenCuts(shown);
+        if ("error" in chosen) {
+          status = { kind: "error", lines: [chosen.error, "Corrige el recorte y vuelve a previsualizar."] };
+          paintStatus();
+          return;
+        }
+        status = null;
+        paintStatus();
+        input.preview(shown.basedOn.sourceId, chosen.cuts.length === 0 ? undefined : chosen.cuts);
+      });
+      box.append(again);
+    }
+    box.append(...appliedCutsBlock(shown));
     return [box];
   }
 
@@ -504,7 +675,7 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       box.append(warnings);
     }
 
-    box.append(...incidentsBlock(shown.incidents ?? []));
+    box.append(...incidentsBlock(shown));
     box.append(decisionsBlock(shown.decisions));
     box.append(...changesBlock(shown));
 
@@ -536,7 +707,9 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
         const text = note.value.trim();
         status = null;
         paintStatus();
-        input.commit(shown.basedOn.sourceId, text === "" ? null : text);
+        // Con los recortes de esta previsualización, no con lo que se haya tocado después: se consolida lo que se ve.
+        const cuts = (shown.cuts ?? []).map(({ removed: _removed, ...cut }) => cut);
+        input.commit(shown.basedOn.sourceId, text === "" ? null : text, cuts.length === 0 ? undefined : cuts);
       });
       actions.append(cancel, confirm);
     } else {
@@ -848,6 +1021,7 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     update(next) {
       context = next;
       preview = null;
+      cutChoices.clear();
       comparison = null;
       render();
     },
@@ -862,8 +1036,19 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     showConsolidated(version, memory) {
       context = { ...context, memory };
       preview = null;
+      cutChoices.clear();
       comparison = null;
-      status = { kind: "info", lines: [`Versión v${version.version} consolidada.`, `Base: ${version.basedOn.fileName}; ${version.decisions.length} decisiones; ${kilobytes(memory.budgetBytes)} en total.`] };
+      const cuts = version.cuts ?? [];
+      status = {
+        kind: "info",
+        lines: [
+          `Versión v${version.version} consolidada.`,
+          `Base: ${version.basedOn.fileName}; ${version.decisions.length} decisiones; ${kilobytes(memory.budgetBytes)} en total.`,
+          ...(cuts.length === 0
+            ? []
+            : [`Con ${cuts.length} ${cuts.length === 1 ? "recorte" : "recortes"} de ventana: ${cuts.reduce((sum, cut) => sum + cut.removed, 0)} lecturas fuera de la versión.`]),
+        ],
+      };
       render();
     },
     showRevoked(version, memory) {

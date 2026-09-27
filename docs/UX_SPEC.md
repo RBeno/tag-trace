@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.44.0
+version: 0.45.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -702,6 +702,11 @@ consolidar. Una incidencia enseña su ventana («de lun., 12:05 a lun., 12:40»)
 «AGV X: no toca el grafo; queda registrada con su ventana»; un cambio que vuelve, «Se vio en vN y
 volvió…» (3.57.0).
 
+**Recorte de ventana (3.58.0)**: cada incidencia con ventana ofrece «Recortar su ventana al
+consolidar» con «Desde» y «Hasta» (fecha y hora, dentro de la ventana del fichero) y «Volver a
+previsualizar con el recorte»; la previsualización dice qué se recortó y cuántas lecturas quitó. Sin
+original archivado la casilla sale deshabilitada con el motivo.
+
 **Comparar versiones (3.56.0)**: con dos o más versiones, dos selectores —de, a; por defecto la
 primera y la vigente—, «Comparar» y el resultado: las dos versiones con su fichero y su ventana, si
 alguna está revocada, cuántas hay entre medias, el delta pintado como en «Evolución» y lo que adoptó
@@ -736,7 +741,10 @@ Debajo de la memoria, en la misma pestaña (`src/presentation/plan-ui.ts`):
    nada.», su evidencia y «Confirmar…» con razón; una salida pide además de qué ubicación cuelga.
 6. **Tramos entre ubicaciones**: por conexión o ruta, pasadas, media y desviación típica por
    régimen, y en cuántos periodos se midió.
-7. **Historial del plano**: cada evento con su fecha efectiva, su razón y si vino de una propuesta.
+7. **Por AGV (3.58.0)**: en cada ubicación con muestra suficiente, un plegable «Por AGV: N de M AGV
+   por debajo de la flota», con la flota entera, los AGV por debajo primero («AGV-07: 2 de 20
+   pasadas»), los demás plegados y cuántos no tienen muestra suficiente.
+8. **Historial del plano**: cada evento con su fecha efectiva, su razón y si vino de una propuesta.
 
 Ningún botón que escribe se activa sin razón. En la evolución, un tag instalado que no se lee sale
 «sin leer en su ubicación», nunca «desaparece». Al abrir un `.agvproj`, el mensaje dice la relación

@@ -261,6 +261,34 @@ test.describe("plano físico", () => {
       await expect(mean).toHaveText(/^\d+,\d (s|min)$/);
     }
   });
+  test("cada ubicación con muestra suficiente se desglosa por AGV, con sus pasadas (R-MEM-004)", async ({ page }) => {
+    const panel = await planned(page);
+    await importInto(page, "memoria", `${MEMORIA}periodo-5.csv`);
+    await openTab(page, "Memoria");
+    // 0200 no es el ancla: doce vueltas por AGV en periodo-5 dan muestra de sobra a 0007 y a 0042.
+    const row = panel.locator(`.plan-location[data-location='${await locationOf(panel, "0200")}']`);
+    const vehicles = row.locator("details.plan-vehicles");
+    await expect(vehicles).toHaveCount(1);
+    const head = vehicles.locator(":scope > summary");
+    await expect(head).toHaveText(/^Por AGV: /);
+    await head.click();
+    await expect(vehicles.locator(".plan-vehicles-fleet")).toHaveText(/^Toda la flota.*: leído en \d+ de \d+ pasadas probadas por su sitio\.$/);
+    // Los que leen menos que la flota van a la vista; el resto, plegado. Cada AGV, con sus pasadas.
+    const rest = vehicles.locator("details.plan-vehicles-rest");
+    if ((await rest.count()) > 0) await rest.locator("summary").click();
+    const lines = vehicles.locator(".plan-vehicle-list li");
+    await expect(lines).toHaveCount(2);
+    for (const agvId of ["0007", "0042"]) {
+      await expect(lines.filter({ hasText: agvId })).toHaveText(new RegExp(`^${agvId}: \\d+ de \\d+ pasadas$`));
+    }
+    const counts = await lines.allTextContents();
+    for (const text of counts) {
+      const [, hits = "0", passes = "0"] = /: (\d+) de (\d+) pasadas$/.exec(text) ?? [];
+      expect(Number(passes)).toBeGreaterThanOrEqual(3);
+      expect(Number(hits)).toBeLessThanOrEqual(Number(passes));
+    }
+  });
+
   test("el plano viaja en el .agvproj: reabrirlo aquí es idéntico; en un dispositivo vacío se añaden sus cambios", async ({ page }) => {
     await planned(page);
     await openTab(page, "Datos");

@@ -149,6 +149,16 @@ describe("assembleSnapshotInput", () => {
     expect(snapshot.lapMs).toBe(40 * SECOND);
   });
 
+  it("cada vértice del anillo lleva de la matriz las pasadas y los aciertos por AGV, y nada más (R-MEM-004)", () => {
+    const snapshot = buildSnapshot(assembleSnapshotInput(input()));
+    const byId = new Map(snapshot.vertices.map((vertex) => [vertex.tagId, vertex]));
+    expect(byId.get("B")?.byVehicle).toEqual({ V1: [10, 10], V2: [10, 0] });
+    expect(byId.get("A")?.byVehicle).toEqual({ V1: [10, 10] });
+    // Fuera del anillo la matriz no mide: sin desglose, no un cero.
+    expect(byId.get("X")?.byVehicle).toBeUndefined();
+    expect(byId.get("Z")?.byVehicle).toBeUndefined();
+  });
+
   it("solo los tramos consecutivos del anillo son aristas", () => {
     const snapshot = buildSnapshot(assembleSnapshotInput(input()));
     expect(snapshot.edges.map((edge) => `${edge.from}→${edge.to}`)).toEqual(["A→B", "B→C"]);

@@ -123,6 +123,7 @@ import {
   loadPlanEvents,
   archiveSource,
   listArchive,
+  loadArchivedSource,
   loadRetainedReadings,
   memoryStoredBytes,
   loadReviews,
@@ -184,6 +185,7 @@ import { measureAnchorGaps } from "../src/domain/anchor-gaps.js";
 import { buildSnapshotFindings } from "../src/domain/snapshot-findings.js";
 import { assembleSnapshotInput } from "../src/application/snapshot-assembly.js";
 import { APP_VERSION } from "../src/application/version.js";
+import { checkCuts, coverageWithoutCuts, cutReadings, type AppliedCut, type IncidentCut } from "../src/domain/incident-cut.js";
 import type { Reading } from "../src/domain/reading.js";
 import type { SourceDirection } from "../src/domain/order.js";
 import type { TruthState } from "../src/domain/truth.js";
@@ -1991,26 +1993,146 @@ async function buildMemoryViews(circuitId: string, observed: CircuitSnapshot | n
   };
 }
 
+// --- Reanálisis de un fichero archivado (OQ-148) ----------------------------------------------------
+
+/** El motivo, en palabras, de que no se pueda recortar un fichero sin su original. */
+const CUT_NEEDS_ORIGINAL = "Sin el fichero original archivado no se puede recortar: vuelve a cargarlo";
+
+/** Un recorte que no se puede hacer: el motivo y qué hacer, para decirlo tal cual en la interfaz. */
+class CutRefused extends Error {
+  readonly recovery: string;
+  constructor(message: string, recovery: string) {
+    super(message);
+    this.name = "CutRefused";
+    this.recovery = recovery;
+  }
+}
+
+/**
+ * Las lecturas de un fichero original archivado (OQ-145), reimportadas igual que en `runImport`: se
+ * comprueba que sus bytes tienen la huella SHA-256 de la fuente, se decodifica (libro de Excel o
+ * texto) y se importa con la procedencia de la fuente. No escribe nada.
+ */
+async function reimportArchived(
+  circuitId: string,
+  source: StoredSource,
+  zone: string,
+): Promise<{ readonly readings: readonly Reading[]; readonly direction: SourceDirection }> {
+  const again = "Vuelve a cargar el fichero en el circuito: queda archivado con su huella.";
+  const bytes = await loadArchivedSource(circuitId, source.sourceHash);
+  if (bytes === undefined) throw new CutRefused(`${CUT_NEEDS_ORIGINAL}.`, again);
+  const buffer = bytes.slice().buffer;
+  if ((await hashFile(buffer)) !== source.sourceHash) {
+    throw new CutRefused(`${CUT_NEEDS_ORIGINAL}: el archivado no coincide con su huella.`, again);
+  }
+  let text: string;
+  let encoding: string;
+  if (looksLikeZip(bytes)) {
+    text = rowsToDelimitedText(await readXlsxRows(bytes));
+    encoding = "xlsx";
+  } else {
+    ({ text, encoding } = decodeSource(buffer));
+  }
+  const result = importReadings(
+    text,
+    { sourceId: source.sourceId, fileName: source.fileName, byteSize: bytes.length, zone, encoding },
+    { onProgress: () => undefined, isCancelled: () => false },
+  );
+  return { readings: result.readings, direction: result.summary.direction };
+}
+
+/**
+ * La instantánea de un fichero a partir de unas lecturas y el contexto del circuito, por el mismo
+ * camino de análisis que la importación (`buildViews`), **sin escribir nada** en el almacén: ni
+ * lecturas, ni instantánea, ni retención. `null` con el motivo si no se pudo construir.
+ */
+async function snapshotFromReadings(
+  stored: StoredCircuit,
+  source: StoredSource,
+  readings: readonly Reading[],
+  coverage: readonly Interval[],
+  direction: SourceDirection,
+  snapshots: readonly CircuitSnapshot[],
+): Promise<{ readonly snapshot: CircuitSnapshot | null; readonly problems: readonly string[] }> {
+  const built = await buildViews({
+    stored,
+    working: readings,
+    workingCoverage: coverage,
+    snapshots,
+    imported: readings,
+    zone: stored.zone,
+    direction,
+    importedSource: { sourceId: source.sourceId, sourceHash: source.sourceHash, fileName: source.fileName, acceptedRows: source.acceptedRows },
+  });
+  if (built === undefined) return { snapshot: null, problems: ["no queda ninguna lectura del fichero."] };
+  return { snapshot: built.snapshot, problems: built.problems };
+}
+
+/**
+ * La instantánea del fichero rehecha desde su original sin las lecturas recortadas (OQ-148). Lleva
+ * los hallazgos de la instantánea medida, que son los que la persona revisó: las decisiones y las
+ * incidencias de la versión son esas, recortadas o no. Conserva también su instante de captura, para
+ * que previsualizar y confirmar den la misma versión.
+ */
+async function cutSnapshot(
+  stored: StoredCircuit,
+  source: StoredSource,
+  measured: CircuitSnapshot,
+  snapshots: readonly CircuitSnapshot[],
+  cuts: readonly IncidentCut[],
+): Promise<{ readonly snapshot: CircuitSnapshot; readonly applied: readonly AppliedCut[] }> {
+  const { readings, direction } = await reimportArchived(stored.circuitId, source, stored.zone);
+  const { kept, applied } = cutReadings(readings, cuts);
+  const coverage = coverageWithoutCuts(source.complete === null ? [] : [source.complete], cuts);
+  const { snapshot, problems } = await snapshotFromReadings(stored, source, kept, coverage, direction, snapshots);
+  if (snapshot === null) {
+    throw new CutRefused(
+      `Con el recorte, el fichero se queda sin instantánea: ${problems.join(" ") || "sin motivo conocido."}`,
+      "Acorta el recorte o consolida sin él.",
+    );
+  }
+  return { snapshot: { ...snapshot, capturedAt: measured.capturedAt, findings: measured.findings }, applied };
+}
+
 /**
  * La previsualización de consolidar un fichero, calculada **aquí** desde el almacén: nunca se confía
  * en una previsualización que venga del hilo principal. El mismo cálculo sirve para `preview` y para
  * `commit`, que es lo que garantiza que lo confirmado es lo que se escribe.
+ *
+ * Con recortes (OQ-148), la instantánea que se consolida es la del fichero rehecha desde su original
+ * archivado sin las lecturas recortadas (`cutSnapshot`); `observed` sigue siendo la guardada, que no
+ * cambia.
  */
-async function previewFor(circuitId: string, sourceId: string): Promise<{ readonly preview: ConsolidationPreview; readonly snapshot: CircuitSnapshot | null; readonly state: LineageState }> {
+async function previewFor(
+  circuitId: string,
+  sourceId: string,
+  requestedCuts: readonly IncidentCut[] = [],
+): Promise<{
+  readonly preview: ConsolidationPreview;
+  readonly snapshot: CircuitSnapshot | null;
+  readonly observed: CircuitSnapshot | null;
+  readonly state: LineageState;
+}> {
   const stored = await loadCircuit(circuitId);
   if (stored === undefined) throw new Error(`El circuito ${circuitId} no está en el almacén.`);
   const source = stored.sources.find((entry) => entry.sourceId === sourceId);
   if (source === undefined) throw new Error(`El fichero ${sourceId} no es una fuente del circuito.`);
-  const [snapshots, reviews, memory] = await Promise.all([loadSnapshots(circuitId), loadReviews(circuitId), loadMemory(circuitId)]);
+  const [snapshots, reviews, memory, archive] = await Promise.all([
+    loadSnapshots(circuitId),
+    loadReviews(circuitId),
+    loadMemory(circuitId),
+    listArchive(circuitId),
+  ]);
   const snapshot = snapshots.find((entry) => entry.sourceId === sourceId) ?? null;
   if (snapshot === null) {
+    if (requestedCuts.length > 0) throw new CutRefused("El fichero no tiene instantánea: no hay nada que recortar.", "Vuelve a cargarlo para crearla.");
     const basedOn = {
       sourceId: source.sourceId,
       sourceHash: source.sourceHash,
       fileName: source.fileName,
       window: source.complete ?? { from: source.importedAt, to: source.importedAt },
     };
-    return { preview: previewWithoutSnapshot(basedOn, memory.active), snapshot: null, state: memory.state };
+    return { preview: previewWithoutSnapshot(basedOn, memory.active), snapshot: null, observed: null, state: memory.state };
   }
   // El periodo desde el esperado vigente (§8): las instantáneas cuya ventana empieza después de la del
   // esperado, hasta la que se consolida, en orden de ventana. Un mismo fichero cargado dos veces
@@ -2034,17 +2156,33 @@ async function previewFor(circuitId: string, sourceId: string): Promise<{ readon
     { after: since, until: snapshot.window.to },
     current === null ? [snapshot] : [current.expected ?? current.snapshot, snapshot],
   );
-  const preview = previewConsolidation({
-    snapshot,
-    reviews,
-    versions: memory.active,
-    rankOf: (kind) => findingKindOf(kind).rank,
-    forkUnresolved: memory.state.incoming !== null,
-    thresholds: CONSOLIDATION_THRESHOLDS,
-    history,
-    confirmedSubjects,
-  });
-  return { preview, snapshot, state: memory.state };
+  // Si se puede recortar: el original de este fichero está archivado (OQ-145).
+  const archived = archive.some((entry) => entry.sourceHash === source.sourceHash);
+  const cutState = archived ? { originalArchived: true } : { originalArchived: false, cutUnavailable: `${CUT_NEEDS_ORIGINAL}.` };
+  const run = (consolidated: CircuitSnapshot, cuts?: readonly AppliedCut[]): ConsolidationPreview =>
+    previewConsolidation({
+      snapshot: consolidated,
+      reviews,
+      versions: memory.active,
+      rankOf: (kind) => findingKindOf(kind).rank,
+      forkUnresolved: memory.state.incoming !== null,
+      thresholds: CONSOLIDATION_THRESHOLDS,
+      history: history.map((entry) => (entry.sourceId === consolidated.sourceId ? consolidated : entry)),
+      confirmedSubjects,
+      ...(cuts === undefined ? {} : { cuts }),
+    });
+  const preview = run(snapshot);
+  if (requestedCuts.length === 0) return { preview: { ...preview, ...cutState }, snapshot, observed: snapshot, state: memory.state };
+
+  // OQ-148: los recortes que la persona eligió, comprobados contra las incidencias de esta previsualización.
+  let cuts: readonly IncidentCut[];
+  try {
+    cuts = checkCuts(requestedCuts, preview.incidents ?? [], snapshot.window);
+  } catch (error) {
+    throw new CutRefused(error instanceof Error ? error.message : String(error), "Ajusta el recorte y vuelve a previsualizar.");
+  }
+  const cut = await cutSnapshot(stored, source, snapshot, snapshots, cuts);
+  return { preview: { ...run(cut.snapshot, cut.applied), ...cutState }, snapshot: cut.snapshot, observed: snapshot, state: memory.state };
 }
 
 /**
@@ -2062,7 +2200,7 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
   }
   try {
     if (message.type === "consolidate") {
-      const { preview, snapshot, state } = await previewFor(circuitId, message.sourceId);
+      const { preview, snapshot, observed, state } = await previewFor(circuitId, message.sourceId, message.cuts ?? []);
       if (message.mode === "preview") {
         emit({ type: "consolidation-preview", circuitId, preview }, jobId);
         return;
@@ -2084,7 +2222,8 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
         note: message.note ?? null,
       });
       await saveMemory({ versions: [version], state: withConsolidated(state, version) });
-      const memory = await buildMemoryViews(circuitId, snapshot);
+      // Lo observado es la instantánea guardada del fichero, recortada o no la versión: es medición.
+      const memory = await buildMemoryViews(circuitId, observed);
       if (memory === undefined) throw new Error("La versión se guardó pero no se pudo volver a leer.");
       emit({ type: "consolidated", circuitId, version, memory }, jobId);
       return;
@@ -2113,6 +2252,11 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
     if (memory === undefined) throw new Error("La elección se guardó pero no se pudo volver a leer.");
     emit({ type: "fork-resolved", circuitId, memory }, jobId);
   } catch (error) {
+    // Un recorte que no se puede hacer se dice tal cual, con qué hacer (OQ-148).
+    if (error instanceof CutRefused) {
+      fail(error.message, error.recovery);
+      return;
+    }
     // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
     fail(
       `La operación de memoria falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
@@ -2157,10 +2301,10 @@ function planViewsFrom(input: PlanInputs): { readonly views: PlanViews; readonly
   for (const entry of sortSnapshots(input.snapshots)) {
     if (observations.has(entry.sourceId)) continue;
     const plan = planAt(events, entry.window.to);
-    if (plan !== null) observations.set(entry.sourceId, observeAgainstPlan(plan, entry));
+    if (plan !== null) observations.set(entry.sourceId, observeAgainstPlan(plan, entry, PROVISIONAL_CONFIG.readRate));
   }
   const workingPlan = working === null ? null : planAt(events, working.window.to);
-  const observation = working === null || workingPlan === null ? null : (observations.get(working.sourceId) ?? observeAgainstPlan(workingPlan, working));
+  const observation = working === null || workingPlan === null ? null : (observations.get(working.sourceId) ?? observeAgainstPlan(workingPlan, working, PROVISIONAL_CONFIG.readRate));
   if (working !== null && observation !== null) observations.set(working.sourceId, observation);
   const proposals =
     working === null || workingPlan === null || observation === null
@@ -2175,7 +2319,7 @@ function planViewsFrom(input: PlanInputs): { readonly views: PlanViews; readonly
       canBootstrap: hasPlan || current === null ? null : { version: current.version, fileName: current.basedOn.fileName },
       events: [...events].sort((a, b) => a.seq - b.seq).map((event) => ({ ...event, text: describeEvent(event, events) })),
       observation,
-      summary: observations.size === 0 ? null : summarizePlan([...observations.values()]),
+      summary: observations.size === 0 ? null : summarizePlan([...observations.values()], PROVISIONAL_CONFIG.readRate),
       proposals,
     },
     observations,
@@ -2232,7 +2376,7 @@ async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Pro
       if (snapshot === undefined) throw new PlanRefusal(`El fichero ${action.sourceId} no tiene instantánea: la propuesta no se puede volver a calcular.`, "Vuelve a cargar el fichero y revisa las propuestas.");
       const plan = planAt(events, snapshot.window.to);
       if (plan === null) throw new PlanRefusal(`Al final de la ventana de «${snapshot.fileName}» todavía no había plano.`, "Las propuestas salen de ficheros posteriores a la creación del plano.");
-      const observation = observeAgainstPlan(plan, snapshot);
+      const observation = observeAgainstPlan(plan, snapshot, PROVISIONAL_CONFIG.readRate);
       const proposal = proposeChanges(plan, observation, snapshot, { declaredExits, minVehicles: PROVISIONAL_CONFIG.plan.minVehiclesForProposal }).find(
         (entry) => entry.id === action.proposalId,
       );

@@ -66,7 +66,8 @@ import { anchorSectionsCsv } from "../domain/anchor-sections.js";
 import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
 import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
-import type { FieldOrder } from "../domain/time.js";
+import { wallClockToUtc, type FieldOrder } from "../domain/time.js";
+import type { IncidentCut } from "../domain/incident-cut.js";
 import { ProjectError, readMemorySection, readPlanSection, readProject, writeProject } from "../persistence/agvproj.js";
 import { exportProjectMemory, importProjectMemory } from "../persistence/project-memory.js";
 import { exportProjectPlan, importProjectPlan } from "../persistence/project-plan.js";
@@ -180,6 +181,30 @@ function formatTick(utcMs: number): string {
 }
 
 const FORMATS: Formats = { instant: formatInstant, tick: formatTick };
+
+/** Un instante como valor de un campo `datetime-local` (`aaaa-mm-ddThh:mm:ss`), en la zona del circuito. */
+function toDateTimeInput(utcMs: number): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: ZONE,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(utcMs));
+  const part = (type: Intl.DateTimeFormatPartTypes): string => parts.find((entry) => entry.type === type)?.value ?? "00";
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
+}
+
+/** El valor de un campo `datetime-local`, leído en la zona del circuito; `null` si no es una fecha. */
+function fromDateTimeInput(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(value);
+  if (match === null) return null;
+  const [year, month, day, hour, minute, second] = match.slice(1).map((field) => Number(field ?? "0")) as [number, number, number, number, number, number];
+  return wallClockToUtc({ year, month, day, hour, minute, second }, ZONE).utcMs;
+}
 
 // --- Regiones de la página -------------------------------------------------
 
@@ -519,8 +544,11 @@ const memoryPanel = createMemoryPanel({
     trayPanel.tabIndex = -1;
     trayPanel.focus({ preventScroll: true });
   },
-  preview: (sourceId) => startMemory({ type: "consolidate", sourceId, mode: "preview" }),
-  commit: (sourceId, note) => startMemory({ type: "consolidate", sourceId, mode: "commit", ...(note === null ? {} : { note }) }),
+  preview: (sourceId, cuts) => startMemory({ type: "consolidate", sourceId, mode: "preview", ...(cuts === undefined ? {} : { cuts }) }),
+  commit: (sourceId, note, cuts) =>
+    startMemory({ type: "consolidate", sourceId, mode: "commit", ...(note === null ? {} : { note }), ...(cuts === undefined ? {} : { cuts }) }),
+  toDateTimeInput,
+  fromDateTimeInput,
   revoke: (version, reason) => startMemory({ type: "revoke", version, reason }),
   resolveFork: (choice, reason) => startMemory({ type: "resolve-fork", choice, reason }),
   compare: (from, to) => startMemory({ type: "compare-versions", from, to }),
@@ -1102,7 +1130,13 @@ function finishMemoryJob(): void {
  */
 function startMemory(
   request:
-    | { readonly type: "consolidate"; readonly sourceId: string; readonly mode: "preview" | "commit"; readonly note?: string }
+    | {
+        readonly type: "consolidate";
+        readonly sourceId: string;
+        readonly mode: "preview" | "commit";
+        readonly note?: string;
+        readonly cuts?: readonly IncidentCut[];
+      }
     | { readonly type: "revoke"; readonly version: number; readonly reason: string }
     | { readonly type: "resolve-fork"; readonly choice: "conservar-local" | "adoptar-entrante"; readonly reason: string }
     | { readonly type: "compare-versions"; readonly from: number; readonly to: number },

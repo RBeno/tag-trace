@@ -267,6 +267,22 @@ describe("el esperado que se consolida · OQ-148", () => {
     expect(expectedSnapshot(EXPECTED, observed, confirmed, new Set()).ring).toEqual(ring);
   });
 
+  it("el desglose por AGV va con las cifras de las que sale: el del esperado anterior en lo no adoptado, ninguno sin medida", () => {
+    // El esperado anterior: T003 leído por todos. Lo observado: T003 sin leer, con su propio desglose.
+    const before = snap({ day: 0, vertices: { T003: { byVehicle: { "AGV-01": [10, 10], "AGV-02": [10, 10] } } } });
+    const observed = snap({ day: 3, ...SILENT_T003, vertices: { T003: { readRate: 0, readings: 0, byVehicle: { "AGV-01": [10, 0], "AGV-02": [10, 0] } } } });
+    const changes = classify([observed], { expected: before });
+    expect(changes.map((change) => [change.key, change.cls])).toEqual([["vertice|T003|deja-de-leerse", "deriva-pendiente"]]);
+    const kept = expectedSnapshot(before, observed, changes, new Set()).vertices.find((entry) => entry.tagId === "T003");
+    // Pasadas y aciertos del anterior, y el desglose también del anterior: nunca mezclados.
+    expect(kept).toMatchObject({ readRate: 1, readings: 40, byVehicle: { "AGV-01": [10, 10], "AGV-02": [10, 10] } });
+    // Una incidencia sin anterior queda sin medida, y sin desglose, que sería la medida de la incidencia.
+    const subjects = new Set(incidentSubjectsOf("tag-rotura|T003", observed));
+    const first = expectedSnapshot(null, observed, [], subjects).vertices.find((entry) => entry.tagId === "T003");
+    expect(first).toMatchObject({ readRate: null, passes: 0 });
+    expect(first?.byVehicle).toBeUndefined();
+  });
+
   it("lo que toca una incidencia toma el valor anterior o, sin anterior, queda sin medida", () => {
     const observed = snap({ day: 3, vertices: { T003: { readRate: 0.2, readings: 8 } }, edges: { "T003>T004": SLOW } });
     const subjects = new Set(incidentSubjectsOf("tag-rotura|T003", observed));

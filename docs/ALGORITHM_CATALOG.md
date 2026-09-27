@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.44.0
+version: 0.45.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -1180,4 +1180,19 @@ ficheros, y `classifyChanges` vuelve a decidir su clase con la misma medida cole
 oro (`historia-oro.test.ts`): anillo de diez tags, cinco AGV y seis periodos; un tag que deja de
 leerse para todos se adopta en v4, un tramo lento de un periodo no se adopta, un tag nuevo que lee
 uno de cinco AGV no se adopta, y un hallazgo grave confirmado queda como incidencia.
+
+## 6.26 Recorte de ventana y desglose por AGV, implementado (OQ-148, R-MEM-004)
+
+- **Recorte** (`src/domain/incident-cut.ts`, Worker `cutSnapshot`): `checkCuts` exige que cada recorte
+  sea de una incidencia del periodo con ventana, con principio no posterior al fin, dentro de la
+  ventana del fichero y del AGV de la incidencia; `cutReadings` quita las lecturas del tiempo
+  recortado (de un AGV o de todos) y `coverageWithoutCuts` quita ese tiempo de la cobertura cuando
+  el recorte es de todos. El Worker reimporta el original archivado, verifica su SHA-256 contra la
+  huella y pasa las lecturas por el mismo camino de análisis que una importación, sin escribir nada.
+  Limitación conocida: en un recorte de un AGV, el paso que cruza la ventana queda como una
+  transición larga de ese AGV, porque la cobertura no es por AGV.
+- **Desglose por AGV** (`observeAgainstPlan`, `summarizePlan`): de `byVehicle` de cada vértice; un AGV
+  «por debajo de la flota» se compara con todas las celdas de esa ubicación en la matriz (s·E < S·e,
+  en enteros). Los periodos cuya instantánea no trae desglose no entran en las cifras por AGV y se
+  dice en cuántos de cuántos periodos se midió.
 

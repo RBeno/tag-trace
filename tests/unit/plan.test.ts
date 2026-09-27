@@ -38,6 +38,7 @@ import {
   type CircuitSnapshot,
   type SnapshotAnchorGap,
   type SnapshotEdge,
+  type SnapshotVehicleCell,
   type SnapshotVertex,
 } from "../../src/domain/snapshot.js";
 
@@ -461,6 +462,90 @@ describe("ADR-0016 §6 · resumen por periodos", () => {
     expect(location?.periods.map((period) => period.sourceId)).toEqual(["f1", "f2"]);
     expect(location?.total).toEqual({ evaluable: 80, successes: 80, omissions: 0, uncertain: null });
     expect(location?.tagId).toBe("T002");
+  });
+});
+
+describe("R-MEM-004 · desglose por AGV de cada ubicación", () => {
+  const SAMPLE = { minPassesPerPair: 3 };
+  /** T003 con tres AGV: uno lo lee siempre, otro casi nunca y otro con solo dos pasadas. */
+  const T003_CELLS: Readonly<Record<string, SnapshotVehicleCell>> = { "AGV-01": [20, 20], "AGV-02": [20, 2], "AGV-03": [2, 2] };
+  const withCells = (cells: NonNullable<SnapshotVertex["byVehicle"]>, options: SnapOptions = {}): CircuitSnapshot =>
+    snap({
+      ...options,
+      vertices: RING.map((tagId) =>
+        tagId === "T003"
+          ? vertex(tagId, RING, { passes: 42, readRate: 24 / 42, readings: 24, byVehicle: cells })
+          : vertex(tagId, RING, { byVehicle: { "AGV-01": [40, 40] } }),
+      ),
+    });
+
+  it("da la tasa por AGV solo a los que llegan a la muestra mínima, con sus pasadas; los demás se cuentan aparte", () => {
+    const location = observeAgainstPlan(planOf([BOOT], DAY), withCells(T003_CELLS), SAMPLE).locations.find((entry) => entry.locationId === "U-0003");
+    expect(location).toMatchObject({ state: "observado", evaluable: 42, successes: 24 });
+    expect(location?.byVehicle).toEqual([
+      { agvId: "AGV-01", evaluable: 20, successes: 20, omissions: 0 },
+      { agvId: "AGV-02", evaluable: 20, successes: 2, omissions: 18 },
+    ]);
+    expect(location?.vehiclesBelowSample).toBe(1);
+    expect(location?.belowSample).toEqual([{ agvId: "AGV-03", evaluable: 2, successes: 2, omissions: 0 }]);
+  });
+
+  it("en el límite de la muestra entra; sin muestra configurada, sin instantánea con desglose o en el ancla no hay desglose", () => {
+    const edge = observeAgainstPlan(planOf([BOOT], DAY), withCells({ "AGV-01": [3, 0], "AGV-02": [2, 0] }), SAMPLE);
+    const u3 = edge.locations.find((entry) => entry.locationId === "U-0003");
+    expect(u3?.byVehicle?.map((cell) => cell.agvId)).toEqual(["AGV-01"]);
+    expect(u3?.vehiclesBelowSample).toBe(1);
+    const noSample = observeAgainstPlan(planOf([BOOT], DAY), withCells(T003_CELLS)).locations.find((entry) => entry.locationId === "U-0003");
+    expect(noSample?.byVehicle).toBeUndefined();
+    const oldSnapshot = observeAgainstPlan(planOf([BOOT], DAY), snap(), SAMPLE).locations.find((entry) => entry.locationId === "U-0003");
+    expect(oldSnapshot?.byVehicle).toBeUndefined();
+    expect(oldSnapshot?.vehiclesBelowSample).toBeUndefined();
+    // El ancla (T001) lee 1 por construcción: no se desglosa.
+    expect(edge.locations.find((entry) => entry.locationId === "U-0001")?.byVehicle).toBeUndefined();
+    expect(edge.locations.find((entry) => entry.locationId === "U-0002")?.byVehicle).toHaveLength(1);
+  });
+
+  it("solo con muestras por debajo del mínimo no hay tasa por AGV y se dice cuántos son", () => {
+    const location = observeAgainstPlan(planOf([BOOT], DAY), withCells({ "AGV-01": [2, 1], "AGV-02": [1, 0] }), SAMPLE).locations.find(
+      (entry) => entry.locationId === "U-0003",
+    );
+    expect(location?.byVehicle).toEqual([]);
+    expect(location?.vehiclesBelowSample).toBe(2);
+    const summary = summarizePlan([observeAgainstPlan(planOf([BOOT], DAY), withCells({ "AGV-01": [2, 1] }), SAMPLE)], SAMPLE);
+    expect(summary.locations.find((entry) => entry.locationId === "U-0003")?.byVehicle).toMatchObject({ lower: [], others: [], vehiclesBelowSample: 1 });
+  });
+
+  it("dos periodos se suman por AGV; la muestra se aplica a la suma y los que leen menos que la flota van primero", () => {
+    const early = withCells(T003_CELLS, { sourceId: "f1", day: 1 });
+    const late = withCells({ "AGV-01": [10, 10], "AGV-02": [5, 1], "AGV-03": [2, 1], "AGV-04": [10, 9] }, { sourceId: "f2", day: 2 });
+    const observations = [late, early].map((snapshot) => observeAgainstPlan(planOf([BOOT], snapshot.window.to), snapshot, SAMPLE));
+    const location = summarizePlan(observations, SAMPLE).locations.find((entry) => entry.locationId === "U-0003");
+    // Flota: 30+25+4+10 = 69 pasadas, 30+3+3+9 = 45 aciertos (65 %).
+    expect(location?.byVehicle).toEqual({
+      periods: 2,
+      minPasses: 3,
+      fleet: { evaluable: 69, successes: 45, omissions: 24 },
+      lower: [{ agvId: "AGV-02", evaluable: 25, successes: 3, omissions: 22 }],
+      // AGV-03 no llega en ningún periodo por separado (2 y 2) y sí en la suma (4).
+      others: [
+        { agvId: "AGV-01", evaluable: 30, successes: 30, omissions: 0 },
+        { agvId: "AGV-03", evaluable: 4, successes: 3, omissions: 1 },
+        { agvId: "AGV-04", evaluable: 10, successes: 9, omissions: 1 },
+      ],
+      vehiclesBelowSample: 0,
+    });
+    // Sin muestra configurada, el resumen no desglosa; el total no cambia.
+    expect(summarizePlan(observations).locations.find((entry) => entry.locationId === "U-0003")?.byVehicle).toBeUndefined();
+  });
+
+  it("un periodo sin desglose (instantánea anterior) no entra en las cifras por AGV y se cuenta", () => {
+    const observations = [snap({ sourceId: "f0", day: 0 }), withCells(T003_CELLS, { sourceId: "f1", day: 1 })].map((snapshot) =>
+      observeAgainstPlan(planOf([BOOT], snapshot.window.to), snapshot, SAMPLE),
+    );
+    const location = summarizePlan(observations, SAMPLE).locations.find((entry) => entry.locationId === "U-0003");
+    expect(location?.periods).toHaveLength(2);
+    expect(location?.byVehicle).toMatchObject({ periods: 1, fleet: { evaluable: 42, successes: 24 }, vehiclesBelowSample: 1 });
+    expect(location?.byVehicle?.lower.map((cell) => cell.agvId)).toEqual(["AGV-02"]);
   });
 });
 

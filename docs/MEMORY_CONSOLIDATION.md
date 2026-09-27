@@ -1,6 +1,6 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.11.0
+version: 0.12.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -166,6 +166,14 @@ pendiente», porque en ese momento no se sabe aún si volverá; desde 3.57.0 (OQ
 fichero del periodo siguiente ya no está, la previsualización lo lista como evento puntual, «se vio
 en vN y volvió», sin cambiar el esperado.
 
+**Recorte de ventana (3.58.0).** Cierra OQ-148: al previsualizar, cada incidencia con ventana ofrece
+«Recortar su ventana al consolidar», con principio y fin editables. La versión se construye desde
+el fichero original archivado sin esas lecturas —las de un AGV, si la incidencia es suya; todas, si
+no—, y el tiempo recortado queda sin cobertura. Sin original archivado no se puede recortar y se
+dice. El reanálisis parte solo de ese fichero, así que las medidas que dependían de otra
+exportación retenida en la ventana de trabajo pueden variar un poco respecto a la instantánea
+guardada, aunque el recorte no quite nada.
+
 **Todo hallazgo que cuenta al consolidar se puede revisar (3.57.0).** Cada sección enseña los
 primeros de cada tipo y el resto en su tabla, pero la instantánea guarda todos: en el circuito de
 auditoría quedaban hallazgos sin tarjeta —tags fuera de la lista, roturas— que habrían dejado la
@@ -221,6 +229,11 @@ Lo que dicen las cifras:
   lecturas. Es la idea del esbozo inicial de guardarlas para revisar el pasado.
 - **Las lecturas retenidas ocupan diez veces el CSV** (unos 318 bytes por lectura normalizada): las
   dos exportaciones retenidas son unos 37 MB.
+
+**Con el desglose por AGV (3.58.0)** cada instantánea del circuito de auditoría crece unos 82 KB sin
+comprimir: la versión pasa del 4,9–6,4 % al 9,3–11,1 % del CSV, y comprimida del 0,63–0,85 % al
+0,75–1,03 %. El objetivo aceptado es el 5 % sobre las versiones guardadas comprimidas, así que
+sigue dentro con margen.
 
 **Decidido el 2026-09-27 (OQ-145):** se acepta el objetivo del 5 % sobre el CSV, con las versiones
 guardadas comprimidas; las lecturas retenidas también se guardan comprimidas, y cada fichero

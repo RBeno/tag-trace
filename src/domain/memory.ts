@@ -19,6 +19,7 @@ import {
   type ClassifiedChange,
   type IncidentRecord,
 } from "./change-class.js";
+import type { AppliedCut } from "./incident-cut.js";
 import type { ReviewEntry, ReviewState } from "./review.js";
 import { canonicalise, semanticHash } from "./semantic-hash.js";
 import { compareSnapshots, type CircuitSnapshot, type SnapshotDelta } from "./snapshot.js";
@@ -76,6 +77,13 @@ export interface ConsolidatedVersion {
   readonly changes?: readonly ClassifiedChange[];
   /** Las incidencias del periodo, guardadas aparte del esperado (R-INC-001). */
   readonly incidents?: readonly IncidentRecord[];
+  /**
+   * Los recortes de ventana que una persona eligió al consolidar (OQ-148), con cuántas lecturas quitó
+   * cada uno. Con recortes, `snapshot` es la instantánea del fichero rehecha desde su original
+   * archivado sin esas lecturas; la instantánea guardada del fichero no cambia. Ausente sin recortes.
+   * Entra en el hash como el resto de la versión.
+   */
+  readonly cuts?: readonly AppliedCut[];
   /** Versión de la aplicación que consolidó. */
   readonly appVersion: string;
 }
@@ -119,6 +127,14 @@ export interface ConsolidationPreview {
   readonly changes?: readonly ClassifiedChange[];
   /** Las incidencias que se excluirán del esperado (OQ-148). */
   readonly incidents?: readonly IncidentRecord[];
+  /** Los recortes de ventana aplicados (OQ-148), con cuántas lecturas quitó cada uno. Ausente sin recortes. */
+  readonly cuts?: readonly AppliedCut[];
+  /**
+   * Si el fichero original está archivado con su huella, que es lo que permite recortar (OQ-145,
+   * OQ-148). `false` con el motivo en `cutUnavailable`. Ausente si quien previsualiza no lo comprobó.
+   */
+  readonly originalArchived?: boolean;
+  readonly cutUnavailable?: string;
 }
 
 export interface ConsolidationInput {
@@ -144,6 +160,11 @@ export interface ConsolidationInput {
   readonly history?: readonly CircuitSnapshot[];
   /** Claves de sujeto (`subjectKey`) que una persona confirmó en el periodo con eventos del plano. */
   readonly confirmedSubjects?: ReadonlySet<string>;
+  /**
+   * Los recortes que se aplicaron para obtener `snapshot` (OQ-148): la instantánea ya viene rehecha sin
+   * esas lecturas. Solo se registran; la previsualización no recorta nada.
+   */
+  readonly cuts?: readonly AppliedCut[];
 }
 
 /** El esperado de una versión: `expected` si lo guarda, o la instantánea (anteriores a 3.55.0, o idéntico). */
@@ -413,8 +434,9 @@ export function previewConsolidation(input: ConsolidationInput): ConsolidationPr
     estimatedBytes: 0,
     ...(changes === undefined ? {} : { changes }),
     incidents,
+    ...(input.cuts === undefined || input.cuts.length === 0 ? {} : { cuts: input.cuts }),
   };
-  const estimatedBytes = versionBytes({ ...provisional, ...expectationFields(shown, snapshot) });
+  const estimatedBytes = versionBytes({ ...provisional, ...expectationFields(shown, snapshot), ...(shown.cuts === undefined ? {} : { cuts: shown.cuts }) });
 
   return { ...shown, estimatedBytes };
 }
@@ -485,9 +507,14 @@ export async function consolidate(
     note: context.note === null || context.note.trim() === "" ? null : context.note,
     revoked: null,
     ...expectationFields(preview, context.snapshot),
+    ...(preview.cuts === undefined || preview.cuts.length === 0 ? {} : { cuts: preview.cuts.map(copyApplied) }),
     appVersion: context.appVersion,
   };
   return { ...unhashed, hash: await versionHash(unhashed) };
+}
+
+function copyApplied(cut: AppliedCut): AppliedCut {
+  return { incidentKey: cut.incidentKey, from: cut.from, to: cut.to, ...(cut.agvId === undefined ? {} : { agvId: cut.agvId }), removed: cut.removed };
 }
 
 /** Revoca una versión: no la borra ni la edita, la marca con fecha y razón (§7). Devuelve una copia. */

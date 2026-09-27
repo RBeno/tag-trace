@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.28.0
+version: 0.29.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -580,8 +580,11 @@ versión del esquema y escribir su migración; los campos se añaden, no se reno
 | Sumas entre anclas | por hueco entre anclas seguidas: tags, suma por régimen, pasadas y, por tag, en cuántas se leyó y por cuántos AGV (R-DAT-021) | secuencias de anclas del fichero |
 | Contexto | flota («N de M» al final y mediana, origen del historial), línea (cadencia, paradas, sin paso), calles (uso), hallazgos (clave de revisión R-EVI-007, tipo, título, cifra, estado) | vistas del fichero |
 
-Lo que **no** guarda, a propósito (`MEMORY_CONSOLIDATION.md` §4): lecturas, matriz completa,
-replay, expedientes, estados por instante. Se reconstruye cargando el fichero otra vez.
+Lo que **no** guarda, a propósito (`MEMORY_CONSOLIDATION.md` §4): lecturas, replay, expedientes,
+estados por instante. Se reconstruye cargando el fichero otra vez. **Desde 3.58.0** cada vértice
+guarda de la matriz de lectura su desglose por AGV (`byVehicle`, par `[pasadas probadas, aciertos]`
+por AGV con pasadas), para que el plano dé la tasa de cada AGV en cada ubicación (R-MEM-004). Las
+instantáneas anteriores no lo traen y siguen valiendo.
 
 **Almacén local, versión 6.** Tres tablas: `circuits` (clave `circuitId`; identidad, fuentes con
 sus metadatos y si sus lecturas están retenidas, cobertura, listas, historial de flota; sin
@@ -615,6 +618,13 @@ persona eligió como referencia del circuito, más lo que hace falta para saber 
 | `lineage` | identificador del linaje que consolidó (generado en la primera consolidación, heredado al adoptar) |
 | `revoked` | `null` o `{ at, reason }`; la única reescritura admitida |
 | `appVersion` | versión del motor que consolidó |
+
+**Recorte de ventana (3.58.0, OQ-148).** Al consolidar, la persona puede recortar la ventana de
+una incidencia —principio y fin, por defecto los de la incidencia—: la versión se construye desde el
+fichero original archivado, verificado por su huella, sin las lecturas de ese tiempo; si la
+incidencia es de un AGV, solo las de ese AGV. El tiempo recortado queda sin cobertura, no como
+silencio. La instantánea guardada del fichero no cambia. La versión guarda los recortes (`cuts`,
+con cuántas lecturas quitó cada uno) y entran en su hash.
 
 **Desde 3.55.0** la versión guarda además `changes` (cada cambio frente al esperado anterior con su
 clase, R-MEM-005), `incidents` (las incidencias del periodo con lo que tocan, R-INC-004) y, si

@@ -347,6 +347,67 @@ test.describe("memoria consolidada", () => {
     await expect(panel.locator(".memory-version[data-version='1'] .memory-version-changes")).toHaveText(/^0 cambios adoptados, 0 pendientes, 1 incidencia excluida\.$/);
   });
 
+  // OQ-148 (propietario 2026-09-27): recortar la ventana de la incidencia desde el original archivado.
+  test("recortar la ventana del «deja de leer» al consolidar: la previsualización dice lo recortado y la versión se crea", async ({ page }) => {
+    await freshPage(page);
+    await prepareCircuit(page);
+    // Como en la prueba anterior: la única incidencia es el AGV que deja de leer.
+    const cards = page.locator(".finding.reviewable");
+    const total = await cards.count();
+    for (let index = 0; index < total; index += 1) {
+      const card = cards.nth(index);
+      const isAbandoned = (await card.getAttribute("data-kind")) === "deja-de-leer";
+      const critical = (await card.locator("xpath=ancestor::*[contains(@class,'tray-group')]").getAttribute("data-rank")) === "1";
+      const state = isAbandoned || !critical ? "confirmado" : "descartado";
+      await card.getByRole("button", { name: /Revisión en campo/ }).click();
+      await card.getByRole("menuitemradio", { name: state === "confirmado" ? /Confirmado/ : /Descartado/ }).click();
+      await page.keyboard.press("Escape");
+      await expect(card).toHaveAttribute("data-review", state);
+    }
+    const title = (await page.locator(".finding.reviewable[data-kind='deja-de-leer'] .finding-title").textContent()) ?? "";
+    const agv = title.split(":")[0] ?? "";
+    expect(agv).not.toBe("");
+
+    await openTab(page, "Memoria");
+    const panel = page.locator(".memory-panel");
+    await panel.getByRole("button", { name: "Previsualizar v1" }).click();
+    const preview = panel.locator(".memory-preview");
+    await expect(preview).toBeVisible({ timeout: 15_000 });
+    const incidents = preview.getByRole("region", { name: "Incidencias excluidas del esperado" });
+    const item = incidents.locator(".memory-items li", { hasText: title });
+    await expect(item).toHaveCount(1);
+    // El original está archivado desde la carga (OQ-145): se puede recortar. Por defecto, su ventana.
+    const toggle = item.getByLabel("Recortar su ventana al consolidar");
+    await expect(toggle).toBeEnabled();
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await expect(item.getByLabel("Desde")).toHaveValue(/^2026-01-24T\d{2}:\d{2}:\d{2}$/);
+    await expect(item.getByLabel("Hasta")).toHaveValue(/^2026-01-24T\d{2}:\d{2}:\d{2}$/);
+    await expect(item).toContainText(`Se quitan solo las lecturas del AGV ${agv}`);
+    // Sin recortes todavía en esta previsualización.
+    await expect(preview.getByRole("region", { name: "Recortes de ventana" })).toHaveCount(0);
+
+    await incidents.getByRole("button", { name: "Volver a previsualizar con el recorte" }).click();
+    const cuts = panel.locator(".memory-preview").getByRole("region", { name: "Recortes de ventana" });
+    await expect(cuts).toBeVisible({ timeout: 15_000 });
+    await expect(cuts).toContainText("Recortes de ventana en esta previsualización: 1");
+    const applied = cuts.locator("li", { hasText: title });
+    await expect(applied).toHaveCount(1);
+    await expect(applied).toContainText(new RegExp(`solo las lecturas del AGV ${agv}: quita \\d+ lecturas?$`));
+    const removed = Number(/quita (\d+) lectura/.exec((await applied.textContent()) ?? "")?.[1]);
+    // Su ventana empieza en su última lectura: al menos esa sale de la versión.
+    expect(removed).toBeGreaterThanOrEqual(1);
+    // La casilla sigue marcada con lo elegido, y la incidencia sigue registrada.
+    const again = panel.locator(".memory-preview .memory-incidents .memory-items li", { hasText: title });
+    await expect(again.getByLabel("Recortar su ventana al consolidar")).toBeChecked();
+    await expect(panel.locator(".memory-preview .memory-blockers")).toHaveCount(0);
+
+    await panel.locator(".memory-preview").getByRole("button", { name: "Confirmar y consolidar" }).click();
+    await expect(panel.locator(".memory-status")).toContainText("Versión v1 consolidada", { timeout: 15_000 });
+    await expect(panel.locator(".memory-status")).toContainText(`Con 1 recorte de ventana: ${removed} lecturas fuera de la versión.`);
+    await expect(panel.locator(".memory-version[data-version='1'] .memory-version-changes")).toHaveText(/^0 cambios adoptados, 0 pendientes, 1 incidencia excluida\.$/);
+  });
+
   test("revocar v1 exige razón, la deja marcada en la lista y el circuito queda sin vigente", async ({ page }) => {
     await freshPage(page);
     await prepareCircuit(page);

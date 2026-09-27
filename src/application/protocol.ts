@@ -214,6 +214,12 @@ export interface ConsolidateMessage {
   readonly mode: "preview" | "commit";
   /** Justificación humana, solo en `commit`. */
   readonly note?: string;
+  /**
+   * Los recortes de ventana que la persona eligió (OQ-148), en `preview` y en `commit`: dentro de
+   * `[from, to]` se quitan las lecturas del fichero, solo las de `agvId` si la incidencia es de un AGV.
+   * El Worker rehace la instantánea desde el original archivado; sin él, no se recorta.
+   */
+  readonly cuts?: readonly { readonly incidentKey: string; readonly from: number; readonly to: number; readonly agvId?: string }[];
 }
 
 /** Revocar una versión: no la borra, la marca con fecha y razón (§7). */

@@ -26,6 +26,7 @@ import {
   type SnapshotAnchorGap,
   type SnapshotEdge,
   type SnapshotInput,
+  type SnapshotVehicleCell,
   type SnapshotVertex,
 } from "../../src/domain/snapshot.js";
 import type { TagChangeThresholds } from "../../src/domain/tag-changes.js";
@@ -199,6 +200,35 @@ describe("construcción de la instantánea", () => {
     expect(() => snap({ window: { from: DAY, to: DAY } })).toThrow(/ventana inválida/);
     expect(() => buildSnapshot({ ...input(), circuitId: " " })).toThrow(/circuitId vacío/);
     expect(() => snap({ vertices: [vertex("TG01", RING, { nonReaders: [""] })] })).toThrow(/AGV en nonReaders de TG01/);
+  });
+});
+
+describe("desglose por AGV de cada vértice (R-MEM-004)", () => {
+  it("guarda pasadas y aciertos por AGV en orden canónico y solo los pares con pasadas", () => {
+    const cells: Record<string, SnapshotVehicleCell> = { V3: [10, 9], V1: [12, 12], V2: [0, 0] };
+    const built = snap({ vertices: RING.map((tagId) => vertex(tagId, RING, tagId === "TG04" ? { byVehicle: cells } : {})) });
+    const tg04 = built.vertices.find((entry) => entry.tagId === "TG04");
+    expect(tg04?.byVehicle).toEqual({ V1: [12, 12], V3: [10, 9] });
+    expect(Object.keys(tg04?.byVehicle ?? {})).toEqual(["V1", "V3"]);
+    // Otro orden de entrada, la misma instantánea bit a bit.
+    const reversed: Record<string, SnapshotVehicleCell> = { V2: [0, 0], V1: [12, 12], V3: [10, 9] };
+    const again = snap({ vertices: RING.map((tagId) => vertex(tagId, RING, tagId === "TG04" ? { byVehicle: reversed } : {})) });
+    expect(JSON.stringify(again)).toBe(JSON.stringify(built));
+  });
+
+  it("sin pasadas no queda desglose, y una instantánea sin el campo sigue valiendo y se compara igual", () => {
+    const empty = snap({ vertices: RING.map((tagId) => vertex(tagId, RING, tagId === "TG04" ? { byVehicle: { V1: [0, 0] } } : {})) });
+    expect("byVehicle" in (empty.vertices.find((entry) => entry.tagId === "TG04") ?? {})).toBe(false);
+    const old = snap();
+    expect(old.vertices.every((entry) => entry.byVehicle === undefined)).toBe(true);
+    const withCells = snap({ sourceId: "f2", window: { from: DAY, to: 2 * DAY }, vertices: RING.map((tagId) => vertex(tagId, RING, { byVehicle: { V1: [40, 40] } })) });
+    expect(compareSnapshots(old, withCells).vertices).toEqual([]);
+  });
+
+  it("rechaza aciertos por encima de las pasadas, cifras no enteras o un AGV vacío", () => {
+    expect(() => snap({ vertices: [vertex("TG01", RING, { byVehicle: { V1: [3, 4] } })] })).toThrow(/TG01 da a V1 4 aciertos en 3 pasadas/);
+    expect(() => snap({ vertices: [vertex("TG01", RING, { byVehicle: { V1: [2.5, 1] } })] })).toThrow(/aciertos en 2.5 pasadas/);
+    expect(() => snap({ vertices: [vertex("TG01", RING, { byVehicle: { "": [3, 1] } })] })).toThrow(/AGV en byVehicle de TG01/);
   });
 });
 

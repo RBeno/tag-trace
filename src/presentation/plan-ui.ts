@@ -8,7 +8,8 @@
  * Sin razón, el botón que envía está apagado. Ninguna propuesta se escribe sola.
  *
  * La única cuenta que se hace es de formato: la desviación típica de un tramo es la raíz de
- * `m2 / (n − 1)`, que el Worker ya dejó sumado.
+ * `m2 / (n − 1)`, que el Worker ya dejó sumado. El desglose por AGV llega ya separado (por debajo de
+ * la flota, el resto y los que no llegan a la muestra) y aquí solo se pone en palabras.
  *
  * Todo texto del dato entra por `textContent` (TH-007).
  */
@@ -25,6 +26,8 @@ import {
   type PlanLocation,
   type PlanProposal,
   type PlanRelation,
+  type VehicleBreakdown,
+  type VehicleCounts,
 } from "../domain/plan.js";
 import { plainTable, scrollBox } from "./charts.js";
 import type { MemoryWorkingFile } from "./memory-ui.js";
@@ -352,6 +355,59 @@ export function createPlanPanel(input: PlanPanelInput): PlanPanel {
     return `En ${periods}: leído en ${total.successes.toLocaleString("es-ES")} de ${plural(total.evaluable, "pasada", "pasadas")}${uncertain}.`;
   }
 
+  /** «AGV-07: 2 de 20 pasadas»: la tasa por AGV nunca va sin su número de pasadas (R-MEM-004). */
+  function vehicleText(cell: VehicleCounts): string {
+    return `${cell.agvId}: ${cell.successes.toLocaleString("es-ES")} de ${plural(cell.evaluable, "pasada", "pasadas")}`;
+  }
+
+  function vehicleList(cells: readonly VehicleCounts[], label: string): HTMLElement {
+    const list = node("ul", "plan-vehicle-list");
+    list.setAttribute("aria-label", label);
+    for (const cell of cells) list.append(node("li", "mono", vehicleText(cell)));
+    return list;
+  }
+
+  /** La línea plegable «Por AGV» de una ubicación: los que leen menos que la flota primero, el resto plegado. */
+  function vehiclesBlock(summary: LocationSummary | undefined): HTMLElement | null {
+    const breakdown: VehicleBreakdown | undefined = summary?.byVehicle;
+    if (summary === undefined || breakdown === undefined) return null;
+    const box = node("details", "plan-vehicles");
+    const supported = breakdown.lower.length + breakdown.others.length;
+    const head =
+      supported === 0
+        ? "ningún AGV con muestra suficiente"
+        : breakdown.lower.length === 0
+          ? `ninguno de ${plural(supported, "AGV", "AGV")} por debajo de la flota`
+          : `${breakdown.lower.length.toLocaleString("es-ES")} de ${plural(supported, "AGV", "AGV")} por debajo de la flota`;
+    box.append(node("summary", undefined, `Por AGV: ${head}`));
+    const coverage =
+      breakdown.periods < summary.periods.length ? ` en ${breakdown.periods.toLocaleString("es-ES")} de ${plural(summary.periods.length, "periodo", "periodos")} (los otros no traen desglose)` : "";
+    box.append(
+      node(
+        "p",
+        "muted plan-vehicles-fleet",
+        `Toda la flota${coverage}: leído en ${breakdown.fleet.successes.toLocaleString("es-ES")} de ${plural(breakdown.fleet.evaluable, "pasada probada", "pasadas probadas")} por su sitio.`,
+      ),
+    );
+    if (breakdown.lower.length > 0) box.append(vehicleList(breakdown.lower, "AGV por debajo de la flota"));
+    if (breakdown.others.length > 0) {
+      const rest = node("details", "plan-vehicles-rest");
+      rest.append(node("summary", undefined, `${plural(breakdown.others.length, "AGV", "AGV")} a la par o por encima de la flota`));
+      rest.append(vehicleList(breakdown.others, "AGV a la par o por encima de la flota"));
+      box.append(rest);
+    }
+    if (breakdown.vehiclesBelowSample > 0) {
+      box.append(
+        node(
+          "p",
+          "muted plan-vehicles-below",
+          `${plural(breakdown.vehiclesBelowSample, "AGV", "AGV")} sin muestra suficiente (menos de ${plural(breakdown.minPasses, "pasada", "pasadas")} por su sitio): sin tasa.`,
+        ),
+      );
+    }
+    return box;
+  }
+
   function historyText(location: PlanLocation): string | null {
     const history = location.history;
     if (history.length === 0 || (history.length === 1 && history[0]?.to === null)) return null;
@@ -476,8 +532,11 @@ export function createPlanPanel(input: PlanPanelInput): PlanPanel {
     head.append(" ", stateLine);
     if (seen.truth !== null && observation?.state === "no-observado") head.append(" ", node("span", "chip plan-truth", seen.truth));
     item.append(head);
-    const total = totalText(plan.summary?.locations.find((entry) => entry.locationId === location.locationId));
+    const summary = plan.summary?.locations.find((entry) => entry.locationId === location.locationId);
+    const total = totalText(summary);
     if (total !== null) item.append(node("p", "muted plan-total", total));
+    const vehicles = vehiclesBlock(summary);
+    if (vehicles !== null) item.append(vehicles);
     const history = historyText(location);
     if (history !== null) item.append(node("p", "muted plan-history", history));
     const holder = node("div", "plan-location-actions");

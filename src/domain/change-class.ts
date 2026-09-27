@@ -343,13 +343,17 @@ export function expectedSnapshot(
         default:
           // `deja-de-leerse`, `empieza-a-leerse`: la lectura del esperado anterior.
           if (now !== null && before !== null) {
+            // El desglose por AGV va con las cifras de las que sale: el del esperado anterior, nunca el
+            // del fichero nuevo junto a las pasadas del anterior.
+            const { byVehicle: _observed, ...rest } = now;
             vertices.set(tagId, {
-              ...now,
+              ...rest,
               readRate: before.readRate,
               passes: before.passes,
               readings: before.readings,
               nonReaders: before.nonReaders,
               situation: before.situation,
+              ...(before.byVehicle === undefined ? {} : { byVehicle: before.byVehicle }),
             });
           }
       }
@@ -379,7 +383,13 @@ export function expectedSnapshot(
     const now = vertices.get(tagId);
     if (now === undefined) continue;
     const before = previousVertices.get(tagId);
-    vertices.set(tagId, before ?? { ...now, readRate: null, passes: 0, readings: 0, nonReaders: [] });
+    if (before !== undefined) {
+      vertices.set(tagId, before);
+    } else {
+      // Sin medida: tampoco desglose por AGV, que sería la medida de la incidencia.
+      const { byVehicle: _observed, ...rest } = now;
+      vertices.set(tagId, { ...rest, readRate: null, passes: 0, readings: 0, nonReaders: [] });
+    }
   }
 
   // El anillo manda: posiciones de nuevo, y un tag fuera del anillo no tiene posición.

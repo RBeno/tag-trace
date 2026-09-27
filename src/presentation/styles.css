@@ -519,6 +519,15 @@ table.data th { color: var(--muted); font-weight: 600; }
 .memory-blockers ul, .memory-warnings ul { margin: 4px 0; padding-left: 18px; }
 .memory-items { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.85rem; }
 .memory-decisions details { margin: 4px 0; }
+.memory-incident-list { display: grid; gap: 6px; }
+.memory-cut { margin-top: 4px; }
+.memory-panel .memory-cut-label { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; }
+.memory-cut-fields { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.memory-cut-fields p { flex-basis: 100%; margin: 2px 0 0; }
+.memory-cut-fields input { font: inherit; }
+.memory-cut-unavailable { margin: 2px 0 0; }
+.memory-cuts { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--line); }
+.memory-cuts-title { font-weight: 600; margin: 0 0 4px; }
 .memory-decisions .memory-items { display: grid; gap: 2px; }
 .memory-note, .memory-revoke-reason, .memory-fork-reason { font: inherit; width: 100%; max-width: 40rem; padding: 6px 10px; min-height: 24px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg); color: var(--ink); margin: 4px 0 8px; box-sizing: border-box; }
@@ -590,9 +599,13 @@ table.data th { color: var(--muted); font-weight: 600; }
 .plan-proposal p { margin: 4px 0 0; }
 .plan-unwritten { font-weight: 600; }
 .plan-edges td, .plan-edges th { white-space: nowrap; }
+.plan-vehicles { margin-top: 4px; font-size: 0.9rem; }
+.plan-vehicles > summary, .plan-vehicles-rest > summary { cursor: pointer; color: var(--viz-series); padding: 2px 0; }
+.plan-vehicle-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.plan-vehicles-rest { margin-top: 4px; }
 .plan-event-when { font-weight: 600; }
 .plan-event p { margin: 2px 0 0; font-size: 0.85rem; }
 @media (any-pointer: coarse) {
-  .plan-menu > summary { min-height: 44px; display: flex; align-items: center; }
+  .plan-menu > summary, .plan-vehicles > summary, .plan-vehicles-rest > summary { min-height: 44px; display: flex; align-items: center; }
   .plan-menu-items button, .plan-location-actions > button, .plan-input { min-height: 44px; }
 }

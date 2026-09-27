@@ -29,6 +29,7 @@ import type {
   SnapshotLane,
   SnapshotLine,
   SnapshotSection,
+  SnapshotVehicleCell,
   SnapshotVertex,
 } from "../domain/snapshot.js";
 import type { TagPlace } from "../domain/undeclared-tags.js";
@@ -102,6 +103,13 @@ function weightedMedian(entries: readonly { readonly value: number; readonly wei
   return sorted[sorted.length - 1]?.value ?? 0;
 }
 
+/** Las celdas de la matriz con pasadas, como las guarda la instantánea. */
+function vehicleCells(cells: ReadMatrix["tags"][number]["byVehicle"]): Readonly<Record<string, SnapshotVehicleCell>> {
+  const out: Record<string, SnapshotVehicleCell> = {};
+  for (const cell of cells) if (cell.passes > 0) out[cell.agvId] = [cell.passes, cell.hits];
+  return out;
+}
+
 function buildVertices(input: SnapshotAssemblyInput): readonly SnapshotVertex[] {
   const ring = input.measure?.ring ?? [];
   const positionOf = new Map(ring.map((tagId, index) => [tagId, index]));
@@ -129,6 +137,8 @@ function buildVertices(input: SnapshotAssemblyInput): readonly SnapshotVertex[] 
       readings,
       // Los AGV que pasaron por su sitio y no lo leyeron nunca en este fichero: pasadas sin lectura.
       nonReaders: (row?.byVehicle ?? []).filter((cell) => cell.passes > 0 && cell.hits === 0).map((cell) => cell.agvId),
+      // Por AGV, sus pasadas probadas y sus aciertos, tal como los dejó la matriz (R-MEM-004).
+      ...(row === undefined ? {} : { byVehicle: vehicleCells(row.byVehicle) }),
       predecessor: place?.predecessor ?? null,
       successor: place?.successor ?? null,
       inventoryClass: input.inventoryClassOf.get(tagId) ?? null,

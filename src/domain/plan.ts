@@ -19,7 +19,7 @@ import type { Interval } from "./coverage.js";
 import type { ConsolidatedVersion } from "./memory.js";
 import { pairKey, type Band } from "./segment-bands.js";
 import { canonicalise } from "./semantic-hash.js";
-import type { CircuitSnapshot, SnapshotAnchorGap, SnapshotDelta, SnapshotEdge } from "./snapshot.js";
+import type { CircuitSnapshot, SnapshotAnchorGap, SnapshotDelta, SnapshotEdge, SnapshotVehicleCell } from "./snapshot.js";
 import type { TruthState } from "./truth.js";
 
 export const PLAN_SCHEMA_VERSION = 1;
@@ -545,6 +545,46 @@ export interface LocationObservation {
   /** Pasadas que no se pudieron dar por buenas ni por malas; `null` si la instantánea no permite contarlas. */
   readonly uncertain: number | null;
   readonly detail: string;
+  /**
+   * Desglose por AGV (R-MEM-004), de las pasadas probadas por su sitio que guarda la instantánea
+   * (`SnapshotVertex.byVehicle`): solo los AGV con al menos la muestra mínima por par
+   * (`readRate.minPassesPerPair`), por identificador. Ausente si la instantánea no lo trae, si el tag
+   * no está en el anillo del fichero o si es el ancla (su tasa es 1 por construcción).
+   */
+  readonly byVehicle?: readonly VehicleCounts[];
+  /** Cuántos AGV pasaron por su sitio sin llegar a la muestra mínima: no se da su tasa. */
+  readonly vehiclesBelowSample?: number;
+  /** Esos AGV con sus cifras, para que dos periodos se sumen de forma exacta (`summarizePlan`); no se enseñan. */
+  readonly belowSample?: readonly VehicleCounts[];
+}
+
+/** Las oportunidades de un AGV en una ubicación: pasadas probadas por su sitio, lecturas y omisiones. */
+export interface VehicleCounts {
+  readonly agvId: string;
+  readonly evaluable: number;
+  readonly successes: number;
+  readonly omissions: number;
+}
+
+/** La muestra mínima por par AGV–tag para dar una tasa por AGV (`PROVISIONAL_CONFIG.readRate`). */
+export interface VehicleSample {
+  readonly minPassesPerPair: number;
+}
+
+/** Separa las celdas de un vértice en las que llegan a la muestra mínima y las que no, por identificador. */
+function splitBySample(
+  cells: Readonly<Record<string, SnapshotVehicleCell>>,
+  sample: VehicleSample,
+): { readonly byVehicle: readonly VehicleCounts[]; readonly belowSample: readonly VehicleCounts[] } {
+  const byVehicle: VehicleCounts[] = [];
+  const belowSample: VehicleCounts[] = [];
+  for (const agvId of Object.keys(cells).sort()) {
+    const [passes, hits] = cells[agvId] as SnapshotVehicleCell;
+    if (passes <= 0) continue;
+    const counts: VehicleCounts = { agvId, evaluable: passes, successes: hits, omissions: passes - hits };
+    (passes >= sample.minPassesPerPair ? byVehicle : belowSample).push(counts);
+  }
+  return { byVehicle, belowSample };
 }
 
 export interface EdgeObservation {
@@ -620,8 +660,12 @@ const plural = (count: number, one: string, many: string): string => `${count} $
  * Los inciertos se dan como `null` en las ubicaciones con tag: la instantánea no guarda cuántas
  * pasadas quedaron sin sostener (ni las cortadas de las secciones ni las `unproven` de la matriz), y
  * no se inventan. En una ubicación sin tag o en una salida no hay oportunidades, y son cero.
+ *
+ * Con `vehicleSample`, cada ubicación contada por las lecturas de su tag lleva además el desglose por
+ * AGV de su vértice (`byVehicle`): los AGV con la muestra mínima, con sus pasadas; los demás solo se
+ * cuentan (`vehiclesBelowSample`). Sin la muestra, no hay tasa por AGV.
  */
-export function observeAgainstPlan(plan: PhysicalPlan, snapshot: CircuitSnapshot): PlanObservation {
+export function observeAgainstPlan(plan: PhysicalPlan, snapshot: CircuitSnapshot, vehicleSample?: VehicleSample): PlanObservation {
   const byId = new Map(plan.locations.map((location) => [location.locationId, location]));
   const ringLocationOfTag = new Map<string, string>();
   for (const id of plan.ring) {
@@ -720,7 +764,17 @@ export function observeAgainstPlan(plan: PhysicalPlan, snapshot: CircuitSnapshot
       };
     }
 
-    const counted = (evaluable: number, successes: number, detail: string): LocationObservation => ({
+    const vertex = vertexOf.get(tagId);
+    // El desglose por AGV sale del vértice en el anillo del fichero: la matriz de lectura solo mide
+    // tags del anillo, y el ancla lee 1 por construcción (las vueltas se cortan por ella).
+    const cells = vertex !== undefined && vertex.position !== null && tagId !== snapshot.anchorTagId ? vertex.byVehicle : undefined;
+    const split = vehicleSample === undefined || cells === undefined ? null : splitBySample(cells, vehicleSample);
+    const breakdown =
+      split === null || split.byVehicle.length + split.belowSample.length === 0
+        ? {}
+        : { byVehicle: split.byVehicle, vehiclesBelowSample: split.belowSample.length, belowSample: split.belowSample };
+
+    const counted = (evaluable: number, successes: number, detail: string, withVehicles = true): LocationObservation => ({
       ...base,
       state: successes > 0 ? "observado" : evaluable > 0 ? "no-observado" : "sin-ocasion",
       truth: successes > 0 ? "observed" : evaluable > 0 ? "inferred" : "unknown",
@@ -729,6 +783,7 @@ export function observeAgainstPlan(plan: PhysicalPlan, snapshot: CircuitSnapshot
       omissions: evaluable - successes,
       uncertain: null,
       detail,
+      ...(withVehicles ? breakdown : {}),
     });
 
     const gap = gapOfLocation.get(location.locationId);
@@ -741,7 +796,6 @@ export function observeAgainstPlan(plan: PhysicalPlan, snapshot: CircuitSnapshot
       );
     }
 
-    const vertex = vertexOf.get(tagId);
     if (vertex !== undefined && vertex.position !== null && vertex.passes > 0) {
       const successes = Math.min(vertex.passes, Math.round((vertex.readRate ?? 0) * vertex.passes));
       return counted(vertex.passes, successes, `${tagId} se leyó en ${successes} de ${plural(vertex.passes, "pasada probada", "pasadas probadas")} por su sitio.`);
@@ -759,6 +813,7 @@ export function observeAgainstPlan(plan: PhysicalPlan, snapshot: CircuitSnapshot
           path.passes,
           0,
           `${tagId} no se leyó; sus vecinos del plano ${beforeTag} (${neighbours.before}) y ${afterTag} (${neighbours.after}) sí, ${between} en el anillo del fichero: ${plural(path.passes, "pasada", "pasadas")} entre ellos.`,
+          false,
         );
       }
     }
@@ -1004,6 +1059,62 @@ export interface LocationSummary {
     readonly state: LocationState;
   })[];
   readonly total: OpportunityCounts;
+  /** Desglose por AGV sumado entre los periodos que lo traen; ausente si ninguno lo trae. */
+  readonly byVehicle?: VehicleBreakdown;
+}
+
+/**
+ * Las pasadas probadas y los aciertos de cada AGV en una ubicación, sumados entre periodos
+ * (R-MEM-004): primero las cifras de cada AGV en cada periodo, y la muestra mínima se aplica a la suma,
+ * de modo que un AGV que no llega en ningún periodo por separado puede llegar en el conjunto.
+ */
+export interface VehicleBreakdown {
+  /** En cuántos periodos había desglose por AGV. Los que no lo traen no entran en ninguna cifra de aquí. */
+  readonly periods: number;
+  /** La muestra mínima por par con que se separó (`readRate.minPassesPerPair`). */
+  readonly minPasses: number;
+  /** Todos los AGV juntos en esos periodos, con o sin muestra: la referencia de la flota en ese sitio. */
+  readonly fleet: Omit<OpportunityCounts, "uncertain">;
+  /** Los AGV con muestra cuya tasa queda por debajo de la de la flota, de menor a mayor tasa. */
+  readonly lower: readonly VehicleCounts[];
+  /** El resto de los AGV con muestra, por identificador. */
+  readonly others: readonly VehicleCounts[];
+  /** Cuántos AGV pasaron por su sitio sin llegar a la muestra mínima: sin tasa. */
+  readonly vehiclesBelowSample: number;
+}
+
+/** Suma por AGV las cifras de los periodos y separa por muestra y frente a la flota. */
+function breakdownOf(observed: readonly LocationObservation[], sample: VehicleSample): VehicleBreakdown | undefined {
+  const withCells = observed.filter((location) => location.byVehicle !== undefined);
+  if (withCells.length === 0) return undefined;
+  const sums = new Map<string, { evaluable: number; successes: number }>();
+  for (const location of withCells) {
+    for (const cell of [...(location.byVehicle ?? []), ...(location.belowSample ?? [])]) {
+      const sum = sums.get(cell.agvId) ?? { evaluable: 0, successes: 0 };
+      sum.evaluable += cell.evaluable;
+      sum.successes += cell.successes;
+      sums.set(cell.agvId, sum);
+    }
+  }
+  const all: VehicleCounts[] = [...sums.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([agvId, sum]) => ({ agvId, evaluable: sum.evaluable, successes: sum.successes, omissions: sum.evaluable - sum.successes }));
+  const fleetEvaluable = all.reduce((total, cell) => total + cell.evaluable, 0);
+  const fleetSuccesses = all.reduce((total, cell) => total + cell.successes, 0);
+  const supported = all.filter((cell) => cell.evaluable >= sample.minPassesPerPair);
+  // Por debajo de la flota, sin divisiones: s/e < S/E  ⇔  s·E < S·e.
+  const isLower = (cell: VehicleCounts): boolean => cell.successes * fleetEvaluable < fleetSuccesses * cell.evaluable;
+  const lower = supported
+    .filter(isLower)
+    .sort((a, b) => a.successes * b.evaluable - b.successes * a.evaluable || a.agvId.localeCompare(b.agvId));
+  return {
+    periods: withCells.length,
+    minPasses: sample.minPassesPerPair,
+    fleet: { evaluable: fleetEvaluable, successes: fleetSuccesses, omissions: fleetEvaluable - fleetSuccesses },
+    lower,
+    others: supported.filter((cell) => !isLower(cell)),
+    vehiclesBelowSample: all.length - supported.length,
+  };
 }
 
 export interface EdgeSummary {
@@ -1016,20 +1127,27 @@ export interface EdgeSummary {
   readonly periods: number;
 }
 
-/** Suma las observaciones de varios ficheros por ubicación y por conexión, con `combineMoments`. */
-export function summarizePlan(observations: readonly PlanObservation[]): {
+/**
+ * Suma las observaciones de varios ficheros por ubicación y por conexión, con `combineMoments`. Con
+ * `vehicleSample`, también el desglose por AGV de cada ubicación (`VehicleBreakdown`).
+ */
+export function summarizePlan(
+  observations: readonly PlanObservation[],
+  vehicleSample?: VehicleSample,
+): {
   readonly locations: readonly LocationSummary[];
   readonly edges: readonly EdgeSummary[];
 } {
   const ordered = [...observations].sort((a, b) => a.window.from - b.window.from || a.window.to - b.window.to || a.sourceId.localeCompare(b.sourceId));
-  const periodsOf = new Map<string, { kind: LocationKind; periods: LocationSummary["periods"][number][] }>();
+  const periodsOf = new Map<string, { kind: LocationKind; periods: LocationSummary["periods"][number][]; observed: LocationObservation[] }>();
   const edgesOf = new Map<string, { fromLocation: string; toLocation: string; composite: boolean; produccion: Moments | null; noche: Moments | null; periods: number }>();
   const merge = (a: Moments | null, b: Moments | null): Moments | null => (a === null ? b : b === null ? a : combineMoments(a, b));
 
   for (const observation of ordered) {
     for (const location of observation.locations) {
-      const entry = periodsOf.get(location.locationId) ?? { kind: location.kind, periods: [] };
+      const entry = periodsOf.get(location.locationId) ?? { kind: location.kind, periods: [], observed: [] };
       entry.kind = location.kind;
+      entry.observed.push(location);
       entry.periods.push({
         sourceId: observation.sourceId,
         fileName: observation.fileName,
@@ -1065,7 +1183,15 @@ export function summarizePlan(observations: readonly PlanObservation[]): {
         }),
         { evaluable: 0, successes: 0, omissions: 0, uncertain: 0 },
       );
-      return { locationId, kind: entry.kind, tagId: entry.periods[entry.periods.length - 1]?.tagId ?? null, periods: entry.periods, total };
+      const byVehicle = vehicleSample === undefined ? undefined : breakdownOf(entry.observed, vehicleSample);
+      return {
+        locationId,
+        kind: entry.kind,
+        tagId: entry.periods[entry.periods.length - 1]?.tagId ?? null,
+        periods: entry.periods,
+        total,
+        ...(byVehicle === undefined ? {} : { byVehicle }),
+      };
     });
   const edges: EdgeSummary[] = [...edgesOf.values()].sort(
     (a, b) => a.fromLocation.localeCompare(b.fromLocation) || a.toLocation.localeCompare(b.toLocation) || Number(a.composite) - Number(b.composite),

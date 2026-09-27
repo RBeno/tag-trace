@@ -2,6 +2,28 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.58.0] - 2026-09-27
+
+Lo que quedaba de F4 salvo los valores de planta (OQ-151).
+
+### Añadido
+
+- **Recortar la ventana de una incidencia al consolidar** (OQ-148): la persona elige principio y fin;
+  la versión se construye desde el fichero original archivado, verificado por su huella, sin las
+  lecturas de ese tiempo —las del AGV, si la incidencia es suya—, y el tiempo queda sin cobertura. La
+  previsualización dice cuántas lecturas quita. La instantánea guardada no cambia.
+- **Tasa por AGV en cada ubicación del plano** (R-MEM-004): la instantánea guarda de la matriz de
+  lectura el desglose por AGV, y el plano enseña «Por AGV» con los que quedan por debajo de la flota,
+  siempre con sus pasadas y solo con muestra suficiente. Crece la instantánea unos 82 KB sin
+  comprimir; comprimida, la versión sigue por debajo del 1,1 % del CSV.
+- OQ-151: estimadores propuestos para los valores provisionales de planta, pendientes del
+  propietario.
+
+### Corregido
+
+- El esperado que conserva las cifras anteriores de un tag llevaba el desglose por AGV del fichero
+  nuevo. Ahora lleva el del mismo periodo que sus cifras, y ninguno cuando queda sin medida.
+
 ## [3.57.0] - 2026-09-27
 
 El propietario cerró OQ-149 y OQ-150 con las recomendaciones («De acuerdo con las dos, adelante»).
