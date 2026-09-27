@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.6.0
+version: 0.6.1
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -49,8 +49,11 @@ stateDiagram-v2
   Cancelled --> [*]
 ```
 
-Solo `Complete`, `Failed` y `Cancelled` son estados finales. La interfaz mantiene como mucho un
-trabajo vigente por circuito; iniciar otro cancela el anterior antes de encolar el nuevo.
+Solo `Complete`, `Failed` y `Cancelled` son estados finales. La interfaz mantiene como mucho **un
+trabajo vigente**: mientras lo hay, apaga todas las entradas que arrancarían otro (los cuatro
+ficheros y los botones de memoria, plano y valores de planta) y, si aun así se pide uno, lo rechaza
+con «Hay otra operación en curso; espera a que termine.». Nunca mata al vigente para empezar el
+nuevo: `terminate()` queda para el último recurso de una cancelación (WP-004).
 
 ## 4. Mensajes
 
@@ -71,7 +74,7 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `cancel` | motivo | El Worker debe atenderla en el siguiente punto de control. |
 | `lists` | fichero de listas de tags, circuito | Sustituye las listas del circuito por las del fichero. |
 | `fleet` | fichero de historial de flota (DS-012), circuito, valor de `circuito` elegido si ya lo hay | Se **fusiona** con lo guardado por (AGV, `desde`); no sustituye. |
-| `consolidate` | circuito, fichero base (`sourceId`), `mode: "preview" \| "commit"`, nota opcional | `preview` no escribe nada. `commit` solo se envía tras la confirmación humana, y el Worker vuelve a calcular la previsualización desde el almacén antes de escribir: con bloqueos responde `error` (R-MEM-001). |
+| `consolidate` | circuito, fichero base (`sourceId`), `mode: "preview" \| "commit"`, nota opcional (`commit`), `cuts` opcional (los recortes de ventana elegidos, con su incidencia, `from`, `to` y el AGV si es de uno; OQ-148), `previewHash` (`commit`) | `preview` no escribe nada. `commit` solo se envía tras la confirmación humana, y el Worker vuelve a calcular la previsualización desde el almacén antes de escribir: con bloqueos responde `error` (R-MEM-001); si la huella de lo recalculado no es la `previewHash` que la interfaz enseñó —o no viene—, responde `error` («La previsualización ha cambiado desde que se mostró.») sin escribir. Justo antes de escribir mira si hay `cancel` pendiente y, si lo hay, responde `cancelled`. |
 | `revoke` | circuito, número de versión, razón | Marca la versión con fecha y razón; no la borra (R-MEM-002). |
 | `compare-versions` | circuito, dos números de versión | Solo lee: compara los esperados de dos versiones del linaje activo. |
 | `plant-value` | circuito, clave, valor, fecha efectiva, razón | Valida y escribe un valor de planta confirmado; rige al volver a analizar los ficheros de su vigencia. |
@@ -91,10 +94,17 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `lists-loaded` | listas aceptadas, rechazos por motivo, avisos | Las vistas se recalculan en la siguiente importación. |
 | `fleet-loaded` | valor de circuito usado, filas aceptadas, rechazos por motivo, añadidas, sustituidas, periodos guardados, avisos | Como `lists-loaded`, no dispara análisis por sí mismo. |
 | `fleet-choose-circuit` | valores de la columna `circuito` con su número de filas | El fichero trae varios circuitos: la interfaz pregunta cuál es este y reenvía `fleet` con la respuesta. Nada se guarda hasta entonces. |
-| `consolidation-preview` | qué pasaría al consolidar: fichero base, versión vigente, siguiente número, delta, bloqueos con sus elementos, avisos, decisiones, bytes estimados | Nada se ha escrito. |
+| `consolidation-preview` | qué pasaría al consolidar: fichero base, versión vigente, siguiente número, delta, bloqueos con sus elementos, avisos, decisiones, cambios clasificados, incidencias, recortes aplicados, bytes estimados; `previewHash`, la huella de todo eso; `cutWarnings` opcional, avisos sobre recortes que no tocan ninguna ventana de su incidencia | Nada se ha escrito. `previewHash` es el hash semántico (INV-010) de la previsualización sin el tamaño estimado ni las notas sobre si se puede recortar, con la versión anterior reducida a su número y su hash (`src/domain/consolidation-fingerprint.ts`); la interfaz lo devuelve tal cual en el `commit`. `cutWarnings` no entra en la huella ni en la versión. |
 | `consolidated` | la versión escrita y la memoria del circuito (`MemoryViews`: versiones resumidas, vigente, comparación, bytes, linaje) | Único mensaje que confirma una consolidación. |
 | `revoked` | número revocado y la memoria del circuito | |
 | `fork-resolved` | la memoria del circuito tras la elección | |
+
+Las escrituras de memoria del Worker (`commit` y `resolve-fork`) pasan al almacén los hashes del
+linaje activo **tal como los leyó**; el almacén los compara con lo guardado dentro de la misma
+transacción y, si el hilo principal escribió la memoria entre medias (al abrir un `.agvproj`), no
+escribe nada y el Worker responde `error` («La memoria cambió mientras se preparaba la escritura: no
+se ha guardado nada.»). La respuesta a un `consolidate` con `mode: "commit"` es `consolidated`,
+`error` o `cancelled`; a `revoke` y `resolve-fork`, `revoked`/`fork-resolved`, `error` o `cancelled`.
 | `versions-compared` | la comparación: las dos versiones, las de entre medias, lo adoptado por el camino y el delta | |
 | `plant-values-updated` | los valores de planta del circuito: provisional, vigente para el fichero de trabajo, historial y dónde se mide | |
 | `plan-updated` | los eventos escritos en palabras y el plano (`PlanViews`) leído contra el fichero de trabajo | |

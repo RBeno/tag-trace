@@ -191,6 +191,7 @@ describe("measurePlantValues · recorta a la ventana del fichero lo que ya se an
     const input: PlantMeasureInput = {
       window,
       zone: "UTC",
+      estimators: PROVISIONAL_CONFIG.plantEstimators,
       hourly: { counts: Array.from({ length: 24 }, (_, hour) => hour), days: 1 },
       productionStops: [
         { fromUtcMs: from + 10 * MINUTE, toUtcMs: from + 20 * MINUTE, sameTimeOn: [from + 30 * MINUTE, from - DAY] },
@@ -228,6 +229,75 @@ describe("measurePlantValues · recorta a la ventana del fichero lo que ya se an
     expect(out.loadedSpans).toEqual([{ spanId: "cargado-1", passes: 3, medianTransitMs: 100, p95TransitMs: 150 }]);
     // Con la hora al minuto no se miden esperas: ninguna muestra.
     expect(out.precisePauses).toEqual({ declared: 1, measurable: false, n: 0, valueMs: null });
+  });
+
+  it("los cuantiles son los de la configuración, no del código: con otros, otra medida", () => {
+    const base: PlantMeasureInput = {
+      window: { from: 0, to: HOUR },
+      zone: "UTC",
+      estimators: PROVISIONAL_CONFIG.plantEstimators,
+      hourly: { counts: new Array<number>(24).fill(0), days: 1 },
+      productionStops: [],
+      gaps: Array.from({ length: 100 }, (_, index) => ({ fromUtcMs: 0, toUtcMs: (index + 1) * MINUTE, durationMs: (index + 1) * MINUTE, cause: "silencio" })),
+      vehicleStops: [],
+      loadedSpans: null,
+      precisePauses: { declared: 0, measurable: true, durationsMs: [] },
+    };
+    const p99 = measurePlantValues(base).returnGaps.valueMs;
+    const p50 = measurePlantValues({ ...base, estimators: { ...base.estimators, returnGapQuantile: 0.5 } }).returnGaps.valueMs;
+    expect(p99).not.toBeNull();
+    expect(p50).not.toBeNull();
+    expect(p50 as number).toBeLessThan(p99 as number);
+  });
+
+  it("en el día del cambio de hora (Europe/Madrid, sintético) falta una hora local: la noche no se estima y lo dice", () => {
+    // 2026-03-29: a las 02:00 CET los relojes pasan a las 03:00 CEST. Un día local entero son 23 horas.
+    const from = Date.UTC(2026, 2, 28, 23, 0); // 00:00 del 29 en Madrid
+    const to = Date.UTC(2026, 2, 29, 22, 0); // 00:00 del 30 en Madrid
+    const out = measurePlantValues({
+      window: { from, to },
+      zone: "Europe/Madrid",
+      estimators: PROVISIONAL_CONFIG.plantEstimators,
+      hourly: { counts: Array.from({ length: 24 }, (_, hour) => (NIGHT_21_TO_6.includes(hour) ? 100 : 1000)), days: 1 },
+      productionStops: [],
+      gaps: [],
+      vehicleStops: [],
+      loadedSpans: null,
+      precisePauses: { declared: 0, measurable: true, durationsMs: [] },
+    });
+    expect(out.hourly.coveredMs[2]).toBe(0);
+    expect(out.hourly.coveredMs.reduce((sum, ms) => sum + ms, 0)).toBe(23 * HOUR);
+    const estimate = estimatePlantValue("noche-desde", out, PROVISIONAL_CONFIG);
+    expect(estimate.value).toBeNull();
+    expect(estimate.why).toMatch(/no cubre entera cada hora del día \(le faltan 1 hora\)/);
+  });
+});
+
+describe("estimatePlantValue · lo que hereda de la configuración vigente lo dice (OQ-154)", () => {
+  const stops: SnapshotPlantMeasures["productionStops"] = [
+    { day: "2026-01-24", minute: 13 * 60 + 58, sameTimeAs: [1] },
+    { day: "2026-01-25", minute: 14 * 60 + 3, sameTimeAs: [0] },
+  ];
+
+  it("«a la misma hora» y las horas de turno dicen la tolerancia vigente con que se emparejaron las repeticiones", () => {
+    const tolerance = estimatePlantValue("misma-hora", measures({ days: 2, productionStops: stops }), PROVISIONAL_CONFIG);
+    expect(tolerance.value).toBe(5 * MINUTE);
+    expect(tolerance.why).toMatch(/tolerancia vigente de 15 min/);
+    expect(tolerance.why).toMatch(/no puede salir un valor mayor/);
+    expect(estimatePlantValue("arranque-turnos", measures({ days: 2, productionStops: stops }), PROVISIONAL_CONFIG).why).toMatch(/tolerancia vigente de 15 min/);
+    expect(estimatePlantValue("misma-hora", measures({ days: 2 }), PROVISIONAL_CONFIG).why).toMatch(/tolerancia vigente de 15 min/);
+  });
+
+  it("la noche dice frente a qué noche vigente se midió la mediana de producción", () => {
+    const night = estimatePlantValue("noche-desde", measures({ hourly: profile(NIGHT_21_TO_6) }), PROVISIONAL_CONFIG);
+    expect(night.why).toMatch(/noche vigente, 22:00–05:00/);
+  });
+
+  it("los percentiles de los estimadores salen de la configuración", () => {
+    const gaps = measures({ returnGaps: { n: 30, valueMs: 61 * MINUTE } });
+    expect(estimatePlantValue("desconexion", gaps, PROVISIONAL_CONFIG).why).toMatch(/^percentil 99 de 30/);
+    const other = { ...PROVISIONAL_CONFIG, plantEstimators: { ...PROVISIONAL_CONFIG.plantEstimators, returnGapQuantile: 0.9 } };
+    expect(estimatePlantValue("desconexion", gaps, other).why).toMatch(/^percentil 90 de 30/);
   });
 });
 
@@ -277,6 +347,16 @@ describe("proposePlantValues · la regla de coincidencia", () => {
     expect(out["noche-desde"].outcome).toBe("faltan-versiones");
     expect(out["noche-desde"].reason).toBe("hacen falta 3 versiones consolidadas no revocadas y hay 2");
     expect(proposePlantValues([], THRESHOLDS)["noche-desde"].reason).toMatch(/no hay ninguna/);
+  });
+
+  it("con todas las versiones revocadas, o con una sola, faltan versiones y no hay propuesta", () => {
+    const revoked = proposePlantValues([version(1, same, true), version(2, same, true), version(3, same, true)], THRESHOLDS);
+    expect(revoked["noche-desde"]).toMatchObject({ proposal: null, outcome: "faltan-versiones", estimates: [] });
+    expect(revoked["noche-desde"].reason).toMatch(/no hay ninguna/);
+    const single = proposePlantValues([version(1, same)], THRESHOLDS);
+    expect(single["noche-desde"]).toMatchObject({ proposal: null, outcome: "faltan-versiones" });
+    expect(single["noche-desde"].reason).toBe("hacen falta 3 versiones consolidadas no revocadas y hay 1");
+    expect(single["noche-desde"].estimates.map((estimate) => [estimate.version, estimate.value])).toEqual([[1, 21]]);
   });
 
   it("una versión revocada no cuenta: ni para coincidir ni para romper la coincidencia", () => {

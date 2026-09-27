@@ -402,7 +402,19 @@ test.describe("memoria consolidada", () => {
     await expect(again.getByLabel("Recortar su ventana al consolidar")).toBeChecked();
     await expect(panel.locator(".memory-preview .memory-blockers")).toHaveCount(0);
 
-    await panel.locator(".memory-preview").getByRole("button", { name: "Confirmar y consolidar" }).click();
+    // Tocar el recorte después de previsualizar apaga «Confirmar»: lo que se confirmaría ya no es lo que se ve.
+    const confirm = panel.locator(".memory-preview").getByRole("button", { name: "Confirmar y consolidar" });
+    const hint = panel.locator(".memory-preview .memory-confirm-hint");
+    await expect(confirm).toBeEnabled();
+    await expect(hint).toBeHidden();
+    await again.getByLabel("Recortar su ventana al consolidar").uncheck();
+    await expect(confirm).toBeDisabled();
+    await expect(hint).toHaveText("Vuelve a previsualizar con el recorte para confirmar");
+    await again.getByLabel("Recortar su ventana al consolidar").check();
+    await expect(confirm).toBeEnabled();
+    await expect(hint).toBeHidden();
+
+    await confirm.click();
     await expect(panel.locator(".memory-status")).toContainText("Versión v1 consolidada", { timeout: 15_000 });
     await expect(panel.locator(".memory-status")).toContainText(`Con 1 recorte de ventana: ${removed} lecturas fuera de la versión.`);
     await expect(panel.locator(".memory-version[data-version='1'] .memory-version-changes")).toHaveText(/^0 cambios adoptados, 0 pendientes, 1 incidencia excluida\.$/);

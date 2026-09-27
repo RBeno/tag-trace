@@ -76,6 +76,9 @@ const ORDER_READING: Readonly<Record<string, string>> = {
   "sin-lecturas": "sin lecturas",
 };
 
+/** Los regímenes del circuito (`produccion`, `noche`) tal como se dicen en pantalla. */
+export const REGIME_WORDS: Readonly<Record<string, string>> = { produccion: "producción", noche: "noche" };
+
 const pick = (map: Readonly<Record<string, string>>) => (value: string): string => map[value] ?? value;
 
 export const truthLabel = pick(TRUTH);
@@ -86,6 +89,7 @@ export const zoneLabel = pick(ZONE);
 export const criticalFunctionLabel = pick(CRITICAL_FUNCTION);
 export const orderChangeLabel = pick(ORDER_CHANGE);
 export const orderReadingLabel = pick(ORDER_READING);
+export const regimeLabel = pick(REGIME_WORDS);
 
 // --- Bandeja de hallazgos (UX_SPEC §4.5) -----------------------------------------------------------
 

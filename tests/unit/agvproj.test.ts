@@ -218,10 +218,43 @@ describe("F4 · esquema 3: la memoria consolidada viaja en la sección `memoria`
     expect(memorySection([...versions, other], forked)?.versiones.map((entry) => entry.hash)).toEqual(["h1", "h2"]);
   });
 
+  it("ida y vuelta con un linaje archivado: viajan sus versiones, mezcladas, y el estado dice cuál es el activo", async () => {
+    const other = version(2, "h2b", "h1", "linaje-B");
+    const archived = { ...state, archived: [{ id: "linaje-B", hashes: ["h1", "h2b"] }] };
+    const memoria = memorySection([...versions, other], archived);
+    expect(memoria?.versiones.map((entry) => entry.hash)).toEqual(["h1", "h2", "h2b"]);
+    const project = await readProject(await writeProject("c1", { ...sections, memoria }, EXPORTED_AT));
+    const back = readMemorySection(project);
+    expect(back).toEqual(memoria);
+    expect(back?.linaje.activo).toEqual({ id: "linaje-A", hashes: ["h1", "h2"] });
+    expect(back?.linaje.archivados).toEqual([{ id: "linaje-B", hashes: ["h1", "h2b"] }]);
+  });
+
   it("una sección `memoria` con otra forma se rechaza diciendo qué falta", async () => {
     const project = await readProject(await writeProject("c1", { ...sections, memoria: { versiones: "no" } }, EXPORTED_AT));
     expect(() => readMemorySection(project)).toThrow(ProjectError);
     expect(() => readMemorySection(project)).toThrow(/versiones/);
+  });
+
+  it("una versión sin base, sin fecha, sin decisiones o con una revocación a medias se rechaza diciendo qué le falta", async () => {
+    const broken = async (patch: Record<string, unknown>, expected: RegExp): Promise<void> => {
+      const { hash: _hash, ...rest } = { ...version(1, "h1", null), ...patch } as Record<string, unknown>;
+      const memoria = { versiones: [{ hash: "h1", ...rest }], linaje: { activo: { id: "linaje-A", hashes: ["h1"] }, archivados: [], eventos: [] } };
+      const project = await readProject(await writeProject("c1", { ...sections, memoria }, EXPORTED_AT));
+      expect(() => readMemorySection(project)).toThrow(ProjectError);
+      expect(() => readMemorySection(project)).toThrow(expected);
+    };
+    await broken({ basedOn: undefined }, /en qué fichero se basa/);
+    await broken({ basedOn: { sourceId: "s1" } }, /en qué fichero se basa/);
+    await broken({ createdAt: "ayer" }, /fecha de creación/);
+    await broken({ decisions: undefined }, /decisiones/);
+    await broken({ decisions: [{ state: "confirmado" }] }, /decisiones/);
+    await broken({ revoked: { at: 1 } }, /revocación sin fecha o razón/);
+    await broken({ previousHash: 7 }, /hash anterior inválido/);
+    await broken({ circuitId: undefined }, /no tiene circuito/);
+    // La forma completa pasa, también revocada.
+    const memoria = { versiones: [{ ...version(1, "h1", null), revoked: { at: 1, reason: "error" } }], linaje: { activo: { id: "linaje-A", hashes: ["h1"] }, archivados: [], eventos: [] } };
+    expect(readMemorySection(await readProject(await writeProject("c1", { ...sections, memoria }, EXPORTED_AT)))).toEqual(memoria);
   });
 
   it("un proyecto del esquema 2 —sin memoria— se sigue abriendo tal cual", async () => {

@@ -550,8 +550,8 @@ const memoryPanel = createMemoryPanel({
     trayPanel.focus({ preventScroll: true });
   },
   preview: (sourceId, cuts) => startMemory({ type: "consolidate", sourceId, mode: "preview", ...(cuts === undefined ? {} : { cuts }) }),
-  commit: (sourceId, note, cuts) =>
-    startMemory({ type: "consolidate", sourceId, mode: "commit", ...(note === null ? {} : { note }), ...(cuts === undefined ? {} : { cuts }) }),
+  commit: (sourceId, note, cuts, previewHash) =>
+    startMemory({ type: "consolidate", sourceId, mode: "commit", previewHash, ...(note === null ? {} : { note }), ...(cuts === undefined ? {} : { cuts }) }),
   toDateTimeInput,
   fromDateTimeInput,
   revoke: (version, reason) => startMemory({ type: "revoke", version, reason }),
@@ -867,11 +867,28 @@ function appendRows(): void {
   }
 }
 
+/**
+ * Un solo trabajo a la vez. Mientras el Worker responde se apagan **todas** las entradas que
+ * arrancarían otro —los cuatro ficheros y los botones de memoria, plano y valores de planta—, no solo
+ * la del panel que lo pidió: dos trabajos a la vez se pisarían el almacén, y matar al que estaba en
+ * curso dejaba una fuente acumulada sin instantánea ni archivo. «Cancelar» solo se ofrece en una
+ * importación, que es la que tiene puntos de control (WP-004); las operaciones de memoria, plano y
+ * valores de planta escriben de una vez y terminan solas (UX_SPEC §8).
+ */
 function setBusy(busy: boolean): void {
   fileInput.disabled = busy;
-  cancelButton.hidden = !busy;
+  projectInput.disabled = busy;
+  listsInput.disabled = busy;
+  fleetInput.disabled = busy;
+  memoryPanel.setBusy(busy);
+  planPanel.setBusy(busy);
+  plantValuesPanel.setBusy(busy);
+  cancelButton.hidden = !busy || state.memoryJob !== null || state.planJob || state.plantValueJob;
   progressPanel.hidden = !busy;
 }
+
+/** Lo que dice el panel cuyo botón se pulsó con otro trabajo en marcha. */
+const BUSY_NOTICE = "Hay otra operación en curso; espera a que termine.";
 
 // --- Ciclo de vida del trabajo --------------------------------------------
 
@@ -879,6 +896,9 @@ function disposeWorker(): void {
   state.worker?.terminate();
   state.worker = null;
   state.jobId = null;
+  state.memoryJob = null;
+  state.planJob = false;
+  state.plantValueJob = false;
 }
 
 function handleMessage(message: FromWorker): void {
@@ -1047,9 +1067,14 @@ function handleMessage(message: FromWorker): void {
     }
 
     case "cancelled":
-      showMessage("info", "Importación cancelada", [
-        "No se ha cambiado nada.",
-      ]);
+      // Una operación de memoria cancelada se dice en su pestaña; la importación, en el aviso general.
+      if (state.memoryJob !== null) {
+        memoryPanel.notice("Operación cancelada. No se ha cambiado nada.");
+      } else {
+        showMessage("info", "Importación cancelada", [
+          "No se ha cambiado nada.",
+        ]);
+      }
       setBusy(false);
       disposeWorker();
       return;
@@ -1057,7 +1082,7 @@ function handleMessage(message: FromWorker): void {
     // --- Memoria consolidada (F4): las respuestas se pintan en su pestaña ---------------------------
     case "consolidation-preview":
       finishMemoryJob();
-      memoryPanel.showPreview(message.preview);
+      memoryPanel.showPreview(message.preview, message.previewHash, message.cutWarnings ?? []);
       return;
 
     case "consolidated":
@@ -1121,7 +1146,11 @@ function startPlantValue(request: PlantValueSendRequest): void {
     plantValuesPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");
     return;
   }
-  disposeWorker();
+  // Nunca se mata el trabajo en curso para empezar este (WP-004): se rechaza y se dice.
+  if (state.worker !== null) {
+    plantValuesPanel.notice(BUSY_NOTICE);
+    return;
+  }
   const jobId = crypto.randomUUID();
   const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
     type: "module",
@@ -1169,7 +1198,10 @@ function startPlan(action: PlanAction): void {
     planPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");
     return;
   }
-  disposeWorker();
+  if (state.worker !== null) {
+    planPanel.notice(BUSY_NOTICE);
+    return;
+  }
   const jobId = crypto.randomUUID();
   const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
     type: "module",
@@ -1219,6 +1251,7 @@ function startMemory(
         readonly mode: "preview" | "commit";
         readonly note?: string;
         readonly cuts?: readonly IncidentCut[];
+        readonly previewHash?: string;
       }
     | { readonly type: "revoke"; readonly version: number; readonly reason: string }
     | { readonly type: "resolve-fork"; readonly choice: "conservar-local" | "adoptar-entrante"; readonly reason: string }
@@ -1229,7 +1262,10 @@ function startMemory(
     memoryPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");
     return;
   }
-  disposeWorker();
+  if (state.worker !== null) {
+    memoryPanel.notice(BUSY_NOTICE);
+    return;
+  }
   const jobId = crypto.randomUUID();
   const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
     type: "module",
@@ -1585,6 +1621,7 @@ function resetViews(): void {
   trayPanel.hidden = true;
   reviewHost.replaceChildren();
   reviewHost.hidden = true;
+  reviewSession?.dispose();
   reviewSession = null;
   tiles.replaceChildren();
   closeDrawer();
@@ -1600,6 +1637,7 @@ function renderViews(views: CircuitViews): void {
   currentTagInfo = views.tagInfo ?? {};
   currentBatteries = views.incidents?.batteries ?? {};
   // La revisión en campo solo existe sobre un circuito: sin él, una marca no tendría dónde guardarse.
+  reviewSession?.dispose();
   reviewSession =
     state.circuitId === null
       ? null
@@ -4566,7 +4604,10 @@ function renderUncardedFindings(views: CircuitViews): void {
   );
   const cards = element("div", "findings");
   for (const item of missing) {
-    cards.append(finding(item.title, item.figure, "Está en la tabla de su sección.", item.key.split("|")));
+    const card = finding(item.title, item.figure, "Está en la tabla de su sección.", item.key.split("|"));
+    // Nacen en el Resumen: no hay sección con evidencia a la que llevar desde su tarjeta.
+    card.dataset["uncarded"] = "si";
+    cards.append(card);
   }
   out.append(cards);
 }
@@ -4671,20 +4712,25 @@ function buildTray(): void {
     card.dataset["tab"] = entry.tab;
     const where = element("p", "finding-where");
     const chip = element("span", "chip", `${THEME_LABEL[kind.theme]} · ${kind.label}`);
-    const link = element("a", "evidence", "Ver evidencia");
-    link.href = `#${entry.tab}`;
-    link.setAttribute("aria-label", `Ver evidencia en «${entry.sectionTitle}»`);
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-      activateTab(entry.tab);
-      const target = document.getElementById(entry.sectionId);
-      (target ?? tabPanels.get(entry.tab))?.scrollIntoView({ block: "start" });
-      if (target instanceof HTMLElement) {
-        target.tabIndex = -1;
-        target.focus({ preventScroll: true });
-      }
-    });
-    where.append(chip, " ", link);
+    where.append(chip);
+    // Las tarjetas de «Más hallazgos del periodo» nacen en el Resumen y su sección queda vacía al
+    // llevarlas a la bandeja: «Ver evidencia» apuntaría a un título sin nada debajo, así que no se ofrece.
+    if (card.dataset["uncarded"] !== "si") {
+      const link = element("a", "evidence", "Ver evidencia");
+      link.href = `#${entry.tab}`;
+      link.setAttribute("aria-label", `Ver evidencia en «${entry.sectionTitle}»`);
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        activateTab(entry.tab);
+        const target = document.getElementById(entry.sectionId);
+        (target ?? tabPanels.get(entry.tab))?.scrollIntoView({ block: "start" });
+        if (target instanceof HTMLElement) {
+          target.tabIndex = -1;
+          target.focus({ preventScroll: true });
+        }
+      });
+      where.append(" ", link);
+    }
     card.prepend(where);
     // El control de revisión cierra la tarjeta: lo que se añadió después (las mediciones de una
     // incidencia) va antes que él.
@@ -5093,8 +5139,20 @@ projectInput.addEventListener("change", () => {
         memoria === undefined
           ? "Sin memoria consolidada: el proyecto es de una versión anterior o el circuito no tenía versiones."
           : `Memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.` +
-            (lineage === null ? " Sin almacén local no se puede comparar con la de este dispositivo." : ` ${LINEAGE_LABEL[lineage]}`) +
-            (lineage === "bifurcada" ? " Elige cuál sigue en la pestaña Memoria, al importar las lecturas del circuito." : lineage === "entrante-adelantada" ? " Se verá al volver a importar las lecturas del circuito." : ""),
+            (lineage === null
+              ? " Sin almacén local no se puede comparar con la de este dispositivo."
+              : imported?.pendingForkBlocked === true
+                ? // Con una bifurcación pendiente aquí, el proyecto no entra ni sustituye al linaje que espera decisión.
+                  " Aquí ya hay una bifurcación sin resolver: este proyecto no se ha adoptado ni sustituye al linaje que espera decisión. Resuélvela en la pestaña Memoria y vuelve a abrir el proyecto."
+                : ` ${LINEAGE_LABEL[lineage]}` +
+                  (lineage === "bifurcada"
+                    ? " Elige cuál sigue en la pestaña Memoria, al importar las lecturas del circuito."
+                    : lineage === "entrante-adelantada"
+                      ? " Se verá al volver a importar las lecturas del circuito."
+                      : "")) +
+            (imported === null || imported.archived === 0
+              ? ""
+              : ` ${imported.archived} ${imported.archived === 1 ? "linaje archivado del otro dispositivo, añadido como archivado" : "linajes archivados del otro dispositivo, añadidos como archivados"}.`),
         planImport === null
           ? plano === undefined
             ? "El proyecto no traía plano del circuito."

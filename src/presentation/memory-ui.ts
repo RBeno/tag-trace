@@ -16,6 +16,7 @@ import type { AppliedCut, IncidentCut } from "../domain/incident-cut.js";
 import type { BlockerCode, ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryDecision, VersionComparison } from "../domain/memory.js";
 import { REVIEW_LABEL, REVIEW_STATES, type ReviewState } from "../domain/review.js";
 import { deltaView } from "./evolution.js";
+import { regimeLabel } from "./labels.js";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const element = document.createElement(tag);
@@ -116,13 +117,12 @@ const CHANGE_WORDS: Readonly<Record<string, string>> = {
   "mas-lento": "más lento",
   "mas-rapido": "más rápido",
 };
-const REGIME_WORDS: Readonly<Record<string, string>> = { produccion: "producción", noche: "noche" };
 
 export function adoptedChangeText(key: string): string {
   const parts = key.split("|");
   if (parts[0] === "vertice" && parts.length === 3) return `${parts[1]} ${CHANGE_WORDS[parts[2] as string] ?? parts[2]}`;
   if (parts[0] === "arista" && parts.length === 5) {
-    return `tramo ${parts[1]} → ${parts[2]} ${CHANGE_WORDS[parts[4] as string] ?? parts[4]} (${REGIME_WORDS[parts[3] as string] ?? parts[3]})`;
+    return `tramo ${parts[1]} → ${parts[2]} ${CHANGE_WORDS[parts[4] as string] ?? parts[4]} (${regimeLabel(parts[3] as string)})`;
   }
   return key;
 }
@@ -171,8 +171,11 @@ export interface MemoryPanelInput {
   readonly goToPending: () => void;
   /** Con `cuts`, los recortes de ventana que la persona eligió (OQ-148). */
   readonly preview: (sourceId: string, cuts?: readonly IncidentCut[]) => void;
-  /** Solo lo llama el botón «Confirmar y consolidar», con los recortes de la previsualización que se confirma. */
-  readonly commit: (sourceId: string, note: string | null, cuts?: readonly IncidentCut[]) => void;
+  /**
+   * Solo lo llama el botón «Confirmar y consolidar», con los recortes de la previsualización que se
+   * confirma y la huella (`previewHash`) con la que llegó: el Worker comprueba que lo que escribe es lo que se vio.
+   */
+  readonly commit: (sourceId: string, note: string | null, cuts: readonly IncidentCut[] | undefined, previewHash: string) => void;
   /**
    * Un instante como valor de un campo de fecha y hora (`aaaa-mm-ddThh:mm:ss`) en la zona del circuito,
    * y al revés (`null` si no es una fecha válida). Sin ellos no se ofrece recortar.
@@ -189,14 +192,20 @@ export interface MemoryPanel {
   readonly node: HTMLElement;
   /** Con cada análisis: la memoria que traen las vistas, el circuito y el fichero de trabajo. */
   update(context: MemoryContext): void;
-  /** Vuelve a pintar con lo mismo: la lista de condiciones lee la bandeja, que cambia con cada marca de revisión. */
+  /**
+   * Vuelve a pintar solo la lista de condiciones, que lee la bandeja y cambia con cada marca de
+   * revisión; lo demás —la nota escrita, el foco, una previsualización abierta— se queda como está.
+   */
   refresh(): void;
-  showPreview(preview: ConsolidationPreview): void;
+  /** La previsualización recibida, su huella (que vuelve tal cual en el `commit`) y los avisos sobre los recortes. */
+  showPreview(preview: ConsolidationPreview, previewHash: string, cutWarnings: readonly string[]): void;
   showConsolidated(version: ConsolidatedVersion, memory: MemoryViews): void;
   showRevoked(version: number, memory: MemoryViews): void;
   showForkResolved(memory: MemoryViews): void;
   showComparison(comparison: VersionComparison): void;
   showError(cause: string, recovery: string): void;
+  /** Un aviso que no es un error: por ejemplo, que hay otro trabajo en curso. */
+  notice(line: string): void;
   /** Mientras el Worker trabaja, los botones que envían mensajes se apagan. */
   setBusy(busy: boolean): void;
 }
@@ -209,6 +218,15 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
   root.hidden = false;
   let context: MemoryContext = { circuitId: null, memory: null, working: null };
   let preview: ConsolidationPreview | null = null;
+  /** La huella con la que llegó `preview`; viaja de vuelta en el `commit`. */
+  let previewHash: string | null = null;
+  /** Los avisos sobre los recortes de `preview`: se enseñan junto a ellos y no bloquean nada. */
+  let cutNotes: readonly string[] = [];
+  /**
+   * `true` mientras lo elegido en las casillas y los campos de recorte no coincide con lo que la
+   * previsualización aplicó: entonces «Confirmar y consolidar» se apaga hasta volver a previsualizar.
+   */
+  let cutsDiffer = false;
   let status: { readonly kind: "info" | "error"; readonly lines: readonly string[] } | null = null;
   let busy = false;
   /** Lo elegido en «Comparar versiones» y la última comparación recibida. */
@@ -328,6 +346,25 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
           "Primero se previsualiza; nada se escribe hasta que confirmes.",
       ),
     );
+    const working = context.working;
+    out.push(checksList(memory));
+
+    const next = preview?.nextVersion ?? (memory?.versions.length ?? 0) + 1;
+    const go = sender(`Previsualizar v${next}`, "memory-preview-button");
+    go.disabled = busy || context.circuitId === null || working === null || !working.hasSnapshot;
+    go.addEventListener("click", () => {
+      if (working === null) return;
+      status = null;
+      paintStatus();
+      input.preview(working.sourceId);
+    });
+    out.push(go);
+    if (preview !== null) out.push(previewBlock(preview));
+    return out;
+  }
+
+  /** La lista de condiciones: lee la bandeja, así que se vuelve a pintar sola con cada marca de revisión. */
+  function checksList(memory: MemoryViews | null): HTMLElement {
     const findings = input.findings();
     const working = context.working;
     const checks = node("ul", "memory-checks");
@@ -362,20 +399,7 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       ),
       check(memory === null || memory.fork === null, memory !== null && memory.fork !== null ? "Bifurcación de linaje sin resolver." : "Sin bifurcación de linaje."),
     );
-    out.push(checks);
-
-    const next = preview?.nextVersion ?? (memory?.versions.length ?? 0) + 1;
-    const go = sender(`Previsualizar v${next}`, "memory-preview-button");
-    go.disabled = busy || context.circuitId === null || working === null || !working.hasSnapshot;
-    go.addEventListener("click", () => {
-      if (working === null) return;
-      status = null;
-      paintStatus();
-      input.preview(working.sourceId);
-    });
-    out.push(go);
-    if (preview !== null) out.push(previewBlock(preview));
-    return out;
+    return checks;
   }
 
   function itemsList(items: readonly string[]): HTMLElement {
@@ -437,6 +461,23 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     return { cuts };
   }
 
+  /**
+   * ¿Lo marcado en las casillas y los campos es lo que esta previsualización aplicó? Si no, confirmar
+   * escribiría otra cosa que la que se ve: el botón se apaga hasta volver a previsualizar.
+   */
+  function cutsMatchShown(shown: ConsolidationPreview): boolean {
+    const chosen = chosenCuts(shown);
+    if ("error" in chosen) return false;
+    const applied = shown.cuts ?? [];
+    if (chosen.cuts.length !== applied.length) return false;
+    return chosen.cuts.every((cut) =>
+      applied.some((other) => other.incidentKey === cut.incidentKey && other.from === cut.from && other.to === cut.to && other.agvId === cut.agvId),
+    );
+  }
+
+  /** Se fija al pintar la previsualización; cada cambio en un recorte lo llama para apagar o encender «Confirmar». */
+  let syncConfirm: () => void = () => {};
+
   /** La casilla «Recortar su ventana al consolidar» de una incidencia con ventana, y sus dos campos. */
   function cutControls(incident: IncidentRecord, span: { readonly from: number; readonly to: number }, shown: ConsolidationPreview, index: number): HTMLElement {
     const holder = node("div", "memory-cut");
@@ -481,6 +522,7 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       field.value = current[side];
       field.addEventListener("change", () => {
         current[side] = field.value;
+        syncConfirm();
       });
       fields.append(fieldLabel, field);
     }
@@ -496,6 +538,7 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     toggle.addEventListener("change", () => {
       current.enabled = toggle.checked;
       fields.hidden = !toggle.checked;
+      syncConfirm();
     });
     holder.append(fields);
     return holder;
@@ -519,6 +562,12 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       list.append(item);
     }
     box.append(list);
+    if (cutNotes.length > 0) {
+      const warnings = node("ul", "memory-cut-warnings");
+      warnings.setAttribute("aria-label", "Avisos sobre los recortes");
+      for (const warning of cutNotes) warnings.append(node("li", undefined, warning));
+      box.append(node("p", "memory-cut-warnings-title", "Avisos (no bloquean):"), warnings);
+    }
     box.append(
       node(
         "p",
@@ -691,8 +740,11 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     const cancel = button("Cancelar");
     cancel.addEventListener("click", () => {
       preview = null;
+      previewHash = null;
       render();
     });
+    syncConfirm = () => {};
+    cutsDiffer = false;
     if (shown.blockers.length === 0) {
       const noteLabel = node("label", undefined, "Nota (opcional): por qué se consolida este periodo");
       noteLabel.htmlFor = "memory-note";
@@ -702,16 +754,28 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       note.placeholder = "Periodo normal tras la revisión del turno…";
       box.append(noteLabel, note);
       const confirm = sender("Confirmar y consolidar", "memory-confirm");
+      // Con un recorte tocado después de previsualizar, lo que se confirmaría no es lo que se ve.
+      const hint = node("p", "muted memory-confirm-hint", "Vuelve a previsualizar con el recorte para confirmar");
+      hint.hidden = true;
+      syncConfirm = () => {
+        cutsDiffer = !cutsMatchShown(shown);
+        hint.hidden = !cutsDiffer;
+        confirm.disabled = busy || cutsDiffer;
+      };
+      const hash = previewHash;
       confirm.addEventListener("click", () => {
         // El único sitio de la aplicación que envía `mode: "commit"`: lo pulsa la persona.
+        if (hash === null || cutsDiffer) return;
         const text = note.value.trim();
         status = null;
         paintStatus();
         // Con los recortes de esta previsualización, no con lo que se haya tocado después: se consolida lo que se ve.
         const cuts = (shown.cuts ?? []).map(({ removed: _removed, ...cut }) => cut);
-        input.commit(shown.basedOn.sourceId, text === "" ? null : text, cuts.length === 0 ? undefined : cuts);
+        input.commit(shown.basedOn.sourceId, text === "" ? null : text, cuts.length === 0 ? undefined : cuts, hash);
       });
       actions.append(cancel, confirm);
+      box.append(hint);
+      syncConfirm();
     } else {
       actions.append(cancel);
     }
@@ -1021,21 +1085,32 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     update(next) {
       context = next;
       preview = null;
+      previewHash = null;
+      cutNotes = [];
       cutChoices.clear();
       comparison = null;
       render();
     },
     refresh() {
-      render();
+      // Solo la lista de condiciones: rehacer el panel entero borraría la nota escrita y el foco.
+      const current = body.querySelector(".memory-checks");
+      if (current === null) {
+        render();
+        return;
+      }
+      current.replaceWith(checksList(context.memory));
     },
-    showPreview(next) {
+    showPreview(next, hash, warnings) {
       preview = next;
+      previewHash = hash;
+      cutNotes = warnings;
       render();
       body.querySelector<HTMLElement>(".memory-preview h4")?.scrollIntoView({ block: "start" });
     },
     showConsolidated(version, memory) {
       context = { ...context, memory };
       preview = null;
+      previewHash = null;
       cutChoices.clear();
       comparison = null;
       const cuts = version.cuts ?? [];
@@ -1080,6 +1155,10 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       paintStatus();
       applyBusy(busy);
     },
+    notice(line) {
+      status = { kind: "info", lines: [line] };
+      paintStatus();
+    },
     setBusy(next) {
       busy = next;
       applyBusy(next);
@@ -1096,6 +1175,8 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
         control.disabled = next || compareFrom === compareTo;
       } else if (control.classList.contains("memory-preview-button")) {
         control.disabled = next || context.circuitId === null || context.working === null || !context.working.hasSnapshot;
+      } else if (control.classList.contains("memory-confirm")) {
+        control.disabled = next || cutsDiffer;
       } else {
         control.disabled = next;
       }

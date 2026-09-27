@@ -25,6 +25,7 @@ import {
 import { decodeSource } from "../src/ingestion/decode.js";
 import { rowsToDelimitedText } from "../src/ingestion/xlsx-readings.js";
 import { declaredTagInfo, tagSections } from "../src/domain/tag-info.js";
+import { previewFingerprint } from "../src/domain/consolidation-fingerprint.js";
 import { measureAnchorSections } from "../src/domain/anchor-sections.js";
 import { reinforcementGroups, reinforcementPartners } from "../src/domain/critical-reinforcement.js";
 import { buildListCleanup } from "../src/domain/list-cleanup.js";
@@ -141,6 +142,7 @@ import {
   listArchive,
   loadArchivedSource,
   loadRetainedReadings,
+  MemoryChangedError,
   memoryStoredBytes,
   loadReviews,
   loadSnapshots,
@@ -201,7 +203,7 @@ import { measureAnchorGaps } from "../src/domain/anchor-gaps.js";
 import { buildSnapshotFindings } from "../src/domain/snapshot-findings.js";
 import { assembleSnapshotInput } from "../src/application/snapshot-assembly.js";
 import { APP_VERSION } from "../src/application/version.js";
-import { checkCuts, coverageWithoutCuts, cutReadings, type AppliedCut, type IncidentCut } from "../src/domain/incident-cut.js";
+import { checkCuts, coverageWithoutCuts, cutReadings, cutWarnings, type AppliedCut, type IncidentCut } from "../src/domain/incident-cut.js";
 import type { Reading } from "../src/domain/reading.js";
 import type { SourceDirection } from "../src/domain/order.js";
 import type { TruthState } from "../src/domain/truth.js";
@@ -1636,6 +1638,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
           plantMeasures: measurePlantValues({
             window,
             zone,
+            estimators: config.plantEstimators,
             // La flota entera, no solo el cohorte principal: el régimen de noche es de toda la planta.
             hourly: hourlyProfile(readings.filter(inWindow), zone),
             productionStops: production.stops,
@@ -2245,6 +2248,8 @@ async function previewFor(
   readonly snapshot: CircuitSnapshot | null;
   readonly observed: CircuitSnapshot | null;
   readonly state: LineageState;
+  /** Avisos sobre los recortes que no bloquean (`cutWarnings`); vacío sin recortes. */
+  readonly cutWarnings: readonly string[];
 }> {
   const stored = await loadCircuit(circuitId);
   if (stored === undefined) throw new Error(`El circuito ${circuitId} no está en el almacén.`);
@@ -2265,7 +2270,7 @@ async function previewFor(
       fileName: source.fileName,
       window: source.complete ?? { from: source.importedAt, to: source.importedAt },
     };
-    return { preview: previewWithoutSnapshot(basedOn, memory.active), snapshot: null, observed: null, state: memory.state };
+    return { preview: previewWithoutSnapshot(basedOn, memory.active), snapshot: null, observed: null, state: memory.state, cutWarnings: [] };
   }
   // El periodo desde el esperado vigente (§8): las instantáneas cuya ventana empieza después de la del
   // esperado, hasta la que se consolida, en orden de ventana. Un mismo fichero cargado dos veces
@@ -2305,7 +2310,7 @@ async function previewFor(
       ...(cuts === undefined ? {} : { cuts }),
     });
   const preview = run(snapshot);
-  if (requestedCuts.length === 0) return { preview: { ...preview, ...cutState }, snapshot, observed: snapshot, state: memory.state };
+  if (requestedCuts.length === 0) return { preview: { ...preview, ...cutState }, snapshot, observed: snapshot, state: memory.state, cutWarnings: [] };
 
   // OQ-148: los recortes que la persona eligió, comprobados contra las incidencias de esta previsualización.
   let cuts: readonly IncidentCut[];
@@ -2315,7 +2320,9 @@ async function previewFor(
     throw new CutRefused(error instanceof Error ? error.message : String(error), "Ajusta el recorte y vuelve a previsualizar.");
   }
   const cut = await cutSnapshot(stored, source, snapshot, snapshots, cuts);
-  return { preview: { ...run(cut.snapshot, cut.applied), ...cutState }, snapshot: cut.snapshot, observed: snapshot, state: memory.state };
+  // Un recorte que no toca ninguna ventana de su incidencia se avisa; la persona eligió ese tiempo y se sigue.
+  const warnings = cutWarnings(cuts, preview.incidents ?? []);
+  return { preview: { ...run(cut.snapshot, cut.applied), ...cutState }, snapshot: cut.snapshot, observed: snapshot, state: memory.state, cutWarnings: warnings };
 }
 
 /**
@@ -2331,11 +2338,21 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
     fail("No hay almacén local: la memoria consolidada necesita IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
     return;
   }
+  // La cancelación es cooperativa (WP-004): se mira justo antes de escribir, y hasta entonces nada
+  // ha cambiado. Después de escribir ya no se atiende: la escritura es una transacción, entera o nada.
+  const cancelledBeforeWrite = (): boolean => {
+    if (!cancelRequested) return false;
+    emit({ type: "cancelled", stage: "hashing" }, jobId);
+    return true;
+  };
+  // La memoria que se leyó para preparar la escritura, para que `saveMemory` la compare con la guardada.
+  const readState = (state: LineageState): { readonly activeHashes: readonly string[] | null } => ({ activeHashes: state.active?.hashes ?? null });
   try {
     if (message.type === "consolidate") {
-      const { preview, snapshot, observed, state } = await previewFor(circuitId, message.sourceId, message.cuts ?? []);
+      const { preview, snapshot, observed, state, cutWarnings: cutNotes } = await previewFor(circuitId, message.sourceId, message.cuts ?? []);
+      const previewHash = await previewFingerprint(preview);
       if (message.mode === "preview") {
-        emit({ type: "consolidation-preview", circuitId, preview }, jobId);
+        emit({ type: "consolidation-preview", circuitId, preview, previewHash, ...(cutNotes.length === 0 ? {} : { cutWarnings: cutNotes }) }, jobId);
         return;
       }
       if (preview.blockers.length > 0 || snapshot === null) {
@@ -2343,6 +2360,16 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
           `No se puede consolidar: ${preview.blockers.map((blocker) => blocker.detail).join(" ")}`,
           "Resuelve lo que bloquea y vuelve a previsualizar.",
         );
+        return;
+      }
+      // Lo que se escribe tiene que ser lo que la persona vio: la previsualización se rehace desde el
+      // almacén y su huella se compara con la que la interfaz enseñó. Sin huella, no hay confirmación.
+      if (message.previewHash === undefined) {
+        fail("La confirmación no trae la huella de la previsualización que se enseñó.", "Vuelve a previsualizar y confirma lo que veas.");
+        return;
+      }
+      if (message.previewHash !== previewHash) {
+        fail("La previsualización ha cambiado desde que se mostró.", "Vuelve a previsualizar y confirma lo que veas.");
         return;
       }
       const lineage = state.active?.id ?? crypto.randomUUID();
@@ -2354,7 +2381,8 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
         now: Date.now(),
         note: message.note ?? null,
       });
-      await saveMemory({ versions: [version], state: withConsolidated(state, version) });
+      if (cancelledBeforeWrite()) return;
+      await saveMemory({ versions: [version], state: withConsolidated(state, version) }, readState(state));
       // Lo observado es la instantánea guardada del fichero, recortada o no la versión: es medición.
       const memory = await buildMemoryViews(circuitId, observed);
       if (memory === undefined) throw new Error("La versión se guardó pero no se pudo volver a leer.");
@@ -2369,6 +2397,7 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
         fail(`La versión v${message.version} no está en el linaje activo del circuito.`, "Comprueba el número en la lista de versiones.");
         return;
       }
+      if (cancelledBeforeWrite()) return;
       await saveVersion(revokeVersion(target, message.reason, Date.now()));
       const snapshots = await loadSnapshots(circuitId);
       const memory = await buildMemoryViews(circuitId, snapshots[snapshots.length - 1] ?? null);
@@ -2382,7 +2411,8 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
 
     const { state } = await loadMemory(circuitId);
     const resolved = resolveFork(state, message.choice, message.reason, Date.now());
-    await saveMemory({ versions: [], state: resolved });
+    if (cancelledBeforeWrite()) return;
+    await saveMemory({ versions: [], state: resolved }, readState(state));
     const snapshots = await loadSnapshots(circuitId);
     const memory = await buildMemoryViews(circuitId, snapshots[snapshots.length - 1] ?? null);
     if (memory === undefined) throw new Error("La elección se guardó pero no se pudo volver a leer.");
@@ -2391,6 +2421,11 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
     // Un recorte que no se puede hacer se dice tal cual, con qué hacer (OQ-148).
     if (error instanceof CutRefused) {
       fail(error.message, error.recovery);
+      return;
+    }
+    // La memoria guardada ya no es la que se leyó (por ejemplo, un `.agvproj` abierto entre medias): no se escribió nada.
+    if (error instanceof MemoryChangedError) {
+      fail("La memoria cambió mientras se preparaba la escritura: no se ha guardado nada.", "Vuelve a previsualizar y confirma lo que veas.");
       return;
     }
     // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
@@ -2940,6 +2975,8 @@ scope.onmessage = (event: MessageEvent<ToWorker>): void => {
 
   if (message.type === "consolidate" || message.type === "revoke" || message.type === "resolve-fork") {
     currentJobId = message.jobId;
+    // Una cancelación tardía del trabajo anterior no debe alcanzar a este (WP-003).
+    cancelRequested = false;
     seq = 0;
     void runMemory(message);
     return;

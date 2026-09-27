@@ -103,7 +103,8 @@ test.describe("valores de planta", () => {
     const panel = page.locator(".plant-values-panel");
     await expect(panel.getByRole("heading", { name: "Valores de planta del circuito" })).toBeVisible();
     await expect(panel).toContainText("Rigen los provisionales hasta que confirmes el valor de tu planta.");
-    await expect(panel).toContainText("OQ-151");
+    // Sin referencias internas en el texto visible (UX_SPEC §4.4).
+    await expect(panel).not.toContainText("OQ-");
     // Sin versiones consolidadas no hay propuesta, y se dice qué falta.
     await expect(panel.locator('.plant-value[data-key="noche-desde"] .plant-value-proposal')).toHaveText(
       "Sin propuesta: hacen falta 3 versiones consolidadas no revocadas y no hay ninguna. Introduce el valor.",

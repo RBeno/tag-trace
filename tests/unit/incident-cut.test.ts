@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { checkCuts, coverageWithoutCuts, cutReadings } from "../../src/domain/incident-cut.js";
+import { checkCuts, coverageWithoutCuts, cutReadings, cutWarnings } from "../../src/domain/incident-cut.js";
 import type { Reading } from "../../src/domain/reading.js";
 
 const SECOND = 1_000;
@@ -52,6 +52,14 @@ describe("cutReadings · por ventana y por AGV", () => {
     ]);
     expect(applied.map((cut) => cut.removed)).toEqual([2, 1, 0]);
   });
+
+  it("un recorte de un instante (`from === to`) quita solo lo que cae justo en él", () => {
+    const { kept, applied } = cutReadings(READINGS, [{ incidentKey: "k", from: 30 * SECOND, to: 30 * SECOND }]);
+    expect(applied[0]?.removed).toBe(1);
+    expect(kept).toHaveLength(READINGS.length - 1);
+    expect(kept.some((entry) => entry.time.utcMs === 30 * SECOND)).toBe(false);
+    expect(kept.some((entry) => entry.time.utcMs === 30 * SECOND + 1)).toBe(true);
+  });
 });
 
 describe("coverageWithoutCuts · sin cobertura, no silencio", () => {
@@ -64,6 +72,16 @@ describe("coverageWithoutCuts · sin cobertura, no silencio", () => {
     expect(coverageWithoutCuts(coverage, [{ incidentKey: "k", from: 20 * SECOND, to: 40 * SECOND, agvId: "0007" }])).toEqual(coverage);
     // Hasta el final: no queda cola.
     expect(coverageWithoutCuts(coverage, [{ incidentKey: "k", from: 90 * SECOND, to: 100 * SECOND }])).toEqual([{ from: 0, to: 90 * SECOND - 1 }]);
+  });
+
+  it("un recorte que empieza justo en el principio, o acaba justo en el fin, no deja un tramo vacío ni invertido", () => {
+    const coverage = [{ from: 0, to: 100 * SECOND }];
+    expect(coverageWithoutCuts(coverage, [{ incidentKey: "k", from: 0, to: 10 * SECOND }])).toEqual([{ from: 10 * SECOND + 1, to: 100 * SECOND }]);
+    expect(coverageWithoutCuts(coverage, [{ incidentKey: "k", from: 95 * SECOND, to: 100 * SECOND }])).toEqual([{ from: 0, to: 95 * SECOND - 1 }]);
+    // Todo el tramo: no queda cobertura.
+    expect(coverageWithoutCuts(coverage, [{ incidentKey: "k", from: 0, to: 100 * SECOND }])).toEqual([]);
+    // Un recorte que cubre el tramo por fuera también lo quita entero.
+    expect(coverageWithoutCuts(coverage, [{ incidentKey: "k", from: -1, to: 200 * SECOND }])).toEqual([]);
   });
 });
 
@@ -100,5 +118,22 @@ describe("checkCuts · contra las incidencias y la ventana del fichero", () => {
         file,
       ),
     ).toThrow(/dos recortes/);
+  });
+
+  it("un recorte fuera de la ventana de su incidencia pasa, pero `cutWarnings` lo avisa; uno que la toca, no", () => {
+    const outside = [{ incidentKey: "deja-de-leer|0007", from: 70 * SECOND, to: 80 * SECOND }];
+    expect(checkCuts(outside, incidents, file)).toHaveLength(1);
+    const warnings = cutWarnings(outside, incidents);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/«0007: deja de leer» no se solapa con la ventana/);
+    // Tocar el extremo ya es solaparse (ambos incluidos).
+    expect(cutWarnings([{ incidentKey: "deja-de-leer|0007", from: 60 * SECOND, to: 80 * SECOND }], incidents)).toEqual([]);
+    expect(cutWarnings([{ incidentKey: "deja-de-leer|0007", from: 0, to: 20 * SECOND }], incidents)).toEqual([]);
+    // Con varias paradas basta con tocar una; fuera de todas, dice cuántas son.
+    const several = [{ key: "parada|linea", title: "Producción parada", windows: [{ from: 10 * SECOND, to: 20 * SECOND }, { from: 50 * SECOND, to: 60 * SECOND }] }];
+    expect(cutWarnings([{ incidentKey: "parada|linea", from: 55 * SECOND, to: 58 * SECOND }], several)).toEqual([]);
+    expect(cutWarnings([{ incidentKey: "parada|linea", from: 30 * SECOND, to: 40 * SECOND }], several)[0]).toMatch(/ninguna de las 2 ventanas/);
+    // Una incidencia desconocida o sin ventana no avisa aquí: la rechaza `checkCuts`.
+    expect(cutWarnings([{ incidentKey: "otro", from: 0, to: 1 }, { incidentKey: "sin-ventana", from: 0, to: 1 }], incidents)).toEqual([]);
   });
 });

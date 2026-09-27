@@ -70,16 +70,26 @@ export function coverageWithoutCuts(coverage: readonly Interval[], cuts: readonl
   return spans;
 }
 
+/** Una incidencia tal como la ve el recorte: su clave, su título, su AGV y sus ventanas (una o varias). */
+export interface CuttableIncident {
+  readonly key: string;
+  readonly title: string;
+  readonly agvId?: string;
+  readonly window?: Interval;
+  readonly windows?: readonly Interval[];
+}
+
 /**
  * Comprueba los recortes pedidos contra las incidencias del periodo y la ventana del fichero. Devuelve
  * los recortes normalizados (con el AGV de la incidencia, no el que venga en el mensaje) o lanza con
  * el motivo en palabras.
+ *
+ * No exige que el recorte se solape con la ventana de la incidencia: el principio y el fin los elige la
+ * persona (OQ-148) y pueden quedar fuera de lo que el hallazgo midió. Eso se avisa, no se bloquea:
+ * `cutWarnings`. Se admite un recorte por incidencia; con varias paradas (`windows`), si se recorta cada
+ * una o la envolvente está abierto (OQ-155).
  */
-export function checkCuts(
-  cuts: readonly IncidentCut[],
-  incidents: readonly { readonly key: string; readonly title: string; readonly agvId?: string; readonly window?: Interval; readonly windows?: readonly Interval[] }[],
-  fileWindow: Interval,
-): readonly IncidentCut[] {
+export function checkCuts(cuts: readonly IncidentCut[], incidents: readonly CuttableIncident[], fileWindow: Interval): readonly IncidentCut[] {
   const byKey = new Map(incidents.map((incident) => [incident.key, incident]));
   const seen = new Set<string>();
   return cuts.map((cut) => {
@@ -103,6 +113,32 @@ export function checkCuts(
     }
     return { incidentKey: cut.incidentKey, from: cut.from, to: cut.to, ...(incident.agvId === undefined ? {} : { agvId: incident.agvId }) };
   });
+}
+
+/** Las ventanas de una incidencia: `windows` si las trae, si no `window`; ninguna si no tiene. */
+function windowsOf(incident: CuttableIncident): readonly Interval[] {
+  return incident.windows ?? (incident.window === undefined ? [] : [incident.window]);
+}
+
+/**
+ * Avisos, no bloqueos, sobre recortes que ya pasaron `checkCuts`: uno por recorte que no se solapa con
+ * ninguna ventana de su incidencia (ambos extremos incluidos). La persona eligió ese principio y ese fin
+ * y puede tener razón —el hallazgo mide desde la primera lectura que falta, no desde que empezó lo que
+ * pasó—, así que se le dice y se sigue. Un recorte de una incidencia desconocida no avisa aquí: lo
+ * rechaza `checkCuts`.
+ */
+export function cutWarnings(cuts: readonly IncidentCut[], incidents: readonly CuttableIncident[]): readonly string[] {
+  const byKey = new Map(incidents.map((incident) => [incident.key, incident]));
+  const out: string[] = [];
+  for (const cut of cuts) {
+    const incident = byKey.get(cut.incidentKey);
+    if (incident === undefined) continue;
+    const windows = windowsOf(incident);
+    if (windows.length === 0 || windows.some((window) => cut.from <= window.to && cut.to >= window.from)) continue;
+    const which = windows.length === 1 ? "la ventana" : `ninguna de las ${windows.length} ventanas`;
+    out.push(`El recorte de «${incident.title}» no se solapa con ${which} de la incidencia: se aplica tal como lo elegiste, pero quita tiempo que el hallazgo no midió.`);
+  }
+  return out;
 }
 
 function copyCut(cut: IncidentCut): IncidentCut {

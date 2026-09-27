@@ -50,6 +50,8 @@ export interface ReviewSession {
   filter(): string;
   /** Se avisa cada vez que cambia el filtro de estado o una marca, para que la bandeja se rehaga. */
   onChange(listener: () => void): void;
+  /** Suelta lo que observa el documento (la medida de la barra); se llama al sustituir la sesión por otra. */
+  dispose(): void;
 }
 
 /** Lo último que se leyó del almacén, para no esperar a IndexedDB al volver a dibujar el mismo circuito. */
@@ -181,7 +183,8 @@ export function createReviewSession(
   const measure = (): void => {
     document.documentElement.style.setProperty("--review-bar-height", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
   };
-  if (typeof ResizeObserver !== "undefined") new ResizeObserver(measure).observe(bar);
+  const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+  observer?.observe(bar);
   const actions = node("div", "review-actions");
   actions.append(exportButton);
   panel.append(counts, filters, actions, absent);
@@ -372,6 +375,7 @@ export function createReviewSession(
     bar,
     panel,
     refresh,
+    dispose: () => observer?.disconnect(),
     has: (key) => controls.has(key),
     filter: () => container.dataset["reviewFilter"] ?? "",
     onChange: (listener) => {

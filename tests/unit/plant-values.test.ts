@@ -33,8 +33,8 @@ function event(seq: number, key: PlantValueEvent["key"], value: PlantValueEvent[
   return { circuitId: "c1", seq, key, value, effectiveAt, recordedAt: 10 * DAY + seq, reason: `razón ${seq}`, origin: "manual" };
 }
 
-describe("catálogo · los ocho valores y dónde viven", () => {
-  it("son los ocho de OQ-140 sin `drift.minGapMs`, y leen los provisionales tal cual", () => {
+describe("catálogo · los siete valores (ocho claves: la noche son dos) y dónde viven", () => {
+  it("son los siete de OQ-140 sin `drift.minGapMs`, en ocho claves, y leen los provisionales tal cual", () => {
     expect(PLANT_VALUES.map((entry) => entry.path)).toEqual([
       "regimes.nightFromHour",
       "regimes.nightToHour",

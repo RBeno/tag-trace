@@ -221,6 +221,12 @@ export interface ConsolidateMessage {
    * El Worker rehace la instantánea desde el original archivado; sin él, no se recorta.
    */
   readonly cuts?: readonly { readonly incidentKey: string; readonly from: number; readonly to: number; readonly agvId?: string }[];
+  /**
+   * Solo en `commit`: la huella (`previewFingerprint`) de la previsualización que la persona vio y
+   * confirmó. El Worker rehace la previsualización desde el almacén y, si su huella no coincide,
+   * responde `error` sin escribir: lo confirmado tiene que ser lo que se enseñó.
+   */
+  readonly previewHash?: string;
 }
 
 /** Revocar una versión: no la borra, la marca con fecha y razón (§7). */
@@ -918,6 +924,13 @@ export interface ConsolidationPreviewMessage extends Envelope {
   readonly type: "consolidation-preview";
   readonly circuitId: string;
   readonly preview: ConsolidationPreview;
+  /** La huella de `preview` (`previewFingerprint`): la interfaz la devuelve tal cual en el `commit`. */
+  readonly previewHash: string;
+  /**
+   * Avisos sobre los recortes que no bloquean: un recorte que no toca ninguna ventana de su incidencia.
+   * Se enseñan junto a los recortes; no entran en la huella ni en la versión. Ausente sin avisos.
+   */
+  readonly cutWarnings?: readonly string[];
 }
 
 /** Respuesta a `consolidate` en modo `commit`: la versión ya está en el almacén. */

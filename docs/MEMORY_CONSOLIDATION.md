@@ -1,6 +1,6 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.12.0
+version: 0.12.1
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -92,8 +92,10 @@ excluye del esperado (R-INC-004, §8).
 pasos E, G y H del diagrama son `previewConsolidation` (no escribe nada), la confirmación humana en
 la interfaz y `consolidate` en el Worker, que vuelve a calcular la previsualización desde el almacén
 antes de escribir. Las precondiciones que hoy se comprueban con datos son: fichero de trabajo con
-instantánea, hallazgos sin pendientes, ningún hallazgo de rango 1 confirmado, ninguna versión
-vigente basada en el mismo fichero y ninguna bifurcación sin resolver. Las demás de la lista
+instantánea, hallazgos sin pendientes, ninguna versión vigente basada en el mismo fichero y ninguna
+bifurcación sin resolver. Un hallazgo de rango 1 confirmado **no bloquea desde 3.55.0** (OQ-148, §8):
+el periodo se consolida entero y lo que toca la incidencia queda fuera del esperado; el código
+`periodo-de-incidencia` se conserva solo por compatibilidad con textos anteriores. Las demás de la lista
 (calidad, calendario, incidencias separadas) quedan a la vista de la persona en el análisis, no las
 decide la aplicación. La previsualización enseña las decisiones por estado, el delta frente a la
 versión vigente y el tamaño estimado; cancelar antes de confirmar no deja rastro.
@@ -117,6 +119,15 @@ Una consolidación nunca se edita. Si se descubre un error:
 de hashes sigue siendo comparable entre dispositivos. La versión vigente es la última no revocada,
 `compareToMemory` y el delta de la siguiente consolidación la usan, y la lista de versiones enseña
 las revocadas tachadas con su razón. La revocación es la única reescritura que admite el almacén.
+
+**Revocar una versión intermedia no deshace lo que se construyó sobre ella.** Si v2 se revoca y ya
+existe v3, el `expected` de v3 —calculado sobre el de v2— **sigue en vigor tal cual**: una versión no
+se recalcula nunca (una consolidación nunca se edita) y la revocación no se propaga hacia delante.
+Lo que cambia es la vigencia: si v3 es la última no revocada, v3 sigue siendo la vigente; si se
+revoca la vigente, pasa a serlo la anterior no revocada. El comparador entre versiones lo deja a la
+vista: `compareVersions` cuenta las revocadas del tramo en `between.revoked` y marca en
+`adoptedAlongTheWay[].revoked` cada versión intermedia revocada cuyas adopciones forman parte del
+camino. Corregir lo que v3 heredó de v2 es consolidar una v4 desde el fichero correcto, no reescribir.
 
 ## 8. Evolución del esperado
 
@@ -273,6 +284,31 @@ versión vigente; las elecciones de linaje del otro dispositivo se añaden al hi
 suyas («en otro dispositivo»), sin aplicarse. Las notas no hace falta copiarlas: forman parte del
 hash, así que dos versiones iguales tienen la misma nota (OQ-144, cerrada el 2026-09-27). Un linaje entrante sin resolver no viaja en el `.agvproj` que se exporta desde aquí.
 
+**Contra qué se clasifica (2026-09-27).** La sección `memoria` lleva las versiones del linaje activo
+**y** de los archivados, mezcladas en `versiones`, y `linaje.activo` y `linaje.archivados` dicen cuál
+es cuál. La relación se clasifica **solo contra la cadena de `linaje.activo`** (`planMemoryImport`):
+las versiones de una rama archivada no son historia del activo, y contarlas hacía pasar por bifurcado
+un destino idéntico al activo del origen, o hacía que un dispositivo vacío adoptara dos ramas como
+una sola cadena con dos v2. Los archivados que trae el proyecto y aquí no estaban entran **como
+archivados**, con sus versiones (`withArchivedLineages`): son historia de otro dispositivo, no una
+decisión. No se repite uno que ya esté archivado (mismo identificador y misma cadena), ni se archiva
+el que aquí es el activo o el que espera decisión. Un proyecto del esquema 3 sin `linaje.activo`
+declarado se clasifica con todas sus versiones como un linaje, que es lo que era entonces.
+
+**Con una bifurcación pendiente, nada se adopta ni se sustituye (2026-09-27).** Si aquí ya hay un
+linaje entrante esperando decisión y se abre otro proyecto cuya relación no es `identica` ni
+`sin-memoria`, el activo y el entrante se quedan como están: ni una `entrante-adelantada` se adopta
+ni una `bifurcada` sustituye al entrante que espera (`pendingForkBlocks`). Se anota la relación, se
+aplican las revocaciones y las elecciones ajenas, y la importación lo devuelve
+(`pendingForkBlocked`) para que la interfaz diga que primero hay que resolver la que hay. Antes, el
+segundo proyecto pisaba en silencio la decisión pendiente.
+
+**Las revocaciones que llegan se aplican sin preguntar, en cualquier relación**, también en
+`bifurcada` y `local-adelantada`: una revocación es un hecho del historial de la versión —lleva su
+fecha y su razón— y no una decisión que este dispositivo deba reinterpretar. Se dice una por una al
+abrir el proyecto. Si el propietario quisiera que la persona la aceptara antes de aplicarla, sería
+una decisión nueva (R-MEM-001) a registrar en `OPEN_QUESTIONS.md`, no un cambio silencioso.
+
 La forma de evitarla es organizativa, no técnica: consolidar siempre desde el mismo dispositivo, o
 exportar e importar antes de consolidar. La aplicación lo recuerda, no lo impone.
 
@@ -280,7 +316,15 @@ exportar e importar antes de consolidar. La aplicación lo recuerda, no lo impon
 
 El `.agvproj` contiene manifiesto, versión, hashes e integridad. Al abrirlo:
 
-- se valida antes de modificar el estado local;
+- se valida antes de modificar el estado local: además del hash de cada sección, **la memoria que
+  trae tiene que ser la que dice ser** (2026-09-27, `verifyProjectMemory`): cada versión vuelve a dar
+  su `hash` al calcularlo (`versionHash`), y cada linaje —activo y archivados— encadena versiones
+  presentes cuyo `previousHash` apunta a una anterior del mismo linaje (la vigente al consolidar, que
+  no es siempre la inmediata si esta estaba revocada). Una que falle rechaza la carga entera con
+  `ProjectError`, sin tocar nada. Vale para cualquier versión desde la primera consolidación (F4): la
+  regla del hash y `CANONICAL_VERSION` no han cambiado, y los campos añadidos después (`expected`,
+  `changes`, `incidents`, `cuts`) son opcionales y no se escriben cuando faltan, así que una versión
+  antigua vuelve a dar el hash con el que nació;
 - se muestra qué evidencia bruta no está incluida;
 - se realiza copia lógica antes de migrar;
 - se prueba la ida y vuelta de la migración;

@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.29.0
+version: 0.29.1
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -278,9 +278,10 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `max_false_points` | R-FLO-008, R-FLO-009: puntos marcados por azar que se aceptan en todo el circuito. |
 | `charging.long_stay_ratio`, `charging.min_stays_for_median` | R-CO-002: cuántas veces la estancia habitual hace larga una permanencia, y cuántas estancias completas hacen falta para tener una habitual. |
 | `charging.usage_max_chance`, `charging.usage_min_deviation` | R-CO-009: azar máximo y desviación mínima (fracción de la parte que le tocaría) para señalar una calle que se usa menos o más que las demás. Provisionales: 0,001 y 0,25. |
-| `plan.min_vehicles_for_proposal` | R-GRA-020 (ADR-0016): AGV distintos que tienen que leer un código no instalado en el plano para proponerlo como tag nuevo. Provisional: 2, el mismo criterio que R-DAT-021. Si la instantánea no dice cuántos AGV lo leyeron, no se propone. |
+| `plan.min_vehicles_for_proposal` | R-GRA-020 (ADR-0016): AGV distintos que tienen que leer un código no instalado en el plano para proponerlo como tag nuevo **o como sustitución**. Provisional: 2, el mismo criterio que R-DAT-021. Si la instantánea no dice cuántos AGV lo leyeron, no se propone ninguna de las dos. |
 | `change_class.sustained_files`, `change_class.collective_share` | R-MEM-005 (OQ-146, OQ-147): ficheros seguidos para que un cambio sea sostenido (3) y parte de los AGV que pasan por el sitio que tiene que superarse para que sea colectivo (0,5, «la mayoría»). Decididos por el propietario el 2026-09-27. |
 | `drift.max_chance` | R-DAT-016 (OQ-138): azar máximo para afirmar un `desaparecido` o un `nuevo` entre periodos. Provisional: 0,001, el mismo que `tag_changes.max_chance`. |
+| `plant_estimators.night_low_share`, `plant_estimators.return_gap_quantile`, `plant_estimators.head_wait_quantile`, `plant_estimators.precise_pause_quantile` | OQ-151: los números de la definición aprobada de los estimadores de los valores de planta —la mitad de la mediana de producción para que una hora sea de noche (0,5), y los cuantiles de los huecos que volvieron (0,99), de las esperas del primero de cola (0,95) y de las esperas en una parada precisa (0,05)—. No son valores de planta: son cómo se miden. El percentil 95 del tránsito de un tramo cargado (margen del FIFO) lo da `fifo.ts` con su mediana y no está aquí. |
 
 Los valores que hoy viven en `PROVISIONAL_CONFIG` con aspecto de dato de planta —horas de arranque de
 turno, regímenes, la hora sin leer que hace una desconexión, los dos minutos del bloqueo, la
@@ -290,10 +291,11 @@ mínimo entre periodos distantes— **no se fijan como configuración de planta*
 Son provisionales hasta que la memoria del circuito (F4) los mida y los consolide con confirmación
 humana (ADR-0010).
 
-**Valores de planta del circuito (3.59.0, `src/domain/plant-values.ts`).** Siete de ellos —inicio y
-fin del régimen de noche, horas de arranque de turno, tiempo sin leer que es desconexión, bloqueo del
-primero de cola, tolerancia de «a la misma hora», margen del FIFO y duración mínima de una parada
-precisa— se pueden confirmar por circuito. Cada confirmación es un evento append-only con valor,
+**Valores de planta del circuito (3.59.0, `src/domain/plant-values.ts`).** Siete de ellos —régimen de
+noche, horas de arranque de turno, tiempo sin leer que es desconexión, bloqueo del primero de cola,
+tolerancia de «a la misma hora», margen del FIFO y duración mínima de una parada precisa— se pueden
+confirmar por circuito: **siete valores, ocho claves**, porque la noche son dos (`noche-desde` y
+`noche-hasta`). Cada confirmación es un evento append-only con valor,
 fecha efectiva, fecha de registro, razón obligatoria y origen `manual`; al analizar un fichero rige el
 último valor efectivo al inicio de su ventana, y sin ninguno rige el provisional. La versión de
 configuración lo dice (`provisional-0+planta(clave#n,…)`) y cada instantánea la guarda (FR-031). El
@@ -302,21 +304,23 @@ las duraciones, mayores que cero y como mucho 24 h, que es un control de errores
 dato de planta.
 
 **Propuestas de la memoria (3.60.0, OQ-151).** Cada instantánea guarda desde 3.60.0 lo que miden los
-estimadores (`plantMeasures`), y la memoria estima cada valor en cada una de las últimas tres versiones
-consolidadas no revocadas. Redondeadas a la unidad del valor, si las tres coinciden **se propone**
-y la persona lo confirma con razón (origen `propuesta`, con las versiones de las que sale); si no
-coinciden o alguna no permite estimar, no se propone nada, se enseña la estimación de cada versión
-y el valor lo introduce una persona. Cómo mide cada estimador:
+estimadores (`plantMeasures`), y la memoria estima cada valor en cada una de las últimas versiones
+consolidadas no revocadas: **tantas como `change_class.sustained_files`** (3), el mismo número de
+ficheros seguidos que hace sostenido un cambio; no hay un umbral propio. Redondeadas a la unidad del
+valor, si todas coinciden **se propone** y la persona lo confirma con razón (origen `propuesta`, con
+las versiones de las que sale); si no coinciden o alguna no permite estimar, no se propone nada, se
+enseña la estimación de cada versión y el valor lo introduce una persona. Los números de cada
+definición (la mitad, los percentiles) están en `plant_estimators`. Cómo mide cada estimador:
 
 | Valor | De qué análisis | Estimador |
 |---|---|---|
-| Régimen de noche | perfil horario de toda la flota, por hora cubierta | tramo circular de horas con menos de la mitad de la mediana de las horas de fuera de la noche vigente; exige cada hora del día cubierta entera al menos una vez, y dos tramos igual de largos no se eligen |
-| Horas de turno | paradas de la producción del fichero | hora de inicio de las que se repiten otro día (la de dos repeticiones a las 13:29 y 13:31 es las 14); con un solo día, no estima |
-| «A la misma hora» | las mismas paradas | mayor diferencia en minutos entre repeticiones |
-| Desconexión | huecos de cada AGV que terminan en una lectura, sin los de carga online | percentil 99, con al menos `bands.min_band_samples` huecos |
-| Bloqueo del primero de cola | paradas sin explicación del primero de cola que acabaron avanzando | percentil 95 de su exceso, con al menos `bands.min_band_samples` |
-| Margen del FIFO | tránsito de cada tramo cargado | el mayor percentil 95 menos mediana |
-| Parada precisa | esperas en las paradas precisas declaradas | percentil 5, con al menos `critical_points.parada_precisa.min_samples` |
+| Régimen de noche | perfil horario de toda la flota, por hora cubierta | tramo circular de horas con menos de `night_low_share` (la mitad) de la mediana de las horas de fuera de la **noche vigente**; exige cada hora del día cubierta entera al menos una vez (el día del cambio de hora le falta una y no estima), y dos tramos igual de largos no se eligen |
+| Horas de turno | paradas de la producción del fichero | hora de inicio de las que se repiten otro día (la de dos repeticiones a las 13:29 y 13:31 es las 14); con un solo día, no estima. Las repeticiones son las que emparejó la **tolerancia vigente** de «a la misma hora» (OQ-154) |
+| «A la misma hora» | las mismas paradas | mayor diferencia en minutos entre repeticiones. **Acotado por el valor vigente (OQ-154):** las repeticiones se emparejan en el análisis con la tolerancia vigente, así que el estimador nunca propondrá una tolerancia mayor que la que rige; lo dice en su explicación |
+| Desconexión | huecos de cada AGV que terminan en una lectura, sin los de carga online | cuantil `return_gap_quantile` (percentil 99), con al menos `bands.min_band_samples` huecos |
+| Bloqueo del primero de cola | paradas sin explicación del primero de cola que acabaron avanzando | cuantil `head_wait_quantile` (percentil 95) de su exceso, con al menos `bands.min_band_samples` |
+| Margen del FIFO | tránsito de cada tramo cargado | el mayor percentil 95 menos mediana (el percentil lo da `fifo.ts`) |
+| Parada precisa | esperas en las paradas precisas declaradas | cuantil `precise_pause_quantile` (percentil 5), con al menos `critical_points.parada_precisa.min_samples` |
 
 ### 3.6 Cohortes
 

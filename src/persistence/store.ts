@@ -168,7 +168,7 @@ export interface StoredSourceReadings {
  * fuente ya los comprime. No hay migración que los reescriba: comprimir es asíncrono y una
  * transacción de migración de IndexedDB no puede esperar a nada que no sea el propio almacén.
  */
-interface SourceReadingsRow {
+export interface SourceReadingsRow {
   readonly circuitId: string;
   readonly sourceId: string;
   readonly readings?: readonly Reading[];
@@ -176,7 +176,7 @@ interface SourceReadingsRow {
 }
 
 /** Una versión consolidada tal como se guarda desde la versión 9: su clave y el JSON comprimido. */
-interface VersionRow {
+export interface VersionRow {
   readonly circuitId: string;
   readonly hash: string;
   readonly gz: Uint8Array;
@@ -201,13 +201,19 @@ async function readingsRow(circuitId: string, sourceId: string, readings: readon
   return { circuitId, sourceId, gz: await gzipJson(readings) };
 }
 
-async function readingsOf(row: SourceReadingsRow): Promise<StoredSourceReadings> {
+/** Las lecturas de una fila de `sources`: comprimidas desde la versión 9, o tal cual si se guardaron antes. */
+export async function readingsOf(row: SourceReadingsRow): Promise<StoredSourceReadings> {
   const readings = row.gz !== undefined ? await gunzipJson<Reading[]>(row.gz) : (row.readings ?? []);
   return { circuitId: row.circuitId, sourceId: row.sourceId, readings };
 }
 
 async function versionRow(version: ConsolidatedVersion): Promise<VersionRow> {
   return { circuitId: version.circuitId, hash: version.hash, gz: await gzipJson(version) };
+}
+
+/** La versión de una fila de `memory`: descomprimida si es una fila de la versión 9, o la propia versión si se guardó antes. */
+export async function versionOf(row: VersionRow | ConsolidatedVersion): Promise<ConsolidatedVersion> {
+  return isVersionRow(row) ? gunzipJson<ConsolidatedVersion>(row.gz) : row;
 }
 
 /** Una fila de `memory`: comprimida desde la versión 9, o la propia versión si se guardó antes. */
@@ -623,21 +629,67 @@ export async function saveVersion(version: ConsolidatedVersion): Promise<void> {
  * clasificada. Dos transacciones dejarían, ante un cierre a mitad, un linaje que nombra un hash que no
  * está o una versión que ningún linaje reclama (INV-006).
  */
-export async function saveMemory(input: {
-  readonly versions: readonly ConsolidatedVersion[];
-  readonly state: StoredMemoryState;
-}): Promise<void> {
+export async function saveMemory(
+  input: {
+    readonly versions: readonly ConsolidatedVersion[];
+    readonly state: StoredMemoryState;
+  },
+  /**
+   * Opcional: los hashes del linaje activo tal como estaban cuando quien escribe **leyó** el estado
+   * (`null` si no había linaje activo). Se comparan con lo guardado dentro de la misma transacción y,
+   * si difieren, no se escribe nada y se lanza `MemoryChangedError`: el hilo principal pudo escribir
+   * la memoria al abrir un `.agvproj` mientras el Worker preparaba una consolidación, y una escritura
+   * a ciegas encima dejaría un linaje que no corresponde a lo que la persona confirmó. Sin este
+   * argumento se escribe como hasta ahora (la importación de un proyecto, que ya trae la relación resuelta).
+   */
+  expected?: { readonly activeHashes: readonly string[] | null },
+): Promise<void> {
   const rows = await Promise.all(input.versions.map(versionRow));
   const db = await open();
   try {
-    const tx = db.transaction([MEMORY, MEMORY_STATE], "readwrite");
-    const memory = tx.objectStore(MEMORY);
-    for (const row of rows) memory.put(row);
-    tx.objectStore(MEMORY_STATE).put(input.state);
-    await settle(tx, "No se pudo guardar la memoria del circuito.");
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([MEMORY, MEMORY_STATE], "readwrite");
+      const memory = tx.objectStore(MEMORY);
+      const states = tx.objectStore(MEMORY_STATE);
+      const write = (): void => {
+        for (const row of rows) memory.put(row);
+        states.put(input.state);
+      };
+      let refused: MemoryChangedError | null = null;
+      if (expected === undefined) {
+        write();
+      } else {
+        const request = states.get(input.state.circuitId) as IDBRequest<StoredMemoryState | undefined>;
+        request.onsuccess = () => {
+          const stored = request.result?.active?.hashes ?? null;
+          if (sameHashes(stored, expected.activeHashes)) {
+            write();
+            return;
+          }
+          refused = new MemoryChangedError();
+          tx.abort();
+        };
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(refused ?? tx.error ?? new Error("No se pudo guardar la memoria del circuito."));
+      tx.onabort = () => reject(refused ?? tx.error ?? new Error("No se pudo guardar la memoria del circuito. La escritura se abortó."));
+    });
   } finally {
     db.close();
   }
+}
+
+/** La memoria guardada ya no es la que se leyó antes de preparar la escritura: nada se ha escrito. */
+export class MemoryChangedError extends Error {
+  constructor() {
+    super("La memoria del circuito cambió mientras se preparaba la escritura.");
+    this.name = "MemoryChangedError";
+  }
+}
+
+function sameHashes(a: readonly string[] | null, b: readonly string[] | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.length === b.length && a.every((hash, index) => hash === b[index]);
 }
 
 /** Todas las versiones de un circuito —de todos los linajes, revocadas incluidas—, en orden de versión y fecha. */
@@ -648,7 +700,7 @@ export async function loadVersions(circuitId: string): Promise<readonly Consolid
     const store = tx.objectStore(MEMORY);
     const rows = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<(VersionRow | StoredVersion)[]>);
     db.close();
-    const versions = await Promise.all(rows.map((row) => (isVersionRow(row) ? gunzipJson<ConsolidatedVersion>(row.gz) : row)));
+    const versions = await Promise.all(rows.map(versionOf));
     return sortVersions(versions);
   } finally {
     db.close();

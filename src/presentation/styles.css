@@ -389,6 +389,7 @@ table.data th { color: var(--muted); font-weight: 600; }
   .drawer-open { min-height: 44px; font-size: 0.9rem; }
   .tile { min-height: 44px; }
   .file-picker .file-button { min-height: 44px; }
+  .memory-compare-select, .memory-cut-fields input, .memory-panel .link-button { min-height: 44px; }
   :root { --readout-height: 36px; }
   input[type="range"] { height: 44px; width: 100%; }
 }

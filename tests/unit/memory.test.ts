@@ -18,7 +18,9 @@ import {
   consolidate,
   currentVersion,
   emptyLineageState,
+  lineageChainProblem,
   MEMORY_SCHEMA_VERSION,
+  pendingForkBlocks,
   previewConsolidation,
   previewWithoutSnapshot,
   resolveFork,
@@ -26,11 +28,14 @@ import {
   revokeVersion,
   versionBytes,
   versionHash,
+  versionHashProblem,
   versionsOfLineage,
+  withArchivedLineages,
   withConsolidated,
   withIncoming,
   type ConsolidatedVersion,
   type ConsolidationInput,
+  type LineageRef,
 } from "../../src/domain/memory.js";
 import type { ReviewEntry } from "../../src/domain/review.js";
 import { compareSnapshots, buildSnapshot, type CircuitSnapshot, type SnapshotFinding, type SnapshotVertex } from "../../src/domain/snapshot.js";
@@ -402,6 +407,9 @@ describe("linajes · §10", () => {
     expect(classifyLineage(local, [revokeVersion(local[0] as ConsolidatedVersion, "error", 1), ...local.slice(1)])).toBe("identica");
   });
 
+  /** El linaje que forman unas versiones, como lo declara el `.agvproj` en `linaje.activo`. */
+  const refOf = (versions: readonly ConsolidatedVersion[]): LineageRef => ({ id: (versions[versions.length - 1] as ConsolidatedVersion).lineage, hashes: versions.map((version) => version.hash) });
+
   it("el estado de linaje adopta lo entrante adelantado, aparca la bifurcación y anota lo demás", async () => {
     const local = await chain("A", 2);
     let state = emptyLineageState("circuito-sintetico");
@@ -409,19 +417,105 @@ describe("linajes · §10", () => {
     expect(state.active).toEqual({ id: "A", hashes: local.map((version) => version.hash) });
 
     const ahead = [...local, ...(await chain("A", 3)).slice(2)];
-    const adopted = withIncoming(state, "entrante-adelantada", ahead);
+    const adopted = withIncoming(state, "entrante-adelantada", refOf(ahead));
     expect(adopted.active?.hashes).toEqual(ahead.map((version) => version.hash));
     expect(adopted.lastRelation).toBe("entrante-adelantada");
     expect(adopted.incoming).toBeNull();
 
     const other = await chain("B", 2, 400);
-    const forked = withIncoming(state, "bifurcada", other);
+    const forked = withIncoming(state, "bifurcada", refOf(other));
     expect(forked.active).toEqual(state.active);
     expect(forked.incoming).toEqual({ id: "B", hashes: other.map((version) => version.hash) });
     expect(versionsOfLineage([...local, ...other], forked.incoming)).toEqual(other);
 
-    expect(withIncoming(state, "identica", local)).toEqual({ ...state, lastRelation: "identica" });
-    expect(withIncoming(state, "sin-memoria", []).lastRelation).toBe("sin-memoria");
+    expect(withIncoming(state, "identica", refOf(local))).toEqual({ ...state, lastRelation: "identica" });
+    expect(withIncoming(state, "sin-memoria", null).lastRelation).toBe("sin-memoria");
+    // Un linaje vacío no se adopta ni queda esperando: solo se anota.
+    expect(withIncoming(state, "entrante-adelantada", { id: "A", hashes: [] })).toEqual({ ...state, lastRelation: "entrante-adelantada" });
+  });
+
+  it("una bifurcación pendiente no se pisa ni se salta: otro proyecto que no sea idéntico solo anota su relación", async () => {
+    const local = await chain("A", 2);
+    let state = emptyLineageState("circuito-sintetico");
+    for (const version of local) state = withConsolidated(state, version);
+    const other = await chain("B", 2, 400);
+    const forked = withIncoming(state, "bifurcada", refOf(other));
+    expect(forked.incoming).not.toBeNull();
+
+    // Un tercer linaje bifurcado no sustituye al que espera decisión.
+    const third = await chain("C", 1, 800);
+    expect(pendingForkBlocks(forked, "bifurcada")).toBe(true);
+    const stillForked = withIncoming(forked, "bifurcada", refOf(third));
+    expect(stillForked.incoming).toEqual(forked.incoming);
+    expect(stillForked.active).toEqual(forked.active);
+    expect(stillForked.lastRelation).toBe("bifurcada");
+
+    // Ni una entrante adelantada se adopta mientras haya bifurcación sin resolver: sería decidir por la persona.
+    const ahead = [...local, ...(await chain("A", 3)).slice(2)];
+    expect(pendingForkBlocks(forked, "entrante-adelantada")).toBe(true);
+    const blocked = withIncoming(forked, "entrante-adelantada", refOf(ahead));
+    expect(blocked.active).toEqual(forked.active);
+    expect(blocked.incoming).toEqual(forked.incoming);
+    expect(blocked.lastRelation).toBe("entrante-adelantada");
+
+    // Lo que no toca nada sigue pasando.
+    expect(pendingForkBlocks(forked, "identica")).toBe(false);
+    expect(pendingForkBlocks(forked, "sin-memoria")).toBe(false);
+    expect(pendingForkBlocks(forked, "local-adelantada")).toBe(true);
+    expect(withIncoming(forked, "identica", refOf(local))).toEqual({ ...forked, lastRelation: "identica" });
+    // Sin bifurcación pendiente nada bloquea.
+    expect(pendingForkBlocks(state, "bifurcada")).toBe(false);
+  });
+
+  it("los linajes archivados de otro dispositivo entran como archivados, sin repetir ni archivar el activo o el que espera", async () => {
+    const local = await chain("A", 2);
+    const other = await chain("B", 2, 400);
+    const old = await chain("C", 1, 800);
+    let state = emptyLineageState("circuito-sintetico");
+    for (const version of local) state = withConsolidated(state, version);
+    state = withIncoming(state, "bifurcada", refOf(other));
+
+    const merged = withArchivedLineages(state, [refOf(old), refOf(local), refOf(other), refOf(old), { id: "vacio", hashes: [] }]);
+    expect(merged.added).toBe(1);
+    expect(merged.state.archived).toEqual([refOf(old)]);
+    expect(merged.state.active).toEqual(state.active);
+    expect(merged.state.incoming).toEqual(state.incoming);
+    // Otra vez el mismo proyecto: nada nuevo, y el estado original no cambia.
+    expect(withArchivedLineages(merged.state, [refOf(old)])).toEqual({ state: merged.state, added: 0 });
+    expect(state.archived).toEqual([]);
+  });
+
+  it("verificación de lo que llega: cada versión da su hash y cada linaje encadena versiones presentes", async () => {
+    const local = await chain("A", 3);
+    expect(await versionHashProblem(local)).toBeNull();
+    expect(lineageChainProblem(local, refOf(local))).toBeNull();
+
+    // Una versión tocada ya no da su hash.
+    const tampered = { ...(local[1] as ConsolidatedVersion), note: "cambiada después" };
+    expect(await versionHashProblem([local[0] as ConsolidatedVersion, tampered])).toMatch(/v2 .* no coincide con su hash/);
+    // Revocarla no cambia el hash: la verificación pasa igual.
+    expect(await versionHashProblem([revokeVersion(local[0] as ConsolidatedVersion, "error", 1), ...local.slice(1)])).toBeNull();
+
+    // Un linaje que apunta a una versión que no viene, o que repite una, o cuyo eslabón no encadena.
+    const hashes = local.map((version) => version.hash);
+    expect(lineageChainProblem(local.slice(0, 2), refOf(local))).toMatch(/no viene en el proyecto/);
+    expect(lineageChainProblem(local, { id: "A", hashes: [hashes[0] as string, hashes[1] as string, hashes[1] as string] })).toMatch(/repite la versión v2/);
+    expect(lineageChainProblem(local, { id: "A", hashes: [hashes[0] as string, hashes[2] as string] })).toMatch(/v3 .* no encadena/);
+    expect(lineageChainProblem(local, { id: "A", hashes: [hashes[1] as string] })).toMatch(/primera versión .* declara una anterior/);
+
+    // Con la anterior revocada al consolidar, la siguiente encadena con la vigente: no con la inmediata.
+    const revoked = [local[0] as ConsolidatedVersion, revokeVersion(local[1] as ConsolidatedVersion, "error", 1)];
+    const snapshot = snap({ sourceId: "A-f3", day: 90 });
+    const next = await consolidate(previewConsolidation(input({ snapshot, versions: revoked })), { ...CONTEXT, lineage: "A", snapshot, now: 91 * DAY });
+    expect(next.previousHash).toBe(hashes[0]);
+    const withRevoked = [...revoked, next];
+    expect(lineageChainProblem(withRevoked, refOf(withRevoked))).toBeNull();
+    // Y si todas las anteriores estaban revocadas, la siguiente nace sin anterior; sin revocar no puede.
+    const allRevoked = revoked.map((version) => (version.revoked === null ? revokeVersion(version, "error", 1) : version));
+    const orphan = await consolidate(previewConsolidation(input({ snapshot, versions: allRevoked })), { ...CONTEXT, lineage: "A", snapshot, now: 91 * DAY });
+    expect(orphan.previousHash).toBeNull();
+    expect(lineageChainProblem([...allRevoked, orphan], refOf([...allRevoked, orphan]))).toBeNull();
+    expect(lineageChainProblem([...revoked, orphan], refOf([...revoked, orphan]))).toMatch(/no declara anterior y hay anteriores sin revocar/);
   });
 
   it("resolver la bifurcación aplica la elección humana y la deja en el historial con su razón", async () => {
@@ -429,7 +523,7 @@ describe("linajes · §10", () => {
     const other = await chain("B", 2, 400);
     let state = emptyLineageState("circuito-sintetico");
     for (const version of local) state = withConsolidated(state, version);
-    const forked = withIncoming(state, "bifurcada", other);
+    const forked = withIncoming(state, "bifurcada", refOf(other));
 
     const kept = resolveFork(forked, "conservar-local", "este dispositivo es el de referencia", 500 * DAY);
     expect(kept.active).toEqual(forked.active);

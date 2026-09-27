@@ -550,6 +550,11 @@ export interface LocationObservation {
    * (`SnapshotVertex.byVehicle`): solo los AGV con al menos la muestra mínima por par
    * (`readRate.minPassesPerPair`), por identificador. Ausente si la instantánea no lo trae, si el tag
    * no está en el anillo del fichero o si es el ancla (su tasa es 1 por construcción).
+   *
+   * **Dos denominadores distintos.** Las cifras por AGV salen de las pasadas probadas de la matriz de
+   * lectura (`read-matrix.ts`); `evaluable`, cuando hay sección entre anclas, son las pasadas completas
+   * de ancla a ancla. Por eso la suma de `evaluable` por AGV no tiene por qué dar `evaluable`: cada
+   * tasa va con su propio denominador (R-MEM-004) y no se mezclan.
    */
   readonly byVehicle?: readonly VehicleCounts[];
   /** Cuántos AGV pasaron por su sitio sin llegar a la muestra mínima: no se da su tasa. */
@@ -907,11 +912,30 @@ function vehiclesReading(snapshot: CircuitSnapshot, tagId: string): number | nul
 }
 
 /**
+ * En cuántas pasadas completas de la sección entre anclas se leyó un tag, o `null` si ninguna lo dice.
+ * Es el mismo denominador que las pasadas de la ubicación que deja de leerse (`evaluable` sale de la
+ * sección), y no las pasadas probadas de la matriz del vértice: las dos cifras de una sustitución se
+ * dan sobre la misma base (R-MEM-004).
+ */
+function passesReading(snapshot: CircuitSnapshot, tagId: string): number | null {
+  let most: number | null = null;
+  for (const gap of snapshot.anchorGaps) {
+    const entry = gap.readsByTag[tagId];
+    if (entry !== undefined) most = Math.max(most ?? 0, entry.passes);
+  }
+  return most;
+}
+
+/**
  * Lo que el Worker propone cambiar en el plano, con su evidencia. **Solo propone**: ninguna se
  * escribe sin que una persona la confirme (ADR-0016 §3).
  *
  * - **sustitucion**: entre dos ubicaciones leídas A y B hay exactamente un código fuera del plano y
- *   exactamente una ubicación del plano no observada con pasadas por su sitio.
+ *   exactamente una ubicación del plano no observada con pasadas por su sitio, y el código lo leyeron
+ *   al menos `minVehicles` AGV distintos: lo de un solo lector es de ese lector (R-DAT-021), también
+ *   cuando parece una sustitución. Las pasadas del detalle son las de la sección entre anclas
+ *   (`readsByTag`), el mismo denominador que las de la ubicación que deja de leerse; sin sección, las
+ *   probadas de su vértice.
  * - **tag-nuevo**: el resto de códigos fuera del plano leídos por al menos `minVehicles` AGV
  *   distintos (R-DAT-021). Los AGV salen de `readsByTag` de las secciones entre anclas; si la
  *   instantánea no lo dice, **no se propone**: no se sabe si lo sostiene más de un lector.
@@ -969,9 +993,13 @@ export function proposeChanges(
     if (silent.length !== 1) continue;
     const locationId = silent[0] as string;
     const old = observed.get(locationId) as LocationObservation;
+    // El mismo listón que un tag nuevo (R-DAT-021): sin saber cuántos AGV lo leen, o con menos de
+    // `minVehicles`, no se propone; una sustitución que ve un solo AGV es de ese AGV.
     const vehicles = vehiclesReading(snapshot, first.tagId);
+    if (vehicles === null || vehicles < context.minVehicles) continue;
+    const passes = passesReading(snapshot, first.tagId) ?? first.passes;
     const detail =
-      `${first.tagId} se leyó en ${plural(first.passes, "pasada", "pasadas")}${agvText(vehicles)} entre ${where(first.after)} y ${where(first.before)}, ` +
+      `${first.tagId} se leyó en ${plural(passes, "pasada", "pasadas")}${agvText(vehicles)} entre ${where(first.after)} y ${where(first.before)}, ` +
       `y ${old.tagId ?? "su tag"}, instalado en ${locationId} entre esas dos ubicaciones, no se leyó en ninguna de ${plural(old.evaluable, "pasada", "pasadas")} por su sitio.`;
     consumed.add(first.tagId);
     substitutions.push({

@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.31.0
+version: 0.31.1
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -648,6 +648,18 @@ una fila por versión, revocadas incluidas, de todos los linajes) y `memoryState
 `circuitId`; linaje activo con sus hashes, linaje entrante sin resolver, linajes archivados, última
 relación clasificada y eventos de elección). La migración desde la 6 solo crea las dos tablas.
 Borrar el circuito borra su memoria. Consolidar escribe la versión y el estado en una transacción.
+
+**Al abrir un `.agvproj` con memoria (2026-09-27).** Antes de compararla con la local se verifica
+que es la que dice ser: cada versión vuelve a dar su `hash` al calcularlo, y cada linaje declarado en
+`linaje.activo` y `linaje.archivados` encadena versiones presentes con sus `previousHash`. Una que
+falle rechaza la carga entera (`ProjectError`). La forma de cada versión se comprueba también
+(`readMemorySection`): hash, número, linaje, instantánea, circuito, fecha, `basedOn` con fichero y
+ventana, `decisions` y `revoked` bien formada. La relación de linaje se clasifica **solo contra
+`linaje.activo`** —las versiones de los archivados viajan mezcladas en `versiones` y no cuentan— y
+los archivados que aquí no estaban entran como archivados. Con una bifurcación sin resolver aquí, un
+proyecto que no sea idéntico ni venga sin memoria no adopta ni sustituye nada: se anota la relación
+y se devuelve `pendingForkBlocked`. Las revocaciones que trae se aplican en cualquier relación, y se
+dicen (`MEMORY_CONSOLIDATION.md` §10 y §11).
 
 **Lo observado frente a la memoria.** En cada importación, si el circuito tiene una versión
 vigente, el Worker compara la instantánea del fichero de trabajo con ella (`compareToMemory`) y

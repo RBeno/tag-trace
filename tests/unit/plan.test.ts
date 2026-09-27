@@ -178,6 +178,8 @@ describe("ADR-0016 §6 · momentos combinables", () => {
     expect(combined.meanMs).toBeCloseTo(whole.meanMs, 6);
     expect(combined.m2).toBeCloseTo(whole.m2, 1);
     expect(combineMoments(whole, momentsOf([]))).toEqual(whole);
+    // Dos vacíos dan vacío, sin dividir por cero.
+    expect(combineMoments(momentsOf([]), momentsOf([]))).toEqual({ n: 0, meanMs: 0, m2: 0 });
   });
 
   it("la horquilla trae media y M2 de las mismas duraciones", () => {
@@ -332,6 +334,22 @@ describe("ADR-0016 §4 · el fichero leído contra el plano", () => {
     expect(observation.unplanned).toEqual([{ tagId: "T005", readings: 40, passes: 40, after: "U-0003", before: "U-0006" }]);
   });
 
+  it("un tag del anillo con cero pasadas probadas no se cuenta por su vértice ni lleva desglose por AGV, aunque lo traiga", () => {
+    // T003 leído fuera de toda pasada probada (p. ej. solo en vueltas cortadas): la matriz no prueba nada.
+    const vertices = RING.map((tagId) => (tagId === "T003" ? vertex(tagId, RING, { passes: 0, readRate: null, readings: 3, byVehicle: { "AGV-01": [0, 0] } }) : vertex(tagId, RING)));
+    const location = observeAgainstPlan(planOf([BOOT], DAY), snap({ vertices }), { minPassesPerPair: 1 }).locations.find((entry) => entry.locationId === "U-0003");
+    expect(location).toMatchObject({ state: "sin-ocasion", truth: "unknown", evaluable: 0, successes: 0 });
+    expect(location?.byVehicle).toBeUndefined();
+    expect(location?.vehiclesBelowSample).toBeUndefined();
+  });
+
+  it("una ubicación sin tag con código virtual declarado sigue sin oportunidades, y lo dice", () => {
+    const create: PlanEventInput = { type: "crear-ubicacion", locationId: "U-0007", kind: "anillo", after: "U-0003", branchFrom: null, virtualTag: "T777", effectiveAt: DAY / 2, evidence: null };
+    const location = observeAgainstPlan(planOf([BOOT, event(2, create)], DAY), snap()).locations.find((entry) => entry.locationId === "U-0007");
+    expect(location).toMatchObject({ tagId: null, state: "sin-tag", truth: "expected", evaluable: 0, successes: 0, uncertain: 0 });
+    expect(location?.detail).toContain("T777");
+  });
+
   it("una salida no se lee: su estado es la revisión manual, confirmada si la hay", () => {
     const exit = event(2, { type: "crear-ubicacion", locationId: "U-0007", kind: "salida", after: null, branchFrom: "U-0002", virtualTag: null, effectiveAt: 0, evidence: null });
     const install = event(3, { type: "instalar", locationId: "U-0007", tagId: "T900", effectiveAt: 0, evidence: null });
@@ -373,6 +391,34 @@ describe("ADR-0016 §3 · propuestas (solo propuestas)", () => {
     const after = observeAgainstPlan(planOf(events, snapshot.window.to), snapshot);
     expect(after.locations.find((entry) => entry.locationId === "U-0004")).toMatchObject({ tagId: "T104", state: "observado", successes: 49 });
     expect(proposeChanges(planOf(events, snapshot.window.to), after, snapshot, CONTEXT)).toEqual([]);
+  });
+
+  it("sustitución: el código nuevo tiene que leerlo más de un AGV (R-DAT-021); con uno, o sin saber cuántos, no se propone", () => {
+    const ring = ["T001", "T002", "T003", "T104", "T005", "T006"];
+    const reads = (vehicles: number): Record<string, { passes: number; vehicles: number }> => ({
+      T002: { passes: 50, vehicles: 3 },
+      T003: { passes: 50, vehicles: 3 },
+      T104: { passes: 49, vehicles },
+      T005: { passes: 50, vehicles: 3 },
+      T006: { passes: 50, vehicles: 3 },
+    });
+    const build = (gaps: readonly SnapshotAnchorGap[]): CircuitSnapshot =>
+      snap({ sourceId: "f2", day: 3, ring, vertices: [...ring.map((tagId) => vertex(tagId, ring)), vertex("T004", ring)], anchorGaps: gaps });
+    const proposalsFor = (snapshot: CircuitSnapshot): ReturnType<typeof proposeChanges> => {
+      const plan = planOf([BOOT], snapshot.window.to);
+      return proposeChanges(plan, observeAgainstPlan(plan, snapshot), snapshot, CONTEXT);
+    };
+    // Un solo lector: lo de un lector es de ese lector, también cuando parece una sustitución.
+    expect(proposalsFor(build([lapGap(50, reads(1))]))).toEqual([]);
+    // La sección no dice quién leyó T104: no se sabe si lo sostiene más de un AGV, y no se supone.
+    const { T104: _unknown, ...withoutNew } = reads(3);
+    expect(proposalsFor(build([lapGap(50, withoutNew)]))).toEqual([]);
+    // Dos lectores: se propone, y las pasadas del detalle son las de la sección, no las probadas del vértice.
+    const two = proposalsFor(build([lapGap(50, reads(2))]));
+    expect(two).toHaveLength(1);
+    expect(two[0]).toMatchObject({ id: "sustitucion|T104|U-0004", kind: "sustitucion" });
+    expect(two[0]?.detail).toContain("T104 se leyó en 49 pasadas por 2 AGV distintos");
+    expect(two[0]?.detail).toContain("ninguna de 50 pasadas");
   });
 
   it("tag nuevo: leído por al menos dos AGV distintos entre dos ubicaciones; con uno, o sin saber cuántos, no se propone", () => {

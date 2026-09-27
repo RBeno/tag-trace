@@ -223,6 +223,42 @@ function isLineageRef(value: unknown): value is LineageRef {
 }
 
 /**
+ * Qué le falta a una versión consolidada para tener la forma esperada, o `null` si la tiene. Se mira
+ * la forma, no el contenido: que el hash sea el suyo y que la cadena encadene lo comprueba
+ * `verifyProjectMemory` al importar, con las versiones ya tipadas.
+ */
+function versionShapeProblem(value: unknown): string | null {
+  if (!isRecord(value)) return "una versión no es un objeto";
+  if (typeof value["hash"] !== "string" || typeof value["version"] !== "number" || typeof value["lineage"] !== "string" || !isRecord(value["snapshot"])) {
+    return "una versión no tiene hash, número, linaje o instantánea";
+  }
+  if (typeof value["circuitId"] !== "string") return "una versión no tiene circuito";
+  if (typeof value["createdAt"] !== "number") return "una versión no tiene fecha de creación";
+  if (value["previousHash"] !== null && typeof value["previousHash"] !== "string") return "una versión tiene un hash anterior inválido";
+  const basedOn = value["basedOn"];
+  if (
+    !isRecord(basedOn) ||
+    typeof basedOn["sourceId"] !== "string" ||
+    typeof basedOn["sourceHash"] !== "string" ||
+    typeof basedOn["fileName"] !== "string" ||
+    !isRecord(basedOn["window"]) ||
+    typeof basedOn["window"]["from"] !== "number" ||
+    typeof basedOn["window"]["to"] !== "number"
+  ) {
+    return "una versión no dice en qué fichero se basa";
+  }
+  const decisions = value["decisions"];
+  if (!Array.isArray(decisions) || !decisions.every((decision) => isRecord(decision) && typeof decision["key"] === "string" && typeof decision["state"] === "string")) {
+    return "una versión no trae sus decisiones";
+  }
+  const revoked = value["revoked"];
+  if (revoked !== null && (!isRecord(revoked) || typeof revoked["at"] !== "number" || typeof revoked["reason"] !== "string")) {
+    return "una versión tiene una revocación sin fecha o razón";
+  }
+  return null;
+}
+
+/**
  * La sección `memoria` de un proyecto ya validado por hash, con su forma comprobada; `undefined` si el
  * proyecto no la trae (esquemas 1 y 2). Una forma que no sea la esperada se rechaza: los hashes
  * garantizan que nadie tocó el fichero, no que lo escribiera una versión que entendemos.
@@ -236,9 +272,8 @@ export function readMemorySection(project: Project): ProjectMemorySection | unde
   const versiones = raw["versiones"];
   if (!Array.isArray(versiones)) throw malformed("faltan las versiones");
   for (const version of versiones as unknown[]) {
-    if (!isRecord(version) || typeof version["hash"] !== "string" || typeof version["version"] !== "number" || typeof version["lineage"] !== "string" || !isRecord(version["snapshot"])) {
-      throw malformed("una versión no tiene hash, número, linaje o instantánea");
-    }
+    const problem = versionShapeProblem(version);
+    if (problem !== null) throw malformed(problem);
   }
   const linaje = raw["linaje"];
   if (!isRecord(linaje)) throw malformed("falta el linaje");

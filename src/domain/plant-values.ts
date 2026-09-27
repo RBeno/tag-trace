@@ -2,9 +2,10 @@
  * Valores de planta del circuito: los que confirma una persona y los que propone la memoria (OQ-140,
  * OQ-151; `CONFIG_SCHEMA.md` §3.5 y §4).
  *
- * Ocho valores de `PROVISIONAL_CONFIG` tienen aspecto de dato de planta —el régimen de noche, las
+ * Siete valores de `PROVISIONAL_CONFIG` tienen aspecto de dato de planta —el régimen de noche, las
  * horas de arranque de turno, la hora sin leer que es desconexión, el bloqueo del primero de cola, la
- * tolerancia de «a la misma hora», el margen del FIFO y la duración mínima de una parada precisa—. El
+ * tolerancia de «a la misma hora», el margen del FIFO y la duración mínima de una parada precisa—, que
+ * son ocho claves porque la noche son dos (empieza y termina). El
  * propietario decidió (OQ-140) que no se fijan como configuración: tienen que salir del análisis y la
  * consolidación continua, y son provisionales hasta que la memoria los mida y una persona los confirme.
  *
@@ -19,6 +20,14 @@
  * `estimatePlantValue` estima un valor con ellas. `proposePlantValues` aplica la regla de coincidencia
  * sobre las últimas versiones consolidadas no revocadas: solo si todas estiman lo mismo hay propuesta,
  * y una propuesta tampoco se aplica sola —la persona la confirma con razón (`origin: "propuesta"`)—.
+ * Los números de la definición (la mitad de la mediana, los percentiles 99, 95 y 5) no están aquí:
+ * viven en `AnalysisConfig.plantEstimators` con su razón.
+ *
+ * **Límite conocido (OQ-154).** Las repeticiones de una parada (`sameTimeAs`) se emparejan en
+ * `flow-stops.ts` con la tolerancia **vigente** de «a la misma hora», y la noche se estima frente a la
+ * noche **vigente**: el estimador de la tolerancia nunca propondrá un valor mayor que el vigente, y el
+ * de las horas de turno solo ve las repeticiones que esa tolerancia dejó emparejar. Se dice en el
+ * `why` de cada estimación; el estimador no cambia porque es la definición aprobada (OQ-151).
  *
  * `drift.minGapMs` (hueco entre periodos distantes) no está: OQ-151 lo sacó de la lista porque es de
  * análisis, no de planta.
@@ -38,7 +47,7 @@ import { canonicalise } from "./semantic-hash.js";
 import { localHourReader } from "./silence-kind.js";
 import type { SnapshotPlantMeasures, SnapshotSampleSummary } from "./snapshot.js";
 
-/** Los ocho valores de planta, por su clave estable (viaja en el `.agvproj`: no se renombra). */
+/** Las ocho claves de los siete valores de planta (la noche son dos), estables: viajan en el `.agvproj` y no se renombran. */
 export type PlantValueKey =
   | "noche-desde"
   | "noche-hasta"
@@ -85,8 +94,8 @@ export interface PlantValueDefinition {
 
 /**
  * Tope de una duración: 24 h. **No es un dato de planta**: es un control de errores de tecleo (quien
- * quiere escribir 2 minutos y escribe 2000). Ninguno de estos ocho valores tiene sentido por encima de
- * un día; si alguno lo tuviera, el tope se sube aquí con su razón.
+ * quiere escribir 2 minutos y escribe 2000). Ninguno de estos valores tiene sentido por encima de un
+ * día; si alguno lo tuviera, el tope se sube aquí con su razón.
  */
 export const MAX_PLANT_DURATION_MS = 24 * 60 * 60_000;
 
@@ -321,6 +330,24 @@ const HOUR_MS = 3_600_000;
 const DAY_MINUTES = 24 * 60;
 
 /**
+ * Los números de la definición de los estimadores (OQ-151), en configuración (`PROVISIONAL_CONFIG.plantEstimators`):
+ * la parte de la mediana de producción por debajo de la cual una hora es de noche, y los cuantiles de
+ * los huecos que volvieron, de las esperas del primero de cola y de las esperas en una parada precisa.
+ */
+export interface PlantEstimatorThresholds {
+  readonly nightLowShare: number;
+  readonly returnGapQuantile: number;
+  readonly headWaitQuantile: number;
+  readonly precisePauseQuantile: number;
+}
+
+/** «percentil 99». */
+const percentile = (quantile: number): string => `percentil ${Math.round(quantile * 100)}`;
+
+/** «la mitad» o «el 40 %» de algo. */
+const shareText = (share: number): string => (share === 0.5 ? "la mitad" : `el ${Math.round(share * 100)} %`);
+
+/**
  * Lo que el Worker ya analizó para la ventana de trabajo, para reducirlo a las medidas de un fichero.
  * Nada de esto se vuelve a medir aquí: se recorta a la ventana del fichero y se resume.
  */
@@ -328,6 +355,8 @@ export interface PlantMeasureInput {
   /** La ventana completa del fichero (R-DAT-007). */
   readonly window: Interval;
   readonly zone: string;
+  /** Los cuantiles con que se resumen las muestras (`config.plantEstimators`): los de la definición aprobada. */
+  readonly estimators: PlantEstimatorThresholds;
   /** `hourlyProfile` sobre las lecturas de la flota en la ventana del fichero. */
   readonly hourly: Pick<HourlyProfile, "counts" | "days">;
   /** `productionStops(...).stops` de la ventana de trabajo. */
@@ -389,14 +418,18 @@ function hourlyCoverage(window: Interval, zone: string): readonly number[] {
  * (`quantile` de `graph.ts`, el mismo de las horquillas):
  *
  * - huecos de los AGV que volvieron a leer: los del expediente (todos terminan en una lectura), sin
- *   los que explica una calle de carga, que nunca se comparan con `longAbsenceMs`; percentil 99;
+ *   los que explica una calle de carga, que nunca se comparan con `longAbsenceMs`; cuantil
+ *   `estimators.returnGapQuantile` (99 en la definición aprobada);
  * - esperas del primero de cola: las paradas `sin-explicacion` —las que `flowStops` compara con
  *   `headStallMs` para decir «bloqueo»— que acabaron en otro tag, con su exceso sobre lo habitual;
- *   percentil 95;
- * - esperas en las paradas precisas declaradas: percentil 5.
+ *   cuantil `estimators.headWaitQuantile` (95);
+ * - esperas en las paradas precisas declaradas: cuantil `estimators.precisePauseQuantile` (5).
+ *
+ * Las repeticiones de cada parada (`sameTimeAs`) son las que `flow-stops.ts` emparejó con la
+ * tolerancia vigente de «a la misma hora»: la medida hereda ese límite (OQ-154).
  */
 export function measurePlantValues(input: PlantMeasureInput): SnapshotPlantMeasures {
-  const { window } = input;
+  const { window, estimators } = input;
   const inside = (from: number, to: number): boolean => from >= window.from && to <= window.to;
   const local = localDayMinute(input.zone);
   const stops = input.productionStops.filter((stop) => stop.fromUtcMs >= window.from && stop.fromUtcMs <= window.to);
@@ -413,13 +446,13 @@ export function measurePlantValues(input: PlantMeasureInput): SnapshotPlantMeasu
     })),
     returnGaps: summary(
       input.gaps.filter((gap) => gap.cause !== "carga-online" && inside(gap.fromUtcMs, gap.toUtcMs)).map((gap) => gap.durationMs),
-      0.99,
+      estimators.returnGapQuantile,
     ),
     headWaits: summary(
       input.vehicleStops
         .filter((stop) => stop.justification === "sin-explicacion" && stop.toTagId !== stop.fromTagId && inside(stop.fromUtcMs, stop.toUtcMs))
         .map((stop) => stop.excessMs),
-      0.95,
+      estimators.headWaitQuantile,
     ),
     loadedSpans:
       input.loadedSpans === null
@@ -432,7 +465,7 @@ export function measurePlantValues(input: PlantMeasureInput): SnapshotPlantMeasu
     precisePauses: {
       declared: input.precisePauses.declared,
       measurable: input.precisePauses.measurable,
-      ...summary(input.precisePauses.measurable ? input.precisePauses.durationsMs : [], 0.05),
+      ...summary(input.precisePauses.measurable ? input.precisePauses.durationsMs : [], estimators.precisePauseQuantile),
     },
   };
 }
@@ -463,10 +496,11 @@ const isNightHour = (hour: number, config: AnalysisConfig): boolean => {
 
 /**
  * El régimen de noche de un fichero: las horas seguidas cuyas lecturas de la flota por hora quedan por
- * debajo de la mitad de la mediana de las horas de producción (las de fuera de la noche vigente).
- * Lecturas por hora cubierta, para que una hora que el fichero cubre a medias no parezca de noche; y
- * cada hora del día tiene que estar cubierta entera al menos una vez, o no hay perfil de un día que
- * leer. Con dos tramos bajos igual de largos no se elige.
+ * debajo de `nightLowShare` (la mitad) de la mediana de las horas de producción (las de fuera de la
+ * noche vigente: la referencia depende de la noche que rige, OQ-154). Lecturas por hora cubierta, para
+ * que una hora que el fichero cubre a medias no parezca de noche; y cada hora del día tiene que estar
+ * cubierta entera al menos una vez, o no hay perfil de un día que leer. Con dos tramos bajos igual de
+ * largos no se elige.
  */
 function estimateNight(measures: SnapshotPlantMeasures, config: AnalysisConfig): { readonly from: number; readonly to: number } | { readonly why: string } {
   const { readings, coveredMs } = measures.hourly;
@@ -479,9 +513,10 @@ function estimateNight(measures: SnapshotPlantMeasures, config: AnalysisConfig):
   if (production.length === 0) return { why: "la noche vigente ocupa todo el día: no hay horas de producción con que comparar" };
   const reference = median(production);
   if (reference <= 0) return { why: "las horas de producción no tienen lecturas" };
-  const low = rates.map((rate) => rate < reference / 2);
-  if (!low.some(Boolean)) return { why: `ninguna hora baja de la mitad de la mediana de producción (${fmtCount(Math.round(reference))} lecturas por hora)` };
-  if (low.every(Boolean)) return { why: "todas las horas quedan por debajo de la mitad de la mediana de producción" };
+  const share = config.plantEstimators.nightLowShare;
+  const low = rates.map((rate) => rate < reference * share);
+  if (!low.some(Boolean)) return { why: `ninguna hora baja de ${shareText(share)} de la mediana de producción (${fmtCount(Math.round(reference))} lecturas por hora)` };
+  if (low.every(Boolean)) return { why: `todas las horas quedan por debajo de ${shareText(share)} de la mediana de producción` };
   const runs: { from: number; length: number }[] = [];
   for (let hour = 0; hour < 24; hour += 1) {
     if (!low[hour] || low[(hour + 23) % 24]) continue;
@@ -546,9 +581,12 @@ export function estimatePlantValue(key: PlantValueKey, measures: SnapshotPlantMe
       const night = estimateNight(measures, currentConfig);
       if ("why" in night) return { value: null, why: `sin datos: ${night.why}` };
       const pad = (hour: number): string => `${String(hour).padStart(2, "0")}:00`;
+      const { nightFromHour, nightToHour } = currentConfig.regimes;
       return {
         value: key === "noche-desde" ? night.from : night.to,
-        why: `horas por debajo de la mitad de la mediana de producción: de ${pad(night.from)} a ${pad(night.to)}`,
+        why:
+          `horas por debajo de ${shareText(currentConfig.plantEstimators.nightLowShare)} de la mediana de producción: de ${pad(night.from)} a ${pad(night.to)}` +
+          ` (la mediana es la de fuera de la noche vigente, ${pad(nightFromHour)}–${pad(nightToHour)}; OQ-154)`,
       };
     }
     case "arranque-turnos":
@@ -556,10 +594,17 @@ export function estimatePlantValue(key: PlantValueKey, measures: SnapshotPlantMe
       if (measures.days < 2) return { value: null, why: "sin datos: el fichero es de un solo día y hacen falta dos para ver una parada que se repite" };
       const stops = measures.productionStops;
       const repeating = stops.map((stop, index) => ({ stop, index })).filter(({ stop }) => stop.sameTimeAs.length > 0);
-      if (repeating.length === 0) return { value: null, why: "sin datos: ninguna parada de la producción se repite a la misma hora otro día" };
+      // OQ-154: las repeticiones se emparejaron con la tolerancia vigente, así que la estimación hereda ese límite.
+      const tolerance = formatPlantValue("duracion", "min", currentConfig.flowStops.sameTimeToleranceMs);
+      if (repeating.length === 0) {
+        return { value: null, why: `sin datos: ninguna parada de la producción se repite a la misma hora otro día (con la tolerancia vigente de ${tolerance}; OQ-154)` };
+      }
       if (key === "arranque-turnos") {
         const hours = [...new Set(repeating.map(({ index }) => Math.round(repeatCentre(stops, index) / 60) % 24))].sort((a, b) => a - b);
-        return { value: hours, why: `${fmtCount(repeating.length)} paradas de la producción que se repiten a la misma hora otro día` };
+        return {
+          value: hours,
+          why: `${fmtCount(repeating.length)} paradas de la producción que se repiten a la misma hora otro día (emparejadas con la tolerancia vigente de ${tolerance}; OQ-154)`,
+        };
       }
       let widest = 0;
       for (const { stop } of repeating) {
@@ -567,17 +612,21 @@ export function estimatePlantValue(key: PlantValueKey, measures: SnapshotPlantMe
           widest = Math.max(widest, Math.abs(minuteDiff((stops[other] as typeof stop).minute, stop.minute)));
         }
       }
-      return durationEstimate(definition, widest * 60_000, `mayor diferencia de hora entre ${fmtCount(repeating.length)} repeticiones`);
+      return durationEstimate(
+        definition,
+        widest * 60_000,
+        `mayor diferencia de hora entre ${fmtCount(repeating.length)} repeticiones, emparejadas con la tolerancia vigente de ${tolerance}: no puede salir un valor mayor que ella (OQ-154)`,
+      );
     }
     case "desconexion":
       return sampleEstimate(definition, measures.returnGaps, currentConfig.bands.minBandSamples, {
         samples: "huecos de AGV que volvieron a leer",
-        what: "percentil 99",
+        what: percentile(currentConfig.plantEstimators.returnGapQuantile),
       });
     case "bloqueo-cabeza":
       return sampleEstimate(definition, measures.headWaits, currentConfig.bands.minBandSamples, {
         samples: "esperas del primero de cola que acabaron avanzando",
-        what: "percentil 95",
+        what: percentile(currentConfig.plantEstimators.headWaitQuantile),
       });
     case "margen-fifo": {
       if (measures.loadedSpans === null) return { value: null, why: "sin datos: sin la lista «zona» no hay tramos de zona cargada" };
@@ -597,7 +646,7 @@ export function estimatePlantValue(key: PlantValueKey, measures: SnapshotPlantMe
       if (!pauses.measurable) return { value: null, why: "sin datos: la hora del fichero va al minuto y no mide esperas" };
       return sampleEstimate(definition, pauses, currentConfig.criticalPoints.paradaPrecisa.minSamples, {
         samples: "esperas en las paradas precisas declaradas",
-        what: "percentil 5",
+        what: percentile(currentConfig.plantEstimators.precisePauseQuantile),
       });
     }
   }

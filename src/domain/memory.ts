@@ -745,6 +745,20 @@ export function withConsolidated(state: LineageState, version: ConsolidatedVersi
   return { ...state, active: { id: active.id, hashes: [...active.hashes, version.hash] } };
 }
 
+/** ¿Son el mismo linaje? Mismo identificador y misma cadena de hashes, en el mismo orden. */
+export function sameLineage(a: LineageRef, b: LineageRef): boolean {
+  return a.id === b.id && a.hashes.length === b.hashes.length && a.hashes.every((hash, index) => b.hashes[index] === hash);
+}
+
+/**
+ * ¿Bloquea la bifurcación pendiente lo que trae este `.agvproj`? Sí cuando hay un linaje entrante
+ * esperando decisión y la relación con el nuevo proyecto no es `identica` ni `sin-memoria`: adoptar
+ * o sustituir el entrante sería decidir por la persona (R-MEM-002). Primero se resuelve la que hay.
+ */
+export function pendingForkBlocks(state: LineageState, relation: LineageRelation): boolean {
+  return state.incoming !== null && relation !== "identica" && relation !== "sin-memoria";
+}
+
 /**
  * Aplica la relación con la memoria de un `.agvproj` abierto (§10). No decide nada por la persona:
  *
@@ -753,11 +767,17 @@ export function withConsolidated(state: LineageState, version: ConsolidatedVersi
  * - `bifurcada` deja el entrante **esperando decisión** (`incoming`), y mientras tanto la consolidación
  *   queda bloqueada;
  * - las demás solo anotan la relación.
+ *
+ * `incoming` es el linaje **activo** del proyecto que se abre, no todas sus versiones: las de sus
+ * linajes archivados no forman parte de su cadena. Con una bifurcación ya pendiente
+ * (`pendingForkBlocks`), nada se adopta ni se sustituye: el estado se queda como está, solo con la
+ * relación anotada, y quien llama lo dice.
  */
-export function withIncoming(state: LineageState, relation: LineageRelation, incoming: readonly ConsolidatedVersion[]): LineageState {
-  const chain = sortVersions(incoming);
-  const last = chain[chain.length - 1];
-  const ref: LineageRef | null = last === undefined ? null : { id: last.lineage, hashes: chain.map((version) => version.hash) };
+export function withIncoming(state: LineageState, relation: LineageRelation, incoming: LineageRef | null): LineageState {
+  const ref = incoming === null || incoming.hashes.length === 0 ? null : incoming;
+  if (pendingForkBlocks(state, relation)) {
+    return { ...state, lastRelation: relation };
+  }
   if (relation === "entrante-adelantada" && ref !== null) {
     return { ...state, active: ref, incoming: null, lastRelation: relation };
   }
@@ -765,6 +785,70 @@ export function withIncoming(state: LineageState, relation: LineageRelation, inc
     return { ...state, incoming: ref, lastRelation: relation };
   }
   return { ...state, lastRelation: relation };
+}
+
+/**
+ * Añade como archivados los linajes archivados que trae un `.agvproj` y aquí no estaban: son
+ * historia de otro dispositivo, no una decisión que tomar. No se repite uno que ya esté archivado,
+ * ni se archiva el que aquí es el activo o el que espera decisión. Devuelve el estado y cuántos entraron.
+ */
+export function withArchivedLineages(state: LineageState, incoming: readonly LineageRef[]): { readonly state: LineageState; readonly added: number } {
+  const present: LineageRef[] = [...state.archived, ...(state.active === null ? [] : [state.active]), ...(state.incoming === null ? [] : [state.incoming])];
+  const added: LineageRef[] = [];
+  for (const lineage of incoming) {
+    if (lineage.hashes.length === 0) continue;
+    if (present.some((known) => sameLineage(known, lineage)) || added.some((known) => sameLineage(known, lineage))) continue;
+    added.push({ id: lineage.id, hashes: [...lineage.hashes] });
+  }
+  if (added.length === 0) return { state, added: 0 };
+  return { state: { ...state, archived: [...state.archived, ...added] }, added: added.length };
+}
+
+// --- Verificación de una memoria que llega (§10, §11) ----------------------------------------------
+
+/**
+ * Qué falla en la cadena de un linaje, o `null` si es consistente. Cada hash del linaje tiene que
+ * ser el de una versión presente, y cada `previousHash` tiene que apuntar a una versión **anterior
+ * del mismo linaje**: la vigente al consolidar, que no es siempre la inmediata anterior porque la
+ * anterior pudo estar revocada. La primera versión no tiene anterior; una posterior solo puede no
+ * tenerla si todas las anteriores estaban revocadas.
+ */
+export function lineageChainProblem(versions: readonly ConsolidatedVersion[], lineage: LineageRef): string | null {
+  const byHash = new Map(versions.map((version) => [version.hash, version]));
+  const seen = new Set<string>();
+  for (let index = 0; index < lineage.hashes.length; index += 1) {
+    const hash = lineage.hashes[index] as string;
+    const version = byHash.get(hash);
+    if (version === undefined) return `el linaje «${lineage.id}» apunta a una versión que no viene en el proyecto`;
+    if (seen.has(hash)) return `el linaje «${lineage.id}» repite la versión v${version.version}`;
+    if (index === 0) {
+      if (version.previousHash !== null) return `la primera versión del linaje «${lineage.id}» (v${version.version}) declara una anterior`;
+    } else if (version.previousHash === null) {
+      const earlier = lineage.hashes.slice(0, index).map((previous) => byHash.get(previous) as ConsolidatedVersion);
+      if (earlier.some((previous) => previous.revoked === null)) {
+        return `la versión v${version.version} del linaje «${lineage.id}» no declara anterior y hay anteriores sin revocar`;
+      }
+    } else if (!seen.has(version.previousHash)) {
+      return `la versión v${version.version} del linaje «${lineage.id}» no encadena con ninguna anterior del linaje`;
+    }
+    seen.add(hash);
+  }
+  return null;
+}
+
+/**
+ * Qué versión no coincide con su propio hash al volver a calcularlo (`versionHash`), o `null` si todas
+ * coinciden. Vale para cualquier versión escrita desde la primera consolidación (F4): la regla del
+ * hash y `CANONICAL_VERSION` no han cambiado, y los campos añadidos después son opcionales y no se
+ * escriben cuando faltan, así que una versión antigua vuelve a dar el hash con el que nació.
+ */
+export async function versionHashProblem(versions: readonly ConsolidatedVersion[]): Promise<string | null> {
+  for (const version of versions) {
+    if ((await versionHash(version)) !== version.hash) {
+      return `la versión v${version.version} del linaje «${version.lineage}» no coincide con su hash`;
+    }
+  }
+  return null;
 }
 
 /** Resuelve la bifurcación con la elección humana y la deja en el historial con su razón (§10). */

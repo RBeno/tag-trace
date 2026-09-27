@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.47.0
+version: 0.47.1
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -705,7 +705,14 @@ volvió…» (3.57.0).
 **Recorte de ventana (3.58.0)**: cada incidencia con ventana ofrece «Recortar su ventana al
 consolidar» con «Desde» y «Hasta» (fecha y hora, dentro de la ventana del fichero) y «Volver a
 previsualizar con el recorte»; la previsualización dice qué se recortó y cuántas lecturas quitó. Sin
-original archivado la casilla sale deshabilitada con el motivo.
+original archivado la casilla sale deshabilitada con el motivo. Si después de previsualizar se toca
+una casilla o un campo del recorte, «Confirmar y consolidar» se apaga y debajo de la nota se lee
+«Vuelve a previsualizar con el recorte para confirmar»: se consolida lo que se ve, no lo que se tocó
+después. Un recorte que no toca ninguna ventana de su incidencia sale como aviso junto a los recortes
+(«Avisos (no bloquean):») y no impide confirmar. Al confirmar, la interfaz devuelve al Worker la huella
+de la previsualización que enseñó; si lo recalculado ya no coincide (otra marca de revisión, otra
+versión llegada en un `.agvproj`), no se escribe nada y se lee «La previsualización ha cambiado desde
+que se mostró. Vuelve a previsualizar y confirma lo que veas.».
 
 **Comparar versiones (3.56.0)**: con dos o más versiones, dos selectores —de, a; por defecto la
 primera y la vigente—, «Comparar» y el resultado: las dos versiones con su fichero y su ventana, si
@@ -800,7 +807,12 @@ La aplicación diferencia:
 
 - sin datos;
 - analizando;
-- cancelando;
+- cancelando («Cancelar» solo se ofrece en una importación, que tiene puntos de control; las
+  operaciones de memoria, plano y valores de planta escriben de una vez y terminan solas, sin botón
+  que cancelar);
+- otra operación en curso: mientras el Worker responde, los ficheros y los botones de memoria, plano
+  y valores de planta están apagados; el panel cuyo botón se pidió aun así dice «Hay otra operación
+  en curso; espera a que termine.» y nada se mata para empezar otra cosa;
 - resultado parcial;
 - fuente inválida;
 - archivo sospechoso de otro circuito;

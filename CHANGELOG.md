@@ -2,6 +2,66 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.61.0] - 2026-09-27
+
+Revisión de la interfaz, la lógica y la consolidación de F4 pedida por el propietario («Haz una revisión de
+la interface, lógica y consolidación» y «Aplica el orden completo en el PR #12»). Cada hallazgo se comprobó
+en el código antes de corregirlo; los tres más graves se reprodujeron con pruebas.
+
+### Corregido
+
+- **Un linaje archivado en el `.agvproj` fingía una bifurcación** (`MEMORY_CONSOLIDATION.md` §10): la
+  sección `memoria` viaja con el linaje activo y los archivados, y al abrirla se clasificaba contra todos
+  juntos. Ahora se clasifica solo contra `linaje.activo`; los archivados del otro dispositivo entran como
+  archivados, con sus versiones. Un dispositivo idéntico vuelve a ver «idéntica».
+- **Un botón de Memoria, Plano o Valores mataba el trabajo en curso**: cada uno terminaba el Worker del
+  otro y dejaba su panel apagado para siempre; una importación grande se cortaba en silencio entre
+  transacciones. Ahora hay un solo trabajo a la vez: mientras dura, los selectores de fichero y los tres
+  paneles están apagados y el botón responde «Hay otra operación en curso; espera a que termine.»
+  (`UX_SPEC.md` §8, `WORKER_PROTOCOL.md` §3).
+- **Se consolida lo que se vio** (`WORKER_PROTOCOL.md` §4): la previsualización lleva una huella y la
+  confirmación la devuelve; si al confirmar la previsualización rehecha no coincide (una marca de revisión
+  cambiada entre medias), no se escribe y se pide previsualizar de nuevo. En la interfaz, tocar un recorte
+  después de previsualizar apaga «Confirmar y consolidar» hasta previsualizar otra vez.
+- **La memoria no se pisa**: `saveMemory` compara dentro de la misma transacción el linaje guardado con el
+  que se leyó al preparar la escritura; si otro hilo lo cambió (un `.agvproj` abierto entre medias) no
+  escribe y lo dice. Con una bifurcación pendiente, abrir otro proyecto ya no la adopta ni la sustituye
+  (`MEMORY_CONSOLIDATION.md` §10).
+- **El esperado guarda la configuración y las medidas de planta** con que se midió lo observado: desde
+  3.60.0 se guardaba duplicado en cada versión por no llevarlas (§8, FR-031). Las versiones ya escritas
+  no se corrigen: la memoria es append-only.
+- **Integridad al abrir un proyecto** (§11): cada versión que llega vuelve a dar su hash y cada linaje
+  encadena; si no, se rechaza la sección entera antes de escribir nada. La forma comprobada incluye
+  `basedOn`, `decisions`, `createdAt` y `revoked`.
+- **Una sustitución en el plano exige el mismo mínimo de AGV que un tag nuevo** (`ALGORITHM_CATALOG.md`
+  §6.23, R-DAT-021), y su detalle cuenta las pasadas de la sección, no las de la matriz.
+- **«Cancelar» solo en importaciones**: en consolidar, revocar, plano y valores no se enseña; el Worker
+  atiende la cancelación justo antes de escribir.
+- **Interfaz**: «(OQ-151)» ya no se ve en pantalla; el régimen sale con su palabra («producción») en la
+  evolución y el comparador; los formularios que comparten sitio ya no se esconden entre sí; objetivos
+  táctiles de 44 px en los selectores del comparador, los campos del recorte y los enlaces de Memoria;
+  las tarjetas de «Más hallazgos del periodo» no ofrecen un «Ver evidencia» vacío; marcar un hallazgo no
+  borra la nota de consolidación; cabeceras de tramos con su régimen; el error de un valor de planta va
+  unido a su campo; el observador de tamaño de la barra de revisión se libera.
+
+### Añadido
+
+- **Avisos del recorte**: un recorte que no toca ninguna ventana de su incidencia se avisa sin bloquear.
+- **`plant_estimators`** (`CONFIG_SCHEMA.md` §3.5): los cuantiles y la cuota de noche de los estimadores
+  salen de la configuración, con los mismos valores que antes.
+- Pruebas TC-306 a TC-316 (`TEST_STRATEGY.md`): linaje archivado, integridad, bifurcación pendiente,
+  esperado con configuración, sustitución, avisos, estimadores, bordes, un solo trabajo, huella y filas
+  en claro. 838 unitarias y 60 de navegador.
+
+### Documentado
+
+- Los estimadores «a la misma hora», horas de turno y noche están acotados por el valor vigente (OQ-154);
+  el número de versiones coincidentes es `change_class.sustained_files`; el desglose por AGV y la
+  ubicación usan denominadores distintos (§6.26); siete valores de planta, ocho claves; revocar una
+  intermedia deja en vigor el esperado de la posterior (§7); «ningún rango 1 confirmado» ya no es
+  precondición (§6).
+- Preguntas nuevas: OQ-154 a OQ-158.
+
 ## [3.60.0] - 2026-09-27
 
 El propietario cerró OQ-151 a OQ-153 («OQ-152 permite consolidar / OQ-153 quedarnos con el aviso /

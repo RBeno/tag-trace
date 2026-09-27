@@ -431,13 +431,16 @@ export function expectedSnapshot(
   const anchorTagId = inRing(observed.anchorTagId) ? observed.anchorTagId : inRing(previousExpected?.anchorTagId ?? null) ? (previousExpected?.anchorTagId ?? null) : null;
 
   // Pasa por `buildSnapshot`: la misma validación y el mismo orden canónico que cualquier instantánea.
-  // Secciones, huecos entre anclas, flota, línea, calles y hallazgos son los de lo observado.
+  // Secciones, huecos entre anclas, flota, línea, calles, hallazgos, configuración con que se midió
+  // (FR-031) y medidas de planta (OQ-151) son los de lo observado: sin ellos, el esperado nunca sería
+  // idéntico a la instantánea y cada versión lo guardaría dos veces (`MEMORY_CONSOLIDATION.md` §9).
   return buildSnapshot({
     circuitId: observed.circuitId,
     zone: observed.zone,
     source: { sourceId: observed.sourceId, sourceHash: observed.sourceHash, fileName: observed.fileName, window: observed.window, acceptedRows: observed.acceptedRows },
     capturedAt: observed.capturedAt,
     appVersion: observed.appVersion,
+    ...(observed.configVersion === undefined ? {} : { configVersion: observed.configVersion }),
     exposure: observed.exposure,
     cohortId: observed.cohortId,
     anchorTagId,
@@ -452,6 +455,7 @@ export function expectedSnapshot(
     line: observed.line,
     lanes: observed.lanes,
     findings: observed.findings,
+    ...(observed.plantMeasures === undefined ? {} : { plantMeasures: observed.plantMeasures }),
   });
 }
 

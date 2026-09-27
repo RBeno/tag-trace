@@ -18,7 +18,7 @@ import type { CircuitSnapshot, SnapshotDelta, VertexDelta } from "../domain/snap
 import { plainTable } from "./charts.js";
 import { SECTION_TONES, type EvolutionData, type RingData, type RingMark } from "./diagnostic-charts.js";
 import { tableDrawer } from "./drawer.js";
-import { criticalFunctionLabel } from "./labels.js";
+import { criticalFunctionLabel, regimeLabel } from "./labels.js";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const element = document.createElement(tag);
@@ -142,7 +142,7 @@ export function changedTagsOf(delta: SnapshotDelta): ReadonlyMap<string, string>
   };
   for (const vertex of delta.vertices) if (vertex.kind !== "cambia-de-clase") add(vertex.tagId, VERTEX_KIND_LABEL[vertex.kind]);
   for (const edge of delta.edges) {
-    add(edge.from, `tramo hasta ${edge.to} ${edge.direction === "mas-lento" ? "más lento" : "más rápido"} en ${edge.regime} (${clock(edge.before.p50Ms)} → ${clock(edge.after.p50Ms)})`);
+    add(edge.from, `tramo hasta ${edge.to} ${edge.direction === "mas-lento" ? "más lento" : "más rápido"} en ${regimeLabel(edge.regime)} (${clock(edge.before.p50Ms)} → ${clock(edge.after.p50Ms)})`);
   }
   return new Map([...out].map(([tagId, texts]) => [tagId, texts.join("; ")]));
 }
@@ -162,7 +162,7 @@ function deltaRows(delta: SnapshotDelta): readonly DeltaRow[] {
     what: edge.direction === "mas-lento" ? "tramo más lento" : "tramo más rápido",
     subject: `${edge.from} → ${edge.to}`,
     detail:
-      `En ${edge.regime}, la mitad de las pasadas tardaba ${clock(edge.before.p50Ms)} (el 80 %, ${clock(edge.before.p80Ms)}) ` +
+      `En ${regimeLabel(edge.regime)}, la mitad de las pasadas tardaba ${clock(edge.before.p50Ms)} (el 80 %, ${clock(edge.before.p80Ms)}) ` +
       `y ahora ${clock(edge.after.p50Ms)} (el 80 %, ${clock(edge.after.p80Ms)}); ${edge.before.samples} y ${edge.after.samples} pasadas.`,
   }));
   const lap =

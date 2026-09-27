@@ -110,6 +110,8 @@ export interface PlanPanel {
   memoryChanged(memory: MemoryViews): void;
   showUpdated(written: readonly string[], plan: PlanViews): void;
   showError(cause: string, recovery: string): void;
+  /** Un aviso que no es un error: por ejemplo, que hay otro trabajo en curso. */
+  notice(line: string): void;
   setBusy(busy: boolean): void;
 }
 
@@ -240,8 +242,14 @@ export function createPlanPanel(input: PlanPanelInput): PlanPanel {
     ready: () => boolean,
     onSend: () => void,
   ): HTMLElement {
+    // Si otro botón del mismo sitio tenía su formulario abierto, se cierra y ese botón vuelve a verse.
     holder.querySelector(".plan-form")?.remove();
+    for (const other of holder.querySelectorAll<HTMLElement>("[data-form-opener]")) {
+      other.hidden = false;
+      delete other.dataset["formOpener"];
+    }
     opener.hidden = true;
+    opener.dataset["formOpener"] = "si";
     const form = node("div", "plan-form");
     form.setAttribute("role", "group");
     form.setAttribute("aria-label", title);
@@ -255,6 +263,7 @@ export function createPlanPanel(input: PlanPanelInput): PlanPanel {
     cancel.addEventListener("click", () => {
       form.remove();
       opener.hidden = false;
+      delete opener.dataset["formOpener"];
       opener.focus();
     });
     const row = node("div", "button-row");
@@ -741,7 +750,7 @@ export function createPlanPanel(input: PlanPanelInput): PlanPanel {
       String(edge.periods),
     ]);
     const table = plainTable(
-      ["De", "A", "Tipo", "Producción: pasadas", "Media", "Desv. típica", "Noche: pasadas", "Media", "Desv. típica", "Periodos"],
+      ["De", "A", "Tipo", "Producción: pasadas", "Producción: media", "Producción: desv. típica", "Noche: pasadas", "Noche: media", "Noche: desv. típica", "Periodos"],
       rows,
     );
     table.classList.add("plan-edges");
@@ -820,6 +829,10 @@ export function createPlanPanel(input: PlanPanelInput): PlanPanel {
       status = { kind: "error", lines: [`No se pudo cambiar el plano: ${cause}`, recovery] };
       paintStatus();
       applyBusy();
+    },
+    notice(line) {
+      status = { kind: "info", lines: [line] };
+      paintStatus();
     },
     setBusy(next) {
       busy = next;

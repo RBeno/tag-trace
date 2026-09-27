@@ -27,9 +27,11 @@ import {
   consolidate,
   currentVersion,
   expectedOf,
+  lineageChainProblem,
   previewConsolidation,
   revokeVersion,
   versionHash,
+  versionHashProblem,
   type ConsolidatedVersion,
 } from "../../src/domain/memory.js";
 import type { ReviewEntry } from "../../src/domain/review.js";
@@ -315,5 +317,11 @@ describe("prueba de oro: cambios plantados a lo largo de seis periodos", () => {
     }
     for (const version of VERSIONS) expect(await versionHash(version)).toBe(version.hash);
     expect(new Set(VERSIONS.map((version) => version.hash)).size).toBe(VERSIONS.length);
+    // Lo mismo que comprueba la importación de un `.agvproj` (§11): cada versión guardada vuelve a dar
+    // su hash, y el linaje encadena versiones presentes.
+    expect(await versionHashProblem(VERSIONS)).toBeNull();
+    expect(lineageChainProblem(VERSIONS, { id: "linaje-oro", hashes: VERSIONS.map((version) => version.hash) })).toBeNull();
+    // Y una versión retocada después de nacer ya no lo da.
+    expect(await versionHashProblem([{ ...v(4), note: "retocada" }])).toMatch(/v4 .* no coincide con su hash/);
   });
 });

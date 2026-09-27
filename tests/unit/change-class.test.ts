@@ -25,7 +25,8 @@ import {
 } from "../../src/domain/change-class.js";
 import type { PlanEvent } from "../../src/domain/plan.js";
 import type { Band } from "../../src/domain/segment-bands.js";
-import { buildSnapshot, type CircuitSnapshot, type SnapshotAnchorGap, type SnapshotEdge, type SnapshotVertex } from "../../src/domain/snapshot.js";
+import { canonicalise } from "../../src/domain/semantic-hash.js";
+import { buildSnapshot, type CircuitSnapshot, type SnapshotAnchorGap, type SnapshotEdge, type SnapshotPlantMeasures, type SnapshotVertex } from "../../src/domain/snapshot.js";
 
 const SECOND = 1_000;
 const DAY = 24 * 3600 * SECOND;
@@ -70,6 +71,9 @@ interface SnapOptions {
   /** Sin la lista de AGV de la sección. */
   readonly noVehicleIds?: boolean;
   readonly edges?: Readonly<Record<string, Band | null>>;
+  /** Con qué configuración se midió (FR-031) y las medidas de planta (OQ-151), si las trae. */
+  readonly configVersion?: string;
+  readonly plantMeasures?: SnapshotPlantMeasures;
 }
 
 /** Una instantánea del día `day`, con una sección entre anclas T001 → T001 que cubre el anillo. */
@@ -105,6 +109,7 @@ function snap(options: SnapOptions): CircuitSnapshot {
     source: { sourceId, sourceHash: `hash-${sourceId}`, fileName: `${sourceId}.csv`, window, acceptedRows: 500 },
     capturedAt: window.to,
     appVersion: "0.0.0-prueba",
+    ...(options.configVersion === undefined ? {} : { configVersion: options.configVersion }),
     exposure: { produccion: DAY, noche: 0 },
     cohortId: 1,
     anchorTagId: ring[0] ?? null,
@@ -119,8 +124,20 @@ function snap(options: SnapOptions): CircuitSnapshot {
     line: null,
     lanes: [],
     findings: [],
+    ...(options.plantMeasures === undefined ? {} : { plantMeasures: options.plantMeasures }),
   });
 }
+
+/** Medidas de planta mínimas de un fichero de un día que cubre las 24 horas. */
+const MEASURES: SnapshotPlantMeasures = {
+  hourly: { readings: new Array<number>(24).fill(100), coveredMs: new Array<number>(24).fill(3_600_000) },
+  days: 1,
+  productionStops: [],
+  returnGaps: { n: 0, valueMs: null },
+  headWaits: { n: 0, valueMs: null },
+  loadedSpans: null,
+  precisePauses: { declared: 0, measurable: true, n: 0, valueMs: null },
+};
 
 /** T003 sin leer por nadie: lo que se ve cuando deja de leerse de verdad. */
 const SILENT_T003 = { vertices: { T003: { readRate: 0, readings: 0 } }, readers: { T003: 0 } } as const;
@@ -224,6 +241,16 @@ describe("clasificar cambios · §8, OQ-146, OQ-147", () => {
     expect(move?.reason).toContain("no tiene medida colectiva");
   });
 
+  it("sin historia no hay fichero actual: ningún cambio, aunque haya esperado", () => {
+    expect(classify([])).toEqual([]);
+  });
+
+  it("con `sustainedFiles: 1` un cambio colectivo del primer fichero ya es sostenido y pasa al esperado", () => {
+    const change = only(classify([snap({ day: 1, ...SILENT_T003 })], { thresholds: { ...THRESHOLDS, sustainedFiles: 1 } }));
+    expect(change).toMatchObject({ cls: "cambio-colectivo-sostenido", files: 1, adopted: true });
+    expect(change.reason).toContain("hacen falta 1");
+  });
+
   it("sin esperado (primera versión) no hay cambios", () => {
     expect(classify([snap({ day: 1, ...SILENT_T003 })], { expected: null })).toEqual([]);
     expect(summarizeChanges([], [])).toEqual({ adopted: 0, pending: 0, incidents: 0 });
@@ -297,6 +324,24 @@ describe("el esperado que se consolida · OQ-148", () => {
     expect(first.edges.find((edge) => edge.from === "T004")?.produccion).toEqual(NORMAL);
     // Sin incidencias ni cambios, el esperado es lo observado.
     expect(expectedSnapshot(null, observed, [], new Set())).toEqual(observed);
+  });
+
+  it("conserva la configuración con que se midió y las medidas de planta: sin cambios, el esperado es idéntico a lo observado (§9, FR-031)", () => {
+    const observed = snap({ day: 3, configVersion: "provisional-0+planta(noche-desde#1)", plantMeasures: MEASURES });
+    // Con cambios no adoptados, los dos campos siguen siendo los de lo observado.
+    const drifted = snap({ day: 3, ...SILENT_T003, configVersion: "provisional-0+planta(noche-desde#1)", plantMeasures: MEASURES });
+    const kept = expectedSnapshot(EXPECTED, drifted, classify([drifted]), new Set());
+    expect(kept.configVersion).toBe("provisional-0+planta(noche-desde#1)");
+    expect(kept.plantMeasures).toEqual(MEASURES);
+    expect(kept.vertices.find((entry) => entry.tagId === "T003")).toMatchObject({ readRate: 1 });
+    // Sin cambios ni incidencias, la forma canónica —la que decide si `expected` se guarda aparte— es la misma.
+    const same = expectedSnapshot(EXPECTED, observed, classify([observed]), new Set());
+    expect(canonicalise(same)).toBe(canonicalise(observed));
+    expect(canonicalise(expectedSnapshot(null, observed, [], new Set()))).toBe(canonicalise(observed));
+    // Y una instantánea sin esos campos no los inventa.
+    const bare = expectedSnapshot(null, snap({ day: 3 }), [], new Set());
+    expect(bare.configVersion).toBeUndefined();
+    expect(bare.plantMeasures).toBeUndefined();
   });
 });
 

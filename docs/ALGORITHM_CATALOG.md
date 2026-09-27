@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.46.0
+version: 0.46.1
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -1139,10 +1139,13 @@ propone.
   camino (observación inferida). Sin nada de eso, «sin ocasión». Una sección con cero pasadas no
   prueba nada.
 - **`proposeChanges`**: `sustitucion` cuando entre dos ubicaciones leídas hay exactamente un código
-  fuera del plano y exactamente una ubicación sin leer con pasadas; `tag-nuevo` para los demás
-  códigos fuera del plano leídos por al menos `plan.min_vehicles_for_proposal` AGV distintos (si la
-  instantánea no dice cuántos, no se propone); `salida-sin-ubicar` por cada tag de parada por salida
-  declarado sin ubicación. Cada tag nuevo va detrás de la ubicación planificada más cercana que lo
+  fuera del plano y exactamente una ubicación sin leer con pasadas, **y** el código lo leyeron al menos
+  `plan.min_vehicles_for_proposal` AGV distintos (R-DAT-021: lo de un solo lector es de ese lector;
+  si la instantánea no dice cuántos, no se propone); en su detalle, las pasadas del código nuevo son
+  las de la sección entre anclas (`readsByTag`), el mismo denominador que las pasadas sin leer de la
+  ubicación, y solo sin sección las probadas de su vértice. `tag-nuevo` para los demás códigos fuera
+  del plano con el mismo mínimo de AGV distintos; `salida-sin-ubicar` por cada tag de parada por
+  salida declarado sin ubicación. Cada tag nuevo va detrás de la ubicación planificada más cercana que lo
   precede en el anillo del fichero, sin encadenarse con otros nuevos: así se aceptan en cualquier
   orden y el anillo queda en el orden del fichero.
 - **`momentsOf`, `combineMoments`, `varianceOf`**: Welford y la combinación de Chan; combinar dos
@@ -1187,21 +1190,35 @@ uno de cinco AGV no se adopta, y un hallazgo grave confirmado queda como inciden
   sea de una incidencia del periodo con ventana, con principio no posterior al fin, dentro de la
   ventana del fichero y del AGV de la incidencia; `cutReadings` quita las lecturas del tiempo
   recortado (de un AGV o de todos) y `coverageWithoutCuts` quita ese tiempo de la cobertura cuando
-  el recorte es de todos. El Worker reimporta el original archivado, verifica su SHA-256 contra la
+  el recorte es de todos. `checkCuts` **no exige** que el recorte se solape con la ventana de la
+  incidencia —el principio y el fin los elige la persona—; `cutWarnings` da un aviso, no un bloqueo,
+  por cada recorte que no toca ninguna ventana de su incidencia. Se admite un recorte por incidencia;
+  con varias paradas (`windows`), si se recorta cada una o la envolvente está abierto (OQ-155). El Worker reimporta el original archivado, verifica su SHA-256 contra la
   huella y pasa las lecturas por el mismo camino de análisis que una importación, sin escribir nada.
   Limitación conocida: en un recorte de un AGV, el paso que cruza la ventana queda como una
   transición larga de ese AGV, porque la cobertura no es por AGV.
 - **Desglose por AGV** (`observeAgainstPlan`, `summarizePlan`): de `byVehicle` de cada vértice; un AGV
   «por debajo de la flota» se compara con todas las celdas de esa ubicación en la matriz (s·E < S·e,
-  en enteros). Los periodos cuya instantánea no trae desglose no entran en las cifras por AGV y se
+  en enteros). Dos denominadores: las cifras por AGV son pasadas probadas de la matriz de lectura,
+  mientras que `evaluable` de la ubicación, cuando hay sección entre anclas, son pasadas completas de
+  ancla a ancla; por eso la suma por AGV no tiene por qué dar `evaluable`, y cada tasa se enseña con
+  su propio denominador (R-MEM-004), sin mezclarlos. Los periodos cuya instantánea no trae desglose no entran en las cifras por AGV y se
   dice en cuántos de cuántos periodos se midió.
 
 ## 6.27 Propuestas de valores de planta, implementado (OQ-151)
 
 `measurePlantValues` (Worker, al montar la instantánea), `estimatePlantValue` y `proposePlantValues`
 (`src/domain/plant-values.ts`). Los estimadores y de qué análisis salen están en `CONFIG_SCHEMA.md`
-§3.5; los percentiles usan `quantile`, el mismo de las horquillas. La única medida nueva es el
-percentil 95 del tránsito de un tramo cargado, sacado de la misma lista de pasadas que su mediana
-(`fifo.ts`). La coincidencia se decide sobre las estimaciones redondeadas a la unidad del valor; al
-confirmar, el Worker vuelve a calcular la propuesta y rechaza si ya no existe o si cambió.
+§3.5; los percentiles usan `quantile`, el mismo de las horquillas, y qué cuantil y qué parte de la
+mediana usa cada estimador vive en `plant_estimators` de la configuración, no en el código. La única
+medida nueva es el percentil 95 del tránsito de un tramo cargado, sacado de la misma lista de pasadas
+que su mediana (`fifo.ts`). El número de versiones consolidadas no revocadas que tienen que coincidir
+es `change_class.sustained_files` (3): el Worker pasa ese mismo valor, y no hay un umbral aparte. La
+coincidencia se decide sobre las estimaciones redondeadas a la unidad del valor; al confirmar, el
+Worker vuelve a calcular la propuesta y rechaza si ya no existe o si cambió.
+
+Límite conocido (OQ-154): las repeticiones de una parada las empareja `flow-stops.ts` con la
+tolerancia **vigente** de «a la misma hora», y la noche se estima frente a la noche **vigente**; el
+estimador de la tolerancia está acotado por el valor que rige y nunca propondrá uno mayor. El
+estimador no cambia (es la definición aprobada en OQ-151); cada estimación lo dice en su explicación.
 

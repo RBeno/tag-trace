@@ -90,6 +90,8 @@ export interface PlantValuesPanel {
   update(context: PlantValuesContext): void;
   showUpdated(written: string, appliesToWorking: boolean, view: PlantValuesView): void;
   showError(cause: string, recovery: string): void;
+  /** Un aviso que no es un error: por ejemplo, que hay otro trabajo en curso. */
+  notice(line: string): void;
   setBusy(busy: boolean): void;
   /** Las propuestas nuevas tras consolidar, revocar o elegir linaje; lo demás de la vista no cambia. */
   proposalsChanged(proposals: PlantValueProposals | null): void;
@@ -134,7 +136,7 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
     "p",
     "muted",
     "Rigen los provisionales hasta que confirmes el valor de tu planta. La memoria propone un valor cuando lo estima igual en las " +
-      "últimas versiones consolidadas (OQ-151); si no coinciden, lo introduces tú. Nada se aplica sin tu confirmación.",
+      "últimas versiones consolidadas; si no coinciden, lo introduces tú. Nada se aplica sin tu confirmación.",
   );
   const statusBox = node("div", "plan-status plant-values-status");
   statusBox.setAttribute("role", "status");
@@ -170,16 +172,29 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
     return { box, input: control };
   }
 
-  function openForm(entry: PlantValueView, holder: HTMLElement, opener: HTMLButtonElement): void {
+  /** Cierra el formulario que hubiera en el mismo sitio y vuelve a enseñar el botón que lo abrió. */
+  function closeOpenForm(holder: HTMLElement): void {
     holder.querySelector(".plan-form")?.remove();
+    for (const other of holder.querySelectorAll<HTMLElement>("[data-form-opener]")) {
+      other.hidden = false;
+      delete other.dataset["formOpener"];
+    }
+  }
+
+  function openForm(entry: PlantValueView, holder: HTMLElement, opener: HTMLButtonElement): void {
+    closeOpenForm(holder);
     opener.hidden = true;
+    opener.dataset["formOpener"] = "si";
     const unit =
       entry.kind === "hora" ? "hora del día, de 0 a 23" : entry.kind === "horas" ? "horas del día, separadas por comas" : entry.inputUnit === "s" ? "segundos" : "minutos";
     const valueField = field(`Valor de tu planta (${unit})`, "plant-value-input", "text");
     valueField.input.inputMode = entry.kind === "horas" ? "text" : "decimal";
     valueField.input.value = toInput(entry, entry.current?.value ?? entry.provisional);
     const problem = node("p", "muted plant-value-problem");
+    problem.id = `${valueField.input.id}-problem`;
     problem.setAttribute("aria-live", "polite");
+    // El lector de pantalla lee el problema con el campo al que se refiere.
+    valueField.input.setAttribute("aria-describedby", problem.id);
 
     const today = isoDay(Date.now(), input.zone);
     const dateField = field("Desde (fecha efectiva)", "plan-date plant-value-date", "date");
@@ -231,6 +246,7 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
     cancel.addEventListener("click", () => {
       form.remove();
       opener.hidden = false;
+      delete opener.dataset["formOpener"];
       opener.focus();
     });
     const row = node("div", "button-row");
@@ -248,8 +264,9 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
 
   /** Confirmar la propuesta de la memoria: fecha efectiva y razón obligatoria; el valor no se edita. */
   function openProposalForm(entry: PlantValueView, proposed: PlantValue, holder: HTMLElement, opener: HTMLButtonElement): void {
-    holder.querySelector(".plan-form")?.remove();
+    closeOpenForm(holder);
     opener.hidden = true;
+    opener.dataset["formOpener"] = "si";
     const today = isoDay(Date.now(), input.zone);
     const dateField = field("Desde (fecha efectiva)", "plan-date plant-value-date", "date");
     dateField.input.value = today;
@@ -285,6 +302,7 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
     cancel.addEventListener("click", () => {
       form.remove();
       opener.hidden = false;
+      delete opener.dataset["formOpener"];
       opener.focus();
     });
     const row = node("div", "button-row");
@@ -475,6 +493,10 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
       status = { kind: "error", lines: [`No se pudo confirmar el valor: ${cause}`, recovery] };
       paintStatus();
       applyBusy();
+    },
+    notice(line) {
+      status = { kind: "info", lines: [line] };
+      paintStatus();
     },
     setBusy(next) {
       busy = next;

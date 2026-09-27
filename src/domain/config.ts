@@ -28,6 +28,7 @@ import type { FlowStopThresholds } from "./flow-stops.js";
 import type { FranjaThresholds } from "./franjas.js";
 import type { GraphThresholds } from "./graph.js";
 import type { GroupedDeliveryThresholds } from "./grouped-delivery.js";
+import type { PlantEstimatorThresholds } from "./plant-values.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
 import type { SilenceKindThresholds } from "./silence-kind.js";
 import type { TrendThresholds } from "./read-rate-trend.js";
@@ -88,6 +89,15 @@ export interface AnalysisConfig {
    * muestra más de `collectiveShare` de los AGV que pasan por el sitio (OQ-147).
    */
   readonly changeClass: { readonly sustainedFiles: number; readonly collectiveShare: number };
+  /**
+   * Cómo estiman los valores de planta los estimadores de OQ-151 (`plant-values.ts`; propietario,
+   * 2026-09-27): la noche son las horas con menos de `nightLowShare` de la mediana de producción; la
+   * desconexión, el cuantil `returnGapQuantile` de los huecos que volvieron; el bloqueo del primero de
+   * cola, el cuantil `headWaitQuantile` de sus esperas; la parada precisa, el cuantil
+   * `precisePauseQuantile` de las suyas. No son valores de planta: son la definición aprobada de cómo
+   * medirlos, y viven aquí para que ningún número de la definición quede escrito en el código.
+   */
+  readonly plantEstimators: PlantEstimatorThresholds;
 }
 
 /**
@@ -223,6 +233,12 @@ export interface AnalysisConfig {
  *   planta, y un 5 % es un AGV que pierde una vuelta de cada veinte. Las muestras mínimas son las de una
  *   horquilla (`bands.minBandSamples`), el azar el de los sitios del circuito (`circuitState.maxFalsePoints`)
  *   y, para quien retiene, los AGV distintos de un contraste (`readRate.minVehiclesForContrast`).
+ * - **Estimadores de los valores de planta (OQ-151, propietario 2026-09-27).** La mitad de la mediana
+ *   de producción para llamar noche a una hora, el percentil 99 de los huecos que volvieron para la
+ *   desconexión, el 95 de las esperas del primero de cola para el bloqueo y el 5 de las esperas en
+ *   una parada precisa son la definición que el propietario aprobó, no una medida de planta: el 99 y
+ *   el 95 dejan fuera lo raro sin dejar fuera lo habitual, y el 5 es la espera corta que casi todas
+ *   superan. Cambiarlos es cambiar la definición, y se hace aquí con su razón, no en el estimador.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -280,6 +296,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   // El mismo «al menos dos AGV distintos» que R-DAT-021 exige para afirmar una ausencia.
   plan: { minVehiclesForProposal: 2 },
   changeClass: { sustainedFiles: 3, collectiveShare: 0.5 },
+  plantEstimators: { nightLowShare: 0.5, returnGapQuantile: 0.99, headWaitQuantile: 0.95, precisePauseQuantile: 0.05 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */
