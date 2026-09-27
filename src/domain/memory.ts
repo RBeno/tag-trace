@@ -12,7 +12,8 @@
  */
 
 import type { ReviewEntry, ReviewState } from "./review.js";
-import type { CircuitSnapshot, SnapshotDelta } from "./snapshot.js";
+import { semanticHash } from "./semantic-hash.js";
+import { compareSnapshots, type CircuitSnapshot, type SnapshotDelta } from "./snapshot.js";
 import type { TagChangeThresholds } from "./tag-changes.js";
 
 export const MEMORY_SCHEMA_VERSION = 1;
@@ -105,9 +106,154 @@ export interface ConsolidationInput {
   readonly thresholds: Pick<TagChangeThresholds, "maxChance">;
 }
 
-/** Qué pasaría al consolidar: la previsualización de vN+1 (§6, paso E). No escribe nada. */
+/** Los hallazgos de la instantánea cruzados con la revisión: la decisión que llevaba cada uno (R-EVI-007). */
+function decisionsOf(snapshot: CircuitSnapshot, reviews: ReadonlyMap<string, ReviewEntry>): readonly MemoryDecision[] {
+  return snapshot.findings.map((finding) => {
+    const review = reviews.get(finding.key);
+    return {
+      key: finding.key,
+      kind: finding.kind,
+      title: finding.title,
+      figure: finding.figure,
+      // «Pendiente» no se guarda como marca (`review.ts`): es la ausencia de decisión.
+      state: review?.state ?? "pendiente",
+      note: review === undefined || review.note.trim() === "" ? null : review.note,
+    };
+  });
+}
+
+/** El número que le toca a la siguiente versión: uno más que la mayor guardada, revocadas incluidas. */
+function nextVersionNumber(versions: readonly ConsolidatedVersion[]): number {
+  return versions.reduce((max, version) => Math.max(max, version.version), 0) + 1;
+}
+
+/**
+ * Qué pasaría al consolidar: la previsualización de vN+1 (§6, paso E). No escribe nada.
+ *
+ * Bloquea **solo lo pendiente** (propietario, 2026-09-23): un hallazgo confirmado, descartado o
+ * pospuesto no impide consolidar. Lo pospuesto pasa con su motivo y con aviso de que volverá como
+ * pendiente en el periodo siguiente. Un hallazgo de rango 1 confirmado convierte el periodo en una
+ * incidencia (§6, §8) y sí bloquea: la memoria normal no aprende de un periodo anómalo (ADR-0005).
+ */
 export function previewConsolidation(input: ConsolidationInput): ConsolidationPreview {
-  throw new Error(`previewConsolidation: pendiente de implementar (${input.snapshot.sourceId})`);
+  const { snapshot, versions } = input;
+  const decisions = decisionsOf(snapshot, input.reviews);
+  const previous = currentVersion(versions);
+  const blockers: ConsolidationBlocker[] = [];
+  const warnings: string[] = [];
+
+  const pending = decisions.filter((decision) => decision.state === "pendiente");
+  if (pending.length > 0) {
+    blockers.push({
+      code: "hallazgos-pendientes",
+      detail: `${pending.length} ${pending.length === 1 ? "hallazgo sigue" : "hallazgos siguen"} sin revisar. Solo bloquea lo pendiente: confirma, descarta o pospón cada uno.`,
+      items: pending.map((decision) => decision.key),
+    });
+  }
+
+  const incident = decisions.filter((decision) => decision.state === "confirmado" && input.rankOf(decision.kind) === 1);
+  if (incident.length > 0) {
+    blockers.push({
+      code: "periodo-de-incidencia",
+      detail: `${incident.length} ${incident.length === 1 ? "hallazgo confirmado" : "hallazgos confirmados"} de rango 1: el periodo es una incidencia, no memoria normal. Trátalo como incidencia o descarta lo que no lo sea.`,
+      items: incident.map((decision) => decision.key),
+    });
+  }
+
+  const twin = versions.filter((version) => version.revoked === null && version.basedOn.sourceHash === snapshot.sourceHash);
+  if (twin.length > 0) {
+    blockers.push({
+      code: "ya-consolidada",
+      detail: `Ya existe una versión vigente basada en este mismo fichero (v${twin.map((version) => version.version).join(", v")}). Para corregirla, revócala y consolida de nuevo.`,
+      items: twin.map((version) => `v${version.version}`),
+    });
+  }
+
+  if (input.forkUnresolved) {
+    blockers.push({
+      code: "bifurcacion-sin-resolver",
+      detail: "Hay una bifurcación de linaje sin resolver: elige qué memoria conservar antes de consolidar.",
+      items: [],
+    });
+  }
+
+  const postponed = decisions.filter((decision) => decision.state === "pospuesto");
+  if (postponed.length > 0) {
+    const motives = postponed.map((decision) => `${decision.title}${decision.note === null ? "" : ` (${decision.note})`}`);
+    warnings.push(
+      `${postponed.length} ${postponed.length === 1 ? "hallazgo pospuesto se consolida" : "hallazgos pospuestos se consolidan"} con su motivo y ${postponed.length === 1 ? "volverá" : "volverán"} como ${postponed.length === 1 ? "pendiente" : "pendientes"} en el periodo siguiente: ${motives.join("; ")}.`,
+    );
+  }
+  const discarded = decisions.filter((decision) => decision.state === "descartado").length;
+  if (discarded > 0) {
+    warnings.push(`${discarded} ${discarded === 1 ? "hallazgo descartado queda" : "hallazgos descartados quedan"} en la versión con su decisión, sin cambiar el análisis.`);
+  }
+
+  const basedOn: ConsolidatedVersion["basedOn"] = {
+    sourceId: snapshot.sourceId,
+    sourceHash: snapshot.sourceHash,
+    fileName: snapshot.fileName,
+    window: { from: snapshot.window.from, to: snapshot.window.to },
+  };
+  const delta = previous === null ? null : compareSnapshots(previous.snapshot, snapshot, input.thresholds);
+  const nextVersion = nextVersionNumber(versions);
+
+  // El tamaño se estima sobre una versión provisional con el hash vacío: el hash real tiene siempre
+  // la misma longitud, así que la diferencia es de decenas de bytes.
+  const provisional: ConsolidatedVersion = {
+    schemaVersion: MEMORY_SCHEMA_VERSION,
+    circuitId: snapshot.circuitId,
+    version: nextVersion,
+    createdAt: 0,
+    basedOn,
+    previousHash: previous?.hash ?? null,
+    hash: "",
+    lineage: "",
+    snapshot,
+    delta,
+    decisions,
+    note: null,
+    revoked: null,
+    appVersion: "",
+  };
+
+  return { basedOn, previous, nextVersion, delta, blockers, warnings, decisions, estimatedBytes: versionBytes(provisional) };
+}
+
+/**
+ * Una previsualización que solo dice que el fichero no tiene instantánea (`sin-instantanea`): el
+ * Worker la emite cuando la fuente existe pero su instantánea no se pudo construir o es anterior a
+ * la versión 6 del almacén. Volver a cargar el fichero la crea.
+ */
+export function previewWithoutSnapshot(
+  basedOn: ConsolidatedVersion["basedOn"],
+  versions: readonly ConsolidatedVersion[],
+): ConsolidationPreview {
+  return {
+    basedOn,
+    previous: currentVersion(versions),
+    nextVersion: nextVersionNumber(versions),
+    delta: null,
+    blockers: [
+      {
+        code: "sin-instantanea",
+        detail: `El fichero «${basedOn.fileName}» no tiene instantánea guardada. Vuelve a cargarlo para crearla.`,
+        items: [basedOn.sourceId],
+      },
+    ],
+    warnings: [],
+    decisions: [],
+    estimatedBytes: 0,
+  };
+}
+
+/**
+ * El hash de una versión: el hash semántico (INV-010) de su contenido **con `hash: ""`** y tal como
+ * nació (`revoked: null`). Se calcula una vez, al consolidar; revocarla no lo cambia, que es lo que
+ * permite que dos dispositivos comparen sus cadenas aunque uno haya revocado algo.
+ */
+export async function versionHash(version: ConsolidatedVersion): Promise<string> {
+  return semanticHash({ ...version, hash: "", revoked: null });
 }
 
 /**
@@ -119,17 +265,55 @@ export async function consolidate(
   preview: ConsolidationPreview,
   context: { readonly circuitId: string; readonly snapshot: CircuitSnapshot; readonly lineage: string; readonly appVersion: string; readonly now: number; readonly note: string | null },
 ): Promise<ConsolidatedVersion> {
-  throw new Error(`consolidate: pendiente de implementar (${context.circuitId}, v${preview.nextVersion})`);
+  if (preview.blockers.length > 0) {
+    throw new Error(`No se puede consolidar: ${preview.blockers.map((blocker) => blocker.code).join(", ")}.`);
+  }
+  if (context.snapshot.sourceHash !== preview.basedOn.sourceHash) {
+    throw new Error("La instantánea no es la de la previsualización: la consolidación se rehace desde el principio.");
+  }
+  const unhashed: ConsolidatedVersion = {
+    schemaVersion: MEMORY_SCHEMA_VERSION,
+    circuitId: context.circuitId,
+    version: preview.nextVersion,
+    createdAt: context.now,
+    basedOn: preview.basedOn,
+    previousHash: preview.previous?.hash ?? null,
+    hash: "",
+    lineage: context.lineage,
+    snapshot: context.snapshot,
+    delta: preview.delta,
+    decisions: preview.decisions,
+    note: context.note === null || context.note.trim() === "" ? null : context.note,
+    revoked: null,
+    appVersion: context.appVersion,
+  };
+  return { ...unhashed, hash: await versionHash(unhashed) };
 }
 
-/** Revoca una versión: no la borra ni la edita, la marca con fecha y razón (§7). */
+/** Revoca una versión: no la borra ni la edita, la marca con fecha y razón (§7). Devuelve una copia. */
 export function revokeVersion(version: ConsolidatedVersion, reason: string, now: number): ConsolidatedVersion {
-  throw new Error(`revokeVersion: pendiente de implementar (v${version.version}, ${reason}, ${now})`);
+  if (version.revoked !== null) {
+    throw new Error(`La versión v${version.version} ya estaba revocada.`);
+  }
+  if (reason.trim() === "") {
+    throw new Error("Una revocación necesita su razón: queda en el historial (§7).");
+  }
+  return { ...version, revoked: { at: now, reason } };
+}
+
+/** Las versiones en orden de creación dentro del linaje: por número y, a igual número, por fecha. */
+export function sortVersions(versions: readonly ConsolidatedVersion[]): readonly ConsolidatedVersion[] {
+  return [...versions].sort((a, b) => a.version - b.version || a.createdAt - b.createdAt);
 }
 
 /** La versión vigente: la última no revocada, o `null`. */
 export function currentVersion(versions: readonly ConsolidatedVersion[]): ConsolidatedVersion | null {
-  throw new Error(`currentVersion: pendiente de implementar (${versions.length})`);
+  const ordered = sortVersions(versions);
+  for (let index = ordered.length - 1; index >= 0; index -= 1) {
+    const version = ordered[index] as ConsolidatedVersion;
+    if (version.revoked === null) return version;
+  }
+  return null;
 }
 
 /** Lo observado frente a la memoria: el delta del fichero actual contra la versión vigente. */
@@ -145,20 +329,137 @@ export function compareToMemory(
   memory: ConsolidatedVersion,
   thresholds: Pick<TagChangeThresholds, "maxChance">,
 ): MemoryComparison {
-  throw new Error(`compareToMemory: pendiente de implementar (${current.sourceId}, v${memory.version}, ${thresholds.maxChance})`);
+  return {
+    version: memory.version,
+    basedOnFileName: memory.basedOn.fileName,
+    consolidatedAt: memory.createdAt,
+    delta: compareSnapshots(memory.snapshot, current, thresholds),
+  };
 }
 
 /** Relación entre la memoria local y la de un `.agvproj` que se abre (§10). */
 export type LineageRelation = "sin-memoria" | "identica" | "local-adelantada" | "entrante-adelantada" | "bifurcada";
 
+/** ¿Es `prefix` un prefijo (propio o no) de `chain`? */
+function isPrefix(prefix: readonly string[], chain: readonly string[]): boolean {
+  return prefix.length <= chain.length && prefix.every((hash, index) => chain[index] === hash);
+}
+
+/**
+ * Clasifica por la **cadena de hashes**, en orden de versión:
+ *
+ * - `sin-memoria`: el proyecto no trae versiones (haya o no memoria local: no hay nada que comparar).
+ * - `identica`: las dos cadenas son iguales.
+ * - `local-adelantada`: la entrante es un prefijo de la local.
+ * - `entrante-adelantada`: la local es un prefijo de la entrante (también si la local está vacía).
+ * - `bifurcada`: ancestro común y ramas distintas, o ningún ancestro común con las dos no vacías.
+ */
 export function classifyLineage(
   local: readonly ConsolidatedVersion[],
   incoming: readonly ConsolidatedVersion[],
 ): LineageRelation {
-  throw new Error(`classifyLineage: pendiente de implementar (${local.length}, ${incoming.length})`);
+  const localChain = sortVersions(local).map((version) => version.hash);
+  const incomingChain = sortVersions(incoming).map((version) => version.hash);
+  if (incomingChain.length === 0) return "sin-memoria";
+  if (localChain.length === incomingChain.length && isPrefix(localChain, incomingChain)) return "identica";
+  if (isPrefix(incomingChain, localChain)) return "local-adelantada";
+  if (isPrefix(localChain, incomingChain)) return "entrante-adelantada";
+  return "bifurcada";
 }
 
 /** Bytes que ocupa una versión serializada, para el presupuesto de crecimiento (§9). */
 export function versionBytes(version: ConsolidatedVersion): number {
   return new TextEncoder().encode(JSON.stringify(version)).length;
+}
+
+// --- Linajes (§10) ---------------------------------------------------------------------------------
+
+/**
+ * Un linaje: su identificador y los hashes de sus versiones, en orden. Se identifica por hashes y no
+ * solo por `lineage` porque dos dispositivos que consolidan en paralelo desde la misma versión heredan
+ * el mismo identificador y producen versiones con el mismo número: solo el hash las distingue.
+ */
+export interface LineageRef {
+  readonly id: string;
+  readonly hashes: readonly string[];
+}
+
+export interface LineageEvent {
+  readonly at: number;
+  readonly choice: "conservar-local" | "adoptar-entrante";
+  readonly reason: string;
+}
+
+/** El estado de linaje del circuito: qué memoria está vigente, cuál espera decisión y cuáles quedaron archivadas. */
+export interface LineageState {
+  readonly circuitId: string;
+  /** El linaje sobre el que se consolida; `null` hasta la primera versión. */
+  readonly active: LineageRef | null;
+  /** El linaje entrante de una bifurcación sin resolver, o `null`. */
+  readonly incoming: LineageRef | null;
+  /** Linajes que una elección dejó como histórico: se conservan, nunca se borran. */
+  readonly archived: readonly LineageRef[];
+  /** La última relación clasificada al abrir un `.agvproj`, o `null` si nunca se abrió uno con memoria. */
+  readonly lastRelation: LineageRelation | null;
+  readonly lineageEvents: readonly LineageEvent[];
+}
+
+export function emptyLineageState(circuitId: string): LineageState {
+  return { circuitId, active: null, incoming: null, archived: [], lastRelation: null, lineageEvents: [] };
+}
+
+/** Las versiones de un linaje, en orden. Sin linaje (`null`) no hay ninguna. */
+export function versionsOfLineage(versions: readonly ConsolidatedVersion[], lineage: LineageRef | null): readonly ConsolidatedVersion[] {
+  if (lineage === null) return [];
+  const wanted = new Set(lineage.hashes);
+  return sortVersions(versions.filter((version) => wanted.has(version.hash)));
+}
+
+/** El estado tras consolidar `version` en el linaje activo: lo crea si es la primera versión. */
+export function withConsolidated(state: LineageState, version: ConsolidatedVersion): LineageState {
+  const active = state.active ?? { id: version.lineage, hashes: [] };
+  return { ...state, active: { id: active.id, hashes: [...active.hashes, version.hash] } };
+}
+
+/**
+ * Aplica la relación con la memoria de un `.agvproj` abierto (§10). No decide nada por la persona:
+ *
+ * - `entrante-adelantada` adopta el linaje entrante como activo (la local era su prefijo, así que no se
+ *   pierde ninguna decisión);
+ * - `bifurcada` deja el entrante **esperando decisión** (`incoming`), y mientras tanto la consolidación
+ *   queda bloqueada;
+ * - las demás solo anotan la relación.
+ */
+export function withIncoming(state: LineageState, relation: LineageRelation, incoming: readonly ConsolidatedVersion[]): LineageState {
+  const chain = sortVersions(incoming);
+  const last = chain[chain.length - 1];
+  const ref: LineageRef | null = last === undefined ? null : { id: last.lineage, hashes: chain.map((version) => version.hash) };
+  if (relation === "entrante-adelantada" && ref !== null) {
+    return { ...state, active: ref, incoming: null, lastRelation: relation };
+  }
+  if (relation === "bifurcada" && ref !== null) {
+    return { ...state, incoming: ref, lastRelation: relation };
+  }
+  return { ...state, lastRelation: relation };
+}
+
+/** Resuelve la bifurcación con la elección humana y la deja en el historial con su razón (§10). */
+export function resolveFork(state: LineageState, choice: LineageEvent["choice"], reason: string, now: number): LineageState {
+  if (state.incoming === null) {
+    throw new Error("No hay ninguna bifurcación sin resolver.");
+  }
+  if (reason.trim() === "") {
+    throw new Error("La elección de linaje necesita su justificación: queda en el historial (§10).");
+  }
+  const event: LineageEvent = { at: now, choice, reason };
+  if (choice === "conservar-local") {
+    return { ...state, incoming: null, archived: [...state.archived, state.incoming], lineageEvents: [...state.lineageEvents, event] };
+  }
+  return {
+    ...state,
+    active: state.incoming,
+    incoming: null,
+    archived: state.active === null ? state.archived : [...state.archived, state.active],
+    lineageEvents: [...state.lineageEvents, event],
+  };
 }

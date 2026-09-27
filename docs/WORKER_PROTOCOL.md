@@ -1,8 +1,8 @@
 ---
 document_id: TT-WORKER-001
-version: 0.2.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-27
 ---
 
 # Protocolo entre la interfaz y los Workers
@@ -71,6 +71,9 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `cancel` | motivo | El Worker debe atenderla en el siguiente punto de control. |
 | `lists` | fichero de listas de tags, circuito | Sustituye las listas del circuito por las del fichero. |
 | `fleet` | fichero de historial de flota (DS-012), circuito, valor de `circuito` elegido si ya lo hay | Se **fusiona** con lo guardado por (AGV, `desde`); no sustituye. |
+| `consolidate` | circuito, fichero base (`sourceId`), `mode: "preview" \| "commit"`, nota opcional | `preview` no escribe nada. `commit` solo se envía tras la confirmación humana, y el Worker vuelve a calcular la previsualización desde el almacén antes de escribir: con bloqueos responde `error` (R-MEM-001). |
+| `revoke` | circuito, número de versión, razón | Marca la versión con fecha y razón; no la borra (R-MEM-002). |
+| `resolve-fork` | circuito, elección (`conservar-local` \| `adoptar-entrante`), razón | Resuelve una bifurcación de linaje; el linaje no elegido queda archivado y la elección, en el historial (`MEMORY_CONSOLIDATION.md` §10). |
 
 ### Del Worker a la interfaz
 
@@ -85,6 +88,14 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `lists-loaded` | listas aceptadas, rechazos por motivo, avisos | Las vistas se recalculan en la siguiente importación. |
 | `fleet-loaded` | valor de circuito usado, filas aceptadas, rechazos por motivo, añadidas, sustituidas, periodos guardados, avisos | Como `lists-loaded`, no dispara análisis por sí mismo. |
 | `fleet-choose-circuit` | valores de la columna `circuito` con su número de filas | El fichero trae varios circuitos: la interfaz pregunta cuál es este y reenvía `fleet` con la respuesta. Nada se guarda hasta entonces. |
+| `consolidation-preview` | qué pasaría al consolidar: fichero base, versión vigente, siguiente número, delta, bloqueos con sus elementos, avisos, decisiones, bytes estimados | Nada se ha escrito. |
+| `consolidated` | la versión escrita y la memoria del circuito (`MemoryViews`: versiones resumidas, vigente, comparación, bytes, linaje) | Único mensaje que confirma una consolidación. |
+| `revoked` | número revocado y la memoria del circuito | |
+| `fork-resolved` | la memoria del circuito tras la elección | |
+
+Las vistas de una importación (`complete.views`) llevan `memory` cuando el circuito tiene versiones:
+la lista resumida, la vigente, **lo observado frente a la memoria** (la instantánea del fichero de
+trabajo comparada con la vigente), los bytes que ocupan todas las versiones y el estado de linaje.
 
 ## 5. Cancelación
 

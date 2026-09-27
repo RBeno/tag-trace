@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.40.0
+version: 0.41.0
 status: baseline-candidate
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Catálogo de algoritmos
@@ -54,7 +54,7 @@ flowchart TD
 | ALG-011 | FIFO/flujo | Tramos de zona cargada derivados del anillo, inversión de orden con margen dual (§8.1) | Adelantamientos candidatos, nunca averías confirmadas | O(n) | F3 |
 | ALG-012 | Carga online | Máquina de estados por cada calle configurada | Entradas, ocupación, permanencia, salidas y anomalías | O(n) | F3 |
 | ALG-013 | Puntos críticos | Llegadas frente a takt/calendario y causas aguas arriba | Ventanas de riesgo e impacto | O(n) | F3 |
-| ALG-014 | Consolidación | Reducción versionada y cálculo de delta | Nueva memoria compacta append-only | O(m), no O(histórico bruto) | F4 |
+| ALG-014 | Consolidación | Reducción versionada y cálculo de delta | Nueva memoria compacta append-only | O(m), no O(histórico bruto) | F4 (implementado, §6.22) |
 | ALG-015 | Retroceso causal | Búsqueda temporal/topológica hacia atrás | Cadena de hechos e hipótesis alternativas | Limitada a ventana/subgrafo | F5 |
 | ALG-016 | Replay multi-AGV | Estado observado/inferido por instante | Movimiento sobre grafo con incertidumbre | Precálculo + consulta incremental | F5 |
 | ALG-017 | Similitud de casos | Características explicables de incidencias | Casos comparables y diferencias | O(k·d) | F5 |
@@ -1096,4 +1096,30 @@ finales del ancla no abren una `parcial`.
   `minGapMs`, no se evalúa y se dice.
 - Para que la comparación entre ficheros sea completa, el Worker rellena en cada hueco `p80Ms`,
   `readsByTag[].offsetMs` y `vehicleIds` (campos opcionales del contrato).
+
+## 6.22 La consolidación humana con versiones, implementado (ALG-014, R-MEM-001..003)
+
+`src/domain/memory.ts`. Nada de este módulo mide ni decide: reduce lo ya revisado a una versión y
+compara versiones.
+
+- **`previewConsolidation`**: cruza los hallazgos de la instantánea con las marcas de revisión
+  (`state = marca ?? "pendiente"`) y produce los bloqueos —`hallazgos-pendientes` con sus claves,
+  `periodo-de-incidencia` con los de rango 1 confirmados (el rango sale del catálogo
+  `src/domain/finding-kinds.ts`, el mismo que ordena la bandeja), `ya-consolidada` si una versión
+  no revocada tiene la misma huella de fichero, `bifurcacion-sin-resolver`—, los avisos (pospuestos
+  que volverán como pendientes, con su motivo; descartados), el delta frente a la vigente
+  (`compareSnapshots`) y los bytes de una versión provisional. Sin instantánea,
+  `previewWithoutSnapshot` da el bloqueo `sin-instantanea`. Es O(hallazgos + tags).
+- **`consolidate`**: solo con la previsualización sin bloqueos; construye la versión con
+  `previousHash` = hash de la vigente, `version` = máximo + 1 (revocadas incluidas) y `hash` =
+  `semanticHash` del contenido con `hash: ""` y `revoked: null`, así que revocar no lo cambia.
+- **`revokeVersion`** devuelve una copia con `{ at, reason }`; **`currentVersion`** es la última no
+  revocada; **`compareToMemory`** es `compareSnapshots(vigente.snapshot, actual)` con la fecha y el
+  fichero de la vigente.
+- **Linaje** (`LineageState`, `classifyLineage`, `withIncoming`, `resolveFork`): la cadena de
+  hashes del linaje activo, ordenada por versión, se compara con la entrante por prefijo; la
+  entrante adelantada se adopta, la bifurcada queda como entrante sin resolver y bloquea la
+  consolidación hasta que la persona elige; el linaje no elegido se archiva con el evento y su razón.
+- El Worker (`runMemory`) recalcula siempre la previsualización desde el almacén antes de un
+  `commit`, y escribe versión y estado en una transacción.
 

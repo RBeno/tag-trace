@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.24.0
+version: 0.25.0
 status: baseline-candidate
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Contratos de datos y procedencia
@@ -498,7 +498,11 @@ formaliza en F1a y se completa en F4. Como mínimo contendrá:
   circuito viaje con toda su evolución y sin su bruto (ADR-0015).
 
 `schema_version` 2 desde 2026-09-26 (sección `instantaneas`); un `.agvproj` de la versión 1 se
-abre igual, sin instantáneas, y la aplicación lo dice.
+abre igual, sin instantáneas, y la aplicación lo dice. **`schema_version` 3 desde 2026-09-27**:
+sección `memoria` con las versiones consolidadas (§13) y el estado de linaje —linaje activo,
+linajes archivados y los eventos de elección—; un linaje entrante sin resolver no se exporta. Se
+leen los esquemas 1, 2 y 3; el 2 es el 3 sin `memoria`, que al abrirse se clasifica como
+`sin-memoria` (`MEMORY_CONSOLIDATION.md` §10).
 
 No incluirá el bruto completo por defecto. Un expediente puede conservar un recorte normalizado mínimo cuando sea necesario para reproducir una incidencia.
 
@@ -582,4 +586,32 @@ leerse o empiezan a leerse, y las aristas más lentas o más rápidas con el cri
 sale como «desaparece», no como «deja de leerse»: esta segunda clase queda para el tag que sigue en
 su sitio (en los dos anillos o en ninguno) y pasa a no leerse con pasadas de sobra. La rotura súbita
 plantada en el corte de la auditoría se ve así, como «desaparece» con sus vecinos.
+
+## 13. La memoria consolidada (F4)
+
+Una **versión** (`src/domain/memory.ts`, `ConsolidatedVersion`) es una instantánea (§12) que una
+persona eligió como referencia del circuito, más lo que hace falta para saber por qué y desde qué:
+
+| Campo | Qué es |
+|---|---|
+| `version` | 1, 2, 3… en orden de creación dentro del linaje; una revocada conserva su número |
+| `basedOn` | fichero base: `sourceId`, huella (`sourceHash`), nombre y ventana |
+| `snapshot` | la instantánea, tal cual |
+| `delta` | lo que cambia frente a la versión vigente anterior (`compareSnapshots`); `null` en la primera |
+| `decisions` | cada hallazgo de la instantánea con su decisión: clave, tipo, título, cifra, estado, nota |
+| `note` | justificación humana, opcional |
+| `hash`, `previousHash` | hash semántico del contenido con `hash: ""` y `revoked: null`; el de la vigente anterior o `null` |
+| `lineage` | identificador del linaje que consolidó (generado en la primera consolidación, heredado al adoptar) |
+| `revoked` | `null` o `{ at, reason }`; la única reescritura admitida |
+| `appVersion` | versión del motor que consolidó |
+
+**Almacén local, versión 7.** A las tablas de la 6 se añaden `memory` (clave `[circuitId, hash]`;
+una fila por versión, revocadas incluidas, de todos los linajes) y `memoryState` (clave
+`circuitId`; linaje activo con sus hashes, linaje entrante sin resolver, linajes archivados, última
+relación clasificada y eventos de elección). La migración desde la 6 solo crea las dos tablas.
+Borrar el circuito borra su memoria. Consolidar escribe la versión y el estado en una transacción.
+
+**Lo observado frente a la memoria.** En cada importación, si el circuito tiene una versión
+vigente, el Worker compara la instantánea del fichero de trabajo con ella (`compareToMemory`) y
+la vista lo enseña en la pestaña Memoria. Sin vigente (todas revocadas) no hay comparación y se dice.
 

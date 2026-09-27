@@ -14,17 +14,24 @@
  * retenidas, R-DAT-023) y `snapshots` (una instantánea por fuente, lo que perdura de cada fichero).
  * Hasta la versión 5 el circuito era un solo valor con todas sus lecturas, y el de auditoría pasó del
  * tamaño máximo de un valor de IndexedDB en Chromium (OQ-142).
+ *
+ * **Versión 7 (F4, ADR-0005).** Dos tablas más: `memory`, las versiones consolidadas del circuito,
+ * **append-only** —clave `[circuitId, hash]`, porque en una bifurcación dos linajes pueden tener la
+ * misma numeración y solo el hash las distingue; la única reescritura admitida es la copia revocada—,
+ * y `memoryState`, el estado de linaje de cada circuito (activo, entrante sin resolver, archivados y
+ * las elecciones registradas, `MEMORY_CONSOLIDATION.md` §10).
  */
 
 import type { Interval } from "../domain/coverage.js";
 import type { FleetPeriod } from "../domain/fleet.js";
+import { sortVersions, type ConsolidatedVersion, type LineageState } from "../domain/memory.js";
 import type { Reading } from "../domain/reading.js";
 import type { ReviewEntry } from "../domain/review.js";
 import type { CircuitSnapshot } from "../domain/snapshot.js";
 import { splitLegacyCircuit, type LegacyCircuitRecord } from "./retention.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 6;
+export const STORE_VERSION = 7;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
@@ -38,6 +45,10 @@ const REVIEWS = "reviews";
 const SOURCES = "sources";
 /** Una instantánea por fuente (ADR-0015): clave `[circuitId, sourceId]`. */
 const SNAPSHOTS = "snapshots";
+/** Las versiones consolidadas, append-only (F4): clave `[circuitId, hash]`. */
+const MEMORY = "memory";
+/** El estado de linaje de cada circuito (§10): clave `circuitId`. */
+const MEMORY_STATE = "memoryState";
 
 /** Las marcas de revisión de un circuito, por clave de hallazgo (`src/domain/review.ts`). */
 export interface StoredReviews {
@@ -136,6 +147,12 @@ export interface StoredSnapshot {
   readonly snapshot: CircuitSnapshot;
 }
 
+/** Una versión consolidada tal como se guarda: la propia versión, cuya clave es `[circuitId, hash]`. */
+export type StoredVersion = ConsolidatedVersion;
+
+/** El estado de linaje de un circuito, tal como se guarda (`src/domain/memory.ts`). */
+export type StoredMemoryState = LineageState;
+
 /**
  * El historial de flota del circuito, **acumulado**: cada carga se fusiona por (AGV, `desde`) con lo
  * guardado, a diferencia de las listas, que se sustituyen enteras.
@@ -227,6 +244,16 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
         current.update({ ...rest, sources: split.sources });
         current.continue();
       };
+    },
+  },
+  {
+    to: 7,
+    // La memoria consolidada (F4): dos tablas nuevas y vacías. Nada que reescribir: ningún circuito
+    // anterior tiene versiones —consolidar es una acción humana que hasta ahora no existía— y el
+    // estado de linaje se crea con la primera consolidación o el primer `.agvproj` con memoria.
+    apply: (db) => {
+      db.createObjectStore(MEMORY, { keyPath: ["circuitId", "hash"] });
+      db.createObjectStore(MEMORY_STATE, { keyPath: "circuitId" });
     },
   },
 ];
@@ -412,13 +439,15 @@ export async function loadSnapshots(circuitId: string): Promise<readonly Circuit
 export async function deleteCircuit(circuitId: string): Promise<void> {
   const db = await open();
   try {
-    // El circuito, sus lecturas, sus instantáneas y su revisión se van juntos: una marca o una
-    // instantánea sin su circuito no significan nada.
-    const tx = db.transaction([CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS], "readwrite");
+    // El circuito, sus lecturas, sus instantáneas, su revisión y su memoria se van juntos: una marca,
+    // una instantánea o una versión sin su circuito no significan nada.
+    const tx = db.transaction([CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS, MEMORY, MEMORY_STATE], "readwrite");
     tx.objectStore(CIRCUITS).delete(circuitId);
     tx.objectStore(REVIEWS).delete(circuitId);
     tx.objectStore(SOURCES).delete(circuitRange(circuitId));
     tx.objectStore(SNAPSHOTS).delete(circuitRange(circuitId));
+    tx.objectStore(MEMORY).delete(circuitRange(circuitId));
+    tx.objectStore(MEMORY_STATE).delete(circuitId);
     await settle(tx, "No se pudo borrar el circuito.");
   } finally {
     db.close();
@@ -459,6 +488,81 @@ export async function saveReview(circuitId: string, key: string, entry: ReviewEn
       tx.onerror = () => reject(tx.error ?? new Error("No se pudo guardar la revisión."));
       tx.onabort = () => reject(tx.error ?? new Error("La escritura de la revisión se abortó."));
     });
+  } finally {
+    db.close();
+  }
+}
+
+// --- Memoria consolidada (F4) ----------------------------------------------------------------------
+
+/**
+ * Guarda una versión: la añade si es nueva o, si ya existe con ese hash, la sustituye. La única
+ * sustitución legítima es la **copia revocada** (`revokeVersion`): el hash no cambia al revocar, así
+ * que la clave es la misma y lo demás de la versión también.
+ */
+export async function saveVersion(version: ConsolidatedVersion): Promise<void> {
+  const db = await open();
+  try {
+    const tx = db.transaction(MEMORY, "readwrite");
+    tx.objectStore(MEMORY).put(version satisfies StoredVersion);
+    await settle(tx, "No se pudo guardar la versión consolidada.");
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Versiones y estado de linaje en **una sola** transacción: una consolidación es la versión nueva más
+ * el linaje que la incorpora, y abrir un `.agvproj` con memoria son sus versiones más la relación
+ * clasificada. Dos transacciones dejarían, ante un cierre a mitad, un linaje que nombra un hash que no
+ * está o una versión que ningún linaje reclama (INV-006).
+ */
+export async function saveMemory(input: {
+  readonly versions: readonly ConsolidatedVersion[];
+  readonly state: StoredMemoryState;
+}): Promise<void> {
+  const db = await open();
+  try {
+    const tx = db.transaction([MEMORY, MEMORY_STATE], "readwrite");
+    const memory = tx.objectStore(MEMORY);
+    for (const version of input.versions) memory.put(version satisfies StoredVersion);
+    tx.objectStore(MEMORY_STATE).put(input.state);
+    await settle(tx, "No se pudo guardar la memoria del circuito.");
+  } finally {
+    db.close();
+  }
+}
+
+/** Todas las versiones de un circuito —de todos los linajes, revocadas incluidas—, en orden de versión y fecha. */
+export async function loadVersions(circuitId: string): Promise<readonly ConsolidatedVersion[]> {
+  const db = await open();
+  try {
+    const tx = db.transaction(MEMORY, "readonly");
+    const store = tx.objectStore(MEMORY);
+    return sortVersions(await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<StoredVersion[]>));
+  } finally {
+    db.close();
+  }
+}
+
+/** El estado de linaje del circuito, o `undefined` si nunca consolidó ni abrió un proyecto con memoria. */
+export async function loadMemoryState(circuitId: string): Promise<StoredMemoryState | undefined> {
+  const db = await open();
+  try {
+    const tx = db.transaction(MEMORY_STATE, "readonly");
+    const store = tx.objectStore(MEMORY_STATE);
+    return await run(store, store.get(circuitId) as IDBRequest<StoredMemoryState | undefined>);
+  } finally {
+    db.close();
+  }
+}
+
+export async function saveMemoryState(state: StoredMemoryState): Promise<void> {
+  const db = await open();
+  try {
+    const tx = db.transaction(MEMORY_STATE, "readwrite");
+    tx.objectStore(MEMORY_STATE).put(state);
+    await settle(tx, "No se pudo guardar el estado de linaje.");
   } finally {
     db.close();
   }

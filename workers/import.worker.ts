@@ -114,19 +114,40 @@ import { buildAllAgvDossiers, buildAllTagDossiers } from "../src/domain/dossier.
 import { compareAgainstVsystem } from "../src/domain/vsystem.js";
 import { buildReplayFrames } from "../src/domain/replay.js";
 import { PROVISIONAL_CONFIG } from "../src/domain/config.js";
-import type { CircuitViews } from "../src/application/protocol.js";
+import type { CircuitViews, MemoryViews, VersionSummary } from "../src/application/protocol.js";
 import {
   isAvailable,
   loadCircuit,
+  loadMemoryState,
   loadRetainedReadings,
   loadReviews,
   loadSnapshots,
+  loadVersions,
   saveAccumulation,
   saveCircuit,
+  saveMemory,
   saveSnapshot,
+  saveVersion,
   type StoredCircuit,
   type StoredSource,
 } from "../src/persistence/store.js";
+import {
+  compareToMemory,
+  consolidate,
+  currentVersion,
+  emptyLineageState,
+  previewConsolidation,
+  previewWithoutSnapshot,
+  resolveFork,
+  revokeVersion,
+  versionBytes,
+  versionsOfLineage,
+  withConsolidated,
+  type ConsolidatedVersion,
+  type ConsolidationPreview,
+  type LineageState,
+} from "../src/domain/memory.js";
+import { findingKindOf } from "../src/domain/finding-kinds.js";
 import { distinctSources, retainedSources } from "../src/persistence/retention.js";
 import {
   buildSnapshot,
@@ -1611,11 +1632,23 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     problems: [...notes, ...failures],
   };
 
+  // La memoria consolidada (F4): solo si el circuito tiene versiones. Lo observado es la instantánea
+  // del fichero de trabajo —la recién construida o, si no se pudo, la guardada de esa misma fuente—.
+  let memory: MemoryViews | undefined;
+  if (stored !== undefined && isAvailable()) {
+    try {
+      memory = await buildMemoryViews(stored.circuitId, snapshot ?? snapshotOf.get(importedSource.sourceId) ?? null);
+    } catch (error) {
+      failures.push(`La memoria consolidada no se pudo leer: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   const views: CircuitViews = {
     ...baseViews,
     anchorSections: anchorSectionsFinal,
     franjas: { ...baseViews.franjas, cohorts: franjaCohortsFinal },
     snapshots: snapshotsView,
+    ...(memory === undefined ? {} : { memory }),
     ...listViews,
     ...(drift === null || !drift.evaluated || drift.earlyPeriod === null || drift.latePeriod === null
       ? {}
@@ -1808,6 +1841,165 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
   }
 }
 
+// --- Memoria consolidada (F4) ----------------------------------------------------------------------
+
+/** Los umbrales con que se comparan instantáneas: los mismos que los cambios de tag (OQ-138). */
+const MEMORY_THRESHOLDS = { maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance };
+
+/** Lo que la lista de versiones necesita de cada una, sin el grafo. */
+function summarizeVersion(version: ConsolidatedVersion): VersionSummary {
+  const count = (state: string): number => version.decisions.filter((decision) => decision.state === state).length;
+  return {
+    version: version.version,
+    createdAt: version.createdAt,
+    basedOnFileName: version.basedOn.fileName,
+    basedOnSourceId: version.basedOn.sourceId,
+    window: version.basedOn.window,
+    decisions: { confirmed: count("confirmado"), discarded: count("descartado"), postponed: count("pospuesto") },
+    note: version.note,
+    revoked: version.revoked,
+    hash: version.hash,
+    bytes: versionBytes(version),
+  };
+}
+
+/** Las versiones guardadas y el estado de linaje del circuito; sin estado guardado, todas forman el linaje activo. */
+async function loadMemory(circuitId: string): Promise<{
+  readonly all: readonly ConsolidatedVersion[];
+  readonly active: readonly ConsolidatedVersion[];
+  readonly state: LineageState;
+}> {
+  const [all, stored] = await Promise.all([loadVersions(circuitId), loadMemoryState(circuitId)]);
+  const state = stored ?? emptyLineageState(circuitId);
+  const active = state.active === null ? all : versionsOfLineage(all, state.active);
+  return { all, active, state };
+}
+
+/** Las vistas de la memoria del circuito, o `undefined` si no tiene ninguna versión. */
+async function buildMemoryViews(circuitId: string, observed: CircuitSnapshot | null): Promise<MemoryViews | undefined> {
+  const { all, active, state } = await loadMemory(circuitId);
+  if (all.length === 0) return undefined;
+  const current = currentVersion(active);
+  return {
+    versions: active.map(summarizeVersion),
+    current: current?.version ?? null,
+    comparison: current === null || observed === null ? null : compareToMemory(observed, current, MEMORY_THRESHOLDS),
+    budgetBytes: all.reduce((sum, version) => sum + versionBytes(version), 0),
+    lineage: state.lastRelation,
+    fork:
+      state.incoming === null
+        ? null
+        : { local: active.map(summarizeVersion), incoming: versionsOfLineage(all, state.incoming).map(summarizeVersion) },
+    lineageEvents: state.lineageEvents,
+  };
+}
+
+/**
+ * La previsualización de consolidar un fichero, calculada **aquí** desde el almacén: nunca se confía
+ * en una previsualización que venga del hilo principal. El mismo cálculo sirve para `preview` y para
+ * `commit`, que es lo que garantiza que lo confirmado es lo que se escribe.
+ */
+async function previewFor(circuitId: string, sourceId: string): Promise<{ readonly preview: ConsolidationPreview; readonly snapshot: CircuitSnapshot | null; readonly state: LineageState }> {
+  const stored = await loadCircuit(circuitId);
+  if (stored === undefined) throw new Error(`El circuito ${circuitId} no está en el almacén.`);
+  const source = stored.sources.find((entry) => entry.sourceId === sourceId);
+  if (source === undefined) throw new Error(`El fichero ${sourceId} no es una fuente del circuito.`);
+  const [snapshots, reviews, memory] = await Promise.all([loadSnapshots(circuitId), loadReviews(circuitId), loadMemory(circuitId)]);
+  const snapshot = snapshots.find((entry) => entry.sourceId === sourceId) ?? null;
+  if (snapshot === null) {
+    const basedOn = {
+      sourceId: source.sourceId,
+      sourceHash: source.sourceHash,
+      fileName: source.fileName,
+      window: source.complete ?? { from: source.importedAt, to: source.importedAt },
+    };
+    return { preview: previewWithoutSnapshot(basedOn, memory.active), snapshot: null, state: memory.state };
+  }
+  const preview = previewConsolidation({
+    snapshot,
+    reviews,
+    versions: memory.active,
+    rankOf: (kind) => findingKindOf(kind).rank,
+    forkUnresolved: memory.state.incoming !== null,
+    thresholds: MEMORY_THRESHOLDS,
+  });
+  return { preview, snapshot, state: memory.state };
+}
+
+/**
+ * Consolidación, revocación y resolución de bifurcaciones (F4). El Worker no decide nada: ejecuta lo
+ * que la persona confirmó (R-MEM-001), y lo escribe append-only (R-MEM-002).
+ */
+async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "revoke" | "resolve-fork" }>): Promise<void> {
+  const { jobId, circuitId } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  if (!isAvailable()) {
+    fail("No hay almacén local: la memoria consolidada necesita IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
+    return;
+  }
+  try {
+    if (message.type === "consolidate") {
+      const { preview, snapshot, state } = await previewFor(circuitId, message.sourceId);
+      if (message.mode === "preview") {
+        emit({ type: "consolidation-preview", circuitId, preview }, jobId);
+        return;
+      }
+      if (preview.blockers.length > 0 || snapshot === null) {
+        fail(
+          `No se puede consolidar: ${preview.blockers.map((blocker) => blocker.detail).join(" ")}`,
+          "Resuelve lo que bloquea y vuelve a previsualizar.",
+        );
+        return;
+      }
+      const lineage = state.active?.id ?? crypto.randomUUID();
+      const version = await consolidate(preview, {
+        circuitId,
+        snapshot,
+        lineage,
+        appVersion: APP_VERSION,
+        now: Date.now(),
+        note: message.note ?? null,
+      });
+      await saveMemory({ versions: [version], state: withConsolidated(state, version) });
+      const memory = await buildMemoryViews(circuitId, snapshot);
+      if (memory === undefined) throw new Error("La versión se guardó pero no se pudo volver a leer.");
+      emit({ type: "consolidated", circuitId, version, memory }, jobId);
+      return;
+    }
+
+    if (message.type === "revoke") {
+      const { active } = await loadMemory(circuitId);
+      const target = active.find((version) => version.version === message.version);
+      if (target === undefined) {
+        fail(`La versión v${message.version} no está en el linaje activo del circuito.`, "Comprueba el número en la lista de versiones.");
+        return;
+      }
+      await saveVersion(revokeVersion(target, message.reason, Date.now()));
+      const snapshots = await loadSnapshots(circuitId);
+      const memory = await buildMemoryViews(circuitId, snapshots[snapshots.length - 1] ?? null);
+      if (memory === undefined) throw new Error("La revocación se guardó pero no se pudo volver a leer.");
+      emit({ type: "revoked", circuitId, version: message.version, memory }, jobId);
+      return;
+    }
+
+    const { state } = await loadMemory(circuitId);
+    const resolved = resolveFork(state, message.choice, message.reason, Date.now());
+    await saveMemory({ versions: [], state: resolved });
+    const snapshots = await loadSnapshots(circuitId);
+    const memory = await buildMemoryViews(circuitId, snapshots[snapshots.length - 1] ?? null);
+    if (memory === undefined) throw new Error("La elección se guardó pero no se pudo volver a leer.");
+    emit({ type: "fork-resolved", circuitId, memory }, jobId);
+  } catch (error) {
+    // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
+    fail(
+      `La operación de memoria falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
+    );
+  }
+}
+
 /**
  * Carga las listas de tags de un circuito y las guarda **con él**.
  *
@@ -1816,19 +2008,6 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
  * los cambios propuestos y vuelve a cargarlas, el análisis siguiente las recoge ya actualizadas y
  * el anterior sigue explicándose con las suyas.
  */
-/** Consolidación y revocación de la memoria (F4). Pendiente de implementar: hoy responde con error. */
-async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "revoke" | "resolve-fork" }>): Promise<void> {
-  emit(
-    {
-      type: "error",
-      code: "INTERNAL",
-      cause: `La memoria consolidada aún no está disponible (${message.type}).`,
-      recovery: "Espera a la entrega de la fase 4.",
-    },
-    message.jobId,
-  );
-}
-
 async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<void> {
   const { jobId, file, circuitId } = message;
   if (!isAvailable()) {

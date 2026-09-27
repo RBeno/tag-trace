@@ -1,8 +1,8 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.4.0
+version: 0.5.0
 status: baseline-candidate
-last_updated: 2026-09-23
+last_updated: 2026-09-27
 ---
 
 # Memoria longitudinal y consolidación
@@ -87,6 +87,16 @@ hallazgo queda pendiente, confirmado, descartado o pospuesto, con su nota. Decis
 pospuesto se puede consolidar con su motivo y vuelve a aparecer como pendiente en el análisis del
 periodo siguiente.
 
+**Implementado el 2026-09-27** (`src/domain/memory.ts`, pestaña «Memoria», `UX_SPEC.md` §6). Los
+pasos E, G y H del diagrama son `previewConsolidation` (no escribe nada), la confirmación humana en
+la interfaz y `consolidate` en el Worker, que vuelve a calcular la previsualización desde el almacén
+antes de escribir. Las precondiciones que hoy se comprueban con datos son: fichero de trabajo con
+instantánea, hallazgos sin pendientes, ningún hallazgo de rango 1 confirmado, ninguna versión
+vigente basada en el mismo fichero y ninguna bifurcación sin resolver. Las demás de la lista
+(calidad, calendario, incidencias separadas) quedan a la vista de la persona en el análisis, no las
+decide la aplicación. La previsualización enseña las decisiones por estado, el delta frente a la
+versión vigente y el tamaño estimado; cancelar antes de confirmar no deja rastro.
+
 ## 7. Inmutabilidad y correcciones
 
 Una consolidación nunca se edita. Si se descubre un error:
@@ -95,6 +105,11 @@ Una consolidación nunca se edita. Si se descubre un error:
 2. se crea una nueva consolidación corregida;
 3. las comparaciones excluyen la versión revocada según reglas explícitas;
 4. el historial y la razón permanecen visibles.
+
+**Implementado**: revocar añade `{ at, reason }` a la versión; su hash no cambia, así que la cadena
+de hashes sigue siendo comparable entre dispositivos. La versión vigente es la última no revocada,
+`compareToMemory` y el delta de la siguiente consolidación la usan, y la lista de versiones enseña
+las revocadas tachadas con su razón. La revocación es la única reescritura que admite el almacén.
 
 ## 8. Evolución del esperado
 
@@ -143,6 +158,18 @@ diseño y hay que tratarla.
 - La elección queda registrada como un evento más del historial, con su justificación.
 - Mientras una bifurcación esté sin resolver, la comparación histórica se marca como incompleta y
   la consolidación queda bloqueada.
+
+**Implementado (2026-09-27)** con dos de las tres salidas: conservar el local (el entrante queda
+archivado) o adoptar el entrante (el local queda archivado y el linaje adoptado sigue aquí). Volver
+al ancestro común no está: exige revocar en un linaje y consolidar de nuevo, y hoy se hace a mano
+con esas dos acciones. La clasificación (`classifyLineage`) va por la cadena de hashes ordenada por
+versión: `identica` si coinciden, `local-adelantada` si la entrante es prefijo de la local,
+`entrante-adelantada` si la local es prefijo de la entrante (entonces se adopta sin preguntar: es la
+misma historia, más larga), `bifurcada` en el resto. El identificador de linaje lo genera el
+dispositivo en su primera consolidación y se hereda al adoptar; lo que distingue dos ramas es el
+hash, no ese identificador. Al abrir un `.agvproj` con `identica` o `local-adelantada` solo se
+sincronizan las revocaciones que trae; las notas y los eventos de linaje del otro dispositivo no
+(OQ-144). Un linaje entrante sin resolver no viaja en el `.agvproj` que se exporta desde aquí.
 
 La forma de evitarla es organizativa, no técnica: consolidar siempre desde el mismo dispositivo, o
 exportar e importar antes de consolidar. La aplicación lo recuerda, no lo impone.

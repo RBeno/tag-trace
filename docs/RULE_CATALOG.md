@@ -1,8 +1,8 @@
 ---
 document_id: TT-RULES-001
-version: 0.54.0
+version: 0.55.0
 status: baseline-candidate
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Catálogo de reglas industriales
@@ -179,9 +179,9 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 
 | ID | Estado | Regla |
 |---|---|---|
-| R-MEM-001 | accepted | Solo un periodo revisado puede consolidarse mediante acción humana explícita. |
-| R-MEM-002 | accepted | Consolidar crea una versión; no sobrescribe ni reinterpreta el pasado. |
-| R-MEM-003 | accepted | La memoria normal conserva agregados, evolución y divergencias relevantes, no todo el bruto. |
+| R-MEM-001 | accepted | Solo un periodo revisado puede consolidarse mediante acción humana explícita. **Tal como quedó implementado (2026-09-27, `src/domain/memory.ts`)**: la consolidación parte de la instantánea de un fichero (R-DAT-023) y se previsualiza antes; bloquean solo los hallazgos **pendientes** (propietario, 2026-09-23), un hallazgo de rango 1 **confirmado** (es un periodo de incidencia, `MEMORY_CONSOLIDATION.md` §8), una versión vigente ya basada en ese mismo fichero, la falta de instantánea y una bifurcación de linaje sin resolver. Lo pospuesto se consolida con su motivo y se avisa de que volverá como pendiente. El Worker recalcula la previsualización desde el almacén al confirmar: nunca consolida lo que le manda la interfaz sin comprobarlo, y nunca consolida sin la confirmación de la persona. |
+| R-MEM-002 | accepted | Consolidar crea una versión; no sobrescribe ni reinterpreta el pasado. **Implementado**: cada versión lleva su hash semántico y el de la versión vigente anterior (cadena de hashes, §10); vN+1 guarda el delta frente a la última no revocada; revocar añade fecha y razón a la versión sin cambiar su hash ni borrarla, y la siguiente consolidación encadena con la última no revocada. El almacén guarda las versiones por `[circuitId, hash]`, así que dos linajes que coinciden en número de versión conviven sin pisarse. |
+| R-MEM-003 | accepted | La memoria normal conserva agregados, evolución y divergencias relevantes, no todo el bruto. **Implementado**: la versión es la instantánea elegida (`DATA_CONTRACTS.md` §12) más las decisiones de la revisión (clave, tipo, título, cifra, estado, nota), la nota humana, la versión del motor y el fichero base con su huella. Nada de lecturas. La vista dice cuántos bytes ocupan todas las versiones (§9). |
 | R-INC-001 | accepted | Una incidencia se vincula al circuito pero se almacena separada de la memoria normal. |
 | R-INC-002 | accepted | Guardar una incidencia no modifica el esperado ni el grafo validado. |
 | R-INC-003 | accepted | Una contramedida solo se considera eficaz tras una verificación posterior registrada. |
