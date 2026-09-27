@@ -251,7 +251,11 @@ export interface SegmentHistory {
  * tiempo, sin repetidas, con la medición de un mismo circuito.
  */
 export function segmentHistories(
-  franjas: readonly { readonly sourceId: string; readonly bands: readonly FranjaBand[] }[],
+  franjas: readonly {
+    readonly sourceId: string;
+    /** Basta con el par y sus horquillas: las instantáneas (ADR-0015) no guardan primera y última vez. */
+    readonly bands: readonly Pick<FranjaBand, "from" | "to" | "produccion" | "noche">[];
+  }[],
 ): readonly SegmentHistory[] {
   const keys = new Map<string, { from: string; to: string }>();
   for (const franja of franjas) for (const row of franja.bands) keys.set(pairKey(row.from, row.to), { from: row.from, to: row.to });
@@ -287,7 +291,14 @@ export function segmentHistories(
   return histories.sort((a, b) => size(b) - size(a) || a.from.localeCompare(b.from));
 }
 
-function classifyHistory(
+/**
+ * La historia de una serie de horquillas de un mismo tramo y régimen, en orden de tiempo (R-TIM-010):
+ * `cambio` con dos, `escalon` con un único salto que se mantiene, `deriva` moviéndose siempre hacia el
+ * mismo lado; `null` si nada cambió o el salto volvió atrás. `at` es el índice donde empieza. La usan
+ * `segmentHistories` (desde lecturas) y `historiesFromSnapshots` (desde instantáneas) para que las dos
+ * digan lo mismo.
+ */
+export function classifyHistory(
   bands: readonly Band[],
 ): { kind: HistoryKind; direction: "mas-lento" | "mas-rapido"; at: number | null } | null {
   if (bands.length < 2) return null;

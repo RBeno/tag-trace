@@ -44,10 +44,14 @@ export interface ReviewSession {
   readonly panel: HTMLElement;
   /** Actualiza el progreso; se llama cuando ya están todas las tarjetas. */
   refresh(): void;
+  /** ¿Hay ya una tarjeta con esta clave de revisión? */
+  has(key: string): boolean;
   /** El filtro de estado activo («» es todos). La bandeja lo combina con el suyo por tema. */
   filter(): string;
   /** Se avisa cada vez que cambia el filtro de estado o una marca, para que la bandeja se rehaga. */
   onChange(listener: () => void): void;
+  /** Suelta lo que observa el documento (la medida de la barra); se llama al sustituir la sesión por otra. */
+  dispose(): void;
 }
 
 /** Lo último que se leyó del almacén, para no esperar a IndexedDB al volver a dibujar el mismo circuito. */
@@ -179,7 +183,8 @@ export function createReviewSession(
   const measure = (): void => {
     document.documentElement.style.setProperty("--review-bar-height", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
   };
-  if (typeof ResizeObserver !== "undefined") new ResizeObserver(measure).observe(bar);
+  const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+  observer?.observe(bar);
   const actions = node("div", "review-actions");
   actions.append(exportButton);
   panel.append(counts, filters, actions, absent);
@@ -252,6 +257,8 @@ export function createReviewSession(
     const changed = node("p", "review-changed");
     changed.hidden = true;
     const control: CardControl = { key, card, title, figure, toggle, popup, items, note, changed };
+    // La clave queda en la tarjeta: es lo que casa la tarjeta con el hallazgo de la instantánea.
+    card.dataset["reviewKey"] = key;
 
     const open = (focusItem: boolean): void => {
       if (openControl !== null && openControl !== control) closeMenu(openControl, false);
@@ -328,6 +335,8 @@ export function createReviewSession(
       summary.total === 0
         ? "Revisión: no hay hallazgos que revisar."
         : `Revisados ${done} de ${summary.total}`;
+    // Sin hallazgos no hay nada a lo que saltar: el botón solo ocuparía sitio.
+    next.hidden = summary.total === 0;
     counts.textContent = REVIEW_STATES.filter((state) => state !== "pendiente")
       .map((state) => counted(summary[state], state))
       .concat(counted(summary.pendiente, "pendiente"))
@@ -366,6 +375,8 @@ export function createReviewSession(
     bar,
     panel,
     refresh,
+    dispose: () => observer?.disconnect(),
+    has: (key) => controls.has(key),
     filter: () => container.dataset["reviewFilter"] ?? "",
     onChange: (listener) => {
       listeners.push(listener);

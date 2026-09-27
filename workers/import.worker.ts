@@ -25,6 +25,7 @@ import {
 import { decodeSource } from "../src/ingestion/decode.js";
 import { rowsToDelimitedText } from "../src/ingestion/xlsx-readings.js";
 import { declaredTagInfo, tagSections } from "../src/domain/tag-info.js";
+import { previewFingerprint } from "../src/domain/consolidation-fingerprint.js";
 import { measureAnchorSections } from "../src/domain/anchor-sections.js";
 import { reinforcementGroups, reinforcementPartners } from "../src/domain/critical-reinforcement.js";
 import { buildListCleanup } from "../src/domain/list-cleanup.js";
@@ -55,7 +56,7 @@ import {
   type Lap,
   type LapAnchor,
 } from "../src/domain/laps.js";
-import { buildReadMatrix, type OrderEvidenceLimits } from "../src/domain/read-matrix.js";
+import { buildReadMatrix, type OrderEvidenceLimits, type ReadMatrix } from "../src/domain/read-matrix.js";
 import { detectTagChanges, withoutTags } from "../src/domain/tag-changes.js";
 import { describeVehicleReading } from "../src/domain/vehicle-reading.js";
 import { buildChargingReport, findLaneJunctions } from "../src/domain/charging.js";
@@ -68,7 +69,7 @@ import {
   timeSignaturesMeasurable,
   transitionDurationsByTag,
 } from "../src/domain/critical-points.js";
-import { compareDistantPeriods } from "../src/domain/drift.js";
+import type { DriftComparison } from "../src/domain/drift.js";
 import { buildFleetTimeline, mergeFleetPeriods } from "../src/domain/fleet.js";
 import { classifySilence, usualSegmentTimes, type UsualTimes } from "../src/domain/silence-kind.js";
 import {
@@ -113,12 +114,100 @@ import {
 import { buildAllAgvDossiers, buildAllTagDossiers } from "../src/domain/dossier.js";
 import { compareAgainstVsystem } from "../src/domain/vsystem.js";
 import { buildReplayFrames } from "../src/domain/replay.js";
-import { PROVISIONAL_CONFIG } from "../src/domain/config.js";
-import type { CircuitViews } from "../src/application/protocol.js";
-import { isAvailable, loadCircuit, saveCircuit } from "../src/persistence/store.js";
+import { PROVISIONAL_CONFIG, type AnalysisConfig } from "../src/domain/config.js";
+import {
+  formatPlantValue,
+  isPlantValueKey,
+  measurePlantValues,
+  plantValueDefinition,
+  plantValueEventFor,
+  plantValuesAt,
+  plantValuesView,
+  proposePlantValues,
+  resolveAnalysisConfig,
+  type PlantValueEvent,
+  type PlantValueProposals,
+  type PlantValuesView,
+} from "../src/domain/plant-values.js";
+import type { CircuitViews, MemoryViews, PlanViews, VersionSummary } from "../src/application/protocol.js";
+import {
+  appendPlanEvents,
+  appendPlantValue,
+  isAvailable,
+  loadCircuit,
+  loadMemoryState,
+  loadPlanEvents,
+  loadPlantValues,
+  archiveSource,
+  listArchive,
+  loadArchivedSource,
+  loadRetainedReadings,
+  MemoryChangedError,
+  memoryStoredBytes,
+  loadReviews,
+  loadSnapshots,
+  loadVersions,
+  saveAccumulation,
+  saveCircuit,
+  saveMemory,
+  saveSnapshot,
+  saveVersion,
+  type StoredCircuit,
+  type StoredSource,
+} from "../src/persistence/store.js";
+import {
+  compareToMemory,
+  compareVersions,
+  consolidate,
+  currentVersion,
+  emptyLineageState,
+  previewConsolidation,
+  previewWithoutSnapshot,
+  resolveFork,
+  revokeVersion,
+  versionBytes,
+  versionsOfLineage,
+  withConsolidated,
+  type ConsolidatedVersion,
+  type ConsolidationPreview,
+  type LineageState,
+} from "../src/domain/memory.js";
+import {
+  bootstrapPlan,
+  describeEvent,
+  observeAgainstPlan,
+  planAt,
+  proposeChanges,
+  reinterpretDelta,
+  summarizePlan,
+  validateEvent,
+  type PlanEvent,
+  type PlanEventInput,
+  type PlanObservation,
+} from "../src/domain/plan.js";
+import { findingKindOf } from "../src/domain/finding-kinds.js";
+import { confirmedSubjectsOf, summarizeChanges } from "../src/domain/change-class.js";
+import { distinctSources, retainedSources } from "../src/persistence/retention.js";
+import {
+  buildSnapshot,
+  compareSnapshots,
+  driftBetweenSnapshots,
+  historiesFromSnapshots,
+  sortSnapshots,
+  structureBetweenSnapshots,
+  type CircuitSnapshot,
+  type SnapshotDelta,
+} from "../src/domain/snapshot.js";
+import { anchorsOnRing } from "../src/domain/anchor-sections.js";
+import { measureAnchorGaps } from "../src/domain/anchor-gaps.js";
+import { buildSnapshotFindings } from "../src/domain/snapshot-findings.js";
+import { assembleSnapshotInput } from "../src/application/snapshot-assembly.js";
+import { APP_VERSION } from "../src/application/version.js";
+import { checkCuts, coverageWithoutCuts, cutReadings, cutWarnings, type AppliedCut, type IncidentCut } from "../src/domain/incident-cut.js";
 import type { Reading } from "../src/domain/reading.js";
 import type { SourceDirection } from "../src/domain/order.js";
 import type { TruthState } from "../src/domain/truth.js";
+import type { TagClass } from "../src/domain/inventory.js";
 import type { AccumulationReport } from "../src/application/protocol.js";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
@@ -139,12 +228,70 @@ async function hashFile(buffer: ArrayBuffer): Promise<string> {
 }
 
 
+/** Lo que la acumulación deja para el análisis: el circuito guardado y la ventana de trabajo. */
+interface Accumulated {
+  readonly report: AccumulationReport;
+  /** El circuito tal como quedó guardado; `undefined` si la afinidad impidió acumular. */
+  readonly stored: StoredCircuit | undefined;
+  /**
+   * La ventana de trabajo (ADR-0015 §2): las lecturas de las fuentes retenidas ya unidas y, si la
+   * fuente importada no está retenida —un fichero repetido cuya primera carga ya se retiró—, también
+   * las suyas, porque es lo que se está mirando.
+   */
+  readonly working: readonly Reading[];
+  /** La cobertura de la ventana de trabajo: solo donde hay lecturas. Fuera no hay silencio, hay instantánea. */
+  readonly workingCoverage: readonly Interval[];
+  /** Las instantáneas que el circuito ya tenía antes de esta importación, en orden de ventana. */
+  readonly snapshots: readonly CircuitSnapshot[];
+}
+
+/** Une las lecturas de varias fuentes retenidas, en orden de ventana, con la unión por tramo común (R-DAT-005). */
+function joinRetained(
+  records: readonly { readonly sourceId: string; readonly readings: readonly Reading[] }[],
+  sources: readonly StoredSource[],
+): readonly Reading[] {
+  const startOf = new Map(sources.map((source) => [source.sourceId, source.complete?.from ?? Infinity]));
+  const ordered = [...records].sort((a, b) => (startOf.get(a.sourceId) ?? Infinity) - (startOf.get(b.sourceId) ?? Infinity));
+  return ordered.reduce<readonly Reading[]>((joined, record) => (joined.length === 0 ? record.readings : unionReadings(joined, record.readings).readings), []);
+}
+
+/** Un informe de acumulación con lo que el circuito **ya tenía**: la fuente no se escribió. */
+function unchangedReport(
+  circuitId: string,
+  existing: StoredCircuit | undefined,
+  working: readonly Reading[],
+  affinity: AccumulationReport["affinity"],
+): AccumulationReport {
+  const sources = existing?.sources ?? [];
+  const distinct = distinctSources(sources);
+  return {
+    circuitId,
+    coverage: existing?.coverage ?? [],
+    totalReadings: working.length,
+    sources: sources.length,
+    shared: 0,
+    disagreements: 0,
+    affinity,
+    accumulated: false,
+    retained: { sourceIds: distinct.filter((source) => source.retained).map((source) => source.sourceId), distinctSources: distinct.length },
+    snapshots: {
+      withSnapshot: distinct.filter((source) => source.snapshot).length,
+      withoutSnapshot: distinct.filter((source) => !source.snapshot).length,
+    },
+  };
+}
+
 /**
- * Suma una fuente recién importada al circuito, uniéndola con lo ya guardado.
+ * Suma una fuente recién importada al circuito.
  *
  * El almacén se lee y se escribe **aquí**, no en el hilo principal: así ni las lecturas guardadas
  * ni las nuevas cruzan un `postMessage`, y la unión —que recorre las dos series— tampoco bloquea la
  * interfaz.
+ *
+ * Desde la versión 6 del almacén (ADR-0015) el circuito no lleva sus lecturas: se cargan solo las
+ * **retenidas** (R-DAT-023), se unen con las nuevas, las nuevas se guardan en su propio registro, se
+ * aplica la retención —las dos últimas cargadas, se solapen o no— y el circuito se
+ * guarda sin lecturas, todo en una transacción. Lo demás del circuito queda como instantánea.
  */
 async function accumulate(
   circuitId: string,
@@ -152,58 +299,69 @@ async function accumulate(
   zone: string,
   result: { summary: { sourceId: string; sourceHash: string; fileName: string; acceptedRows: number };
     readings: readonly Reading[] },
-): Promise<AccumulationReport | undefined> {
+  config: AnalysisConfig,
+): Promise<Accumulated | undefined> {
   if (!isAvailable()) return undefined;
 
   const existing = await loadCircuit(circuitId);
-  const previous = existing?.readings ?? [];
+  const retainedRecords = await loadRetainedReadings(circuitId);
+  const snapshots = await loadSnapshots(circuitId);
+  const previous = joinRetained(retainedRecords, existing?.sources ?? []);
+  const complete = sourceCoverage(result.readings).complete;
 
   // La afinidad se comprueba **antes de unir y antes de escribir**: una fuente ajena que llegue
   // hasta el almacén ya no se puede separar de las demás, porque la unión no conserva de qué
-  // circuito venía cada lectura. Aquí todavía hay dónde parar (FR-003, R-DAT-006).
-  const affinity = assessAffinity(
-    tagsOf(result.readings),
-    tagsOf(previous),
-    PROVISIONAL_CONFIG.affinity,
-  );
+  // circuito venía cada lectura. Aquí todavía hay dónde parar (FR-003, R-DAT-006). Lo conocido del
+  // circuito son los tags de las lecturas retenidas **y** los de sus instantáneas: un tag que solo se
+  // leyó en un fichero ya retirado sigue siendo del circuito.
+  const knownTags = new Set(tagsOf(previous));
+  for (const snapshot of snapshots) for (const vertex of snapshot.vertices) if (vertex.readings > 0) knownTags.add(vertex.tagId);
+  const affinity = assessAffinity(tagsOf(result.readings), knownTags, config.affinity);
   if (!affinity.mayAccumulate) {
     return {
-      circuitId,
-      coverage: existing?.coverage ?? [],
-      totalReadings: previous.length,
-      sources: existing?.sources.length ?? 0,
-      shared: 0,
-      disagreements: 0,
-      affinity,
-      accumulated: false,
+      report: unchangedReport(circuitId, existing, previous, affinity),
+      stored: undefined,
+      working: result.readings,
+      workingCoverage: complete === null ? [] : [complete],
+      snapshots,
     };
   }
 
-  const union = unionReadings(previous, result.readings);
-  const complete = sourceCoverage(result.readings).complete;
-
-  const sources = [
-    ...(existing?.sources ?? []),
-    {
-      sourceId: result.summary.sourceId,
-      sourceHash: result.summary.sourceHash,
-      fileName: result.summary.fileName,
-      importedAt: Date.now(),
-      acceptedRows: result.summary.acceptedRows,
-      complete,
-    },
-  ];
+  // Un fichero repetido (misma huella) no es una fuente nueva (R-DAT-005, INV-005): se anota su carga y
+  // no crea instantánea, pero sí cuenta como la última carga (OQ-143 b): si sus lecturas se habían
+  // retirado, vuelven al almacén bajo el `sourceId` de su primera carga.
+  const twin = existing?.sources.find((source) => source.sourceHash === result.summary.sourceHash);
+  const entry = {
+    sourceId: result.summary.sourceId,
+    sourceHash: result.summary.sourceHash,
+    fileName: result.summary.fileName,
+    importedAt: Date.now(),
+    acceptedRows: result.summary.acceptedRows,
+    complete,
+    retained: false,
+    snapshot: twin?.snapshot ?? false,
+  };
+  const retained = retainedSources([...(existing?.sources ?? []), entry]);
+  const sources: StoredSource[] = [...(existing?.sources ?? []), entry].map((source) => ({ ...source, retained: retained.has(source.sourceId) }));
   const coverage = mergeIntervals(
     sources.map((source) => source.complete).filter((span): span is Interval => span !== null),
   );
 
-  await saveCircuit({
+  // Las lecturas retenidas que siguen retenidas, unidas con las nuevas: es la ventana de trabajo. Las
+  // que dejan de estarlo se retiran del almacén en la misma transacción.
+  const kept = joinRetained(
+    retainedRecords.filter((record) => retained.has(record.sourceId)),
+    sources,
+  );
+  const union = unionReadings(kept, result.readings);
+  const drop = retainedRecords.map((record) => record.sourceId).filter((sourceId) => !retained.has(sourceId));
+
+  const stored: StoredCircuit = {
     circuitId,
     name: existing?.name ?? circuitName,
     zone,
     sources,
     coverage,
-    readings: union.readings,
     // Las listas sobreviven a la llegada de una fuente nueva. Sin esto, cargar una exportación
     // borraba en silencio las listas de planta del circuito —el objeto se reescribe entero— y el
     // inventario desaparecía sin que nada lo dijera. Lo destapó la prueba de navegador.
@@ -211,18 +369,84 @@ async function accumulate(
     // Y el historial de flota, por la misma razón: lo destapó la prueba de navegador de la Parte 39.
     ...(existing?.fleet === undefined ? {} : { fleet: existing.fleet }),
     updatedAt: Date.now(),
+  };
+  // Un repetido cuyas lecturas ya no estaban guardadas las recupera, con la procedencia de su primera
+  // carga: es el mismo fichero, fila a fila, así que la fila de origen no cambia.
+  const recovered =
+    twin !== undefined && retained.has(twin.sourceId) && !retainedRecords.some((record) => record.sourceId === twin.sourceId)
+      ? result.readings.map((reading) => ({ ...reading, provenance: { ...reading.provenance, sourceId: twin.sourceId } }))
+      : null;
+  await saveAccumulation({
+    circuit: stored,
+    readings:
+      twin === undefined
+        ? [{ sourceId: entry.sourceId, readings: result.readings }]
+        : recovered === null
+          ? []
+          : [{ sourceId: twin.sourceId, readings: recovered }],
+    drop,
   });
 
+  const distinct = distinctSources(sources);
+  const workingCoverage = mergeIntervals([
+    ...sources.filter((source) => retained.has(source.sourceId)).map((source) => source.complete),
+    complete,
+  ].filter((span): span is Interval => span !== null));
   return {
-    circuitId,
-    coverage,
-    totalReadings: union.readings.length,
-    sources: sources.length,
-    shared: union.shared,
-    disagreements: union.disagreements,
-    affinity,
-    accumulated: true,
+    report: {
+      circuitId,
+      coverage,
+      totalReadings: union.readings.length,
+      sources: sources.length,
+      shared: union.shared,
+      disagreements: union.disagreements,
+      affinity,
+      accumulated: true,
+      retained: { sourceIds: [...retained], distinctSources: distinct.length },
+      snapshots: {
+        withSnapshot: distinct.filter((source) => source.snapshot).length,
+        withoutSnapshot: distinct.filter((source) => !source.snapshot).length,
+      },
+    },
+    stored,
+    working: union.readings,
+    workingCoverage,
+    snapshots,
   };
+}
+
+// --- Valores de planta confirmados (OQ-140) -------------------------------------------------------
+
+/**
+ * Las propuestas de la memoria para los valores de planta (OQ-151): las versiones consolidadas del
+ * linaje activo, con la configuración que rige hoy (la noche vigente y las muestras mínimas). La regla
+ * de coincidencia es la de `proposePlantValues`; aquí solo se leen las versiones. Si la memoria no se
+ * puede leer, no hay propuestas (`null`): nunca se propone a ciegas.
+ */
+async function plantProposalsOf(circuitId: string, events: readonly PlantValueEvent[]): Promise<PlantValueProposals | null> {
+  try {
+    const { active } = await loadMemory(circuitId);
+    const config = resolveAnalysisConfig(PROVISIONAL_CONFIG, events, Date.now());
+    return proposePlantValues(active, { sustainedFiles: config.changeClass.sustainedFiles, config });
+  } catch {
+    return null;
+  }
+}
+
+/** El inicio de la ventana de un fichero: su tramo completo o, con un solo instante, ese instante. */
+function fileStartOf(readings: readonly Reading[]): number | null {
+  const coverage = sourceCoverage(readings);
+  return coverage.complete?.from ?? coverage.partialFrom;
+}
+
+/**
+ * La configuración con que se analiza un fichero del circuito que empieza en `at`: la provisional con
+ * los valores de planta que una persona confirmó y que rigen en ese instante (OQ-140). Sin valores
+ * confirmados, o sin almacén, `PROVISIONAL_CONFIG` tal cual.
+ */
+async function configForFile(circuitId: string, at: number | null): Promise<AnalysisConfig> {
+  if (at === null || !isAvailable()) return PROVISIONAL_CONFIG;
+  return resolveAnalysisConfig(PROVISIONAL_CONFIG, await loadPlantValues(circuitId), at);
 }
 
 /** Tramos de la banda de actividad. Bastantes para ver la forma, pocos para que quepa en pantalla. */
@@ -268,21 +492,94 @@ function strideSample(values: readonly number[], max: number): number[] {
  * justamente los que R-DAT-013 marca `inferred` sin sostener topología — el desempate no cambia esa
  * conclusión, solo cuál de las dos direcciones empatadas se etiqueta.
  */
-async function buildViews(
-  circuitId: string | undefined,
-  accumulation: AccumulationReport | undefined,
-  imported: readonly Reading[],
-  zone: string,
-  direction: SourceDirection,
-  importedSource: { readonly sourceId: string; readonly sourceHash: string; readonly fileName: string },
-): Promise<CircuitViews | undefined> {
-  const stored =
-    circuitId !== undefined && accumulation?.accumulated === true && isAvailable()
-      ? await loadCircuit(circuitId)
-      : undefined;
-  const readings = stored?.readings ?? imported;
-  const coverage = stored?.coverage ?? [];
+interface ViewsContext {
+  /** El circuito guardado; `undefined` si la fuente no se acumuló. */
+  readonly stored: StoredCircuit | undefined;
+  /** La ventana de trabajo: las lecturas retenidas unidas (ADR-0015 §2), o las importadas sin circuito. */
+  readonly working: readonly Reading[];
+  readonly workingCoverage: readonly Interval[];
+  /** Las instantáneas que el circuito ya tenía, en orden de ventana. */
+  readonly snapshots: readonly CircuitSnapshot[];
+  readonly imported: readonly Reading[];
+  readonly zone: string;
+  readonly direction: SourceDirection;
+  readonly importedSource: { readonly sourceId: string; readonly sourceHash: string; readonly fileName: string; readonly acceptedRows: number };
+  /**
+   * La configuración con que se analiza este fichero (OQ-140): la provisional con los valores de planta
+   * confirmados vigentes al inicio de su ventana (`configForFile`). Sin valores confirmados es
+   * `PROVISIONAL_CONFIG` tal cual. Todo lo que `buildViews` mide —vistas, instantánea, memoria y plano—
+   * usa esta y ninguna otra.
+   */
+  readonly config: AnalysisConfig;
+  /** Lo que la pestaña Datos enseña de los valores de planta para este fichero. */
+  readonly plantValues: PlantValuesView;
+}
+
+interface ViewsResult {
+  readonly views: CircuitViews;
+  /** La instantánea de este fichero, o `null` si no se pudo construir (y `problems` dice por qué). */
+  readonly snapshot: CircuitSnapshot | null;
+  readonly problems: readonly string[];
+}
+
+/** Lo que una instantánea aporta a la vista «Mediciones por fichero» cuando sus lecturas ya no están. */
+function measureFromSnapshot(
+  snapshot: CircuitSnapshot,
+  resolutionMs: number,
+): CircuitViews["franjas"]["cohorts"][number]["measures"][number] {
+  return {
+    sourceId: snapshot.sourceId,
+    cohortId: snapshot.cohortId,
+    ring: snapshot.ring,
+    anchorTagId: snapshot.ring[0] ?? null,
+    // El anillo de la instantánea empieza por el ancla del circuito (`ring` «desde el ancla»).
+    anchorShared: snapshot.anchorTagId !== null && snapshot.ring[0] === snapshot.anchorTagId,
+    positions: snapshot.vertices
+      .filter((vertex) => vertex.position !== null)
+      .sort((a, b) => (a.position as number) - (b.position as number))
+      // La instantánea no guarda con cuántos pasos se situó cada tag: no se inventa, va a cero.
+      .map((vertex) => ({ tagId: vertex.tagId, offsetMs: vertex.offsetMs, samples: 0 })),
+    lapMs: snapshot.lapMs,
+    resolutionMs,
+    bands: snapshot.edges.map((edge) => ({
+      from: edge.from,
+      to: edge.to,
+      produccion: edge.produccion,
+      noche: edge.noche,
+      firstSeenUtcMs: snapshot.window.from,
+      lastSeenUtcMs: snapshot.window.to,
+    })),
+    // Sin lecturas no hay ritmo de cada AGV que medir (R-AGV-019): la vista lo enseña vacío.
+    pace: { fleetRatio: null, testedVehicles: 0, enoughVehicles: false, vehicles: [], holders: [] },
+  };
+}
+
+/**
+ * Ejecuta una comparación entre instantáneas y, si falla, lo dice en vez de tirar la importación
+ * entera: el análisis del fichero actual no depende de ella (R-EVI-006: nunca se calla).
+ */
+function attempt<T>(what: string, problems: string[], fallback: T, compute: () => T): T {
+  try {
+    return compute();
+  } catch (error) {
+    problems.push(`${what}: ${error instanceof Error ? error.message : String(error)}`);
+    return fallback;
+  }
+}
+
+async function buildViews(context: ViewsContext): Promise<ViewsResult | undefined> {
+  const { stored, imported, zone, direction, importedSource, config } = context;
+  const readings = context.working;
+  const coverage = context.workingCoverage;
   if (readings.length === 0) return undefined;
+  /** Por qué falta una instantánea o una comparación: lo esperado (`notes`) y lo que falló (`failures`). */
+  const notes: string[] = [];
+  const failures: string[] = [];
+  /** Qué fuentes tienen lecturas en la ventana de trabajo: las retenidas y la que se acaba de importar. */
+  const withReadings = new Set([
+    ...(stored?.sources ?? []).filter((source) => source.retained).map((source) => source.sourceId),
+    importedSource.sourceId,
+  ]);
 
   // --- Configuración de planta (OQ-B04, `CONFIG_SCHEMA.md` §3.4) -----------------------------
   //
@@ -311,7 +608,7 @@ async function buildViews(
     readings,
     laneConfig.lanes,
     coverage,
-    PROVISIONAL_CONFIG.charging,
+    config.charging,
   );
 
   // --- Grafo, cohortes y vueltas (F2) -------------------------------------------------------
@@ -320,7 +617,7 @@ async function buildViews(
   // mezclados no comparten ancla, y buscar un ciclo dominante sobre los dos a la vez produciría un
   // ancla sin sentido para ninguno.
   const { transitions } = buildTransitions(readings, direction, coverage);
-  const cohortAssignment = assignCohorts(readings, transitions, PROVISIONAL_CONFIG.cohorts);
+  const cohortAssignment = assignCohorts(readings, transitions, config.cohorts);
 
   const laps: Lap[] = [];
   const shapes: CircuitViews["shapes"][number][] = [];
@@ -329,7 +626,7 @@ async function buildViews(
   // Cambios de tag dentro de un mismo periodo (R-DAT-019), antes que la matriz: cuándo empezó o dejó
   // de leerse cada tag es lo que hace falta para medirlo solo dentro de su vida (R-OPP-016).
   // Régimen de cada instante (R-TIM-009): la noche se mide aparte y no altera el estado normal.
-  const regimeOf = regimeReader(zone, PROVISIONAL_CONFIG.regimes);
+  const regimeOf = regimeReader(zone, config.regimes);
   // Los tags que se leen y no están en la lista del circuito: dónde y cuándo se leen (R-DAT-022). Va
   // antes que los cambios de tag porque un tag de noche empieza y deja de leerse cada día por su
   // horario, no porque cambie: no es un cambio de tag ni parte la ventana en dos.
@@ -353,9 +650,9 @@ async function buildViews(
     new Set([...byName("carga-online"), ...byName("mantenimiento"), ...byName("emergencia")]),
     regimeOf,
     {
-      minSlotPasses: PROVISIONAL_CONFIG.tagChanges.minSlotPasses,
-      maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
-      maxReadsBetween: PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
+      minSlotPasses: config.tagChanges.minSlotPasses,
+      maxChance: config.tagChanges.maxChance,
+      maxReadsBetween: config.tagChanges.maxReadsBetween,
     },
     byName("noche"),
   );
@@ -367,10 +664,10 @@ async function buildViews(
       .map((tag) => tag.tagId),
   );
   const tagChanges = withoutTags(
-    detectTagChanges(readings, direction, coverage, PROVISIONAL_CONFIG.tagChanges, {
-      minPassesForNever: PROVISIONAL_CONFIG.vehicleReading.minPassesForNever,
-      highRate: PROVISIONAL_CONFIG.readRate.highRate,
-      minAdoptionShare: PROVISIONAL_CONFIG.drift.minAdoptionShare,
+    detectTagChanges(readings, direction, coverage, config.tagChanges, {
+      minPassesForNever: config.vehicleReading.minPassesForNever,
+      highRate: config.readRate.highRate,
+      minAdoptionShare: config.drift.minAdoptionShare,
     }),
     nightTags,
   );
@@ -390,8 +687,8 @@ async function buildViews(
     new Set(criticalPointsConfig.funcionOf.keys()),
     coverage,
     zone,
-    PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
-    PROVISIONAL_CONFIG.flowStops,
+    config.silenceKind.shiftStartHours,
+    config.flowStops,
   );
   const laneTags = new Set(laneConfig.lanes.flatMap((lane) => [...lane.tags]));
   // Las paradas de la línea con AGV esperando (R-FLO-010), antes que cualquier tiempo habitual: la cola
@@ -399,8 +696,8 @@ async function buildViews(
   // que es el que pasa por la línea, y sin saber aún quién retiene: eso no cambia las paradas.
   const lineTagList = lists.find((entry) => entry.list === "linea")?.tags ?? [];
   const lineFeedThresholds = {
-    minSamples: PROVISIONAL_CONFIG.bands.minBandSamples,
-    minMarginMs: PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+    minSamples: config.bands.minBandSamples,
+    minMarginMs: config.flowStops.minStopExcessMs,
   };
   const mainVehicleSet = new Set(cohortAssignment.cohorts[0]?.vehicles ?? []);
   const mainReadings = readings.filter((entry) => mainVehicleSet.has(entry.agvId));
@@ -449,6 +746,27 @@ async function buildViews(
     change.kind === "cambio" ? [change.oldLastUtcMs, change.newFirstUtcMs] : [change.kind === "deja" ? change.lastUtcMs : change.firstUtcMs],
   );
   const franjaCohorts: CircuitViews["franjas"]["cohorts"][number][] = [];
+  const keepByCohort = new Map<number, (gaps: readonly AnchorGapChange[]) => AnchorGapChange[]>();
+  /** Lo del cohorte principal que la instantánea necesita (ADR-0015): su ancla, su medición y su matriz. */
+  let mainCohort:
+    | {
+        readonly cohortId: number;
+        readonly effective: LapAnchor;
+        readonly anchorTruth: TruthState;
+        readonly measures: CircuitViews["franjas"]["cohorts"][number]["measures"];
+        readonly matrix: ReadMatrix;
+        readonly deliveries: readonly { readonly agvId: string; readonly fromUtcMs: number; readonly toUtcMs: number }[];
+        readonly candidates: ReadonlyMap<string, string>;
+      }
+    | undefined;
+
+  // Las esperas en las paradas precisas declaradas del fichero importado, para estimar la duración
+  // mínima de una parada precisa (OQ-151): de las mismas transiciones de producción con que se buscan
+  // las firmas de tiempo, recortadas a la ventana del fichero.
+  const plantWindow = windows.find((entry) => entry.source.sourceId === importedSource.sourceId && entry.duplicateOf === null)?.window ?? null;
+  const declaredPauses = new Set([...criticalPointsConfig.funcionOf].filter(([, name]) => name === "parada-precisa").map(([tagId]) => tagId));
+  const declaredPauseWaits: number[] = [];
+  let declaredPausesMeasurable = true;
 
   for (const cohort of cohortAssignment.cohorts) {
     const vehicleSet = new Set(cohort.vehicles);
@@ -487,16 +805,16 @@ async function buildViews(
       ),
       effective.cycle,
       regimeOf,
-      PROVISIONAL_CONFIG.bands,
-      PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+      config.bands,
+      config.flowStops.minStopExcessMs,
     );
     const grouped = collapseGroupedDeliveries(
       cohortTransitions,
       preliminaryBands,
       regimeOf,
-      PROVISIONAL_CONFIG.readRate.minTimeRatio,
+      config.readRate.minTimeRatio,
       laneTags,
-      PROVISIONAL_CONFIG.groupedDelivery,
+      config.groupedDelivery,
     );
     const cohortTimeline = grouped.transitions;
 
@@ -507,7 +825,7 @@ async function buildViews(
       timedTransitions,
       effective.cycle,
       zone,
-      PROVISIONAL_CONFIG.silenceKind.shiftStartHours,
+      config.silenceKind.shiftStartHours,
     );
     for (const agvId of cohort.vehicles) usualByVehicle.set(agvId, usual);
     // La horquilla de cada tramo, por régimen (R-FLO-007): solo con transiciones que miden algo.
@@ -516,8 +834,8 @@ async function buildViews(
       measuredTimed,
       effective.cycle,
       regimeOf,
-      PROVISIONAL_CONFIG.bands,
-      PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+      config.bands,
+      config.flowStops.minStopExcessMs,
     );
     for (const [index, from] of bands.ring.entries()) {
       const to = bands.ring[(index + 1) % bands.ring.length];
@@ -537,7 +855,7 @@ async function buildViews(
         laneTags,
         functionOf: criticalPointsConfig.funcionOf,
       },
-      PROVISIONAL_CONFIG.flowStops,
+      config.flowStops,
     );
     flowReports.push(flow);
 
@@ -594,38 +912,47 @@ async function buildViews(
       coverage,
       effective.cycle,
       effective.tagId,
-      PROVISIONAL_CONFIG.readRate,
+      config.readRate,
       orderLimits,
-      PROVISIONAL_CONFIG.trend,
+      config.trend,
       tagChanges.lives,
     );
     matrices.push(matrix);
     vehicleReadings.push({
       cohortId: cohort.id,
-      ...describeVehicleReading(matrix, PROVISIONAL_CONFIG.readRate, PROVISIONAL_CONFIG.vehicleReading),
+      ...describeVehicleReading(matrix, config.readRate, config.vehicleReading),
     });
 
     // FIFO en zona cargada (R-FLO-001): los tramos son propiedad del anillo de este cohorte, así
     // que se derivan aquí, no una sola vez fuera del bucle como las calles (que son de circuito).
     if (zoneConfig.zoneOf.size > 0) {
       const { spans, problems: spanProblems } = loadedZoneSpans(effective.cycle, zoneConfig.zoneOf);
-      const fifoReport = buildFifoReport(cohort.id, cohortReadings, spans, PROVISIONAL_CONFIG.fifo, coverage);
+      const fifoReport = buildFifoReport(cohort.id, cohortReadings, spans, config.fifo, coverage);
       fifoCohorts.push({ cohortId: cohort.id, spans: fifoReport.spans, problems: spanProblems });
     }
 
     // Candidatos a punto crítico (R-GRA-007): sobre las transiciones del cohorte entero, no solo el
     // anillo — restringir a `anchor.cycle` escondería justo la rama fuera de él que la firma busca.
-    const bifurcaciones = findBifurcationCandidates(cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.bifurcacion);
-    const conCruces = classifyCrossings(bifurcaciones, cohortTransitions, PROVISIONAL_CONFIG.criticalPoints.cruce);
+    const bifurcaciones = findBifurcationCandidates(cohortTransitions, config.criticalPoints.bifurcacion);
+    const conCruces = classifyCrossings(bifurcaciones, cohortTransitions, config.criticalPoints.cruce);
     // Las firmas de tiempo, solo en producción: un descanso de 15 min rompería el coeficiente de
     // variación de una parada precisa (R-AGV-018), y la noche tiene su propio ritmo (R-TIM-009).
     const productionTimed = timedTransitions.filter((transition) => transitionRegime(transition, regimeOf) === "produccion");
-    const paradas = findPrecisePauseCandidates(productionTimed, PROVISIONAL_CONFIG.criticalPoints.paradaPrecisa);
-    const semaforos = findTrafficLightCandidates(productionTimed, PROVISIONAL_CONFIG.criticalPoints.semaforo);
+    const paradas = findPrecisePauseCandidates(productionTimed, config.criticalPoints.paradaPrecisa);
+    const semaforos = findTrafficLightCandidates(productionTimed, config.criticalPoints.semaforo);
     // Para dibujar la distribución que la firma resume: las duraciones de cada candidato de tiempo y
     // una muestra de referencia con todas las del cohorte (sin pares del mismo instante, R-DAT-013).
     const durations = transitionDurationsByTag(productionTimed);
     const allDurations = [...durations.values()].flat();
+    if (plantWindow !== null && declaredPauses.size > 0) {
+      const inFile = productionTimed.filter(
+        (transition) => declaredPauses.has(transition.from) && transition.fromTime >= plantWindow.from && transition.toTime <= plantWindow.to,
+      );
+      if (inFile.length > 0) {
+        if (timeSignaturesMeasurable(productionTimed)) declaredPauseWaits.push(...[...transitionDurationsByTag(inFile).values()].flat());
+        else declaredPausesMeasurable = false;
+      }
+    }
     criticalPointCohorts.push({
       cohortId: cohort.id,
       candidates: [
@@ -651,22 +978,23 @@ async function buildViews(
     }
     // El ritmo de cada AGV y quién retiene (R-AGV-019, R-AGV-020), en todo lo cargado y en cada fichero.
     const paceThresholds: VehiclePaceThresholds = {
-      ...PROVISIONAL_CONFIG.pace,
-      minSamples: PROVISIONAL_CONFIG.bands.minBandSamples,
-      maxFalsePoints: PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
-      minVehiclesForContrast: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
+      ...config.pace,
+      minSamples: config.bands.minBandSamples,
+      maxFalsePoints: config.circuitState.maxFalsePoints,
+      minVehiclesForContrast: config.readRate.minVehiclesForContrast,
     };
     const paceInput = { transitions: measuredTimed, regimeOf, flow, zoneOf: zoneConfig.zoneOf };
-    // La medición de cada fichero (R-TIM-011), con las mismas transiciones limpias.
-    const measures = measuredWindows.map((entry) => {
+    // La medición de cada fichero (R-TIM-011), con las mismas transiciones limpias: solo de los ficheros
+    // cuyas lecturas están en la ventana de trabajo. Los demás se leen de su instantánea (ADR-0015 §3).
+    const measures = measuredWindows.filter((entry) => withReadings.has(entry.source.sourceId)).map((entry) => {
       const measure = measureFranjaCohort(
         { cohortId: cohort.id, transitions: cohortTimeline, measured: measuredTimed, anchorTagId: effective.tagId },
         entry.window,
         regimeOf,
-        PROVISIONAL_CONFIG.bands,
-        PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
-        PROVISIONAL_CONFIG.franjas,
-        PROVISIONAL_CONFIG.tagChanges.maxReadsBetween,
+        config.bands,
+        config.flowStops.minStopExcessMs,
+        config.franjas,
+        config.tagChanges.maxReadsBetween,
       );
       return {
         sourceId: entry.source.sourceId,
@@ -675,8 +1003,8 @@ async function buildViews(
           paceInput,
           entry.window,
           measure.ring,
-          PROVISIONAL_CONFIG.bands,
-          PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+          config.bands,
+          config.flowStops.minStopExcessMs,
           paceThresholds,
         ),
       };
@@ -695,14 +1023,14 @@ async function buildViews(
         fromUtcMs: delivery.fromUtcMs,
         toUtcMs: delivery.toUtcMs,
       })),
-      maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance,
+      maxChance: config.tagChanges.maxChance,
       resolutionMs: preliminaryBands.resolutionMs,
     };
     // Las secuencias se preparan una vez. Dentro de un tramo de cobertura se mira alrededor de los
     // cambios de tag por su sitio (R-DAT-019) y de donde un tag empieza o deja de leerse: un bloque de
     // tags seguidos cambiado a la vez no tiene sitio que comparar, porque sus vecinos también cambiaron.
     const sequences = anchorSequences(cohortReadings, direction, structureSpans);
-    const boundaries = structureBoundaries(sequences, structureSpans, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs, nightTags);
+    const boundaries = structureBoundaries(sequences, structureSpans, config.tagChanges.maxOverlapMs, nightTags);
     // Un mismo cambio se enseña una vez. Primero dentro de cada fichero, que dice a qué hora; entre
     // ficheros solo lo que no esté ya dicho: los mismos tags, o menos, de un cambio ya enseñado.
     const structure: StructureSet[] = [];
@@ -714,27 +1042,30 @@ async function buildViews(
         shown.push(tags);
         return true;
       });
-    for (const around of windowsAroundChanges([...changeTimes, ...boundaries], structureSpans, PROVISIONAL_CONFIG.tagChanges.maxOverlapMs)) {
-      const gaps = keep(compareAnchorGaps(sequences, around.before, around.after, anchorContext, PROVISIONAL_CONFIG.anchorSums));
+    for (const around of windowsAroundChanges([...changeTimes, ...boundaries], structureSpans, config.tagChanges.maxOverlapMs)) {
+      const gaps = keep(compareAnchorGaps(sequences, around.before, around.after, anchorContext, config.anchorSums));
       if (gaps.length > 0) {
         structure.push({ source: "dentro-del-fichero", beforeSourceId: null, afterSourceId: null, atUtcMs: around.atUtcMs, gaps });
       }
     }
-    for (let index = 1; index < measuredWindows.length; index += 1) {
-      const early = measuredWindows[index - 1] as (typeof measuredWindows)[number];
-      const late = measuredWindows[index] as (typeof measuredWindows)[number];
-      const gaps = keep(compareAnchorGaps(sequences, early.window, late.window, anchorContext, PROVISIONAL_CONFIG.anchorSums));
-      if (gaps.length > 0) {
-        structure.push({
-          source: "entre-ficheros",
-          beforeSourceId: early.source.sourceId,
-          afterSourceId: late.source.sourceId,
-          atUtcMs: late.window.from,
-          gaps,
-        });
-      }
-    }
+    // Entre ficheros seguidos se compara desde las instantáneas (ADR-0015 §3), después del bucle: las
+    // lecturas de un fichero anterior pueden no estar ya. Se guarda el filtro para no repetir un cambio.
+    keepByCohort.set(cohort.id, keep);
     franjaCohorts.push({ cohortId: cohort.id, measures, histories: segmentHistories(measures), structure });
+    if (cohort === cohortAssignment.cohorts[0]) {
+      mainCohort = {
+        cohortId: cohort.id,
+        effective,
+        anchorTruth,
+        measures,
+        matrix,
+        deliveries: grouped.deliveries.map((delivery) => ({ agvId: delivery.agvId, fromUtcMs: delivery.fromUtcMs, toUtcMs: delivery.toUtcMs })),
+        candidates: new Map([
+          ...[...timeCritical].filter(([tagId]) => !criticalPointsConfig.funcionOf.has(tagId)),
+          ...conCruces.map((candidate) => [candidate.tagId, candidate.kind] as const),
+        ]),
+      };
+    }
 
     const size = effective.cycle.length;
     circuitStateCohorts.push({
@@ -759,11 +1090,11 @@ async function buildViews(
           timeCritical,
           declaredOrder,
           readTags: readTagSet,
-          reachTags: PROVISIONAL_CONFIG.flowStops.reachTags,
-          minVehicles: PROVISIONAL_CONFIG.readRate.minVehiclesForContrast,
-          headStallMs: PROVISIONAL_CONFIG.flowStops.headStallMs,
+          reachTags: config.flowStops.reachTags,
+          minVehicles: config.readRate.minVehiclesForContrast,
+          headStallMs: config.flowStops.headStallMs,
         },
-        PROVISIONAL_CONFIG.circuitState,
+        config.circuitState,
       ),
       groupedDelivery: {
         evaluated: grouped.evaluated,
@@ -773,7 +1104,7 @@ async function buildViews(
         ...summarizeDeliveries(
           grouped.deliveries,
           measurableTransitions(cohortTransitions, coverage, laneTags),
-          PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
+          config.circuitState.maxFalsePoints,
         ),
       },
       changes: bandChangesBetweenPeriods(
@@ -781,9 +1112,9 @@ async function buildViews(
         coverage,
         effective.cycle,
         regimeOf,
-        PROVISIONAL_CONFIG.bands,
-        PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
-        PROVISIONAL_CONFIG.drift.minGapMs,
+        config.bands,
+        config.flowStops.minStopExcessMs,
+        config.drift.minGapMs,
       ),
     });
   }
@@ -800,7 +1131,7 @@ async function buildViews(
     cohortAssignment,
     laps,
     dossierCoverage,
-    PROVISIONAL_CONFIG.silence.minGapMs,
+    config.silence.minGapMs,
     laneConfig.lanes,
   );
   const vehicleIds = agvDossiers.map((dossier) => dossier.agvId);
@@ -824,13 +1155,15 @@ async function buildViews(
       laneTags,
       regimeOf,
       sectionOf: sections,
-      windows: measuredWindows.map((entry) => ({ sourceId: entry.source.sourceId, window: entry.window })),
+      windows: measuredWindows
+        .filter((entry) => withReadings.has(entry.source.sourceId))
+        .map((entry) => ({ sourceId: entry.source.sourceId, window: entry.window })),
     },
-    PROVISIONAL_CONFIG.bands,
-    PROVISIONAL_CONFIG.flowStops.minStopExcessMs,
+    config.bands,
+    config.flowStops.minStopExcessMs,
   );
 
-  const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, PROVISIONAL_CONFIG.silence.minGapMs);
+  const replayFrames = buildReplayFrames(readings, REPLAY_FRAMES, config.silence.minGapMs);
 
   // La flota a lo largo del tiempo (DS-012, R-AGV-014): reutiliza las inactividades del expediente
   // y los arranques en frío de las calles, y recorta todo a la cobertura (R-DAT-007). Cada hueco sin
@@ -876,7 +1209,7 @@ async function buildViews(
             ...classifySilence(
               gap,
               { usual: usualByVehicle.get(dossier.agvId) ?? null, maintenance, justification },
-              PROVISIONAL_CONFIG.silenceKind,
+              config.silenceKind,
             ),
           };
         }),
@@ -887,8 +1220,8 @@ async function buildViews(
         .filter((stay) => stay.leftUtcMs !== null)
         .map((stay) => [stay.agvId, stay.leftUtcMs as number]),
     ),
-    minGapMs: PROVISIONAL_CONFIG.silence.minGapMs,
-    longAbsenceMs: PROVISIONAL_CONFIG.silenceKind.longAbsenceMs,
+    minGapMs: config.silence.minGapMs,
+    longAbsenceMs: config.silenceKind.longAbsenceMs,
     productionStops: productionIntervals,
   });
 
@@ -913,7 +1246,7 @@ async function buildViews(
     .flatMap((report) => report.blockages)
     .sort((a, b) => b.behind.length - a.behind.length || b.excessMs - a.excessMs);
 
-  const views: CircuitViews = {
+  const baseViews: Omit<CircuitViews, "snapshots"> = {
     hourly: hourlyProfile(readings, zone),
     activity: activityBand(readings, coverage, ACTIVITY_BINS),
     cohorts: cohortAssignment.cohorts,
@@ -997,8 +1330,8 @@ async function buildViews(
     circuitState: {
       exposure: regimeExposure(dossierCoverage, productionIntervals, regimeOf),
       night: {
-        fromHour: PROVISIONAL_CONFIG.regimes.nightFromHour,
-        toHour: PROVISIONAL_CONFIG.regimes.nightToHour,
+        fromHour: config.regimes.nightFromHour,
+        toHour: config.regimes.nightToHour,
       },
       cohorts: circuitStateCohorts,
     },
@@ -1007,21 +1340,17 @@ async function buildViews(
       : { lapAnchorProblems: [...lapAnchorsConfig.problems, ...lapAnchorProblems] }),
   };
 
-  if (lists.length === 0) return views;
+  // Lo que solo existe con listas de planta cargadas: inventario, contraste, limpieza, línea e
+  // incidencias. Va en una función para que la instantánea, que viene después, tenga el inventario.
+  let inventoryClassOf: ReadonlyMap<string, TagClass> = new Map();
+  const withLists = (): Partial<CircuitViews> => {
+  if (lists.length === 0) return {};
 
   const unservedLaneTags = new Set(
     charging.lanes
       .filter((lane) => !lane.served)
       .flatMap((lane) => laneConfig.lanes.find((item) => item.laneId === lane.laneId)?.tags ?? []),
   );
-  const knownTags = new Set([
-    ...byName("circuito"),
-    ...byName("memoria"),
-    ...byName("mantenimiento"),
-    ...byName("emergencia"),
-    ...byName("carga-online"),
-    ...criticalPointsConfig.funcionOf.keys(),
-  ]);
   const inventory = buildTagInventory(
     readings,
     {
@@ -1035,12 +1364,10 @@ async function buildViews(
       reinforcement,
       night: byName("noche"),
     },
-    PROVISIONAL_CONFIG.blindness,
+    config.blindness,
   );
 
-  // Comparación entre dos periodos distantes (R-DAT-016, R-AGV-013): usa la cobertura que ya existe
-  // -la unión de todas las fuentes aceptadas-, nunca un segundo fichero pedido aparte.
-  const drift = compareDistantPeriods(readings, coverage, knownTags, PROVISIONAL_CONFIG.drift, direction);
+  inventoryClassOf = new Map(inventory.rows.map((row) => [row.tagId, row.tagClass]));
 
   const counts = new Map<string, number>();
   const truthOf = new Map<string, string>();
@@ -1157,7 +1484,6 @@ async function buildViews(
   records.sort((a, b) => a.incident.fromUtcMs - b.incident.fromUtcMs);
 
   return {
-    ...views,
     incidents: { batteries, abandoned, records },
     ...(lineFeed === undefined ? {} : { lineFeed }),
     ...(undeclared.evaluated ? { undeclaredTags: undeclared.tags } : {}),
@@ -1186,7 +1512,314 @@ async function buildViews(
     ...(criticalPointsConfig.problems.length === 0
       ? {}
       : { criticalPointsProblems: criticalPointsConfig.problems }),
-    ...(!drift.evaluated || drift.earlyPeriod === null || drift.latePeriod === null
+  };
+  };
+  const listViews = withLists();
+
+  // --- La instantánea de este fichero (ADR-0015 §1) ---------------------------------------------
+  //
+  // Se construye con lo que ya está calculado, medido **sobre la ventana de este fichero**: la matriz,
+  // los vecinos, las secciones, las sumas entre anclas, la línea y las calles se recalculan aquí sobre
+  // sus lecturas para que la instantánea diga lo que pasó en ese fichero y no en la ventana de trabajo
+  // entera. Un fichero repetido no crea instantánea (R-DAT-005); uno sin ventana completa, tampoco.
+  const importedWindow = windows.find((entry) => entry.source.sourceId === importedSource.sourceId);
+  let snapshot: CircuitSnapshot | null = null;
+  if (stored === undefined) {
+    // Sin circuito no hay dónde guardar una instantánea, y no es un problema: no se pidió acumular.
+  } else if (importedWindow === undefined) {
+    notes.push("La fuente importada no tiene ventana completa (un solo instante): sin instantánea.");
+  } else if (importedWindow.duplicateOf !== null) {
+    notes.push(`El fichero repite «${importedWindow.duplicateOf}»: no es una fuente nueva y no crea instantánea (R-DAT-005).`);
+  } else {
+    const window = importedWindow.window;
+    const inWindow = (entry: Reading): boolean => entry.time.utcMs >= window.from && entry.time.utcMs <= window.to;
+    // Sin cohorte (un fichero tan corto que no agrupa vehículos) la instantánea es de todas las lecturas,
+    // sin anillo: sigue siendo un grafo con fecha, y es lo que hace que el fichero quede registrado.
+    const fileReadings = (mainAnchorCohort === undefined ? readings : mainReadings).filter(inWindow);
+    const snapshotCohortId = mainAnchorCohort?.id ?? 0;
+    const measure = mainCohort?.measures.find((entry) => entry.sourceId === importedSource.sourceId) ?? null;
+    const ring = measure?.ring ?? [];
+    const anchor = mainCohort?.effective ?? null;
+    const readingsByTag = new Map<string, number>();
+    for (const entry of fileReadings) readingsByTag.set(entry.tagId, (readingsByTag.get(entry.tagId) ?? 0) + 1);
+    const declared = new Set([...declaredOrder, ...criticalPointsConfig.funcionOf.keys()]);
+    const reviews = await loadReviews(stored.circuitId);
+    const declaredOnRing = anchorsOnRing(ring, lapAnchorsConfig.anchors);
+    const fileLine =
+      lineTagList.length === 0
+        ? null
+        : measureLineFeed(
+            fileReadings,
+            lineTagList,
+            [window],
+            regimeOf,
+            lineFeedThresholds,
+            new Set((circuitStateCohorts[0]?.pace.holders ?? []).filter((holder) => holder.expected !== null).map((holder) => holder.agvId)),
+            criticalPointsConfig.funcionOf,
+            productionIntervals,
+          );
+    const fileCharging = laneConfig.lanes.length === 0 ? null : buildChargingReport(readings.filter(inWindow), laneConfig.lanes, [window], config.charging);
+    snapshot = attempt("La instantánea de este fichero no se pudo construir", failures, null, () =>
+      buildSnapshot(
+        assembleSnapshotInput({
+          circuitId: stored.circuitId,
+          zone,
+          source: { ...importedSource, window },
+          capturedAt: Date.now(),
+          appVersion: APP_VERSION,
+          configVersion: config.configVersion,
+          exposure: regimeExposure([window], productionIntervals, regimeOf),
+          cohortId: snapshotCohortId,
+          anchorTagId: anchor?.tagId ?? null,
+          anchorDeclared: mainCohort?.anchorTruth === "observed",
+          measure,
+          matrix:
+            anchor === null || ring.length === 0
+              ? null
+              : buildReadMatrix(
+                  snapshotCohortId,
+                  fileReadings,
+                  direction,
+                  [window],
+                  ring,
+                  ring[0] as string,
+                  config.readRate,
+                  orderLimits,
+                  config.trend,
+                  tagChanges.lives,
+                ),
+          readingsByTag,
+          neighbours: dominantNeighbours(fileReadings, new Set([...ring, ...readingsByTag.keys(), ...declared])),
+          declared,
+          sectionOf: sections,
+          funcionOf: criticalPointsConfig.funcionOf,
+          candidateFunctionOf: mainCohort?.candidates ?? new Map(),
+          inventoryClassOf,
+          laneOfTag: new Map(laneConfig.lanes.flatMap((lane) => lane.tags.map((tagId) => [tagId, lane.laneId] as const))),
+          lineTags: new Set(lineTagList),
+          declaredAnchors: new Set(lapAnchorsConfig.anchors),
+          sections:
+            ring.length === 0
+              ? []
+              : measureAnchorSections(
+                  {
+                    readings: fileReadings,
+                    direction,
+                    ring,
+                    anchors: lapAnchorsConfig.anchors,
+                    coverage: [window],
+                    productionStops: productionIntervals,
+                    laneTags,
+                    regimeOf,
+                    sectionOf: sections,
+                    windows: [{ sourceId: importedSource.sourceId, window }],
+                  },
+                  config.bands,
+                  config.flowStops.minStopExcessMs,
+                ).sections,
+          anchorGaps:
+            ring.length === 0 || anchor === null
+              ? []
+              : measureAnchorGaps({
+                  readings: fileReadings,
+                  direction,
+                  ring,
+                  // Las anclas declaradas que están en el anillo; si no hay dos, el ancla del circuito
+                  // sola y el hueco es la vuelta entera.
+                  anchors: declaredOnRing.length >= 2 ? declaredOnRing : [ring[0] as string],
+                  coverage: [window],
+                  productionStops: productionIntervals,
+                  laneTags,
+                  regimeOf,
+                  deliveries: mainCohort?.deliveries ?? [],
+                }),
+          fleet,
+          line: fileLine,
+          plantMeasures: measurePlantValues({
+            window,
+            zone,
+            estimators: config.plantEstimators,
+            // La flota entera, no solo el cohorte principal: el régimen de noche es de toda la planta.
+            hourly: hourlyProfile(readings.filter(inWindow), zone),
+            productionStops: production.stops,
+            gaps: agvDossiers.flatMap((dossier) => dossier.inactivity),
+            vehicleStops: flowReports.flatMap((report) => report.stops),
+            loadedSpans:
+              zoneConfig.zoneOf.size === 0 || anchor === null
+                ? null
+                : buildFifoReport(snapshotCohortId, fileReadings, loadedZoneSpans(anchor.cycle, zoneConfig.zoneOf).spans, config.fifo, [window]).spans,
+            precisePauses: { declared: declaredPauses.size, measurable: declaredPausesMeasurable, durationsMs: declaredPauseWaits },
+          }),
+          lanes: fileCharging?.lanes ?? [],
+          laneUsage: fileCharging?.usage ?? [],
+          findings: buildSnapshotFindings({
+            zone,
+            matrix: mainCohort?.matrix ?? null,
+            tagChanges: tagChanges.changes,
+            lanes: charging.lanes,
+            laneUsage: charging.usage,
+            state: circuitStateCohorts[0]?.state ?? null,
+            undeclaredTags: undeclared.evaluated ? undeclared.tags : [],
+            reviews,
+            // OQ-149: los de rango 1 con instante, de lo mismo que reciben las vistas (sin medir nada).
+            flow: { vehicles: fleet.vehicles.length, production: productionView, blockages },
+            lineFeed: listViews.lineFeed ?? null,
+            abandoned: listViews.incidents?.abandoned ?? [],
+          }),
+        }),
+      ),
+    );
+  }
+
+  // --- Lo que compara ficheros se lee de las instantáneas (ADR-0015 §3) -------------------------
+  const allSnapshots = sortSnapshots([
+    ...context.snapshots.filter((entry) => snapshot === null || entry.sourceId !== snapshot.sourceId),
+    ...(snapshot === null ? [] : [snapshot]),
+  ]);
+  const snapshotOf = new Map(allSnapshots.map((entry) => [entry.sourceId, entry]));
+  const franjaCohortsFinal = franjaCohorts.map((cohort) => {
+    if (mainCohort === undefined || cohort.cohortId !== mainCohort.cohortId) return cohort;
+    // Las mediciones de los ficheros anteriores salen de su instantánea; la del fichero actual, de su
+    // medición; un fichero anterior sin instantánea pero con lecturas retenidas, de su medición.
+    const resolutionMs = cohort.measures.find((entry) => entry.sourceId === importedSource.sourceId)?.resolutionMs ?? 0;
+    const measures = measuredWindows.flatMap((entry) => {
+      const sourceId = entry.source.sourceId;
+      const measured = cohort.measures.find((item) => item.sourceId === sourceId);
+      if (sourceId === importedSource.sourceId && measured !== undefined) return [measured];
+      const own = snapshotOf.get(sourceId);
+      if (own !== undefined) return [measureFromSnapshot(own, resolutionMs)];
+      return measured === undefined ? [] : [measured];
+    });
+    const keep = keepByCohort.get(cohort.cohortId) ?? ((gaps: readonly AnchorGapChange[]): AnchorGapChange[] => [...gaps]);
+    const structure = [...cohort.structure];
+    for (let index = 1; index < allSnapshots.length; index += 1) {
+      const early = allSnapshots[index - 1] as CircuitSnapshot;
+      const late = allSnapshots[index] as CircuitSnapshot;
+      const set = attempt(`La estructura entre «${early.fileName}» y «${late.fileName}» no se pudo comparar`, failures, null, () =>
+        structureBetweenSnapshots(early, late, config.tagChanges),
+      );
+      if (set === null) continue;
+      const gaps = keep(set.gaps);
+      if (gaps.length > 0) structure.push({ ...set, gaps });
+    }
+    const histories = attempt("Las horquillas entre ficheros no se pudieron leer de las instantáneas", failures, cohort.histories, () =>
+      historiesFromSnapshots(allSnapshots, config.franjas),
+    );
+    return { cohortId: cohort.cohortId, measures, histories, structure };
+  });
+  // El p50 por fichero de cada sección (R-TIM-012): de la instantánea, en los ficheros sin lecturas.
+  const anchorSectionsFinal: CircuitViews["anchorSections"] = {
+    ...baseViews.anchorSections,
+    sections: anchorSections.sections.map((section) => {
+      const extra = allSnapshots
+        .filter((entry) => !withReadings.has(entry.sourceId))
+        .flatMap((entry) => {
+          const own = entry.sections.find((item) => item.fromTagId === section.fromTagId && item.toTagId === section.toTagId);
+          return own === undefined ? [] : [{ sourceId: entry.sourceId, samples: own.produccion?.samples ?? 0, p50Ms: own.produccion?.p50Ms ?? null }];
+        });
+      const order = new Map(measuredWindows.map((entry, index) => [entry.source.sourceId, index]));
+      const bySource = [...extra, ...section.bySource].sort((a, b) => (order.get(a.sourceId) ?? Infinity) - (order.get(b.sourceId) ?? Infinity));
+      return { ...section, bySource };
+    }),
+  };
+  const deltas: SnapshotDelta[] = [];
+  for (let index = 1; index < allSnapshots.length; index += 1) {
+    const early = allSnapshots[index - 1] as CircuitSnapshot;
+    const late = allSnapshots[index] as CircuitSnapshot;
+    const delta = attempt(`El cambio entre «${early.fileName}» y «${late.fileName}» no se pudo calcular`, failures, null, () =>
+      compareSnapshots(early, late, config.tagChanges),
+    );
+    if (delta !== null) deltas.push(delta);
+  }
+  // Deriva entre la primera y la última instantánea (R-DAT-016, R-AGV-013), si son distantes: solo con
+  // listas cargadas, como antes, y solo desde instantáneas, nunca desde lecturas de ficheros anteriores.
+  const first = allSnapshots[0];
+  const last = allSnapshots[allSnapshots.length - 1];
+  const drift: DriftComparison | null =
+    lists.length === 0 || first === undefined || last === undefined || first === last
+      ? null
+      : attempt("La deriva entre periodos no se pudo leer de las instantáneas", failures, null, () =>
+          driftBetweenSnapshots(first, last, config.drift),
+        );
+  const retainedIds = new Set((stored?.sources ?? []).filter((source) => source.retained).map((source) => source.sourceId));
+  const sourceList = (stored?.sources ?? []).length === 0 ? [{ ...importedSource, importedAt: Date.now(), complete: importedWindow?.window ?? null }] : distinctSources(stored?.sources ?? []);
+  const snapshotsView: CircuitViews["snapshots"] = {
+    list: sourceList
+      .flatMap((source) => {
+        const own = snapshotOf.get(source.sourceId);
+        const window = own?.window ?? source.complete;
+        if (window === null) return [];
+        return [
+          {
+            sourceId: source.sourceId,
+            fileName: source.fileName,
+            window,
+            capturedAt: own?.capturedAt ?? source.importedAt,
+            retained: retainedIds.has(source.sourceId) || source.sourceId === importedSource.sourceId,
+            hasSnapshot: own !== undefined,
+          },
+        ];
+      })
+      .sort((a, b) => a.window.from - b.window.from || a.window.to - b.window.to),
+    deltas,
+    problems: [...notes, ...failures],
+    workingFindings: (snapshot ?? snapshotOf.get(importedSource.sourceId) ?? null)?.findings ?? [],
+  };
+
+  // La memoria consolidada (F4): solo si el circuito tiene versiones. Lo observado es la instantánea
+  // del fichero de trabajo —la recién construida o, si no se pudo, la guardada de esa misma fuente—.
+  let memory: MemoryViews | undefined;
+  if (stored !== undefined && isAvailable()) {
+    try {
+      memory = await buildMemoryViews(stored.circuitId, snapshot ?? snapshotOf.get(importedSource.sourceId) ?? null);
+    } catch (error) {
+      failures.push(`La memoria consolidada no se pudo leer: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // El plano físico (ADR-0016): si el circuito tiene plano, o una versión vigente desde la que crearlo.
+  // Con plano, la evolución y la comparación con la memoria se leen con él: un tag instalado que no se
+  // leyó es «no observado» en su ubicación, no «desaparece» (`reinterpretDelta`).
+  let plan: PlanViews | undefined;
+  let snapshotsFinal = snapshotsView;
+  if (stored !== undefined && isAvailable()) {
+    try {
+      const [events, memoryData] = await Promise.all([loadPlanEvents(stored.circuitId), loadMemory(stored.circuitId)]);
+      const built = planViewsFrom({
+        events,
+        current: currentVersion(memoryData.active),
+        snapshots: allSnapshots,
+        working: snapshot ?? snapshotOf.get(importedSource.sourceId) ?? null,
+        declaredExits: declaredExitsOf(stored.lists),
+        config,
+      });
+      if (built !== undefined) {
+        plan = built.views;
+        if (events.length > 0) {
+          snapshotsFinal = {
+            ...snapshotsView,
+            deltas: snapshotsView.deltas.map((delta) => reinterpretDelta(delta, built.observations.get(delta.toSourceId) ?? null)),
+          };
+          if (memory !== undefined && memory.comparison !== null) {
+            memory = { ...memory, comparison: { ...memory.comparison, delta: reinterpretDelta(memory.comparison.delta, built.views.observation) } };
+          }
+        }
+      }
+    } catch (error) {
+      failures.push(`El plano físico no se pudo leer: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  const views: CircuitViews = {
+    ...baseViews,
+    anchorSections: anchorSectionsFinal,
+    franjas: { ...baseViews.franjas, cohorts: franjaCohortsFinal },
+    snapshots: snapshotsFinal,
+    ...(memory === undefined ? {} : { memory }),
+    ...(plan === undefined ? {} : { plan }),
+    plantValues: context.plantValues,
+    ...listViews,
+    ...(drift === null || !drift.evaluated || drift.earlyPeriod === null || drift.latePeriod === null
       ? {}
       : {
           drift: {
@@ -1212,6 +1845,7 @@ async function buildViews(
           },
         }),
   };
+  return { views, snapshot, problems: failures };
 }
 
 async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise<void> {
@@ -1284,18 +1918,82 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         isCancelled: () => cancelRequested,
       },
     );
+    // Los valores de planta confirmados del circuito que rigen al inicio de este fichero (OQ-140):
+    // sustituyen a los provisionales en todo lo que se analiza de él. Sin ninguno, la provisional.
+    const fileStart = fileStartOf(result.readings);
+    const plantEvents = message.circuitId === undefined || !isAvailable() ? [] : await loadPlantValues(message.circuitId);
+    const circuitConfig = fileStart === null ? PROVISIONAL_CONFIG : resolveAnalysisConfig(PROVISIONAL_CONFIG, plantEvents, fileStart);
+
     // La acumulación ocurre **después** de que la importación haya terminado del todo, y en una
     // sola transacción: cancelar a mitad no deja nada escrito (INV-006).
-    const accumulation =
+    const accumulated =
       message.circuitId === undefined
         ? undefined
-        : await accumulate(message.circuitId, message.circuitName ?? message.circuitId, zone, result);
+        : await accumulate(message.circuitId, message.circuitName ?? message.circuitId, zone, result, circuitConfig);
+    // Un fichero que no se acumuló (afinidad) no es del circuito: se analiza con los provisionales.
+    const inCircuit = accumulated?.stored !== undefined;
+    const workingSpan = (accumulated?.workingCoverage ?? []).reduce<{ from: number; to: number } | null>(
+      (span, entry) => (span === null ? { from: entry.from, to: entry.to } : { from: Math.min(span.from, entry.from), to: Math.max(span.to, entry.to) }),
+      null,
+    );
 
-    // Las vistas se calculan sobre lo que se está mirando: el circuito entero si la fuente se
-    // acumuló, y solo esta fuente si no. Calcularlas siempre sobre el circuito sería mentir cuando
-    // la afinidad ha impedido acumular, porque el usuario estaría viendo un conjunto que no
+    // El fichero original, comprimido, queda archivado con su huella (OQ-145): es la evidencia para
+    // revisar o volver a medir el pasado con reglas nuevas cuando sus lecturas ya no estén retenidas.
+    // Un fallo aquí no invalida la importación, pero se dice.
+    const archiveProblems: string[] = [];
+    if (accumulated?.stored !== undefined && message.circuitId !== undefined) {
+      try {
+        await archiveSource(
+          { circuitId: message.circuitId, sourceHash, sourceId: result.summary.sourceId, fileName: file.name, importedAt: Date.now() },
+          bytes,
+        );
+      } catch (error) {
+        archiveProblems.push(`No se pudo archivar el fichero original: ${error instanceof Error ? error.message : String(error)}.`);
+      }
+    }
+
+    // Las vistas se calculan sobre lo que se está mirando: la ventana de trabajo del circuito si la
+    // fuente se acumuló, y solo esta fuente si no. Calcularlas siempre sobre el circuito sería mentir
+    // cuando la afinidad ha impedido acumular, porque el usuario estaría viendo un conjunto que no
     // incluye el fichero que acaba de cargar.
-    const views = await buildViews(message.circuitId, accumulation, result.readings, zone, result.summary.direction, result.summary);
+    const built = await buildViews({
+      stored: accumulated?.stored,
+      working: accumulated?.working ?? result.readings,
+      workingCoverage: accumulated?.workingCoverage ?? [],
+      snapshots: accumulated?.snapshots ?? [],
+      imported: result.readings,
+      zone,
+      direction: result.summary.direction,
+      importedSource: result.summary,
+      config: inCircuit ? circuitConfig : PROVISIONAL_CONFIG,
+      plantValues: plantValuesView({
+        events: inCircuit ? plantEvents : [],
+        provisional: PROVISIONAL_CONFIG,
+        at: fileStart,
+        fileName: file.name,
+        window: inCircuit ? workingSpan : null,
+        canConfirm: inCircuit,
+        proposals: inCircuit && message.circuitId !== undefined ? await plantProposalsOf(message.circuitId, plantEvents) : null,
+      }),
+    });
+
+    // La instantánea se guarda sola (ADR-0015 §4): es una medición con fecha, no memoria consolidada.
+    // Con ella, la fuente queda marcada como «con instantánea» en el circuito.
+    let accumulation = accumulated?.report;
+    if (built?.snapshot !== null && built?.snapshot !== undefined && accumulated?.stored !== undefined) {
+      const own = built.snapshot;
+      await saveSnapshot(own);
+      const sources = accumulated.stored.sources.map((source) => (source.sourceHash === own.sourceHash ? { ...source, snapshot: true } : source));
+      await saveCircuit({ ...accumulated.stored, sources });
+      const distinct = distinctSources(sources);
+      accumulation = {
+        ...(accumulation as AccumulationReport),
+        snapshots: {
+          withSnapshot: distinct.filter((source) => source.snapshot).length,
+          withoutSnapshot: distinct.filter((source) => !source.snapshot).length,
+        },
+      };
+    }
 
     emit(
       {
@@ -1303,9 +2001,10 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         summary: result.summary,
         readings: result.readings,
         quarantine: result.quarantine,
-        warnings: result.warnings,
+        // Lo que no se pudo construir o comparar se dice con el resto de advertencias (R-EVI-006).
+        warnings: [...result.warnings, ...(built?.problems ?? []), ...archiveProblems],
         ...(accumulation === undefined ? {} : { accumulation }),
-        ...(views === undefined ? {} : { views }),
+        ...(built === undefined ? {} : { views: built.views }),
       },
       jobId,
     );
@@ -1344,6 +2043,687 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         recovery: "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
       },
       jobId,
+    );
+  }
+}
+
+// --- Memoria consolidada (F4) ----------------------------------------------------------------------
+
+/**
+ * Los umbrales con que se comparan instantáneas: los mismos que los cambios de tag (OQ-138). Salen de
+ * `PROVISIONAL_CONFIG` y no de la configuración de cada fichero porque comparan versiones de ficheros
+ * distintos, y ninguno de los dos es un valor de planta (OQ-140): con valores confirmados son iguales.
+ */
+const MEMORY_THRESHOLDS = { maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance };
+
+/** Los mismos, más los de la clasificación de cambios frente al esperado (§8, OQ-146, OQ-147). */
+const CONSOLIDATION_THRESHOLDS = { ...MEMORY_THRESHOLDS, changeClass: PROVISIONAL_CONFIG.changeClass };
+
+/**
+ * El resumen de una versión con sus cambios (3.55.0): cuántos pasaron al esperado, cuántos quedaron
+ * pendientes y cuántas incidencias se excluyeron. Ausente en las versiones anteriores, que no los
+ * clasificaban.
+ */
+/** Lo que la lista de versiones necesita de cada una, sin el grafo. */
+function summarizeVersion(version: ConsolidatedVersion): VersionSummary {
+  const count = (state: string): number => version.decisions.filter((decision) => decision.state === state).length;
+  return {
+    ...(version.changes === undefined ? {} : { changeSummary: summarizeChanges(version.changes, version.incidents ?? []) }),
+    version: version.version,
+    createdAt: version.createdAt,
+    basedOnFileName: version.basedOn.fileName,
+    basedOnSourceId: version.basedOn.sourceId,
+    window: version.basedOn.window,
+    decisions: { confirmed: count("confirmado"), discarded: count("descartado"), postponed: count("pospuesto") },
+    note: version.note,
+    revoked: version.revoked,
+    hash: version.hash,
+    bytes: versionBytes(version),
+  };
+}
+
+/** Las versiones guardadas y el estado de linaje del circuito; sin estado guardado, todas forman el linaje activo. */
+async function loadMemory(circuitId: string): Promise<{
+  readonly all: readonly ConsolidatedVersion[];
+  readonly active: readonly ConsolidatedVersion[];
+  readonly state: LineageState;
+}> {
+  const [all, stored] = await Promise.all([loadVersions(circuitId), loadMemoryState(circuitId)]);
+  const state = stored ?? emptyLineageState(circuitId);
+  const active = state.active === null ? all : versionsOfLineage(all, state.active);
+  return { all, active, state };
+}
+
+/** Las vistas de la memoria del circuito, o `undefined` si no tiene ninguna versión. */
+async function buildMemoryViews(circuitId: string, observed: CircuitSnapshot | null): Promise<MemoryViews | undefined> {
+  const { all, active, state } = await loadMemory(circuitId);
+  if (all.length === 0) return undefined;
+  const current = currentVersion(active);
+  return {
+    versions: active.map(summarizeVersion),
+    current: current?.version ?? null,
+    comparison: current === null || observed === null ? null : compareToMemory(observed, current, MEMORY_THRESHOLDS),
+    budgetBytes: all.reduce((sum, version) => sum + versionBytes(version), 0),
+    // Lo guardado de verdad, comprimido, y el archivo de originales (OQ-145).
+    storedBytes: await memoryStoredBytes(circuitId),
+    archiveBytes: (await listArchive(circuitId)).reduce((sum, entry) => sum + entry.storedBytes, 0),
+    lineage: state.lastRelation,
+    fork:
+      state.incoming === null
+        ? null
+        : { local: active.map(summarizeVersion), incoming: versionsOfLineage(all, state.incoming).map(summarizeVersion) },
+    lineageEvents: state.lineageEvents,
+  };
+}
+
+// --- Reanálisis de un fichero archivado (OQ-148) ----------------------------------------------------
+
+/** El motivo, en palabras, de que no se pueda recortar un fichero sin su original. */
+const CUT_NEEDS_ORIGINAL = "Sin el fichero original archivado no se puede recortar: vuelve a cargarlo";
+
+/** Un recorte que no se puede hacer: el motivo y qué hacer, para decirlo tal cual en la interfaz. */
+class CutRefused extends Error {
+  readonly recovery: string;
+  constructor(message: string, recovery: string) {
+    super(message);
+    this.name = "CutRefused";
+    this.recovery = recovery;
+  }
+}
+
+/**
+ * Las lecturas de un fichero original archivado (OQ-145), reimportadas igual que en `runImport`: se
+ * comprueba que sus bytes tienen la huella SHA-256 de la fuente, se decodifica (libro de Excel o
+ * texto) y se importa con la procedencia de la fuente. No escribe nada.
+ */
+async function reimportArchived(
+  circuitId: string,
+  source: StoredSource,
+  zone: string,
+): Promise<{ readonly readings: readonly Reading[]; readonly direction: SourceDirection }> {
+  const again = "Vuelve a cargar el fichero en el circuito: queda archivado con su huella.";
+  const bytes = await loadArchivedSource(circuitId, source.sourceHash);
+  if (bytes === undefined) throw new CutRefused(`${CUT_NEEDS_ORIGINAL}.`, again);
+  const buffer = bytes.slice().buffer;
+  if ((await hashFile(buffer)) !== source.sourceHash) {
+    throw new CutRefused(`${CUT_NEEDS_ORIGINAL}: el archivado no coincide con su huella.`, again);
+  }
+  let text: string;
+  let encoding: string;
+  if (looksLikeZip(bytes)) {
+    text = rowsToDelimitedText(await readXlsxRows(bytes));
+    encoding = "xlsx";
+  } else {
+    ({ text, encoding } = decodeSource(buffer));
+  }
+  const result = importReadings(
+    text,
+    { sourceId: source.sourceId, fileName: source.fileName, byteSize: bytes.length, zone, encoding },
+    { onProgress: () => undefined, isCancelled: () => false },
+  );
+  return { readings: result.readings, direction: result.summary.direction };
+}
+
+/**
+ * La instantánea de un fichero a partir de unas lecturas y el contexto del circuito, por el mismo
+ * camino de análisis que la importación (`buildViews`), **sin escribir nada** en el almacén: ni
+ * lecturas, ni instantánea, ni retención. `null` con el motivo si no se pudo construir.
+ */
+async function snapshotFromReadings(
+  stored: StoredCircuit,
+  source: StoredSource,
+  readings: readonly Reading[],
+  coverage: readonly Interval[],
+  direction: SourceDirection,
+  snapshots: readonly CircuitSnapshot[],
+): Promise<{ readonly snapshot: CircuitSnapshot | null; readonly problems: readonly string[] }> {
+  // La misma configuración con que se analizó el fichero al importarlo (OQ-140).
+  const at = source.complete?.from ?? fileStartOf(readings);
+  const events = isAvailable() ? await loadPlantValues(stored.circuitId) : [];
+  const built = await buildViews({
+    stored,
+    working: readings,
+    workingCoverage: coverage,
+    snapshots,
+    imported: readings,
+    zone: stored.zone,
+    direction,
+    importedSource: { sourceId: source.sourceId, sourceHash: source.sourceHash, fileName: source.fileName, acceptedRows: source.acceptedRows },
+    config: at === null ? PROVISIONAL_CONFIG : resolveAnalysisConfig(PROVISIONAL_CONFIG, events, at),
+    plantValues: plantValuesView({
+      events,
+      provisional: PROVISIONAL_CONFIG,
+      at,
+      fileName: source.fileName,
+      window: null,
+      canConfirm: true,
+      proposals: isAvailable() ? await plantProposalsOf(stored.circuitId, events) : null,
+    }),
+  });
+  if (built === undefined) return { snapshot: null, problems: ["no queda ninguna lectura del fichero."] };
+  return { snapshot: built.snapshot, problems: built.problems };
+}
+
+/**
+ * La instantánea del fichero rehecha desde su original sin las lecturas recortadas (OQ-148). Lleva
+ * los hallazgos de la instantánea medida, que son los que la persona revisó: las decisiones y las
+ * incidencias de la versión son esas, recortadas o no. Conserva también su instante de captura, para
+ * que previsualizar y confirmar den la misma versión.
+ */
+async function cutSnapshot(
+  stored: StoredCircuit,
+  source: StoredSource,
+  measured: CircuitSnapshot,
+  snapshots: readonly CircuitSnapshot[],
+  cuts: readonly IncidentCut[],
+): Promise<{ readonly snapshot: CircuitSnapshot; readonly applied: readonly AppliedCut[] }> {
+  const { readings, direction } = await reimportArchived(stored.circuitId, source, stored.zone);
+  const { kept, applied } = cutReadings(readings, cuts);
+  const coverage = coverageWithoutCuts(source.complete === null ? [] : [source.complete], cuts);
+  const { snapshot, problems } = await snapshotFromReadings(stored, source, kept, coverage, direction, snapshots);
+  if (snapshot === null) {
+    throw new CutRefused(
+      `Con el recorte, el fichero se queda sin instantánea: ${problems.join(" ") || "sin motivo conocido."}`,
+      "Acorta el recorte o consolida sin él.",
+    );
+  }
+  return { snapshot: { ...snapshot, capturedAt: measured.capturedAt, findings: measured.findings }, applied };
+}
+
+/**
+ * La previsualización de consolidar un fichero, calculada **aquí** desde el almacén: nunca se confía
+ * en una previsualización que venga del hilo principal. El mismo cálculo sirve para `preview` y para
+ * `commit`, que es lo que garantiza que lo confirmado es lo que se escribe.
+ *
+ * Con recortes (OQ-148), la instantánea que se consolida es la del fichero rehecha desde su original
+ * archivado sin las lecturas recortadas (`cutSnapshot`); `observed` sigue siendo la guardada, que no
+ * cambia.
+ */
+async function previewFor(
+  circuitId: string,
+  sourceId: string,
+  requestedCuts: readonly IncidentCut[] = [],
+): Promise<{
+  readonly preview: ConsolidationPreview;
+  readonly snapshot: CircuitSnapshot | null;
+  readonly observed: CircuitSnapshot | null;
+  readonly state: LineageState;
+  /** Avisos sobre los recortes que no bloquean (`cutWarnings`); vacío sin recortes. */
+  readonly cutWarnings: readonly string[];
+}> {
+  const stored = await loadCircuit(circuitId);
+  if (stored === undefined) throw new Error(`El circuito ${circuitId} no está en el almacén.`);
+  const source = stored.sources.find((entry) => entry.sourceId === sourceId);
+  if (source === undefined) throw new Error(`El fichero ${sourceId} no es una fuente del circuito.`);
+  const [snapshots, reviews, memory, archive] = await Promise.all([
+    loadSnapshots(circuitId),
+    loadReviews(circuitId),
+    loadMemory(circuitId),
+    listArchive(circuitId),
+  ]);
+  const snapshot = snapshots.find((entry) => entry.sourceId === sourceId) ?? null;
+  if (snapshot === null) {
+    if (requestedCuts.length > 0) throw new CutRefused("El fichero no tiene instantánea: no hay nada que recortar.", "Vuelve a cargarlo para crearla.");
+    const basedOn = {
+      sourceId: source.sourceId,
+      sourceHash: source.sourceHash,
+      fileName: source.fileName,
+      window: source.complete ?? { from: source.importedAt, to: source.importedAt },
+    };
+    return { preview: previewWithoutSnapshot(basedOn, memory.active), snapshot: null, observed: null, state: memory.state, cutWarnings: [] };
+  }
+  // El periodo desde el esperado vigente (§8): las instantáneas cuya ventana empieza después de la del
+  // esperado, hasta la que se consolida, en orden de ventana. Un mismo fichero cargado dos veces
+  // (misma huella) cuenta una vez: si no, un cambio parecería sostenido por repetir el fichero.
+  const current = currentVersion(memory.active);
+  const since = current?.basedOn.window.to ?? null;
+  const ordered = sortSnapshots(snapshots);
+  const upTo = ordered.slice(0, ordered.findIndex((entry) => entry.sourceId === sourceId) + 1);
+  const seen = new Set<string>([snapshot.sourceHash]);
+  const history: CircuitSnapshot[] = [snapshot];
+  for (const entry of [...upTo].reverse()) {
+    if (entry.sourceId === snapshot.sourceId || seen.has(entry.sourceHash)) continue;
+    if (since !== null && !(entry.window.from > since)) continue;
+    seen.add(entry.sourceHash);
+    history.unshift(entry);
+  }
+  // Lo que una persona confirmó con el plano físico entre el fin del esperado y el fin del fichero.
+  const events = await loadPlanEvents(circuitId);
+  const confirmedSubjects = confirmedSubjectsOf(
+    events,
+    { after: since, until: snapshot.window.to },
+    current === null ? [snapshot] : [current.expected ?? current.snapshot, snapshot],
+  );
+  // Si se puede recortar: el original de este fichero está archivado (OQ-145).
+  const archived = archive.some((entry) => entry.sourceHash === source.sourceHash);
+  const cutState = archived ? { originalArchived: true } : { originalArchived: false, cutUnavailable: `${CUT_NEEDS_ORIGINAL}.` };
+  const run = (consolidated: CircuitSnapshot, cuts?: readonly AppliedCut[]): ConsolidationPreview =>
+    previewConsolidation({
+      snapshot: consolidated,
+      reviews,
+      versions: memory.active,
+      rankOf: (kind) => findingKindOf(kind).rank,
+      forkUnresolved: memory.state.incoming !== null,
+      thresholds: CONSOLIDATION_THRESHOLDS,
+      history: history.map((entry) => (entry.sourceId === consolidated.sourceId ? consolidated : entry)),
+      confirmedSubjects,
+      ...(cuts === undefined ? {} : { cuts }),
+    });
+  const preview = run(snapshot);
+  if (requestedCuts.length === 0) return { preview: { ...preview, ...cutState }, snapshot, observed: snapshot, state: memory.state, cutWarnings: [] };
+
+  // OQ-148: los recortes que la persona eligió, comprobados contra las incidencias de esta previsualización.
+  let cuts: readonly IncidentCut[];
+  try {
+    cuts = checkCuts(requestedCuts, preview.incidents ?? [], snapshot.window);
+  } catch (error) {
+    throw new CutRefused(error instanceof Error ? error.message : String(error), "Ajusta el recorte y vuelve a previsualizar.");
+  }
+  const cut = await cutSnapshot(stored, source, snapshot, snapshots, cuts);
+  // Un recorte que no toca ninguna ventana de su incidencia se avisa; la persona eligió ese tiempo y se sigue.
+  const warnings = cutWarnings(cuts, preview.incidents ?? []);
+  return { preview: { ...run(cut.snapshot, cut.applied), ...cutState }, snapshot: cut.snapshot, observed: snapshot, state: memory.state, cutWarnings: warnings };
+}
+
+/**
+ * Consolidación, revocación y resolución de bifurcaciones (F4). El Worker no decide nada: ejecuta lo
+ * que la persona confirmó (R-MEM-001), y lo escribe append-only (R-MEM-002).
+ */
+async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "revoke" | "resolve-fork" }>): Promise<void> {
+  const { jobId, circuitId } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  if (!isAvailable()) {
+    fail("No hay almacén local: la memoria consolidada necesita IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
+    return;
+  }
+  // La cancelación es cooperativa (WP-004): se mira justo antes de escribir, y hasta entonces nada
+  // ha cambiado. Después de escribir ya no se atiende: la escritura es una transacción, entera o nada.
+  const cancelledBeforeWrite = (): boolean => {
+    if (!cancelRequested) return false;
+    emit({ type: "cancelled", stage: "hashing" }, jobId);
+    return true;
+  };
+  // La memoria que se leyó para preparar la escritura, para que `saveMemory` la compare con la guardada.
+  const readState = (state: LineageState): { readonly activeHashes: readonly string[] | null } => ({ activeHashes: state.active?.hashes ?? null });
+  try {
+    if (message.type === "consolidate") {
+      const { preview, snapshot, observed, state, cutWarnings: cutNotes } = await previewFor(circuitId, message.sourceId, message.cuts ?? []);
+      const previewHash = await previewFingerprint(preview);
+      if (message.mode === "preview") {
+        emit({ type: "consolidation-preview", circuitId, preview, previewHash, ...(cutNotes.length === 0 ? {} : { cutWarnings: cutNotes }) }, jobId);
+        return;
+      }
+      if (preview.blockers.length > 0 || snapshot === null) {
+        fail(
+          `No se puede consolidar: ${preview.blockers.map((blocker) => blocker.detail).join(" ")}`,
+          "Resuelve lo que bloquea y vuelve a previsualizar.",
+        );
+        return;
+      }
+      // Lo que se escribe tiene que ser lo que la persona vio: la previsualización se rehace desde el
+      // almacén y su huella se compara con la que la interfaz enseñó. Sin huella, no hay confirmación.
+      if (message.previewHash === undefined) {
+        fail("La confirmación no trae la huella de la previsualización que se enseñó.", "Vuelve a previsualizar y confirma lo que veas.");
+        return;
+      }
+      if (message.previewHash !== previewHash) {
+        fail("La previsualización ha cambiado desde que se mostró.", "Vuelve a previsualizar y confirma lo que veas.");
+        return;
+      }
+      const lineage = state.active?.id ?? crypto.randomUUID();
+      const version = await consolidate(preview, {
+        circuitId,
+        snapshot,
+        lineage,
+        appVersion: APP_VERSION,
+        now: Date.now(),
+        note: message.note ?? null,
+      });
+      if (cancelledBeforeWrite()) return;
+      await saveMemory({ versions: [version], state: withConsolidated(state, version) }, readState(state));
+      // Lo observado es la instantánea guardada del fichero, recortada o no la versión: es medición.
+      const memory = await buildMemoryViews(circuitId, observed);
+      if (memory === undefined) throw new Error("La versión se guardó pero no se pudo volver a leer.");
+      emit({ type: "consolidated", circuitId, version, memory, plantProposals: await plantProposalsOf(circuitId, await loadPlantValues(circuitId)) }, jobId);
+      return;
+    }
+
+    if (message.type === "revoke") {
+      const { active } = await loadMemory(circuitId);
+      const target = active.find((version) => version.version === message.version);
+      if (target === undefined) {
+        fail(`La versión v${message.version} no está en el linaje activo del circuito.`, "Comprueba el número en la lista de versiones.");
+        return;
+      }
+      if (cancelledBeforeWrite()) return;
+      await saveVersion(revokeVersion(target, message.reason, Date.now()));
+      const snapshots = await loadSnapshots(circuitId);
+      const memory = await buildMemoryViews(circuitId, snapshots[snapshots.length - 1] ?? null);
+      if (memory === undefined) throw new Error("La revocación se guardó pero no se pudo volver a leer.");
+      emit(
+        { type: "revoked", circuitId, version: message.version, memory, plantProposals: await plantProposalsOf(circuitId, await loadPlantValues(circuitId)) },
+        jobId,
+      );
+      return;
+    }
+
+    const { state } = await loadMemory(circuitId);
+    const resolved = resolveFork(state, message.choice, message.reason, Date.now());
+    if (cancelledBeforeWrite()) return;
+    await saveMemory({ versions: [], state: resolved }, readState(state));
+    const snapshots = await loadSnapshots(circuitId);
+    const memory = await buildMemoryViews(circuitId, snapshots[snapshots.length - 1] ?? null);
+    if (memory === undefined) throw new Error("La elección se guardó pero no se pudo volver a leer.");
+    emit({ type: "fork-resolved", circuitId, memory, plantProposals: await plantProposalsOf(circuitId, await loadPlantValues(circuitId)) }, jobId);
+  } catch (error) {
+    // Un recorte que no se puede hacer se dice tal cual, con qué hacer (OQ-148).
+    if (error instanceof CutRefused) {
+      fail(error.message, error.recovery);
+      return;
+    }
+    // La memoria guardada ya no es la que se leyó (por ejemplo, un `.agvproj` abierto entre medias): no se escribió nada.
+    if (error instanceof MemoryChangedError) {
+      fail("La memoria cambió mientras se preparaba la escritura: no se ha guardado nada.", "Vuelve a previsualizar y confirma lo que veas.");
+      return;
+    }
+    // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
+    fail(
+      `La operación de memoria falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
+    );
+  }
+}
+
+// --- Plano físico (ADR-0016) -----------------------------------------------------------------------
+
+/** Tags de parada por salida de circuito declarados: lista `critico`, función `parada`. */
+function declaredExitsOf(lists: StoredCircuit["lists"]): readonly string[] {
+  const tags = (lists ?? [])
+    .filter((list) => list.list === "critico")
+    .flatMap((list) => list.entries ?? [])
+    .filter((entry) => entry.funcion === "parada")
+    .map((entry) => entry.tagId);
+  return [...new Set(tags)].sort();
+}
+
+interface PlanInputs {
+  readonly events: readonly PlanEvent[];
+  /** La versión consolidada vigente, o `null`. */
+  readonly current: ConsolidatedVersion | null;
+  readonly snapshots: readonly CircuitSnapshot[];
+  /** La instantánea del fichero de trabajo, o `null`. */
+  readonly working: CircuitSnapshot | null;
+  readonly declaredExits: readonly string[];
+  /** La configuración del análisis (con los valores de planta del fichero de trabajo, si los hay). */
+  readonly config: AnalysisConfig;
+}
+
+/**
+ * Las vistas del plano, todas calculadas aquí: el plano vigente, el historial en palabras, el fichero
+ * de trabajo leído con el plano de su ventana, la suma de todas las instantáneas y las propuestas.
+ * `undefined` si el circuito no tiene plano ni versión vigente desde la que crearlo. Devuelve también
+ * la observación de cada instantánea, para leer la evolución con el plano.
+ */
+function planViewsFrom(input: PlanInputs): { readonly views: PlanViews; readonly observations: ReadonlyMap<string, PlanObservation> } | undefined {
+  const { events, current, working } = input;
+  if (events.length === 0 && current === null) return undefined;
+  const hasPlan = events.some((event) => event.type === "crear-plano");
+  const observations = new Map<string, PlanObservation>();
+  for (const entry of sortSnapshots(input.snapshots)) {
+    if (observations.has(entry.sourceId)) continue;
+    const plan = planAt(events, entry.window.to);
+    if (plan !== null) observations.set(entry.sourceId, observeAgainstPlan(plan, entry, input.config.readRate));
+  }
+  const workingPlan = working === null ? null : planAt(events, working.window.to);
+  const observation = working === null || workingPlan === null ? null : (observations.get(working.sourceId) ?? observeAgainstPlan(workingPlan, working, input.config.readRate));
+  if (working !== null && observation !== null) observations.set(working.sourceId, observation);
+  const proposals =
+    working === null || workingPlan === null || observation === null
+      ? []
+      : proposeChanges(workingPlan, observation, working, {
+          declaredExits: input.declaredExits,
+          minVehicles: input.config.plan.minVehiclesForProposal,
+        });
+  return {
+    views: {
+      current: planAt(events, Date.now()),
+      canBootstrap: hasPlan || current === null ? null : { version: current.version, fileName: current.basedOn.fileName },
+      events: [...events].sort((a, b) => a.seq - b.seq).map((event) => ({ ...event, text: describeEvent(event, events) })),
+      observation,
+      summary: observations.size === 0 ? null : summarizePlan([...observations.values()], input.config.readRate),
+      proposals,
+    },
+    observations,
+  };
+}
+
+/** Una negativa del plano con su motivo y qué hacer: no es un defecto, es una acción que no vale. */
+class PlanRefusal extends Error {
+  constructor(
+    readonly reason: string,
+    readonly recovery: string,
+  ) {
+    super(reason);
+    this.name = "PlanRefusal";
+  }
+}
+
+/**
+ * Cambios del plano físico (ADR-0016). El Worker no decide nada: escribe lo que una persona confirmó,
+ * con su razón, después de validar **todos** los eventos en orden contra el registro guardado, y en
+ * una sola transacción append-only. Las propuestas se recalculan aquí desde la instantánea del
+ * fichero; nunca se escribe la que trae la interfaz.
+ */
+async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Promise<void> {
+  const { jobId, circuitId, action } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  if (!isAvailable()) {
+    fail("No hay almacén local: el plano físico necesita IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
+    return;
+  }
+  try {
+    const reason = typeof action.reason === "string" ? action.reason.trim() : "";
+    if (reason === "") throw new PlanRefusal("La razón está vacía: ningún cambio del plano se escribe sin su justificación.", "Escribe por qué se hace el cambio y vuelve a confirmarlo.");
+    const stored = await loadCircuit(circuitId);
+    if (stored === undefined) throw new PlanRefusal(`El circuito ${circuitId} no está en el almacén.`, "Carga antes un fichero del circuito.");
+    const [events, memoryData, snapshots] = await Promise.all([loadPlanEvents(circuitId), loadMemory(circuitId), loadSnapshots(circuitId)]);
+    const declaredExits = declaredExitsOf(stored.lists);
+    const now = Date.now();
+    const lastSeq = events.reduce((max, event) => Math.max(max, event.seq), 0);
+    const build = (inputs: readonly PlanEventInput[], origin: PlanEvent["origin"]): PlanEvent[] =>
+      inputs.map((input, index) => ({ ...input, evidence: input.evidence ?? null, circuitId, seq: lastSeq + 1 + index, recordedAt: now, reason, origin }) as PlanEvent);
+
+    let toWrite: PlanEvent[];
+    if (action.kind === "crear-plano") {
+      if (events.length > 0) throw new PlanRefusal("El circuito ya tiene plano: no se crea dos veces.", "Registra los cambios como eventos del plano existente.");
+      const version = memoryData.active.find((entry) => entry.version === action.fromVersion);
+      if (version === undefined) throw new PlanRefusal(`La versión v${action.fromVersion} no está en el linaje activo del circuito.`, "Elige una versión de la lista de versiones.");
+      if (version.revoked !== null) throw new PlanRefusal(`La versión v${action.fromVersion} está revocada: el plano no nace de una versión revocada.`, "Elige la versión vigente.");
+      toWrite = [bootstrapPlan(version, { circuitId, recordedAt: now, reason })];
+    } else if (action.kind === "aceptar-propuesta") {
+      const snapshot = snapshots.find((entry) => entry.sourceId === action.sourceId);
+      if (snapshot === undefined) throw new PlanRefusal(`El fichero ${action.sourceId} no tiene instantánea: la propuesta no se puede volver a calcular.`, "Vuelve a cargar el fichero y revisa las propuestas.");
+      const plan = planAt(events, snapshot.window.to);
+      if (plan === null) throw new PlanRefusal(`Al final de la ventana de «${snapshot.fileName}» todavía no había plano.`, "Las propuestas salen de ficheros posteriores a la creación del plano.");
+      // La misma configuración con que se analizó ese fichero (OQ-140).
+      const config = await configForFile(circuitId, snapshot.window.from);
+      const observation = observeAgainstPlan(plan, snapshot, config.readRate);
+      const proposal = proposeChanges(plan, observation, snapshot, { declaredExits, minVehicles: config.plan.minVehiclesForProposal }).find(
+        (entry) => entry.id === action.proposalId,
+      );
+      if (proposal === undefined) {
+        throw new PlanRefusal(
+          `La propuesta «${action.proposalId}» ya no sale de «${snapshot.fileName}» con el plano guardado: quizá ya se aceptó o el plano cambió.`,
+          "Revisa la lista de propuestas actualizada.",
+        );
+      }
+      let inputs = proposal.events;
+      if (proposal.kind === "salida-sin-ubicar") {
+        const branchFrom = action.branchFrom ?? "";
+        const anchor = plan.locations.find((location) => location.locationId === branchFrom);
+        if (branchFrom === "" || anchor === undefined || anchor.kind !== "anillo") {
+          throw new PlanRefusal(
+            branchFrom === "" ? "Una salida tiene que colgar de una ubicación del anillo, y no se ha elegido ninguna." : `${branchFrom} no es una ubicación de anillo abierta del plano.`,
+            "Elige la ubicación del anillo de la que cuelga la salida.",
+          );
+        }
+        inputs = inputs.map((input) => (input.type === "crear-ubicacion" ? { ...input, branchFrom } : input));
+      }
+      toWrite = build(inputs, "propuesta");
+    } else {
+      toWrite = build([action.event], "manual");
+    }
+
+    // Todos los eventos se validan en orden antes de escribir ninguno.
+    const accumulated: PlanEvent[] = [...events];
+    for (const event of toWrite) {
+      const problem = validateEvent(accumulated, event);
+      if (problem !== null) throw new PlanRefusal(`No se escribe nada: «${describeEvent(event, accumulated)}» no vale. ${problem}`, "Corrige el cambio y vuelve a confirmarlo.");
+      accumulated.push(event);
+    }
+    await appendPlanEvents(toWrite);
+
+    const saved = await loadPlanEvents(circuitId);
+    const ordered = sortSnapshots(snapshots);
+    const working =
+      message.workingSourceId === null
+        ? (ordered[ordered.length - 1] ?? null)
+        : (snapshots.find((entry) => entry.sourceId === message.workingSourceId) ?? null);
+    const config = working === null ? PROVISIONAL_CONFIG : await configForFile(circuitId, working.window.from);
+    const built = planViewsFrom({ events: saved, current: currentVersion(memoryData.active), snapshots, working, declaredExits, config });
+    if (built === undefined) throw new Error("Los eventos se guardaron pero el plano no se pudo volver a leer.");
+    emit({ type: "plan-updated", circuitId, written: toWrite.map((event) => describeEvent(event, saved)), plan: built.views }, jobId);
+  } catch (error) {
+    if (error instanceof PlanRefusal) {
+      fail(error.reason, error.recovery);
+      return;
+    }
+    // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
+    fail(
+      `La operación del plano falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
+    );
+  }
+}
+
+// --- Valores de planta confirmados (OQ-140) -------------------------------------------------------
+
+/**
+ * Confirma un valor de planta del circuito. Lo pide una persona con su razón: a mano (`manual`), o
+ * confirmando la propuesta de la memoria (`propuesta`, OQ-151). En el segundo caso el Worker **vuelve a
+ * calcular** la propuesta con las versiones consolidadas antes de escribir, y rechaza el valor si ya no
+ * es el propuesto: no se fía de la interfaz. Valida lo pedido —clave conocida, valor válido, fecha y
+ * razón— y lo añade al registro append-only (`plantValueEventFor`). No vuelve a analizar: el valor se
+ * aplica al volver a analizar los ficheros que empiezan desde su fecha efectiva. Responde con lo vigente
+ * para el fichero de trabajo y las propuestas de ahora.
+ */
+async function runPlantValue(message: Extract<ToWorker, { type: "plant-value" }>): Promise<void> {
+  const { jobId, circuitId } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  if (!isAvailable()) {
+    fail("No hay almacén local: los valores de planta necesitan IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
+    return;
+  }
+  try {
+    const stored = await loadCircuit(circuitId);
+    if (stored === undefined) {
+      fail(`El circuito ${circuitId} no está en el almacén.`, "Carga antes un fichero del circuito.");
+      return;
+    }
+    const events = await loadPlantValues(circuitId);
+    const origin = message.origin === "propuesta" ? "propuesta" : "manual";
+    const proposals = origin === "propuesta" ? await plantProposalsOf(circuitId, events) : null;
+    const built = plantValueEventFor({
+      circuitId,
+      events,
+      request: { key: message.key, value: message.value, effectiveAt: message.effectiveAt, reason: message.reason, origin },
+      recordedAt: Date.now(),
+      proposal: proposals === null || !isPlantValueKey(message.key) ? null : proposals[message.key],
+    });
+    if ("cause" in built) {
+      fail(built.cause, built.recovery);
+      return;
+    }
+    const { event } = built;
+    const definition = plantValueDefinition(event.key);
+    await appendPlantValue(event);
+
+    const saved = await loadPlantValues(circuitId);
+    const distinct = distinctSources(stored.sources);
+    const workingSource =
+      (message.workingSourceId === null ? undefined : stored.sources.find((source) => source.sourceId === message.workingSourceId)) ??
+      [...distinct].sort((a, b) => a.importedAt - b.importedAt)[distinct.length - 1];
+    const at = workingSource?.complete?.from ?? null;
+    const retained = stored.sources.filter((source) => source.retained && source.complete !== null).map((source) => source.complete as Interval);
+    const window = retained.length === 0 ? null : { from: Math.min(...retained.map((span) => span.from)), to: Math.max(...retained.map((span) => span.to)) };
+    const plantValues = plantValuesView({
+      events: saved,
+      provisional: PROVISIONAL_CONFIG,
+      at,
+      fileName: workingSource?.fileName ?? null,
+      window,
+      canConfirm: true,
+      proposals: await plantProposalsOf(circuitId, saved),
+    });
+    emit(
+      {
+        type: "plant-values-updated",
+        circuitId,
+        written: `${definition?.label ?? event.key}: ${formatPlantValue(definition?.kind ?? "duracion", definition?.inputUnit, event.value)}.`,
+        appliesToWorking: at !== null && plantValuesAt(saved, at).get(event.key)?.seq === event.seq,
+        plantValues,
+      },
+      jobId,
+    );
+  } catch (error) {
+    // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
+    fail(
+      `No se pudo guardar el valor de planta (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
+    );
+  }
+}
+
+/**
+ * Comparar dos versiones consolidadas del linaje activo (F4, puerta G4). Solo lee: el esperado de una
+ * frente al de la otra, lo que hay entre medias y lo que se adoptó por el camino (`compareVersions`).
+ */
+async function runCompareVersions(message: Extract<ToWorker, { type: "compare-versions" }>): Promise<void> {
+  const { jobId, circuitId } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  if (!isAvailable()) {
+    fail("No hay almacén local: la memoria consolidada necesita IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
+    return;
+  }
+  try {
+    const { active } = await loadMemory(circuitId);
+    const missing = [message.from, message.to].filter((number) => !active.some((version) => version.version === number));
+    if (missing.length > 0) {
+      fail(
+        `${missing.length === 1 ? "La versión" : "Las versiones"} v${missing.join(" y v")} no ${missing.length === 1 ? "está" : "están"} en el linaje activo del circuito.`,
+        "Elige dos versiones de la lista de versiones.",
+      );
+      return;
+    }
+    if (message.from === message.to) {
+      fail(`Las dos versiones son la misma (v${message.from}).`, "Elige dos versiones distintas.");
+      return;
+    }
+    const comparison = compareVersions(active, message.from, message.to, MEMORY_THRESHOLDS);
+    emit({ type: "versions-compared", circuitId, comparison }, jobId);
+  } catch (error) {
+    // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
+    fail(
+      `La comparación de versiones falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
     );
   }
 }
@@ -1569,6 +2949,36 @@ scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   if (message.type === "cancel") {
     // Solo cancela el trabajo vigente: una cancelación tardía de otro trabajo no afecta a este.
     if (message.jobId === currentJobId) cancelRequested = true;
+    return;
+  }
+
+  if (message.type === "compare-versions") {
+    currentJobId = message.jobId;
+    seq = 0;
+    void runCompareVersions(message);
+    return;
+  }
+
+  if (message.type === "plant-value") {
+    currentJobId = message.jobId;
+    seq = 0;
+    void runPlantValue(message);
+    return;
+  }
+
+  if (message.type === "plan-action") {
+    currentJobId = message.jobId;
+    seq = 0;
+    void runPlan(message);
+    return;
+  }
+
+  if (message.type === "consolidate" || message.type === "revoke" || message.type === "resolve-fork") {
+    currentJobId = message.jobId;
+    // Una cancelación tardía del trabajo anterior no debe alcanzar a este (WP-003).
+    cancelRequested = false;
+    seq = 0;
+    void runMemory(message);
     return;
   }
 

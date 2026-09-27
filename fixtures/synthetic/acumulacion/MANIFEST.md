@@ -3,8 +3,8 @@
 - Dataset ID/version: `acumulacion-basica/1`
 - Generador: escritos a mano para F1a
 - `synthetic: true`
-- Propósito: ejercitar la unión por tramo común (TC-015), la cobertura (R-DAT-007) y la
-  persistencia entre sesiones
+- Propósito: ejercitar la unión por tramo común (TC-015), la cobertura (R-DAT-007), la
+  persistencia entre sesiones y la retención de lecturas por fuente (R-DAT-023)
 - Periodo ficticio: enero de 2026, inventado
 - Configuración ficticia asociada: zona `Europe/Madrid`
 
@@ -22,7 +22,12 @@
 `ventana-1` y `ventana-2` **se solapan**: comparten las lecturas de 5:09:30, 5:10:00 y 5:10:30.
 Unidas deben dar 9 lecturas distintas, no 12, y el solape debe conservar las dos procedencias.
 
-`ventana-lejana` es disjunta de las otras dos, a dos días de distancia. Su cobertura debe salir
+`ventana-3` **se solapa con `ventana-2`** (comparte las lecturas de 5:11:00, 5:11:30 y 5:12:00) y
+no con `ventana-1`. Cargadas las tres seguidas, la retención (R-DAT-023, ADR-0015) debe conservar
+las lecturas de `ventana-3` y `ventana-2` y retirar las de `ventana-1`, y las tres deben tener
+instantánea.
+
+`ventana-lejana` es disjunta de las otras, a dos días de distancia. Su cobertura debe salir
 como un **segundo tramo**, y el hueco entre medias como `sin datos cargados` — nunca como un
 silencio del circuito, que es el falso diagnóstico que R-DAT-007 existe para evitar.
 

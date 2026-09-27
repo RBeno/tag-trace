@@ -14,6 +14,8 @@ import {
   type AccumulationReport,
   type CircuitViews,
   type FromWorker,
+  type MemoryViews,
+  type PlanAction,
   type SourceSummary,
   type ToWorker,
 } from "../application/protocol.js";
@@ -31,18 +33,22 @@ import {
   scrollBox,
 } from "./charts.js";
 import { closeDrawer } from "./drawer.js";
+import { changedTagsOf, deltaAround, evolutionDataOf, evolutionSection, ringDataFromSnapshot, sourceStatusList, timeControl } from "./evolution.js";
+import type { CircuitSnapshot } from "../domain/snapshot.js";
 import { FLEET_STRUCTURE } from "../domain/fleet.js";
 import {
   agvTimelineChart,
   driftChart,
   dwellChart,
+  evolutionChart,
+  ringFigure,
+  type RingFigure,
   fifoSlopeChart,
   fleetCountChart,
   fleetLifelineChart,
   forkChart,
   laneOccupancyChart,
   readMatrixHeatmap,
-  ringChart,
   segmentBandChart,
   trendMultiplesChart,
   type BandRow,
@@ -54,15 +60,23 @@ import {
   type TrendPanel,
 } from "./diagnostic-charts.js";
 import { PROVISIONAL_CONFIG } from "../domain/config.js";
+import { CARDS_SHOWN } from "../domain/finding-kinds.js";
 import { bandsCsv } from "../domain/segment-bands.js";
 import { anchorSectionsCsv } from "../domain/anchor-sections.js";
 import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
 import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
-import type { FieldOrder } from "../domain/time.js";
-import { ProjectError, readProject, writeProject } from "../persistence/agvproj.js";
-import { isAvailable, loadCircuit, loadReviews } from "../persistence/store.js";
+import { wallClockToUtc, type FieldOrder } from "../domain/time.js";
+import type { IncidentCut } from "../domain/incident-cut.js";
+import { ProjectError, readMemorySection, readPlanSection, readPlantValuesSection, readProject, writeProject } from "../persistence/agvproj.js";
+import { exportProjectMemory, importProjectMemory } from "../persistence/project-memory.js";
+import { exportProjectPlan, importProjectPlan } from "../persistence/project-plan.js";
+import { exportProjectPlantValues, importProjectPlantValues } from "../persistence/project-plant-values.js";
+import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
+import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
+import { createPlanPanel, planRelationText } from "./plan-ui.js";
+import { createPlantValuesPanel, plantValuesRelationText, type PlantValueSendRequest } from "./plant-values-ui.js";
 import {
   RANK_LABEL,
   THEMES,
@@ -107,6 +121,14 @@ interface State {
   circuitId: string | null;
   /** Ficheros acumulados en el circuito, para la portada: los que dice «Lo acumulado». */
   sources: number;
+  /** Las instantáneas del circuito (ADR-0015), en orden de ventana, leídas del almacén tras cada importación. */
+  snapshots: readonly CircuitSnapshot[];
+  /** Qué operación de memoria (F4) espera respuesta del Worker, para saber a quién contarle el error. */
+  memoryJob: "preview" | "commit" | "revoke" | "resolve-fork" | "compare-versions" | null;
+  /** Una acción sobre el plano físico (ADR-0016) espera respuesta del Worker. */
+  planJob: boolean;
+  /** Un valor de planta confirmado (OQ-140) espera respuesta del Worker. */
+  plantValueJob: boolean;
 }
 
 const state: State = {
@@ -124,6 +146,10 @@ const state: State = {
   fleetFile: null,
   circuitId: null,
   sources: 0,
+  snapshots: [],
+  memoryJob: null,
+  planJob: false,
+  plantValueJob: false,
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -160,6 +186,30 @@ function formatTick(utcMs: number): string {
 }
 
 const FORMATS: Formats = { instant: formatInstant, tick: formatTick };
+
+/** Un instante como valor de un campo `datetime-local` (`aaaa-mm-ddThh:mm:ss`), en la zona del circuito. */
+function toDateTimeInput(utcMs: number): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: ZONE,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(utcMs));
+  const part = (type: Intl.DateTimeFormatPartTypes): string => parts.find((entry) => entry.type === type)?.value ?? "00";
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
+}
+
+/** El valor de un campo `datetime-local`, leído en la zona del circuito; `null` si no es una fecha. */
+function fromDateTimeInput(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(value);
+  if (match === null) return null;
+  const [year, month, day, hour, minute, second] = match.slice(1).map((field) => Number(field ?? "0")) as [number, number, number, number, number, number];
+  return wallClockToUtc({ year, month, day, hour, minute, second }, ZONE).utcMs;
+}
 
 // --- Regiones de la página -------------------------------------------------
 
@@ -328,6 +378,7 @@ const TABS = [
   ["agv", "AGV"],
   ["tiempos", "Tiempos"],
   ["linea", "Línea y calles"],
+  ["memoria", "Memoria"],
   ["datos", "Datos"],
 ] as const;
 type TabId = (typeof TABS)[number][0];
@@ -411,6 +462,9 @@ reviewHost.hidden = true;
 
 let activeTab: TabId = "resumen";
 
+/** La revisión en campo de las vistas que se están enseñando (`review-ui.ts`). Va antes de la pestaña Memoria, que la consulta al construirse. */
+let reviewSession: ReviewSession | null = null;
+
 function isTabId(value: string): value is TabId {
   return (TAB_IDS as readonly string[]).includes(value);
 }
@@ -479,6 +533,64 @@ const tiles = element("div", "tiles");
 tiles.setAttribute("role", "list");
 tiles.setAttribute("aria-label", "Cifras del circuito");
 
+/**
+ * La pestaña «Memoria» (F4). Se construye una vez y se rehace con cada análisis (`views.memory`) y con
+ * cada respuesta del Worker. Sus botones envían mensajes; ninguno consolida por su cuenta: el `commit`
+ * solo sale de «Confirmar y consolidar», tras una previsualización sin bloqueos.
+ */
+const memoryPanel = createMemoryPanel({
+  formatInstant,
+  formatWindow: (window) => `${formatTick(window.from)} → ${formatTick(window.to)}`,
+  formatTick,
+  findings: findingsStatus,
+  goToPending: () => {
+    activateTab("resumen");
+    trayPanel.scrollIntoView({ block: "start" });
+    trayPanel.tabIndex = -1;
+    trayPanel.focus({ preventScroll: true });
+  },
+  preview: (sourceId, cuts) => startMemory({ type: "consolidate", sourceId, mode: "preview", ...(cuts === undefined ? {} : { cuts }) }),
+  commit: (sourceId, note, cuts, previewHash) =>
+    startMemory({ type: "consolidate", sourceId, mode: "commit", previewHash, ...(note === null ? {} : { note }), ...(cuts === undefined ? {} : { cuts }) }),
+  toDateTimeInput,
+  fromDateTimeInput,
+  revoke: (version, reason) => startMemory({ type: "revoke", version, reason }),
+  resolveFork: (choice, reason) => startMemory({ type: "resolve-fork", choice, reason }),
+  compare: (from, to) => startMemory({ type: "compare-versions", from, to }),
+});
+
+/**
+ * La sección «Plano del circuito» (ADR-0016), debajo de la memoria en la misma pestaña. Se rehace con
+ * cada análisis (`views.plan`) y con cada `plan-updated`. Cada cambio del plano lo pide una persona con
+ * un botón y una razón escrita; el Worker lo valida y lo escribe.
+ */
+const planPanel = createPlanPanel({
+  formatInstant,
+  // «12/01»: día y mes con dos cifras, en la zona del circuito.
+  formatDay: (utcMs) => {
+    const parts = new Intl.DateTimeFormat("es-ES", { timeZone: ZONE, day: "numeric", month: "numeric" }).formatToParts(new Date(utcMs));
+    const part = (type: string): string => (parts.find((entry) => entry.type === type)?.value ?? "").padStart(2, "0");
+    return `${part("day")}/${part("month")}`;
+  },
+  zone: ZONE,
+  send: (action) => startPlan(action),
+});
+
+/**
+ * La sección «Valores de planta del circuito» (OQ-140), en la pestaña Datos. Se rehace con cada análisis
+ * (`views.plantValues`) y con cada `plant-values-updated`. Cada valor lo confirma una persona con su
+ * fecha efectiva y su razón; el Worker lo valida y lo escribe, y se aplica al volver a analizar.
+ */
+const plantValuesPanel = createPlantValuesPanel({
+  formatInstant,
+  zone: ZONE,
+  send: (request) => startPlantValue(request),
+  goTo: (section) => {
+    const tab = TABS.find(([, label]) => label === section.tab)?.[0];
+    if (tab !== undefined) jumpTo(tab, section.heading);
+  },
+});
+
 {
   const get = (id: TabId): HTMLElement => tabPanels.get(id) as HTMLElement;
   const views = (id: TabId): HTMLElement => viewsOf.get(id) as HTMLElement;
@@ -489,9 +601,11 @@ tiles.setAttribute("aria-label", "Cifras del circuito");
   get("agv").append(views("agv"), dossierPanel);
   get("tiempos").append(views("tiempos"));
   get("linea").append(views("linea"));
+  // Memoria: la memoria consolidada del circuito, sus versiones y el flujo de consolidar (F4).
+  get("memoria").append(memoryPanel.node, planPanel.node);
   // Datos: lo que se carga y lo que entró, tal cual: listas, copia, fuente, cobertura y perfil,
   // replay y lecturas.
-  get("datos").append(listsPanel, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel);
+  get("datos").append(listsPanel, plantValuesPanel.node, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel);
   const empty = element("p", "muted tab-empty", "Todavía no hay análisis: elige un fichero de lecturas y escribe el circuito.");
   get("resumen").prepend(empty);
 }
@@ -753,11 +867,28 @@ function appendRows(): void {
   }
 }
 
+/**
+ * Un solo trabajo a la vez. Mientras el Worker responde se apagan **todas** las entradas que
+ * arrancarían otro —los cuatro ficheros y los botones de memoria, plano y valores de planta—, no solo
+ * la del panel que lo pidió: dos trabajos a la vez se pisarían el almacén, y matar al que estaba en
+ * curso dejaba una fuente acumulada sin instantánea ni archivo. «Cancelar» solo se ofrece en una
+ * importación, que es la que tiene puntos de control (WP-004); las operaciones de memoria, plano y
+ * valores de planta escriben de una vez y terminan solas (UX_SPEC §8).
+ */
 function setBusy(busy: boolean): void {
   fileInput.disabled = busy;
-  cancelButton.hidden = !busy;
+  projectInput.disabled = busy;
+  listsInput.disabled = busy;
+  fleetInput.disabled = busy;
+  memoryPanel.setBusy(busy);
+  planPanel.setBusy(busy);
+  plantValuesPanel.setBusy(busy);
+  cancelButton.hidden = !busy || state.memoryJob !== null || state.planJob || state.plantValueJob;
   progressPanel.hidden = !busy;
 }
+
+/** Lo que dice el panel cuyo botón se pulsó con otro trabajo en marcha. */
+const BUSY_NOTICE = "Hay otra operación en curso; espera a que termine.";
 
 // --- Ciclo de vida del trabajo --------------------------------------------
 
@@ -765,6 +896,9 @@ function disposeWorker(): void {
   state.worker?.terminate();
   state.worker = null;
   state.jobId = null;
+  state.memoryJob = null;
+  state.planJob = false;
+  state.plantValueJob = false;
 }
 
 function handleMessage(message: FromWorker): void {
@@ -807,6 +941,11 @@ function handleMessage(message: FromWorker): void {
       }
       if (message.views !== undefined) renderViews(message.views);
       state.views = message.views ?? null;
+      const working = message.views === undefined ? null : workingFileOf(message.views);
+      memoryPanel.update({ circuitId: state.circuitId, memory: message.views?.memory ?? null, working });
+      planPanel.update({ circuitId: state.circuitId, plan: message.views?.plan ?? null, working });
+      plantValuesPanel.update({ circuitId: state.circuitId, view: message.views?.plantValues ?? null });
+      if (message.views !== undefined) loadEvolution(message.views);
       renderDossier();
       renderReplaySkeleton();
       renderTableSkeleton();
@@ -820,6 +959,27 @@ function handleMessage(message: FromWorker): void {
     }
 
     case "error": {
+      // Un error de una operación de memoria se cuenta en su pestaña, no como fallo de importación.
+      if (state.memoryJob !== null) {
+        state.memoryJob = null;
+        memoryPanel.showError(message.cause, message.recovery);
+        memoryPanel.setBusy(false);
+        setBusy(false);
+        disposeWorker();
+        return;
+      }
+      // Y el de un valor de planta, en la suya.
+      if (state.plantValueJob) {
+        finishPlantValueJob();
+        plantValuesPanel.showError(message.cause, message.recovery);
+        return;
+      }
+      // Y el de una acción del plano, en su sección.
+      if (state.planJob) {
+        finishPlanJob();
+        planPanel.showError(message.cause, message.recovery);
+        return;
+      }
       // WP-005: cero filas es una respuesta legítima, y llega siempre con causa y recuperación.
       const lines = [message.cause, message.recovery];
       if (message.detectedSchema !== undefined) {
@@ -907,13 +1067,259 @@ function handleMessage(message: FromWorker): void {
     }
 
     case "cancelled":
-      showMessage("info", "Importación cancelada", [
-        "No se ha cambiado nada.",
-      ]);
+      // Una operación de memoria cancelada se dice en su pestaña; la importación, en el aviso general.
+      if (state.memoryJob !== null) {
+        memoryPanel.notice("Operación cancelada. No se ha cambiado nada.");
+      } else {
+        showMessage("info", "Importación cancelada", [
+          "No se ha cambiado nada.",
+        ]);
+      }
       setBusy(false);
       disposeWorker();
       return;
+
+    // --- Memoria consolidada (F4): las respuestas se pintan en su pestaña ---------------------------
+    case "consolidation-preview":
+      finishMemoryJob();
+      memoryPanel.showPreview(message.preview, message.previewHash, message.cutWarnings ?? []);
+      return;
+
+    case "consolidated":
+      finishMemoryJob();
+      memoryPanel.showConsolidated(message.version, message.memory);
+      if (message.plantProposals !== undefined) plantValuesPanel.proposalsChanged(message.plantProposals);
+      planPanel.memoryChanged(message.memory);
+      renderMemoryTile(message.memory);
+      return;
+
+    case "revoked":
+      finishMemoryJob();
+      memoryPanel.showRevoked(message.version, message.memory);
+      if (message.plantProposals !== undefined) plantValuesPanel.proposalsChanged(message.plantProposals);
+      planPanel.memoryChanged(message.memory);
+      renderMemoryTile(message.memory);
+      return;
+
+    case "fork-resolved":
+      finishMemoryJob();
+      memoryPanel.showForkResolved(message.memory);
+      if (message.plantProposals !== undefined) plantValuesPanel.proposalsChanged(message.plantProposals);
+      planPanel.memoryChanged(message.memory);
+      renderMemoryTile(message.memory);
+      return;
+
+    case "versions-compared":
+      finishMemoryJob();
+      memoryPanel.showComparison(message.comparison);
+      return;
+
+    // --- Plano físico (ADR-0016): la respuesta se pinta en su sección --------------------------------
+    case "plan-updated":
+      finishPlanJob();
+      planPanel.showUpdated(message.written, message.plan);
+      return;
+
+    // --- Valores de planta (OQ-140): la respuesta se pinta en su sección ----------------------------
+    case "plant-values-updated":
+      finishPlantValueJob();
+      plantValuesPanel.showUpdated(message.written, message.appliesToWorking, message.plantValues);
+      return;
   }
+}
+
+function finishPlantValueJob(): void {
+  state.plantValueJob = false;
+  plantValuesPanel.setBusy(false);
+  setBusy(false);
+  disposeWorker();
+}
+
+/**
+ * Envía un valor de planta confirmado al Worker (OQ-140). Como `startPlan`: mismo Worker, `jobId`
+ * propio, y la presentación solo pide. No vuelve a analizar nada: el valor se aplica al volver a
+ * cargar los ficheros de su vigencia.
+ */
+function startPlantValue(request: PlantValueSendRequest): void {
+  const circuitId = state.circuitId;
+  if (circuitId === null) {
+    plantValuesPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");
+    return;
+  }
+  // Nunca se mata el trabajo en curso para empezar este (WP-004): se rechaza y se dice.
+  if (state.worker !== null) {
+    plantValuesPanel.notice(BUSY_NOTICE);
+    return;
+  }
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  state.plantValueJob = true;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    finishPlantValueJob();
+    plantValuesPanel.showError("el proceso auxiliar se detuvo.", "No se ha guardado nada. Vuelve a intentarlo.");
+  };
+  setBusy(true);
+  plantValuesPanel.setBusy(true);
+  progressNote.textContent = "Guardando el valor de planta";
+  progressBar.value = 0;
+  const working = state.views === null ? null : workingFileOf(state.views);
+  const message: ToWorker = {
+    type: "plant-value",
+    protocolVersion: PROTOCOL_VERSION,
+    jobId,
+    circuitId,
+    ...request,
+    workingSourceId: working === null ? null : working.sourceId,
+  };
+  worker.postMessage(message);
+}
+
+function finishPlanJob(): void {
+  state.planJob = false;
+  planPanel.setBusy(false);
+  setBusy(false);
+  disposeWorker();
+}
+
+/**
+ * Envía una acción sobre el plano físico al Worker (ADR-0016): crear el plano, confirmar una
+ * propuesta o registrar un cambio a mano. Como `startMemory`: mismo Worker, `jobId` propio, y la
+ * presentación solo pide. Va con el fichero de trabajo para que la respuesta traiga el plano leído
+ * contra él.
+ */
+function startPlan(action: PlanAction): void {
+  const circuitId = state.circuitId;
+  if (circuitId === null) {
+    planPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");
+    return;
+  }
+  if (state.worker !== null) {
+    planPanel.notice(BUSY_NOTICE);
+    return;
+  }
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  state.planJob = true;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    finishPlanJob();
+    planPanel.showError("el proceso auxiliar se detuvo.", "El plano no se ha modificado. Vuelve a intentarlo.");
+  };
+  setBusy(true);
+  planPanel.setBusy(true);
+  progressNote.textContent =
+    action.kind === "crear-plano" ? "Creando el plano" : action.kind === "aceptar-propuesta" ? "Escribiendo el cambio confirmado" : "Registrando el cambio del plano";
+  progressBar.value = 0;
+  const working = state.views === null ? null : workingFileOf(state.views);
+  const message: ToWorker = {
+    type: "plan-action",
+    protocolVersion: PROTOCOL_VERSION,
+    jobId,
+    circuitId,
+    action,
+    workingSourceId: working === null ? null : working.sourceId,
+  };
+  worker.postMessage(message);
+}
+
+function finishMemoryJob(): void {
+  state.memoryJob = null;
+  memoryPanel.setBusy(false);
+  setBusy(false);
+  disposeWorker();
+}
+
+/**
+ * Envía una operación de memoria al Worker (F4): previsualizar o confirmar una consolidación, revocar
+ * una versión, elegir linaje o comparar dos versiones. Mismo Worker, mismo protocolo y `jobId` propio, como las listas y la
+ * flota: la memoria se lee y se escribe fuera del hilo principal, y la presentación solo pide.
+ */
+function startMemory(
+  request:
+    | {
+        readonly type: "consolidate";
+        readonly sourceId: string;
+        readonly mode: "preview" | "commit";
+        readonly note?: string;
+        readonly cuts?: readonly IncidentCut[];
+        readonly previewHash?: string;
+      }
+    | { readonly type: "revoke"; readonly version: number; readonly reason: string }
+    | { readonly type: "resolve-fork"; readonly choice: "conservar-local" | "adoptar-entrante"; readonly reason: string }
+    | { readonly type: "compare-versions"; readonly from: number; readonly to: number },
+): void {
+  const circuitId = state.circuitId;
+  if (circuitId === null) {
+    memoryPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");
+    return;
+  }
+  if (state.worker !== null) {
+    memoryPanel.notice(BUSY_NOTICE);
+    return;
+  }
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  state.memoryJob = request.type === "consolidate" ? request.mode : request.type;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    state.memoryJob = null;
+    memoryPanel.showError("el proceso auxiliar se detuvo.", "La memoria no se ha modificado. Vuelve a intentarlo.");
+    memoryPanel.setBusy(false);
+    setBusy(false);
+    disposeWorker();
+  };
+  setBusy(true);
+  memoryPanel.setBusy(true);
+  progressNote.textContent =
+    request.type === "consolidate"
+      ? request.mode === "preview"
+        ? "Previsualizando la consolidación"
+        : "Consolidando"
+      : request.type === "revoke"
+        ? "Revocando la versión"
+        : request.type === "compare-versions"
+          ? "Comparando versiones"
+          : "Registrando la elección de linaje";
+  progressBar.value = 0;
+  const message: ToWorker = { ...request, protocolVersion: PROTOCOL_VERSION, jobId, circuitId };
+  worker.postMessage(message);
+}
+
+/** El fichero de trabajo del análisis en pantalla, con si tiene instantánea, según lo que dicen las vistas. */
+function workingFileOf(views: CircuitViews): MemoryWorkingFile | null {
+  const summary = state.summary;
+  if (summary === null) return null;
+  const list = views.snapshots.list;
+  // El mismo fichero cargado dos veces es una fuente nueva sin instantánea propia (R-DAT-005): vale la
+  // del primero, que es el mismo contenido.
+  const entry = list.find((item) => item.sourceId === summary.sourceId) ?? [...list].reverse().find((item) => item.fileName === summary.fileName && item.hasSnapshot);
+  if (entry === undefined) return { sourceId: summary.sourceId, fileName: summary.fileName, hasSnapshot: false };
+  return { sourceId: entry.sourceId, fileName: entry.fileName, hasSnapshot: entry.hasSnapshot };
+}
+
+/** Lo que la bandeja dice de la revisión, contado en sus tarjetas: es la unidad de revisión (R-EVI-007). */
+function findingsStatus(): FindingsStatus | null {
+  if (reviewSession === null) return null;
+  const cards = [...tray.querySelectorAll<HTMLElement>(".finding.reviewable")];
+  const stateOf = (card: HTMLElement): string => card.dataset["review"] ?? "pendiente";
+  return {
+    total: cards.length,
+    pending: cards.filter((card) => stateOf(card) === "pendiente").length,
+    confirmedCritical: cards.filter((card) => stateOf(card) === "confirmado" && card.closest<HTMLElement>(".tray-group")?.dataset["rank"] === "1").length,
+  };
 }
 
 function startImport(file: File, fieldOrder?: FieldOrder): void {
@@ -1110,6 +1516,8 @@ function renderAccumulation(report: {
   readonly sources: number;
   readonly shared: number;
   readonly disagreements: number;
+  readonly retained: { readonly sourceIds: readonly string[]; readonly distinctSources: number };
+  readonly snapshots: { readonly withSnapshot: number; readonly withoutSnapshot: number };
 }): void {
   // El nombre del circuito abre el Resumen, que es lo primero que se ve; en Datos, lo acumulado.
   const resumen = viewsOf.get("resumen") as HTMLElement;
@@ -1118,7 +1526,20 @@ function renderAccumulation(report: {
   summaryPanel.append(element("h2", undefined, `Lo acumulado en «${report.circuitId}»`));
   const rows: readonly (readonly [string, string])[] = [
     ["Ficheros cargados", String(report.sources)],
-    ["Lecturas del circuito", report.totalReadings.toLocaleString("es-ES")],
+    // Las lecturas en crudo solo viven en la ventana de trabajo (ADR-0015 §2, R-DAT-023): el
+    // expediente y el replay alcanzan justo esto, y lo demás queda como instantánea.
+    [
+      "Lecturas retenidas",
+      `${report.totalReadings.toLocaleString("es-ES")} lecturas de ${report.retained.sourceIds.length} ` +
+        `${report.retained.sourceIds.length === 1 ? "fichero" : "ficheros"} de ${report.retained.distinctSources}`,
+    ],
+    [
+      "Instantáneas",
+      `${report.snapshots.withSnapshot} de ${report.retained.distinctSources} ficheros` +
+        (report.snapshots.withoutSnapshot === 0
+          ? ""
+          : `; ${report.snapshots.withoutSnapshot} sin instantánea (anteriores a esta versión o sin construir): vuelve a cargarlos para crearla`),
+    ],
     [
       "Cobertura",
       report.coverage.length === 0
@@ -1200,6 +1621,7 @@ function resetViews(): void {
   trayPanel.hidden = true;
   reviewHost.replaceChildren();
   reviewHost.hidden = true;
+  reviewSession?.dispose();
   reviewSession = null;
   tiles.replaceChildren();
   closeDrawer();
@@ -1215,6 +1637,7 @@ function renderViews(views: CircuitViews): void {
   currentTagInfo = views.tagInfo ?? {};
   currentBatteries = views.incidents?.batteries ?? {};
   // La revisión en campo solo existe sobre un circuito: sin él, una marca no tendría dónde guardarse.
+  reviewSession?.dispose();
   reviewSession =
     state.circuitId === null
       ? null
@@ -1256,6 +1679,9 @@ function renderViews(views: CircuitViews): void {
   out.append(element("h3", undefined, "Composición del circuito"));
   out.append(element("p", "muted", cohortLine));
   renderRingFigure(views);
+  // La evolución (ADR-0015 §3) se rellena cuando las instantáneas llegan del almacén (`loadEvolution`).
+  evolutionHost = element("div", "evolution-host");
+  out.append(evolutionHost);
 
   // --- Datos: lo cargado, tal cual --------------------------------------------------------------
   out = viewsOf.get("datos") as HTMLElement;
@@ -1273,6 +1699,8 @@ function renderViews(views: CircuitViews): void {
       formatInstant,
     ),
   );
+  // Qué queda de cada fichero en este dispositivo (R-DAT-023): lecturas, instantánea o nada.
+  if (views.snapshots.list.length > 0) out.append(sourceStatusList(views.snapshots, formatTick));
 
   // --- Tags: inventario, lectura, cambios, listas ----------------------------------------------
   out = viewsOf.get("tags") as HTMLElement;
@@ -1335,6 +1763,8 @@ function renderViews(views: CircuitViews): void {
   renderCircuitState(views);
   renderAnchorSections(views);
   renderFranjas(out, views, { finding, formatInstant, formatTick, duration, circuitId: state.circuitId });
+  timesEvolutionHost = element("div", "evolution-host");
+  out.append(timesEvolutionHost);
   renderCriticalPoints(views);
   renderRing(views);
 
@@ -1346,11 +1776,16 @@ function renderViews(views: CircuitViews): void {
   renderCharging(views);
   renderFifo(views);
 
+  renderUncardedFindings(views);
   for (const panel of viewsOf.values()) panel.hidden = panel.childElementCount === 0;
   buildTray();
   reviewSession?.refresh();
   renderTiles(views);
-  reviewSession?.onChange(() => renderFindingsTile());
+  reviewSession?.onChange(() => {
+    renderFindingsTile();
+    // La lista de condiciones de «Consolidar periodo» cuenta las tarjetas de la bandeja.
+    memoryPanel.refresh();
+  });
 }
 
 /**
@@ -1699,8 +2134,6 @@ function renderUndeclaredTags(views: CircuitViews): void {
   }
 }
 
-/** La revisión en campo de las vistas que se están enseñando (`review-ui.ts`). */
-let reviewSession: ReviewSession | null = null;
 
 /**
  * La flota del circuito a lo largo del tiempo (DS-012, R-AGV-014, R-AGV-015): el recuento N de M y
@@ -2361,9 +2794,9 @@ type Matrix = CircuitViews["readMatrices"][number];
 type TagRow = Matrix["tags"][number];
 
 /** Cuántos casos se enseñan de entrada. Es un parámetro de pantalla, no una magnitud de planta. */
-const HIGHLIGHTS = 8;
+const HIGHLIGHTS = CARDS_SHOWN.highlights;
 /** Tarjetas de AGV por cada tipo de diferencia de lectura. Parámetro de pantalla. */
-const PER_KIND = 5;
+const PER_KIND = CARDS_SHOWN.perKind;
 
 /** Una probabilidad pequeña, legible: «1 vez de cada 1.000» o «menos de 1 de cada millón». */
 function formatChance(chance: number): string {
@@ -2515,9 +2948,104 @@ function matrixOf(views: CircuitViews, cohortId: number): Matrix | undefined {
  * tag abre su expediente por la misma vía que escribirlo en el buscador de la barra.
  */
 function renderRingFigure(views: CircuitViews): void {
+  ringToday = null;
+  ringHandle = null;
   for (const shape of views.shapes) {
     const matrix = matrixOf(views, shape.cohortId);
-    out.append(ringChart(ringDataOf(shape, matrix, views), { onTagOpen: openDossier }));
+    const data = ringDataOf(shape, matrix, views);
+    const handle = ringFigure(data, { onTagOpen: openDossier });
+    // El control de tiempo recorre el anillo del cohorte principal: el primero, que es el de las instantáneas.
+    if (ringHandle === null) {
+      ringHandle = handle;
+      ringToday = data;
+    }
+    out.append(handle.node);
+  }
+}
+
+/** El anillo de la portada y sus datos de hoy, para que el control de tiempo vuelva a ellos. */
+let ringHandle: RingFigure | null = null;
+let ringToday: RingData | null = null;
+/** Donde la portada y Tiempos escriben la evolución cuando llegan las instantáneas. */
+let evolutionHost: HTMLElement | null = null;
+let timesEvolutionHost: HTMLElement | null = null;
+/** Una importación nueva invalida la carga de instantáneas de la anterior. */
+let evolutionToken = 0;
+
+/**
+ * Lee las instantáneas del almacén y monta la evolución (ADR-0015 §3): el control de tiempo sobre el
+ * anillo, la sección «Evolución» debajo y el gráfico de tiempos en Tiempos. Va después de las vistas
+ * porque las instantáneas no viajan en ellas —`views.snapshots` lleva la lista y los deltas, que
+ * pesan poco; el grafo entero se lee del almacén, que ya lo tiene cuando el Worker responde.
+ */
+function loadEvolution(views: CircuitViews): void {
+  const token = ++evolutionToken;
+  state.snapshots = [];
+  const circuitId = state.circuitId;
+  const mount = (snapshots: readonly CircuitSnapshot[]): void => {
+    if (token !== evolutionToken) return;
+    state.snapshots = snapshots;
+    renderEvolution(views, snapshots);
+  };
+  if (circuitId === null || !isAvailable()) {
+    mount([]);
+    return;
+  }
+  void loadSnapshots(circuitId).then(mount, () => mount([]));
+}
+
+/** La fecha de una instantánea es la ventana de su fichero, no cuándo se calculó: dos cargadas hoy seguidas distan meses de datos. */
+const windowOf = (window: { readonly from: number; readonly to: number }): string => `${formatTick(window.from)} → ${formatTick(window.to)}`;
+
+function renderEvolution(views: CircuitViews, snapshots: readonly CircuitSnapshot[]): void {
+  const host = evolutionHost;
+  const handle = ringHandle;
+  const today = ringToday;
+  const last = snapshots.length - 1;
+  const select = (index: number): void => {
+    if (handle === null || today === null) return;
+    const snapshot = snapshots[index];
+    const around = snapshot === undefined ? null : deltaAround(views.snapshots.deltas, snapshot.sourceId);
+    const changed = around === null ? new Map<string, string>() : changedTagsOf(around.delta);
+    const latest = snapshots[last];
+    // La última instantánea es la de hoy: se vuelve al anillo de las vistas, que lleva la zona, el
+    // patrón y las incidencias medidas que la instantánea no guarda.
+    if (index === last || snapshot === undefined) {
+      handle.update(today, { changed, note: null });
+    } else {
+      handle.update(ringDataFromSnapshot(snapshot), {
+        changed,
+        note: `Instantánea de ${snapshot.fileName}, ${windowOf(snapshot.window)}; hoy: ${latest?.fileName ?? "—"}. La zona y las paradas sin explicación no viajan en la instantánea.`,
+      });
+    }
+    if (host !== null) {
+      host.replaceChildren(evolutionSection({ snapshots, deltas: views.snapshots.deltas, selected: index, formatWindow: windowOf }));
+    }
+  };
+  if (handle !== null && snapshots.length > 1) {
+    const control = timeControl(
+      snapshots.map((snapshot) => ({ label: snapshot.fileName, date: windowOf(snapshot.window) })),
+      last,
+      select,
+    );
+    handle.node.querySelector(".ring-layers")?.before(control);
+  }
+  select(last);
+
+  const times = timesEvolutionHost;
+  if (times !== null) {
+    const data = evolutionDataOf(snapshots, windowOf);
+    times.replaceChildren(
+      data === null
+        ? element(
+            "p",
+            "muted",
+            snapshots.length === 0
+              ? "El circuito a lo largo de los ficheros: sin instantáneas guardadas todavía; se dibuja con la segunda."
+              : "El circuito a lo largo de los ficheros: con una sola instantánea no hay línea que dibujar; se dibuja con la segunda.",
+          )
+        : evolutionChart(data),
+    );
   }
 }
 
@@ -3818,10 +4346,11 @@ function finding(title: string, figure: string, evidence: string, review?: reado
  * Activa una pestaña y desplaza hasta el encabezado con ese texto (o hasta la figura con ese título),
  * dejándole el foco: es lo que hace cada tile y el enlace «El anillo está en Resumen».
  */
-function jumpTo(tab: TabId, heading: string): void {
+function jumpTo(tab: TabId, heading: string, alternative?: string): void {
   activateTab(tab);
   const panel = tabPanels.get(tab);
-  const target = [...(panel?.querySelectorAll<HTMLElement>("h2, h3") ?? [])].find((node) => node.textContent === heading);
+  const headings = [...(panel?.querySelectorAll<HTMLElement>("h2, h3") ?? [])];
+  const target = headings.find((node) => node.textContent === heading) ?? headings.find((node) => node.textContent === alternative);
   const focusOn = target?.closest("figure") ?? target ?? panel;
   focusOn?.scrollIntoView({ block: "start" });
   if (focusOn instanceof HTMLElement) {
@@ -3836,7 +4365,7 @@ function tile(
   value: string | null,
   note: string,
   go: () => void,
-  options: { readonly accent?: boolean; readonly id?: string } = {},
+  options: { readonly accent?: boolean; readonly id?: string; readonly empty?: string } = {},
 ): HTMLElement {
   const item = element("div", "tile-item");
   item.setAttribute("role", "listitem");
@@ -3846,7 +4375,7 @@ function tile(
   if (options.accent === true) button.classList.add("attn");
   button.append(
     element("p", "tile-label", label),
-    element("p", value === null ? "tile-value tile-empty" : "tile-value", value ?? "sin datos"),
+    element("p", value === null ? "tile-value tile-empty" : "tile-value", value ?? options.empty ?? "sin datos"),
     element("p", "tile-note", note),
   );
   button.addEventListener("click", go);
@@ -3929,6 +4458,8 @@ function renderTiles(views: CircuitViews): void {
     .filter((entry) => entry.measure !== undefined && entry.measure.lapMs !== null);
   const lastLap = laps[laps.length - 1];
   const previousLap = laps[laps.length - 2];
+  // Con más de una instantánea el tile lo dice y lleva a la figura de evolución; con una, a la tabla.
+  const withSnapshot = views.snapshots.list.filter((entry) => entry.hasSnapshot).length;
   tiles.append(
     tile(
       "Vuelta",
@@ -3936,8 +4467,9 @@ function renderTiles(views: CircuitViews): void {
       lastLap === undefined
         ? "sin vuelta medida"
         : `fichero ${lastLap.source.fileName}` +
-            (previousLap === undefined ? "" : `; el anterior, ${duration(previousLap.measure?.lapMs ?? null)}`),
-      () => jumpTo("tiempos", "Mediciones por fichero"),
+            (previousLap === undefined ? "" : `; el anterior, ${duration(previousLap.measure?.lapMs ?? null)}`) +
+            (withSnapshot > 1 ? `; ${withSnapshot} instantáneas` : ""),
+      () => (withSnapshot > 1 ? jumpTo("tiempos", "El circuito a lo largo de los ficheros", "Mediciones por fichero") : jumpTo("tiempos", "Mediciones por fichero")),
       { id: "vuelta" },
     ),
   );
@@ -3959,6 +4491,37 @@ function renderTiles(views: CircuitViews): void {
       () => jumpTo("linea", "Alimentación de la línea"),
       { id: "linea" },
     ),
+  );
+
+  // Memoria (F4): la versión vigente de la memoria consolidada, o «sin consolidar». Se rellena aparte
+  // porque cambia al consolidar o revocar sin que haya una importación nueva.
+  const memorySlot = element("div", "tile-item");
+  memorySlot.setAttribute("role", "listitem");
+  memorySlot.dataset["slot"] = "memoria";
+  tiles.append(memorySlot);
+  renderMemoryTile(views.memory ?? null);
+}
+
+/** El tile de la memoria: «vN» de la vigente o «sin consolidar»; lleva a la pestaña Memoria. */
+function renderMemoryTile(memory: MemoryViews | null): void {
+  const slot = tiles.querySelector<HTMLElement>("[data-slot='memoria']");
+  if (slot === null) return;
+  const versions = memory?.versions.length ?? 0;
+  const current = memory?.current ?? null;
+  slot.replaceChildren(
+    ...tile(
+      "Memoria",
+      current === null ? null : `v${current}`,
+      state.circuitId === null
+        ? "sin circuito"
+        : current === null
+          ? versions === 0
+            ? "ninguna versión consolidada"
+            : `${versions} ${versions === 1 ? "versión revocada" : "versiones, todas revocadas"}`
+          : `${versions} ${versions === 1 ? "versión" : "versiones"}; vigente de ${memory?.versions.find((entry) => entry.version === current)?.basedOnFileName ?? "—"}`,
+      () => jumpTo("memoria", "Memoria del circuito"),
+      { id: "memoria", empty: "sin consolidar" },
+    ).children,
   );
 }
 
@@ -4019,6 +4582,36 @@ function headingId(text: string, taken: Set<string>): string {
  * tema, y deja en cada sección una línea «N hallazgos de esta sección: ver en Resumen». Una sola
  * copia de cada tarjeta: es la unidad de revisión (R-EVI-007).
  */
+/**
+ * Los hallazgos de la instantánea del fichero de trabajo que ninguna sección ha pintado —cada sección
+ * enseña los primeros de cada tipo y el resto en su tabla— van a la bandeja como tarjetas propias.
+ * Son los que cuentan al consolidar: sin tarjeta no se podrían revisar y quedarían pendientes para
+ * siempre (3.57.0). La clave es la de la instantánea, partida por su separador.
+ */
+function renderUncardedFindings(views: CircuitViews): void {
+  const session = reviewSession;
+  if (session === null) return;
+  const missing = (views.snapshots.workingFindings ?? []).filter((item) => !session.has(item.key));
+  if (missing.length === 0) return;
+  const out = viewsOf.get("resumen") as HTMLElement;
+  out.append(element("h3", undefined, "Más hallazgos del periodo"));
+  out.append(
+    element(
+      "p",
+      "muted",
+      "Su sección enseña los primeros de cada tipo; estos también cuentan al consolidar y se revisan aquí.",
+    ),
+  );
+  const cards = element("div", "findings");
+  for (const item of missing) {
+    const card = finding(item.title, item.figure, "Está en la tabla de su sección.", item.key.split("|"));
+    // Nacen en el Resumen: no hay sección con evidencia a la que llevar desde su tarjeta.
+    card.dataset["uncarded"] = "si";
+    cards.append(card);
+  }
+  out.append(cards);
+}
+
 function buildTray(): void {
   interface Entry {
     readonly card: HTMLElement;
@@ -4119,20 +4712,25 @@ function buildTray(): void {
     card.dataset["tab"] = entry.tab;
     const where = element("p", "finding-where");
     const chip = element("span", "chip", `${THEME_LABEL[kind.theme]} · ${kind.label}`);
-    const link = element("a", "evidence", "Ver evidencia");
-    link.href = `#${entry.tab}`;
-    link.setAttribute("aria-label", `Ver evidencia en «${entry.sectionTitle}»`);
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-      activateTab(entry.tab);
-      const target = document.getElementById(entry.sectionId);
-      (target ?? tabPanels.get(entry.tab))?.scrollIntoView({ block: "start" });
-      if (target instanceof HTMLElement) {
-        target.tabIndex = -1;
-        target.focus({ preventScroll: true });
-      }
-    });
-    where.append(chip, " ", link);
+    where.append(chip);
+    // Las tarjetas de «Más hallazgos del periodo» nacen en el Resumen y su sección queda vacía al
+    // llevarlas a la bandeja: «Ver evidencia» apuntaría a un título sin nada debajo, así que no se ofrece.
+    if (card.dataset["uncarded"] !== "si") {
+      const link = element("a", "evidence", "Ver evidencia");
+      link.href = `#${entry.tab}`;
+      link.setAttribute("aria-label", `Ver evidencia en «${entry.sectionTitle}»`);
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        activateTab(entry.tab);
+        const target = document.getElementById(entry.sectionId);
+        (target ?? tabPanels.get(entry.tab))?.scrollIntoView({ block: "start" });
+        if (target instanceof HTMLElement) {
+          target.tabIndex = -1;
+          target.focus({ preventScroll: true });
+        }
+      });
+      where.append(" ", link);
+    }
     card.prepend(where);
     // El control de revisión cierra la tarjeta: lo que se añadió después (las mediciones de una
     // incidencia) va antes que él.
@@ -4461,13 +5059,26 @@ exportButton.addEventListener("click", () => {
     // La revisión en campo viaja con el proyecto: es trabajo humano, lo único que no se puede
     // volver a calcular importando otra vez las fuentes. Sin marcas, el fichero queda como antes.
     const reviews = [...(await loadReviews(circuitId)).values()];
+    // Y las instantáneas de cada fichero (ADR-0015 §5): el circuito viaja con su evolución y sin su bruto.
+    const snapshots = await loadSnapshots(circuitId);
+    // Y la memoria consolidada (F4, §10-§11): las versiones con su cadena de hashes, para que el
+    // destino clasifique el linaje al abrirlo. Sin versiones, la sección no viaja.
+    const memoria = await exportProjectMemory(circuitId);
+    // Y el plano físico (ADR-0016, esquema 4): sus eventos append-only. Sin plano, la sección no viaja.
+    const plano = await exportProjectPlan(circuitId);
+    // Y los valores de planta confirmados (OQ-140, esquema 5). Sin ninguno, la sección no viaja.
+    const valores = await exportProjectPlantValues(circuitId);
     const bytes = await writeProject(
       circuitId,
       {
         circuito: { id: circuit.circuitId, nombre: circuit.name, zona: circuit.zone },
         fuentes: circuit.sources,
         cobertura: circuit.coverage,
+        instantaneas: snapshots,
         ...(reviews.length === 0 ? {} : { revision: reviews }),
+        ...(memoria === undefined ? {} : { memoria }),
+        ...(plano === undefined ? {} : { plano }),
+        ...(valores === undefined ? {} : { valores }),
       },
       Date.now(),
     );
@@ -4476,8 +5087,12 @@ exportButton.addEventListener("click", () => {
     // usuario ya ha hecho otra cosa —abrir un proyecto, por ejemplo— le pisa su mensaje con uno
     // que corresponde a la acción anterior.
     showMessage("info", "Proyecto exportado", [
-      `${circuit.sources.length} ficheros y sus periodos. Las lecturas se quedan en este dispositivo.`,
+      `${circuit.sources.length} ficheros y sus periodos, con ${snapshots.length} ${snapshots.length === 1 ? "instantánea" : "instantáneas"}. ` +
+        "Las lecturas se quedan en este dispositivo.",
       ...(reviews.length === 0 ? [] : [`Incluye ${reviews.length} hallazgos revisados en campo.`]),
+      ...(memoria === undefined ? [] : [`Incluye la memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.`]),
+      ...(plano === undefined ? [] : [`Incluye el plano del circuito: ${plano.eventos.length} ${plano.eventos.length === 1 ? "cambio registrado" : "cambios registrados"}.`]),
+      ...(valores === undefined ? [] : [`Incluye los valores de planta confirmados: ${valores.eventos.length} ${valores.eventos.length === 1 ? "valor" : "valores"}.`]),
     ]);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
     const link = element("a");
@@ -4501,8 +5116,62 @@ projectInput.addEventListener("change", () => {
         | readonly { from: number; to: number }[]
         | undefined;
       const revision = project.sections["revision"] as readonly { state?: string }[] | undefined;
+      const instantaneas = project.sections["instantaneas"] as readonly unknown[] | undefined;
+      // La memoria consolidada que trae (F4, §10): su forma se comprueba antes de tocar nada, y la
+      // relación con la local —idéntica, local por delante, entrante por delante (se adopta) o
+      // bifurcada (hay que elegir)— la clasifica y la guarda la persistencia. Nada se fusiona.
+      const memoria = readMemorySection(project);
+      const imported = isAvailable() ? await importProjectMemory(project.manifest.circuit_id, memoria) : null;
+      const lineage = imported?.relation ?? null;
+      // Y el plano físico (ADR-0016): su forma se comprueba antes de tocar nada; solo entran eventos
+      // si el plano local es un prefijo exacto del entrante. Dos planos distintos no se mezclan.
+      const plano = readPlanSection(project);
+      const planImport = isAvailable() ? await importProjectPlan(project.manifest.circuit_id, plano) : null;
+      // Y los valores de planta confirmados (OQ-140): mismo criterio que el plano, nada se mezcla.
+      const valores = readPlantValuesSection(project);
+      const valuesImport = isAvailable() ? await importProjectPlantValues(project.manifest.circuit_id, valores) : null;
       showMessage("info", `Proyecto «${circuito?.nombre ?? project.manifest.circuit_id}»`, [
         `${fuentes?.length ?? 0} fuentes declaradas, exportado el ${formatInstant(project.manifest.exported_at)}.`,
+        // Un proyecto del esquema 1 no traía instantáneas: se abre igual y se dice (ADR-0015 §5).
+        instantaneas === undefined
+          ? "Sin instantáneas: el proyecto es de una versión anterior."
+          : `${instantaneas.length} ${instantaneas.length === 1 ? "instantánea" : "instantáneas"} del circuito.`,
+        memoria === undefined
+          ? "Sin memoria consolidada: el proyecto es de una versión anterior o el circuito no tenía versiones."
+          : `Memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.` +
+            (lineage === null
+              ? " Sin almacén local no se puede comparar con la de este dispositivo."
+              : imported?.pendingForkBlocked === true
+                ? // Con una bifurcación pendiente aquí, el proyecto no entra ni sustituye al linaje que espera decisión.
+                  " Aquí ya hay una bifurcación sin resolver: este proyecto no se ha adoptado ni sustituye al linaje que espera decisión. Resuélvela en la pestaña Memoria y vuelve a abrir el proyecto."
+                : ` ${LINEAGE_LABEL[lineage]}` +
+                  (lineage === "bifurcada"
+                    ? " Elige cuál sigue en la pestaña Memoria, al importar las lecturas del circuito."
+                    : lineage === "entrante-adelantada"
+                      ? " Se verá al volver a importar las lecturas del circuito."
+                      : "")) +
+            (imported === null || imported.archived === 0
+              ? ""
+              : ` ${imported.archived} ${imported.archived === 1 ? "linaje archivado del otro dispositivo, añadido como archivado" : "linajes archivados del otro dispositivo, añadidos como archivados"}.`),
+        planImport === null
+          ? plano === undefined
+            ? "El proyecto no traía plano del circuito."
+            : "Trae el plano del circuito. Sin almacén local no se puede comparar con el de este dispositivo."
+          : planRelationText(planImport.relation, planImport.added) +
+            (planImport.added > 0 ? " Se verá al volver a importar las lecturas del circuito." : ""),
+        valuesImport === null
+          ? valores === undefined
+            ? "El proyecto no traía valores de planta confirmados."
+            : "Trae valores de planta confirmados. Sin almacén local no se pueden comparar con los de este dispositivo."
+          : plantValuesRelationText(valuesImport.relation, valuesImport.added) +
+            (valuesImport.added > 0 ? " Se aplicarán al volver a importar las lecturas del circuito." : ""),
+        // Una revocación que llega cambia la versión vigente: se dice, versión por versión (OQ-144).
+        ...(imported?.revocations ?? []).map(
+          (entry) => `El proyecto trae la revocación de v${entry.version} (${formatInstant(entry.at)}): ${entry.reason}. Aquí queda revocada.`,
+        ),
+        ...(imported === null || imported.events === 0
+          ? []
+          : [`${imported.events} ${imported.events === 1 ? "elección de linaje hecha" : "elecciones de linaje hechas"} en otro dispositivo, añadidas al historial.`]),
         cobertura === undefined || cobertura.length === 0
           ? "Sin cobertura declarada."
           : `Cobertura: ${cobertura.map((span) => formatSpan(span.from, span.to)).join("  ·  ")}`,
@@ -4529,6 +5198,14 @@ projectInput.addEventListener("change", () => {
     }
   })();
 });
+
+// --- Almacén: la migración pendiente se hace al abrir, no a mitad de la primera importación --------
+
+if (isAvailable()) {
+  void ensureStore().catch(() => {
+    // Sin almacén utilizable la aplicación sigue analizando; la primera acumulación dirá que no pudo guardar.
+  });
+}
 
 // --- Sin red -----------------------------------------------------------------
 

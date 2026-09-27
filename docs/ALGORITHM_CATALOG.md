@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.39.0
+version: 0.46.3
 status: baseline-candidate
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Catálogo de algoritmos
@@ -54,7 +54,7 @@ flowchart TD
 | ALG-011 | FIFO/flujo | Tramos de zona cargada derivados del anillo, inversión de orden con margen dual (§8.1) | Adelantamientos candidatos, nunca averías confirmadas | O(n) | F3 |
 | ALG-012 | Carga online | Máquina de estados por cada calle configurada | Entradas, ocupación, permanencia, salidas y anomalías | O(n) | F3 |
 | ALG-013 | Puntos críticos | Llegadas frente a takt/calendario y causas aguas arriba | Ventanas de riesgo e impacto | O(n) | F3 |
-| ALG-014 | Consolidación | Reducción versionada y cálculo de delta | Nueva memoria compacta append-only | O(m), no O(histórico bruto) | F4 |
+| ALG-014 | Consolidación | Reducción versionada y cálculo de delta | Nueva memoria compacta append-only | O(m), no O(histórico bruto) | F4 (implementado, §6.22) |
 | ALG-015 | Retroceso causal | Búsqueda temporal/topológica hacia atrás | Cadena de hechos e hipótesis alternativas | Limitada a ventana/subgrafo | F5 |
 | ALG-016 | Replay multi-AGV | Estado observado/inferido por instante | Movimiento sobre grafo con incertidumbre | Precálculo + consulta incremental | F5 |
 | ALG-017 | Similitud de casos | Características explicables de incidencias | Casos comparables y diferencias | O(k·d) | F5 |
@@ -1064,4 +1064,174 @@ finales del ancla no abren una `parcial`.
 **Hora repetida por posición** (ADR-0013, nota 2026-09-26): `resolveRepeatedHourByPosition` en
 `time.ts`, llamada por el importador tras medir el sentido y antes de volver a medir la monotonía.
 `isOrderReliable(flag)` es la única pregunta que hacen monotonía, transiciones y vueltas.
+
+## 6.21 La instantánea del circuito y la evolución, implementado (ADR-0015, R-DAT-023)
+
+`src/domain/snapshot.ts`. Nada de este módulo mide: reduce lo ya calculado al contrato de
+`DATA_CONTRACTS.md` §12 y compara instantáneas.
+
+- **`buildSnapshot`** valida (ids, ventana, anillo sin repetidos, posiciones coherentes con el
+  anillo, aristas entre consecutivos) y ordena de forma canónica: vértices por posición y luego por
+  id, aristas y huecos en orden del anillo, hallazgos por clave, listas de AGV ordenadas. Un input
+  inválido es un `TypeError` con el motivo.
+- **`compareSnapshots`**: un tag *aparece* o *desaparece* si está en un anillo y no en el otro;
+  *se mueve* si, en el anillo restringido a los tags comunes, cambian su predecesor **y** su sucesor
+  (insertar un tag desplaza los índices de todos, así que se compara por vecino, nunca por
+  índice); *cambia de clase* por la clase de inventario; *deja de leerse* o *empieza a leerse* solo
+  entre tags con la misma pertenencia al anillo, con pasadas, y con la prueba de azar
+  `(1 − tasa)^pasadas ≤ maxChance` si se da el umbral. Las aristas, por régimen, con `bandShift`
+  (R-TIM-010). La vuelta, si cambia, se dice sin criterio de horquilla (no se guarda).
+- **`historiesFromSnapshots`**: las instantáneas en orden de ventana, el fichero repetido contado una
+  vez, y `segmentHistories` sobre sus aristas: mismo resultado que desde las lecturas.
+- **`structureBetweenSnapshots`**: por hueco entre anclas común a las dos, *retirado* si un tag de
+  antes falta después con `(1 − tasa_antes)^pasadas_después ≤ maxChance` y al menos dos AGV
+  distintos en las pasadas de después (uno solo, `unconfirmed`); *insertado* simétrico; *sustituido*
+  cuando un retirado y un insertado comparten los vecinos estables, «mismo sitio» u «otro punto»
+  según el desfase desde el ancla frente a `p80 − p50`; la suma con `sumVerdict`, el mismo de la
+  comparación dentro del fichero. Sin anclas comunes, `null`.
+- **`driftBetweenSnapshots`**: `desaparecido`, `nuevo`, `obsoleto-consolidado` y
+  `sustitucion-candidata` con `absenceTest` (tasa frente al vecino dominante en el periodo en que se
+  leía, oportunidades = lecturas de ese vecino en el otro); por AGV, `droppedTags` desde
+  `nonReaders` y `notAdoptedTags` con `readRate ≥ minAdoptionShare`. Con las ventanas más cerca de
+  `minGapMs`, no se evalúa y se dice.
+- Para que la comparación entre ficheros sea completa, el Worker rellena en cada hueco `p80Ms`,
+  `readsByTag[].offsetMs` y `vehicleIds` (campos opcionales del contrato).
+
+## 6.22 La consolidación humana con versiones, implementado (ALG-014, R-MEM-001..003)
+
+`src/domain/memory.ts`. Nada de este módulo mide ni decide: reduce lo ya revisado a una versión y
+compara versiones.
+
+- **`previewConsolidation`**: cruza los hallazgos de la instantánea con las marcas de revisión
+  (`state = marca ?? "pendiente"`) y produce los bloqueos —`hallazgos-pendientes` con sus claves,
+  `periodo-de-incidencia` con los de rango 1 confirmados (el rango sale del catálogo
+  `src/domain/finding-kinds.ts`, el mismo que ordena la bandeja), `ya-consolidada` si una versión
+  no revocada tiene la misma huella de fichero, `bifurcacion-sin-resolver`—, los avisos (pospuestos
+  que volverán como pendientes, con su motivo; descartados), el delta frente a la vigente
+  (`compareSnapshots`) y los bytes de una versión provisional. Sin instantánea,
+  `previewWithoutSnapshot` da el bloqueo `sin-instantanea`. Es O(hallazgos + tags).
+- **`consolidate`**: solo con la previsualización sin bloqueos; construye la versión con
+  `previousHash` = hash de la vigente, `version` = máximo + 1 (revocadas incluidas) y `hash` =
+  `semanticHash` del contenido con `hash: ""` y `revoked: null`, así que revocar no lo cambia.
+- **`revokeVersion`** devuelve una copia con `{ at, reason }`; **`currentVersion`** es la última no
+  revocada; **`compareToMemory`** es `compareSnapshots(vigente.snapshot, actual)` con la fecha y el
+  fichero de la vigente.
+- **Linaje** (`LineageState`, `classifyLineage`, `withIncoming`, `resolveFork`): la cadena de
+  hashes del linaje activo, ordenada por versión, se compara con la entrante por prefijo; la
+  entrante adelantada se adopta, la bifurcada queda como entrante sin resolver y bloquea la
+  consolidación hasta que la persona elige; el linaje no elegido se archiva con el evento y su razón.
+- El Worker (`runMemory`) recalcula siempre la previsualización desde el almacén antes de un
+  `commit`, y escribe versión y estado en una transacción.
+
+## 6.23 El plano físico con ubicaciones estables, implementado (ADR-0016, R-GRA-019..021, R-MEM-004)
+
+`src/domain/plan.ts`. Nada de este módulo cambia el plano por su cuenta: recorre eventos, observa y
+propone.
+
+- **`planAt`** recorre los eventos por (fecha efectiva, `seq`) hasta el instante pedido; los que no
+  valen se saltan, y `validateEvent` impide escribirlos: además de las comprobaciones directas,
+  repite el historial con el candidato y lo rechaza si deja sin valor un evento posterior.
+- **`observeAgainstPlan`**: las pasadas de una ubicación salen de la sección entre anclas que la
+  contiene según el orden del plano (pasadas completas de ancla a ancla y, por tag, en cuántas se
+  leyó); si no, de las pasadas probadas de su vértice (`readRate × passes` recupera los aciertos,
+  porque `readRate` es aciertos entre pasadas probadas); si no, de la arista que la salta entre sus
+  vecinos leídos, admitiendo en medio solo tags fuera del plano y tomando la menor de las aristas del
+  camino (observación inferida). Sin nada de eso, «sin ocasión». Una sección con cero pasadas no
+  prueba nada.
+- **`proposeChanges`**: `sustitucion` cuando entre dos ubicaciones leídas hay exactamente un código
+  fuera del plano y exactamente una ubicación sin leer con pasadas, **y** el código lo leyeron al menos
+  `plan.min_vehicles_for_proposal` AGV distintos (R-DAT-021: lo de un solo lector es de ese lector;
+  si la instantánea no dice cuántos, no se propone); en su detalle, las pasadas del código nuevo son
+  las de la sección entre anclas (`readsByTag`), el mismo denominador que las pasadas sin leer de la
+  ubicación, y solo sin sección las probadas de su vértice. `tag-nuevo` para los demás códigos fuera
+  del plano con el mismo mínimo de AGV distintos; `salida-sin-ubicar` por cada tag de parada por
+  salida declarado sin ubicación. Cada tag nuevo va detrás de la ubicación planificada más cercana que lo
+  precede en el anillo del fichero, sin encadenarse con otros nuevos: así se aceptan en cualquier
+  orden y el anillo queda en el orden del fichero.
+- **`momentsOf`, `combineMoments`, `varianceOf`**: Welford y la combinación de Chan; combinar dos
+  mitades da lo mismo que medir todo junto. `summarizePlan` suma por ubicación y por conexión.
+- **`reinterpretDelta`**: un «desaparece» de un tag instalado en el plano pasa a «no-observado», con
+  las pasadas por su sitio en el detalle.
+
+## 6.24 Clasificación de cambios frente al esperado, implementado (MEMORY_CONSOLIDATION §8, R-MEM-005, R-INC-004)
+
+`src/domain/change-class.ts`.
+
+- **`classifyChanges`**: los cambios presentes son `compareSnapshots(esperado, actual)`; `files`
+  cuenta las instantáneas seguidas, hacia atrás desde la actual y posteriores al esperado, que
+  muestran el mismo cambio en el mismo sujeto. Colectivo en un vértice: en la sección entre anclas
+  que lo contiene (la de su predecesor más cercano si ya no está en el anillo; la que empieza o acaba
+  en él si es ancla), AGV que lo muestran entre AGV que la recorren (`vehicleIds`); sin dato, no.
+  En una arista, que `bandShift` marque el cambio. La clase se decide por este orden: incidencia,
+  confirmado, colectivo y sostenido, deriva pendiente; los eventos puntuales son los que se vieron en
+  un fichero anterior y ya no están.
+- **`expectedSnapshot`**: lo observado; lo no adoptado vuelve al valor anterior —un tag que aparece
+  sale del anillo; uno que desaparece o se mueve vuelve detrás de su predecesor más cercano, con su
+  vértice y sus aristas—; lo que toca una incidencia conserva el anterior o queda sin medida. Pasa por
+  `buildSnapshot`, con la misma validación que cualquier instantánea.
+- **`incidentSubjectsOf`**: los tags del anillo que nombran las partes de la clave del hallazgo
+  (separadas por «|» o «+») y sus aristas de entrada y salida en los dos regímenes.
+- **`confirmedSubjectsOf`**: los tags de los eventos del plano con fecha efectiva dentro del periodo.
+
+## 6.25 Comparador entre versiones y prueba de oro, implementado (G4)
+
+`compareVersions` (`src/domain/memory.ts`): `compareSnapshots` entre los esperados de dos versiones,
+las versiones de entre medias con cuántas revocadas, y las claves que adoptó cada versión posterior a
+la menor hasta la mayor. `carryConsecutive`, usada por `previewConsolidation` cuando recibe la
+historia: un cambio no adoptado de la versión vigente que sigue en todos los ficheros nuevos suma sus
+ficheros, y `classifyChanges` vuelve a decidir su clase con la misma medida colectiva. La prueba de
+oro (`historia-oro.test.ts`): anillo de diez tags, cinco AGV y seis periodos; un tag que deja de
+leerse para todos se adopta en v4, un tramo lento de un periodo no se adopta, un tag nuevo que lee
+uno de cinco AGV no se adopta, y un hallazgo grave confirmado queda como incidencia.
+
+## 6.26 Recorte de ventana y desglose por AGV, implementado (OQ-148, R-MEM-004)
+
+- **Recorte** (`src/domain/incident-cut.ts`, Worker `cutSnapshot`): `checkCuts` exige que cada recorte
+  sea de una incidencia del periodo con ventana, con principio no posterior al fin, dentro de la
+  ventana del fichero y del AGV de la incidencia; `cutReadings` quita las lecturas del tiempo
+  recortado (de un AGV o de todos) y `coverageWithoutCuts` quita ese tiempo de la cobertura cuando
+  el recorte es de todos. `checkCuts` **no exige** que el recorte se solape con la ventana de la
+  incidencia —el principio y el fin los elige la persona—; `cutWarnings` da un aviso, no un bloqueo,
+  por cada recorte que no toca ninguna ventana de su incidencia. Una incidencia admite varios recortes
+  —uno por parada con varias `windows` (OQ-155, propietario 2026-09-27)— y `checkCuts` rechaza solo
+  que dos recortes de la misma incidencia compartan un instante (ambos extremos incluidos), porque la
+  lectura contaría en uno y el otro diría lo que no quitó. El Worker reimporta el original archivado, verifica su SHA-256 contra la
+  huella y pasa las lecturas por el mismo camino de análisis que una importación, sin escribir nada.
+  Limitación conocida: en un recorte de un AGV, el paso que cruza la ventana queda como una
+  transición larga de ese AGV, porque la cobertura no es por AGV.
+- **Desglose por AGV** (`observeAgainstPlan`, `summarizePlan`): de `byVehicle` de cada vértice; un AGV
+  «por debajo de la flota» se compara con todas las celdas de esa ubicación en la matriz (s·E < S·e,
+  en enteros). Dos denominadores: las cifras por AGV son pasadas probadas de la matriz de lectura,
+  mientras que `evaluable` de la ubicación, cuando hay sección entre anclas, son pasadas completas de
+  ancla a ancla; por eso la suma por AGV no tiene por qué dar `evaluable`, y cada tasa se enseña con
+  su propio denominador (R-MEM-004), sin mezclarlos. Los periodos cuya instantánea no trae desglose no entran en las cifras por AGV y se
+  dice en cuántos de cuántos periodos se midió.
+
+## 6.27 Propuestas de valores de planta, implementado (OQ-151)
+
+`measurePlantValues` (Worker, al montar la instantánea), `estimatePlantValue` y `proposePlantValues`
+(`src/domain/plant-values.ts`). Los estimadores y de qué análisis salen están en `CONFIG_SCHEMA.md`
+§3.5; los percentiles usan `quantile`, el mismo de las horquillas, y qué cuantil y qué parte de la
+mediana usa cada estimador vive en `plant_estimators` de la configuración, no en el código. La única
+medida nueva es el percentil 95 del tránsito de un tramo cargado, sacado de la misma lista de pasadas
+que su mediana (`fifo.ts`). El número de versiones consolidadas no revocadas que tienen que coincidir
+es `change_class.sustained_files` (3): el Worker pasa ese mismo valor, y no hay un umbral aparte. La
+coincidencia se decide sobre las estimaciones redondeadas a la unidad del valor; al confirmar, el
+Worker vuelve a calcular la propuesta y rechaza si ya no existe o si cambió.
+
+Tolerancia de medida (OQ-154, resuelto para «a la misma hora» y las horas de turno; propietario,
+2026-09-27, 3.62.0): hasta 3.61.0 las repeticiones de una parada eran las que `flow-stops.ts`
+emparejó con la tolerancia **vigente** de «a la misma hora», y el estimador de esa tolerancia nunca
+podía proponer un valor mayor que el que regía. Ahora el emparejamiento es una función pura de
+`flow-stops.ts` (`sameTimeRepetitions`: misma hora local otro día, con un margen), que
+`productionStops` sigue llamando con la tolerancia vigente —el análisis no cambia— y que
+`measurePlantValues` llama otra vez, solo para medir, con
+`plant_estimators.same_time_measure_tolerance_ms` (60 min, `CONFIG_SCHEMA.md` §3.5). Cada estimación
+dice con qué tolerancia de medida se emparejaron sus repeticiones. Las medidas guardadas antes de
+3.62.0 conservan su emparejamiento estrecho (append-only; la propuesta recalcula estimaciones desde
+las medidas guardadas, no las medidas).
+
+Límite conocido (OQ-154), solo la noche: se estima frente a la noche **vigente** (la mediana de
+producción es la de fuera de ella). El estimador no cambia (es la definición aprobada en OQ-151); cada
+estimación lo dice en su explicación.
 

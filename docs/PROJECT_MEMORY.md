@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.32.0
+version: 0.44.0
 status: baseline-candidate
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Memoria compacta del proyecto
@@ -314,14 +314,97 @@ Decisiones del propietario al revisar la conversión de la lista de PC2:
   `vacio`), y es lo que monta los tramos FIFO de zona cargada (R-FLO-001). Las calles de carga online
   van en `vacio` (R-FLO-003).
 
+## F4 abierta (2026-09-26)
+
+El propietario autoriza F4 con estas palabras, en la conversación del 2026-09-26, tras aprobar
+ADR-0015: «De acuerdo con las dos, adelante con el ADR y la entrega. Y a continuación continúa con
+Fase 4». Las dos decisiones aprobadas: retener en crudo solo la última exportación (o dos si se
+solapan) y separar la instantánea automática de cada fichero de la consolidación humana. G3 se
+cierra con lo que F3 dejó demostrado —diagnóstico explicable sobre el circuito de auditoría con 53
+clases plantadas, revisión en campo, interfaz por preguntas— y con lo que sigue abierto declarado,
+no marcado: OQ-101 a OQ-131 en su estado, OQ-143 sobre la retención.
+
+Lo que F4 hereda ya hecho por la última entrega de F3 (`[3.50.0]`): la instantánea por fichero, el
+almacén por fuentes con retención, las comparaciones entre ficheros desde las instantáneas y el
+`.agvproj` con ellas. Lo que F4 tiene que crear (`ROADMAP.md`): la memoria consolidada como
+versiones vN append-only elegidas por el propietario entre las instantáneas revisadas, el
+comparador entre lo consolidado y lo nuevo (el «esperado» frente a lo observado), la
+previsualización y el botón de confirmación humana, la revocación, y el presupuesto de crecimiento
+medido. Ninguna IA consolida: la instantánea se guarda sola, la memoria la aprueba una persona
+(ADR-0010, `MEMORY_CONSOLIDATION.md` §6).
+
+La frase de transición a F5 es `CONTINÚA FASE 5`, y ninguna IA la escribe por el propietario.
+
+## Consolidación con versiones (2026-09-27)
+
+Primera entrega de F4 (`CHANGELOG.md` `[3.51.0]`). La memoria del circuito son versiones vN
+append-only: cada una es la instantánea de un fichero que la persona eligió, con las decisiones de
+la revisión, su nota y el hash de la anterior. Se consolida desde la pestaña Memoria tras
+previsualizar; bloquean solo los hallazgos pendientes, un rango 1 confirmado (periodo de
+incidencia), una versión vigente del mismo fichero y una bifurcación sin resolver. Revocar no borra.
+Cada importación compara el fichero de trabajo con la vigente. El `.agvproj` (esquema 3) lleva la
+memoria y, al abrirlo, la aplicación clasifica el linaje y adopta el entrante si va por delante; una
+bifurcación se resuelve conservando o adoptando, con razón. El mismo día el propietario cerró OQ-143
+y OQ-144 con las recomendaciones («Ok entonces continúa con las 3», `[3.52.0]`): se retienen las dos
+últimas exportaciones se solapen o no, volver a cargar un fichero lo recupera, las elecciones de
+linaje de otro dispositivo se añaden al historial y las revocaciones que llegan se dicen; sin botón
+de volver al ancestro común. Pendiente: el resto de G4 (incidencias excluidas del esperado,
+presupuesto medido, comparación histórica), que es F4 todavía.
+
+## El plano físico (2026-09-27)
+
+El propietario comparó su esbozo inicial con el programa y aprobó recuperar tres ideas («Aplica los
+puntos que has propuesto 1, 2 y 3», ADR-0016, `[3.53.0]`): la ubicación y el tag instalado son
+identidades distintas; el plano físico persiste frente a las lecturas y solo cambia por
+confirmación humana; y las estadísticas guardan recuento, media y M2 para sumarse entre periodos.
+Añadió que una ubicación puede existir sin tag físico, y que los tags de parada por salida de
+circuito, que casi nunca se recorren, entren como salidas del grafo que se revisan a mano
+(R-GRA-021). El plano se crea desde una versión consolidada con una acción humana.
+
+## Presupuesto, clasificación de cambios e incidencias (2026-09-27)
+
+El propietario aceptó las cuatro recomendaciones sobre OQ-145 a OQ-148 (`[3.55.0]`): memoria y
+lecturas retenidas comprimidas y cada fichero original archivado comprimido; un cambio es sostenido
+en tres ficheros seguidos y colectivo si lo muestra más de la mitad de los AGV que pasan por el
+sitio; solo los colectivos y sostenidos y los confirmados pasan al esperado; y un periodo con
+incidencia se consolida entero, sin ella en el esperado. Queda abierta OQ-149: los hallazgos graves
+con instante no están en la instantánea y no se excluyen todavía. El mismo día entró el comparador
+entre dos versiones cualesquiera con su prueba de oro (`[3.56.0]`), que encontró y corrigió que un
+cambio permanente no se adoptaba si se consolidaba cada periodo (OQ-150 para que el propietario
+valide la lectura). Después el propietario cerró OQ-149 y OQ-150 con las recomendaciones
+(`[3.57.0]`): los hallazgos graves con instante se excluyen como incidencia con su ventana, y un
+cambio pendiente que vuelve se reclasifica como evento puntual. En esa entrega salió un fallo de
+F4: la instantánea guardaba hallazgos que ninguna sección pintaba, y habrían bloqueado la
+consolidación; la bandeja los enseña ahora. Con esto, cada criterio de G4 tiene evidencia; marcarlos
+y escribir `CONTINÚA FASE 5` es del propietario. Después (`[3.58.0]`) entraron el recorte de ventana de
+una incidencia desde el original archivado y la tasa por AGV en cada ubicación del plano. Después (`[3.59.0]`)
+los valores de planta por circuito, confirmados por una persona. El propietario cerró OQ-151 a OQ-153 el
+mismo día: se consolida con la configuración provisional, ante dos vigencias basta el aviso, y los
+valores de planta se proponen con los estimadores aprobados solo si coinciden en las últimas tres
+versiones; si no, los introduce una persona (`[3.60.0]`). Con esto queda hecho lo previsto para F4;
+marcar G4, fusionar el PR y escribir `CONTINÚA FASE 5` son del propietario.
+
+El propietario pidió después una revisión de la interfaz, la lógica y la consolidación, y que se
+aplicara entera en el PR (`[3.61.0]`). Lo grave que salió: un linaje archivado exportado en el
+`.agvproj` fingía una bifurcación en otro dispositivo; y cada botón de Memoria, Plano o Valores
+terminaba el Worker del trabajo en curso, dejando paneles apagados e importaciones a medias. Con ello,
+la confirmación lleva la huella de la previsualización, la memoria no se escribe a ciegas, el esperado
+guarda su configuración (desde 3.60.0 se duplicaba en cada versión), la integridad de la memoria se
+verifica al abrir un proyecto y la sustitución en el plano exige dos AGV. Quedan abiertas OQ-154 a
+OQ-158 (estimadores acotados por el valor vigente, recortes por parada, aceptar revocaciones, linajes
+antiguos con números repetidos y la cuenta arrastrada de una incidencia). El propietario pidió
+aplicar la recomendación a las cinco (`[3.62.0]`): tolerancia de medida ancha solo para estimar, un
+recorte por parada, rechazar un linaje con dos versiones del mismo número, no arrastrar la cuenta de
+una incidencia, y dejar las revocaciones importadas como están.
+
 ## Estado al 2026-09-26 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
 `project_state.json` y en `CHANGELOG.md`; lo que no esté escrito en el repositorio no existe para la
 conversación siguiente.
 
-- **Fase F3** (diagnóstico explicable), en curso. F4 espera `CONTINÚA FASE 4` del propietario
-  (ADR-0010). **Última entrega (2026-09-26): revisión de toda la lógica de medición y análisis**
+- **Fase F4** (memoria longitudinal y consolidación), abierta el 2026-09-26 por el propietario
+  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): OQ-154 a OQ-158 con la recomendación aplicada** (`[3.62.0]`), tras la revisión de interfaz, lógica y consolidación (`[3.61.0]`), tras las propuestas de valores de planta (`[3.60.0]`), tras los valores de planta por circuito (`[3.59.0]`), tras el recorte de ventana y la tasa por AGV (`[3.58.0]`), tras las incidencias con instante (`[3.57.0]`), tras el comparador entre versiones y la prueba de oro (`[3.56.0]`), tras la clasificación de cambios, las incidencias fuera del esperado y el almacén comprimido (`[3.55.0]`), tras el plano físico (`[3.53.0]`), tras la consolidación humana con versiones (`[3.51.0]`, `[3.52.0]`). Anterior: **revisión de toda la lógica de medición y análisis**
   (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
   regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
   (OQ-135 a OQ-141), dos de ellas contradicciones código↔documento que no se tocan hasta que decida.

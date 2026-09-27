@@ -20,6 +20,20 @@ import type { CircuitState } from "../domain/circuit-state.js";
 import type { DeliveryConcentration, GroupedDelivery } from "../domain/grouped-delivery.js";
 import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { StructureSet } from "../domain/anchor-sums.js";
+import type { SnapshotDelta, SnapshotFinding } from "../domain/snapshot.js";
+import type { ChangeSummary } from "../domain/change-class.js";
+import type { ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryComparison, VersionComparison } from "../domain/memory.js";
+import type {
+  EdgeSummary,
+  LocationSummary,
+  PhysicalPlan,
+  PlanEvent,
+  PlanEventInput,
+  PlanObservation,
+  PlanProposal,
+} from "../domain/plan.js";
+import type { Interval } from "../domain/coverage.js";
+import type { PlantValue, PlantValueKey, PlantValueProposals, PlantValuesView } from "../domain/plant-values.js";
 import type { PaceReport } from "../domain/vehicle-pace.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
 import type { AnchorSection } from "../domain/anchor-sections.js";
@@ -80,10 +94,30 @@ export interface AccumulationReport {
   readonly circuitId: string;
   /** Intervalos analizables del circuito tras sumar esta fuente (R-DAT-007). */
   readonly coverage: readonly { readonly from: number; readonly to: number }[];
-  /** Lecturas del circuito entero, ya unidas. */
+  /**
+   * Lecturas de la **ventana de trabajo**, ya unidas: las de las fuentes retenidas (R-DAT-023). Hasta
+   * 3.49.0 eran todas las del circuito; ahora las de los ficheros anteriores quedan como instantánea.
+   */
   readonly totalReadings: number;
-  /** Fuentes acumuladas en el circuito. */
+  /** Fuentes acumuladas en el circuito, contando cada carga (un fichero repetido cuenta, INV-005). */
   readonly sources: number;
+  /**
+   * Qué fuentes conservan sus lecturas (ADR-0015 §2): las dos últimas cargadas, se solapen o no
+   * (OQ-143). Lo que el expediente y el replay alcanzan es exactamente esto, y la vista lo dice.
+   */
+  readonly retained: {
+    readonly sourceIds: readonly string[];
+    /** Fuentes distintas del circuito (sin repetidos): el «M» de «lecturas retenidas: N ficheros de M». */
+    readonly distinctSources: number;
+  };
+  /**
+   * Cuántas fuentes distintas tienen instantánea y cuántas no. Sin instantánea quedan las anteriores a
+   * la versión 6 del almacén y las que el análisis no pudo construir; volver a cargar el fichero la crea.
+   */
+  readonly snapshots: {
+    readonly withSnapshot: number;
+    readonly withoutSnapshot: number;
+  };
   /** Eventos que esta fuente ya traía otra: se cuentan una vez y conservan las dos procedencias. */
   readonly shared: number;
   /** Eventos del tramo común que solo una de las dos trae. La fuente se contradice consigo misma. */
@@ -166,7 +200,132 @@ export interface FleetChooseCircuitMessage extends Envelope {
   readonly options: readonly { readonly name: string; readonly rows: number }[];
 }
 
-export type ToWorker = StartMessage | CancelMessage | LoadListsMessage | LoadFleetMessage;
+/**
+ * Consolidar un periodo (F4; `MEMORY_CONSOLIDATION.md` §6). `mode: "preview"` devuelve qué pasaría
+ * sin escribir nada; `mode: "commit"` escribe vN+1 y solo se envía tras la confirmación humana. El
+ * Worker no decide consolidar: ejecuta lo que la persona confirmó (R-MEM-001).
+ */
+export interface ConsolidateMessage {
+  readonly type: "consolidate";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  /** El fichero cuya instantánea se consolida. */
+  readonly sourceId: string;
+  readonly mode: "preview" | "commit";
+  /** Justificación humana, solo en `commit`. */
+  readonly note?: string;
+  /**
+   * Los recortes de ventana que la persona eligió (OQ-148), en `preview` y en `commit`: dentro de
+   * `[from, to]` se quitan las lecturas del fichero, solo las de `agvId` si la incidencia es de un AGV.
+   * El Worker rehace la instantánea desde el original archivado; sin él, no se recorta.
+   */
+  readonly cuts?: readonly { readonly incidentKey: string; readonly from: number; readonly to: number; readonly agvId?: string }[];
+  /**
+   * Solo en `commit`: la huella (`previewFingerprint`) de la previsualización que la persona vio y
+   * confirmó. El Worker rehace la previsualización desde el almacén y, si su huella no coincide,
+   * responde `error` sin escribir: lo confirmado tiene que ser lo que se enseñó.
+   */
+  readonly previewHash?: string;
+}
+
+/** Revocar una versión: no la borra, la marca con fecha y razón (§7). */
+export interface RevokeMessage {
+  readonly type: "revoke";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly version: number;
+  readonly reason: string;
+}
+
+/**
+ * Resolver una bifurcación de linaje (§10): conservar la memoria local o adoptar la entrante. El
+ * linaje que no se elige queda archivado, nunca borrado; la elección y su razón quedan en el historial.
+ */
+export interface ResolveForkMessage {
+  readonly type: "resolve-fork";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly choice: "conservar-local" | "adoptar-entrante";
+  readonly reason: string;
+}
+
+/**
+ * Un cambio del plano físico (ADR-0016). Todos los escribe una persona: crear el plano desde una
+ * versión consolidada, aceptar una propuesta del Worker (que la vuelve a calcular desde el almacén
+ * antes de escribirla, sin fiarse de la que tiene la interfaz) o registrar un evento a mano —una
+ * salida, una revisión, una retirada—. La razón es obligatoria.
+ */
+export type PlanAction =
+  | { readonly kind: "crear-plano"; readonly fromVersion: number; readonly reason: string }
+  | {
+      readonly kind: "aceptar-propuesta";
+      readonly proposalId: string;
+      /** El fichero de cuya observación salió la propuesta: el Worker la recalcula desde su instantánea. */
+      readonly sourceId: string;
+      readonly reason: string;
+      /** Solo en `salida-sin-ubicar`: la ubicación del anillo de la que cuelga la salida. */
+      readonly branchFrom?: string;
+    }
+  | { readonly kind: "evento"; readonly event: PlanEventInput; readonly reason: string };
+
+export interface PlanActionMessage {
+  readonly type: "plan-action";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly action: PlanAction;
+  /** El fichero de trabajo que la interfaz enseña: la respuesta trae el plano leído contra él. */
+  readonly workingSourceId: string | null;
+}
+
+/**
+ * Confirmar un valor de planta del circuito (OQ-140). Lo pide una persona con el valor, la fecha desde
+ * la que rige y una razón obligatoria; el Worker lo valida y lo añade al registro append-only. No
+ * vuelve a analizar nada: el valor se aplica al volver a analizar los ficheros de su vigencia.
+ */
+export interface PlantValueMessage {
+  readonly type: "plant-value";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly key: PlantValueKey;
+  readonly value: PlantValue;
+  readonly effectiveAt: number;
+  readonly reason: string;
+  /**
+   * `propuesta`: la persona confirma la propuesta de la memoria (OQ-151). El Worker la vuelve a calcular
+   * con las versiones consolidadas antes de escribir y rechaza el valor si ya no es el propuesto: no se
+   * fía de la interfaz. Sin él, o `manual`, el valor lo escribió la persona.
+   */
+  readonly origin?: "manual" | "propuesta";
+  /** El fichero de trabajo que la interfaz enseña: la respuesta dice lo vigente para él. */
+  readonly workingSourceId: string | null;
+}
+
+/** Comparar dos versiones consolidadas del linaje activo (F4). Solo lee: no escribe nada. */
+export interface CompareVersionsMessage {
+  readonly type: "compare-versions";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly from: number;
+  readonly to: number;
+}
+
+export type ToWorker =
+  | CompareVersionsMessage
+  | PlantValueMessage
+  | PlanActionMessage
+  | StartMessage
+  | CancelMessage
+  | LoadListsMessage
+  | LoadFleetMessage
+  | ConsolidateMessage
+  | RevokeMessage
+  | ResolveForkMessage;
 
 interface Envelope {
   readonly protocolVersion: number;
@@ -600,6 +759,52 @@ export interface CircuitViews {
     }[];
   };
   /**
+   * Las instantáneas del circuito (ADR-0015): una por fuente distinta, en orden de ventana, y qué
+   * cambió de cada una a la siguiente. Las que no la tienen aparecen igual, con `hasSnapshot: false`
+   * —un fichero anterior a la versión 6 del almacén, o uno cuya instantánea no pudo construirse—.
+   */
+  readonly snapshots: {
+    readonly list: readonly {
+      readonly sourceId: string;
+      readonly fileName: string;
+      readonly window: Interval;
+      /** Cuándo se tomó la instantánea; sin ella, cuándo se cargó el fichero. */
+      readonly capturedAt: number;
+      readonly retained: boolean;
+      readonly hasSnapshot: boolean;
+    }[];
+    /** Entre instantáneas consecutivas (`compareSnapshots`). */
+    readonly deltas: readonly SnapshotDelta[];
+    /**
+     * Los hallazgos que guarda la instantánea del fichero de trabajo: son los que cuentan al
+     * consolidar. La interfaz enseña en la bandeja los que no tienen tarjeta en su sección, para que
+     * ninguno quede pendiente sin poder revisarse (3.57.0).
+     */
+    readonly workingFindings?: readonly SnapshotFinding[];
+    /**
+     * Por qué falta alguna instantánea o comparación, en palabras: nunca se calla (R-EVI-006). Vacío
+     * cuando todo se pudo construir.
+     */
+    readonly problems: readonly string[];
+  };
+  /**
+   * La memoria consolidada del circuito (F4). Ausente si el circuito no tiene versiones; con
+   * `current: null` si todas están revocadas. `comparison` es lo observado (la instantánea del
+   * fichero de trabajo) frente a la versión vigente, o `null` si no hay vigente o falta instantánea.
+   */
+  readonly memory?: MemoryViews;
+  /**
+   * El plano físico del circuito (ADR-0016). Ausente si el circuito no tiene plano ni versión
+   * consolidada desde la que crearlo.
+   */
+  readonly plan?: PlanViews;
+  /**
+   * Los valores de planta del circuito (OQ-140): por valor, el provisional, el confirmado que rige
+   * para el fichero de trabajo (o ninguno), el historial y dónde mide el programa algo relacionado.
+   * El Worker lo manda en cada importación.
+   */
+  readonly plantValues?: PlantValuesView;
+  /**
    * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando
    * el circuito tiene listas de planta cargadas **y** al menos dos periodos distantes: con una sola
    * fuente cargada no hay con qué comparar, y no mostrar nada es más honesto que un aviso permanente.
@@ -630,6 +835,129 @@ export interface CircuitViews {
       readonly notAdoptedTags: readonly string[];
     }[];
   };
+}
+
+/** Resumen de una versión consolidada, sin el grafo: lo que la lista de versiones necesita. */
+export interface VersionSummary {
+  readonly version: number;
+  readonly createdAt: number;
+  readonly basedOnFileName: string;
+  readonly basedOnSourceId: string;
+  readonly window: { readonly from: number; readonly to: number };
+  readonly decisions: { readonly confirmed: number; readonly discarded: number; readonly postponed: number };
+  readonly note: string | null;
+  readonly revoked: { readonly at: number; readonly reason: string } | null;
+  readonly hash: string;
+  readonly bytes: number;
+  /** Cuántos cambios pasaron al esperado, cuántos quedaron pendientes y cuántas incidencias se excluyeron (3.55.0); ausente en las versiones anteriores. */
+  readonly changeSummary?: ChangeSummary;
+}
+
+export interface MemoryViews {
+  readonly versions: readonly VersionSummary[];
+  /** Número de la versión vigente (última no revocada) o `null`. */
+  readonly current: number | null;
+  readonly comparison: MemoryComparison | null;
+  /** Bytes que ocupan todas las versiones guardadas, revocadas incluidas (§9), sin comprimir. */
+  readonly budgetBytes: number;
+  /** Lo mismo tal como está guardado, comprimido (OQ-145). Ausente si el almacén no lo sabe. */
+  readonly storedBytes?: number;
+  /** Bytes del archivo de ficheros originales comprimidos del circuito (OQ-145). */
+  readonly archiveBytes?: number;
+  /** Relación con la memoria que traía el último `.agvproj` abierto, si hubo (§10). */
+  readonly lineage: LineageRelation | null;
+  /** Bifurcación sin resolver: los dos linajes, para que la persona elija. `null` si no la hay. */
+  readonly fork: { readonly local: readonly VersionSummary[]; readonly incoming: readonly VersionSummary[] } | null;
+  /** Las elecciones de linaje registradas (§10), la más reciente al final. */
+  readonly lineageEvents: readonly {
+    readonly at: number;
+    readonly choice: "conservar-local" | "adoptar-entrante";
+    readonly reason: string;
+    /** Elección hecha en otro dispositivo, llegada con un `.agvproj` (OQ-144). */
+    readonly origin?: "otro-dispositivo";
+  }[];
+}
+
+/** El plano físico tal como lo enseña la interfaz: todo ya calculado en el Worker. */
+export interface PlanViews {
+  /** El plano vigente ahora, o `null` si todavía no hay. */
+  readonly current: PhysicalPlan | null;
+  /** Si no hay plano y hay versión vigente: desde cuál se puede crear. */
+  readonly canBootstrap: { readonly version: number; readonly fileName: string } | null;
+  /** Los eventos registrados, del primero al último, con su línea en palabras. */
+  readonly events: readonly (PlanEvent & { readonly text: string })[];
+  /** El fichero de trabajo leído contra el plano vigente al final de su ventana. */
+  readonly observation: PlanObservation | null;
+  /** Las observaciones de todas las instantáneas sumadas por ubicación y conexión. */
+  readonly summary: { readonly locations: readonly LocationSummary[]; readonly edges: readonly EdgeSummary[] } | null;
+  /** Cambios que el Worker propone con su evidencia; ninguno está escrito. */
+  readonly proposals: readonly PlanProposal[];
+}
+
+export interface VersionsComparedMessage extends Envelope {
+  readonly type: "versions-compared";
+  readonly circuitId: string;
+  readonly comparison: VersionComparison;
+}
+
+export interface PlanUpdatedMessage extends Envelope {
+  readonly type: "plan-updated";
+  readonly circuitId: string;
+  /** Qué evento o eventos se escribieron, en palabras. */
+  readonly written: readonly string[];
+  readonly plan: PlanViews;
+}
+
+/** Respuesta a `plant-value`: el valor ya está en el almacén; nada se ha vuelto a analizar. */
+export interface PlantValuesUpdatedMessage extends Envelope {
+  readonly type: "plant-values-updated";
+  readonly circuitId: string;
+  /** Lo escrito, en palabras. */
+  readonly written: string;
+  /** Si el valor escrito rige ya para el fichero de trabajo (su fecha efectiva no pasa de su inicio). */
+  readonly appliesToWorking: boolean;
+  readonly plantValues: PlantValuesView;
+}
+
+/** Respuesta a `consolidate` en modo `preview`: nada se ha escrito. */
+export interface ConsolidationPreviewMessage extends Envelope {
+  readonly type: "consolidation-preview";
+  readonly circuitId: string;
+  readonly preview: ConsolidationPreview;
+  /** La huella de `preview` (`previewFingerprint`): la interfaz la devuelve tal cual en el `commit`. */
+  readonly previewHash: string;
+  /**
+   * Avisos sobre los recortes que no bloquean: un recorte que no toca ninguna ventana de su incidencia.
+   * Se enseñan junto a los recortes; no entran en la huella ni en la versión. Ausente sin avisos.
+   */
+  readonly cutWarnings?: readonly string[];
+}
+
+/** Respuesta a `consolidate` en modo `commit`: la versión ya está en el almacén. */
+export interface ConsolidatedMessage extends Envelope {
+  readonly type: "consolidated";
+  readonly circuitId: string;
+  readonly version: ConsolidatedVersion;
+  readonly memory: MemoryViews;
+  /** Las propuestas de los valores de planta recalculadas con la memoria nueva (OQ-151); ausente sin almacén. */
+  readonly plantProposals?: PlantValueProposals | null;
+}
+
+export interface RevokedMessage extends Envelope {
+  readonly type: "revoked";
+  readonly circuitId: string;
+  readonly version: number;
+  readonly memory: MemoryViews;
+  /** Las propuestas de los valores de planta recalculadas con la memoria nueva (OQ-151); ausente sin almacén. */
+  readonly plantProposals?: PlantValueProposals | null;
+}
+
+export interface ForkResolvedMessage extends Envelope {
+  readonly type: "fork-resolved";
+  readonly circuitId: string;
+  readonly memory: MemoryViews;
+  /** Las propuestas de los valores de planta recalculadas con la memoria nueva (OQ-151); ausente sin almacén. */
+  readonly plantProposals?: PlantValueProposals | null;
 }
 
 /** `ReplayFrame` tal como cruza el `postMessage`: el mapa de vehículos, ya como pares. */
@@ -673,7 +1001,14 @@ export type FromWorker =
   | CancelledMessage
   | ListsLoadedMessage
   | FleetLoadedMessage
-  | FleetChooseCircuitMessage;
+  | FleetChooseCircuitMessage
+  | ConsolidationPreviewMessage
+  | ConsolidatedMessage
+  | RevokedMessage
+  | ForkResolvedMessage
+  | PlanUpdatedMessage
+  | PlantValuesUpdatedMessage
+  | VersionsComparedMessage;
 
 /**
  * `Omit` sobre una unión colapsa a las claves comunes y pierde el discriminante. Distribuyendo

@@ -39,7 +39,7 @@ test.describe("pestañas y bandeja de hallazgos", () => {
     await freshPage(page);
     // Sin nada cargado ya hay pestañas, y la de entrada es el Resumen.
     const tabs = page.getByRole("tab");
-    await expect(tabs).toHaveText(["Resumen", "Tags", "AGV", "Tiempos", "Línea y calles", "Datos"]);
+    await expect(tabs).toHaveText(["Resumen", "Tags", "AGV", "Tiempos", "Línea y calles", "Memoria", "Datos"]);
     await expect(page.getByRole("tab", { name: "Resumen" })).toHaveAttribute("aria-selected", "true");
 
     await page.locator("#circuit-name").fill("auditoria");
@@ -52,6 +52,32 @@ test.describe("pestañas y bandeja de hallazgos", () => {
     await page.locator("#source-file").setInputFiles([]);
     await page.locator("#source-file").setInputFiles(readings);
     await expect(page.locator(".finding", { hasText: "Nadie entró en" }).first()).toBeVisible({ timeout: 180_000 });
+
+    // Cada hallazgo que guarda la instantánea del fichero —los que cuentan al consolidar— tiene su
+    // tarjeta revisable en la bandeja, aunque su sección solo enseñe los primeros de su tipo (3.57.0).
+    // Sin ella quedaría pendiente para siempre y la consolidación no se podría hacer nunca.
+    const snapshotKeys = await page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("tag-trace");
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        const rows = await new Promise<{ circuitId: string; snapshot: { findings: { key: string }[] } }[]>((resolve, reject) => {
+          const request = db.transaction("snapshots", "readonly").objectStore("snapshots").getAll();
+          request.onsuccess = () => resolve(request.result as { circuitId: string; snapshot: { findings: { key: string }[] } }[]);
+          request.onerror = () => reject(request.error);
+        });
+        return rows.filter((row) => row.circuitId === "auditoria").flatMap((row) => row.snapshot.findings.map((item) => item.key));
+      } finally {
+        db.close();
+      }
+    });
+    expect(snapshotKeys.length).toBeGreaterThan(0);
+    const cardKeys = new Set(
+      await page.locator(".tray .finding.reviewable").evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset["reviewKey"] ?? "")),
+    );
+    expect(snapshotKeys.filter((key) => !cardKeys.has(key))).toEqual([]);
 
     // La bandeja tiene tantas tarjetas como hallazgos cuenta la barra, y ninguna queda en su sección.
     const bar = page.locator(".review-bar");
@@ -141,5 +167,48 @@ test.describe("pestañas y bandeja de hallazgos", () => {
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  test.describe("en un móvil de 390 px, con datos cargados", () => {
+    test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
+
+    // La prueba de arriba mide el desborde sin importar nada, cuando la barra de revisión está oculta.
+    // Hasta 3.54.0, con datos, «Siguiente pendiente» quedaba 146 px fuera de la pantalla: con cero
+    // hallazgos, el título «Revisión: no hay hallazgos que revisar.» no se partía y lo empujaba.
+    test("ninguna pestaña desborda, con y sin hallazgos que revisar", async ({ page }) => {
+      const { fileURLToPath } = await import("node:url");
+      const memoria = fileURLToPath(new URL("../../fixtures/synthetic/memoria/", import.meta.url));
+      const tabs = ["Resumen", "Tags", "AGV", "Tiempos", "Línea y calles", "Memoria", "Datos"] as const;
+      const overflowIn = async (): Promise<Record<string, number>> => {
+        const result: Record<string, number> = {};
+        for (const tab of tabs) {
+          await openTab(page, tab);
+          result[tab] = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        }
+        return result;
+      };
+      const importPeriod = async (): Promise<void> => {
+        await openTab(page, "Resumen");
+        await page.locator("#circuit-name").fill("movil");
+        await page.locator("#source-file").setInputFiles([]);
+        await page.locator("#source-file").setInputFiles(`${memoria}periodo-1.csv`);
+        await expect(page.getByRole("heading", { name: "Circuito «movil»", exact: true })).toBeVisible({ timeout: 15_000 });
+      };
+
+      await freshPage(page);
+      // Sin listas no hay hallazgos: la barra lo dice y no ofrece un salto que no lleva a nada.
+      await importPeriod();
+      const bar = page.locator(".review-bar");
+      await expect(bar).toContainText("no hay hallazgos que revisar");
+      await expect(bar.getByRole("button", { name: "Siguiente pendiente" })).toBeHidden();
+      expect(await overflowIn()).toEqual(Object.fromEntries(tabs.map((tab) => [tab, 0])));
+
+      // Con las listas aparece un hallazgo: el botón vuelve, y tampoco desborda.
+      await page.locator("#lists-file").setInputFiles(`${memoria}listas.csv`);
+      await expect(page.getByText("Listas cargadas")).toBeVisible({ timeout: 15_000 });
+      await importPeriod();
+      await expect(bar.getByRole("button", { name: "Siguiente pendiente" })).toBeVisible();
+      expect(await overflowIn()).toEqual(Object.fromEntries(tabs.map((tab) => [tab, 0])));
+    });
   });
 });

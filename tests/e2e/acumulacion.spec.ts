@@ -14,6 +14,7 @@ import { openTab } from "./pestanas.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { STORE_VERSION } from "../../src/persistence/store.js";
 import { writeXlsx } from "../support/xlsx-writer.js";
 
 const FIXTURES = fileURLToPath(new URL("../../fixtures/synthetic/acumulacion/", import.meta.url));
@@ -48,31 +49,82 @@ async function importInto(page: Page, circuit: string, fixture: string): Promise
   await expect(page.getByText(`Circuito «${circuit}»`)).toBeVisible({ timeout: 15_000 });
 }
 
+/** Lo que el almacén guarda de un circuito, tabla por tabla (versión 6, ADR-0015). */
+interface StoredShape {
+  /** Lecturas **retenidas** en la tabla `sources`, sumando sus registros: la ventana de trabajo en crudo. */
+  readonly readings: number;
+  /** Fuentes anotadas en el circuito, contando cada carga. */
+  readonly sources: number;
+  readonly coverage: number;
+  /** Las fuentes con lecturas en la tabla `sources`, por nombre de fichero, en orden de carga. */
+  readonly retained: readonly string[];
+  /** Las fuentes con instantánea en la tabla `snapshots`, por nombre de fichero, en orden de ventana. */
+  readonly snapshots: readonly string[];
+  /** El registro del circuito, ¿lleva todavía `readings`? Desde la versión 6, nunca. */
+  readonly circuitHasReadings: boolean;
+  readonly version: number;
+  /** Si todos los registros de lecturas están comprimidos (almacén 9, OQ-145). */
+  readonly compressed: boolean;
+  /** Los ficheros originales archivados, por nombre (almacén 9, OQ-145). */
+  readonly archived: readonly string[];
+  /** Las tablas de la memoria consolidada (almacén 7): `memory` y `memoryState`. */
+  readonly memoryStores: boolean;
+}
+
 /** Lo que el almacén tiene de verdad, leído del almacén y no del mensaje que la interfaz muestra. */
-async function storedCircuit(
-  page: Page,
-  circuitId: string,
-): Promise<{ readings: number; sources: number; coverage: number } | null> {
+async function storedCircuit(page: Page, circuitId: string): Promise<StoredShape | null> {
   return page.evaluate(async (id) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("tag-trace");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
+    const all = <T>(store: string): Promise<T[]> =>
+      new Promise((resolve, reject) => {
+        if (!db.objectStoreNames.contains(store)) {
+          resolve([]);
+          return;
+        }
+        const request = db.transaction(store, "readonly").objectStore(store).getAll();
+        request.onsuccess = () => resolve(request.result as T[]);
+        request.onerror = () => reject(request.error);
+      });
     try {
       if (!db.objectStoreNames.contains("circuits")) return null;
       const record = await new Promise<
-        { readings: unknown[]; sources: unknown[]; coverage: unknown[] } | undefined
+        { readings?: unknown[]; sources: { sourceId: string; fileName: string }[]; coverage: unknown[] } | undefined
       >((resolve, reject) => {
         const request = db.transaction("circuits", "readonly").objectStore("circuits").get(id);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
       if (record === undefined) return null;
+      const nameOf = new Map(record.sources.map((source) => [source.sourceId, source.fileName]));
+      // Desde la versión 9 del almacén las lecturas se guardan comprimidas (`gz`, OQ-145); antes, en claro.
+      const readingsIn = async (row: { readings?: unknown[]; gz?: Uint8Array }): Promise<unknown[]> => {
+        if (row.gz === undefined) return row.readings ?? [];
+        const stream = new Blob([row.gz as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
+        return JSON.parse(new TextDecoder().decode(await new Response(stream).arrayBuffer())) as unknown[];
+      };
+      const sources = (await all<{ circuitId: string; sourceId: string; readings?: unknown[]; gz?: Uint8Array }>("sources")).filter((row) => row.circuitId === id);
+      const counts = await Promise.all(sources.map(async (row) => (await readingsIn(row)).length));
+      const archive = (await all<{ circuitId: string; fileName: string }>("archive")).filter((row) => row.circuitId === id);
+      const snapshots = (await all<{ circuitId: string; sourceId: string; snapshot: { fileName: string; window: { from: number } } }>("snapshots")).filter(
+        (row) => row.circuitId === id,
+      );
       return {
-        readings: record.readings.length,
+        readings: counts.reduce((sum, count) => sum + count, 0),
+        compressed: sources.every((row) => row.gz !== undefined),
+        archived: archive.map((row) => row.fileName).sort(),
         sources: record.sources.length,
         coverage: record.coverage.length,
+        retained: record.sources.filter((source) => sources.some((row) => row.sourceId === source.sourceId)).map((source) => source.fileName),
+        snapshots: snapshots
+          .sort((a, b) => a.snapshot.window.from - b.snapshot.window.from)
+          .map((row) => nameOf.get(row.sourceId) ?? row.snapshot.fileName),
+        circuitHasReadings: record.readings !== undefined,
+        version: db.version,
+        memoryStores: db.objectStoreNames.contains("memory") && db.objectStoreNames.contains("memoryState"),
       };
     } finally {
       db.close();
@@ -84,13 +136,22 @@ test.describe("acumular un circuito", () => {
   test("dos exportaciones solapadas se cuentan una vez", async ({ page }) => {
     await freshPage(page);
     await importInto(page, "piloto", "ventana-1.csv");
-    expect(await storedCircuit(page, "piloto")).toEqual({ readings: 6, sources: 1, coverage: 1 });
+    expect(await storedCircuit(page, "piloto")).toMatchObject({ readings: 6, sources: 1, coverage: 1, retained: ["ventana-1.csv"] });
 
     await importInto(page, "piloto", "ventana-2.csv");
-    // 6 + 6 = 12 filas, pero tres son el mismo evento: quedan 9.
-    expect(await storedCircuit(page, "piloto")).toEqual({ readings: 9, sources: 2, coverage: 1 });
+    // 6 + 6 = 12 filas, pero tres son el mismo evento: la ventana de trabajo tiene 9. Desde la versión 6
+    // (ADR-0015) el almacén guarda cada fuente aparte —12 filas en dos registros— y la unión se rehace al
+    // cargar; las dos se retienen porque se solapan (R-DAT-023).
+    expect(await storedCircuit(page, "piloto")).toMatchObject({
+      readings: 12,
+      sources: 2,
+      coverage: 1,
+      retained: ["ventana-1.csv", "ventana-2.csv"],
+      circuitHasReadings: false,
+    });
     await openTab(page, "Datos");
     await expect(page.getByText(/3 eventos ya estaban/)).toBeVisible();
+    await expect(page.getByText(/9 lecturas de 2 ficheros de 2/)).toBeVisible();
   });
 
   test("la misma exportación en Excel se lee igual que en CSV, y se cuenta una vez", async ({ page }) => {
@@ -105,19 +166,25 @@ test.describe("acumular un circuito", () => {
       buffer: Buffer.from(book),
     });
     await expect(page.getByText("Circuito «piloto»")).toBeVisible({ timeout: 15_000 });
-    expect(await storedCircuit(page, "piloto")).toEqual({ readings: 6, sources: 1, coverage: 1 });
+    expect(await storedCircuit(page, "piloto")).toMatchObject({ readings: 6, sources: 1, coverage: 1 });
 
-    // Y el mismo contenido en CSV no suma nada: son los mismos eventos.
+    // Y el mismo contenido en CSV no suma nada a la ventana de trabajo: son los mismos eventos. Es otro
+    // fichero (otra huella), así que se guarda aparte y se retiene con el anterior, con el que se solapa.
     await importInto(page, "piloto", "ventana-1.csv");
-    expect(await storedCircuit(page, "piloto")).toMatchObject({ readings: 6, sources: 2 });
+    expect(await storedCircuit(page, "piloto")).toMatchObject({ readings: 12, sources: 2, retained: ["ventana-1.xlsx", "ventana-1.csv"] });
+    await openTab(page, "Datos");
+    await expect(page.getByText(/6 lecturas de 2 ficheros de 2/)).toBeVisible();
   });
 
   test("volver a cargar la misma exportación no cambia ninguna cifra", async ({ page }) => {
     await freshPage(page);
     await importInto(page, "piloto", "ventana-1.csv");
     await importInto(page, "piloto", "ventana-1.csv");
-    // INV-005: la procedencia se conserva —son dos fuentes— pero las métricas no se duplican.
-    expect(await storedCircuit(page, "piloto")).toMatchObject({ readings: 6, sources: 2 });
+    // INV-005: la procedencia se conserva —son dos cargas— pero las métricas no se duplican: un fichero
+    // repetido no es una fuente nueva, no guarda lecturas aparte ni crea otra instantánea (R-DAT-005).
+    expect(await storedCircuit(page, "piloto")).toMatchObject({ readings: 6, sources: 2, snapshots: ["ventana-1.csv"] });
+    await openTab(page, "Datos");
+    await expect(page.getByText(/6 lecturas de 1 fichero de 1/)).toBeVisible();
   });
 
   test("dos ventanas disjuntas dejan el hueco al descubierto, y no es un silencio", async ({ page }) => {
@@ -125,8 +192,10 @@ test.describe("acumular un circuito", () => {
     await importInto(page, "piloto", "ventana-1.csv");
     await importInto(page, "piloto", "ventana-lejana.csv");
 
+    // Disjuntas, y las dos conservan sus lecturas: se retienen las dos últimas cargadas, se solapen o no
+    // (R-DAT-023, OQ-143 a; propietario 2026-09-27). Hasta entonces aquí solo quedaba la lejana.
     const stored = await storedCircuit(page, "piloto");
-    expect(stored).toMatchObject({ readings: 10, sources: 2, coverage: 2 });
+    expect(stored).toMatchObject({ readings: 10, sources: 2, coverage: 2, retained: ["ventana-1.csv", "ventana-lejana.csv"] });
     // Y la interfaz lo dice con todas las letras, que es lo que impide el falso diagnóstico.
     await openTab(page, "Datos");
     await expect(page.getByText(/no hay datos cargados/)).toBeVisible();
@@ -139,6 +208,139 @@ test.describe("acumular un circuito", () => {
     // Sin esto, «acumular» no significaría nada: el servidor de planta guarda dos o tres días.
     await page.reload();
     expect(await storedCircuit(page, "piloto")).toMatchObject({ readings: 6, sources: 1 });
+  });
+
+  test("tres exportaciones seguidas: la primera deja de estar retenida, las tres tienen instantánea, y la acumulación lo dice", async ({ page }) => {
+    await freshPage(page);
+    await importInto(page, "piloto", "ventana-1.csv");
+    await importInto(page, "piloto", "ventana-2.csv");
+    await importInto(page, "piloto", "ventana-3.csv");
+
+    // La última y la anterior se solapan y se retienen; la primera se retira del almacén (ADR-0015 §2).
+    // Las tres dejan instantánea (§1), y el circuito ya no lleva lecturas.
+    expect(await storedCircuit(page, "piloto")).toMatchObject({
+      sources: 3,
+      coverage: 1,
+      retained: ["ventana-2.csv", "ventana-3.csv"],
+      snapshots: ["ventana-1.csv", "ventana-2.csv", "ventana-3.csv"],
+      // Las lecturas retenidas se guardan comprimidas, y los tres originales quedan archivados aunque
+      // el primero ya no tenga lecturas retenidas (OQ-145, propietario 2026-09-27).
+      compressed: true,
+      archived: ["ventana-1.csv", "ventana-2.csv", "ventana-3.csv"],
+      circuitHasReadings: false,
+      version: STORE_VERSION,
+      memoryStores: true,
+    });
+    await openTab(page, "Datos");
+    // 6 + 6 filas de las dos retenidas, tres eventos comunes: 9 en la ventana de trabajo.
+    await expect(page.getByText(/9 lecturas de 2 ficheros de 3/)).toBeVisible();
+    await expect(page.getByText(/^3 de 3 ficheros$/)).toBeVisible();
+  });
+
+  test("volver a cargar un fichero retirado recupera sus lecturas y lo pone el último (OQ-143 b)", async ({ page }) => {
+    await freshPage(page);
+    await importInto(page, "piloto", "ventana-1.csv");
+    await importInto(page, "piloto", "ventana-2.csv");
+    await importInto(page, "piloto", "ventana-3.csv");
+    expect(await storedCircuit(page, "piloto")).toMatchObject({ retained: ["ventana-2.csv", "ventana-3.csv"], readings: 12 });
+
+    // La primera, otra vez: no es una fuente nueva ni deja otra instantánea (R-DAT-005), pero es la
+    // última carga, así que vuelve a la ventana de trabajo y la segunda sale (propietario, 2026-09-27).
+    await importInto(page, "piloto", "ventana-1.csv");
+    // `retained` lista cada carga anotada, y la repetida comparte el identificador de su primera carga:
+    // por eso «ventana-1» sale dos veces. Las lecturas guardadas son las de la primera y la tercera.
+    expect(await storedCircuit(page, "piloto")).toMatchObject({
+      sources: 4,
+      retained: ["ventana-1.csv", "ventana-3.csv", "ventana-1.csv"],
+      readings: 12,
+      snapshots: ["ventana-1.csv", "ventana-2.csv", "ventana-3.csv"],
+    });
+    await openTab(page, "Datos");
+    await expect(page.getByText(/lecturas de 2 ficheros de 3/)).toBeVisible();
+  });
+
+  test("una base de la versión 5 se migra al abrir: el circuito sin lecturas, las dos últimas fuentes retenidas y la vista lo dice", async ({ page }) => {
+    await freshPage(page);
+    // Se borra lo que la aplicación acaba de crear al abrirse y se siembra una base de la versión 5 con un
+    // circuito antiguo: dos fuentes disjuntas y todas sus lecturas en el mismo registro.
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => {
+        const request = indexedDB.deleteDatabase("tag-trace");
+        request.onsuccess = () => resolve();
+        request.onerror = () => resolve();
+        request.onblocked = () => resolve();
+      });
+      const hour = 3_600_000;
+      const first = Date.UTC(2026, 0, 24, 4, 8); // 24/01/2026 5:08 en Madrid
+      const second = Date.UTC(2026, 0, 26, 8, 0); // 26/01/2026 9:00 en Madrid
+      const reading = (sourceId: string, row: number, utcMs: number, agvId: string, tagId: string) => ({
+        time: { utcMs, raw: String(utcMs), zone: "Europe/Madrid", flag: "ok" },
+        agvId,
+        tagId,
+        provenance: { sourceId, sourceHash: sourceId, sourceRow: row },
+      });
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("tag-trace", 5);
+        request.onupgradeneeded = () => {
+          request.result.createObjectStore("circuits", { keyPath: "circuitId" });
+          request.result.createObjectStore("reviews", { keyPath: "circuitId" });
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("circuits", "readwrite");
+        tx.objectStore("circuits").put({
+          circuitId: "antiguo",
+          name: "antiguo",
+          zone: "Europe/Madrid",
+          sources: [
+            { sourceId: "s1", sourceHash: "s1", fileName: "antigua-1.csv", importedAt: 1, acceptedRows: 3, complete: { from: first, to: first + hour } },
+            { sourceId: "s2", sourceHash: "s2", fileName: "antigua-2.csv", importedAt: 2, acceptedRows: 3, complete: { from: second, to: second + hour } },
+          ],
+          coverage: [
+            { from: first, to: first + hour },
+            { from: second, to: second + hour },
+          ],
+          readings: [
+            reading("s1", 2, first, "0007", "58021"),
+            reading("s1", 3, first + 60_000, "0007", "58022"),
+            reading("s1", 4, first + 120_000, "0042", "20107"),
+            reading("s2", 2, second, "0007", "58023"),
+            reading("s2", 3, second + 60_000, "0007", "58024"),
+            reading("s2", 4, second + 120_000, "0042", "20108"),
+          ],
+          updatedAt: 3,
+        });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    });
+
+    // Al abrir la aplicación se abre el almacén y las migraciones 5→6 y 6→7 se hacen solas, en orden:
+    // la 6 parte el circuito por fuentes y la 7 añade las tablas de la memoria consolidada.
+    await page.reload();
+    await expect.poll(async () => (await storedCircuit(page, "antiguo"))?.version, { timeout: 15_000 }).toBe(STORE_VERSION);
+    expect(await storedCircuit(page, "antiguo")).toMatchObject({
+      memoryStores: true,
+      // Las dos fuentes antiguas son las dos últimas cargadas: las dos se retienen (OQ-143 a,
+      // propietario 2026-09-27). Hasta entonces, disjuntas, solo quedaba la segunda.
+      readings: 6,
+      sources: 2,
+      coverage: 2,
+      retained: ["antigua-1.csv", "antigua-2.csv"],
+      snapshots: [],
+      circuitHasReadings: false,
+    });
+
+    // Y al cargar un fichero nuevo en ese circuito, la vista dice qué está retenido y qué no tiene instantánea.
+    await importInto(page, "antiguo", "ventana-1.csv");
+    // Ahora la primera antigua sale: quedan la segunda y la nueva.
+    expect(await storedCircuit(page, "antiguo")).toMatchObject({ sources: 3, retained: ["antigua-2.csv", "ventana-1.csv"], snapshots: ["ventana-1.csv"] });
+    await openTab(page, "Datos");
+    await expect(page.getByText(/9 lecturas de 2 ficheros de 3/)).toBeVisible();
+    await expect(page.getByText(/1 de 3 ficheros; 2 sin instantánea/)).toBeVisible();
   });
 
   test("sin circuito, importar no escribe nada en el almacén", async ({ page }) => {

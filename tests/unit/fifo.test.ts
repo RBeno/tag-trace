@@ -169,6 +169,15 @@ describe("adelantamiento en un tramo (buildFifoReport, R-FLO-001)", () => {
     expect(span?.overtakes).toEqual([]);
   });
 
+  it("el percentil 95 del tránsito sale del mismo cálculo que la mediana, con la misma guarda (OQ-151)", () => {
+    const readings = [...pass("A", 0, 10), ...pass("B", 100, 120), ...pass("C", 200, 230), ...pass("D", 300, 340), ...pass("E", 400, 450)].flat();
+    const span = buildFifoReport(1, readings, [SPAN], THRESHOLDS).spans[0];
+    expect(span?.medianTransitMs).toBe(30 * MINUTE);
+    expect(span?.p95TransitMs).toBe(50 * MINUTE);
+    const few = buildFifoReport(1, [...pass("A", 0, 10), ...pass("B", 100, 120)].flat(), [SPAN], THRESHOLDS).spans[0];
+    expect(few?.p95TransitMs).toBeNull();
+  });
+
   it("por debajo de las pasadas mínimas no se evalúa el tramo, aunque exista una inversión fabricada", () => {
     const readings = [...pass("A", 0, 60), ...pass("B", 10, 20)].flat(); // B adelanta claramente a A
     const report = buildFifoReport(1, readings, [SPAN], THRESHOLDS);

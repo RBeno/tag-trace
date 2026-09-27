@@ -65,7 +65,36 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
   test("cada vista nueva se dibuja, lleva su tabla y no emite un rótulo por marca", async ({ page }) => {
     const scenario = buildAuditScenario();
     const [early, late] = splitInTwo(scenario.readingsCsv);
+    const of = (kind: string) => scenario.defects.find((defect) => defect.kind === kind);
+    const adelantado = of("adelantamiento-en-zona-cargada")?.vehicles[0] ?? "";
 
+    const figureOf = (title: string | RegExp) =>
+      page.locator("figure.chart", { has: page.getByRole("heading", { name: title }) }).first();
+    const figureWithTable = async (title: string | RegExp) => {
+      const figure = figureOf(title);
+      await expect(figure, String(title)).toBeVisible();
+      await expect(figure.getByRole("button", { name: "Ver los mismos datos en tabla" }), String(title)).toBeVisible();
+      expect(await figure.locator("svg title").count(), String(title)).toBe(0);
+      return figure;
+    };
+
+    // La prueba va en dos fases. Desde ADR-0015 (R-DAT-023) la **ventana de trabajo** son las lecturas
+    // retenidas: las dos últimas exportaciones cargadas, se solapen o no (OQ-143, propietario
+    // 2026-09-27). En la fase 1 la ventana es solo el temprano; en la fase 2, el temprano y el tardío,
+    // con los 40 min del corte al descubierto. Entre el 2026-09-26 y el 2026-09-27 la regla retenía
+    // solo el tardío, porque no se solapan, y la fase 2 no veía la primera mitad.
+    //
+    // Horas relativas al arranque de la ventana (`from`, 05:00), en el reloj final del generador; el
+    // corte entre ficheros va de ~14 h 40 min a ~15 h 20 min:
+    //   · puntos conflictivos: 2 h y 7 h 15 min       → temprano
+    //   · paradas de la producción: 5 h y 13 h        → temprano;  29 h → tardío
+    //   · parada aislada: 9 h 15 min                  → temprano
+    //   · el adelantado se demora en su primer paso por el tramo cargado, en su primera vuelta → temprano
+    //   · rotura, corte y bloque de tres sustituidos: 17 h (22:00)  → tardío
+    //   · baja del AGV que sigue leyendo: 16 h 30 min (21:30)      → tardío
+    //   · noche lenta: 22:00–05:00; ritmo lento: desde ~24 h        → tardío
+
+    // ---- Fase 1: ventana temprana ----
     await freshPage(page);
     await page.locator("#circuit-name").fill("auditoria");
     await page.locator("#source-file").setInputFiles({ name: "temprano.csv", mimeType: "text/csv", buffer: early });
@@ -85,18 +114,13 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await page.getByRole("button", { name: "Cargar las filas de este circuito" }).click();
     await expect(page.getByText("Historial de flota cargado")).toBeVisible({ timeout: 30_000 });
 
-    // Las vistas que dependen de las listas y de los dos periodos aparecen en la importación que
-    // llega cuando ya están las dos cosas.
+    // Se vuelve a cargar el mismo temprano: una exportación repetida no es una fuente nueva ni mueve
+    // la retención (R-DAT-005, R-DAT-023), pero se vuelve a analizar con las listas y la flota ya
+    // cargadas. La señal de que la vista es la nueva es un hallazgo que solo existe con listas: la
+    // calle en la que nadie entró.
     await page.locator("#source-file").setInputFiles([]);
-    await page.locator("#source-file").setInputFiles({ name: "tardio.csv", mimeType: "text/csv", buffer: late });
-    // La bandeja del Resumen trae una tarjeta de cambio entre periodos solo con los dos periodos
-    // cargados: es la señal de que la vista ya es la de la segunda importación.
-    await expect(page.locator(".finding", { hasText: "cambio entre periodos" }).first()).toBeVisible({ timeout: 180_000 });
-    await openTab(page, "Tags");
-    await expect(page.getByRole("heading", { name: "Cambios entre los dos periodos" })).toBeVisible();
-
-    const figureOf = (title: string | RegExp) =>
-      page.locator("figure.chart", { has: page.getByRole("heading", { name: title }) }).first();
+    await page.locator("#source-file").setInputFiles({ name: "temprano.csv", mimeType: "text/csv", buffer: early });
+    await expect(page.locator(".finding", { hasText: "Nadie entró en" }).first()).toBeVisible({ timeout: 180_000 });
 
     // El anillo vive en el Resumen desde 3.49.0 y no repite tabla: la suya es la lista ordenada del
     // anillo, en Tiempos, en el cajón.
@@ -107,8 +131,77 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await openTab(page, "Tiempos");
     await expect(page.getByText(/Ver los \d+ tags del anillo, en orden/).first()).toBeVisible();
 
+    // La flota: el recuento N de M —en el circuito, y cuántos leen—, la vida de cada AGV en un único
+    // lienzo y el asignado que no lee nunca.
+    await openTab(page, "AGV");
+    await expect(page.getByRole("heading", { name: "Flota del circuito" })).toBeVisible();
+    const count = figureOf("Flota en el circuito");
+    await expect(count.getByText(/Menos en el circuito: \d+ de \d+.*Menos leyendo: \d+ de \d+/)).toBeVisible();
+    await expect(count.getByRole("button", { name: "Ver los mismos datos en tabla" })).toBeVisible();
+    expect(await count.locator("svg title").count()).toBe(0);
+    const lifeline = figureOf("Vida de cada AGV en el circuito");
+    await expect(lifeline.locator("canvas")).toBeVisible();
+    // Cómo volvió cada AGV tras cada hueco (R-AGV-017): la leyenda nombra las clases, y el AGV que se
+    // retrasa 20 min en el tramo cargado y sigue por el tag siguiente sale parado. Se demora en su
+    // primera vuelta, así que es un hecho de la ventana temprana.
+    for (const kind of [
+      "parado sin nada que lo explique: vuelve por el tag siguiente",
+      "parado con la producción parada o en cola detrás de otro parado",
+      "el primero de una cola, sin avanzar y sin nada que lo explique",
+      "vuelve un tag más allá",
+      "por un tag de mantenimiento",
+    ]) {
+      await expect(lifeline.getByText(kind), kind).toBeVisible();
+    }
+    await lifeline.getByRole("button", { name: "Ver los mismos datos en tabla" }).click();
+    const cajon = page.locator("aside.drawer");
+    const lifeRow = cajon.locator("tr", { has: page.getByRole("cell", { name: adelantado, exact: true }) });
+    await expect(cajon.locator("th").nth(6)).toHaveText("Parado, sin explicar");
+    await expect(lifeRow.locator("td").nth(6)).not.toHaveText("0 %");
+    await page.keyboard.press("Escape");
+    // Contra el flujo (R-AGV-018): de las tres paradas de la producción plantadas, en la ventana
+    // temprana caen las dos del primer día (10:00 y 18:00); la de las 10:00 del día siguiente está en
+    // el tardío, así que aquí no hay «se repite a esa hora otro día». Y el mismo AGV como el primero
+    // de su cola sin avanzar con la producción en marcha. Las tarjetas viven en la bandeja del
+    // Resumen, así que se afirma su contenido, no su visibilidad.
+    const paradasTemprano = page.locator(".finding", { hasText: "La producción se paró 2 veces" });
+    await expect(paradasTemprano).toHaveCount(1);
+    await expect(paradasTemprano).not.toContainText("se repite a esa hora otro día");
+    await expect(page.locator(".finding", { hasText: "el primero de la cola" }).first()).toContainText(adelantado);
+    await expect(page.locator(".finding", { hasText: "asignado no leyó nada" })).toContainText(scenario.fleetNeverRead);
+
+    // Lo plantado de día en la primera mitad, medido con la horquilla de esta ventana (R-TIM-009):
+    // los puntos conflictivos, la parada aislada sin causa y el AGV al que le llegan lecturas juntas
+    // (tres de sus cuatro ráfagas caen aquí).
+    await openTab(page, "Tiempos");
+    const [conflictoA, conflictoB] = of("punto-conflictivo")?.tags ?? [];
+    await expect(page.locator(".finding", { hasText: `Punto conflictivo en ${conflictoA} y ${conflictoB}` })).toContainText("de 8 AGV");
+    const aislada = of("parada-sin-explicacion-aislada");
+    await expect(
+      page.locator(".finding", { hasText: `${aislada?.vehicles[0] ?? ""}:` }).filter({ hasText: `de más en ${aislada?.tags[0] ?? ""}` }),
+    ).toContainText("Qué lo paró no lo dice el dato");
+    const agrupado = of("entrega-agrupada")?.vehicles[0] ?? "";
+    await expect(page.locator(".finding", { hasText: `${agrupado}: le llegan lecturas juntas` })).toContainText("no paró");
+
+    // Con un solo fichero cargado, la retención lo dice así en Datos (ADR-0015 §2).
+    await openTab(page, "Datos");
+    await expect(page.locator("dl.facts dd", { hasText: /^[\d.]+ lecturas de 1 fichero de 1$/ })).toBeVisible();
+
+    // ---- Fase 2: los dos ficheros ----
+    // El tardío es la última carga y el temprano la anterior: los dos quedan en la ventana de trabajo
+    // (R-DAT-023). La bandeja del Resumen trae una tarjeta de
+    // cambio entre periodos solo con las dos instantáneas: es la señal de que la vista ya es la de la
+    // segunda importación; la bandeja vive en el Resumen, así que se mira desde ahí.
+    await openTab(page, "Resumen");
+    await page.locator("#source-file").setInputFiles([]);
+    await page.locator("#source-file").setInputFiles({ name: "tardio.csv", mimeType: "text/csv", buffer: late });
+    await expect(page.locator(".finding", { hasText: "cambio entre periodos" }).first()).toBeVisible({ timeout: 180_000 });
+    await openTab(page, "Tags");
+    await expect(page.getByRole("heading", { name: "Cambios entre los dos periodos" })).toBeVisible();
+
     const withTable: readonly (readonly ["Tags" | "Tiempos" | "Línea y calles", string | RegExp])[] = [
-      // Dos vistas con este dibujo, una por tags y otra por AGV; desde 3.47.0 cada una con su nombre.
+      // La rotura plantada cae a las 22:00, dentro del tardío, y lo que la enseña como tendencia son
+      // los dos periodos: con los dos ficheros retenidos vuelve a verse en el tiempo (OQ-143 a).
       ["Tags", "Rotura y degradación de cada tag, en el tiempo"],
       ["Tiempos", "Tiempo de parada en los posibles puntos críticos"],
       ["Tiempos", "Tags donde el recorrido se divide"],
@@ -118,10 +211,7 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     ];
     for (const [tab, title] of withTable) {
       await openTab(page, tab);
-      const figure = figureOf(title);
-      await expect(figure, String(title)).toBeVisible();
-      await expect(figure.getByRole("button", { name: "Ver los mismos datos en tabla" }), String(title)).toBeVisible();
-      expect(await figure.locator("svg title").count(), String(title)).toBe(0);
+      await figureWithTable(title);
     }
 
     // La deriva lleva su detalle en la tabla plegada de debajo, como antes.
@@ -138,45 +228,23 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await heatmap.getByRole("button", { name: "Peor omisión primero" }).click();
     await expect(heatmap.getByRole("button", { name: "Peor omisión primero" })).toHaveAttribute("aria-pressed", "true");
 
-    // La flota: el recuento N de M —en el circuito, y cuántos leen—, la vida de cada AGV en un único
-    // lienzo, el asignado que no lee nunca y el que sigue leyendo después de su baja.
+    // La flota con los dos ficheros: el recuento y la vida siguen dibujándose; las tres paradas de la
+    // producción están en la ventana, y la de las 10:00 del segundo día se repite a la hora de la del
+    // primero; el asignado que no lee nunca sigue sin leer; y el que sigue leyendo después de su baja
+    // (21:30) se ve, porque su baja cae dentro del tardío.
     await openTab(page, "AGV");
     await expect(page.getByRole("heading", { name: "Flota del circuito" })).toBeVisible();
-    const count = figureOf("Flota en el circuito");
-    await expect(count.getByText(/Menos en el circuito: \d+ de \d+.*Menos leyendo: \d+ de \d+/)).toBeVisible();
-    await expect(count.getByRole("button", { name: "Ver los mismos datos en tabla" })).toBeVisible();
-    expect(await count.locator("svg title").count()).toBe(0);
-    const lifeline = figureOf("Vida de cada AGV en el circuito");
-    await expect(lifeline.locator("canvas")).toBeVisible();
-    // Cómo volvió cada AGV tras cada hueco (R-AGV-017): la leyenda nombra las clases, y el AGV que se
-    // retrasa 20 min en el tramo cargado y sigue por el tag siguiente sale parado.
-    for (const kind of [
-      "parado sin nada que lo explique: vuelve por el tag siguiente",
-      "parado con la producción parada o en cola detrás de otro parado",
-      "el primero de una cola, sin avanzar y sin nada que lo explique",
-      "vuelve un tag más allá",
-      "por un tag de mantenimiento",
-    ]) {
-      await expect(lifeline.getByText(kind), kind).toBeVisible();
-    }
-    const adelantado = scenario.defects.find((defect) => defect.kind === "adelantamiento-en-zona-cargada")?.vehicles[0] ?? "";
-    await lifeline.getByRole("button", { name: "Ver los mismos datos en tabla" }).click();
-    const cajon = page.locator("aside.drawer");
-    const lifeRow = cajon.locator("tr", { has: page.getByRole("cell", { name: adelantado, exact: true }) });
-    await expect(cajon.locator("th").nth(6)).toHaveText("Parado, sin explicar");
-    await expect(lifeRow.locator("td").nth(6)).not.toHaveText("0 %");
-    await page.keyboard.press("Escape");
-    // Contra el flujo (R-AGV-018): las tres paradas de la producción plantadas, la de las 10:00
-    // repetida, y el mismo AGV como el primero de su cola sin avanzar con la producción en marcha.
-    await expect(page.locator(".finding", { hasText: "La producción se paró 3 veces" })).toContainText(
-      "se repite a esa hora otro día",
-    );
-    await expect(page.locator(".finding", { hasText: "el primero de la cola" }).first()).toContainText(adelantado);
+    await expect(figureOf("Flota en el circuito").getByText(/Menos en el circuito: \d+ de \d+/)).toBeVisible();
+    await expect(figureOf("Vida de cada AGV en el circuito").locator("canvas")).toBeVisible();
+    const paradasDosDias = page.locator(".finding", { hasText: "La producción se paró 3 veces" });
+    await expect(paradasDosDias).toHaveCount(1);
+    await expect(paradasDosDias).toContainText("se repite a esa hora otro día");
     await expect(page.locator(".finding", { hasText: "asignado no leyó nada" })).toContainText(scenario.fleetNeverRead);
     await expect(page.locator(".finding", { hasText: "sin estar asignado" })).toContainText(scenario.fleetLeavesMidway);
 
-    // Mediciones por fichero (R-TIM-011): los dos ficheros, el anillo en tiempo sin un rótulo por marca
-    // y con su tabla, y el CSV de cada fichero con su cabecera.
+    // Mediciones por fichero (R-TIM-011): los dos ficheros —el temprano medido desde su instantánea—,
+    // el anillo en tiempo sin un rótulo por marca y con su tabla, y el CSV de cada fichero con su
+    // cabecera.
     await openTab(page, "Tiempos");
     await expect(page.getByRole("heading", { name: "Mediciones por fichero" })).toBeVisible();
     await expect(page.getByText("2 ficheros medidos", { exact: false })).toBeVisible();
@@ -184,25 +252,27 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(ringTime).toBeVisible();
     expect(await ringTime.locator("svg title").count()).toBe(0);
     await expect(ringTime.getByText(/Ver la posición de los \d+ tags en cada fichero/)).toBeVisible();
+    await expect(page.locator("tr", { hasText: "temprano.csv" }).first()).toBeVisible();
     const [franjaCsv] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: "Descargar «tardio.csv» (CSV)" }).click(),
     ]);
     const { readFileSync } = await import("node:fs");
-    const franjaText = readFileSync(await franjaCsv.path(), "utf8").replace(/^﻿/, "");
+    const franjaText = readFileSync(await franjaCsv.path(), "utf8").replace(/^\ufeff/, "");
     expect(franjaText.split("\r\n")[0]).toBe("desde;hasta;regimen;muestras;p50_s;p80_s;p95_s;valla_s;primera;ultima;posicion_desde_s");
 
     // El ritmo de cada AGV y quién retiene (R-AGV-019, R-AGV-020): quien retiene, en el estado normal; el
-    // que se vuelve más lento, en la tabla de ficheros con su cifra; y el CSV de ritmo con su cabecera.
-    const retenedor = scenario.defects.find((defect) => defect.kind === "retiene-a-otros")?.vehicles[0] ?? "";
-    const lento = scenario.defects.find((defect) => defect.kind === "ritmo-mas-lento-en-un-fichero")?.vehicles[0] ?? "";
+    // que se vuelve más lento (desde la mañana del segundo día, dentro del tardío), en la tabla de
+    // ficheros con su cifra; y el CSV de ritmo con su cabecera.
+    const retenedor = of("retiene-a-otros")?.vehicles[0] ?? "";
+    const lento = of("ritmo-mas-lento-en-un-fichero")?.vehicles[0] ?? "";
     await expect(page.locator(".finding", { hasText: `${retenedor} retiene a otros AGV` })).toContainText("AGV distintos");
     await expect(page.locator("tr", { hasText: lento }).filter({ hasText: "más lento" }).first()).toBeVisible();
     const [paceCsvFile] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: "Descargar ritmo de «tardio.csv» (CSV)" }).click(),
     ]);
-    const paceText = readFileSync(await paceCsvFile.path(), "utf8").replace(/^﻿/, "");
+    const paceText = readFileSync(await paceCsvFile.path(), "utf8").replace(/^\ufeff/, "");
     expect(paceText.split("\r\n")[0]).toBe("agv;muestras;ritmo;veredicto;retenciones;min_retenidos");
 
     // Los cambios de estructura por la suma entre anclas (R-DAT-021). Aquí el mantenimiento cae dentro del
@@ -210,6 +280,12 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     // una sola vez, y marcado en la fila de ese fichero con su forma.
     await expect(page.locator(".finding", { hasText: "3 sustituidos en su sitio" })).toHaveCount(1);
     expect(await ringTime.locator("path[data-k]").count()).toBeGreaterThan(0);
+
+    // La retención, en Datos (ADR-0015 §2, R-DAT-023): las lecturas en crudo son las de los dos ficheros
+    // —2 de 2— y las instantáneas, una por fichero, siguen las dos.
+    await openTab(page, "Datos");
+    await expect(page.locator("dl.facts dd", { hasText: /^[\d.]+ lecturas de 2 ficheros de 2$/ })).toBeVisible();
+    await expect(page.locator("dl.facts dd", { hasText: /^2 de 2 ficheros$/ })).toBeVisible();
 
     // El expediente de un vehículo, en un solo eje de tiempo: buscar desde la barra abre la pestaña AGV.
     await page.locator("#dossier-search").fill("7112");

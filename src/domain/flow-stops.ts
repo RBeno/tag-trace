@@ -271,7 +271,25 @@ export function productionStops(
     }
   }
 
-  // ¿Se repite a la misma hora local otro día?
+  // ¿Se repite a la misma hora local otro día? Con la tolerancia operativa: la que rige el análisis.
+  const repeats = sameTimeRepetitions(
+    candidates.map((stop) => stop.from),
+    zone,
+    thresholds.sameTimeToleranceMs,
+  );
+  const stops: ProductionStop[] = candidates.map((stop, index) => ({ fromUtcMs: stop.from, toUtcMs: stop.to, sameTimeOn: repeats[index] as readonly number[] }));
+  return { basis, basisTags: criticalRead.size, stops, events };
+}
+
+/**
+ * Qué paradas empiezan a la misma hora local **otro día** que cada una, con un margen de `toleranceMs`
+ * (en minutos enteros del reloj local, como se lee en planta): para cada inicio, los `fromUtcMs` de
+ * las demás que se repiten. Pura: el emparejamiento operativo de `productionStops` la llama con la
+ * tolerancia vigente (`sameTimeToleranceMs`), y la medida de los valores de planta (`plant-values.ts`)
+ * con una tolerancia de medida más ancha, para que la estimación pueda ver una tolerancia de planta
+ * mayor que la vigente (OQ-154). Dos paradas del mismo día local nunca se emparejan.
+ */
+export function sameTimeRepetitions(startsUtcMs: readonly number[], zone: string, toleranceMs: number): readonly (readonly number[])[] {
   const clock = new Intl.DateTimeFormat("en-CA", {
     timeZone: zone,
     year: "numeric",
@@ -286,19 +304,15 @@ export function productionStops(
     const get = (type: Intl.DateTimeFormatPartTypes): string => parts.find((part) => part.type === type)?.value ?? "0";
     return { day: `${get("year")}-${get("month")}-${get("day")}`, minute: Number(get("hour")) * 60 + Number(get("minute")) };
   };
-  const local = candidates.map((stop) => localOf(stop.from));
-  const tolerance = thresholds.sameTimeToleranceMs / 60_000;
-  const stops: ProductionStop[] = candidates.map((stop, index) => {
+  const local = startsUtcMs.map(localOf);
+  const tolerance = toleranceMs / 60_000;
+  return startsUtcMs.map((_, index) => {
     const own = local[index] as { day: string; minute: number };
-    const sameTimeOn = candidates
-      .filter((_, other) => {
-        const them = local[other] as { day: string; minute: number };
-        return other !== index && them.day !== own.day && Math.abs(them.minute - own.minute) <= tolerance;
-      })
-      .map((other) => other.from);
-    return { fromUtcMs: stop.from, toUtcMs: stop.to, sameTimeOn };
+    return startsUtcMs.filter((_, other) => {
+      const them = local[other] as { day: string; minute: number };
+      return other !== index && them.day !== own.day && Math.abs(them.minute - own.minute) <= tolerance;
+    });
   });
-  return { basis, basisTags: criticalRead.size, stops, events };
 }
 
 /** Quita las transiciones que cruzan una parada de la producción: un descanso no mide un tramo. */

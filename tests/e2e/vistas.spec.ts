@@ -41,7 +41,10 @@ async function importInto(page: Page, circuit: string, fixture: string): Promise
   await page.locator("#source-file").setInputFiles(`${LECTURAS}${fixture}`);
 }
 
-/** Lecturas que el almacén tiene de verdad, leídas del almacén y no del mensaje de la interfaz. */
+/**
+ * Lecturas que el almacén tiene de verdad, leídas del almacén y no del mensaje de la interfaz. Desde la
+ * versión 6 (ADR-0015) viven en la tabla `sources`, un registro por fuente retenida; el circuito no las lleva.
+ */
 async function storedReadings(page: Page, circuitId: string): Promise<number | null> {
   return page.evaluate(async (id) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -50,13 +53,29 @@ async function storedReadings(page: Page, circuitId: string): Promise<number | n
       request.onerror = () => reject(request.error);
     });
     try {
-      if (!db.objectStoreNames.contains("circuits")) return null;
-      const record = await new Promise<{ readings: unknown[] } | undefined>((resolve, reject) => {
+      if (!db.objectStoreNames.contains("circuits") || !db.objectStoreNames.contains("sources")) return null;
+      const record = await new Promise<unknown>((resolve, reject) => {
         const request = db.transaction("circuits", "readonly").objectStore("circuits").get(id);
-        request.onsuccess = () => resolve(request.result as { readings: unknown[] } | undefined);
+        request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
-      return record === undefined ? null : record.readings.length;
+      if (record === undefined) return null;
+      const rows = await new Promise<{ circuitId: string; readings?: unknown[]; gz?: Uint8Array }[]>((resolve, reject) => {
+        const request = db.transaction("sources", "readonly").objectStore("sources").getAll();
+        request.onsuccess = () => resolve(request.result as { circuitId: string; readings?: unknown[]; gz?: Uint8Array }[]);
+        request.onerror = () => reject(request.error);
+      });
+      // Desde la versión 9 del almacén las lecturas se guardan comprimidas (`gz`, OQ-145).
+      let total = 0;
+      for (const row of rows.filter((entry) => entry.circuitId === id)) {
+        if (row.gz === undefined) {
+          total += row.readings?.length ?? 0;
+          continue;
+        }
+        const stream = new Blob([row.gz as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
+        total += (JSON.parse(new TextDecoder().decode(await new Response(stream).arrayBuffer())) as unknown[]).length;
+      }
+      return total;
     } finally {
       db.close();
     }

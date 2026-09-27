@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.21.0
+version: 0.31.2
 status: baseline-candidate
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Contratos de datos y procedencia
@@ -494,6 +494,17 @@ formaliza en F1a y se completa en F4. Como mínimo contendrá:
 - expedientes de incidencia separados;
 - referencias a fuentes y disponibilidad de evidencia;
 - registro append-only de consolidaciones y migraciones.
+- **las instantáneas de cada fichero** (sección `instantaneas`, §12), que son lo que hace que el
+  circuito viaje con toda su evolución y sin su bruto (ADR-0015).
+
+`schema_version` 2 desde 2026-09-26 (sección `instantaneas`); un `.agvproj` de la versión 1 se
+abre igual, sin instantáneas, y la aplicación lo dice. **`schema_version` 3 desde 2026-09-27**:
+sección `memoria` con las versiones consolidadas (§13) y el estado de linaje —linaje activo,
+linajes archivados y los eventos de elección—; un linaje entrante sin resolver no se exporta. Se
+leen los esquemas 1, 2 y 3; el 2 es el 3 sin `memoria`, que al abrirse se clasifica como
+`sin-memoria` (`MEMORY_CONSOLIDATION.md` §10). **`schema_version` 4 desde 2026-09-27**: sección
+`plano` con los eventos del plano físico (§14). Se leen los esquemas 1 a 4; el 3 es el 4 sin
+`plano`.
 
 No incluirá el bruto completo por defecto. Un expediente puede conservar un recorte normalizado mínimo cuando sea necesario para reproducir una incidencia.
 
@@ -534,7 +545,163 @@ El usuario debe poder eliminar lo que ha creado, y esa eliminación debe ser ver
   almacenamiento, solicitando persistencia explícita (RSK-011, TH-009).
 - El bruto original nunca es propiedad de la aplicación: se referencia por hash y permanece donde
   el usuario lo tenga.
+- **Retención de lecturas** (R-DAT-023, ADR-0015): el almacén guarda las lecturas por fuente y solo
+  retiene las de las dos últimas exportaciones cargadas, se solapen o no (OQ-143, 2026-09-27). Las
+  demás se retiran y su fichero queda como instantánea (§12). El expediente y el replay solo
+  alcanzan las lecturas retenidas, y la vista lo dice. Volver a cargar un fichero retirado lo pone el
+  último: sus lecturas vuelven, guardadas bajo el identificador de su primera carga, y no se crea
+  fuente ni instantánea nuevas.
+
+**Medidas de planta en la instantánea (3.60.0).** `plantMeasures` guarda por fichero lo que necesitan
+los estimadores de los valores de planta (lecturas y cobertura por hora local, paradas de producción
+con día y minuto, resúmenes de los huecos que vuelven, de las esperas del primero de cola, del
+tránsito del tramo cargado y de las paradas precisas). Unos cientos de bytes por fichero; las
+instantáneas anteriores no lo traen y esa versión no permite estimar.
+
+**Almacén local, versión 10 (3.59.0).** Tabla `plantValues` con clave `[circuitId, seq]`, append-only
+con `add`: los valores de planta confirmados del circuito (`CONFIG_SCHEMA.md` §3.5). Borrar el
+circuito la borra. El `.agvproj` pasa al **esquema 5** con la sección `valores` (los eventos, con su
+hash); se leen los esquemas 1 a 5; al abrir, un local que es prefijo del entrante recibe lo que falta
+y dos historiales distintos no se mezclan. Cada instantánea guarda `configVersion` (FR-031).
+
+**Almacén local, versión 9 (OQ-145).** Las lecturas retenidas (`sources`) y las versiones
+(`memory`) se guardan comprimidas con el gzip del navegador (`gz`); las guardadas antes se leen igual
+y se comprimen en su próxima escritura, sin migración que las reescriba, porque comprimir es
+asíncrono y una transacción de migración no puede esperar. Tabla nueva `archive` con clave
+`[circuitId, sourceHash]`: **cada fichero original, comprimido**, con su nombre, instante de carga y
+tamaño original. No viaja en el `.agvproj`: el bruto no sale del dispositivo por defecto (ADR-0012).
+Borrar el circuito lo borra.
 
 ## 11. Datos reales y GitHub
 
 Ninguna fuente real, aunque esté parcialmente anonimizada, se añade al repositorio. Los fixtures sintéticos deben usar identificadores, geometría, horarios y distribuciones inventados y llevar un manifiesto `synthetic: true`.
+
+## 12. La instantánea del circuito (ADR-0015)
+
+Lo que perdura de cada exportación analizada: un grafo con fecha, definido en
+`src/domain/snapshot.ts` (`CircuitSnapshot`, `schemaVersion` 1). Cambiar un campo es subir la
+versión del esquema y escribir su migración; los campos se añaden, no se renombran.
+
+| Bloque | Contenido | De dónde sale |
+|---|---|---|
+| Identidad | `circuitId`, `zone`, `sourceId`, `sourceHash`, `fileName`, `window` (tramo analizable, R-DAT-007), `capturedAt`, `appVersion`, `acceptedRows`, exposición por régimen | resumen de la fuente y cobertura |
+| Anillo | `cohortId`, `anchorTagId`, `anchorDeclared`, `ring` (desde el ancla), `lapMs` | ciclo dominante del cohorte principal (R-GRA-009) y la vuelta del fichero (R-TIM-011) |
+| Vértices | por tag: posición, `offsetMs` desde el ancla, tramo, función, declarado, tasa de lectura y pasadas (R-OPP-013), lecturas, AGV que nunca lo leen, predecesor y sucesor dominantes (R-DAT-019), clase de inventario, situación (`anillo`, `calle`, `linea`, `fuera`, `sin-lecturas`), calle, ancla | matriz de lectura, inventario, listas, vecinos dominantes |
+| Aristas | por tramo del anillo: horquilla de producción y de noche (R-FLO-007) | horquillas del fichero |
+| Secciones | por sección entre anclas: nombre, tags, horquillas (R-TIM-012) | secciones del fichero |
+| Sumas entre anclas | por hueco entre anclas seguidas: tags, suma por régimen, pasadas y, por tag, en cuántas se leyó y por cuántos AGV (R-DAT-021) | secuencias de anclas del fichero |
+| Contexto | flota («N de M» al final y mediana, origen del historial), línea (cadencia, paradas, sin paso), calles (uso), hallazgos (clave de revisión R-EVI-007, tipo, título, cifra, estado) | vistas del fichero |
+
+Lo que **no** guarda, a propósito (`MEMORY_CONSOLIDATION.md` §4): lecturas, replay, expedientes,
+estados por instante. Se reconstruye cargando el fichero otra vez. **Desde 3.58.0** cada vértice
+guarda de la matriz de lectura su desglose por AGV (`byVehicle`, par `[pasadas probadas, aciertos]`
+por AGV con pasadas), para que el plano dé la tasa de cada AGV en cada ubicación (R-MEM-004). Las
+instantáneas anteriores no lo traen y siguen valiendo.
+
+**Almacén local, versión 6.** Tres tablas: `circuits` (clave `circuitId`; identidad, fuentes con
+sus metadatos y si sus lecturas están retenidas, cobertura, listas, historial de flota; sin
+lecturas), `sources` (clave `[circuitId, sourceId]`; las lecturas de esa fuente mientras estén
+retenidas) y `snapshots` (clave `[circuitId, sourceId]`; una instantánea por fuente). La migración
+desde la versión 5 parte el registro antiguo por la procedencia de cada lectura, aplica la
+retención y deja las fuentes anteriores sin instantánea (`snapshot: false`) hasta que se vuelvan a
+cargar.
+
+**Evolución.** La secuencia de instantáneas, en orden de ventana, es la evolución del circuito:
+`compareSnapshots` da los vértices que aparecen, desaparecen, se mueven, cambian de clase, dejan de
+leerse o empiezan a leerse, y las aristas más lentas o más rápidas con el criterio de R-TIM-010. Un tag que en el segundo fichero no se lee ni una vez no está en su anillo, así que
+sale como «desaparece», no como «deja de leerse»: esta segunda clase queda para el tag que sigue en
+su sitio (en los dos anillos o en ninguno) y pasa a no leerse con pasadas de sobra. La rotura súbita
+plantada en el corte de la auditoría se ve así, como «desaparece» con sus vecinos.
+
+## 13. La memoria consolidada (F4)
+
+Una **versión** (`src/domain/memory.ts`, `ConsolidatedVersion`) es una instantánea (§12) que una
+persona eligió como referencia del circuito, más lo que hace falta para saber por qué y desde qué:
+
+| Campo | Qué es |
+|---|---|
+| `version` | 1, 2, 3… en orden de creación dentro del linaje; una revocada conserva su número |
+| `basedOn` | fichero base: `sourceId`, huella (`sourceHash`), nombre y ventana |
+| `snapshot` | la instantánea, tal cual |
+| `delta` | lo que cambia frente a la versión vigente anterior (`compareSnapshots`); `null` en la primera |
+| `decisions` | cada hallazgo de la instantánea con su decisión: clave, tipo, título, cifra, estado, nota |
+| `note` | justificación humana, opcional |
+| `hash`, `previousHash` | hash semántico del contenido con `hash: ""` y `revoked: null`; el de la vigente anterior o `null` |
+| `lineage` | identificador del linaje que consolidó (generado en la primera consolidación, heredado al adoptar) |
+| `revoked` | `null` o `{ at, reason }`; la única reescritura admitida |
+| `appVersion` | versión del motor que consolidó |
+
+**Recorte de ventana (3.58.0, OQ-148).** Al consolidar, la persona puede recortar la ventana de
+una incidencia —principio y fin, por defecto los de la incidencia—: la versión se construye desde el
+fichero original archivado, verificado por su huella, sin las lecturas de ese tiempo; si la
+incidencia es de un AGV, solo las de ese AGV. El tiempo recortado queda sin cobertura, no como
+silencio. La instantánea guardada del fichero no cambia. La versión guarda los recortes (`cuts`,
+con cuántas lecturas quitó cada uno) y entran en su hash. Una incidencia puede tener varios recortes
+en `cuts` —uno por parada, OQ-155— que no se solapan entre sí; dos incidencias distintas sí pueden
+recortar el mismo tiempo.
+
+**Desde 3.55.0** la versión guarda además `changes` (cada cambio frente al esperado anterior con su
+clase, R-MEM-005), `incidents` (las incidencias del periodo con lo que tocan, R-INC-004) y, si
+difiere de `snapshot`, `expected` (el esperado que deja). Todos entran en el hash. Lo observado
+frente a la memoria se compara con `expected ?? snapshot`.
+
+**Almacén local, versión 7.** A las tablas de la 6 se añaden `memory` (clave `[circuitId, hash]`;
+una fila por versión, revocadas incluidas, de todos los linajes) y `memoryState` (clave
+`circuitId`; linaje activo con sus hashes, linaje entrante sin resolver, linajes archivados, última
+relación clasificada y eventos de elección). La migración desde la 6 solo crea las dos tablas.
+Borrar el circuito borra su memoria. Consolidar escribe la versión y el estado en una transacción.
+
+**Al abrir un `.agvproj` con memoria (2026-09-27).** Antes de compararla con la local se verifica
+que es la que dice ser: cada versión vuelve a dar su `hash` al calcularlo, y cada linaje declarado en
+`linaje.activo` y `linaje.archivados` encadena versiones presentes con sus `previousHash`. Una que
+falle rechaza la carga entera (`ProjectError`). La forma de cada versión se comprueba también
+(`readMemorySection`): hash, número, linaje, instantánea, circuito, fecha, `basedOn` con fichero y
+ventana, `decisions` y `revoked` bien formada. La relación de linaje se clasifica **solo contra
+`linaje.activo`** —las versiones de los archivados viajan mezcladas en `versiones` y no cuentan— y
+los archivados que aquí no estaban entran como archivados. Con una bifurcación sin resolver aquí, un
+proyecto que no sea idéntico ni venga sin memoria no adopta ni sustituye nada: se anota la relación
+y se devuelve `pendingForkBlocked`. Las revocaciones que trae se aplican en cualquier relación, y se
+dicen (`MEMORY_CONSOLIDATION.md` §10 y §11).
+
+**Lo observado frente a la memoria.** En cada importación, si el circuito tiene una versión
+vigente, el Worker compara la instantánea del fichero de trabajo con ella (`compareToMemory`) y
+la vista lo enseña en la pestaña Memoria. Sin vigente (todas revocadas) no hay comparación y se dice.
+
+## 14. El plano físico (ADR-0016)
+
+El plano (`src/domain/plan.ts`) separa la **ubicación** del **tag instalado** en ella (R-GRA-019). Se
+guarda como una lista de eventos append-only con fecha efectiva; el plano de cualquier instante sale
+de recorrerlos (`planAt`).
+
+| Evento | Qué hace |
+|---|---|
+| `crear-plano` | Crea una ubicación de anillo por tag del anillo de una versión consolidada, en orden, con su tag |
+| `crear-ubicacion` | Ubicación nueva: de anillo, detrás de `after`; o `salida`, colgando de `branchFrom`. Nace sin tag; `virtualTag` guarda el código que el circuito virtual declara para ese sitio |
+| `instalar`, `sustituir`, `retirar` | Cambian el tag de una ubicación; la ubicación y su historia siguen |
+| `cerrar-ubicacion` | La ubicación deja de existir; en el anillo, sus vecinos quedan conectados |
+| `revision-manual` | Resultado de ir a mirar: `correcto`, `averiado` o `no-encontrado`, con nota |
+
+Cada evento lleva `seq`, fecha efectiva, fecha de registro, razón humana, evidencia (fichero y
+detalle) y origen (`manual` o `propuesta` confirmada). Los identificadores de ubicación
+(`U-0001`…) no se reutilizan nunca, tampoco los de una ubicación cerrada. Un evento que dejaría sin
+valor otro posterior se rechaza, así que uno retroactivo no rompe el historial.
+
+**Observación de un fichero contra el plano** (`observeAgainstPlan`), con el plano vigente al final
+de su ventana. Por ubicación: estado (`observado`, `no-observado`, `sin-ocasion`, `sin-tag`,
+`revision-manual`), grado de verdad, oportunidades evaluables, aciertos, omisiones e inciertos.
+Los inciertos son desconocidos (`null`) en toda ubicación de anillo con tag: la instantánea no
+guarda las pasadas cortadas. Las pasadas por el sitio salen, por orden de preferencia, de la sección
+entre anclas que contiene la ubicación según el plano, de las pasadas probadas de su vértice, o de
+la arista que la salta entre sus vecinos leídos (entonces es inferida). Por conexión y régimen:
+recuento, media y M2 (Welford), que `summarizePlan` combina entre periodos de forma exacta (Chan).
+Una conexión que salta ubicaciones sin leer es una **ruta**, no una conexión del plano.
+
+**Almacén local, versión 8.** Tabla `plan` con clave `[circuitId, seq]`, escrita con `add` en una
+transacción: si un `seq` ya existe no se escribe ninguno. La migración desde la 7 solo crea la tabla.
+Borrar el circuito borra su plano. Al abrir un `.agvproj`, los eventos entrantes se clasifican
+frente a los locales: `sin-plano`, `identico`, `local-adelantado`, `entrante-adelantado` (se añaden
+los que faltan) o `distinto` (no se mezcla nada, R-MEM-002).
+
+Las horquillas (`Band`) guardan desde 3.53.0 `meanMs` y `m2` de las mismas muestras; las instantáneas
+anteriores no los traen y sus conexiones salen sin momentos.
+

@@ -2,6 +2,370 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.62.0] - 2026-09-27
+
+El propietario pidió aplicar la recomendación de la IA a OQ-154 a OQ-158 («En las respuestas utiliza tu
+recomendación»). Las cinco quedan cerradas en `OPEN_QUESTIONS.md`.
+
+### Cambiado
+
+- **Tolerancia de medida para estimar** (OQ-154, `CONFIG_SCHEMA.md` §3.5): las repeticiones de parada
+  se emparejan, solo para estimar «a la misma hora» y las horas de turno, con
+  `plant_estimators.same_time_measure_tolerance_ms` (60 min), separada de la operativa. Antes el
+  estimador nunca podía proponer una tolerancia mayor que la vigente. La noche sigue estimándose frente
+  a la noche vigente, límite documentado. Las medidas guardadas antes de esta versión conservan su
+  emparejamiento estrecho.
+- **Un recorte por parada** (OQ-155, `UX_SPEC.md`, `ALGORITHM_CATALOG.md` §6.26): una incidencia con
+  varias paradas enseña una fila por parada, prellenada con esa ventana; se admiten varios recortes por
+  incidencia si no se solapan. Ya no se propone la envolvente.
+- **Un linaje con dos versiones del mismo número se rechaza al abrir el proyecto** (OQ-157,
+  `MEMORY_CONSOLIDATION.md` §11).
+- **La medida de una incidencia no cuenta hacia sostenido** (OQ-158, §8): `carryConsecutive` solo
+  arrastra la cuenta de una `deriva-pendiente`.
+- **Las revocaciones importadas siguen aplicándose solas** (OQ-156, §10): son una decisión humana con
+  razón en el otro dispositivo; se anuncian una por una.
+
+### Pruebas
+
+- TC-317 a TC-320 (`TEST_STRATEGY.md`). Una expectativa cambiada por decisión, con su motivo escrito:
+  dos recortes no solapados de una incidencia ya no se rechazan (OQ-155); y un fixture de medidas
+  llevaba repeticiones cruzadas del mismo día que el emparejamiento real nunca produce (OQ-154).
+
+## [3.61.0] - 2026-09-27
+
+Revisión de la interfaz, la lógica y la consolidación de F4 pedida por el propietario («Haz una revisión de
+la interface, lógica y consolidación» y «Aplica el orden completo en el PR #12»). Cada hallazgo se comprobó
+en el código antes de corregirlo; los tres más graves se reprodujeron con pruebas.
+
+### Corregido
+
+- **Un linaje archivado en el `.agvproj` fingía una bifurcación** (`MEMORY_CONSOLIDATION.md` §10): la
+  sección `memoria` viaja con el linaje activo y los archivados, y al abrirla se clasificaba contra todos
+  juntos. Ahora se clasifica solo contra `linaje.activo`; los archivados del otro dispositivo entran como
+  archivados, con sus versiones. Un dispositivo idéntico vuelve a ver «idéntica».
+- **Un botón de Memoria, Plano o Valores mataba el trabajo en curso**: cada uno terminaba el Worker del
+  otro y dejaba su panel apagado para siempre; una importación grande se cortaba en silencio entre
+  transacciones. Ahora hay un solo trabajo a la vez: mientras dura, los selectores de fichero y los tres
+  paneles están apagados y el botón responde «Hay otra operación en curso; espera a que termine.»
+  (`UX_SPEC.md` §8, `WORKER_PROTOCOL.md` §3).
+- **Se consolida lo que se vio** (`WORKER_PROTOCOL.md` §4): la previsualización lleva una huella y la
+  confirmación la devuelve; si al confirmar la previsualización rehecha no coincide (una marca de revisión
+  cambiada entre medias), no se escribe y se pide previsualizar de nuevo. En la interfaz, tocar un recorte
+  después de previsualizar apaga «Confirmar y consolidar» hasta previsualizar otra vez.
+- **La memoria no se pisa**: `saveMemory` compara dentro de la misma transacción el linaje guardado con el
+  que se leyó al preparar la escritura; si otro hilo lo cambió (un `.agvproj` abierto entre medias) no
+  escribe y lo dice. Con una bifurcación pendiente, abrir otro proyecto ya no la adopta ni la sustituye
+  (`MEMORY_CONSOLIDATION.md` §10).
+- **El esperado guarda la configuración y las medidas de planta** con que se midió lo observado: desde
+  3.60.0 se guardaba duplicado en cada versión por no llevarlas (§8, FR-031). Las versiones ya escritas
+  no se corrigen: la memoria es append-only.
+- **Integridad al abrir un proyecto** (§11): cada versión que llega vuelve a dar su hash y cada linaje
+  encadena; si no, se rechaza la sección entera antes de escribir nada. La forma comprobada incluye
+  `basedOn`, `decisions`, `createdAt` y `revoked`.
+- **Una sustitución en el plano exige el mismo mínimo de AGV que un tag nuevo** (`ALGORITHM_CATALOG.md`
+  §6.23, R-DAT-021), y su detalle cuenta las pasadas de la sección, no las de la matriz.
+- **«Cancelar» solo en importaciones**: en consolidar, revocar, plano y valores no se enseña; el Worker
+  atiende la cancelación justo antes de escribir.
+- **Interfaz**: «(OQ-151)» ya no se ve en pantalla; el régimen sale con su palabra («producción») en la
+  evolución y el comparador; los formularios que comparten sitio ya no se esconden entre sí; objetivos
+  táctiles de 44 px en los selectores del comparador, los campos del recorte y los enlaces de Memoria;
+  las tarjetas de «Más hallazgos del periodo» no ofrecen un «Ver evidencia» vacío; marcar un hallazgo no
+  borra la nota de consolidación; cabeceras de tramos con su régimen; el error de un valor de planta va
+  unido a su campo; el observador de tamaño de la barra de revisión se libera.
+
+### Añadido
+
+- **Avisos del recorte**: un recorte que no toca ninguna ventana de su incidencia se avisa sin bloquear.
+- **`plant_estimators`** (`CONFIG_SCHEMA.md` §3.5): los cuantiles y la cuota de noche de los estimadores
+  salen de la configuración, con los mismos valores que antes.
+- Pruebas TC-306 a TC-316 (`TEST_STRATEGY.md`): linaje archivado, integridad, bifurcación pendiente,
+  esperado con configuración, sustitución, avisos, estimadores, bordes, un solo trabajo, huella y filas
+  en claro. 838 unitarias y 60 de navegador.
+
+### Documentado
+
+- Los estimadores «a la misma hora», horas de turno y noche están acotados por el valor vigente (OQ-154);
+  el número de versiones coincidentes es `change_class.sustained_files`; el desglose por AGV y la
+  ubicación usan denominadores distintos (§6.26); siete valores de planta, ocho claves; revocar una
+  intermedia deja en vigor el esperado de la posterior (§7); «ningún rango 1 confirmado» ya no es
+  precondición (§6).
+- Preguntas nuevas: OQ-154 a OQ-158.
+
+## [3.60.0] - 2026-09-27
+
+El propietario cerró OQ-151 a OQ-153 («OQ-152 permite consolidar / OQ-153 quedarnos con el aviso /
+OQ-151 usa la propuesta pero si no coinciden que los valores los introduzca una persona»).
+
+### Añadido
+
+- **La memoria propone valores de planta** (OQ-151, `CONFIG_SCHEMA.md` §3.5): siete estimadores
+  aprobados, medidos en cada instantánea (`plantMeasures`) y estimados en cada una de las últimas tres
+  versiones consolidadas. Si coinciden se propone y la persona lo confirma con razón; si no, se
+  enseña la estimación de cada versión y el valor lo introduce una persona.
+
+### Cambiado
+
+- **Se consolida con la configuración provisional** (OQ-152): `CONFIG_SCHEMA.md` §4 lo permite ya,
+  porque cada instantánea guarda con qué configuración se midió.
+- **Dos vigencias en la ventana de trabajo** (OQ-153): se queda el aviso.
+
+## [3.59.0] - 2026-09-27
+
+### Añadido
+
+- **Valores de planta del circuito** (OQ-140, `CONFIG_SCHEMA.md` §3.5): en la pestaña Datos, cada uno
+  de los siete valores provisionales de planta se puede confirmar para el circuito con su fecha
+  efectiva y una razón obligatoria. Rige al analizar los ficheros de su vigencia; sin confirmación,
+  el provisional. Viajan en el `.agvproj` (esquema 5) y se guardan en el almacén (versión 10). Los
+  estimadores con que la memoria los propondrá siguen abiertos (OQ-151).
+- **Cada instantánea guarda con qué configuración se midió** (`configVersion`, FR-031).
+
+## [3.58.0] - 2026-09-27
+
+Lo que quedaba de F4 salvo los valores de planta (OQ-151).
+
+### Añadido
+
+- **Recortar la ventana de una incidencia al consolidar** (OQ-148): la persona elige principio y fin;
+  la versión se construye desde el fichero original archivado, verificado por su huella, sin las
+  lecturas de ese tiempo —las del AGV, si la incidencia es suya—, y el tiempo queda sin cobertura. La
+  previsualización dice cuántas lecturas quita. La instantánea guardada no cambia.
+- **Tasa por AGV en cada ubicación del plano** (R-MEM-004): la instantánea guarda de la matriz de
+  lectura el desglose por AGV, y el plano enseña «Por AGV» con los que quedan por debajo de la flota,
+  siempre con sus pasadas y solo con muestra suficiente. Crece la instantánea unos 82 KB sin
+  comprimir; comprimida, la versión sigue por debajo del 1,1 % del CSV.
+- OQ-151: estimadores propuestos para los valores provisionales de planta, pendientes del
+  propietario.
+
+### Corregido
+
+- El esperado que conserva las cifras anteriores de un tag llevaba el desglose por AGV del fichero
+  nuevo. Ahora lleva el del mismo periodo que sus cifras, y ninguno cuando queda sin medida.
+
+## [3.57.0] - 2026-09-27
+
+El propietario cerró OQ-149 y OQ-150 con las recomendaciones («De acuerdo con las dos, adelante»).
+
+### Añadido
+
+- **Hallazgos graves con instante como incidencias** (OQ-149, R-INC-004): el primero de cola sin
+  avanzar, la parada de la línea, el paso por la línea, el AGV que deja de leer y la producción parada
+  entran en la instantánea con la clave de su tarjeta y su ventana. Confirmados, se excluyen del
+  esperado: los de un sitio, su tag y sus tramos; los de un AGV o de toda la producción no tocan el
+  grafo y quedan registrados con su AGV y su ventana.
+- **Evento puntual que vuelve** (OQ-150): un cambio que la versión vigente dejó pendiente y ya no está
+  en el último fichero sale en la previsualización siguiente como «se vio en vN y volvió».
+
+### Corregido
+
+- **Hallazgos que contaban al consolidar sin poder revisarse.** Cada sección enseña los primeros de
+  cada tipo, pero la instantánea guardaba todos: en el circuito de auditoría faltaban las tarjetas
+  de varios tags fuera de la lista y de roturas, que habrían dejado la consolidación pendiente para
+  siempre. La bandeja los enseña ahora en «Más hallazgos del periodo», y una prueba de navegador
+  comprueba que toda clave de la instantánea tiene tarjeta (sin el arreglo, falla).
+- **Cambia una prueba por la decisión**: en la prueba de oro, el tramo lento del periodo 3 sale en v4
+  como evento puntual (OQ-150).
+
+## [3.56.0] - 2026-09-27
+
+### Añadido
+
+- **Comparar versiones** (pestaña Memoria, `UX_SPEC.md` §6): el esperado de dos versiones
+  consolidadas cualesquiera, en cualquier orden, con las versiones de entre medias, las revocadas y
+  lo que adoptó cada una por el camino. Solo lee.
+- **Prueba de oro de la historia** (TC-296): seis periodos consolidados en cadena con cuatro cambios
+  plantados; la comparación de la primera versión a la última da exactamente lo adoptado.
+
+### Corregido
+
+- **Un cambio permanente no se adoptaba nunca si se consolidaba cada periodo**: la cuenta de ficheros
+  seguidos volvía a uno en cada versión. Ahora continúa a través de las consolidaciones mientras el
+  cambio siga presente, y la razón lo dice. Lo encontró la prueba de oro. OQ-150 pide al propietario
+  que valide la lectura.
+
+## [3.55.0] - 2026-09-27
+
+El propietario aceptó las cuatro recomendaciones sobre el presupuesto, la clasificación de cambios y
+las incidencias («De acuerdo con las cuatro recomendaciones, adelante»; OQ-145 a OQ-148).
+
+### Añadido
+
+- **Clasificación de cambios frente al esperado** (`MEMORY_CONSOLIDATION.md` §8, R-MEM-005): al
+  previsualizar una versión, cada cambio sale como incidencia, confirmado, colectivo y sostenido,
+  deriva pendiente o evento puntual, con su razón y sus cifras. Sostenido son tres ficheros seguidos;
+  colectivo, más de la mitad de los AGV que pasan por el sitio. Solo los colectivos y sostenidos y
+  los confirmados con el plano pasan al esperado; cada versión guarda su esperado, y lo observado se
+  compara con él.
+- **Archivo de ficheros originales** (OQ-145): cada fichero que se acumula queda guardado
+  comprimido con su huella, unos 300 KB por cada 1,9 MB de CSV. La pestaña Memoria dice lo que ocupa.
+
+### Cambiado
+
+- **Un periodo con incidencia se consolida** (R-INC-004, OQ-148): un hallazgo grave confirmado ya no
+  bloquea; queda como incidencia de la versión y lo que toca no entra en el esperado. **Cambia una
+  prueba por la decisión**: la del bloqueo por periodo de incidencia espera ahora la incidencia
+  excluida.
+- **Almacén local, versión 9**: lecturas retenidas y versiones comprimidas (lo guardado antes se lee
+  igual) y tabla `archive`. Las pruebas de navegador que leen el almacén entienden el formato.
+- El plano físico se crea desde el esperado de la versión, no desde lo observado.
+
+### Abierto
+
+- OQ-149: los hallazgos graves con instante no están en la instantánea y no se excluyen como
+  incidencia.
+
+## [3.54.1] - 2026-09-27
+
+### Medido
+
+- **Presupuesto de la memoria** (`MEMORY_CONSOLIDATION.md` §9, TC-292): con el circuito de auditoría
+  en cuatro periodos de unas 12 horas, una versión consolidada ocupa entre el 4,8 % y el 6,3 % del
+  CSV de su periodo y, comprimida, menos del 1 %; conservar todas las lecturas comprimidas cuesta un
+  37 % del CSV. Las lecturas retenidas ocupan diez veces el CSV. Sin cambios en la aplicación.
+- Preguntas nuevas para el propietario: OQ-145 (qué se acepta como presupuesto y qué se comprime),
+  OQ-146 y OQ-147 (cuándo un cambio es sostenido y colectivo) y OQ-148 (cómo se excluye una
+  incidencia del esperado).
+
+## [3.54.0] - 2026-09-27
+
+### Corregido
+
+- **La barra de revisión desbordaba en el móvil.** En 390 px de ancho y con datos cargados,
+  «Siguiente pendiente» quedaba 146 px fuera de la pantalla y la página se desplazaba de lado: con
+  cero hallazgos, el título «Revisión: no hay hallazgos que revisar.» no se partía y lo empujaba.
+  Ahora la fila de la barra baja el botón a otra línea si no cabe, y el botón no aparece cuando no
+  hay hallazgos. Venía de 3.48.0; la prueba de navegación medía el desborde sin datos, con la barra
+  oculta, y ahora lo mide en las siete pestañas con y sin hallazgos (TC-291).
+
+## [3.53.0] - 2026-09-27
+
+El plano físico del circuito (ADR-0016): tres ideas del esbozo inicial del propietario que se
+habían perdido, recuperadas a petición suya.
+
+### Añadido
+
+- **Ubicaciones estables, distintas del tag instalado** (R-GRA-019). El plano del circuito son
+  ubicaciones `U-0001`… con su tag a lo largo del tiempo: sustituir un tag no borra la historia del
+  sitio. Una ubicación puede no tener tag físico, con el código que el circuito virtual declara.
+- **Un plano que no cambia porque un tag deje de leerse** (R-GRA-020). Sus cambios son eventos
+  append-only con fecha efectiva, razón y evidencia, y solo los escribe una persona. El programa
+  propone —tag nuevo entre dos ubicaciones, sustitución donde una deja de leerse, salida sin
+  ubicar— y la persona confirma. Una ubicación sin leer sigue en el plano como «sin leer: N pasadas
+  por su sitio», inferida, o «sin ocasión»; la evolución y la comparación con la memoria lo dicen
+  así en vez de «desaparece».
+- **Salidas que se revisan a mano** (R-GRA-021): los tags de parada por salida de circuito cuelgan de
+  una ubicación del anillo, no entran en ninguna tasa, y su estado es la última revisión registrada.
+- **Estadísticas que se suman entre periodos** (R-MEM-004): cada horquilla guarda media y M2; por
+  ubicación, oportunidades, aciertos, omisiones e inciertos; por conexión, recuento, media y
+  desviación, combinados de forma exacta entre ficheros.
+- **Sección «Plano del circuito»** en la pestaña Memoria (`UX_SPEC.md` §6.1): crear el plano desde una
+  versión, ubicaciones con su estado y su historia, acciones manuales, salidas, propuestas, tramos
+  entre ubicaciones e historial. Fixtures sintéticos nuevos en `memoria/`.
+
+### Cambiado
+
+- **Almacén local, versión 8** (tabla `plan`) y **`.agvproj` esquema 4** (sección `plano`); los
+  anteriores se siguen abriendo. **Cambia un resultado esperado por la subida de esquema**: la
+  prueba del esquema vigente del `.agvproj` espera 4.
+- Umbral provisional nuevo en configuración: `plan.min_vehicles_for_proposal` = 2.
+
+## [3.52.0] - 2026-09-27
+
+El propietario cierra OQ-143 y OQ-144 con las recomendaciones («Ok entonces continúa con las 3»).
+
+### Cambiado
+
+- **Retención de dos exportaciones** (R-DAT-023, ADR-0015 §2 enmendado): se guardan las lecturas de
+  las dos últimas exportaciones cargadas, se solapen o no. Con dos exportaciones diarias que no se
+  tocan, la rotura que cae en el corte vuelve a verse en el tiempo y el expediente alcanza los dos
+  días. **Cambian pruebas por el cambio de regla**, cada una con su motivo escrito: en las de
+  acumulación, dos ventanas disjuntas quedan las dos retenidas y la base migrada desde la versión 5
+  retiene sus dos fuentes; en la de vistas de diagnóstico, la fase con los dos ficheros vuelve a
+  afirmar lo que afirmaba antes de la retención: tres paradas de la producción que se repiten a la
+  misma hora y la figura de rotura y degradación en el tiempo. Las unitarias de migración usan tres
+  fuentes para que una se retire.
+- **Volver a cargar un fichero lo recupera**: cuenta como la última carga, sus lecturas vuelven al
+  almacén con el identificador de su primera carga, y sigue sin crear fuente ni instantánea nuevas.
+- **Al abrir un `.agvproj`**, las revocaciones que trae y aquí no estaban se dicen una por una con su
+  razón, y las elecciones de linaje del otro dispositivo se añaden al historial marcadas «(en otro
+  dispositivo)». Volver al ancestro común sigue sin botón propio, por decisión del propietario.
+
+## [3.51.0] - 2026-09-27
+
+Primera entrega de F4: la memoria consolidada del circuito, con versiones que aprueba una persona
+(R-MEM-001..003, ALG-014, `MEMORY_CONSOLIDATION.md` §6-§10).
+
+### Añadido
+
+- **Versiones vN append-only** (`src/domain/memory.ts`, `DATA_CONTRACTS.md` §13): una versión es la
+  instantánea de un fichero elegida como referencia, con las decisiones de la revisión, la nota
+  humana, el delta frente a la vigente anterior, su hash semántico y el de la anterior. Revocar
+  añade fecha y razón y no cambia el hash; la vigente es la última no revocada.
+- **Consolidar periodo** en una pestaña nueva, **Memoria** (`UX_SPEC.md` §6): previsualización con
+  bloqueos en palabras —hallazgos pendientes, periodo de incidencia (rango 1 confirmado), fichero ya
+  consolidado, sin instantánea, bifurcación sin resolver—, avisos que no bloquean (pospuestos que
+  volverán como pendientes), decisiones por estado, delta y tamaño estimado; «Confirmar y
+  consolidar» solo sin bloqueos. Lista de versiones con revocación por razón obligatoria, y el
+  presupuesto: cuánto ocupa la memoria.
+- **Lo observado frente a la memoria**: cada importación compara el fichero de trabajo con la
+  versión vigente y lo enseña como «Evolución». En el Resumen, un séptimo tile, «Memoria».
+- **Linaje entre dispositivos** (§10): al abrir un `.agvproj`, la memoria entrante se clasifica
+  como idéntica, local adelantada, entrante adelantada (se adopta) o bifurcada (hay que elegir
+  conservar o adoptar, con razón; el otro linaje queda archivado).
+- Fixture sintético `memoria/1` para el flujo en el navegador.
+
+### Cambiado
+
+- **Almacén local, versión 7**: tablas `memory` y `memoryState`; la migración desde la 6 solo las
+  crea. **`.agvproj` esquema 3** con la sección `memoria`; los esquemas 1 y 2 se siguen abriendo.
+- El catálogo de tipos de hallazgo y sus rangos pasa al dominio (`src/domain/finding-kinds.ts`), para
+  que el Worker decida el periodo de incidencia con el mismo rango que ordena la bandeja.
+- Protocolo del Worker: mensajes `consolidate`, `revoke`, `resolve-fork` y sus respuestas
+  (`WORKER_PROTOCOL.md` §4). Las pruebas de navegador de navegación y portada cuentan siete
+  pestañas y siete tiles, y las de acumulación comparan con la versión vigente del almacén en lugar
+  de un 6 fijo: la migración desde la 5 pasa ahora por la 6 hasta la 7, con las tablas de memoria.
+
+## [3.50.0] - 2026-09-26
+
+El estado del circuito es un grafo que evoluciona (ADR-0015, R-DAT-023; decisión del propietario).
+
+### Añadido
+
+- **Instantánea por fichero** (`src/domain/snapshot.ts`, `DATA_CONTRACTS` §12): un grafo con fecha
+  —vértices con posición, tramo, función, tasa de lectura, no lectores, vecinos, clase y
+  situación; aristas y secciones con su horquilla por régimen; sumas entre anclas; flota, línea,
+  calles y hallazgos con su revisión— construida por el Worker al terminar cada análisis y guardada
+  sola, como medición. `compareSnapshots` da lo que cambia de una a otra: vértices que aparecen,
+  desaparecen, se mueven (por vecino, no por índice), cambian de clase, dejan de leerse o empiezan a
+  leerse; aristas más lentas o más rápidas (R-TIM-010); la vuelta.
+- **Las comparaciones entre ficheros leen de las instantáneas**: horquillas que cambian,
+  estructura por la suma entre anclas y deriva entre periodos, con los mismos criterios y los mismos
+  resultados que desde las lecturas (probado). Lo que cambia dentro de un fichero se mide con sus
+  lecturas.
+- **Almacén local, versión 6**: `circuits` sin lecturas, `sources` con las lecturas retenidas por
+  fuente, `snapshots` por fuente; migración automática desde la 5 al abrir la aplicación. El
+  `.agvproj` pasa al esquema 2 con la sección `instantaneas`, sin lecturas; el 1 se sigue abriendo.
+- La acumulación dice qué ficheros tienen lecturas retenidas y cuáles solo instantánea, y el motor
+  enseña su versión en cada instantánea (`appVersion`, del propio `CHANGELOG`).
+- **El anillo en el tiempo y la evolución** (UX_SPEC §5.2): en la portada, un control de tiempo
+  recorre las instantáneas y redibuja el anillo conservando la capa, con un arco de acento en lo que
+  cambia frente a la vecina; debajo, «Evolución» cuenta lo que aparece, desaparece, se mueve, deja o
+  empieza a leerse, los tramos más lentos o más rápidos y la vuelta, con el detalle en el cajón. En
+  Tiempos, «El circuito a lo largo de los ficheros»: el p50 de cada sección entre anclas, una línea
+  por sección y una columna por instantánea. En Datos, cada fichero dice si tiene lecturas
+  retenidas, solo instantánea, o ninguna. Cuatro tonos más de tramo, validados en claro y oscuro.
+
+### Cambiado
+
+- **Retención de lecturas** (R-DAT-023): solo la última exportación cargada y, si se solapa con la
+  anterior en orden de carga, también esa; las demás se retiran del almacén y quedan como
+  instantánea. El expediente y el replay alcanzan solo las lecturas retenidas. **Cambia una prueba
+  de navegador**: en el circuito de auditoría partido en dos, la rotura plantada cae en el corte y
+  ya no sale «en el tiempo» dentro de la ventana; la enseña la tarjeta «cambio entre periodos»,
+  leída de las dos instantáneas. Dos casos quedan para el propietario en OQ-143.
+- OQ-142 cerrada: el límite de un valor de IndexedDB deja de alcanzarse porque las lecturas ya no
+  se guardan enteras ni para siempre.
+
 ## [3.49.0] - 2026-09-26
 
 Interfaz (3/3), aprobada por el propietario: la portada con cifras, el anillo con capas en el Resumen

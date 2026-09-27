@@ -20,6 +20,7 @@
  */
 
 import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
+import { quantile } from "./graph.js";
 import type { Reading } from "./reading.js";
 
 export interface FifoThresholds {
@@ -197,6 +198,11 @@ export interface SpanReport {
   readonly tagCount: number;
   readonly passes: number;
   readonly medianTransitMs: number | null;
+  /**
+   * El percentil 95 del mismo tránsito, con la misma guarda (`minPassesForSpan`): lo que usa el
+   * estimador del margen del FIFO (OQ-151). No decide ningún adelantamiento.
+   */
+  readonly p95TransitMs: number | null;
   readonly evaluated: boolean;
   readonly overtakes: readonly FifoOvertake[];
   /**
@@ -332,6 +338,13 @@ export function buildFifoReport(
       completed.length >= thresholds.minPassesForSpan
         ? median(completed.map((pass) => pass.leftUtcMs - pass.enteredUtcMs))
         : null;
+    const p95TransitMs =
+      medianTransitMs === null
+        ? null
+        : quantile(
+            completed.map((pass) => pass.leftUtcMs - pass.enteredUtcMs).sort((a, b) => a - b),
+            0.95,
+          );
     const overtakes = medianTransitMs === null ? [] : findOvertakes(completed, medianTransitMs, thresholds);
     return {
       spanId: span.spanId,
@@ -340,6 +353,7 @@ export function buildFifoReport(
       tagCount: span.tags.length,
       passes: completed.length,
       medianTransitMs,
+      p95TransitMs,
       evaluated: medianTransitMs !== null,
       overtakes,
       focus: focusWindow(completed, overtakes),

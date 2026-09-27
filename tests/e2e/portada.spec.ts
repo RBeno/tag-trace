@@ -48,15 +48,17 @@ async function loadAudit(page: Page): Promise<void> {
 test.describe("portada: cifras, anillo con capas y cajón de tablas", () => {
   test.setTimeout(300_000);
 
-  test("seis tiles, el anillo con sus capas y el cajón, en escritorio", async ({ page }) => {
+  test("siete tiles, el anillo con sus capas y el cajón, en escritorio", async ({ page }) => {
     await loadAudit(page);
 
-    // Seis tiles con su cifra, y el de hallazgos dice lo mismo que la barra de revisión.
+    // Seis tiles del análisis con su cifra, más el de la memoria consolidada (F4), que sin versión dice
+    // «sin consolidar»; el de hallazgos dice lo mismo que la barra de revisión.
     const tiles = page.locator(".tiles [role='listitem'] .tile");
-    await expect(tiles).toHaveCount(6);
+    await expect(tiles).toHaveCount(7);
     const labels = await tiles.locator(".tile-label").allTextContents();
-    expect(labels).toEqual(["AGV en el circuito", "Tags en el anillo", "Cobertura", "Hallazgos", "Vuelta", "Línea"]);
-    for (const value of await tiles.locator(".tile-value").allTextContents()) expect(value).toMatch(/\d/);
+    expect(labels).toEqual(["AGV en el circuito", "Tags en el anillo", "Cobertura", "Hallazgos", "Vuelta", "Línea", "Memoria"]);
+    for (const value of await tiles.locator(":not([data-tile='memoria']) > .tile-value").allTextContents()) expect(value).toMatch(/\d/);
+    await expect(page.locator(".tile[data-tile='memoria'] .tile-value")).toHaveText("sin consolidar");
     const bar = page.locator(".review-bar");
     const total = Number(/Revisados 0 de (\d+)/.exec((await bar.textContent()) ?? "")?.[1] ?? "0");
     expect(total).toBeGreaterThan(10);
@@ -159,7 +161,7 @@ test.describe("portada: cifras, anillo con capas y cajón de tablas", () => {
 
       // Dos columnas: el segundo tile está a la derecha del primero, y el tercero debajo.
       const tiles = page.locator(".tiles .tile");
-      await expect(tiles).toHaveCount(6);
+      await expect(tiles).toHaveCount(7);
       const boxes = await tiles.evaluateAll((nodes) => nodes.map((node) => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, h: r.height }; }));
       expect(boxes[1]?.x ?? 0).toBeGreaterThan(boxes[0]?.x ?? 0);
       expect(boxes[2]?.y ?? 0).toBeGreaterThan(boxes[0]?.y ?? 0);

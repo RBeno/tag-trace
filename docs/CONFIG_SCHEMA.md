@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.24.0
+version: 0.29.2
 status: baseline-candidate
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Configuración de circuito
@@ -278,7 +278,11 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `max_false_points` | R-FLO-008, R-FLO-009: puntos marcados por azar que se aceptan en todo el circuito. |
 | `charging.long_stay_ratio`, `charging.min_stays_for_median` | R-CO-002: cuántas veces la estancia habitual hace larga una permanencia, y cuántas estancias completas hacen falta para tener una habitual. |
 | `charging.usage_max_chance`, `charging.usage_min_deviation` | R-CO-009: azar máximo y desviación mínima (fracción de la parte que le tocaría) para señalar una calle que se usa menos o más que las demás. Provisionales: 0,001 y 0,25. |
+| `plan.min_vehicles_for_proposal` | R-GRA-020 (ADR-0016): AGV distintos que tienen que leer un código no instalado en el plano para proponerlo como tag nuevo **o como sustitución**. Provisional: 2, el mismo criterio que R-DAT-021. Si la instantánea no dice cuántos AGV lo leyeron, no se propone ninguna de las dos. |
+| `change_class.sustained_files`, `change_class.collective_share` | R-MEM-005 (OQ-146, OQ-147): ficheros seguidos para que un cambio sea sostenido (3) y parte de los AGV que pasan por el sitio que tiene que superarse para que sea colectivo (0,5, «la mayoría»). Decididos por el propietario el 2026-09-27. |
 | `drift.max_chance` | R-DAT-016 (OQ-138): azar máximo para afirmar un `desaparecido` o un `nuevo` entre periodos. Provisional: 0,001, el mismo que `tag_changes.max_chance`. |
+| `plant_estimators.night_low_share`, `plant_estimators.return_gap_quantile`, `plant_estimators.head_wait_quantile`, `plant_estimators.precise_pause_quantile` | OQ-151: los números de la definición aprobada de los estimadores de los valores de planta —la mitad de la mediana de producción para que una hora sea de noche (0,5), y los cuantiles de los huecos que volvieron (0,99), de las esperas del primero de cola (0,95) y de las esperas en una parada precisa (0,05)—. No son valores de planta: son cómo se miden. El percentil 95 del tránsito de un tramo cargado (margen del FIFO) lo da `fifo.ts` con su mediana y no está aquí. |
+| `plant_estimators.same_time_measure_tolerance_ms` | OQ-154 (propietario, 2026-09-27): margen de hora local con que `measurePlantValues` empareja, **solo para medir**, las paradas de la producción que se repiten otro día. Provisional: 60 min. Es una tolerancia de medida, no operativa: ancha para que la estimación de «a la misma hora» pueda ver una tolerancia de planta mayor que la vigente (`flow_stops.same_time_tolerance_ms`, 15 min), con la que nunca podría salir un valor mayor que ella. El análisis (`productionStops`) sigue emparejando con la vigente; esta no cambia ningún resultado del análisis. |
 
 Los valores que hoy viven en `PROVISIONAL_CONFIG` con aspecto de dato de planta —horas de arranque de
 turno, regímenes, la hora sin leer que hace una desconexión, los dos minutos del bloqueo, la
@@ -287,6 +291,49 @@ mínimo entre periodos distantes— **no se fijan como configuración de planta*
 2026-09-26, OQ-140): «es información que tendría que salir del análisis y la consolidación continua».
 Son provisionales hasta que la memoria del circuito (F4) los mida y los consolide con confirmación
 humana (ADR-0010).
+
+**Valores de planta del circuito (3.59.0, `src/domain/plant-values.ts`).** Siete de ellos —régimen de
+noche, horas de arranque de turno, tiempo sin leer que es desconexión, bloqueo del primero de cola,
+tolerancia de «a la misma hora», margen del FIFO y duración mínima de una parada precisa— se pueden
+confirmar por circuito: **siete valores, ocho claves**, porque la noche son dos (`noche-desde` y
+`noche-hasta`). Cada confirmación es un evento append-only con valor,
+fecha efectiva, fecha de registro, razón obligatoria y origen `manual`; al analizar un fichero rige el
+último valor efectivo al inicio de su ventana, y sin ninguno rige el provisional. La versión de
+configuración lo dice (`provisional-0+planta(clave#n,…)`) y cada instantánea la guarda (FR-031). El
+hueco entre periodos distantes no entra: es de análisis (OQ-151). Las horas son enteras de 0 a 23;
+las duraciones, mayores que cero y como mucho 24 h, que es un control de errores de tecleo y no un
+dato de planta.
+
+**Propuestas de la memoria (3.60.0, OQ-151).** Cada instantánea guarda desde 3.60.0 lo que miden los
+estimadores (`plantMeasures`), y la memoria estima cada valor en cada una de las últimas versiones
+consolidadas no revocadas: **tantas como `change_class.sustained_files`** (3), el mismo número de
+ficheros seguidos que hace sostenido un cambio; no hay un umbral propio. Redondeadas a la unidad del
+valor, si todas coinciden **se propone** y la persona lo confirma con razón (origen `propuesta`, con
+las versiones de las que sale); si no coinciden o alguna no permite estimar, no se propone nada, se
+enseña la estimación de cada versión y el valor lo introduce una persona. Los números de cada
+definición (la mitad, los percentiles) están en `plant_estimators`. Cómo mide cada estimador:
+
+| Valor | De qué análisis | Estimador |
+|---|---|---|
+| Régimen de noche | perfil horario de toda la flota, por hora cubierta | tramo circular de horas con menos de `night_low_share` (la mitad) de la mediana de las horas de fuera de la **noche vigente**; exige cada hora del día cubierta entera al menos una vez (el día del cambio de hora le falta una y no estima), y dos tramos igual de largos no se eligen |
+| Horas de turno | paradas de la producción del fichero | hora de inicio de las que se repiten otro día (la de dos repeticiones a las 13:29 y 13:31 es las 14); con un solo día, no estima. Las repeticiones se emparejan al medir con la **tolerancia de medida** `plant_estimators.same_time_measure_tolerance_ms` (60 min; OQ-154), no con la vigente |
+| «A la misma hora» | las mismas paradas | mayor diferencia en minutos entre repeticiones, emparejadas al medir con la **tolerancia de medida** (60 min; OQ-154), así que puede proponer una tolerancia mayor que la que rige; lo dice en su explicación |
+| Desconexión | huecos de cada AGV que terminan en una lectura, sin los de carga online | cuantil `return_gap_quantile` (percentil 99), con al menos `bands.min_band_samples` huecos |
+| Bloqueo del primero de cola | paradas sin explicación del primero de cola que acabaron avanzando | cuantil `head_wait_quantile` (percentil 95) de su exceso, con al menos `bands.min_band_samples` |
+| Margen del FIFO | tránsito de cada tramo cargado | el mayor percentil 95 menos mediana (el percentil lo da `fifo.ts`) |
+| Parada precisa | esperas en las paradas precisas declaradas | cuantil `precise_pause_quantile` (percentil 5), con al menos `critical_points.parada_precisa.min_samples` |
+
+**Tolerancia de medida (3.62.0, OQ-154; propietario, 2026-09-27).** Hasta 3.61.0 las repeticiones de
+una parada eran las que el análisis emparejó con la tolerancia vigente de «a la misma hora», y el
+estimador de esa tolerancia —y el de las horas de turno, que depende del mismo emparejamiento— no
+podía proponer un valor mayor que el vigente. Desde 3.62.0 `measurePlantValues` vuelve a emparejar las
+paradas del fichero con `plant_estimators.same_time_measure_tolerance_ms` (60 min), solo para medir; el
+emparejamiento operativo del análisis no cambia. Las medidas (`plantMeasures`) guardadas en
+instantáneas anteriores a 3.62.0 se emparejaron con la vigente y **quedan como están** (append-only,
+sin corrección): la propuesta recalcula las estimaciones desde las medidas guardadas, no las medidas,
+así que hasta que haya `change_class.sustained_files` versiones medidas con 3.62.0 la coincidencia
+puede no darse, y se enseña la estimación de cada versión. El límite se mantiene solo para la noche,
+que se estima frente a la noche vigente (la mediana de producción es la de fuera de ella).
 
 ### 3.6 Cohortes
 
@@ -376,8 +423,12 @@ origin         : quién o qué la introdujo
 state          : draft | active | superseded
 ```
 
-Una configuración `draft` permite analizar en modo exploratorio pero **no** consolidar. Un análisis
-que abarque dos vigencias distintas debe separarse por tramos o declararse `unknown` en la frontera.
+**La configuración provisional (`draft`) permite consolidar** (propietario, 2026-09-27, OQ-152:
+«OQ-152 permite consolidar»): sin consolidar, la memoria no podría medir los valores de planta que la harán
+definitiva (OQ-140). Cada instantánea guarda con qué configuración se midió (`configVersion`,
+FR-031), así que ninguna versión pierde de qué configuración salió. **Un análisis que abarque dos
+vigencias** no se parte por tramos: la aplicación avisa de que un valor cambia dentro de lo cargado
+(propietario, 2026-09-27, OQ-153: «OQ-153 quedarnos con el aviso»).
 
 ## 5. Privacidad
 

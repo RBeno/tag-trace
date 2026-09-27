@@ -14,9 +14,9 @@ Antes de cualquier tarea, en este orden:
 
 ## Estado actual
 
-La fase vigente la dice `docs/project_state.json`, no este fichero. Al 2026-09-26: fase **F3**, en
-curso, con la aplicación en marcha; F4 espera `CONTINÚA FASE 4` del propietario. El relevo entre
-conversaciones está al final de `docs/PROJECT_MEMORY.md`.
+La fase vigente la dice `docs/project_state.json`, no este fichero. Al 2026-09-26: fase **F4**
+(memoria longitudinal y consolidación), abierta por el propietario ese día; F5 espera `CONTINÚA
+FASE 5`. El relevo entre conversaciones está al final de `docs/PROJECT_MEMORY.md`.
 
 ## Límites que no se negocian
 

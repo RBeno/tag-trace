@@ -2,7 +2,7 @@
 
 Sistema local y explicable de diagnóstico longitudinal y gemelo digital de circuitos AGV a partir de lecturas históricas de tags.
 
-> Estado actual: **Fase 3 — diagnóstico explicable**, en curso. La aplicación se publica en <https://rbeno.github.io/tag-trace/>. La fase vigente la registra `docs/project_state.json`.
+> Estado actual: **Fase 4 — memoria longitudinal y consolidación**, en curso. La aplicación se publica en <https://rbeno.github.io/tag-trace/>. La fase vigente la registra `docs/project_state.json`.
 
 ## Propósito
 

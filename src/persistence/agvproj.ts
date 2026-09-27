@@ -6,16 +6,38 @@
  * distinguía de uno válido. Aquí un proyecto corrupto **se nota**.
  *
  * Lo que va dentro y lo que no: `.agvproj` lleva la identidad del circuito, su configuración, el
- * inventario de fuentes con sus hashes y la cobertura. **No lleva el bruto**, por decisión de
- * ADR-0012. Las lecturas se acumulan en el dispositivo; el fichero es lo que viaja entre
- * dispositivos, que además es un intercambio manual (CON-002).
+ * inventario de fuentes con sus hashes, la cobertura y, desde el esquema 2, **las instantáneas de
+ * cada fichero** (sección `instantaneas`, ADR-0015 §5): es lo que hace que el circuito viaje con toda
+ * su evolución. Desde el esquema 3 lleva además **la memoria consolidada** (sección `memoria`, F4,
+ * `MEMORY_CONSOLIDATION.md` §10 y §11): las versiones y el estado de linaje, para que al abrirlo se
+ * compare la cadena de hashes con la local. Desde el esquema 4 lleva **el plano físico** (sección
+ * `plano`, ADR-0016): sus eventos append-only. Desde el esquema 5 lleva **los valores de planta
+ * confirmados** (sección `valores`, OQ-140): sus eventos append-only. **No lleva el bruto**, por decisión de ADR-0012. Las lecturas se acumulan en el
+ * dispositivo; el fichero es lo que viaja entre dispositivos, que además es un intercambio manual
+ * (CON-002).
  */
 
+import { sortVersions, type ConsolidatedVersion, type LineageEvent, type LineageRef, type LineageState } from "../domain/memory.js";
+import type { PlanEvent } from "../domain/plan.js";
+import { plantValueEventProblem, type PlantValueEvent } from "../domain/plant-values.js";
 import { canonicalise, semanticHash } from "../domain/semantic-hash.js";
 import { readZip, writeZip, ZipError } from "./zip.js";
 
 /** Un número desconocido se rechaza sin tocar nada. Subirlo obliga a escribir su migración. */
-export const AGVPROJ_SCHEMA_VERSION = 1;
+export const AGVPROJ_SCHEMA_VERSION = 5;
+
+/**
+ * Los esquemas anteriores que esta versión sigue abriendo, con lo que hay que hacer con cada uno.
+ *
+ * El 1 no llevaba la sección `instantaneas`: un proyecto de entonces se abre tal cual, sin
+ * instantáneas, y lo dice quien lo enseña (`instantaneas` ausente). El 2 no llevaba `memoria`: se
+ * abre igual, sin memoria (`memoria` ausente, que es «sin-memoria» al clasificar el linaje). El 3 no
+ * llevaba `plano`: se abre igual, sin plano (`plano` ausente, que es «sin-plano» al importarlo). El 4
+ * no llevaba `valores`: se abre igual, sin valores confirmados (rigen los provisionales). No hay
+ * nada que reescribir: las secciones que traían significan lo mismo. Un esquema que no esté aquí ni
+ * sea el vigente se rechaza.
+ */
+export const AGVPROJ_READABLE_VERSIONS: readonly number[] = [1, 2, 3, 4, AGVPROJ_SCHEMA_VERSION];
 
 const MANIFEST = "manifest.json";
 
@@ -110,8 +132,10 @@ export async function readProject(bytes: Uint8Array): Promise<Project> {
   }
   const manifest = JSON.parse(new TextDecoder().decode(manifestEntry.data)) as ProjectManifest;
 
-  // 2. Una versión desconocida se rechaza sin tocar el almacenamiento local.
-  if (manifest.schema_version !== AGVPROJ_SCHEMA_VERSION) {
+  // 2. Una versión desconocida se rechaza sin tocar el almacenamiento local. Las anteriores conocidas
+  //    se abren: el esquema 1 es el 2 sin la sección `instantaneas`, el 2 es el 3 sin `memoria`, el 3
+  //    es el 4 sin `plano` y el 4 es el 5 sin `valores`.
+  if (!AGVPROJ_READABLE_VERSIONS.includes(manifest.schema_version)) {
     throw new ProjectError(
       `El proyecto usa el esquema ${manifest.schema_version} y esta versión entiende el ` +
         `${AGVPROJ_SCHEMA_VERSION}.`,
@@ -151,4 +175,220 @@ export async function readProject(bytes: Uint8Array): Promise<Project> {
   }
 
   return { manifest, sections };
+}
+
+// --- Sección `memoria` (esquema 3) -----------------------------------------------------------------
+
+/** El nombre de la sección de memoria en el contenedor. */
+export const MEMORY_SECTION = "memoria";
+
+/**
+ * Lo que viaja de la memoria consolidada: las versiones del linaje activo y de los archivados —tal
+ * cual, con su hash, para que el destino pueda encadenarlas y clasificar la relación— y el estado de
+ * linaje. Un linaje entrante sin resolver **no** viaja: es una decisión pendiente de este dispositivo.
+ */
+export interface ProjectMemorySection {
+  readonly versiones: readonly ConsolidatedVersion[];
+  readonly linaje: {
+    readonly activo: LineageRef | null;
+    readonly archivados: readonly LineageRef[];
+    readonly eventos: readonly LineageEvent[];
+  };
+}
+
+/** Construye la sección `memoria` a partir de lo guardado. `undefined` si el circuito no tiene versiones. */
+export function memorySection(versions: readonly ConsolidatedVersion[], state: LineageState | undefined): ProjectMemorySection | undefined {
+  if (versions.length === 0) return undefined;
+  const active = state?.active ?? null;
+  const archived = state?.archived ?? [];
+  const travelling = new Set([...(active?.hashes ?? []), ...archived.flatMap((lineage) => lineage.hashes)]);
+  // Sin estado guardado (no debería pasar: se escriben juntos) viajan todas las versiones como un linaje.
+  const versiones = state === undefined ? sortVersions(versions) : sortVersions(versions.filter((version) => travelling.has(version.hash)));
+  return {
+    versiones,
+    linaje: {
+      activo: active ?? (versiones.length === 0 ? null : { id: (versiones[versiones.length - 1] as ConsolidatedVersion).lineage, hashes: versiones.map((version) => version.hash) }),
+      archivados: archived,
+      eventos: state?.lineageEvents ?? [],
+    },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isLineageRef(value: unknown): value is LineageRef {
+  return isRecord(value) && typeof value["id"] === "string" && Array.isArray(value["hashes"]) && value["hashes"].every((hash) => typeof hash === "string");
+}
+
+/**
+ * Qué le falta a una versión consolidada para tener la forma esperada, o `null` si la tiene. Se mira
+ * la forma, no el contenido: que el hash sea el suyo y que la cadena encadene lo comprueba
+ * `verifyProjectMemory` al importar, con las versiones ya tipadas.
+ */
+function versionShapeProblem(value: unknown): string | null {
+  if (!isRecord(value)) return "una versión no es un objeto";
+  if (typeof value["hash"] !== "string" || typeof value["version"] !== "number" || typeof value["lineage"] !== "string" || !isRecord(value["snapshot"])) {
+    return "una versión no tiene hash, número, linaje o instantánea";
+  }
+  if (typeof value["circuitId"] !== "string") return "una versión no tiene circuito";
+  if (typeof value["createdAt"] !== "number") return "una versión no tiene fecha de creación";
+  if (value["previousHash"] !== null && typeof value["previousHash"] !== "string") return "una versión tiene un hash anterior inválido";
+  const basedOn = value["basedOn"];
+  if (
+    !isRecord(basedOn) ||
+    typeof basedOn["sourceId"] !== "string" ||
+    typeof basedOn["sourceHash"] !== "string" ||
+    typeof basedOn["fileName"] !== "string" ||
+    !isRecord(basedOn["window"]) ||
+    typeof basedOn["window"]["from"] !== "number" ||
+    typeof basedOn["window"]["to"] !== "number"
+  ) {
+    return "una versión no dice en qué fichero se basa";
+  }
+  const decisions = value["decisions"];
+  if (!Array.isArray(decisions) || !decisions.every((decision) => isRecord(decision) && typeof decision["key"] === "string" && typeof decision["state"] === "string")) {
+    return "una versión no trae sus decisiones";
+  }
+  const revoked = value["revoked"];
+  if (revoked !== null && (!isRecord(revoked) || typeof revoked["at"] !== "number" || typeof revoked["reason"] !== "string")) {
+    return "una versión tiene una revocación sin fecha o razón";
+  }
+  return null;
+}
+
+/**
+ * La sección `memoria` de un proyecto ya validado por hash, con su forma comprobada; `undefined` si el
+ * proyecto no la trae (esquemas 1 y 2). Una forma que no sea la esperada se rechaza: los hashes
+ * garantizan que nadie tocó el fichero, no que lo escribiera una versión que entendemos.
+ */
+export function readMemorySection(project: Project): ProjectMemorySection | undefined {
+  const raw = project.sections[MEMORY_SECTION];
+  if (raw === undefined) return undefined;
+  const malformed = (what: string): ProjectError =>
+    new ProjectError(`La sección «${MEMORY_SECTION}» no tiene la forma esperada: ${what}.`, "El proyecto se creó con otra versión de la aplicación. No se ha cargado nada.");
+  if (!isRecord(raw)) throw malformed("no es un objeto");
+  const versiones = raw["versiones"];
+  if (!Array.isArray(versiones)) throw malformed("faltan las versiones");
+  for (const version of versiones as unknown[]) {
+    const problem = versionShapeProblem(version);
+    if (problem !== null) throw malformed(problem);
+  }
+  const linaje = raw["linaje"];
+  if (!isRecord(linaje)) throw malformed("falta el linaje");
+  const activo = linaje["activo"];
+  const archivados = linaje["archivados"];
+  const eventos = linaje["eventos"];
+  if (activo !== null && !isLineageRef(activo)) throw malformed("el linaje activo no es válido");
+  if (!Array.isArray(archivados) || !archivados.every(isLineageRef)) throw malformed("los linajes archivados no son válidos");
+  if (!Array.isArray(eventos)) throw malformed("faltan los eventos de linaje");
+  return {
+    versiones: versiones as readonly ConsolidatedVersion[],
+    linaje: { activo: activo as LineageRef | null, archivados: archivados as readonly LineageRef[], eventos: eventos as readonly LineageEvent[] },
+  };
+}
+
+// --- Sección `plano` (esquema 4) -------------------------------------------------------------------
+
+/** El nombre de la sección del plano físico en el contenedor. */
+export const PLAN_SECTION = "plano";
+
+/** Lo que viaja del plano físico (ADR-0016): sus eventos, tal cual, en orden de registro. */
+export interface ProjectPlanSection {
+  readonly eventos: readonly PlanEvent[];
+}
+
+/** Construye la sección `plano`. `undefined` si el circuito no tiene plano. */
+export function planSection(events: readonly PlanEvent[]): ProjectPlanSection | undefined {
+  if (events.length === 0) return undefined;
+  return { eventos: [...events].sort((a, b) => a.seq - b.seq) };
+}
+
+const PLAN_EVENT_TYPES = ["crear-plano", "crear-ubicacion", "instalar", "retirar", "sustituir", "cerrar-ubicacion", "revision-manual"];
+
+/** Qué le falta a un evento del plano para tener la forma esperada, o `null` si la tiene. */
+function planEventProblem(value: unknown): string | null {
+  if (!isRecord(value)) return "un evento no es un objeto";
+  const { type } = value;
+  if (typeof type !== "string" || !PLAN_EVENT_TYPES.includes(type)) return "un evento tiene un tipo desconocido";
+  if (typeof value["circuitId"] !== "string") return "un evento no tiene circuito";
+  if (!Number.isInteger(value["seq"])) return "un evento no tiene número";
+  if (typeof value["effectiveAt"] !== "number" || typeof value["recordedAt"] !== "number") return "un evento no tiene sus fechas";
+  if (typeof value["reason"] !== "string" || value["reason"].trim() === "") return "un evento no tiene razón";
+  if (value["origin"] !== "manual" && value["origin"] !== "propuesta") return "un evento no tiene origen";
+  const evidence = value["evidence"];
+  if (evidence !== null && (!isRecord(evidence) || typeof evidence["detail"] !== "string")) return "un evento tiene una evidencia sin detalle";
+  if (type === "crear-plano") {
+    const ring = value["ring"];
+    if (typeof value["fromVersion"] !== "number" || !Array.isArray(ring)) return "el evento de creación no tiene versión o anillo";
+    if (!ring.every((entry) => isRecord(entry) && typeof entry["locationId"] === "string" && typeof entry["tagId"] === "string")) return "el anillo inicial no es válido";
+    return null;
+  }
+  if (typeof value["locationId"] !== "string") return "un evento no nombra su ubicación";
+  if (type === "crear-ubicacion") {
+    if (value["kind"] !== "anillo" && value["kind"] !== "salida") return "una ubicación nueva no tiene clase";
+    for (const field of ["after", "branchFrom", "virtualTag"]) {
+      const entry = value[field];
+      if (entry !== null && typeof entry !== "string") return `una ubicación nueva tiene «${field}» inválido`;
+    }
+  }
+  if ((type === "instalar" || type === "sustituir") && typeof value["tagId"] !== "string") return "un evento de instalación no nombra el tag";
+  if (type === "revision-manual" && (typeof value["result"] !== "string" || typeof value["note"] !== "string")) return "una revisión manual no tiene resultado o nota";
+  return null;
+}
+
+/**
+ * La sección `plano` de un proyecto ya validado por hash, con su forma comprobada; `undefined` si el
+ * proyecto no la trae (esquemas 1 a 3). Una forma que no sea la esperada se rechaza.
+ */
+export function readPlanSection(project: Project): ProjectPlanSection | undefined {
+  const raw = project.sections[PLAN_SECTION];
+  if (raw === undefined) return undefined;
+  const malformed = (what: string): ProjectError =>
+    new ProjectError(`La sección «${PLAN_SECTION}» no tiene la forma esperada: ${what}.`, "El proyecto se creó con otra versión de la aplicación. No se ha cargado nada.");
+  if (!isRecord(raw)) throw malformed("no es un objeto");
+  const eventos = raw["eventos"];
+  if (!Array.isArray(eventos)) throw malformed("faltan los eventos");
+  for (const event of eventos as unknown[]) {
+    const problem = planEventProblem(event);
+    if (problem !== null) throw malformed(problem);
+  }
+  return { eventos: eventos as readonly PlanEvent[] };
+}
+
+// --- Sección `valores` (esquema 5) -----------------------------------------------------------------
+
+/** El nombre de la sección de valores de planta confirmados en el contenedor. */
+export const PLANT_VALUES_SECTION = "valores";
+
+/** Lo que viaja de los valores de planta confirmados (OQ-140): sus eventos, tal cual, en orden de registro. */
+export interface ProjectPlantValuesSection {
+  readonly eventos: readonly PlantValueEvent[];
+}
+
+/** Construye la sección `valores`. `undefined` si el circuito no tiene ningún valor confirmado. */
+export function plantValuesSection(events: readonly PlantValueEvent[]): ProjectPlantValuesSection | undefined {
+  if (events.length === 0) return undefined;
+  return { eventos: [...events].sort((a, b) => a.seq - b.seq) };
+}
+
+/**
+ * La sección `valores` de un proyecto ya validado por hash, con su forma comprobada —cada valor contra
+ * su validación, como si lo hubiera escrito una persona aquí—; `undefined` si el proyecto no la trae
+ * (esquemas 1 a 4). Una forma que no sea la esperada se rechaza.
+ */
+export function readPlantValuesSection(project: Project): ProjectPlantValuesSection | undefined {
+  const raw = project.sections[PLANT_VALUES_SECTION];
+  if (raw === undefined) return undefined;
+  const malformed = (what: string): ProjectError =>
+    new ProjectError(`La sección «${PLANT_VALUES_SECTION}» no tiene la forma esperada: ${what}.`, "El proyecto se creó con otra versión de la aplicación. No se ha cargado nada.");
+  if (!isRecord(raw)) throw malformed("no es un objeto");
+  const eventos = raw["eventos"];
+  if (!Array.isArray(eventos)) throw malformed("faltan los eventos");
+  for (const event of eventos as unknown[]) {
+    const problem = plantValueEventProblem(event);
+    if (problem !== null) throw malformed(problem);
+  }
+  return { eventos: eventos as readonly PlantValueEvent[] };
 }

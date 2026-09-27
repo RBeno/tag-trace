@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.36.0
+version: 0.47.2
 status: baseline-candidate
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Especificación de experiencia de usuario
@@ -24,17 +24,26 @@ la página era una sola lista de cuarenta y tres secciones en el orden en que se
 de alto sin abrir nada, sin índice, y «Lo que hay que mirar» era la sección 22. Ahora una barra fija
 bajo la cabecera (`nav` con `role="tablist"`, botones `role="tab"` con `aria-selected`, flechas de
 teclado; en el móvil, fichas desplazables en horizontal de 44 px con dedo) reparte el análisis en
-seis pestañas. La activa va en el `hash` de la URL (`#tags`, `#agv`…) y se restaura al recargar; por
+siete pestañas (la séptima, Memoria, desde 3.51.0). La activa va en el `hash` de la URL (`#tags`, `#agv`…) y se restaura al recargar; por
 defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 
 | Pestaña | Qué contiene |
 |---|---|
-| **Resumen** | La **portada** (3.49.0): la tira de seis cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta y línea—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. |
+| **Resumen** | La **portada** (3.49.0): la tira de siete cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta, línea y memoria—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. |
 | **Tags** | Inventario de tags; «Lo que hay que mirar» (tags); rotura y degradación de cada tag; mapa de omisión; cambios de tag; tags leídos fuera de la lista; limpieza de la lista; contraste contra Vsystem; orden del circuito según las lecturas; comparación entre dos periodos. |
 | **AGV** | Flota del circuito, flota en el circuito y vida de cada AGV (con las paradas de la producción y los primeros de cola); lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; ritmo de cada AGV y quién retiene; y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
 | **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito en palabras, con el enlace al dibujo del Resumen, su lista ordenada y los tags fuera del anillo. |
 | **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
-| **Datos** | Listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
+| **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje; debajo, el **plano del circuito** (§6.1). |
+| **Datos** | Valores de planta del circuito (3.59.0: el provisional y el confirmado de cada uno, con su fecha y su razón, «Cambiar…» con razón obligatoria, dónde mide el programa algo relacionado e historial; aviso si un valor cambia dentro de lo cargado; desde 3.60.0, «Propuesta de la memoria: X (coincide en v4, v5 y v6)» con «Confirmar la propuesta…», o «Sin propuesta: … Introduce el valor.» con la estimación de cada versión); listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
+
+**Más hallazgos del periodo (3.57.0).** Los hallazgos que guarda la instantánea del fichero y que
+ninguna sección pinta —cada sección enseña los primeros de cada tipo— van a la bandeja con su propia
+tarjeta, bajo ese título: cuentan al consolidar y tienen que poder revisarse. Cada tarjeta lleva su
+clave de revisión como atributo (`data-review-key`).
+
+La barra fija de la revisión parte su fila en dos si el título y «Siguiente pendiente» no caben, y
+sin hallazgos no ofrece el botón (3.54.0).
 
 Lo que se ve en todas las pestañas: la cabecera, la barra de pestañas con el buscador, la barra fija
 de la revisión (§4.3), el selector de lecturas con el nombre del circuito, el progreso y los
@@ -45,7 +54,7 @@ que todo lo demás y en cifras proporcionales —nunca `tabular-nums`, que a ese
 suelto—, una etiqueta corta encima y la línea de contexto debajo. Tinta normal, sin color de serie;
 solo el tile de hallazgos lleva el acento en la cifra, y solo mientras quede algún hallazgo de rango 1
 pendiente. Cada tile activa la pestaña que lo explica y desplaza hasta su encabezado. Dos columnas en
-el móvil, tres en tableta y seis en una fila desde 1.100 px, con alto uniforme y sin gráfico dentro.
+el móvil, tres en tableta y siete en una fila desde 1.100 px, con alto uniforme y sin gráfico dentro.
 De dónde sale cada cifra, y qué dice cuando el dato no existe (siempre «sin datos» en gris, nunca un
 cero inventado):
 
@@ -56,17 +65,17 @@ cero inventado):
 | Cobertura | horas cargadas (suma de los tramos de cobertura, R-DAT-007) | «N ficheros, de <primera> a <última>» | Datos, «Cobertura cargada» |
 | Hallazgos | pendientes de total, contando las tarjetas de la bandeja; se rehace con cada marca | «N pueden parar la planta» (rango 1 pendientes) o «revisión completa» | la bandeja del Resumen |
 | Vuelta | la vuelta mediana (`lapMs`) del **último fichero medido**, la misma que «Mediciones por fichero» enseña como «Vuelta» | «fichero X; el anterior, Y min» | Tiempos, «Mediciones por fichero» |
+| Memoria | «vN», la versión vigente; sin versiones o con todas revocadas, «sin consolidar» en gris | «de <fichero base>, <fecha>» | Memoria |
 | Línea | paradas de la línea en producción (`lineFeed.stops`) | «X min sin paso; un AGV cada Y s de mediana» (`rhythm` de producción: `aboveFenceMs`, `cycleMs`); sin lista `linea`, «sin línea declarada» | Línea y calles, «Alimentación de la línea» |
 
-**Las seis se construyen al llegar las vistas**, cada una en su pestaña oculta, y se rehacen enteras
+**Las pestañas de análisis se construyen al llegar las vistas**, cada una en su pestaña oculta, y se rehacen enteras
 en cada importación. Lo que se pretendía con construirlas a demanda —que un `canvas` oculto no mida
 su ancho— ya lo resuelve cada gráfico por su cuenta: mide con `ResizeObserver` y se dibuja la primera
 vez que su pestaña se enseña. Y la bandeja del Resumen necesita todas las tarjetas, que nacen dentro
 de la sección que las explica: construirlas dos veces costaría el doble para enseñar lo mismo.
 
 Áreas previstas que todavía no existen en el producto y que irán a su pestaña cuando lleguen:
-gestor de circuitos y preparación del análisis (Datos), comparador y consolidación (Resumen, F4),
-incidencias con casos similares y contramedidas (Línea y calles), configuración (Datos).
+gestor de circuitos y preparación del análisis (Datos), incidencias con casos similares y contramedidas (Línea y calles), configuración (Datos).
 
 ## 3. Flujo de análisis
 
@@ -412,6 +421,10 @@ críticos y la deriva ya calculaban y hasta ahora solo se leía en tarjetas y ta
 | **Salidas de los tags con reparto** | cruce (las ramas vuelven a juntarse) o bifurcación (no) | el grosor es la cuota, con su soporte; el margen de saltos es configuración |
 | **Ocupación de las calles de carga** | quién estuvo en cada calle y cuándo, la calle sin servicio, quién esperó de más; y las tres comprobaciones de planta (R-CO-009): la calle que se usa menos o más que las demás con su cuota, el tag de la calle que no se leyó en tantas de tantas estancias, y quién no entró a cargar | solo es barra lo que se sabe: una estancia sin entrada o sin salida es una marca en su extremo conocido; fuera de cobertura, trama (R-CO-007, R-DAT-007); el detalle plegado da la cuota de cada calle y qué se lee dentro de cada una |
 | **Tiempos por sección entre anclas** | cuánto se tarda de un ancla a la siguiente —kitting, cruce, línea— por régimen, y cómo se mueve por fichero | tabla por sección y régimen con muestras, p50, p80, p95 y valla, en su caja desplazable; la columna de tags dice «48 tags, de 60000 a 60147» y la lista entera va en el detalle plegado junto al p50 por fichero (3.47.0: la lista en la tabla partía las cabeceras letra a letra); CSV; sin dos anclas en el anillo, una línea que dice qué declarar (R-TIM-012) |
+| **El anillo en el tiempo** (Resumen) | cómo estaba el circuito en cada fichero: un control de tiempo (anterior/siguiente, deslizador y lista, con la ventana de cada fichero) redibuja el anillo con esa instantánea conservando la capa; lo que cambia frente a la instantánea vecina lleva un arco de acento por fuera, con leyenda y lectura | la última instantánea es la de hoy y coincide con el análisis; en otra, el pie lo dice y avisa de lo que la instantánea no guarda (zona, paradas sin explicación); con un solo fichero el control no aparece (ADR-0015, R-DAT-023) |
+| **Evolución** (Resumen, bajo el anillo) | de una instantánea a la siguiente: cuántos tags aparecen, desaparecen, se mueven, dejan o empiezan a leerse, cuántos tramos van más lentos o más rápidos, la vuelta antes y después; los primeros cambios con su detalle y el resto en el cajón | hechos, no causas; un cambio de clase de inventario se cuenta pero no resalta el anillo (es etiqueta, no movimiento: cargar las listas entre dos ficheros cambia la clase de todos); con un solo fichero se dice |
+| **El circuito a lo largo de los ficheros** (Tiempos) | el p50 de producción de cada sección entre anclas, una línea por sección y una columna por instantánea, en un solo eje desde cero | como mucho ocho series (las siete mayores y «otras»); un hueco es una instantánea que no midió esa sección; leyenda siempre, lectura al tocar y tabla en el cajón; sin dos instantáneas se dice |
+| **Ficheros del circuito** (Datos) | por fichero: ventana y si tiene lecturas retenidas, solo instantánea, o ninguna instantánea (vuelve a cargarlo) | es la única vista que dice qué alcanza el expediente y el replay (R-DAT-023) |
 | **Entrada y salida del tramo cargado** | un adelantamiento como una línea que cruza a las demás | candidato, no avería: OQ-107 sigue sin catálogo de excepciones (R-FLO-001) |
 | **Deriva entre los dos periodos** | qué tag desapareció, apareció o se sustituyó, en lecturas | correlación de posición y tiempo, nunca confirmación física (R-DAT-017, R-EVI-004) |
 | **Inventario** | cuánto hay que valorar frente a lo que no, y qué acción pide cada clase | sin color de severidad: «a valorar» es una pregunta, no un problema (§5.2) |
@@ -661,6 +674,95 @@ La pantalla muestra explícitamente:
 
 El botón final usa una confirmación inequívoca. No existe consolidación automática ni deshacer destructivo; una corrección genera nueva versión/revocación.
 
+**Implementado en 3.51.0: la pestaña Memoria** (`src/presentation/memory-ui.ts`). De arriba abajo:
+
+1. **Memoria del circuito**: «Versión vigente: vN — de <fichero>, <fecha>» con el recuento de
+   decisiones, o «Sin memoria consolidada todavía.».
+2. **Lo observado frente a la memoria vN**: el delta de la instantánea del fichero de trabajo contra
+   la vigente, pintado igual que «Evolución» (cifras, lista y el detalle en el cajón); «Nada distinto
+   de la memoria» si no cambia nada; sin vigente, «Sin comparación» con la causa.
+3. **Consolidar periodo**: una lista de condiciones leída de la bandeja (fichero con instantánea,
+   hallazgos sin pendientes, sin periodo de incidencia, sin bifurcación) que orienta, no decide:
+   manda la previsualización del Worker. «Previsualizar vN+1» abre la previsualización con los
+   bloqueos en palabras —los pendientes por su título, con «Ir a los hallazgos pendientes»—, los
+   avisos que no bloquean, las decisiones por estado, el delta frente a la vigente y el tamaño
+   estimado. Con bloqueos solo hay «Cancelar». Sin ellos, una nota opcional y «Confirmar y
+   consolidar», el único punto desde el que se escribe; el resultado, «Versión vN consolidada.».
+4. **Versiones**: de la más nueva a la más vieja, la vigente marcada, las revocadas con borde
+   discontinuo, chip y «Revocada el …: razón». «Revocar…» pide la razón y no se envía sin ella. La
+   numeración no se reutiliza.
+5. **Presupuesto**: «La memoria ocupa X KB en N versiones. Guardada comprimida: Y KB. Ficheros
+   originales archivados: Z KB.» (`MEMORY_CONSOLIDATION.md` §9, OQ-145).
+
+Desde 3.55.0 la previsualización añade «Incidencias excluidas del esperado» —cada hallazgo grave
+confirmado con lo que toca— y «Cambios frente al esperado», agrupados por clase con su razón y si
+pasan o no al esperado, plegados si son muchos; la lista de versiones resume cada una («3 cambios
+adoptados, 5 pendientes, 1 incidencia excluida»). La condición de incidencias ya no impide
+consolidar. Una incidencia enseña su ventana («de lun., 12:05 a lun., 12:40») y, si es de un AGV,
+«AGV X: no toca el grafo; queda registrada con su ventana»; un cambio que vuelve, «Se vio en vN y
+volvió…» (3.57.0).
+
+**Recorte de ventana (3.58.0)**: cada incidencia con ventana ofrece «Recortar su ventana al
+consolidar» con «Desde» y «Hasta» (fecha y hora, dentro de la ventana del fichero) y «Volver a
+previsualizar con el recorte»; la previsualización dice qué se recortó y cuántas lecturas quitó. Sin
+original archivado la casilla sale deshabilitada con el motivo. Si después de previsualizar se toca
+una casilla o un campo del recorte, «Confirmar y consolidar» se apaga y debajo de la nota se lee
+«Vuelve a previsualizar con el recorte para confirmar»: se consolida lo que se ve, no lo que se tocó
+después. Un recorte que no toca ninguna ventana de su incidencia sale como aviso junto a los recortes
+(«Avisos (no bloquean):») y no impide confirmar. Una incidencia con varias paradas (`windows`, «La
+producción se paró N veces») ofrece **una fila por parada** (OQ-155, propietario 2026-09-27): «Parada
+k de N: de … a …», la casilla «Recortar esta parada al consolidar» y sus «Desde» y «Hasta» propuestos
+con esa parada, no con la envolvente; cada fila se marca por su cuenta y la previsualización enseña un
+recorte por fila marcada. Dos recortes de la misma incidencia que compartan un instante los rechaza el
+Worker («Los recortes de «…» se solapan: sepáralos o une los dos en uno.»). Con una sola ventana la
+fila es la de siempre. Al confirmar, la interfaz devuelve al Worker la huella
+de la previsualización que enseñó; si lo recalculado ya no coincide (otra marca de revisión, otra
+versión llegada en un `.agvproj`), no se escribe nada y se lee «La previsualización ha cambiado desde
+que se mostró. Vuelve a previsualizar y confirma lo que veas.».
+
+**Comparar versiones (3.56.0)**: con dos o más versiones, dos selectores —de, a; por defecto la
+primera y la vigente—, «Comparar» y el resultado: las dos versiones con su fichero y su ventana, si
+alguna está revocada, cuántas hay entre medias, el delta pintado como en «Evolución» y lo que adoptó
+cada versión por el camino, plegado si es largo. Solo lee: no cambia la memoria.
+6. **Dos linajes**, solo con una bifurcación sin resolver: las dos listas y «Conservar la memoria
+   local» / «Adoptar la entrante (la local queda archivada)», con razón obligatoria; debajo,
+   «Elecciones de linaje».
+
+Al abrir un `.agvproj`, la aplicación dice la relación de su memoria con la local («idéntica», «la
+local va por delante: se conserva», «la entrante va por delante: se adopta», «bifurcadas: hay que
+elegir», «no traía memoria»); si trae revocaciones que aquí no estaban, las dice una por una con
+su razón («El proyecto trae la revocación de v1 (fecha): razón. Aquí queda revocada.»), y cuántas
+elecciones de linaje de otro dispositivo se añadieron al historial, donde salen marcadas «(en otro
+dispositivo)». Al exportar, cuántas versiones incluye.
+
+### 6.1 Plano del circuito (3.53.0, ADR-0016)
+
+Debajo de la memoria, en la misma pestaña (`src/presentation/plan-ui.ts`):
+
+1. **Sin plano**: una frase de qué es —«Cada ubicación guarda su historia aunque cambie el tag que
+   tiene puesto»— y «Crear el plano desde vN» con razón obligatoria; sin versión, «Consolida un
+   periodo para crear el plano.»
+2. **Cifras**: ubicaciones del anillo, salidas, sin leer en su sitio y cambios propuestos.
+3. **Ubicaciones del anillo**, en orden: identificador, tag o «sin tag físico (código virtual X)»,
+   estado en el fichero de trabajo con su cifra —«leído en X de N pasadas», «sin leer: N pasadas por
+   su sitio» con la ficha «inferido», «sin ocasión», «sin tag»—, el acumulado de todos los periodos y
+   la historia de tags. Un menú «Cambiar…» por ubicación: sustituir, retirar o instalar tag, añadir
+   una ubicación detrás, cerrarla; todas con fecha efectiva y razón obligatoria.
+4. **Salidas por revisar a mano**: tag, de qué ubicación cuelga y la última revisión («Sin revisar
+   todavía.» o «Revisada el …: resultado — nota»), con «Registrar revisión…».
+5. **Cambios propuestos**: una tarjeta por propuesta, con «Propuesta: todavía no se ha escrito
+   nada.», su evidencia y «Confirmar…» con razón; una salida pide además de qué ubicación cuelga.
+6. **Tramos entre ubicaciones**: por conexión o ruta, pasadas, media y desviación típica por
+   régimen, y en cuántos periodos se midió.
+7. **Por AGV (3.58.0)**: en cada ubicación con muestra suficiente, un plegable «Por AGV: N de M AGV
+   por debajo de la flota», con la flota entera, los AGV por debajo primero («AGV-07: 2 de 20
+   pasadas»), los demás plegados y cuántos no tienen muestra suficiente.
+8. **Historial del plano**: cada evento con su fecha efectiva, su razón y si vino de una propuesta.
+
+Ningún botón que escribe se activa sin razón. En la evolución, un tag instalado que no se lee sale
+«sin leer en su ubicación», nunca «desaparece». Al abrir un `.agvproj`, el mensaje dice la relación
+de su plano con el local; al exportar, cuántos cambios incluye.
+
 ## 7. Móvil, tableta y portátil
 
 La misma aplicación se usa con el móvil, con una tableta y con un portátil, y con dedo, ratón o el
@@ -711,7 +813,12 @@ La aplicación diferencia:
 
 - sin datos;
 - analizando;
-- cancelando;
+- cancelando («Cancelar» solo se ofrece en una importación, que tiene puntos de control; las
+  operaciones de memoria, plano y valores de planta escriben de una vez y terminan solas, sin botón
+  que cancelar);
+- otra operación en curso: mientras el Worker responde, los ficheros y los botones de memoria, plano
+  y valores de planta están apagados; el panel cuyo botón se pidió aun así dice «Hay otra operación
+  en curso; espera a que termine.» y nada se mata para empezar otra cosa;
 - resultado parcial;
 - fuente inválida;
 - archivo sospechoso de otro circuito;

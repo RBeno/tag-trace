@@ -50,6 +50,14 @@
   --viz-tramo-2: #d49a00;
   --viz-tramo-3: #1b9480;
   --viz-tramo-4: #c2185b;
+  /* Cuatro tonos más (3.50.0) para «El circuito a lo largo de los ficheros», que dibuja hasta ocho
+     secciones: validados por parejas vecinas contra esta superficie con el comprobador de paleta
+     (todas las nuevas por encima de 8 de ΔE en protan/deutan y de 15 en visión normal; solo queda
+     el aviso ya conocido de la pareja 3–4 y del ámbar por debajo de 3:1, que llevan leyenda y tabla). */
+  --viz-tramo-5: #0e7fa8;
+  --viz-tramo-6: #5f8a12;
+  --viz-tramo-7: #8a4a8a;
+  --viz-tramo-8: #b34f1f;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -92,6 +100,12 @@
     --viz-tramo-2: #eec14d;
     --viz-tramo-3: #4cc2ad;
     --viz-tramo-4: #e2659a;
+    /* Como los cuatro de arriba, más claros que la banda del comprobador a propósito (superficie
+       oscura); entre vecinos, ΔE >= 10 en protan/deutan, >= 19 en visión normal y todos por encima de 3:1. */
+    --viz-tramo-5: #3f9fd0;
+    --viz-tramo-6: #93b93a;
+    --viz-tramo-7: #c47fd0;
+    --viz-tramo-8: #e8824a;
   }
 }
 * { box-sizing: border-box; }
@@ -339,7 +353,11 @@ table.data th { color: var(--muted); font-weight: 600; }
 
 .review-bar { position: sticky; top: 0; z-index: 3; background: var(--bg); border: 1px solid var(--line);
   border-radius: 10px; padding: 8px 12px; margin: 0 0 8px; }
-.review-bar-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Con `wrap`, si el título y el botón no caben en una fila el botón baja a la siguiente, en vez de
+   salirse de la pantalla: en 390 px, «Revisión: no hay hallazgos que revisar.» con `nowrap` lo
+   empujaba 146 px fuera (3.54.0). */
+.review-bar-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.review-heading { min-width: 0; }
 .review-bar-row button { min-height: 40px; flex: none; }
 .review-panel { margin: 0 0 16px; }
 .review-heading { font-weight: 600; margin: 0; }
@@ -371,6 +389,7 @@ table.data th { color: var(--muted); font-weight: 600; }
   .drawer-open { min-height: 44px; font-size: 0.9rem; }
   .tile { min-height: 44px; }
   .file-picker .file-button { min-height: 44px; }
+  .memory-compare-select, .memory-cut-fields input, .memory-panel .link-button { min-height: 44px; }
   :root { --readout-height: 36px; }
   input[type="range"] { height: 44px; width: 100%; }
 }
@@ -394,7 +413,8 @@ table.data th { color: var(--muted); font-weight: 600; }
 .tile.attn .tile-value { color: var(--viz-accent); }
 .tile-note { font-size: 0.8rem; color: var(--muted); line-height: 1.35; overflow-wrap: anywhere; }
 @media (min-width: 700px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (min-width: 1100px) { .tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+/* Siete desde F4: la memoria consolidada va en la tira, junto a las seis cifras del análisis. */
+@media (min-width: 1100px) { .tiles { grid-template-columns: repeat(7, minmax(0, 1fr)); } }
 
 /* El selector de capas del anillo y el foco de teclado sobre un segmento. */
 .chart .seg[role="radiogroup"] button[aria-checked="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
@@ -435,3 +455,187 @@ table.data th { color: var(--muted); font-weight: 600; }
 }
 /* El icono del botón del cajón dentro de una figura no es un gráfico: no se estira al ancho. */
 .chart .drawer-open svg { display: inline-block; width: 14px; height: 14px; }
+
+/* --- Evolución: el anillo recorre el tiempo (ADR-0015 §3, 3.50.0) -------------------------------
+   El control de tiempo va dentro de la figura del anillo, encima del selector de capas: «anterior»,
+   el deslizador, «siguiente» y la misma lista como `select` para teclado y lector de pantalla. En
+   el móvil el deslizador ocupa la fila entera y los botones se reparten debajo. */
+.time-control { margin: 0 0 10px; }
+.time-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.time-row .time-range { flex: 1 1 12rem; min-width: 8rem; margin: 0; accent-color: var(--viz-series); }
+.time-row .time-step { padding: 6px 12px; min-height: 32px; font-size: 0.9rem; white-space: nowrap; }
+.time-row .time-step:disabled { opacity: 0.45; cursor: default; }
+.time-row .time-select { font: inherit; font-size: 0.85rem; padding: 6px 8px; min-height: 32px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); max-width: 100%; min-width: 0; }
+.time-label { font-size: 0.85rem; margin: 4px 0 0; font-variant-numeric: tabular-nums; }
+/* La sección «Evolución»: la fila de cifras como chips (número en tinta, etiqueta en gris; el cero
+   apagado pero presente) y la lista compacta de cambios con su tipo como ficha. */
+.evolution h3 { margin: 16px 0 4px; }
+.evo-figures { display: flex; flex-wrap: wrap; gap: 6px 8px; list-style: none; margin: 8px 0; padding: 0; }
+.evo-figure { display: inline-flex; align-items: baseline; gap: 4px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg); font-size: 0.85rem; color: var(--muted); }
+.evo-figure .evo-n { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.evo-figure.zero { opacity: 0.6; }
+.evo-figure.zero .evo-n { color: var(--muted); font-weight: 500; }
+.evo-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; font-size: 0.9rem; }
+.evo-list li { padding-left: 10px; border-left: 3px solid var(--viz-accent); }
+.evo-list .chip, .source-list .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.evo-list .muted { display: inline; }
+/* Ficheros del circuito, en Datos: qué queda de cada uno en este dispositivo. */
+.source-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; font-size: 0.9rem; }
+.source-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.source-list .muted { margin: 0; }
+.source-list .chip.retained { border-color: var(--viz-series); color: var(--ink); }
+.source-list .chip.missing { border-color: var(--warn); color: var(--warn); }
+@media (any-pointer: coarse) {
+  .time-row .time-step, .time-row .time-select { min-height: 44px; }
+  .time-row .time-range { flex-basis: 100%; order: -1; }
+}
+@media (max-width: 560px) {
+  .time-row .time-range { flex-basis: 100%; order: -1; }
+  .time-row .time-select { flex: 1 1 100%; }
+}
+
+/* --- Memoria consolidada (F4, MEMORY_CONSOLIDATION.md §6-§11) ----------------------------------------
+   Misma tarjeta que el resto de paneles; lo que se añade es la lista de condiciones, la
+   previsualización enmarcada y las versiones con su marca (vigente, revocada), nunca solo por color. */
+.memory-panel h3 { margin: 20px 0 4px; }
+.memory-panel h4 { margin: 12px 0 4px; font-size: 1rem; }
+.memory-status[role="status"]:empty { display: none; }
+.memory-status { margin: 8px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+.memory-status p { margin: 2px 0; }
+.memory-status.error { border-color: var(--error); }
+.memory-status.error p:first-child { color: var(--error); font-weight: 600; }
+.memory-none { font-weight: 600; margin: 4px 0 0; }
+.memory-current-line { margin: 4px 0 0; }
+.memory-checks { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
+.memory-check { display: flex; align-items: baseline; gap: 8px; }
+.memory-check-mark { flex: none; width: 1.2em; text-align: center; font-weight: 600; color: var(--muted); }
+.memory-check[data-ok="si"] .memory-check-mark { color: var(--viz-series); }
+.memory-check[data-ok="no"] .memory-check-mark { color: var(--warn); }
+.memory-preview { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.memory-preview h4:first-child { margin-top: 0; }
+.memory-blockers { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--warn); }
+.memory-blockers-title { font-weight: 600; color: var(--warn); margin: 0 0 4px; }
+.memory-blockers ul, .memory-warnings ul { margin: 4px 0; padding-left: 18px; }
+.memory-items { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.85rem; }
+.memory-decisions details { margin: 4px 0; }
+.memory-incident-list { display: grid; gap: 6px; }
+.memory-cut { margin-top: 4px; }
+/* Varias paradas (OQ-155): una fila por parada, separadas entre sí; la fila cabe en 390 px porque sus campos ya envuelven. */
+.memory-cut-rows .memory-cut + .memory-cut { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.memory-cut-which { margin: 2px 0 0; }
+.memory-panel .memory-cut-label { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; }
+.memory-cut-fields { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.memory-cut-fields p { flex-basis: 100%; margin: 2px 0 0; }
+.memory-cut-fields input { font: inherit; }
+.memory-cut-unavailable { margin: 2px 0 0; }
+.memory-cuts { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--line); }
+.memory-cuts-title { font-weight: 600; margin: 0 0 4px; }
+.memory-decisions .memory-items { display: grid; gap: 2px; }
+.memory-note, .memory-revoke-reason, .memory-fork-reason { font: inherit; width: 100%; max-width: 40rem; padding: 6px 10px; min-height: 24px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); margin: 4px 0 8px; box-sizing: border-box; }
+.memory-panel label { display: block; margin-top: 8px; }
+.link-button { border: 0; background: transparent; padding: 0; color: var(--viz-series); text-decoration: underline; text-underline-offset: 2px; min-height: 0; border-radius: 0; }
+.memory-versions { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.memory-version { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.memory-version.revoked { border-style: dashed; color: var(--muted); }
+.memory-version-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.memory-version-head .muted { margin: 0; }
+.memory-vn { font-weight: 600; }
+.memory-version .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.memory-version .chip.current { border-color: var(--viz-series); color: var(--ink); }
+.memory-version .chip.revoked { border-color: var(--warn); color: var(--warn); }
+.memory-revoked-reason { margin: 4px 0 0; color: var(--warn); }
+.memory-revoke { margin-top: 6px; }
+.memory-revoke button.danger { margin-top: 0; }
+.memory-fork { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--warn); background: var(--bg); }
+.memory-fork-columns { display: grid; gap: 12px; }
+@media (min-width: 900px) { .memory-fork-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.memory-lineage-events { margin: 4px 0; padding-left: 18px; }
+.memory-compare-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.memory-compare-row label { display: inline; margin-top: 0; }
+.memory-compare-select { font: inherit; padding: 4px 8px; min-height: 24px; border-radius: 8px; }
+.memory-compare-result { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.memory-compare-result h4:first-child { margin-top: 0; }
+.memory-compare-revoked { margin: 4px 0; color: var(--warn); }
+
+/* --- Plano del circuito (ADR-0016) ----------------------------------------------------------------
+   Debajo de la memoria, en la misma pestaña. Las ubicaciones son una lista compacta: id, tag, estado
+   en el fichero de trabajo y, en gris, lo acumulado y la historia. Los cambios a mano van plegados
+   en un menú por ubicación y se abren en su sitio con su razón; una propuesta es una tarjeta que dice
+   que no se ha escrito nada. El estado nunca va solo por color: siempre en palabras. */
+.plan-panel h3 { margin: 20px 0 4px; }
+.plan-panel h4 { margin: 0 0 4px; font-size: 1rem; }
+.plan-panel label { display: block; margin-top: 8px; }
+.plan-status[role="status"]:empty { display: none; }
+.plan-status { margin: 8px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+.plan-status p { margin: 2px 0; }
+.plan-status.error { border-color: var(--error); }
+.plan-status.error p:first-child { color: var(--error); font-weight: 600; }
+.plan-none { font-weight: 600; margin: 8px 0 0; }
+.plan-bootstrap { margin-top: 8px; }
+.plan-locations, .plan-exits, .plan-events { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.plan-location, .plan-exit { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.plan-location[data-state="no-observado"] { border-left: 3px solid var(--viz-accent); }
+.plan-location-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.plan-id { font-weight: 600; }
+.plan-tag.muted { margin: 0; }
+.plan-location .muted, .plan-exit .muted { margin: 2px 0 0; font-size: 0.85rem; }
+.plan-location-head .muted { margin: 0; font-size: inherit; }
+.plan-panel .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.plan-review { margin: 4px 0 0; }
+.plan-review.none { color: var(--muted); }
+.plan-review.averiado, .plan-review.no-encontrado { color: var(--warn); }
+.plan-location-actions, .plan-proposal-actions { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; }
+.plan-menu > summary { cursor: pointer; color: var(--viz-series); padding: 4px 0; list-style-position: inside; }
+.plan-menu-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.plan-menu-items button, .plan-location-actions > button { padding: 4px 10px; font-size: 0.9rem; }
+.plan-form { flex: 1 1 100%; margin-top: 4px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
+.plan-form-title { font-weight: 600; margin: 0 0 4px; }
+.plan-form .muted { font-size: 0.85rem; }
+.plan-input { font: inherit; width: 100%; max-width: 40rem; padding: 6px 10px; min-height: 24px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); margin: 4px 0 4px; box-sizing: border-box; }
+.plan-date, .plan-result, .plan-branch { width: auto; max-width: 100%; }
+.plan-send:disabled { opacity: 0.5; cursor: default; }
+.plan-proposals { display: grid; gap: 8px; margin-top: 8px; }
+.plan-proposal { padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--viz-series); background: var(--bg); }
+.plan-proposal p { margin: 4px 0 0; }
+.plan-unwritten { font-weight: 600; }
+.plan-edges td, .plan-edges th { white-space: nowrap; }
+.plan-vehicles { margin-top: 4px; font-size: 0.9rem; }
+.plan-vehicles > summary, .plan-vehicles-rest > summary { cursor: pointer; color: var(--viz-series); padding: 2px 0; }
+.plan-vehicle-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.plan-vehicles-rest { margin-top: 4px; }
+.plan-event-when { font-weight: 600; }
+.plan-event p { margin: 2px 0 0; font-size: 0.85rem; }
+@media (any-pointer: coarse) {
+  .plan-menu > summary, .plan-vehicles > summary, .plan-vehicles-rest > summary { min-height: 44px; display: flex; align-items: center; }
+  .plan-menu-items button, .plan-location-actions > button, .plan-input { min-height: 44px; }
+}
+
+/* --- Valores de planta del circuito (OQ-140) --------------------------------------------------------
+   En la pestaña Datos. Una fila por valor: el provisional, lo que rige para el fichero de trabajo con
+   su fecha y su razón, dónde mide el programa algo relacionado y «Cambiar…», que abre el formulario en
+   su sitio. El estado nunca va solo por color: la etiqueta dice «provisional» o «confirmado». */
+.plant-values-panel label { display: block; margin-top: 8px; }
+.plant-values-note { margin: 8px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--warn); background: var(--bg); }
+.plant-values { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.plant-value { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.plant-value[data-state="confirmado"] { border-left: 3px solid var(--viz-series); }
+.plant-value p { margin: 2px 0 0; }
+.plant-value .muted { font-size: 0.85rem; }
+.plant-value-label { font-weight: 600; }
+.plant-value .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.plant-value .chip.confirmed { border-color: var(--viz-series); color: var(--ink); }
+.plant-value-boundary { color: var(--warn); }
+.plant-value-problem:empty { display: none; }
+.plant-value-problem { color: var(--warn); }
+.plant-value-actions { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; }
+.plant-value-actions > button { padding: 4px 10px; font-size: 0.9rem; }
+.plant-value-history { margin-top: 4px; font-size: 0.9rem; }
+.plant-value-history > summary { cursor: pointer; color: var(--viz-series); padding: 2px 0; }
+@media (any-pointer: coarse) {
+  .plant-value-history > summary { min-height: 44px; display: flex; align-items: center; }
+  .plant-value-actions > button, .plant-value-link { min-height: 44px; }
+}
