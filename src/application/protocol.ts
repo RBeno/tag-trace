@@ -91,8 +91,8 @@ export interface AccumulationReport {
   /** Fuentes acumuladas en el circuito, contando cada carga (un fichero repetido cuenta, INV-005). */
   readonly sources: number;
   /**
-   * Qué fuentes conservan sus lecturas (ADR-0015 §2): la última cargada y, si se solapa con ella, la
-   * anterior. Lo que el expediente y el replay alcanzan es exactamente esto, y la vista lo dice.
+   * Qué fuentes conservan sus lecturas (ADR-0015 §2): las dos últimas cargadas, se solapen o no
+   * (OQ-143). Lo que el expediente y el replay alcanzan es exactamente esto, y la vista lo dice.
    */
   readonly retained: {
     readonly sourceIds: readonly string[];
@@ -757,7 +757,13 @@ export interface MemoryViews {
   /** Bifurcación sin resolver: los dos linajes, para que la persona elija. `null` si no la hay. */
   readonly fork: { readonly local: readonly VersionSummary[]; readonly incoming: readonly VersionSummary[] } | null;
   /** Las elecciones de linaje registradas (§10), la más reciente al final. */
-  readonly lineageEvents: readonly { readonly at: number; readonly choice: "conservar-local" | "adoptar-entrante"; readonly reason: string }[];
+  readonly lineageEvents: readonly {
+    readonly at: number;
+    readonly choice: "conservar-local" | "adoptar-entrante";
+    readonly reason: string;
+    /** Elección hecha en otro dispositivo, llegada con un `.agvproj` (OQ-144). */
+    readonly origin?: "otro-dispositivo";
+  }[];
 }
 
 /** Respuesta a `consolidate` en modo `preview`: nada se ha escrito. */

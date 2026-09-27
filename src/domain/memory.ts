@@ -388,6 +388,36 @@ export interface LineageEvent {
   readonly at: number;
   readonly choice: "conservar-local" | "adoptar-entrante";
   readonly reason: string;
+  /** Presente si la elección se hizo en otro dispositivo y llegó con un `.agvproj` (OQ-144). */
+  readonly origin?: "otro-dispositivo";
+}
+
+/** Dos eventos son el mismo si coinciden instante, elección y razón; de dónde vinieron no cuenta. */
+function eventKey(event: LineageEvent): string {
+  return `${event.at}|${event.choice}|${event.reason}`;
+}
+
+/**
+ * Añade al historial las elecciones de linaje que trae un `.agvproj` y aquí no estaban (OQ-144,
+ * propietario 2026-09-27). Solo se añaden, marcadas como de otro dispositivo: son decisiones humanas
+ * ajenas que se registran, no que se aplican ni se reinterpretan (R-MEM-002). Devuelve el estado y
+ * cuántas entraron.
+ */
+export function withForeignEvents(
+  state: LineageState,
+  incoming: readonly LineageEvent[],
+): { readonly state: LineageState; readonly added: number } {
+  const known = new Set(state.lineageEvents.map(eventKey));
+  const added: LineageEvent[] = [];
+  for (const event of incoming) {
+    const key = eventKey(event);
+    if (known.has(key)) continue;
+    known.add(key);
+    added.push({ at: event.at, choice: event.choice, reason: event.reason, origin: "otro-dispositivo" });
+  }
+  if (added.length === 0) return { state, added: 0 };
+  const lineageEvents = [...state.lineageEvents, ...added].sort((a, b) => a.at - b.at);
+  return { state: { ...state, lineageEvents }, added: added.length };
 }
 
 /** El estado de linaje del circuito: qué memoria está vigente, cuál espera decisión y cuáles quedaron archivadas. */

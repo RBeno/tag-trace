@@ -15,6 +15,7 @@ import {
   emptyLineageState,
   sortVersions,
   versionsOfLineage,
+  withForeignEvents,
   withIncoming,
   type ConsolidatedVersion,
   type LineageRelation,
@@ -39,10 +40,20 @@ export async function exportProjectMemory(circuitId: string): Promise<ProjectMem
  *   decisión humana; hasta entonces la consolidación está bloqueada.
  *
  * En todos los casos, una versión que el proyecto trae **revocada** y aquí no lo está se marca
- * revocada: la revocación es un hecho del historial, no una decisión que reinterpretar.
+ * revocada: la revocación es un hecho del historial, no una decisión que reinterpretar. Pero cambia
+ * la versión vigente, así que se devuelve para que la interfaz lo diga (OQ-144). Y las elecciones de
+ * linaje del otro dispositivo se añaden al historial, marcadas como suyas.
  */
-export async function importProjectMemory(circuitId: string, incoming: ProjectMemorySection | undefined): Promise<LineageRelation> {
-  if (!isAvailable()) return "sin-memoria";
+export interface ProjectMemoryImport {
+  readonly relation: LineageRelation;
+  /** Versiones que llegaron revocadas y aquí no lo estaban: ahora lo están. */
+  readonly revocations: readonly { readonly version: number; readonly at: number; readonly reason: string }[];
+  /** Elecciones de linaje de otro dispositivo que entraron en el historial. */
+  readonly events: number;
+}
+
+export async function importProjectMemory(circuitId: string, incoming: ProjectMemorySection | undefined): Promise<ProjectMemoryImport> {
+  if (!isAvailable()) return { relation: "sin-memoria", revocations: [], events: 0 };
   const [versions, stored] = await Promise.all([loadVersions(circuitId), loadMemoryState(circuitId)]);
   const state = stored ?? emptyLineageState(circuitId);
   const local = state.active === null ? sortVersions(versions) : versionsOfLineage(versions, state.active);
@@ -51,14 +62,17 @@ export async function importProjectMemory(circuitId: string, incoming: ProjectMe
 
   const known = new Map(versions.map((version) => [version.hash, version]));
   const toWrite: ConsolidatedVersion[] = [];
+  const revocations: ProjectMemoryImport["revocations"][number][] = [];
   for (const version of incomingVersions) {
     const mine = known.get(version.hash);
     if (mine === undefined) {
       if (relation === "entrante-adelantada" || relation === "bifurcada") toWrite.push(version);
     } else if (mine.revoked === null && version.revoked !== null) {
       toWrite.push({ ...mine, revoked: version.revoked });
+      revocations.push({ version: mine.version, at: version.revoked.at, reason: version.revoked.reason });
     }
   }
-  await saveMemory({ versions: toWrite, state: withIncoming(state, relation, incomingVersions) });
-  return relation;
+  const events = withForeignEvents(withIncoming(state, relation, incomingVersions), incoming?.linaje.eventos ?? []);
+  await saveMemory({ versions: toWrite, state: events.state });
+  return { relation, revocations, events: events.added };
 }

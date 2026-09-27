@@ -21,6 +21,7 @@ import {
   previewConsolidation,
   previewWithoutSnapshot,
   resolveFork,
+  withForeignEvents,
   revokeVersion,
   versionBytes,
   versionHash,
@@ -323,5 +324,20 @@ describe("linajes · §10", () => {
 
     expect(() => resolveFork(state, "conservar-local", "sin nada que resolver", 1)).toThrow(/ninguna bifurcación/);
     expect(() => resolveFork(forked, "conservar-local", " ", 1)).toThrow(/justificación/);
+  });
+
+  it("las elecciones de linaje de otro dispositivo se añaden marcadas, sin repetir las que ya estaban (OQ-144)", () => {
+    const own = { at: 10, choice: "conservar-local" as const, reason: "consolidé aquí primero" };
+    const state = { ...emptyLineageState("circuito-sintetico"), lineageEvents: [own] };
+    const foreign = { at: 5, choice: "adoptar-entrante" as const, reason: "adopté la del portátil" };
+    const merged = withForeignEvents(state, [own, foreign]);
+    expect(merged.added).toBe(1);
+    // En orden de fecha, la ajena marcada y la propia sin marca.
+    expect(merged.state.lineageEvents).toEqual([{ ...foreign, origin: "otro-dispositivo" }, own]);
+    // Abrir otra vez el mismo proyecto no añade nada, y la original no cambia.
+    expect(withForeignEvents(merged.state, [own, foreign]).added).toBe(0);
+    expect(state.lineageEvents).toEqual([own]);
+    // Sin eventos entrantes, el mismo estado.
+    expect(withForeignEvents(state, []).state).toBe(state);
   });
 });

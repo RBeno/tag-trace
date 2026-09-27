@@ -388,7 +388,7 @@ export function sourceStatusList(snapshots: CircuitViews["snapshots"], formatTic
     node(
       "p",
       "muted",
-      "Las lecturas en crudo solo viven en la ventana de trabajo: la última exportación y, si se solapa con ella, la anterior. " +
+      "Las lecturas en crudo solo viven en la ventana de trabajo: las dos últimas exportaciones cargadas. " +
         "Lo demás queda como instantánea, que es lo que la evolución compara.",
     ),
   );

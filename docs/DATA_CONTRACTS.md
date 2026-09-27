@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.25.0
+version: 0.26.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -544,10 +544,11 @@ El usuario debe poder eliminar lo que ha creado, y esa eliminación debe ser ver
 - El bruto original nunca es propiedad de la aplicación: se referencia por hash y permanece donde
   el usuario lo tenga.
 - **Retención de lecturas** (R-DAT-023, ADR-0015): el almacén guarda las lecturas por fuente y solo
-  retiene las de la última exportación cargada y, si su ventana completa se solapa con la anterior,
-  las de esa anterior. Las demás se retiran y su fichero queda como instantánea (§12). El
-  expediente y el replay solo alcanzan las lecturas retenidas, y la vista lo dice; volver a cargar
-  el fichero las recupera.
+  retiene las de las dos últimas exportaciones cargadas, se solapen o no (OQ-143, 2026-09-27). Las
+  demás se retiran y su fichero queda como instantánea (§12). El expediente y el replay solo
+  alcanzan las lecturas retenidas, y la vista lo dice. Volver a cargar un fichero retirado lo pone el
+  último: sus lecturas vuelven, guardadas bajo el identificador de su primera carga, y no se crea
+  fuente ni instantánea nuevas.
 
 ## 11. Datos reales y GitHub
 

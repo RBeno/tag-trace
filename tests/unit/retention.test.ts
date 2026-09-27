@@ -12,6 +12,7 @@ import type { Provenance, Reading } from "../../src/domain/reading.js";
 import {
   distinctSources,
   partitionReadingsBySource,
+  RETAINED_EXPORTS,
   retainedSources,
   splitLegacyCircuit,
   windowsOverlap,
@@ -42,13 +43,12 @@ describe("R-DAT-023 · qué fuentes conservan sus lecturas", () => {
     expect(retainedSources([source("a", 0, HOUR)])).toEqual(new Set(["a"]));
   });
 
-  it("la última cargada se retiene siempre, y la anterior solo si sus ventanas se solapan", () => {
+  it("las dos últimas cargadas se retienen, se solapen o no (OQ-143 a, propietario 2026-09-27)", () => {
     // Solapadas: las dos.
     expect(retainedSources([source("a", 0, 2 * HOUR), source("b", HOUR, 3 * HOUR)])).toEqual(new Set(["a", "b"]));
-    // Disjuntas: solo la última.
-    expect(retainedSources([source("a", 0, HOUR), source("b", 2 * HOUR, 3 * HOUR)])).toEqual(new Set(["b"]));
-    // Contiguas por un instante también se solapan: no hay hueco entre ellas.
-    expect(retainedSources([source("a", 0, HOUR), source("b", HOUR, 2 * HOUR)])).toEqual(new Set(["a", "b"]));
+    // Disjuntas: también las dos. Hasta el 2026-09-27 solo se retenía la última; la regla cambió.
+    expect(retainedSources([source("a", 0, HOUR), source("b", 2 * HOUR, 3 * HOUR)])).toEqual(new Set(["a", "b"]));
+    expect(RETAINED_EXPORTS).toBe(2);
   });
 
   it("nunca se retienen más de dos: la antepenúltima se retira aunque se solape con las otras", () => {
@@ -56,22 +56,30 @@ describe("R-DAT-023 · qué fuentes conservan sus lecturas", () => {
     expect(retainedSources(sources)).toEqual(new Set(["b", "c"]));
   });
 
-  it("«anterior» es la anterior en orden de carga, no la más cercana en el tiempo", () => {
-    // Se carga primero la ventana más tardía y después la más temprana, disjuntas: solo la última cargada.
-    expect(retainedSources([source("tarde", 5 * HOUR, 6 * HOUR), source("pronto", 0, HOUR)])).toEqual(new Set(["pronto"]));
+  it("«últimas» es en orden de carga, no en el tiempo", () => {
+    const sources = [source("tarde", 5 * HOUR, 6 * HOUR), source("medio", 3 * HOUR, 4 * HOUR), source("pronto", 0, HOUR)];
+    expect(retainedSources(sources)).toEqual(new Set(["medio", "pronto"]));
   });
 
-  it("un fichero repetido no es una fuente nueva: no cambia la retención (R-DAT-005, INV-005)", () => {
-    const withoutRepeat = [source("a", 0, HOUR), source("b", 2 * HOUR, 3 * HOUR)];
-    // El mismo fichero «a» cargado otra vez, con otro sourceId pero la misma huella.
-    const withRepeat = [...withoutRepeat, source("a-bis", 0, HOUR, "a")];
-    expect(retainedSources(withRepeat)).toEqual(retainedSources(withoutRepeat));
-    expect(distinctSources(withRepeat).map((entry) => entry.sourceId)).toEqual(["a", "b"]);
+  it("volver a cargar un fichero retirado lo pone el último, con el sourceId de su primera carga (OQ-143 b)", () => {
+    const sources = [source("a", 0, HOUR), source("b", 2 * HOUR, 3 * HOUR), source("c", 4 * HOUR, 5 * HOUR)];
+    expect(retainedSources(sources)).toEqual(new Set(["b", "c"]));
+    // El mismo fichero «a», con otro sourceId pero la misma huella: vuelve a la ventana y «b» sale.
+    const reloaded = [...sources, source("a-bis", 0, HOUR, "a")];
+    expect(retainedSources(reloaded)).toEqual(new Set(["c", "a"]));
+    // Sigue sin ser una fuente nueva (R-DAT-005, INV-005).
+    expect(distinctSources(reloaded).map((entry) => entry.sourceId)).toEqual(["a", "b", "c"]);
   });
 
-  it("una fuente sin ventana completa no se solapa con nada", () => {
+  it("recargar uno que ya está retenido no cambia qué se retiene", () => {
+    const sources = [source("a", 0, HOUR), source("b", 2 * HOUR, 3 * HOUR)];
+    expect(retainedSources([...sources, source("b-bis", 2 * HOUR, 3 * HOUR, "b")])).toEqual(new Set(["a", "b"]));
+    expect(retainedSources([...sources, source("a-bis", 0, HOUR, "a")])).toEqual(new Set(["a", "b"]));
+  });
+
+  it("una fuente sin ventana completa cuenta igual como carga", () => {
     expect(windowsOverlap(null, { from: 0, to: HOUR })).toBe(false);
-    expect(retainedSources([source("a", 0, HOUR), source("b", null, null)])).toEqual(new Set(["b"]));
+    expect(retainedSources([source("a", 0, HOUR), source("b", null, null)])).toEqual(new Set(["a", "b"]));
   });
 });
 
@@ -94,36 +102,41 @@ describe("migración 5→6 · partición de las lecturas por procedencia", () =>
   });
 
   it("partir un circuito antiguo deja las fuentes marcadas, sin instantánea, y solo las lecturas retenidas", () => {
+    // Tres fuentes: con la regla de las dos últimas cargadas (OQ-143), la primera se retira.
     const split = splitLegacyCircuit({
       circuitId: "c",
       sources: [
         { ...source("a", 0, HOUR), fileName: "a.csv", importedAt: 1, acceptedRows: 2 },
         { ...source("b", 2 * HOUR, 3 * HOUR), fileName: "b.csv", importedAt: 2, acceptedRows: 1 },
+        { ...source("c", 4 * HOUR, 5 * HOUR), fileName: "c.csv", importedAt: 3, acceptedRows: 1 },
       ],
-      readings: [reading("a", 1, 0), reading("a", 2, HOUR), reading("b", 1, 2 * HOUR)],
+      readings: [reading("a", 1, 0), reading("a", 2, HOUR), reading("b", 1, 2 * HOUR), reading("c", 1, 4 * HOUR)],
     });
     expect(split.sources.map((entry) => [entry.sourceId, entry.retained, entry.snapshot])).toEqual([
       ["a", false, false],
       ["b", true, false],
+      ["c", true, false],
     ]);
-    expect(split.readings).toEqual([{ sourceId: "b", readings: [reading("b", 1, 2 * HOUR)] }]);
+    expect(Object.fromEntries(split.readings.map((entry) => [entry.sourceId, entry.readings]))).toEqual({
+      b: [reading("b", 1, 2 * HOUR)],
+      c: [reading("c", 1, 4 * HOUR)],
+    });
   });
 
   it("si la fuente retenida compartía tramo con la retirada, ese tramo sigue en la retenida", () => {
-    // Registro antiguo: la lectura común quedó con procedencia «a» y «b» en `alsoFrom`.
+    // Registro antiguo: la lectura común quedó con procedencia «a» y «b» en `alsoFrom`. «a» se retira
+    // porque detrás vienen «b» y «c».
     const common = reading("a", 2, HOUR, [{ sourceId: "b", sourceHash: "b", sourceRow: 1 }]);
     const split = splitLegacyCircuit({
       circuitId: "c",
       sources: [
         { ...source("a", 0, HOUR), fileName: "a.csv", importedAt: 1, acceptedRows: 2 },
         { ...source("b", HOUR, 2 * HOUR), fileName: "b.csv", importedAt: 2, acceptedRows: 2 },
+        { ...source("c", 3 * HOUR, 4 * HOUR), fileName: "c.csv", importedAt: 3, acceptedRows: 1 },
       ],
-      readings: [reading("a", 1, 0), common, reading("b", 2, 2 * HOUR)],
+      readings: [reading("a", 1, 0), common, reading("b", 2, 2 * HOUR), reading("c", 1, 3 * HOUR)],
     });
-    // Solapadas: las dos se retienen, y «b» tiene sus dos lecturas, no una.
-    expect(split.readings.map((entry) => [entry.sourceId, entry.readings.length])).toEqual([
-      ["b", 2],
-      ["a", 2],
-    ]);
+    // «b» tiene sus dos lecturas, no una: la común no se pierde con «a».
+    expect(Object.fromEntries(split.readings.map((entry) => [entry.sourceId, entry.readings.length]))).toEqual({ b: 2, c: 1 });
   });
 });

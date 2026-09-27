@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.38.0
+version: 0.39.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -690,7 +690,10 @@ El botón final usa una confirmación inequívoca. No existe consolidación auto
 
 Al abrir un `.agvproj`, la aplicación dice la relación de su memoria con la local («idéntica», «la
 local va por delante: se conserva», «la entrante va por delante: se adopta», «bifurcadas: hay que
-elegir», «no traía memoria»); al exportar, cuántas versiones incluye.
+elegir», «no traía memoria»); si trae revocaciones que aquí no estaban, las dice una por una con
+su razón («El proyecto trae la revocación de v1 (fecha): razón. Aquí queda revocada.»), y cuántas
+elecciones de linaje de otro dispositivo se añadieron al historial, donde salen marcadas «(en otro
+dispositivo)». Al exportar, cuántas versiones incluye.
 
 ## 7. Móvil, tableta y portátil
 

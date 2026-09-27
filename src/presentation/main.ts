@@ -4820,7 +4820,8 @@ projectInput.addEventListener("change", () => {
       // relación con la local —idéntica, local por delante, entrante por delante (se adopta) o
       // bifurcada (hay que elegir)— la clasifica y la guarda la persistencia. Nada se fusiona.
       const memoria = readMemorySection(project);
-      const lineage = isAvailable() ? await importProjectMemory(project.manifest.circuit_id, memoria) : null;
+      const imported = isAvailable() ? await importProjectMemory(project.manifest.circuit_id, memoria) : null;
+      const lineage = imported?.relation ?? null;
       showMessage("info", `Proyecto «${circuito?.nombre ?? project.manifest.circuit_id}»`, [
         `${fuentes?.length ?? 0} fuentes declaradas, exportado el ${formatInstant(project.manifest.exported_at)}.`,
         // Un proyecto del esquema 1 no traía instantáneas: se abre igual y se dice (ADR-0015 §5).
@@ -4832,6 +4833,13 @@ projectInput.addEventListener("change", () => {
           : `Memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.` +
             (lineage === null ? " Sin almacén local no se puede comparar con la de este dispositivo." : ` ${LINEAGE_LABEL[lineage]}`) +
             (lineage === "bifurcada" ? " Elige cuál sigue en la pestaña Memoria, al importar las lecturas del circuito." : lineage === "entrante-adelantada" ? " Se verá al volver a importar las lecturas del circuito." : ""),
+        // Una revocación que llega cambia la versión vigente: se dice, versión por versión (OQ-144).
+        ...(imported?.revocations ?? []).map(
+          (entry) => `El proyecto trae la revocación de v${entry.version} (${formatInstant(entry.at)}): ${entry.reason}. Aquí queda revocada.`,
+        ),
+        ...(imported === null || imported.events === 0
+          ? []
+          : [`${imported.events} ${imported.events === 1 ? "elección de linaje hecha" : "elecciones de linaje hechas"} en otro dispositivo, añadidas al historial.`]),
         cobertura === undefined || cobertura.length === 0
           ? "Sin cobertura declarada."
           : `Cobertura: ${cobertura.map((span) => formatSpan(span.from, span.to)).join("  ·  ")}`,

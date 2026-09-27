@@ -78,12 +78,11 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
       return figure;
     };
 
-    // La prueba va en dos fases porque, desde ADR-0015 (R-DAT-023), la **ventana de trabajo** son solo
-    // las lecturas retenidas: la última exportación cargada y la anterior únicamente si se solapan.
-    // Los dos ficheros de aquí dejan 40 min sin datos en medio, así que tras cargar el tardío la
-    // ventana es solo el tardío y el temprano queda como instantánea. Lo plantado en la primera mitad
-    // se afirma en la fase 1, con el temprano como ventana; lo de la segunda mitad y lo que compara
-    // ficheros —que se lee de las dos instantáneas—, en la fase 2.
+    // La prueba va en dos fases. Desde ADR-0015 (R-DAT-023) la **ventana de trabajo** son las lecturas
+    // retenidas: las dos últimas exportaciones cargadas, se solapen o no (OQ-143, propietario
+    // 2026-09-27). En la fase 1 la ventana es solo el temprano; en la fase 2, el temprano y el tardío,
+    // con los 40 min del corte al descubierto. Entre el 2026-09-26 y el 2026-09-27 la regla retenía
+    // solo el tardío, porque no se solapan, y la fase 2 no veía la primera mitad.
     //
     // Horas relativas al arranque de la ventana (`from`, 05:00), en el reloj final del generador; el
     // corte entre ficheros va de ~14 h 40 min a ~15 h 20 min:
@@ -188,9 +187,9 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await openTab(page, "Datos");
     await expect(page.locator("dl.facts dd", { hasText: /^[\d.]+ lecturas de 1 fichero de 1$/ })).toBeVisible();
 
-    // ---- Fase 2: ventana tardía ----
-    // El tardío no se solapa con el temprano, así que la ventana de trabajo pasa a ser solo el tardío
-    // y el temprano queda como instantánea (R-DAT-023). La bandeja del Resumen trae una tarjeta de
+    // ---- Fase 2: los dos ficheros ----
+    // El tardío es la última carga y el temprano la anterior: los dos quedan en la ventana de trabajo
+    // (R-DAT-023). La bandeja del Resumen trae una tarjeta de
     // cambio entre periodos solo con las dos instantáneas: es la señal de que la vista ya es la de la
     // segunda importación; la bandeja vive en el Resumen, así que se mira desde ahí.
     await openTab(page, "Resumen");
@@ -201,12 +200,9 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(page.getByRole("heading", { name: "Cambios entre los dos periodos" })).toBeVisible();
 
     const withTable: readonly (readonly ["Tags" | "Tiempos" | "Línea y calles", string | RegExp])[] = [
-      // «Rotura y degradación de cada tag, en el tiempo» no sale aquí: la rotura plantada cae a las
-      // 22:00, dentro del tardío, pero lo que la enseña como tendencia son los dos periodos, y desde
-      // ADR-0015 la ventana de trabajo es solo el último fichero (el primero no se solapa con él y
-      // queda como instantánea). Tampoco sale con el temprano solo: la degradación necesita la ventana
-      // entera. Lo que la sustituye es la tarjeta «cambio entre periodos» de arriba, leída de las dos
-      // instantáneas (R-DAT-023).
+      // La rotura plantada cae a las 22:00, dentro del tardío, y lo que la enseña como tendencia son
+      // los dos periodos: con los dos ficheros retenidos vuelve a verse en el tiempo (OQ-143 a).
+      ["Tags", "Rotura y degradación de cada tag, en el tiempo"],
       ["Tiempos", "Tiempo de parada en los posibles puntos críticos"],
       ["Tiempos", "Tags donde el recorrido se divide"],
       ["Línea y calles", "Ocupación de las calles de carga"],
@@ -232,17 +228,17 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await heatmap.getByRole("button", { name: "Peor omisión primero" }).click();
     await expect(heatmap.getByRole("button", { name: "Peor omisión primero" })).toHaveAttribute("aria-pressed", "true");
 
-    // La flota en la ventana tardía: el recuento y la vida siguen dibujándose; la única parada de la
-    // producción que cae aquí es la de las 10:00 del segundo día, sola y sin otro día con que
-    // repetirse; el asignado que no lee nunca sigue sin leer; y el que sigue leyendo después de su baja
-    // (21:30) solo se ve aquí, porque su baja cae dentro de esta ventana.
+    // La flota con los dos ficheros: el recuento y la vida siguen dibujándose; las tres paradas de la
+    // producción están en la ventana, y la de las 10:00 del segundo día se repite a la hora de la del
+    // primero; el asignado que no lee nunca sigue sin leer; y el que sigue leyendo después de su baja
+    // (21:30) se ve, porque su baja cae dentro del tardío.
     await openTab(page, "AGV");
     await expect(page.getByRole("heading", { name: "Flota del circuito" })).toBeVisible();
     await expect(figureOf("Flota en el circuito").getByText(/Menos en el circuito: \d+ de \d+/)).toBeVisible();
     await expect(figureOf("Vida de cada AGV en el circuito").locator("canvas")).toBeVisible();
-    const paradasTardio = page.locator(".finding", { hasText: "La producción se paró 1 vez" });
-    await expect(paradasTardio).toHaveCount(1);
-    await expect(paradasTardio).not.toContainText("se repite a esa hora otro día");
+    const paradasDosDias = page.locator(".finding", { hasText: "La producción se paró 3 veces" });
+    await expect(paradasDosDias).toHaveCount(1);
+    await expect(paradasDosDias).toContainText("se repite a esa hora otro día");
     await expect(page.locator(".finding", { hasText: "asignado no leyó nada" })).toContainText(scenario.fleetNeverRead);
     await expect(page.locator(".finding", { hasText: "sin estar asignado" })).toContainText(scenario.fleetLeavesMidway);
 
@@ -285,10 +281,10 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(page.locator(".finding", { hasText: "3 sustituidos en su sitio" })).toHaveCount(1);
     expect(await ringTime.locator("path[data-k]").count()).toBeGreaterThan(0);
 
-    // La retención, en Datos (ADR-0015 §2, R-DAT-023): las lecturas en crudo son solo las del tardío
-    // —1 fichero de 2— y las instantáneas, una por fichero, siguen las dos.
+    // La retención, en Datos (ADR-0015 §2, R-DAT-023): las lecturas en crudo son las de los dos ficheros
+    // —2 de 2— y las instantáneas, una por fichero, siguen las dos.
     await openTab(page, "Datos");
-    await expect(page.locator("dl.facts dd", { hasText: /^[\d.]+ lecturas de 1 fichero de 2$/ })).toBeVisible();
+    await expect(page.locator("dl.facts dd", { hasText: /^[\d.]+ lecturas de 2 ficheros de 2$/ })).toBeVisible();
     await expect(page.locator("dl.facts dd", { hasText: /^2 de 2 ficheros$/ })).toBeVisible();
 
     // El expediente de un vehículo, en un solo eje de tiempo: buscar desde la barra abre la pestaña AGV.

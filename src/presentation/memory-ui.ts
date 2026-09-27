@@ -545,7 +545,8 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     const out: HTMLElement[] = [node("h3", undefined, "Elecciones de linaje")];
     const list = node("ul", "memory-lineage-events");
     for (const event of [...memory.lineageEvents].reverse()) {
-      list.append(node("li", undefined, `${input.formatInstant(event.at)}: ${CHOICE_LABEL[event.choice]} — ${event.reason}`));
+      const where = event.origin === "otro-dispositivo" ? " (en otro dispositivo)" : "";
+      list.append(node("li", undefined, `${input.formatInstant(event.at)}${where}: ${CHOICE_LABEL[event.choice]} — ${event.reason}`));
     }
     out.push(list);
     return out;

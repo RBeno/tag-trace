@@ -8,7 +8,7 @@
  * lecturas— ronda los 110 MB como un solo valor de IndexedDB, y Chromium no admite valores de más
  * de unos 127 MiB (OQ-142). Lo que crece con los meses son las lecturas; lo que perdura de cada
  * fichero es su instantánea (`src/domain/snapshot.ts`). Las lecturas en crudo solo viven en la
- * ventana de trabajo: la última exportación cargada y, si se solapa con ella, la anterior.
+ * ventana de trabajo: las dos últimas exportaciones cargadas (OQ-143, propietario 2026-09-27).
  */
 
 import type { Interval } from "../domain/coverage.js";
@@ -44,25 +44,33 @@ export function distinctSources<T extends Pick<RetentionSource, "sourceHash">>(s
 }
 
 /**
- * Qué fuentes conservan sus lecturas (R-DAT-023, decisión del propietario 2026-09-26).
+ * Cuántas exportaciones conservan sus lecturas. No es una constante de planta: es la regla de
+ * retención que decidió el propietario (R-DAT-023, OQ-143), y cambiarla es cambiar la regla.
+ */
+export const RETAINED_EXPORTS = 2;
+
+/**
+ * Qué fuentes conservan sus lecturas (R-DAT-023; propietario, 2026-09-26 y 2026-09-27).
  *
- * Se retienen las lecturas de la **última exportación cargada** y, si su ventana completa se solapa
- * con la de la **anterior cargada**, también las de esa anterior. Las demás se retiran del almacén y
- * quedan como instantánea. Es una regla, no una cifra: aquí no hay ningún número.
+ * Se retienen las lecturas de las **dos últimas exportaciones cargadas**, se solapen o no (OQ-143 a:
+ * con dos exportaciones diarias que no se tocan, la rotura que cae en el corte solo se ve en el tiempo
+ * si las dos siguen enteras). Las demás se retiran del almacén y quedan como instantánea.
  *
- * «Anterior» es la anterior **en orden de carga**, no en el tiempo: es lo que hace que la regla sea
- * predecible para quien carga («los dos últimos ficheros que cargué, si se solapan») y lo que
- * corresponde a la práctica de planta, que exporta en orden. Un fichero repetido no cuenta como
- * carga nueva y no mueve nada.
+ * «Últimas» es **en orden de carga**, no en el tiempo: es lo que hace que la regla sea predecible
+ * para quien carga («los dos últimos ficheros que cargué»). Un fichero repetido no es una fuente
+ * nueva (R-DAT-005), pero **sí es una carga**: volver a cargar un fichero lo pone el último (OQ-143
+ * b), porque quien lo vuelve a cargar quiere mirarlo. Sus lecturas viven bajo el `sourceId` de su
+ * primera carga, que es el que se devuelve.
  */
 export function retainedSources(sources: readonly RetentionSource[]): ReadonlySet<string> {
-  const distinct = distinctSources(sources);
-  const last = distinct[distinct.length - 1];
-  if (last === undefined) return new Set();
-  const retained = new Set([last.sourceId]);
-  const previous = distinct[distinct.length - 2];
-  if (previous !== undefined && windowsOverlap(last.complete, previous.complete)) retained.add(previous.sourceId);
-  return retained;
+  const firstId = new Map<string, string>();
+  const lastLoad = new Map<string, number>();
+  sources.forEach((source, index) => {
+    if (!firstId.has(source.sourceHash)) firstId.set(source.sourceHash, source.sourceId);
+    lastLoad.set(source.sourceHash, index);
+  });
+  const byLastLoad = [...lastLoad.entries()].sort((a, b) => a[1] - b[1]).map(([hash]) => firstId.get(hash) as string);
+  return new Set(byLastLoad.slice(-RETAINED_EXPORTS));
 }
 
 /** Las procedencias que una lectura ya traía de uniones anteriores (`MergedReading.alsoFrom`). */

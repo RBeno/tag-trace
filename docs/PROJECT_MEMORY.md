@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.34.0
+version: 0.35.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -344,8 +344,11 @@ previsualizar; bloquean solo los hallazgos pendientes, un rango 1 confirmado (pe
 incidencia), una versión vigente del mismo fichero y una bifurcación sin resolver. Revocar no borra.
 Cada importación compara el fichero de trabajo con la vigente. El `.agvproj` (esquema 3) lleva la
 memoria y, al abrirlo, la aplicación clasifica el linaje y adopta el entrante si va por delante; una
-bifurcación se resuelve conservando o adoptando, con razón. Pendiente: OQ-144 (qué se sincroniza con
-la misma memoria; volver al ancestro común) y el resto de G4 (incidencias excluidas del esperado,
+bifurcación se resuelve conservando o adoptando, con razón. El mismo día el propietario cerró OQ-143
+y OQ-144 con las recomendaciones («Ok entonces continúa con las 3», `[3.52.0]`): se retienen las dos
+últimas exportaciones se solapen o no, volver a cargar un fichero lo recupera, las elecciones de
+linaje de otro dispositivo se añaden al historial y las revocaciones que llegan se dicen; sin botón
+de volver al ancestro común. Pendiente: el resto de G4 (incidencias excluidas del esperado,
 presupuesto medido, comparación histórica), que es F4 todavía.
 
 ## Estado al 2026-09-26 (relevo a un chat nuevo)
@@ -355,7 +358,7 @@ El trabajo sigue en otra conversación por el límite de contexto. Todo lo que d
 conversación siguiente.
 
 - **Fase F4** (memoria longitudinal y consolidación), abierta el 2026-09-26 por el propietario
-  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): la consolidación humana con versiones** (`[3.51.0]`, sección de arriba). Anterior: **revisión de toda la lógica de medición y análisis**
+  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): la consolidación humana con versiones** (`[3.51.0]` y `[3.52.0]`, sección de arriba). Anterior: **revisión de toda la lógica de medición y análisis**
   (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
   regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
   (OQ-135 a OQ-141), dos de ellas contradicciones código↔documento que no se tocan hasta que decida.

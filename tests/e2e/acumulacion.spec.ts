@@ -178,9 +178,10 @@ test.describe("acumular un circuito", () => {
     await importInto(page, "piloto", "ventana-1.csv");
     await importInto(page, "piloto", "ventana-lejana.csv");
 
-    // Disjuntas: solo la última cargada conserva sus lecturas (R-DAT-023); la primera queda como instantánea.
+    // Disjuntas, y las dos conservan sus lecturas: se retienen las dos últimas cargadas, se solapen o no
+    // (R-DAT-023, OQ-143 a; propietario 2026-09-27). Hasta entonces aquí solo quedaba la lejana.
     const stored = await storedCircuit(page, "piloto");
-    expect(stored).toMatchObject({ readings: 4, sources: 2, coverage: 2, retained: ["ventana-lejana.csv"] });
+    expect(stored).toMatchObject({ readings: 10, sources: 2, coverage: 2, retained: ["ventana-1.csv", "ventana-lejana.csv"] });
     // Y la interfaz lo dice con todas las letras, que es lo que impide el falso diagnóstico.
     await openTab(page, "Datos");
     await expect(page.getByText(/no hay datos cargados/)).toBeVisible();
@@ -218,7 +219,29 @@ test.describe("acumular un circuito", () => {
     await expect(page.getByText(/^3 de 3 ficheros$/)).toBeVisible();
   });
 
-  test("una base de la versión 5 se migra al abrir: el circuito sin lecturas, la última fuente retenida y la vista lo dice", async ({ page }) => {
+  test("volver a cargar un fichero retirado recupera sus lecturas y lo pone el último (OQ-143 b)", async ({ page }) => {
+    await freshPage(page);
+    await importInto(page, "piloto", "ventana-1.csv");
+    await importInto(page, "piloto", "ventana-2.csv");
+    await importInto(page, "piloto", "ventana-3.csv");
+    expect(await storedCircuit(page, "piloto")).toMatchObject({ retained: ["ventana-2.csv", "ventana-3.csv"], readings: 12 });
+
+    // La primera, otra vez: no es una fuente nueva ni deja otra instantánea (R-DAT-005), pero es la
+    // última carga, así que vuelve a la ventana de trabajo y la segunda sale (propietario, 2026-09-27).
+    await importInto(page, "piloto", "ventana-1.csv");
+    // `retained` lista cada carga anotada, y la repetida comparte el identificador de su primera carga:
+    // por eso «ventana-1» sale dos veces. Las lecturas guardadas son las de la primera y la tercera.
+    expect(await storedCircuit(page, "piloto")).toMatchObject({
+      sources: 4,
+      retained: ["ventana-1.csv", "ventana-3.csv", "ventana-1.csv"],
+      readings: 12,
+      snapshots: ["ventana-1.csv", "ventana-2.csv", "ventana-3.csv"],
+    });
+    await openTab(page, "Datos");
+    await expect(page.getByText(/lecturas de 2 ficheros de 3/)).toBeVisible();
+  });
+
+  test("una base de la versión 5 se migra al abrir: el circuito sin lecturas, las dos últimas fuentes retenidas y la vista lo dice", async ({ page }) => {
     await freshPage(page);
     // Se borra lo que la aplicación acaba de crear al abrirse y se siembra una base de la versión 5 con un
     // circuito antiguo: dos fuentes disjuntas y todas sus lecturas en el mismo registro.
@@ -283,19 +306,22 @@ test.describe("acumular un circuito", () => {
     await expect.poll(async () => (await storedCircuit(page, "antiguo"))?.version, { timeout: 15_000 }).toBe(STORE_VERSION);
     expect(await storedCircuit(page, "antiguo")).toMatchObject({
       memoryStores: true,
-      readings: 3,
+      // Las dos fuentes antiguas son las dos últimas cargadas: las dos se retienen (OQ-143 a,
+      // propietario 2026-09-27). Hasta entonces, disjuntas, solo quedaba la segunda.
+      readings: 6,
       sources: 2,
       coverage: 2,
-      retained: ["antigua-2.csv"],
+      retained: ["antigua-1.csv", "antigua-2.csv"],
       snapshots: [],
       circuitHasReadings: false,
     });
 
     // Y al cargar un fichero nuevo en ese circuito, la vista dice qué está retenido y qué no tiene instantánea.
     await importInto(page, "antiguo", "ventana-1.csv");
-    expect(await storedCircuit(page, "antiguo")).toMatchObject({ sources: 3, retained: ["ventana-1.csv"], snapshots: ["ventana-1.csv"] });
+    // Ahora la primera antigua sale: quedan la segunda y la nueva.
+    expect(await storedCircuit(page, "antiguo")).toMatchObject({ sources: 3, retained: ["antigua-2.csv", "ventana-1.csv"], snapshots: ["ventana-1.csv"] });
     await openTab(page, "Datos");
-    await expect(page.getByText(/6 lecturas de 1 fichero de 3/)).toBeVisible();
+    await expect(page.getByText(/9 lecturas de 2 ficheros de 3/)).toBeVisible();
     await expect(page.getByText(/1 de 3 ficheros; 2 sin instantánea/)).toBeVisible();
   });
 

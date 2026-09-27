@@ -274,4 +274,47 @@ test.describe("memoria consolidada", () => {
     await expect(panel.locator(".memory-lineage")).toHaveText("La memoria entrante va por delante: se adopta.");
     await expect(panel.getByRole("heading", { name: "Lo observado frente a la memoria v1" })).toBeVisible();
   });
+
+  test("una revocación que llega en un .agvproj se aplica y se dice (OQ-144)", async ({ page }) => {
+    await freshPage(page);
+    await prepareCircuit(page);
+    await reviewAll(page);
+    await consolidateFirst(page);
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const folder = mkdtempSync(join(tmpdir(), "agvproj-revocacion-"));
+    const exportTo = async (name: string): Promise<string> => {
+      await openTab(page, "Datos");
+      const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Exportar circuito (.agvproj)" }).click()]);
+      const path = join(folder, name);
+      await download.saveAs(path);
+      return path;
+    };
+
+    // Primera copia con v1 vigente; después se revoca aquí y se exporta la segunda copia.
+    const vigente = await exportTo("vigente.agvproj");
+    await openTab(page, "Memoria");
+    const version = page.locator(".memory-panel .memory-version[data-version='1']");
+    await version.getByRole("button", { name: "Revocar la versión v1" }).click();
+    await version.locator(".memory-revoke-reason").fill("La instantánea era de un día de pruebas");
+    await version.locator(".memory-revoke-send").click();
+    await expect(page.locator(".memory-panel .memory-status")).toContainText("Versión v1 revocada", { timeout: 15_000 });
+    const revocada = await exportTo("revocada.agvproj");
+
+    // Otro dispositivo adopta la copia con v1 vigente y después abre la que la trae revocada: la
+    // revocación se aplica, porque es un hecho del historial, y el mensaje lo dice con su razón.
+    await freshPage(page);
+    const message = page.locator("section.message");
+    await page.locator("#project-file").setInputFiles(vigente);
+    await expect(message).toContainText("La memoria entrante va por delante: se adopta.", { timeout: 10_000 });
+    await page.locator("#project-file").setInputFiles(revocada);
+    await expect(message).toContainText("La memoria del proyecto abierto es idéntica a la de este dispositivo.", { timeout: 10_000 });
+    await expect(message).toContainText(/El proyecto trae la revocación de v1 \(.+\): La instantánea era de un día de pruebas\. Aquí queda revocada\./);
+    // Abrirla otra vez ya no avisa: no hay nada nuevo que revocar.
+    await page.locator("#project-file").setInputFiles([]);
+    await page.locator("#project-file").setInputFiles(revocada);
+    await expect(message).toContainText(/Integridad verificada/, { timeout: 10_000 });
+    await expect(message).not.toContainText("El proyecto trae la revocación");
+  });
 });

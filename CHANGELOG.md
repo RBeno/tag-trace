@@ -2,6 +2,27 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.52.0] - 2026-09-27
+
+El propietario cierra OQ-143 y OQ-144 con las recomendaciones («Ok entonces continúa con las 3»).
+
+### Cambiado
+
+- **Retención de dos exportaciones** (R-DAT-023, ADR-0015 §2 enmendado): se guardan las lecturas de
+  las dos últimas exportaciones cargadas, se solapen o no. Con dos exportaciones diarias que no se
+  tocan, la rotura que cae en el corte vuelve a verse en el tiempo y el expediente alcanza los dos
+  días. **Cambian pruebas por el cambio de regla**, cada una con su motivo escrito: en las de
+  acumulación, dos ventanas disjuntas quedan las dos retenidas y la base migrada desde la versión 5
+  retiene sus dos fuentes; en la de vistas de diagnóstico, la fase con los dos ficheros vuelve a
+  afirmar lo que afirmaba antes de la retención: tres paradas de la producción que se repiten a la
+  misma hora y la figura de rotura y degradación en el tiempo. Las unitarias de migración usan tres
+  fuentes para que una se retire.
+- **Volver a cargar un fichero lo recupera**: cuenta como la última carga, sus lecturas vuelven al
+  almacén con el identificador de su primera carga, y sigue sin crear fuente ni instantánea nuevas.
+- **Al abrir un `.agvproj`**, las revocaciones que trae y aquí no estaban se dicen una por una con su
+  razón, y las elecciones de linaje del otro dispositivo se añaden al historial marcadas «(en otro
+  dispositivo)». Volver al ancestro común sigue sin botón propio, por decisión del propietario.
+
 ## [3.51.0] - 2026-09-27
 
 Primera entrega de F4: la memoria consolidada del circuito, con versiones que aprueba una persona
@@ -36,11 +57,6 @@ Primera entrega de F4: la memoria consolidada del circuito, con versiones que ap
   (`WORKER_PROTOCOL.md` §4). Las pruebas de navegador de navegación y portada cuentan siete
   pestañas y siete tiles, y las de acumulación comparan con la versión vigente del almacén en lugar
   de un 6 fijo: la migración desde la 5 pasa ahora por la 6 hasta la 7, con las tablas de memoria.
-
-### Abierto
-
-- OQ-144: qué se sincroniza al abrir un `.agvproj` con la misma memoria y si hace falta volver al
-  ancestro común como acción propia.
 
 ## [3.50.0] - 2026-09-26
 

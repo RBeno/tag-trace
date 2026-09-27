@@ -39,6 +39,8 @@ para la memoria normal; lo que faltaba era hacerlo desde el primer fichero.
    solapan— (decisión del propietario, 2026-09-26). Las anteriores se retiran del almacén y quedan
    como instantánea; volver a cargar el fichero las recupera. El expediente y el replay de un fichero
    retirado dejan de estar disponibles hasta que se vuelva a cargar, y la vista lo dice.
+   **Enmienda (propietario, 2026-09-27, OQ-143):** se retienen las dos últimas exportaciones
+   cargadas **se solapen o no**, y volver a cargar un fichero cuenta como la última carga.
 
 3. **La secuencia de instantáneas es la evolución.** Todo lo que compara ficheros —horquillas que
    cambian (R-TIM-010, R-TIM-011), tags insertados o retirados por la suma entre anclas (R-DAT-021),
@@ -64,7 +66,7 @@ para la memoria normal; lo que faltaba era hacerlo desde el primer fichero.
 - Cada módulo que compara ficheros gana una entrada desde instantáneas y pierde su dependencia de
   las lecturas de ficheros anteriores. Las pruebas de auditoría y de navegador lo cubren con dos
   exportaciones.
-- El tamaño del almacén queda acotado por las lecturas de una o dos exportaciones más una
+- El tamaño del almacén queda acotado por las lecturas de dos exportaciones más una
   instantánea por fichero; el presupuesto se declara en `MEMORY_CONSOLIDATION.md` §9.
 - Lo que una instantánea no guarda no se puede recalcular sin volver a cargar el fichero: la lista de
   lo que guarda está en `DATA_CONTRACTS.md` §12 y se versiona (`schemaVersion`).

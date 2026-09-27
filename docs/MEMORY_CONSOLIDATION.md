@@ -1,6 +1,6 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -15,7 +15,7 @@ Conservar la evolución real del circuito con el mínimo volumen necesario para 
 
 | Capa | Contenido | Persistencia por defecto |
 |---|---|---|
-| Bruto activo | Archivos originales y filas | Solo durante la sesión/análisis; referencia por hash. Las lecturas normalizadas se retienen solo para la última exportación (o dos si se solapan), R-DAT-023 |
+| Bruto activo | Archivos originales y filas | Solo durante la sesión/análisis; referencia por hash. Las lecturas normalizadas se retienen solo para las dos últimas exportaciones cargadas, R-DAT-023 |
 | Trabajo | Eventos normalizados, índices y grafos temporales | Temporal, liberable por etapas |
 | Resultado | Hallazgos, métricas, grafo del periodo | **Duradera como instantánea** por fichero desde 2026-09-26 (ADR-0015, R-DAT-023): un grafo con fecha de cientos de kilobytes, guardado solo, sin ser memoria consolidada |
 | Memoria normal | Estado consolidado y deltas compactos | Duradera en `.agvproj` |
@@ -161,15 +161,17 @@ diseño y hay que tratarla.
 
 **Implementado (2026-09-27)** con dos de las tres salidas: conservar el local (el entrante queda
 archivado) o adoptar el entrante (el local queda archivado y el linaje adoptado sigue aquí). Volver
-al ancestro común no está: exige revocar en un linaje y consolidar de nuevo, y hoy se hace a mano
-con esas dos acciones. La clasificación (`classifyLineage`) va por la cadena de hashes ordenada por
+al ancestro común no tiene botón propio (propietario, 2026-09-27, OQ-144): se hace revocando en un
+linaje y consolidando de nuevo. La clasificación (`classifyLineage`) va por la cadena de hashes ordenada por
 versión: `identica` si coinciden, `local-adelantada` si la entrante es prefijo de la local,
 `entrante-adelantada` si la local es prefijo de la entrante (entonces se adopta sin preguntar: es la
 misma historia, más larga), `bifurcada` en el resto. El identificador de linaje lo genera el
 dispositivo en su primera consolidación y se hereda al adoptar; lo que distingue dos ramas es el
-hash, no ese identificador. Al abrir un `.agvproj` con `identica` o `local-adelantada` solo se
-sincronizan las revocaciones que trae; las notas y los eventos de linaje del otro dispositivo no
-(OQ-144). Un linaje entrante sin resolver no viaja en el `.agvproj` que se exporta desde aquí.
+hash, no ese identificador. Al abrir un `.agvproj`, en cualquier relación: las revocaciones que trae y aquí
+no estaban se aplican, y el mensaje de apertura las dice una por una con su razón, porque cambian la
+versión vigente; las elecciones de linaje del otro dispositivo se añaden al historial marcadas como
+suyas («en otro dispositivo»), sin aplicarse. Las notas no hace falta copiarlas: forman parte del
+hash, así que dos versiones iguales tienen la misma nota (OQ-144, cerrada el 2026-09-27). Un linaje entrante sin resolver no viaja en el `.agvproj` que se exporta desde aquí.
 
 La forma de evitarla es organizativa, no técnica: consolidar siempre desde el mismo dispositivo, o
 exportar e importar antes de consolidar. La aplicación lo recuerda, no lo impone.

@@ -250,7 +250,7 @@ function unchangedReport(
  *
  * Desde la versión 6 del almacén (ADR-0015) el circuito no lleva sus lecturas: se cargan solo las
  * **retenidas** (R-DAT-023), se unen con las nuevas, las nuevas se guardan en su propio registro, se
- * aplica la retención —la última cargada y, si se solapa con ella, la anterior— y el circuito se
+ * aplica la retención —las dos últimas cargadas, se solapen o no— y el circuito se
  * guarda sin lecturas, todo en una transacción. Lo demás del circuito queda como instantánea.
  */
 async function accumulate(
@@ -286,8 +286,9 @@ async function accumulate(
     };
   }
 
-  // Un fichero repetido (misma huella) no es una fuente nueva (R-DAT-005, INV-005): se anota su carga,
-  // pero no crea registro de lecturas ni instantánea ni cambia la retención.
+  // Un fichero repetido (misma huella) no es una fuente nueva (R-DAT-005, INV-005): se anota su carga y
+  // no crea instantánea, pero sí cuenta como la última carga (OQ-143 b): si sus lecturas se habían
+  // retirado, vuelven al almacén bajo el `sourceId` de su primera carga.
   const twin = existing?.sources.find((source) => source.sourceHash === result.summary.sourceHash);
   const entry = {
     sourceId: result.summary.sourceId,
@@ -328,9 +329,20 @@ async function accumulate(
     ...(existing?.fleet === undefined ? {} : { fleet: existing.fleet }),
     updatedAt: Date.now(),
   };
+  // Un repetido cuyas lecturas ya no estaban guardadas las recupera, con la procedencia de su primera
+  // carga: es el mismo fichero, fila a fila, así que la fila de origen no cambia.
+  const recovered =
+    twin !== undefined && retained.has(twin.sourceId) && !retainedRecords.some((record) => record.sourceId === twin.sourceId)
+      ? result.readings.map((reading) => ({ ...reading, provenance: { ...reading.provenance, sourceId: twin.sourceId } }))
+      : null;
   await saveAccumulation({
     circuit: stored,
-    readings: twin === undefined ? [{ sourceId: entry.sourceId, readings: result.readings }] : [],
+    readings:
+      twin === undefined
+        ? [{ sourceId: entry.sourceId, readings: result.readings }]
+        : recovered === null
+          ? []
+          : [{ sourceId: twin.sourceId, readings: recovered }],
     drop,
   });
 
