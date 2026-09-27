@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.36.0
+version: 0.37.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -361,6 +361,16 @@ Añadió que una ubicación puede existir sin tag físico, y que los tags de par
 circuito, que casi nunca se recorren, entren como salidas del grafo que se revisan a mano
 (R-GRA-021). El plano se crea desde una versión consolidada con una acción humana.
 
+## Presupuesto, clasificación de cambios e incidencias (2026-09-27)
+
+El propietario aceptó las cuatro recomendaciones sobre OQ-145 a OQ-148 (`[3.55.0]`): memoria y
+lecturas retenidas comprimidas y cada fichero original archivado comprimido; un cambio es sostenido
+en tres ficheros seguidos y colectivo si lo muestra más de la mitad de los AGV que pasan por el
+sitio; solo los colectivos y sostenidos y los confirmados pasan al esperado; y un periodo con
+incidencia se consolida entero, sin ella en el esperado. Queda abierta OQ-149: los hallazgos graves
+con instante no están en la instantánea y no se excluyen todavía. Siguiente en F4: el comparador
+entre dos versiones cualesquiera con su prueba de oro.
+
 ## Estado al 2026-09-26 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
@@ -368,7 +378,7 @@ El trabajo sigue en otra conversación por el límite de contexto. Todo lo que d
 conversación siguiente.
 
 - **Fase F4** (memoria longitudinal y consolidación), abierta el 2026-09-26 por el propietario
-  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): el plano físico con ubicaciones estables** (`[3.53.0]`), tras la consolidación humana con versiones (`[3.51.0]`, `[3.52.0]`). Anterior: **revisión de toda la lógica de medición y análisis**
+  («continúa con Fase 4»). F5 espera `CONTINÚA FASE 5` (ADR-0010). **Última entrega (2026-09-27): clasificación de cambios, incidencias fuera del esperado y almacén comprimido** (`[3.55.0]`), tras el plano físico (`[3.53.0]`), tras la consolidación humana con versiones (`[3.51.0]`, `[3.52.0]`). Anterior: **revisión de toda la lógica de medición y análisis**
   (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
   regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
   (OQ-135 a OQ-141), dos de ellas contradicciones código↔documento que no se tocan hasta que decida.

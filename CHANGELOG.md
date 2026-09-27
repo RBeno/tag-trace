@@ -2,6 +2,37 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.55.0] - 2026-09-27
+
+El propietario aceptó las cuatro recomendaciones sobre el presupuesto, la clasificación de cambios y
+las incidencias («De acuerdo con las cuatro recomendaciones, adelante»; OQ-145 a OQ-148).
+
+### Añadido
+
+- **Clasificación de cambios frente al esperado** (`MEMORY_CONSOLIDATION.md` §8, R-MEM-005): al
+  previsualizar una versión, cada cambio sale como incidencia, confirmado, colectivo y sostenido,
+  deriva pendiente o evento puntual, con su razón y sus cifras. Sostenido son tres ficheros seguidos;
+  colectivo, más de la mitad de los AGV que pasan por el sitio. Solo los colectivos y sostenidos y
+  los confirmados con el plano pasan al esperado; cada versión guarda su esperado, y lo observado se
+  compara con él.
+- **Archivo de ficheros originales** (OQ-145): cada fichero que se acumula queda guardado
+  comprimido con su huella, unos 300 KB por cada 1,9 MB de CSV. La pestaña Memoria dice lo que ocupa.
+
+### Cambiado
+
+- **Un periodo con incidencia se consolida** (R-INC-004, OQ-148): un hallazgo grave confirmado ya no
+  bloquea; queda como incidencia de la versión y lo que toca no entra en el esperado. **Cambia una
+  prueba por la decisión**: la del bloqueo por periodo de incidencia espera ahora la incidencia
+  excluida.
+- **Almacén local, versión 9**: lecturas retenidas y versiones comprimidas (lo guardado antes se lee
+  igual) y tabla `archive`. Las pruebas de navegador que leen el almacén entienden el formato.
+- El plano físico se crea desde el esperado de la versión, no desde lo observado.
+
+### Abierto
+
+- OQ-149: los hallazgos graves con instante no están en la instantánea y no se excluyen como
+  incidencia.
+
 ## [3.54.1] - 2026-09-27
 
 ### Medido

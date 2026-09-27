@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.27.0
+version: 0.28.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -552,6 +552,14 @@ El usuario debe poder eliminar lo que ha creado, y esa eliminación debe ser ver
   último: sus lecturas vuelven, guardadas bajo el identificador de su primera carga, y no se crea
   fuente ni instantánea nuevas.
 
+**Almacén local, versión 9 (OQ-145).** Las lecturas retenidas (`sources`) y las versiones
+(`memory`) se guardan comprimidas con el gzip del navegador (`gz`); las guardadas antes se leen igual
+y se comprimen en su próxima escritura, sin migración que las reescriba, porque comprimir es
+asíncrono y una transacción de migración no puede esperar. Tabla nueva `archive` con clave
+`[circuitId, sourceHash]`: **cada fichero original, comprimido**, con su nombre, instante de carga y
+tamaño original. No viaja en el `.agvproj`: el bruto no sale del dispositivo por defecto (ADR-0012).
+Borrar el circuito lo borra.
+
 ## 11. Datos reales y GitHub
 
 Ninguna fuente real, aunque esté parcialmente anonimizada, se añade al repositorio. Los fixtures sintéticos deben usar identificadores, geometría, horarios y distribuciones inventados y llevar un manifiesto `synthetic: true`.
@@ -607,6 +615,11 @@ persona eligió como referencia del circuito, más lo que hace falta para saber 
 | `lineage` | identificador del linaje que consolidó (generado en la primera consolidación, heredado al adoptar) |
 | `revoked` | `null` o `{ at, reason }`; la única reescritura admitida |
 | `appVersion` | versión del motor que consolidó |
+
+**Desde 3.55.0** la versión guarda además `changes` (cada cambio frente al esperado anterior con su
+clase, R-MEM-005), `incidents` (las incidencias del periodo con lo que tocan, R-INC-004) y, si
+difiere de `snapshot`, `expected` (el esperado que deja). Todos entran en el hash. Lo observado
+frente a la memoria se compara con `expected ?? snapshot`.
 
 **Almacén local, versión 7.** A las tablas de la 6 se añaden `memory` (clave `[circuitId, hash]`;
 una fila por versión, revocadas incluidas, de todos los linajes) y `memoryState` (clave

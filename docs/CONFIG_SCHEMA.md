@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.25.0
+version: 0.26.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -279,6 +279,7 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `charging.long_stay_ratio`, `charging.min_stays_for_median` | R-CO-002: cuántas veces la estancia habitual hace larga una permanencia, y cuántas estancias completas hacen falta para tener una habitual. |
 | `charging.usage_max_chance`, `charging.usage_min_deviation` | R-CO-009: azar máximo y desviación mínima (fracción de la parte que le tocaría) para señalar una calle que se usa menos o más que las demás. Provisionales: 0,001 y 0,25. |
 | `plan.min_vehicles_for_proposal` | R-GRA-020 (ADR-0016): AGV distintos que tienen que leer un código no instalado en el plano para proponerlo como tag nuevo. Provisional: 2, el mismo criterio que R-DAT-021. Si la instantánea no dice cuántos AGV lo leyeron, no se propone. |
+| `change_class.sustained_files`, `change_class.collective_share` | R-MEM-005 (OQ-146, OQ-147): ficheros seguidos para que un cambio sea sostenido (3) y parte de los AGV que pasan por el sitio que tiene que superarse para que sea colectivo (0,5, «la mayoría»). Decididos por el propietario el 2026-09-27. |
 | `drift.max_chance` | R-DAT-016 (OQ-138): azar máximo para afirmar un `desaparecido` o un `nuevo` entre periodos. Provisional: 0,001, el mismo que `tag_changes.max_chance`. |
 
 Los valores que hoy viven en `PROVISIONAL_CONFIG` con aspecto de dato de planta —horas de arranque de

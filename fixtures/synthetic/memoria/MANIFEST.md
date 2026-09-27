@@ -60,3 +60,16 @@ memoria dependen de sus hallazgos.
 **Prohibido**: que la aplicación cambie el plano sin la confirmación de una persona con razón escrita;
 que una ubicación sin leer salga del plano; que la salida `0900` entre en una tasa o en un tramo del
 anillo.
+
+## Incidencia excluida del esperado (OQ-148)
+
+`periodo-6.csv` es el mismo anillo el 29/01, **dieciséis vueltas por AGV** con los dos AGV a la vez
+(`0042` veinte segundos detrás de `0007`). `0300` se lee en todas las pasadas de las ocho primeras
+vueltas y, desde la novena, solo en una de cada cuatro: su lectura **cae de golpe** sin dejar de
+leerse del todo, así que el análisis produce una rotura de tag (rango 1) que la instantánea guarda.
+Confirmada, la previsualización de la consolidación **no se bloquea**: la rotura sale en
+«Incidencias excluidas del esperado», tocando `0300` y sus dos tramos, y la versión se puede
+consolidar (propietario, 2026-09-27).
+
+**Prohibido**: que la rotura confirmada bloquee la consolidación; que el esperado de la versión tome
+la medida de `0300` de este periodo.

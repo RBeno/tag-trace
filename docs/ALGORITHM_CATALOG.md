@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.42.0
+version: 0.43.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -1149,4 +1149,24 @@ propone.
   mitades da lo mismo que medir todo junto. `summarizePlan` suma por ubicación y por conexión.
 - **`reinterpretDelta`**: un «desaparece» de un tag instalado en el plano pasa a «no-observado», con
   las pasadas por su sitio en el detalle.
+
+## 6.24 Clasificación de cambios frente al esperado, implementado (MEMORY_CONSOLIDATION §8, R-MEM-005, R-INC-004)
+
+`src/domain/change-class.ts`.
+
+- **`classifyChanges`**: los cambios presentes son `compareSnapshots(esperado, actual)`; `files`
+  cuenta las instantáneas seguidas, hacia atrás desde la actual y posteriores al esperado, que
+  muestran el mismo cambio en el mismo sujeto. Colectivo en un vértice: en la sección entre anclas
+  que lo contiene (la de su predecesor más cercano si ya no está en el anillo; la que empieza o acaba
+  en él si es ancla), AGV que lo muestran entre AGV que la recorren (`vehicleIds`); sin dato, no.
+  En una arista, que `bandShift` marque el cambio. La clase se decide por este orden: incidencia,
+  confirmado, colectivo y sostenido, deriva pendiente; los eventos puntuales son los que se vieron en
+  un fichero anterior y ya no están.
+- **`expectedSnapshot`**: lo observado; lo no adoptado vuelve al valor anterior —un tag que aparece
+  sale del anillo; uno que desaparece o se mueve vuelve detrás de su predecesor más cercano, con su
+  vértice y sus aristas—; lo que toca una incidencia conserva el anterior o queda sin medida. Pasa por
+  `buildSnapshot`, con la misma validación que cualquier instantánea.
+- **`incidentSubjectsOf`**: los tags del anillo que nombran las partes de la clave del hallazgo
+  (separadas por «|» o «+») y sus aristas de entrada y salida en los dos regímenes.
+- **`confirmedSubjectsOf`**: los tags de los eventos del plano con fecha efectiva dentro del periodo.
 

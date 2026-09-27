@@ -1,6 +1,6 @@
 ---
 document_id: TT-RULES-001
-version: 0.56.0
+version: 0.57.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -186,7 +186,9 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-MEM-002 | accepted | Consolidar crea una versión; no sobrescribe ni reinterpreta el pasado. **Implementado**: cada versión lleva su hash semántico y el de la versión vigente anterior (cadena de hashes, §10); vN+1 guarda el delta frente a la última no revocada; revocar añade fecha y razón a la versión sin cambiar su hash ni borrarla, y la siguiente consolidación encadena con la última no revocada. El almacén guarda las versiones por `[circuitId, hash]`, así que dos linajes que coinciden en número de versión conviven sin pisarse. |
 | R-MEM-003 | accepted | La memoria normal conserva agregados, evolución y divergencias relevantes, no todo el bruto. **Implementado**: la versión es la instantánea elegida (`DATA_CONTRACTS.md` §12) más las decisiones de la revisión (clave, tipo, título, cifra, estado, nota), la nota humana, la versión del motor y el fichero base con su huella. Nada de lecturas. La vista dice cuántos bytes ocupan todas las versiones (§9). |
 | R-MEM-004 | accepted | **Una tasa o una media siempre van con su número de oportunidades, y se combinan sin las muestras** (ADR-0016 §6). Por ubicación y periodo se guardan oportunidades evaluables, lecturas correctas, omisiones e inciertos (desconocidos si la instantánea no permite contarlos); por conexión y régimen, recuento, media y M2, que dos periodos combinan de forma exacta. Los percentiles se conservan para las consultas rápidas de un periodo. |
+| R-MEM-005 | accepted | **Solo un cambio colectivo y sostenido, o uno confirmado, pasa al esperado** (`MEMORY_CONSOLIDATION.md` §8; propietario, 2026-09-27, OQ-146 y OQ-147). Al consolidar, cada cambio frente al esperado vigente se clasifica: **incidencia** si lo toca un hallazgo grave confirmado del periodo; **cambio confirmado** si una persona lo confirmó con un evento del plano físico en el periodo; **colectivo y sostenido** si se mantiene en `change_class.sustained_files` ficheros seguidos (3) y lo muestra más de `change_class.collective_share` (la mitad) de los AGV que pasan por su sitio; **deriva pendiente** en el resto, con la razón; y **evento puntual** si se vio en algún fichero y ya no está. El esperado de la versión es lo observado salvo en lo no adoptado, donde conserva el valor anterior. Si no se sabe si un cambio es colectivo, no lo es. En un tramo, la instantánea no guarda tiempos por AGV, y «la mayoría» se lee como más de la mitad de las pasadas: que su mediana se movió. |
 | R-INC-001 | accepted | Una incidencia se vincula al circuito pero se almacena separada de la memoria normal. |
+| R-INC-004 | accepted | **Un periodo con incidencia se consolida entero, sin ella en el esperado** (propietario, 2026-09-27, OQ-148). Un hallazgo grave (rango 1) confirmado ya no bloquea la consolidación: queda como incidencia de la versión, guardada aparte del esperado (R-INC-001), y los tags que nombra y los tramos que salen de ellos o llegan a ellos conservan en el esperado su valor anterior, o quedan sin medida si no lo había. Recortar la ventana de la incidencia se hará cuando las lecturas estén archivadas. |
 | R-INC-002 | accepted | Guardar una incidencia no modifica el esperado ni el grafo validado. |
 | R-INC-003 | accepted | Una contramedida solo se considera eficaz tras una verificación posterior registrada. |
 

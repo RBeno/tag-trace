@@ -457,7 +457,9 @@ export function bootstrapPlan(
   version: ConsolidatedVersion,
   context: { readonly circuitId: string; readonly recordedAt: number; readonly reason: string },
 ): PlanEvent {
-  const ring = version.snapshot.ring.map((tagId, index) => ({ locationId: formatLocationId(index + 1), tagId }));
+  // El plano nace del esperado de la versión, no de lo observado (3.55.0): un tag que no se leyó y cuyo
+  // cambio no se adoptó sigue en el esperado, y por tanto en el plano.
+  const ring = (version.expected ?? version.snapshot).ring.map((tagId, index) => ({ locationId: formatLocationId(index + 1), tagId }));
   return {
     type: "crear-plano",
     circuitId: context.circuitId,

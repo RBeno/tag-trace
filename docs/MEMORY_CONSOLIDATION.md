@@ -1,6 +1,6 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -85,7 +85,8 @@ Antes de habilitar el botón deben cumplirse:
 hallazgo queda pendiente, confirmado, descartado o pospuesto, con su nota. Decisión del propietario
 (2026-09-23) para cuando exista el botón de consolidar: **solo bloquea lo que sigue pendiente**. Lo
 pospuesto se puede consolidar con su motivo y vuelve a aparecer como pendiente en el análisis del
-periodo siguiente.
+periodo siguiente. Desde 3.55.0 un hallazgo grave confirmado no bloquea: es una incidencia que se
+excluye del esperado (R-INC-004, §8).
 
 **Implementado el 2026-09-27** (`src/domain/memory.ts`, pestaña «Memoria», `UX_SPEC.md` §6). Los
 pasos E, G y H del diagrama son `previewConsolidation` (no escribe nada), la confirmación humana en
@@ -128,6 +129,28 @@ Un cambio observado no sustituye inmediatamente al esperado. Se clasifica como:
 - cambio confirmado de configuración/circuito.
 
 Solo los últimos dos, tras revisión, pueden generar una nueva versión de grafo o perfil esperado. Las estadísticas antiguas conservan su vigencia.
+
+**Implementado el 2026-09-27** (`src/domain/change-class.ts`, R-MEM-005, R-INC-004), con las
+decisiones del propietario: sostenido son **tres ficheros seguidos** (OQ-146) y colectivo es **más
+de la mitad de los AGV que pasan por el sitio** (OQ-147), los dos en configuración. Al previsualizar
+vN+1, cada cambio frente al esperado vigente sale con su clase y su razón, agrupado; cada versión
+guarda su **esperado** —lo observado salvo en lo no adoptado, donde conserva el valor anterior— y lo
+observado frente a la memoria se compara con él. Lo que la instantánea no permite medir, se dice:
+
+- Un vértice es colectivo si, en la sección entre anclas que lo contiene, lo muestran más de la
+  mitad de los AGV que la recorren. Sin ese dato no se sabe, y no es colectivo.
+- Un tramo no guarda tiempos por AGV: «la mayoría» se lee como que se movió la mediana de sus
+  pasadas, que es lo que ya mide el criterio de horquilla (R-TIM-010).
+- Moverse de sitio o cambiar de clase no tiene medida colectiva: solo pasa si una persona lo
+  confirma con el plano.
+- Secciones, sumas entre anclas, flota, línea, calles y hallazgos del esperado salen de lo observado.
+- El esperado solo se guarda si difiere de lo observado, para no duplicar la versión.
+
+**Incidencias (OQ-148).** Un hallazgo grave confirmado ya no bloquea: el periodo se consolida entero
+y la incidencia queda en la versión, aparte del esperado, con lo que toca —los tags que nombra y
+sus tramos—, que conserva el valor anterior o queda sin medida. Los hallazgos graves que ocurren en
+un instante no están en la instantánea y todavía no se excluyen (OQ-149). El plano físico se crea
+desde el esperado de la versión, no desde lo observado.
 
 ## 9. Crecimiento y presupuesto
 
@@ -173,8 +196,11 @@ Lo que dicen las cifras:
 - **Las lecturas retenidas ocupan diez veces el CSV** (unos 318 bytes por lectura normalizada): las
   dos exportaciones retenidas son unos 37 MB.
 
-Qué se acepta como objetivo, y si se comprimen las versiones y las lecturas, lo decide el
-propietario (OQ-145).
+**Decidido el 2026-09-27 (OQ-145):** se acepta el objetivo del 5 % sobre el CSV, con las versiones
+guardadas comprimidas; las lecturas retenidas también se guardan comprimidas, y cada fichero
+original queda archivado comprimido con su huella —unos 300 KB por cada 1,9 MB de CSV en el
+circuito de auditoría, un 16 %—. La pestaña Memoria dice lo que ocupa la memoria, lo guardado
+comprimido y el archivo.
 
 ## 10. Bifurcación de linaje entre dispositivos
 

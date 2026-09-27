@@ -21,6 +21,7 @@ import type { DeliveryConcentration, GroupedDelivery } from "../domain/grouped-d
 import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { StructureSet } from "../domain/anchor-sums.js";
 import type { SnapshotDelta } from "../domain/snapshot.js";
+import type { ChangeSummary } from "../domain/change-class.js";
 import type { ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryComparison } from "../domain/memory.js";
 import type {
   EdgeSummary,
@@ -787,6 +788,8 @@ export interface VersionSummary {
   readonly revoked: { readonly at: number; readonly reason: string } | null;
   readonly hash: string;
   readonly bytes: number;
+  /** Cuántos cambios pasaron al esperado, cuántos quedaron pendientes y cuántas incidencias se excluyeron (3.55.0); ausente en las versiones anteriores. */
+  readonly changeSummary?: ChangeSummary;
 }
 
 export interface MemoryViews {

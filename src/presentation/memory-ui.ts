@@ -11,6 +11,7 @@
  */
 
 import type { MemoryViews, VersionSummary } from "../application/protocol.js";
+import { CHANGE_CLASSES, type ChangeClass, type ChangeSummary, type ClassifiedChange, type IncidentRecord } from "../domain/change-class.js";
 import type { BlockerCode, ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryDecision } from "../domain/memory.js";
 import { REVIEW_LABEL, REVIEW_STATES, type ReviewState } from "../domain/review.js";
 import { deltaView } from "./evolution.js";
@@ -41,6 +42,33 @@ export const BLOCKER_LABEL: Readonly<Record<BlockerCode, string>> = {
   "ya-consolidada": "Ese fichero ya está consolidado en una versión vigente",
   "bifurcacion-sin-resolver": "Hay dos linajes sin resolver",
 };
+
+/** Cada clase de cambio frente al esperado (§8), y si pasa al esperado. */
+export const CHANGE_CLASS_LABEL: Readonly<Record<ChangeClass, { readonly text: string; readonly adopted: boolean }>> = {
+  "cambio-confirmado": { text: "Confirmados por una persona (plano físico)", adopted: true },
+  "cambio-colectivo-sostenido": { text: "Colectivos y sostenidos", adopted: true },
+  "deriva-pendiente": { text: "Derivas pendientes", adopted: false },
+  incidencia: { text: "Tocados por una incidencia", adopted: false },
+  "evento-puntual": { text: "Eventos puntuales: se vieron y ya no están", adopted: false },
+};
+
+/** «3 cambios adoptados, 5 pendientes, 1 incidencia excluida». */
+export function changeSummaryLine(summary: ChangeSummary): string {
+  return (
+    `${summary.adopted} ${summary.adopted === 1 ? "cambio adoptado" : "cambios adoptados"}, ` +
+    `${summary.pending} ${summary.pending === 1 ? "pendiente" : "pendientes"}, ` +
+    `${summary.incidents} ${summary.incidents === 1 ? "incidencia excluida" : "incidencias excluidas"}`
+  );
+}
+
+/** Lo que toca una incidencia, en palabras: sus tags y cuántos tramos. */
+export function incidentReach(incident: IncidentRecord): string {
+  const tags = incident.subjects.filter((key) => key.startsWith("vertice|")).map((key) => key.slice("vertice|".length));
+  // Un tramo en dos regímenes es el mismo tramo.
+  const edges = new Set(incident.subjects.filter((key) => key.startsWith("arista|")).map((key) => key.split("|").slice(1, 3).join("→"))).size;
+  if (tags.length === 0) return "no toca ningún tag del anillo: el esperado no cambia por ella";
+  return `toca ${tags.join(", ")} y ${edges} ${edges === 1 ? "tramo" : "tramos"}: quedan fuera de las estadísticas del esperado`;
+}
 
 /** La relación entre la memoria local y la del `.agvproj` abierto (§10), dicha en una frase. */
 export const LINEAGE_LABEL: Readonly<Record<LineageRelation, string>> = {
@@ -246,13 +274,14 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
               ? `Hallazgos: sin pendientes (${findings.total} revisados).`
               : `Hallazgos: ${findings.pending} ${findings.pending === 1 ? "pendiente" : "pendientes"} de ${findings.total}.`,
       ),
+      // OQ-148: una incidencia ya no impide consolidar; se excluye del esperado lo que toca.
       check(
-        findings === null ? null : findings.confirmedCritical === 0,
+        findings === null ? null : true,
         findings === null
-          ? "Periodo de incidencia: sin bandeja no se sabe."
+          ? "Incidencias: sin bandeja no se sabe."
           : findings.confirmedCritical === 0
-            ? "Sin periodo de incidencia: ningún hallazgo confirmado puede parar la planta."
-            : `Periodo de incidencia: ${findings.confirmedCritical} ${findings.confirmedCritical === 1 ? "hallazgo confirmado puede" : "hallazgos confirmados pueden"} parar la planta. Lo decide la previsualización.`,
+            ? "Sin incidencias: ningún hallazgo confirmado puede parar la planta."
+            : `Incidencias: ${findings.confirmedCritical} ${findings.confirmedCritical === 1 ? "hallazgo confirmado puede" : "hallazgos confirmados pueden"} parar la planta. No impide consolidar: el periodo se consolida entero y la previsualización dice qué queda fuera del esperado.`,
       ),
       check(memory === null || memory.fork === null, memory !== null && memory.fork !== null ? "Bifurcación de linaje sin resolver." : "Sin bifurcación de linaje."),
     );
@@ -302,6 +331,81 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     return box;
   }
 
+  function incidentsBlock(incidents: readonly IncidentRecord[]): readonly HTMLElement[] {
+    if (incidents.length === 0) return [];
+    const box = node("div", "memory-incidents");
+    box.setAttribute("role", "region");
+    box.setAttribute("aria-label", "Incidencias excluidas del esperado");
+    box.append(node("h4", undefined, "Incidencias excluidas del esperado"));
+    box.append(
+      node(
+        "p",
+        "muted",
+        "Hallazgos confirmados que pueden parar la planta. El periodo se consolida entero; cada incidencia se guarda aparte y lo que toca no entra en las estadísticas del esperado, que conserva su valor anterior o queda sin medida.",
+      ),
+    );
+    const list = node("ul", "memory-items");
+    for (const incident of incidents) {
+      const item = node("li");
+      item.dataset["key"] = incident.key;
+      item.append(node("strong", undefined, incident.title), " ", node("span", "muted", incident.figure), " — ", node("span", undefined, incidentReach(incident)));
+      list.append(item);
+    }
+    box.append(list);
+    return [box];
+  }
+
+  /** Los cambios de una clase: el hecho y la razón de su clase. Plegado si son muchos. */
+  function changeGroup(cls: ChangeClass, group: readonly ClassifiedChange[]): HTMLElement {
+    const label = CHANGE_CLASS_LABEL[cls];
+    const details = node("details", "memory-change-group");
+    details.dataset["class"] = cls;
+    details.open = group.length <= 5 && cls !== "evento-puntual";
+    details.append(node("summary", undefined, `${label.text}: ${group.length} — ${label.adopted ? "pasan al esperado" : "no pasan al esperado"}`));
+    const list = node("ul", "memory-items");
+    const shown = group.slice(0, 30);
+    for (const change of shown) {
+      const item = node("li");
+      item.dataset["key"] = change.key;
+      item.append(node("span", undefined, change.detail), " ", node("span", "muted", change.reason));
+      list.append(item);
+    }
+    if (group.length > shown.length) list.append(node("li", "muted", `y ${group.length - shown.length} más`));
+    details.append(list);
+    return details;
+  }
+
+  function changesBlock(shown: ConsolidationPreview): readonly HTMLElement[] {
+    const box = node("div", "memory-changes");
+    box.setAttribute("role", "region");
+    box.setAttribute("aria-label", "Cambios frente al esperado");
+    box.append(node("h4", undefined, "Cambios frente al esperado"));
+    if (shown.previous === null) {
+      box.append(node("p", "muted", "Primera versión: no hay esperado anterior. El esperado será lo observado, salvo lo que toque una incidencia."));
+      return [box];
+    }
+    if (shown.changes === undefined) {
+      box.append(node("p", "muted", "Esta previsualización no clasifica los cambios; el delta de abajo los enseña sin clase."));
+      return [box];
+    }
+    box.append(
+      node(
+        "p",
+        "muted",
+        "Un cambio no sustituye enseguida al esperado. Solo pasan los colectivos y sostenidos y los que una persona confirmó con el plano físico; los demás quedan fuera y el esperado conserva su valor anterior.",
+      ),
+    );
+    if (shown.changes.length === 0) {
+      box.append(node("p", undefined, "Ningún cambio frente al esperado vigente."));
+      return [box];
+    }
+    for (const cls of CHANGE_CLASSES) {
+      const group = shown.changes.filter((change) => change.cls === cls);
+      if (group.length > 0) box.append(changeGroup(cls, group));
+    }
+    return [box];
+  }
+
   function previewBlock(shown: ConsolidationPreview): HTMLElement {
     const box = node("div", "memory-preview");
     box.setAttribute("role", "region");
@@ -347,7 +451,9 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       box.append(warnings);
     }
 
+    box.append(...incidentsBlock(shown.incidents ?? []));
     box.append(decisionsBlock(shown.decisions));
+    box.append(...changesBlock(shown));
 
     box.append(node("h4", undefined, shown.previous === null ? "Frente a la memoria" : `Frente a la versión vigente v${shown.previous.version}`));
     if (shown.delta === null) {
@@ -404,6 +510,8 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       ),
     );
     item.append(head);
+    const changeSummary = entry.changeSummary;
+    if (changeSummary !== undefined) item.append(node("p", "muted memory-version-changes", `${changeSummaryLine(changeSummary)}.`));
     if (entry.note !== null && entry.note !== "") item.append(node("p", "muted", `Nota: ${entry.note}`));
     if (entry.revoked !== null) {
       item.append(node("p", "memory-revoked-reason", `Revocada el ${input.formatInstant(entry.revoked.at)}: ${entry.revoked.reason}`));
@@ -476,7 +584,14 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     return node(
       "p",
       "muted memory-budget",
-      count === 0 ? "La memoria no ocupa nada todavía." : `La memoria ocupa ${kilobytes(memory?.budgetBytes ?? 0)} en ${count} ${count === 1 ? "versión" : "versiones"}.`,
+      count === 0
+        ? "La memoria no ocupa nada todavía."
+        : `La memoria ocupa ${kilobytes(memory?.budgetBytes ?? 0)} en ${count} ${count === 1 ? "versión" : "versiones"}.` +
+            // Lo guardado de verdad, comprimido, y el archivo de ficheros originales (OQ-145).
+            (memory?.storedBytes === undefined ? "" : ` Guardada comprimida: ${kilobytes(memory.storedBytes)}.`) +
+            (memory?.archiveBytes === undefined || memory.archiveBytes === 0
+              ? ""
+              : ` Ficheros originales archivados: ${kilobytes(memory.archiveBytes)}.`),
     );
   }
 

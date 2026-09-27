@@ -208,6 +208,49 @@ test.describe("memoria consolidada", () => {
     await expect(page.locator(".tile[data-tile='memoria'] .tile-value")).toHaveText("v1");
   });
 
+  // Desde 3.55.0 (OQ-148, propietario 2026-09-27): un hallazgo de rango 1 confirmado ya no bloquea.
+  test("un hallazgo de rango 1 confirmado sale en «Incidencias excluidas del esperado» y el periodo se consolida", async ({ page }) => {
+    await freshPage(page);
+    // `periodo-6`: 0300 deja de leerse de golpe a mitad del periodo, una rotura (rango 1) que la instantánea guarda.
+    await importInto(page, "incidencia", `${MEMORIA}periodo-6.csv`);
+    const cards = page.locator(".finding.reviewable");
+    const total = await cards.count();
+    let critical = 0;
+    for (let index = 0; index < total; index += 1) {
+      const card = cards.nth(index);
+      if ((await card.locator("xpath=ancestor::*[contains(@class,'tray-group')]").getAttribute("data-rank")) === "1") critical += 1;
+      // Todo confirmado, rango 1 incluido: el periodo es de incidencia.
+      await card.getByRole("button", { name: /Revisión en campo/ }).click();
+      await card.getByRole("menuitemradio", { name: /Confirmado/ }).click();
+      await page.keyboard.press("Escape");
+      await expect(card).toHaveAttribute("data-review", "confirmado");
+    }
+    expect(critical).toBeGreaterThan(0);
+
+    await openTab(page, "Memoria");
+    const panel = page.locator(".memory-panel");
+    // La condición lo avisa, pero no bloquea.
+    await expect(panel.locator(".memory-check[data-ok='no']")).toHaveCount(0);
+    await expect(panel.locator(".memory-checks")).toContainText("Incidencias:");
+    await panel.getByRole("button", { name: "Previsualizar v1" }).click();
+    const preview = panel.locator(".memory-preview");
+    await expect(preview).toBeVisible({ timeout: 15_000 });
+    await expect(preview.locator(".memory-blockers")).toHaveCount(0);
+    const incidents = preview.getByRole("region", { name: "Incidencias excluidas del esperado" });
+    await expect(incidents.getByRole("heading", { name: "Incidencias excluidas del esperado" })).toBeVisible();
+    // La rotura de 0300, nombrada por su título y no por su clave, con lo que toca.
+    const rotura = incidents.locator(".memory-items li", { hasText: "Tag 0300" });
+    await expect(rotura).toHaveCount(1);
+    await expect(rotura).not.toContainText("|");
+    await expect(rotura).toContainText("toca 0300 y 2 tramos");
+    await expect(preview.getByRole("region", { name: "Cambios frente al esperado" })).toContainText("Primera versión: no hay esperado anterior.");
+
+    await preview.getByRole("button", { name: "Confirmar y consolidar" }).click();
+    await expect(panel.locator(".memory-status")).toContainText("Versión v1 consolidada", { timeout: 15_000 });
+    const version = panel.locator(".memory-version[data-version='1']");
+    await expect(version.locator(".memory-version-changes")).toHaveText(/^0 cambios adoptados, 0 pendientes, \d+ incidencias? excluidas?\.$/);
+  });
+
   test("revocar v1 exige razón, la deja marcada en la lista y el circuito queda sin vigente", async ({ page }) => {
     await freshPage(page);
     await prepareCircuit(page);

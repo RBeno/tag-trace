@@ -122,7 +122,9 @@ import {
   loadMemoryState,
   loadPlanEvents,
   archiveSource,
+  listArchive,
   loadRetainedReadings,
+  memoryStoredBytes,
   loadReviews,
   loadSnapshots,
   loadVersions,
@@ -164,6 +166,7 @@ import {
   type PlanObservation,
 } from "../src/domain/plan.js";
 import { findingKindOf } from "../src/domain/finding-kinds.js";
+import { confirmedSubjectsOf, summarizeChanges } from "../src/domain/change-class.js";
 import { distinctSources, retainedSources } from "../src/persistence/retention.js";
 import {
   buildSnapshot,
@@ -1922,10 +1925,19 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
 /** Los umbrales con que se comparan instantáneas: los mismos que los cambios de tag (OQ-138). */
 const MEMORY_THRESHOLDS = { maxChance: PROVISIONAL_CONFIG.tagChanges.maxChance };
 
+/** Los mismos, más los de la clasificación de cambios frente al esperado (§8, OQ-146, OQ-147). */
+const CONSOLIDATION_THRESHOLDS = { ...MEMORY_THRESHOLDS, changeClass: PROVISIONAL_CONFIG.changeClass };
+
+/**
+ * El resumen de una versión con sus cambios (3.55.0): cuántos pasaron al esperado, cuántos quedaron
+ * pendientes y cuántas incidencias se excluyeron. Ausente en las versiones anteriores, que no los
+ * clasificaban.
+ */
 /** Lo que la lista de versiones necesita de cada una, sin el grafo. */
 function summarizeVersion(version: ConsolidatedVersion): VersionSummary {
   const count = (state: string): number => version.decisions.filter((decision) => decision.state === state).length;
   return {
+    ...(version.changes === undefined ? {} : { changeSummary: summarizeChanges(version.changes, version.incidents ?? []) }),
     version: version.version,
     createdAt: version.createdAt,
     basedOnFileName: version.basedOn.fileName,
@@ -1961,6 +1973,9 @@ async function buildMemoryViews(circuitId: string, observed: CircuitSnapshot | n
     current: current?.version ?? null,
     comparison: current === null || observed === null ? null : compareToMemory(observed, current, MEMORY_THRESHOLDS),
     budgetBytes: all.reduce((sum, version) => sum + versionBytes(version), 0),
+    // Lo guardado de verdad, comprimido, y el archivo de originales (OQ-145).
+    storedBytes: await memoryStoredBytes(circuitId),
+    archiveBytes: (await listArchive(circuitId)).reduce((sum, entry) => sum + entry.storedBytes, 0),
     lineage: state.lastRelation,
     fork:
       state.incoming === null
@@ -1991,13 +2006,37 @@ async function previewFor(circuitId: string, sourceId: string): Promise<{ readon
     };
     return { preview: previewWithoutSnapshot(basedOn, memory.active), snapshot: null, state: memory.state };
   }
+  // El periodo desde el esperado vigente (§8): las instantáneas cuya ventana empieza después de la del
+  // esperado, hasta la que se consolida, en orden de ventana. Un mismo fichero cargado dos veces
+  // (misma huella) cuenta una vez: si no, un cambio parecería sostenido por repetir el fichero.
+  const current = currentVersion(memory.active);
+  const since = current?.basedOn.window.to ?? null;
+  const ordered = sortSnapshots(snapshots);
+  const upTo = ordered.slice(0, ordered.findIndex((entry) => entry.sourceId === sourceId) + 1);
+  const seen = new Set<string>([snapshot.sourceHash]);
+  const history: CircuitSnapshot[] = [snapshot];
+  for (const entry of [...upTo].reverse()) {
+    if (entry.sourceId === snapshot.sourceId || seen.has(entry.sourceHash)) continue;
+    if (since !== null && !(entry.window.from > since)) continue;
+    seen.add(entry.sourceHash);
+    history.unshift(entry);
+  }
+  // Lo que una persona confirmó con el plano físico entre el fin del esperado y el fin del fichero.
+  const events = await loadPlanEvents(circuitId);
+  const confirmedSubjects = confirmedSubjectsOf(
+    events,
+    { after: since, until: snapshot.window.to },
+    current === null ? [snapshot] : [current.expected ?? current.snapshot, snapshot],
+  );
   const preview = previewConsolidation({
     snapshot,
     reviews,
     versions: memory.active,
     rankOf: (kind) => findingKindOf(kind).rank,
     forkUnresolved: memory.state.incoming !== null,
-    thresholds: MEMORY_THRESHOLDS,
+    thresholds: CONSOLIDATION_THRESHOLDS,
+    history,
+    confirmedSubjects,
   });
   return { preview, snapshot, state: memory.state };
 }

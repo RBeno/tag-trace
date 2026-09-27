@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.41.0
+version: 0.42.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -686,7 +686,14 @@ El botón final usa una confirmación inequívoca. No existe consolidación auto
 4. **Versiones**: de la más nueva a la más vieja, la vigente marcada, las revocadas con borde
    discontinuo, chip y «Revocada el …: razón». «Revocar…» pide la razón y no se envía sin ella. La
    numeración no se reutiliza.
-5. **Presupuesto**: «La memoria ocupa X KB en N versiones.» (`MEMORY_CONSOLIDATION.md` §9).
+5. **Presupuesto**: «La memoria ocupa X KB en N versiones. Guardada comprimida: Y KB. Ficheros
+   originales archivados: Z KB.» (`MEMORY_CONSOLIDATION.md` §9, OQ-145).
+
+Desde 3.55.0 la previsualización añade «Incidencias excluidas del esperado» —cada hallazgo grave
+confirmado con lo que toca— y «Cambios frente al esperado», agrupados por clase con su razón y si
+pasan o no al esperado, plegados si son muchos; la lista de versiones resume cada una («3 cambios
+adoptados, 5 pendientes, 1 incidencia excluida»). La condición de incidencias ya no impide
+consolidar.
 6. **Dos linajes**, solo con una bifurcación sin resolver: las dos listas y «Conservar la memoria
    local» / «Adoptar la entrante (la local queda archivada)», con razón obligatoria; debajo,
    «Elecciones de linaje».

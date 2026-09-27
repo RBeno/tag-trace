@@ -2,7 +2,8 @@
  * La memoria consolidada del circuito (F4; ADR-0005, ADR-0015 §4, R-MEM-001..003).
  *
  * Lo que se fija, con un anillo sintético de seis tags y una flota inventada: la previsualización
- * bloquea solo lo pendiente (propietario, 2026-09-23) y un rango 1 confirmado como incidencia; lo
+ * bloquea solo lo pendiente (propietario, 2026-09-23); un rango 1 confirmado es una incidencia que no
+ * bloquea y queda fuera del esperado (OQ-148, propietario 2026-09-27); lo
  * pospuesto pasa con aviso y volverá como pendiente; un mismo fichero no se consolida dos veces salvo
  * revocación; una bifurcación sin resolver bloquea; las versiones encadenan hash y delta; revocar no
  * muta y la vigente salta las revocadas; la relación entre linajes se clasifica por la cadena de
@@ -132,15 +133,41 @@ describe("previsualización · §6 paso E", () => {
     ]);
   });
 
-  it("un hallazgo de rango 1 confirmado convierte el periodo en incidencia y bloquea", () => {
+  // Cambia por decisión del propietario (2026-09-27, OQ-148): antes un rango 1 confirmado bloqueaba
+  // con `periodo-de-incidencia`; ahora el periodo se consolida entero, el hallazgo va a `incidents`
+  // con lo que toca y eso queda fuera del esperado.
+  it("un hallazgo de rango 1 confirmado es una incidencia: no bloquea y va a `incidents` con lo que toca (OQ-148)", async () => {
     const snapshot = snap({ findings: [finding("tag-rotura", "T005"), finding("tag-deja", "T002")] });
     const reviews = new Map([review("tag-rotura|T005", "confirmado"), review("tag-deja|T002", "confirmado")]);
     const preview = previewConsolidation(input({ snapshot, reviews }));
-    expect(preview.blockers.map((blocker) => blocker.code)).toEqual(["periodo-de-incidencia"]);
-    expect(preview.blockers[0]?.items).toEqual(["tag-rotura|T005"]);
+    expect(preview.blockers).toEqual([]);
+    expect(preview.incidents).toEqual([
+      {
+        key: "tag-rotura|T005",
+        kind: "tag-rotura",
+        title: "tag-rotura de T005",
+        figure: "1 vez",
+        subjects: [
+          "vertice|T005",
+          "arista|T004|T005|produccion",
+          "arista|T004|T005|noche",
+          "arista|T005|T006|produccion",
+          "arista|T005|T006|noche",
+        ],
+      },
+    ]);
+    // Primera versión: el esperado es lo observado salvo la incidencia, que queda sin medida.
+    const v1 = await consolidate(preview, { ...CONTEXT, snapshot });
+    expect(v1.incidents).toEqual(preview.incidents);
+    expect(v1.changes).toEqual([]);
+    const t005 = v1.expected?.vertices.find((vertex) => vertex.tagId === "T005");
+    expect(t005).toMatchObject({ readRate: null, passes: 0, readings: 0 });
+    expect(v1.snapshot.vertices.find((vertex) => vertex.tagId === "T005")?.readRate).toBe(1);
+    expect(await versionHash(v1)).toBe(v1.hash);
     // Un rango 1 descartado o pospuesto no es incidencia.
     const otra = previewConsolidation(input({ snapshot, reviews: new Map([review("tag-rotura|T005", "descartado"), review("tag-deja|T002", "pospuesto", "sin acceso")]) }));
     expect(otra.blockers).toEqual([]);
+    expect(otra.incidents).toEqual([]);
   });
 
   it("lo pospuesto pasa con aviso, con su motivo, y volverá como pendiente en el periodo siguiente", () => {
@@ -238,6 +265,39 @@ describe("consolidar · §6 paso G, §10 cadena de hashes", () => {
     const v3 = await consolidate(preview, { ...CONTEXT, snapshot: third, now: 70 * DAY });
     expect(v3.previousHash).toBe(v1.hash);
     expect(v3.delta).toEqual(compareSnapshots(v1.snapshot, third, THRESHOLDS));
+  });
+
+  it("con `changeClass`, la versión guarda los cambios clasificados y el esperado solo adopta lo sostenido y colectivo (OQ-146, OQ-147)", async () => {
+    const v1 = await version1();
+    // T007 aparece en f2 y sigue en f3: dos ficheros, no sostenido con tres.
+    const ring7 = [...RING, "T007"];
+    const f2 = snap({ sourceId: "f2", day: 30, ring: ring7 });
+    const f3 = snap({ sourceId: "f3", day: 31, ring: ring7 });
+    const thresholds = { ...THRESHOLDS, changeClass: { sustainedFiles: 3, collectiveShare: 0.5 } };
+    const preview = previewConsolidation(input({ snapshot: f3, versions: [v1], history: [f2, f3], thresholds }));
+    expect(preview.changes?.map((change) => [change.key, change.cls, change.files])).toEqual([["vertice|T007|aparece", "deriva-pendiente", 2]]);
+    const v2 = await consolidate(preview, { ...CONTEXT, snapshot: f3, now: 40 * DAY });
+    expect(v2.changes).toEqual(preview.changes);
+    // El esperado no incluye T007: apareció sin adoptarse. La instantánea sí, tal cual.
+    expect(v2.expected?.ring).toEqual(RING);
+    expect(v2.snapshot.ring).toEqual(ring7);
+    // Y la comparación con la memoria es contra el esperado: T007 sigue apareciendo.
+    expect(compareToMemory(f3, v2, THRESHOLDS).delta.vertices.map((entry) => [entry.tagId, entry.kind])).toEqual([["T007", "aparece"]]);
+    // Confirmado por una persona (evento del plano), pasa al esperado y no se guarda `expected` aparte.
+    const confirmed = previewConsolidation(input({ snapshot: f3, versions: [v1], history: [f2, f3], thresholds, confirmedSubjects: new Set(["vertice|T007"]) }));
+    expect(confirmed.changes?.[0]).toMatchObject({ cls: "cambio-confirmado", adopted: true });
+    const v2b = await consolidate(confirmed, { ...CONTEXT, snapshot: f3, now: 40 * DAY });
+    expect(v2b.expected).toBeUndefined();
+    expect(v2b.changes).toHaveLength(1);
+  });
+
+  it("el delta de la versión siguiente es contra el esperado de la vigente, no contra su instantánea", async () => {
+    const snapshot = snap({ findings: [finding("tag-rotura", "T005")] });
+    const reviews = new Map([review("tag-rotura|T005", "confirmado")]);
+    const v1 = await consolidate(previewConsolidation(input({ snapshot, reviews })), { ...CONTEXT, snapshot });
+    const second = snap({ sourceId: "f2", day: 30 });
+    const preview = previewConsolidation(input({ snapshot: second, versions: [v1] }));
+    expect(preview.delta).toEqual(compareSnapshots(v1.expected as CircuitSnapshot, second, THRESHOLDS));
   });
 
   it("compareToMemory es lo observado frente a la vigente, con su fichero y su fecha", async () => {

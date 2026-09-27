@@ -11,9 +11,16 @@
  * uno es subir `MEMORY_SCHEMA_VERSION` y escribir su migración.
  */
 
-import type { ClassifiedChange, IncidentRecord } from "./change-class.js";
+import {
+  classifyChanges,
+  expectedSnapshot,
+  incidentSubjectsOf,
+  type ChangeClassThresholds,
+  type ClassifiedChange,
+  type IncidentRecord,
+} from "./change-class.js";
 import type { ReviewEntry, ReviewState } from "./review.js";
-import { semanticHash } from "./semantic-hash.js";
+import { canonicalise, semanticHash } from "./semantic-hash.js";
 import { compareSnapshots, type CircuitSnapshot, type SnapshotDelta } from "./snapshot.js";
 import type { TagChangeThresholds } from "./tag-changes.js";
 
@@ -59,7 +66,10 @@ export interface ConsolidatedVersion {
   readonly revoked: { readonly at: number; readonly reason: string } | null;
   /**
    * El esperado que deja esta versión (§8, OQ-146..148): lo observado salvo los cambios no adoptados
-   * y lo que toca una incidencia. Ausente en las versiones anteriores a 3.55.0, que usan `snapshot`.
+   * y lo que toca una incidencia. Ausente en las versiones anteriores a 3.55.0, que usan `snapshot`,
+   * y también desde 3.55.0 cuando es idéntico a `snapshot` (no se guarda dos veces lo mismo, §9): en
+   * los dos casos el esperado es `expected ?? snapshot` (`expectedOf`). Las versiones de 3.55.0 en
+   * adelante se reconocen porque traen `changes` e `incidents`, aunque estén vacíos.
    */
   readonly expected?: CircuitSnapshot;
   /** Los cambios frente al esperado anterior, con su clase. */
@@ -73,7 +83,11 @@ export interface ConsolidatedVersion {
 export type BlockerCode =
   /** Hay hallazgos sin revisar: solo bloquea lo pendiente (propietario, 2026-09-23). */
   | "hallazgos-pendientes"
-  /** Hay hallazgos de rango 1 confirmados: es un periodo de incidencia, no memoria normal (§6, §8). */
+  /**
+   * Hay hallazgos de rango 1 confirmados. **Desde 3.55.0 no se produce** (OQ-148, propietario
+   * 2026-09-27): el periodo se consolida entero y lo que toca la incidencia queda fuera del esperado.
+   * Se conserva en la unión por compatibilidad con previsualizaciones y textos anteriores.
+   */
   | "periodo-de-incidencia"
   /** El fichero elegido no tiene instantánea. */
   | "sin-instantanea"
@@ -117,7 +131,44 @@ export interface ConsolidationInput {
   readonly rankOf: (kind: string) => number;
   /** `true` si hay una bifurcación de linaje sin resolver (§10). */
   readonly forkUnresolved: boolean;
-  readonly thresholds: Pick<TagChangeThresholds, "maxChance">;
+  /**
+   * `maxChance` compara instantáneas. `changeClass` (OQ-146, OQ-147) es opcional para no romper las
+   * llamadas anteriores: sin él no se clasifican los cambios (`changes` queda ausente) y el esperado
+   * es lo observado salvo lo que toca una incidencia.
+   */
+  readonly thresholds: Pick<TagChangeThresholds, "maxChance"> & { readonly changeClass?: ChangeClassThresholds };
+  /**
+   * Las instantáneas posteriores al esperado vigente, en orden de ventana, terminando en la que se
+   * consolida (si no termina en ella, se añade). Sin ella, solo la que se consolida.
+   */
+  readonly history?: readonly CircuitSnapshot[];
+  /** Claves de sujeto (`subjectKey`) que una persona confirmó en el periodo con eventos del plano. */
+  readonly confirmedSubjects?: ReadonlySet<string>;
+}
+
+/** El esperado de una versión: `expected` si lo guarda, o la instantánea (anteriores a 3.55.0, o idéntico). */
+export function expectedOf(version: ConsolidatedVersion): CircuitSnapshot {
+  return version.expected ?? version.snapshot;
+}
+
+/** Las claves de sujeto que tocan las incidencias. */
+export function incidentSubjectSet(incidents: readonly IncidentRecord[]): ReadonlySet<string> {
+  return new Set(incidents.flatMap((incident) => incident.subjects));
+}
+
+/**
+ * Lo que la versión guarda del esperado, sus cambios y sus incidencias. `expected` solo si difiere de
+ * la instantánea: si no, sería guardar dos veces lo mismo (§9).
+ */
+function expectationFields(
+  preview: ConsolidationPreview,
+  snapshot: CircuitSnapshot,
+): Pick<ConsolidatedVersion, "expected" | "changes" | "incidents"> {
+  const incidents = preview.incidents ?? [];
+  const changes = preview.changes ?? [];
+  const expected = expectedSnapshot(preview.previous === null ? null : expectedOf(preview.previous), snapshot, changes, incidentSubjectSet(incidents));
+  const same = canonicalise(expected) === canonicalise(snapshot);
+  return { ...(same ? {} : { expected }), changes, incidents };
 }
 
 /** Los hallazgos de la instantánea cruzados con la revisión: la decisión que llevaba cada uno (R-EVI-007). */
@@ -146,8 +197,12 @@ function nextVersionNumber(versions: readonly ConsolidatedVersion[]): number {
  *
  * Bloquea **solo lo pendiente** (propietario, 2026-09-23): un hallazgo confirmado, descartado o
  * pospuesto no impide consolidar. Lo pospuesto pasa con su motivo y con aviso de que volverá como
- * pendiente en el periodo siguiente. Un hallazgo de rango 1 confirmado convierte el periodo en una
- * incidencia (§6, §8) y sí bloquea: la memoria normal no aprende de un periodo anómalo (ADR-0005).
+ * pendiente en el periodo siguiente.
+ *
+ * Un hallazgo de rango 1 confirmado es una **incidencia** y, desde 3.55.0, ya no bloquea (OQ-148,
+ * propietario 2026-09-27): el periodo se consolida entero, la incidencia se guarda aparte
+ * (`incidents`, R-INC-001) y lo que toca queda fuera de las estadísticas del esperado. Con
+ * `thresholds.changeClass`, los cambios frente al esperado vigente se clasifican (§8, `changes`).
  */
 export function previewConsolidation(input: ConsolidationInput): ConsolidationPreview {
   const { snapshot, versions } = input;
@@ -165,14 +220,16 @@ export function previewConsolidation(input: ConsolidationInput): ConsolidationPr
     });
   }
 
-  const incident = decisions.filter((decision) => decision.state === "confirmado" && input.rankOf(decision.kind) === 1);
-  if (incident.length > 0) {
-    blockers.push({
-      code: "periodo-de-incidencia",
-      detail: `${incident.length} ${incident.length === 1 ? "hallazgo confirmado" : "hallazgos confirmados"} de rango 1: el periodo es una incidencia, no memoria normal. Trátalo como incidencia o descarta lo que no lo sea.`,
-      items: incident.map((decision) => decision.key),
-    });
-  }
+  // OQ-148: un rango 1 confirmado no bloquea; se excluye del esperado lo que toca.
+  const incidents: IncidentRecord[] = decisions
+    .filter((decision) => decision.state === "confirmado" && input.rankOf(decision.kind) === 1)
+    .map((decision) => ({
+      key: decision.key,
+      kind: decision.kind,
+      title: decision.title,
+      figure: decision.figure,
+      subjects: incidentSubjectsOf(decision.key, snapshot),
+    }));
 
   const twin = versions.filter((version) => version.revoked === null && version.basedOn.sourceHash === snapshot.sourceHash);
   if (twin.length > 0) {
@@ -209,8 +266,23 @@ export function previewConsolidation(input: ConsolidationInput): ConsolidationPr
     fileName: snapshot.fileName,
     window: { from: snapshot.window.from, to: snapshot.window.to },
   };
-  const delta = previous === null ? null : compareSnapshots(previous.snapshot, snapshot, input.thresholds);
+  const expected = previous === null ? null : expectedOf(previous);
+  const delta = expected === null ? null : compareSnapshots(expected, snapshot, { maxChance: input.thresholds.maxChance });
   const nextVersion = nextVersionNumber(versions);
+
+  const changeClass = input.thresholds.changeClass;
+  let changes: readonly ClassifiedChange[] | undefined;
+  if (changeClass !== undefined) {
+    const given = input.history ?? [];
+    const history = given[given.length - 1]?.sourceId === snapshot.sourceId ? given : [...given.filter((entry) => entry.sourceId !== snapshot.sourceId), snapshot];
+    changes = classifyChanges({
+      expected,
+      history,
+      incidentSubjects: incidentSubjectSet(incidents),
+      confirmedSubjects: input.confirmedSubjects ?? new Set(),
+      thresholds: { ...changeClass, maxChance: input.thresholds.maxChance },
+    });
+  }
 
   // El tamaño se estima sobre una versión provisional con el hash vacío: el hash real tiene siempre
   // la misma longitud, así que la diferencia es de decenas de bytes.
@@ -230,8 +302,21 @@ export function previewConsolidation(input: ConsolidationInput): ConsolidationPr
     revoked: null,
     appVersion: "",
   };
+  const shown: ConsolidationPreview = {
+    basedOn,
+    previous,
+    nextVersion,
+    delta,
+    blockers,
+    warnings,
+    decisions,
+    estimatedBytes: 0,
+    ...(changes === undefined ? {} : { changes }),
+    incidents,
+  };
+  const estimatedBytes = versionBytes({ ...provisional, ...expectationFields(shown, snapshot) });
 
-  return { basedOn, previous, nextVersion, delta, blockers, warnings, decisions, estimatedBytes: versionBytes(provisional) };
+  return { ...shown, estimatedBytes };
 }
 
 /**
@@ -299,6 +384,7 @@ export async function consolidate(
     decisions: preview.decisions,
     note: context.note === null || context.note.trim() === "" ? null : context.note,
     revoked: null,
+    ...expectationFields(preview, context.snapshot),
     appVersion: context.appVersion,
   };
   return { ...unhashed, hash: await versionHash(unhashed) };
@@ -330,7 +416,7 @@ export function currentVersion(versions: readonly ConsolidatedVersion[]): Consol
   return null;
 }
 
-/** Lo observado frente a la memoria: el delta del fichero actual contra la versión vigente. */
+/** Lo observado frente a la memoria: el delta del fichero actual contra el esperado de la versión vigente. */
 export interface MemoryComparison {
   readonly version: number;
   readonly basedOnFileName: string;
@@ -347,7 +433,7 @@ export function compareToMemory(
     version: memory.version,
     basedOnFileName: memory.basedOn.fileName,
     consolidatedAt: memory.createdAt,
-    delta: compareSnapshots(memory.snapshot, current, thresholds),
+    delta: compareSnapshots(expectedOf(memory), current, thresholds),
   };
 }
 
