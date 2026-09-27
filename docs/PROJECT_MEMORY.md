@@ -430,9 +430,8 @@ conversación siguiente.
 - **Fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
   6` (ADR-0010). **Primera entrega de F5: ADR-0017 propuesto** (expediente y onda, sección de
-  arriba), pendiente del propietario; el resto del alcance está en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
-  (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
-  antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
+  arriba), pendiente del propietario; el resto del alcance está en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes
+  de tocar nada. Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**
   (`CHANGELOG.md` `[3.43.0]` y `[3.44.0]`): unos treinta fallos reproducidos y corregidos, con su
   regla anotada «revisión de la lógica, 2026-09-26», y siete preguntas nuevas para el propietario
