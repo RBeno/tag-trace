@@ -1,6 +1,6 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.7.0
+version: 0.8.0
 status: baseline-candidate
 last_updated: 2026-09-27
 ---
@@ -146,6 +146,35 @@ registro con todas las lecturas rondaba los 110 MB y pasó del límite de un val
 Chromium tras dos recargas (OQ-142); una instantánea del mismo fichero ocupa cientos de kilobytes.
 El almacén queda acotado por las lecturas de una o dos exportaciones más una instantánea por
 fichero (ADR-0015).
+
+**Medido el 2026-09-27** (`tests/e2e/presupuesto-memoria.spec.ts`, TC-292): el mismo circuito
+partido en cuatro periodos consecutivos de unas 12 horas, importados uno tras otro. Bytes por
+periodo:
+
+| Periodo | Lecturas | CSV | Lecturas guardadas | Lecturas con gzip | Instantánea | Versión | Versión con gzip | Versión / CSV | Versión con gzip / CSV |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 58.070 | 1.858.253 | 18.455.159 | 684.567 | 87.640 | 89.693 | 11.508 | 4,8 % | 0,62 % |
+| 2 | 59.435 | 1.901.933 | 18.889.229 | 695.253 | 87.960 | 92.034 | 12.144 | 4,8 % | 0,64 % |
+| 3 | 59.330 | 1.898.573 | 18.855.839 | 704.070 | 107.704 | 120.110 | 15.904 | 6,3 % | 0,84 % |
+| 4 | 58.879 | 1.884.141 | 18.712.421 | 698.699 | 106.108 | 113.843 | 15.669 | 6,0 % | 0,83 % |
+
+Lo que dicen las cifras:
+
+- **Sin comprimir, la versión ronda el objetivo candidato y lo pasa en dos periodos.** Casi todo es la
+  instantánea: los vértices (unos 47 KB para 145 tags) y las aristas, que crecen en los periodos 3 y
+  4 porque entra el régimen de noche con su propia horquilla. Son datos, no duplicados. Además, el
+  circuito de auditoría no es un periodo normal: lleva 53 clases de fallo plantadas, y las
+  decisiones y el delta crecen con ellas.
+- **La instantánea depende de cuántos tags tiene el circuito, no de cuántas lecturas**, así que con
+  exportaciones más largas que 12 horas la proporción baja.
+- **Comprimida, la versión ocupa menos del 1 % del CSV.** El JSON repite sus claves en cada vértice.
+- **Conservar todas las lecturas comprimidas cuesta un 37 % del CSV**: unos 0,7 MB por cada 58.000
+  lecturas. Es la idea del esbozo inicial de guardarlas para revisar el pasado.
+- **Las lecturas retenidas ocupan diez veces el CSV** (unos 318 bytes por lectura normalizada): las
+  dos exportaciones retenidas son unos 37 MB.
+
+Qué se acepta como objetivo, y si se comprimen las versiones y las lecturas, lo decide el
+propietario (OQ-145).
 
 ## 10. Bifurcación de linaje entre dispositivos
 

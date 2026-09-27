@@ -2,6 +2,18 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.54.1] - 2026-09-27
+
+### Medido
+
+- **Presupuesto de la memoria** (`MEMORY_CONSOLIDATION.md` §9, TC-292): con el circuito de auditoría
+  en cuatro periodos de unas 12 horas, una versión consolidada ocupa entre el 4,8 % y el 6,3 % del
+  CSV de su periodo y, comprimida, menos del 1 %; conservar todas las lecturas comprimidas cuesta un
+  37 % del CSV. Las lecturas retenidas ocupan diez veces el CSV. Sin cambios en la aplicación.
+- Preguntas nuevas para el propietario: OQ-145 (qué se acepta como presupuesto y qué se comprime),
+  OQ-146 y OQ-147 (cuándo un cambio es sostenido y colectivo) y OQ-148 (cómo se excluye una
+  incidencia del esperado).
+
 ## [3.54.0] - 2026-09-27
 
 ### Corregido

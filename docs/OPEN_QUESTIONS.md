@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.50.0
+version: 0.51.0
 status: active
 last_updated: 2026-09-27
 ---
@@ -34,6 +34,10 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 
 | ID | Pregunta | Tratamiento mientras esté abierta |
 |---|---|---|
+| OQ-145 | **Presupuesto de la memoria, con las cifras medidas** (`MEMORY_CONSOLIDATION.md` §9, 2026-09-27). Sin comprimir, una versión consolidada ocupa entre el 4,8 % y el 6,3 % del CSV de su periodo; comprimida, menos del 1 %. Conservar todas las lecturas comprimidas cuesta un 37 % del CSV. (a) ¿Se acepta el objetivo del 5 % medido sobre el CSV tal como llega, con las versiones guardadas comprimidas? (b) ¿Se guardan todas las lecturas originales comprimidas, una por fichero, para poder revisar el pasado con reglas nuevas? (c) ¿Se comprimen también las lecturas retenidas, que hoy ocupan diez veces el CSV? | Nada se comprime todavía; las versiones se guardan en JSON y solo se retienen las lecturas de las dos últimas exportaciones. |
+| OQ-146 | **Cuándo un cambio es «sostenido»** (`MEMORY_CONSOLIDATION.md` §8). Solo un cambio colectivo sostenido o uno confirmado puede cambiar el esperado. ¿Cuántos periodos consecutivos tiene que mantenerse un cambio para ser sostenido: un número de ficheros, un número de días, o los dos? | La clasificación de §8 no se implementa hasta decidirlo; el plano ya separa «tag sin leer» de «cambio del plano». |
+| OQ-147 | **Cuándo un cambio es «colectivo»** (§8). ¿Qué parte de la flota o de los tags tiene que mostrarlo: por ejemplo, la mayoría de los AGV que pasan por el sitio, o todos los tags de una sección? | Igual que OQ-146. |
+| OQ-148 | **Cómo se excluye una incidencia del esperado.** Hoy un periodo con un hallazgo grave confirmado no se puede consolidar entero. ¿Se consolida el periodo recortando la ventana de la incidencia (su principio y su fin, que elige la persona), o se consolida entero marcando esos hallazgos como incidencia y dejando sus tramos fuera de las estadísticas del esperado? Recortar exige tener las lecturas del periodo para medirlo de nuevo, y hoy solo se retienen las de las dos últimas exportaciones. | Un periodo con un hallazgo grave confirmado sigue sin poder consolidarse. |
 | OQ-101 | ¿Qué modelos de lector/AGV existen y cuáles suprimen tag repetido? | Regla R-OPP-002 sigue candidate |
 | OQ-102 | ¿Qué evento o secuencia identifica con fiabilidad una vuelta? **El mecanismo para cuando se responda ya existe** (`lap_anchors`, R-GRA-009, 2026-09-22): una ancla declarada rota el ciclo ya reconstruido y una vuelta completa cortada por ella sale `observed`. Sigue faltando el tag real. | Conservar vueltas parciales/desconocidas; sin ancla declarada, el ancla es el ciclo dominante e `inferred` |
 | OQ-103 | ¿Cómo distinguir mantenimiento/asistencia/pastor en los CSV? | Catálogo parcial y exclusión explícita |
