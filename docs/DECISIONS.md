@@ -1,8 +1,8 @@
 ---
 document_id: TT-DECISIONS-001
-version: 0.2.0
+version: 0.3.0
 status: active
-last_updated: 2026-09-03
+last_updated: 2026-09-27
 ---
 
 # Índice de decisiones arquitectónicas
@@ -23,6 +23,8 @@ last_updated: 2026-09-03
 | [ADR-0012](decisions/ADR-0012-agvproj-container.md) | Contenedor `.agvproj`: zip, manifiesto y hash por sección | Accepted |
 | [ADR-0013](decisions/ADR-0013-canonical-time-and-determinism.md) | Tiempo canónico, orden total y determinismo numérico | Accepted |
 | [ADR-0014](decisions/ADR-0014-public-repository-and-publication.md) | Repositorio público y publicación en GitHub Pages | Accepted |
+| [ADR-0015](decisions/ADR-0015-circuit-state-as-evolving-graph.md) | El estado del circuito es un grafo que evoluciona: instantánea por fichero | Accepted |
+| [ADR-0016](decisions/ADR-0016-physical-plan-with-stable-locations.md) | Plano físico: ubicaciones estables, cambios confirmados y estadísticas combinables | Accepted |
 
 ## Convención
 

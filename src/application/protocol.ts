@@ -22,6 +22,15 @@ import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { StructureSet } from "../domain/anchor-sums.js";
 import type { SnapshotDelta } from "../domain/snapshot.js";
 import type { ConsolidatedVersion, ConsolidationPreview, LineageRelation, MemoryComparison } from "../domain/memory.js";
+import type {
+  EdgeSummary,
+  LocationSummary,
+  PhysicalPlan,
+  PlanEvent,
+  PlanEventInput,
+  PlanObservation,
+  PlanProposal,
+} from "../domain/plan.js";
 import type { Interval } from "../domain/coverage.js";
 import type { PaceReport } from "../domain/vehicle-pace.js";
 import type { Band, PeriodBandChanges, RegimeExposure } from "../domain/segment-bands.js";
@@ -229,7 +238,33 @@ export interface ResolveForkMessage {
   readonly reason: string;
 }
 
+/**
+ * Un cambio del plano físico (ADR-0016). Todos los escribe una persona: crear el plano desde una
+ * versión consolidada, aceptar una propuesta del Worker (que la vuelve a calcular desde el almacén
+ * antes de escribirla, sin fiarse de la que tiene la interfaz) o registrar un evento a mano —una
+ * salida, una revisión, una retirada—. La razón es obligatoria.
+ */
+export type PlanAction =
+  | { readonly kind: "crear-plano"; readonly fromVersion: number; readonly reason: string }
+  | {
+      readonly kind: "aceptar-propuesta";
+      readonly proposalId: string;
+      readonly reason: string;
+      /** Solo en `salida-sin-ubicar`: la ubicación del anillo de la que cuelga la salida. */
+      readonly branchFrom?: string;
+    }
+  | { readonly kind: "evento"; readonly event: PlanEventInput; readonly reason: string };
+
+export interface PlanActionMessage {
+  readonly type: "plan-action";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly action: PlanAction;
+}
+
 export type ToWorker =
+  | PlanActionMessage
   | StartMessage
   | CancelMessage
   | LoadListsMessage
@@ -699,6 +734,11 @@ export interface CircuitViews {
    */
   readonly memory?: MemoryViews;
   /**
+   * El plano físico del circuito (ADR-0016). Ausente si el circuito no tiene plano ni versión
+   * consolidada desde la que crearlo.
+   */
+  readonly plan?: PlanViews;
+  /**
    * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando
    * el circuito tiene listas de planta cargadas **y** al menos dos periodos distantes: con una sola
    * fuente cargada no hay con qué comparar, y no mostrar nada es más honesto que un aviso permanente.
@@ -764,6 +804,30 @@ export interface MemoryViews {
     /** Elección hecha en otro dispositivo, llegada con un `.agvproj` (OQ-144). */
     readonly origin?: "otro-dispositivo";
   }[];
+}
+
+/** El plano físico tal como lo enseña la interfaz: todo ya calculado en el Worker. */
+export interface PlanViews {
+  /** El plano vigente ahora, o `null` si todavía no hay. */
+  readonly current: PhysicalPlan | null;
+  /** Si no hay plano y hay versión vigente: desde cuál se puede crear. */
+  readonly canBootstrap: { readonly version: number; readonly fileName: string } | null;
+  /** Los eventos registrados, del primero al último, con su línea en palabras. */
+  readonly events: readonly (PlanEvent & { readonly text: string })[];
+  /** El fichero de trabajo leído contra el plano vigente al final de su ventana. */
+  readonly observation: PlanObservation | null;
+  /** Las observaciones de todas las instantáneas sumadas por ubicación y conexión. */
+  readonly summary: { readonly locations: readonly LocationSummary[]; readonly edges: readonly EdgeSummary[] } | null;
+  /** Cambios que el Worker propone con su evidencia; ninguno está escrito. */
+  readonly proposals: readonly PlanProposal[];
+}
+
+export interface PlanUpdatedMessage extends Envelope {
+  readonly type: "plan-updated";
+  readonly circuitId: string;
+  /** Qué evento o eventos se escribieron, en palabras. */
+  readonly written: readonly string[];
+  readonly plan: PlanViews;
 }
 
 /** Respuesta a `consolidate` en modo `preview`: nada se ha escrito. */
@@ -839,7 +903,8 @@ export type FromWorker =
   | ConsolidationPreviewMessage
   | ConsolidatedMessage
   | RevokedMessage
-  | ForkResolvedMessage;
+  | ForkResolvedMessage
+  | PlanUpdatedMessage;
 
 /**
  * `Omit` sobre una unión colapsa a las claves comunes y pierde el discriminante. Distribuyendo

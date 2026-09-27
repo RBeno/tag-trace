@@ -54,6 +54,13 @@ export interface BandThresholds {
 
 export interface Band {
   readonly samples: number;
+  /**
+   * Media y suma de cuadrados de desviaciones de las mismas muestras (ADR-0016 §6): se combinan entre
+   * periodos sin las muestras, cosa que los percentiles no permiten. Opcionales porque las
+   * instantáneas guardadas antes de 3.53.0 no las traen.
+   */
+  readonly meanMs?: number;
+  readonly m2?: number;
   readonly p50Ms: number;
   readonly p80Ms: number;
   readonly p95Ms: number;

@@ -113,6 +113,7 @@ const VERTEX_KIND_LABEL: Readonly<Record<VertexDelta["kind"], string>> = {
   "cambia-de-clase": "cambia de clase",
   "deja-de-leerse": "deja de leerse",
   "empieza-a-leerse": "empieza a leerse",
+  "no-observado": "sin leer en su ubicación",
 };
 
 /** El delta que explica la instantánea elegida: el que llega a ella o, si es la primera, el que sale de ella. */

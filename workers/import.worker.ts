@@ -2020,6 +2020,19 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
  * los cambios propuestos y vuelve a cargarlas, el análisis siguiente las recoge ya actualizadas y
  * el anterior sigue explicándose con las suyas.
  */
+/** Cambios del plano físico (ADR-0016). Pendiente de implementar: hoy responde con error. */
+async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Promise<void> {
+  emit(
+    {
+      type: "error",
+      code: "INTERNAL",
+      cause: `El plano físico aún no está disponible (${message.action.kind}).`,
+      recovery: "Espera a la entrega del plano.",
+    },
+    message.jobId,
+  );
+}
+
 async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<void> {
   const { jobId, file, circuitId } = message;
   if (!isAvailable()) {
@@ -2233,6 +2246,13 @@ scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   if (message.type === "cancel") {
     // Solo cancela el trabajo vigente: una cancelación tardía de otro trabajo no afecta a este.
     if (message.jobId === currentJobId) cancelRequested = true;
+    return;
+  }
+
+  if (message.type === "plan-action") {
+    currentJobId = message.jobId;
+    seq = 0;
+    void runPlan(message);
     return;
   }
 

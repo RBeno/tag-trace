@@ -340,7 +340,15 @@ export function buildSnapshot(input: SnapshotInput): CircuitSnapshot {
 /** Un vértice que aparece, desaparece, se mueve o cambia de clase entre dos instantáneas. */
 export interface VertexDelta {
   readonly tagId: string;
-  readonly kind: "aparece" | "desaparece" | "se-mueve" | "cambia-de-clase" | "deja-de-leerse" | "empieza-a-leerse";
+  readonly kind:
+    | "aparece"
+    | "desaparece"
+    | "se-mueve"
+    | "cambia-de-clase"
+    | "deja-de-leerse"
+    | "empieza-a-leerse"
+    /** Solo con plano (ADR-0016 §4): el tag sigue instalado en su ubicación y no se leyó. Lo pone `reinterpretDelta`. */
+    | "no-observado";
   readonly before: SnapshotVertex | null;
   readonly after: SnapshotVertex | null;
   readonly detail: string;
