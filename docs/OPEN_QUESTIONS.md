@@ -1,8 +1,8 @@
 ---
 document_id: TT-OPEN-001
-version: 0.60.0
+version: 0.61.0
 status: active
-last_updated: 2026-09-27
+last_updated: 2026-09-28
 ---
 
 # Preguntas abiertas
@@ -66,6 +66,12 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-134 | **Parcial.** Cerrado el 2026-09-26: los 60 s no son un ajuste. El ciclo ronda los 55 s y no es fijo —hay periodos de 50 y de 60—, la noche es distinta y la línea puede parar varias veces, así que cada tiempo entre pasos se mide contra su ciclo local (R-FLO-010). Abierto: con el pulmón lleno el cruce no deja pasar a más AGV y se acumulan detrás de la parada precisa; en el día medido no se ven AGV esperando detrás del pulmón, así que falta un día con el pulmón desbordado para medirlo. | Ninguna constante de planta va al código. |
 | OQ-114 | El mayor silencio colectivo observado cae justo en la frontera entre el régimen nocturno y el de producción, lo que sugiere cambio de turno o parada planificada. Con una sola observación no hay soporte. ¿Lo confirma el calendario? **Nota (2026-09-24):** ya se puede auditar con los datos: las paradas de la producción salen de los tags críticos (R-AGV-018) y se marca cuáles se repiten a la misma hora otro día; el propietario espera franjas como 8:00–8:10, 10:00–10:15, 12:00–12:10, 16:00–16:10 y 18:00–18:15. **Nota (2026-09-25):** una exportación real de otro circuito muestra también una parada de toda la producción en esa frontera —ningún tag crítico leído y ningún AGV leyendo durante unos tres cuartos de hora—, y las franjas que espera el propietario salen de los datos sin declararlas. Siguen siendo dos observaciones, de circuitos distintos y de un solo día cada una. | Hipótesis registrada con su evidencia; no se promueve a perfil esperado |
 
+
+## Necesarias durante F5
+
+| ID | Pregunta | Por qué importa | Documentos |
+|---|---|---|---|
+| OQ-164 | Un circuito puede tener una **bifurcación hacia un circuito de carga manual** (propietario, 2026-09-28: «CM es un circuito de carga manual»): el AGV sale del circuito, carga en otro y vuelve. R-AGV-018 dice que ningún AGV cambia de circuito. ¿Cómo se trata ese tiempo fuera? ¿Se declara la bifurcación con una función propia (hoy se escribe `bifurcacion` con `grupo` = `salida-circuito-carga-manual`) y el hueco del AGV desde ella hasta que reaparece se clasifica como «en carga manual» en vez de silencio o desconexión? ¿Cuenta el AGV en «N de M» mientras está fuera? | Sin regla, cada visita a carga manual sale como silencio largo o desconexión, puede fabricar paradas sin explicación y entra en la batería de incidencias. No se inventa: se declara hasta que el propietario decida. | R-AGV-017, R-AGV-018, R-AGV-014, ADR-0016 (salidas del grafo) |
 
 ## Decisiones de producto posteriores
 

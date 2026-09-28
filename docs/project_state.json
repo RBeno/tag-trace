@@ -1,12 +1,12 @@
 {
   "project": "TAG TRACE",
   "repository": "RBeno/tag-trace",
-  "documentationVersion": "1.60.0",
+  "documentationVersion": "1.60.1",
   "currentPhase": "F5",
   "phaseName": "Laboratorio de incidencias",
   "status": "in_progress",
   "baseline": "approved",
-  "lastUpdated": "2026-09-27",
+  "lastUpdated": "2026-09-28",
   "implementationStarted": true,
   "legacyRepository": "RBeno/tag-trace-agv",
   "nextTransition": {

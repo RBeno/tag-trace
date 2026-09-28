@@ -2,6 +2,15 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.65.1] - 2026-09-28
+
+### Documentación
+
+- `OPEN_QUESTIONS.md`: OQ-164, la salida de un AGV hacia un circuito de carga manual frente a
+  R-AGV-018 («ningún AGV cambia de circuito»). Aparece al preparar las listas de un circuito con una
+  bifurcación de ese tipo; hasta que se decida, el hueco sale como silencio o desconexión. Sin cambios
+  de código.
+
 ## [3.65.0] - 2026-09-27
 
 El propietario acepta ADR-0017 y las recomendaciones de OQ-159 a OQ-163 («Acepto ADR-0017, usa tu
