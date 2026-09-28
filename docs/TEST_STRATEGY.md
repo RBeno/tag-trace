@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.69.0
+version: 0.69.1
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-09-28
 ---
 
 # Estrategia de pruebas y evaluación
@@ -374,6 +374,7 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-323 | Ondas superpuestas y sin línea (`incident-wave.test.ts`) | Otra parada sin explicación dos tags delante y a la vez es superpuesta y el reparto se dice desconocido; una 15 tags detrás, fuera del alcance, no. Sin línea declarada no hay línea ni pulmón y la calma se mide con las transiciones. |
 | TC-324 | Registro del expediente (`incident-case.test.ts`) | El estado sale de los eventos y corregir el síntoma conserva el anterior; el programa no cambia de estado, no fija la ventana elegida, no escribe hipótesis ni confirma causas; las transiciones de §7, con conclusión para cerrar, verificación para eficaz y solo reabrir o anotar tras cerrar; numeración, fechas, razón y ventana que contiene el síntoma. |
 | TC-325 | Recorte de evidencia (`incident-case.test.ts`) | Solo la ventana, de toda la flota, en el orden de ADR-0013 y con los ceros iniciales; el hash se reproduce con las lecturas en otro orden y cambia si cambian las versiones. |
+| TC-326 | El ritmo se enseña como diferencia (`pace-label.test.ts`) | Una razón de 1,17 frente a la flota se escribe «17 % más lento», 0,92 «8 % más rápido» y 1,004 «igual que la flota»: nunca «117 %» junto a «más lento». |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las siete pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

@@ -79,6 +79,16 @@ const ORDER_READING: Readonly<Record<string, string>> = {
 /** Los regímenes del circuito (`produccion`, `noche`) tal como se dicen en pantalla. */
 export const REGIME_WORDS: Readonly<Record<string, string>> = { produccion: "producción", noche: "noche" };
 
+/**
+ * El ritmo de un AGV frente a la flota, dicho como diferencia: una razón de 1,17 es «17 % más lento».
+ * Enseñar «117 %» junto a «más lento» se leía como un 117 % más lento, siete veces lo real.
+ */
+export function paceDifference(relative: number): string {
+  const difference = Math.round((relative - 1) * 100);
+  if (difference === 0) return "igual que la flota";
+  return difference > 0 ? `${difference} % más lento` : `${-difference} % más rápido`;
+}
+
 const pick = (map: Readonly<Record<string, string>>) => (value: string): string => map[value] ?? value;
 
 export const truthLabel = pick(TRUTH);

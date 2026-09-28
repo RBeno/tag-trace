@@ -2,6 +2,17 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.65.2] - 2026-09-28
+
+### Corregido
+
+- **El ritmo de un AGV se enseñaba como razón y se leía como diferencia** (R-AGV-019). La tabla
+  «Ritmo de cada AGV en cada fichero» (pestaña Tiempos) y la columna «Ritmo frente a la flota» ponían
+  «117 %, más lento» para un AGV que va 1,17 veces lo que la flota, y se leía como un 117 % más lento.
+  Ahora dicen «17 % más lento», como ya decían las tarjetas de hallazgo; un AGV que no se señala lleva
+  «, a su paso». Visto por el propietario con datos de planta. Solo cambia la pantalla: la medida y el
+  CSV no cambian. TC-326 (`pace-label.test.ts`).
+
 ## [3.65.1] - 2026-09-28
 
 ### Documentación

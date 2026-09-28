@@ -13,6 +13,7 @@ import type { AnchorGapChange, StructureChange } from "../domain/anchor-sums.js"
 import { franjaCsv, type HistoryKind } from "../domain/franjas.js";
 import { paceCsv } from "../domain/vehicle-pace.js";
 import { plainTable, scrollBox } from "./charts.js";
+import { paceDifference } from "./labels.js";
 import { ringTimeChart, segmentHistoryChart, type RingTimeRow, type SegmentHistoryPanel } from "./diagnostic-charts.js";
 
 export interface FranjaUiDeps {
@@ -308,8 +309,7 @@ export function renderFranjas(panel: HTMLElement, views: CircuitViews, deps: Fra
                 const pace =
                   vehicle === undefined
                     ? "—"
-                    : `${Math.round((vehicle.ratio / vehicle.fleetRatio) * 100)} %` +
-                      (vehicle.verdict === null ? "" : vehicle.verdict === "mas-lento" ? ", más lento" : ", más rápido");
+                    : paceDifference(vehicle.ratio / vehicle.fleetRatio) + (vehicle.verdict === null ? ", a su paso" : "");
                 return holder === undefined ? pace : `${pace}; retiene a ${holder.retained.length} (${holder.retentions} veces)`;
               }),
             ]),

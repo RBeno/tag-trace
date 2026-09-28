@@ -87,6 +87,7 @@ import {
   type FindingRank,
   type Theme,
   orderReadingLabel,
+  paceDifference,
   patternLabel,
   truthLabel,
   verdictLabel,
@@ -2653,7 +2654,7 @@ function renderPace(views: CircuitViews): void {
               return [
                 vehicle.agvId,
                 String(vehicle.samples),
-                percent(vehicle.ratio / vehicle.fleetRatio),
+                paceDifference(vehicle.ratio / vehicle.fleetRatio),
                 vehicle.verdict === null ? "a su paso" : `${vehicle.verdict === "mas-lento" ? "más lento" : "más rápido"}, ${whereText(vehicle.where)}`,
                 String(holder?.retentions ?? 0),
                 holder === undefined ? "—" : duration(holder.waitMs),
