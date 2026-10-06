@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.29.2
+version: 0.30.0
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-06
 ---
 
 # Configuración de circuito
@@ -412,6 +412,27 @@ Se transporta en CSV o en Excel como DS-012 (`DATA_CONTRACTS.md` §3.6 y §3.7):
 (AGV, `valid_from`) en lugar de sustituirse entero, para que un alta o una baja se registren subiendo
 solo su fila. El valor elegido de la columna `circuito`, cuando el fichero trae varios, se guarda con
 el circuito y se reutiliza en las cargas siguientes.
+
+### 3.10 Cortes wifi y mapa de calor
+
+Los umbrales de la clasificación de cortes (R-COM-007) y de los huecos de lectura (R-COM-008).
+**Provisionales**: salen del primer informe de conexiones real y no los ha fijado planta.
+
+```text
+wifi:
+  micro_cut_max_ms: 10000            # un corte de 10 s o menos es microcorte (29 de 40 en el primer informe)
+  far_reappearance_hops: 10          # reaparecer a más tags de ruta es salir del recorrido
+  max_skipped_tags: 3                # hueco más largo que se cuenta como salto de lectura (R-OPP-014)
+  min_passes_for_rate: 5             # pasadas para dar cortes por cada 100 pasadas
+  min_vehicles_for_tag_fault: 2      # AGV que se lo saltan sin corte para apuntar al tag (R-DAT-021)
+  max_pace_factor: 3                 # leer más lento que esto frente a lo habitual no es ir en marcha
+```
+
+`max_pace_factor` es el mismo «tres veces lo habitual» con que se clasifican los silencios
+(`silenceKind.factorOverUsual`), y
+`min_vehicles_for_tag_fault`, el «al menos dos AGV» de R-DAT-021: no son valores de planta nuevos.
+Qué paradas son precisas no es un umbral: sale de la lista `critico` o de la columna `funcion`
+(§3.4.1).
 
 ## 4. Vigencia y versionado
 

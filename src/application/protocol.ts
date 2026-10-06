@@ -200,6 +200,30 @@ export interface FleetChooseCircuitMessage extends Envelope {
   readonly options: readonly { readonly name: string; readonly rows: number }[];
 }
 
+/** Cargar el informe de conexiones wifi de un AGV (DS-013). */
+export interface LoadWifiMessage {
+  readonly type: "wifi";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly file: File;
+  readonly circuitId: string;
+  /** El AGV del informe, confirmado por la persona: el fichero no lo trae en ninguna columna. */
+  readonly agvId: string;
+}
+
+export interface WifiLoadedMessage extends Envelope {
+  readonly type: "wifi-loaded";
+  readonly circuitId: string;
+  readonly agvId: string;
+  readonly accepted: number;
+  /** Eventos nuevos tras fusionar con lo guardado de ese AGV. */
+  readonly added: number;
+  readonly rejected: readonly { readonly reason: string; readonly rows: number }[];
+  /** AGV con informe guardado en el circuito. */
+  readonly agvs: readonly string[];
+  readonly warnings: readonly string[];
+}
+
 /**
  * Consolidar un periodo (F4; `MEMORY_CONSOLIDATION.md` §6). `mode: "preview"` devuelve qué pasaría
  * sin escribir nada; `mode: "commit"` escribe vN+1 y solo se envía tras la confirmación humana. El
@@ -323,6 +347,7 @@ export type ToWorker =
   | CancelMessage
   | LoadListsMessage
   | LoadFleetMessage
+  | LoadWifiMessage
   | ConsolidateMessage
   | RevokeMessage
   | ResolveForkMessage;
@@ -732,6 +757,44 @@ export interface CircuitViews {
     }[];
   };
   /**
+   * Cortes wifi cruzados con las lecturas y mapa de calor por tag (R-COM-004 a R-COM-008). Solo si
+   * el circuito tiene algún informe de conexiones (DS-013); se rehace en cada importación.
+   */
+  readonly wifi?: {
+    readonly agvs: readonly string[];
+    readonly warnings: readonly string[];
+    readonly cuts: readonly {
+      readonly agvId: string;
+      readonly startUtcMs: number;
+      readonly startRaw: string;
+      readonly durationMs: number | null;
+      readonly reconnection: string | null;
+      readonly lastTagId: string | null;
+      readonly nextTagId: string | null;
+      readonly msSinceLastRead: number | null;
+      readonly readsDuring: number;
+      readonly cutClass: string;
+      readonly aux: string;
+      readonly evidence: string;
+    }[];
+    readonly rows: readonly {
+      readonly tagId: string;
+      readonly position: number | null;
+      /** Si es una parada precisa declarada. */
+      readonly preciseStop: boolean;
+      readonly cuts: number;
+      readonly cutsPer100: number | null;
+      readonly vehiclesWithCuts: number;
+      readonly cutsByAgv: Readonly<Record<string, number>>;
+      readonly passesByAgv: Readonly<Record<string, number>>;
+      readonly byClass: Readonly<Record<string, number>>;
+      readonly skips: Readonly<Record<string, number>>;
+      readonly vehiclesSkippingWithoutCut: number;
+    }[];
+    /** Huecos de lectura por causa, en todo el circuito. */
+    readonly skipsByCause: Readonly<Record<string, number>>;
+  };
+  /**
    * La medición de cada fichero (R-TIM-011): una franja es un fichero. Por circuito, la horquilla de
    * cada tramo, el anillo y la posición en tiempo de cada tag en cada fichero, y los tramos que cambian
    * de un fichero a otro. Se rehace en cada importación; no se guarda una copia fija (eso es F4).
@@ -1002,6 +1065,7 @@ export type FromWorker =
   | ListsLoadedMessage
   | FleetLoadedMessage
   | FleetChooseCircuitMessage
+  | WifiLoadedMessage
   | ConsolidationPreviewMessage
   | ConsolidatedMessage
   | RevokedMessage

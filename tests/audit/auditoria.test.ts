@@ -20,6 +20,8 @@ import { describe, expect, it } from "vitest";
 
 import { buildAuditScenario, toRealUtc, type DefectClass } from "../support/circuito-auditoria.js";
 import { importReadings } from "../../src/ingestion/importer.js";
+import { importWifiText } from "../../src/ingestion/wifi-connections.js";
+import { buildWifiHeatmap } from "../../src/domain/wifi-cuts.js";
 import { buildTransitions } from "../../src/domain/graph.js";
 import { assignCohorts } from "../../src/domain/cohort.js";
 import { dominantNeighbours, locateUndeclaredTags, type UndeclaredTagReport } from "../../src/domain/undeclared-tags.js";
@@ -1632,6 +1634,35 @@ describe("auditoría del circuito con verdad conocida", () => {
         detail:
           `${escrito} → ${fila?.verdict ?? "sin fila"} con ${fila?.observedTag ?? "—"}; ${real}: ${fuera?.verdict ?? "no sale fuera de la lista"}` +
           `${fuera === undefined ? "" : `, la lista pone ahí ${fuera.declaredWithoutReadings.join(", ") || "nada"}`}; juntos en el orden leído: ${juntos ? "sí" : "no"}`,
+      };
+    },
+    "hueco-de-comunicacion": () => {
+      const planted = scenario.defects.find((d) => d.kind === "hueco-de-comunicacion");
+      const [tag] = planted?.tags ?? [];
+      const agv = scenario.wifiAgv;
+      const { readings } = importReadings(
+        scenario.readingsCsv,
+        { sourceId: "auditoria", fileName: "auditoria.csv", byteSize: scenario.readingsCsv.length, zone: "Europe/Madrid", encoding: "utf-8" },
+        { onProgress: () => undefined, isCancelled: () => false },
+      );
+      const heat = buildWifiHeatmap({
+        readings,
+        connections: new Map([[agv, importWifiText(scenario.wifiCsv, "Europe/Madrid").events]]),
+        preciseStops: new Set(),
+        thresholds: PROVISIONAL_CONFIG.wifi,
+      });
+      const own = heat.skips.filter((skip) => skip.agvId === agv);
+      const planted_ = own.filter((skip) => skip.tagId === tag && skip.prevUtcMs === planted?.atUtcMs);
+      const rest = own.filter((skip) => !planted_.includes(skip));
+      return {
+        ok:
+          planted_.length === 1 &&
+          planted_[0]?.cause === "comunicacion" &&
+          rest.length > 0 &&
+          rest.every((skip) => skip.cause !== "comunicacion"),
+        detail:
+          `${tag} de ${agv}: ${planted_.map((skip) => skip.cause).join(", ") || "sin hueco"}; ` +
+          `otros ${rest.length} huecos suyos: ${[...new Set(rest.map((skip) => skip.cause))].join(", ") || "ninguno"}`,
       };
     },
     "refuerzo-sin-lectura": () => {

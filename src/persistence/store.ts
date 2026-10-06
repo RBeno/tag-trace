@@ -34,6 +34,7 @@ import type { Interval } from "../domain/coverage.js";
 import type { PlanEvent } from "../domain/plan.js";
 import type { PlantValueEvent } from "../domain/plant-values.js";
 import type { FleetPeriod } from "../domain/fleet.js";
+import type { ConnectionEvent } from "../domain/wifi-cuts.js";
 import { sortVersions, type ConsolidatedVersion, type LineageState } from "../domain/memory.js";
 import type { Reading } from "../domain/reading.js";
 import type { ReviewEntry } from "../domain/review.js";
@@ -152,6 +153,8 @@ export interface StoredCircuit {
   readonly lists?: readonly StoredTagList[];
   /** Historial de flota (DS-012). Ausente hasta que se carga, y en circuitos anteriores a la versión 4. */
   readonly fleet?: StoredFleet;
+  /** Informes de conexiones wifi por AGV (DS-013). Ausente hasta que se carga el primero. */
+  readonly wifi?: StoredWifi;
   readonly updatedAt: number;
 }
 
@@ -243,6 +246,17 @@ export interface StoredFleet {
   readonly periods: readonly FleetPeriod[];
   readonly loadedAt: number;
   readonly fileNames: readonly string[];
+}
+
+/**
+ * Los informes de conexiones wifi del circuito (DS-013), **acumulados** por AGV: cada carga se
+ * fusiona con lo guardado de ese AGV, como el historial de flota. Un AGV sin informe no tiene
+ * entrada, y eso es distinto de tenerla vacía: sus huecos de lectura no se pueden separar.
+ */
+export interface StoredWifi {
+  readonly byAgv: Readonly<
+    Record<string, { readonly events: readonly ConnectionEvent[]; readonly fileNames: readonly string[]; readonly loadedAt: number }>
+  >;
 }
 
 /** Todas las claves `[circuitId, *]` de una tabla con clave compuesta: un array ordena después de cualquier texto. */

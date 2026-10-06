@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.45.0
+version: 0.46.0
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-06
 ---
 
 # Memoria compacta del proyecto
@@ -410,6 +410,31 @@ síntoma, intervalo o hallazgo; retroceso temporal y topológico; replay multi-A
 incertidumbre; biblioteca de casos y similitud explicada; informe vivo y exportación local;
 contramedidas y verificación antes/después.
 
+## Cortes wifi frente a huecos de lectura (2026-10-06, 3.64.0)
+
+Primera entrega de F5, pedida por el propietario tras analizar con él, en local y fuera del
+repositorio, dos días de un AGV: su informe de conexiones wifi, sus lecturas con la acción de cada tag
+y el informe ampliado de la flota. Petición: «empezamos con el mapa de calor wifi así podemos separar
+el fallo comunicación con fallo de lectura o de tag», y anotar las reglas que dio:
+
+- **Los tags están en la memoria del vehículo**: sin wifi el AGV los sigue leyendo y ejecutando; lo que
+  falta es que la lectura llegue al histórico (R-COM-004).
+- **Sin wifi solo faltan las órdenes del servidor**, y la que se ve es continuar en una parada precisa:
+  el AGV espera hasta reconectar (R-COM-005).
+- **Un temporizador puede hacerlo continuar** sin wifi pasado un tiempo, con el riesgo de ocupar un
+  cruce y chocar (R-COM-006). Qué paradas protegen un cruce lo declara planta (OQ-162).
+
+Lo que entra: el informe de conexiones por AGV (DS-013; el AGV sale del nombre del fichero y se
+confirma), la clasificación de cada corte (R-COM-007), la causa de cada hueco de lectura (R-COM-008)
+y la pestaña **Wifi** con el mapa de calor por tag y AGV. Dos decisiones que no conviene deshacer:
+**«fuera del recorrido» se decide antes que «en marcha»**, porque la lectura con la que el AGV
+reaparece cae a veces dentro del corte; y **otro AGV que lo adelanta prueba que no ocupaba la guía**
+(R-AGV-021), porque reaparecer pocos tags más adelante no basta: en el dato real, el corte de 63 min
+reaparecía a 7 tags y por el sitio pasaron decenas de AGV mientras tanto. Contrastado con ese dato,
+la clasificación coincide con el análisis a mano. Quedan abiertas OQ-159 a OQ-163; la siguiente pieza
+prevista es el catálogo de tags por tag y MTC a partir de las acciones (DS-014) y la consecuencia de
+un tag no leído, que espera a OQ-159.
+
 ## Estado al 2026-09-27 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
@@ -418,8 +443,9 @@ conversación siguiente.
 
 - **Fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
-  6` (ADR-0010). **Aún no hay ninguna entrega de F5**: el primer trabajo de esta fase es el punto de
-  partida en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  6` (ADR-0010). **La primera entrega de F5 es la de cortes wifi** (3.64.0, sección de arriba), una
+  fuente de evidencia pedida por el propietario; el expediente de F5 sigue sin empezar, y su punto de
+  partida está en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
   (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
   antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**
@@ -434,7 +460,7 @@ conversación siguiente.
   anclas en puntos críticos miden tiempos por sección con nombre de tramo (R-TIM-012). La última entrega es la posición de un tag según las lecturas (R-GRA-015,
   `CHANGELOG.md` `[3.32.0]`), publicada en `main` y en la web.
 - **Cómo se ha trabajado**: una entrega por petición del propietario, con su documentación, su clase
-  plantada en la auditoría sintética (`tests/audit/`, 53 clases) y un solo commit en la rama de
+  plantada en la auditoría sintética (`tests/audit/`, 54 clases) y un solo commit en la rama de
   trabajo; PR y fusión solo cuando él lo pide. Las decisiones de cada entrega están en las secciones
   de arriba y en el `CHANGELOG`.
 - **Pendiente de planta**, sin identificadores:
@@ -443,7 +469,11 @@ conversación siguiente.
      como fichero, y decide qué tags leídos que la lista no tiene se declaran.
   3. Resuelto el 2026-09-26: el propietario dio el número correcto del tag de noche; está en el libro
      de listas, fuera del repositorio.
-  4. El resto de preguntas abiertas, en `OPEN_QUESTIONS.md`.
+  4. Cortes wifi (2026-10-06): qué hace el AGV con un tag que no detecta (OQ-159), si los cortes
+     largos fuera del recorrido son extracciones (OQ-160), qué significan `Datos Aux` y `Cober.`
+     (OQ-161), qué paradas precisas protegen un cruce y dónde hay temporizador (OQ-162), y los tags
+     «No ejecutado» siempre (OQ-163).
+  5. El resto de preguntas abiertas, en `OPEN_QUESTIONS.md`.
 - **Fuera del repositorio**: los scripts y las salidas de los análisis con datos de planta vivían en
   `local/` (ignorado por git) y se le entregaron al propietario en un paquete. Para analizar datos
   nuevos hay que volver a subir la exportación y, si hacen falta, las listas.

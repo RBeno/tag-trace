@@ -1,8 +1,8 @@
 ---
 document_id: TT-RULES-001
-version: 0.59.0
+version: 0.60.0
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-06
 ---
 
 # Catálogo de reglas industriales
@@ -130,6 +130,11 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-COM-001 | accepted | Sin WiFi no llegan lecturas al histórico disponible. |
 | R-COM-002 | candidate | Sin comunicación, el AGV no recibiría la orden del servidor para entrar en carga online. Debe validarse en cada arquitectura operativa. |
 | R-COM-003 | accepted | Un patrón simultáneo de múltiples AGV apunta a infraestructura/proceso común antes que a fallos independientes, pero requiere evidencia. |
+| R-COM-004 | accepted | **Sin wifi el AGV sigue leyendo y ejecutando los tags: los tiene en su memoria** (propietario, 2026-10-06: «los tags los tiene en memoria y ejecuta si la falta de lectura es por wifi»). Lo que se pierde sin wifi es que la lectura llegue al histórico (R-COM-001), no la orden del tag. Por eso un tag que falta en el histórico **dentro de un corte wifi** es un hueco de comunicación, y no un fallo de lectura ni un tag sin ejecutar. Necesita el informe de conexiones del AGV (DS-013); sin él, R-OPP-003 sigue mandando y el hueco no se separa. `src/domain/wifi-cuts.ts`. |
+| R-COM-005 | accepted | **Sin wifi lo único que el AGV deja de recibir son las órdenes del servidor**, y la que se ve en el dato es **continuar en una parada precisa** (propietario, 2026-10-06; la parada precisa espera la señal del servidor, R-GRA-007). Un AGV en una parada precisa sin wifi espera hasta reconectar. Un corte con el AGV parado en una parada precisa **declarada** (lista `critico` o columna `funcion`) es «espera al servidor»; sin paradas precisas declaradas no se puede decir y el corte sale «parado», con la razón escrita. R-COM-002 es un caso particular de esta regla. |
+| R-COM-006 | accepted | **Se puede programar que el AGV continúe tras X tiempo sin información del servidor, con el riesgo de ocupar un cruce y chocar** (propietario, 2026-10-06). El programa no sabe qué paradas precisas protegen un cruce ni si el temporizador está programado: lo declara planta (OQ-162). Hasta entonces el riesgo **se nombra** en la frase de cada corte en parada precisa y **nunca se afirma** (R-EVI-004). Un tag `control-wifi` (R-GRA-007) hace lo mismo en un punto fijo del circuito. |
+| R-COM-007 | candidate | **Cada corte del informe de conexiones se clasifica con las lecturas del AGV**, en este orden: `sin-cierre` (el informe no trae la reconexión); `apagado` (reconexión «tras apagado»: no es un corte de red); `sin-lecturas`; `microcorte` (dura `wifi.micro_cut_max_ms` o menos); `fuera-del-recorrido` (no estaba en la guía: reaparece a más de `wifi.far_reappearance_hops` tags de ruta, u **otro AGV pasó por su último tag y llegó al de reaparición antes que él**, R-AGV-021); `en-marcha` (leyó durante el corte al ritmo de la ruta, no más de `wifi.max_pace_factor` veces lo habitual de esos tramos: ejecutaba los tags, R-COM-004); `espera-servidor` (R-COM-005); y `parado`. «Fuera del recorrido» se decide antes que «en marcha» porque la lectura con la que reaparece puede caer dentro del corte. La ruta es el sucesor dominante de la flota, y las posiciones, el anillo de los AGV con informe (una exportación puede mezclar recorridos). Los umbrales son provisionales (`CONFIG_SCHEMA.md` §3.10). Con el primer informe real (dos días de un AGV), los tres cortes largos —18, 30 y 63 min— salen fuera del recorrido, como el análisis a mano. |
+| R-COM-008 | candidate | **Un tag que falta entre dos lecturas seguidas de un AGV se separa por causa**: `comunicacion` si el hueco cae dentro de un corte suyo (R-COM-004); sin corte, `tag` si lo saltan al menos `wifi.min_vehicles_for_tag_fault` AGV con informe (el «al menos dos» de R-DAT-021); `lectura` si no y otro AGV sí lo lee (apunta a su lector); `sin-contraste` si nadie más lo lee; y `sin-informe` si el AGV no tiene informe de conexiones, que no se separa nunca. Solo cuentan huecos de hasta `wifi.max_skipped_tags` tags seguidos por el camino dominante y con un paso entre las dos lecturas que no es habitual (menos del 10 % de las salidas): uno más largo no se da por recorrido (R-OPP-014). Dos lecturas en el mismo instante no cuentan: el reloj no las ordena. «Apunta al lector» y «apunta al tag» son una lectura de la guía, no una causa (R-EVI-006). |
 
 ## Flujo, FIFO y zonas
 

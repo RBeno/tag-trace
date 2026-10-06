@@ -8,7 +8,7 @@
 
 import { expect, type Page } from "@playwright/test";
 
-export type TabName = "Resumen" | "Tags" | "AGV" | "Tiempos" | "Línea y calles" | "Memoria" | "Datos";
+export type TabName = "Resumen" | "Tags" | "AGV" | "Wifi" | "Tiempos" | "Línea y calles" | "Memoria" | "Datos";
 
 /** Activa una pestaña por su nombre y espera a que esté seleccionada. */
 export async function openTab(page: Page, name: TabName): Promise<void> {

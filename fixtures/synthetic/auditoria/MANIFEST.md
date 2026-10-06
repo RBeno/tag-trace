@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/29`
+- Dataset ID/version: `auditoria/30`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -133,4 +133,12 @@ Se declaran tres anclas —las posiciones 0, 50 y 100 del anillo— y la lista `
 mayoría). La primera sigue siendo el ancla de vuelta. La sonda afirma tres secciones de 50 tags con
 esos nombres, horquilla de producción en las tres, muestras en los dos ficheros, y que la suma de sus
 p50 cabe en la vuelta nominal (150 pasos de 12 a 20 s). Ninguna lectura cambia.
+
+## Hueco de comunicación (2026-10-06): `auditoria/30`
+
+Se añade un informe de conexiones wifi (DS-013) del AGV de lector degradado, con un solo corte que
+cubre uno de los tags sueltos que ya se salta —el hueco de un tag que cae en medio de los suyos, sin
+otro papel plantado—. La clase `hueco-de-comunicacion` afirma que ese hueco sale como comunicación y
+que ninguno de sus otros huecos, fuera de cortes, lo hace (R-COM-004, R-COM-008). Ninguna lectura
+cambia. Todas las clases siguen DETECTA.
 

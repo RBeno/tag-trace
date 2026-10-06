@@ -239,7 +239,7 @@ Lo que dicen las cifras:
 - **Sin comprimir, la versión ronda el objetivo candidato y lo pasa en dos periodos.** Casi todo es la
   instantánea: los vértices (unos 47 KB para 145 tags) y las aristas, que crecen en los periodos 3 y
   4 porque entra el régimen de noche con su propia horquilla. Son datos, no duplicados. Además, el
-  circuito de auditoría no es un periodo normal: lleva 53 clases de fallo plantadas, y las
+  circuito de auditoría no es un periodo normal: lleva 54 clases de fallo plantadas, y las
   decisiones y el delta crecen con ellas.
 - **La instantánea depende de cuántos tags tiene el circuito, no de cuántas lecturas**, así que con
   exportaciones más largas que 12 horas la proporción baja.

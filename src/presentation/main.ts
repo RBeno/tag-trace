@@ -64,6 +64,8 @@ import { CARDS_SHOWN } from "../domain/finding-kinds.js";
 import { bandsCsv } from "../domain/segment-bands.js";
 import { anchorSectionsCsv } from "../domain/anchor-sections.js";
 import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
+import { renderWifi } from "./wifi-ui.js";
+import { WIFI_STRUCTURE, agvFromFileName } from "../domain/wifi-cuts.js";
 import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
 import { wallClockToUtc, type FieldOrder } from "../domain/time.js";
@@ -317,6 +319,29 @@ const fleetLabel = element("label", undefined, "Historial de flota");
 fleetLabel.htmlFor = "fleet-file";
 const fleetNote = element("p", "muted", "");
 
+/**
+ * El informe de conexiones wifi de un AGV (DS-013). El fichero no trae el AGV en ninguna columna: lo
+ * dice su nombre (`CONEXIONES123`), así que se propone desde el nombre y la persona lo confirma aquí.
+ */
+const wifiInput = element("input");
+wifiInput.type = "file";
+wifiInput.accept = ".xlsx,.csv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+wifiInput.id = "wifi-file";
+const wifiLabel = element("label", undefined, "Informe de conexiones wifi de un AGV");
+wifiLabel.htmlFor = "wifi-file";
+const wifiAgvInput = element("input");
+wifiAgvInput.type = "text";
+wifiAgvInput.id = "wifi-agv";
+wifiAgvInput.placeholder = "del nombre del fichero";
+const wifiAgvLabel = element("label", undefined, "AGV del informe");
+wifiAgvLabel.htmlFor = "wifi-agv";
+const wifiNote = element("p", "muted", "");
+const wifiEmpty = element(
+  "p",
+  "muted tab-empty",
+  "Sin informes de conexiones wifi. Cárgalos en «Datos», uno por AGV, y vuelve a importar las lecturas del circuito.",
+);
+
 {
   listsPanel.append(element("h2", undefined, "Listas del circuito"), listsLabel, filePicker(listsInput));
   const structure = element("details");
@@ -364,6 +389,21 @@ const fleetNote = element("p", "muted", "");
   fleetExample.style.overflowX = "auto";
   fleetStructure.append(fleetExample);
   listsPanel.append(fleetLabel, filePicker(fleetInput), fleetStructure, fleetNote);
+
+  const wifiStructure = element("details");
+  wifiStructure.append(element("summary", undefined, "Qué forma tiene que tener el informe de conexiones"));
+  wifiStructure.append(
+    element(
+      "p",
+      "muted",
+      `El informe de conexiones de un AGV tal como lo exporta Vsystem, con «${WIFI_STRUCTURE.header.join("» y «")}» ` +
+        `(${WIFI_STRUCTURE.kinds.join(", ")}). El AGV no va en el fichero: se toma de su nombre y se puede corregir ` +
+        "aquí antes de cargarlo. Cada carga se suma a lo guardado de ese AGV.",
+    ),
+  );
+  const wifiAgvRow = element("div", "filters");
+  wifiAgvRow.append(wifiAgvLabel, wifiAgvInput);
+  listsPanel.append(wifiLabel, wifiAgvRow, filePicker(wifiInput), wifiStructure, wifiNote);
 }
 
 /**
@@ -376,6 +416,7 @@ const TABS = [
   ["resumen", "Resumen"],
   ["tags", "Tags"],
   ["agv", "AGV"],
+  ["wifi", "Wifi"],
   ["tiempos", "Tiempos"],
   ["linea", "Línea y calles"],
   ["memoria", "Memoria"],
@@ -599,6 +640,8 @@ const plantValuesPanel = createPlantValuesPanel({
   get("tags").append(views("tags"));
   // AGV: las vistas de la flota y, al final, el expediente que abre el buscador de la barra.
   get("agv").append(views("agv"), dossierPanel);
+  // Wifi: el mapa de calor, y mientras no haya informe de conexiones, cómo conseguirlo.
+  get("wifi").append(wifiEmpty, views("wifi"));
   get("tiempos").append(views("tiempos"));
   get("linea").append(views("linea"));
   // Memoria: la memoria consolidada del circuito, sus versiones y el flujo de consolidar (F4).
@@ -1045,6 +1088,21 @@ function handleMessage(message: FromWorker): void {
       return;
     }
 
+    case "wifi-loaded": {
+      wifiNote.textContent =
+        `Circuito «${message.circuitId}» — informes de conexiones de ${message.agvs.length} AGV: ${message.agvs.join(", ")}.`;
+      const lines = [
+        `AGV ${message.agvId}: ${message.accepted.toLocaleString("es-ES")} eventos leídos, ${message.added.toLocaleString("es-ES")} nuevos.`,
+        ...message.rejected.map((entry) => `${entry.rows} ${entry.rows === 1 ? "fila no cargada" : "filas no cargadas"}: ${entry.reason}.`),
+        ...message.warnings,
+        "El mapa de calor se verá en la pestaña «Wifi» al volver a importar las lecturas del circuito.",
+      ];
+      showMessage(message.warnings.length > 0 || message.rejected.length > 0 ? "warn" : "info", "Informe de conexiones cargado", lines);
+      setBusy(false);
+      disposeWorker();
+      return;
+    }
+
     case "lists-loaded": {
       const detail = message.lists
         .map((entry) => `${entry.list}: ${entry.tags.toLocaleString("es-ES")} ${entry.tags === 1 ? "tag" : "tags"}`)
@@ -1403,6 +1461,31 @@ function startFleet(file: File, circuitId: string, circuitName?: string): void {
   worker.postMessage(load);
 }
 
+/** Arranca la carga de un informe de conexiones wifi (DS-013). */
+function startWifi(file: File, circuitId: string, agvId: string): void {
+  disposeWorker();
+  clearMessages();
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    showMessage("error", "El proceso auxiliar se detuvo", [
+      "El informe no llegó a cargarse y el circuito no se ha modificado.",
+    ]);
+    setBusy(false);
+    disposeWorker();
+  };
+  setBusy(true);
+  progressNote.textContent = "Leyendo el informe de conexiones";
+  progressBar.value = 0;
+  const load: ToWorker = { type: "wifi", protocolVersion: PROTOCOL_VERSION, jobId, file, circuitId, agvId };
+  worker.postMessage(load);
+}
+
 function startLists(file: File, circuitId: string): void {
   disposeWorker();
   clearMessages();
@@ -1447,7 +1530,7 @@ function startLists(file: File, circuitId: string): void {
  * la carga se rechaza sola. Es exactamente el defecto que introdujo el primer intento de arreglo
  * de esto, y lo destapó la prueba de navegador en la misma ejecución.
  */
-for (const input of [fileInput, projectInput, listsInput, fleetInput]) {
+for (const input of [fileInput, projectInput, listsInput, fleetInput, wifiInput]) {
   input.addEventListener("click", () => {
     input.value = "";
   });
@@ -1477,6 +1560,29 @@ fleetInput.addEventListener("change", () => {
     return;
   }
   startFleet(file, circuitId);
+});
+
+wifiInput.addEventListener("change", () => {
+  const file = wifiInput.files?.[0];
+  if (file === undefined) return;
+  const circuitId = circuitInput.value.trim();
+  if (circuitId === "") {
+    showMessage("warn", "Falta el circuito", [
+      "El informe de conexiones pertenece a un circuito concreto: escribe cuál antes de cargarlo.",
+    ]);
+    return;
+  }
+  // El AGV escrito manda; si no hay, el del nombre del fichero, y se enseña de dónde salió.
+  const typed = wifiAgvInput.value.trim();
+  const agvId = typed === "" ? agvFromFileName(file.name) : typed;
+  if (agvId === null || agvId === "") {
+    showMessage("warn", "Falta el AGV", [
+      "El informe de conexiones no dice de qué AGV es y su nombre no trae un número: escríbelo en «AGV del informe».",
+    ]);
+    return;
+  }
+  if (typed === "") wifiAgvInput.value = agvId;
+  startWifi(file, circuitId, agvId);
 });
 
 fileInput.addEventListener("change", () => {
@@ -1756,6 +1862,14 @@ function renderViews(views: CircuitViews): void {
   renderFleet(views);
   renderVehicleReadingSection(views);
   renderPace(views);
+
+  // --- Wifi: cortes de comunicación frente a huecos de lectura (R-COM-004 a R-COM-008) ---------------
+  out = viewsOf.get("wifi") as HTMLElement;
+  wifiEmpty.hidden = views.wifi !== undefined;
+  if (views.wifi !== undefined) {
+    out.append(element("h2", undefined, "Wifi"));
+    renderWifi(out, views, { finding, formatInstant, duration });
+  }
 
   // --- Tiempos: el estado normal, las secciones, los ficheros, los críticos y el anillo ----------
   out = viewsOf.get("tiempos") as HTMLElement;

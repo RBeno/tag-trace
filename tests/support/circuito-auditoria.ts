@@ -138,7 +138,12 @@ export type DefectClass =
   /** El mismo tag de noche, declarado en la lista `noche` de planta: explicado, sin comprobarlo. */
   | "tag-de-noche-declarado"
   /** Dos desvinculaciones seguidas en el circuito, una sin leerse nunca: la otra sostiene la función (R-GRA-016). */
-  | "refuerzo-sin-lectura";
+  | "refuerzo-sin-lectura"
+  /**
+   * Un corte wifi del AGV de lector degradado que cubre uno de los tags que ya se salta: ese hueco es
+   * comunicación y no lectura; los demás huecos del mismo AGV, fuera de cortes, no (R-COM-004, R-COM-008).
+   */
+  | "hueco-de-comunicacion";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -202,6 +207,9 @@ export interface AuditScenario {
    * mitad y sigue leyendo (`fleetLeavesMidway`), y una fila de otro circuito para el selector.
    */
   readonly fleetCsv: string;
+  /** Informe de conexiones wifi (DS-013) de `wifiAgv`, en forma `Fecha;Conexión`. */
+  readonly wifiCsv: string;
+  readonly wifiAgv: string;
   readonly fleetCircuit: string;
   readonly fleetNeverRead: string;
   readonly fleetLeavesMidway: string;
@@ -1038,6 +1046,28 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
 
   filas.sort((a, b) => b.t - a.t); // Pila: lo más reciente primero, como la fuente real.
 
+  // Un corte wifi (R-COM-004), después de generar y sin `random()`: el lector degradado se salta tags
+  // del anillo de vez en cuando; se elige el hueco de un solo tag que cae en medio de los suyos y se
+  // pone un corte que lo cubre. Las lecturas no cambian.
+  const propiasDegradado = filas.filter((fila) => fila.v === lectorDegradado).sort((a, b) => a.t - b.t);
+  const huecosDegradado: { a: (typeof filas)[number]; b: (typeof filas)[number]; tag: string }[] = [];
+  for (let index = 1; index < propiasDegradado.length; index += 1) {
+    const a = propiasDegradado[index - 1] as (typeof filas)[number];
+    const b = propiasDegradado[index] as (typeof filas)[number];
+    const ia = ring.indexOf(a.tag);
+    const ib = ring.indexOf(b.tag);
+    if (ia === -1 || ib !== ia + 2 || b.t - a.t < 6_000) continue;
+    const tag = ring[ia + 1] as string;
+    // Un tag que otro papel ya hace saltar (memoria, rotura, convoy…) no sirve: su hueco tiene otro motivo.
+    if ([...nuncaLeidos, ...lecturaAlta, ...lecturaMedia, ...porMemoria, ...tramoConvoy, ...rotos, ...degradados].includes(tag)) continue;
+    huecosDegradado.push({ a, b, tag });
+  }
+  const huecoWifi = huecosDegradado[Math.floor(huecosDegradado.length / 2)];
+  if (huecoWifi === undefined) throw new Error("el lector degradado no se salta ningún tag suelto");
+  const wifiCsv = ["Fecha;Conexión"]
+    .concat([`${stamp(huecoWifi.b.t - 2_000)};Conexión`, `${stamp(huecoWifi.a.t + 2_000)};Desconexión`])
+    .join("\r\n");
+
   const readingsCsv = ["Fecha;AGV;Tag"]
     .concat(filas.map((fila) => `${stamp(fila.t)};${fila.v};${fila.tag}`))
     .join("\r\n");
@@ -1233,6 +1263,14 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       vehicles: [],
       expect: "la zona se enumera y las calles caen dentro de ella (R-FLO-003)",
       mustNotSay: "que declarar la zona cambie el veredicto de ningún tag sano",
+    },
+    {
+      kind: "hueco-de-comunicacion",
+      tags: [huecoWifi.tag],
+      vehicles: [lectorDegradado],
+      atUtcMs: toRealUtc(huecoWifi.a.t),
+      expect: "ese hueco, dentro del corte wifi, como comunicación; los demás huecos del mismo AGV, no",
+      mustNotSay: "que ese tag no se leyó por el lector o por el tag",
     },
     {
       kind: "lector-agv-degradado",
@@ -1572,6 +1610,8 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     readingsCsv,
     listsCsv,
     fleetCsv,
+    wifiCsv,
+    wifiAgv: lectorDegradado,
     fleetCircuit,
     fleetNeverRead,
     fleetLeavesMidway,

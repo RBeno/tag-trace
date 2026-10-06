@@ -2,6 +2,52 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.64.0] - 2026-10-06
+
+**Cortes wifi frente a huecos de lectura**, primera entrega de F5. El propietario la pidió tras
+analizar en local dos días de un AGV —su informe de conexiones, sus lecturas con acciones y el informe
+ampliado de la flota—: «empezamos con el mapa de calor wifi así podemos separar el fallo comunicación
+con fallo de lectura o de tag», y anotar las reglas que dio. Ningún dato de planta entra en el
+repositorio: el contraste con el dato real se hizo en local.
+
+### Reglas del propietario
+
+- **R-COM-004**: los tags están en la memoria del vehículo; sin wifi el AGV los sigue leyendo y
+  ejecutando, y lo que falta es que la lectura llegue al histórico.
+- **R-COM-005**: sin wifi solo faltan las órdenes del servidor, y la que se ve es continuar en una
+  parada precisa: el AGV espera hasta reconectar.
+- **R-COM-006**: un temporizador puede hacerlo continuar sin wifi, con el riesgo de ocupar un cruce y
+  chocar. Se nombra en cada corte en parada precisa y no se afirma hasta que planta declare qué
+  paradas protegen un cruce (OQ-162).
+
+### Añadido
+
+- **Informe de conexiones wifi de un AGV** (DS-013, `DATA_CONTRACTS.md` §3.9): se carga en «Datos»
+  en `.xlsx` o texto, con `Fecha` y `Conexión`; el AGV no viene en el fichero, se propone desde su
+  nombre y se confirma; se fusiona por AGV sin duplicar eventos. `src/ingestion/wifi-connections.ts`.
+- **Clasificación de cada corte** (R-COM-007): sin cierre, apagado, microcorte, fuera del recorrido
+  —reaparece lejos o lo adelanta otro AGV—, en marcha —leyendo al ritmo de la ruta—, espera al
+  servidor y parado. **Causa de cada hueco de lectura** (R-COM-008): comunicación, lectura, tag, sin
+  contraste o sin informe. `src/domain/wifi-cuts.ts` (ALG-024, `ALGORITHM_CATALOG.md` §6.28).
+- **Pestaña «Wifi»** con las tarjetas por clase, los huecos por causa y el **mapa de calor** por tag
+  en orden de ruta y AGV, más la lista de cortes con su frase (`src/presentation/wifi-ui.ts`,
+  `UX_SPEC.md` §2).
+- Umbrales provisionales `wifi` en la configuración (`CONFIG_SCHEMA.md` §3.10).
+- Clase de auditoría `hueco-de-comunicacion` (`auditoria/30`): un corte plantado sobre un hueco del
+  AGV de lector degradado sale como comunicación, y sus otros 1306 huecos, no.
+- Preguntas abiertas OQ-159 a OQ-163; OQ-105 pasa a parcial: el informe de conexiones es la señal que
+  separa wifi ausente de lector silencioso.
+
+### Corregido
+
+- **Importar lecturas borraba el informe wifi guardado**: el registro del circuito se reescribe
+  entero y solo conservaba listas y flota. Lo destapó la prueba de navegador, como antes las otras dos.
+
+### Pruebas
+
+- TC-321 a TC-326 (`TEST_STRATEGY.md`). TC-274 cuenta ocho pestañas: la lista esperada en
+  `navegacion.spec.ts` añade «Wifi», que es una pestaña nueva, no un resultado cambiado.
+
 ## [3.63.0] - 2026-09-27
 
 **F5 abierta** por el propietario («pasa a Fase 5»), tras fusionar el PR #12 (3.50.0 a 3.62.0,

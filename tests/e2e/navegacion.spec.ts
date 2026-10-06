@@ -39,7 +39,7 @@ test.describe("pestañas y bandeja de hallazgos", () => {
     await freshPage(page);
     // Sin nada cargado ya hay pestañas, y la de entrada es el Resumen.
     const tabs = page.getByRole("tab");
-    await expect(tabs).toHaveText(["Resumen", "Tags", "AGV", "Tiempos", "Línea y calles", "Memoria", "Datos"]);
+    await expect(tabs).toHaveText(["Resumen", "Tags", "AGV", "Wifi", "Tiempos", "Línea y calles", "Memoria", "Datos"]);
     await expect(page.getByRole("tab", { name: "Resumen" })).toHaveAttribute("aria-selected", "true");
 
     await page.locator("#circuit-name").fill("auditoria");
@@ -178,7 +178,7 @@ test.describe("pestañas y bandeja de hallazgos", () => {
     test("ninguna pestaña desborda, con y sin hallazgos que revisar", async ({ page }) => {
       const { fileURLToPath } = await import("node:url");
       const memoria = fileURLToPath(new URL("../../fixtures/synthetic/memoria/", import.meta.url));
-      const tabs = ["Resumen", "Tags", "AGV", "Tiempos", "Línea y calles", "Memoria", "Datos"] as const;
+      const tabs = ["Resumen", "Tags", "AGV", "Wifi", "Tiempos", "Línea y calles", "Memoria", "Datos"] as const;
       const overflowIn = async (): Promise<Record<string, number>> => {
         const result: Record<string, number> = {};
         for (const tab of tabs) {

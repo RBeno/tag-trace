@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.31.2
+version: 0.32.0
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-06
 ---
 
 # Contratos de datos y procedencia
@@ -27,6 +27,8 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-010 | Proyecto anterior | `.agvproj` con manifiesto y versión | Persistencia local |
 | DS-011 | Informe ampliado de Vsystem | Tipo, fecha con segundos, AGV, circuito y, según el tipo, tag o uso | Enriquecida, opcional |
 | DS-012 | Historial de flota | AGV y fecha de alta; circuito, fecha de baja y nota opcionales | Configuración, incremental (§3.6) |
+| DS-013 | Informe de conexiones wifi de un AGV | Fecha con segundos y tipo de conexión; el AGV lo da el nombre del fichero | Enriquecida, opcional, incremental por AGV (§3.9) |
+| DS-014 | Lecturas de un AGV con acciones | Fecha, tag, MTC y la acción que el tag ordenó | **Todavía no se importa** (OQ-163) |
 
 El **orden** de la lista del circuito es lo declarado: puede tener erratas al transcribir o un orden
 distinto al real, y la posición de un tag la dan las lecturas (R-GRA-015).
@@ -333,6 +335,29 @@ que el texto:
   `xlsx`.
 - Un libro que no se puede leer se rechaza entero, con el motivo y la salida: guardarlo de nuevo en
   Excel o exportarlo como CSV.
+
+### 3.9 Informe de conexiones wifi de un AGV (DS-013)
+
+Vsystem exporta, por AGV, un informe de cada vez que el vehículo pierde y recupera la comunicación.
+Se carga en «Datos», junto a las listas, y sirve para separar un hueco de comunicación de un fallo de
+lectura o de tag (R-COM-004 a R-COM-008).
+
+- **Columnas obligatorias**: `Fecha` (día/mes/año y hora con segundos, en la zona del circuito) y
+  `Conexión`, con uno de `Conexión`, `Desconexión` o `Conexión tras apagado` (con o sin espacios de
+  relleno). `Datos Aux` se guarda y se enseña **sin interpretar** (OQ-161). El resto de columnas
+  (`Linea`, `Nº Motor`, `Cober.`, `Ver.`, `RFID`, `PID`, `IP Terminal`…) no se usa.
+- **El AGV no es una columna.** El informe es de un solo vehículo y lo dice el nombre del fichero
+  (`CONEXIONES123`). La interfaz propone la última tira de dígitos del nombre, con sus ceros, y la
+  persona la confirma o la escribe; sin número en el nombre y sin AGV escrito, no se carga.
+- Un tipo de conexión desconocido o una fecha que no se entiende **rechaza la fila con su motivo**;
+  se cuentan y se enseñan, nunca se descartan en silencio.
+- **Se fusiona por AGV**: un evento con el mismo instante y tipo que uno guardado es el mismo evento,
+  así que dos exportaciones que se solapan no se duplican. Se guarda con el circuito (como el
+  historial de flota) y **no viaja en el `.agvproj`**: no es memoria del circuito sino una fuente.
+- Cada desconexión se empareja con la conexión siguiente; a igual instante, la desconexión va antes.
+  Una desconexión sin conexión detrás es un corte `sin-cierre`.
+- El mapa se rehace en cada importación de lecturas: cargar un informe nuevo pide volver a importar
+  las lecturas para verlo.
 
 ## 4. Proceso de importación
 

@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.46.3
+version: 0.47.0
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-06
 ---
 
 # Catálogo de algoritmos
@@ -64,6 +64,7 @@ flowchart TD
 | ALG-021 | Candidatos a punto crítico | Reparto de sucesores sostenido (bifurcación/cruce), coeficiente de variación (parada precisa), mayor salto proporcional (semáforo) | Candidatos por clase con evidencia y soporte, nunca asignación | O(n) | F3 |
 | ALG-022 | Cambios de tag dentro de un periodo | Pasadas por el sitio del tag; racha fuera de su vida larga e improbable por azar; pareja unívoca por vecino compartido | Cambios, tags que dejan o empiezan a leerse, su vida, y la diferencia de cada AGV frente al nuevo | O(n) sobre las lecturas | F3 |
 | ALG-023 | Lectura por AGV | Celdas dentro de la vida del tag; nunca, desde una hora, poco con cola binomial frente al resto | Por AGV y por tag, la diferencia medida y si pasa en muchos o en pocos tags | O(celdas) | F3 |
+| ALG-024 | Cortes wifi y mapa de calor | Emparejar desconexión y conexión; situar cada corte con la lectura anterior y la siguiente del AGV; ruta por sucesor dominante; adelantamientos y ritmo frente a lo habitual del tramo | Clase de cada corte, causa de cada hueco de lectura y cortes por tag y AGV | O(n log n) sobre las lecturas más O(c·n) por los adelantamientos de c cortes | F5 |
 
 ## 4. Oportunidades y salud
 
@@ -1235,3 +1236,36 @@ Límite conocido (OQ-154), solo la noche: se estima frente a la noche **vigente*
 producción es la de fuera de ella). El estimador no cambia (es la definición aprobada en OQ-151); cada
 estimación lo dice en su explicación.
 
+## 6.28 Cortes wifi y mapa de calor, implementado (ALG-024, R-COM-004 a R-COM-008)
+
+`buildWifiHeatmap` (`src/domain/wifi-cuts.ts`), llamado por el Worker al montar las vistas si el
+circuito tiene algún informe de conexiones (DS-013). Entra todo el conjunto de lecturas del circuito
+—da la ruta y lo que hacen los demás AGV—, el informe de cada AGV que lo tiene, las paradas precisas
+declaradas y los umbrales `wifi` de la configuración (`CONFIG_SCHEMA.md` §3.10).
+
+1. **Ruta.** El sucesor dominante de cada tag sale de las transiciones de toda la flota; las
+   posiciones, del anillo dominante (`findDominantCycle`) de los AGV con informe, y de toda la flota
+   solo si ellos no forman uno: una exportación puede mezclar recorridos. Lo habitual de cada tramo
+   dominante es la mediana de lo que tarda la flota en recorrerlo.
+2. **Cortes.** Cada desconexión se empareja con la conexión siguiente (a igual instante, la
+   desconexión primero). Para cada corte: la última lectura del AGV en o antes del inicio, la
+   siguiente, cuántas lee hasta la reconexión, los saltos de ruta entre las dos (hasta
+   `far_reappearance_hops`), qué otros AGV pasaron por su último tag y llegaron al de reaparición
+   antes que él, y si el tiempo entre las dos lecturas cabe en `max_pace_factor` veces lo habitual
+   de esos tramos más un microcorte. La clase sigue el orden de R-COM-007.
+3. **Huecos de lectura.** Entre dos lecturas seguidas del mismo AGV con instantes distintos, si el
+   paso es poco habitual (menos del 10 % de las salidas del primero) y el camino dominante los une
+   en 2 a `max_skipped_tags + 1` saltos, cada tag intermedio es un hueco. Su causa sigue R-COM-008.
+4. **Mapa.** Una fila por tag con algún corte, pasada o hueco: cortes por AGV (el corte se pone en el
+   último tag leído), pasadas de los AGV con informe dentro del periodo de su informe —que empieza en
+   la lectura que precede a su primer evento—, cortes por 100 pasadas desde `min_passes_for_rate`,
+   clases y huecos por causa. En orden de ruta; los tags fuera del anillo, al final por número.
+
+Determinista: las lecturas de cada AGV se ordenan por instante y fila, los AGV por identificador, y
+los empates del sucesor dominante por identificador.
+
+Contrastado con el primer informe real (dos días de un AGV, en local, fuera del repositorio): 40
+cortes, 28 microcortes, 2 en marcha, 3 parados, 3 apagados, 1 sin lecturas antes y 3 fuera del
+recorrido —los tres de más de 15 min, que el análisis a mano había identificado como extracciones
+porque otros AGV seguían pasando por el sitio—. Límite conocido: con un solo AGV con informe, ningún
+hueco puede apuntar al tag (hace falta que lo salten al menos dos con informe).

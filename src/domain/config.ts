@@ -34,6 +34,7 @@ import type { SilenceKindThresholds } from "./silence-kind.js";
 import type { TrendThresholds } from "./read-rate-trend.js";
 import type { TagChangeThresholds } from "./tag-changes.js";
 import type { VehicleReadingThresholds } from "./vehicle-reading.js";
+import type { WifiCutThresholds } from "./wifi-cuts.js";
 
 export interface SilenceThresholds {
   /**
@@ -98,6 +99,11 @@ export interface AnalysisConfig {
    * medirlos, y viven aquí para que ningún número de la definición quede escrito en el código.
    */
   readonly plantEstimators: PlantEstimatorThresholds;
+  /**
+   * Cortes wifi y mapa de calor (R-COM-007, `CONFIG_SCHEMA.md` §3.10). Provisionales: salen de un
+   * solo informe de conexiones y no los ha fijado planta.
+   */
+  readonly wifi: WifiCutThresholds;
 }
 
 /**
@@ -308,6 +314,18 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     // Tolerancia de medida, no operativa: ancha para que la estimación pueda ver una tolerancia de
     // planta mayor que la vigente; solo para estimar (OQ-154).
     sameTimeMeasureToleranceMs: 60 * 60_000,
+  },
+  // Microcorte: en el primer informe real, 29 de 40 cortes duraron 10 s o menos. Reaparecer a más
+  // de 10 tags es salir del recorrido; un hueco de hasta 3 tags seguidos es el que R-OPP-014 todavía
+  // deja contrastar; 5 pasadas para dar una tasa; y el «al menos dos AGV» de R-DAT-021 para culpar al tag.
+  wifi: {
+    microCutMaxMs: 10_000,
+    farReappearanceHops: 10,
+    maxSkippedTags: 3,
+    minPassesForRate: 5,
+    minVehiclesForTagFault: 2,
+    // El mismo «tres veces lo habitual» que `silenceKind.factorOverUsual`.
+    maxPaceFactor: 3,
   },
 };
 

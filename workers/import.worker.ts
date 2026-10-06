@@ -103,6 +103,8 @@ import {
   type VehicleStop,
 } from "../src/domain/flow-stops.js";
 import { FLEET_STRUCTURE, FleetFailure, importFleetHistory, importFleetRows } from "../src/ingestion/fleet-history.js";
+import { WIFI_REJECTION_LABEL, WIFI_STRUCTURE, WifiFailure, importWifiRows, importWifiText, mergeWifiEvents } from "../src/ingestion/wifi-connections.js";
+import { buildWifiHeatmap } from "../src/domain/wifi-cuts.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -368,6 +370,8 @@ async function accumulate(
     ...(existing?.lists === undefined ? {} : { lists: existing.lists }),
     // Y el historial de flota, por la misma razón: lo destapó la prueba de navegador de la Parte 39.
     ...(existing?.fleet === undefined ? {} : { fleet: existing.fleet }),
+    // Y los informes de conexiones wifi (DS-013): lo destapó la prueba de navegador de 3.64.0.
+    ...(existing?.wifi === undefined ? {} : { wifi: existing.wifi }),
     updatedAt: Date.now(),
   };
   // Un repetido cuyas lecturas ya no estaban guardadas las recupera, con la procedencia de su primera
@@ -1192,6 +1196,56 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     );
     return stopped >= 0.5 * (to - from) ? ("produccion" as const) : null;
   };
+  // Cortes wifi y mapa de calor (R-COM-004 a R-COM-008): solo con algún informe de conexiones.
+  const wifiStored = stored?.wifi?.byAgv;
+  const wifiView: CircuitViews["wifi"] | undefined = (() => {
+    if (wifiStored === undefined || Object.keys(wifiStored).length === 0) return undefined;
+    const preciseStops = new Set(
+      [...criticalPointsConfig.funcionOf]
+        .filter(([, funcion]) => funcion === "parada-precisa" || /precisa/i.test(funcion))
+        .map(([tagId]) => tagId),
+    );
+    const heat = buildWifiHeatmap({
+      readings,
+      connections: new Map(Object.entries(wifiStored).map(([agvId, entry]) => [agvId, entry.events])),
+      preciseStops,
+      thresholds: config.wifi,
+    });
+    const skipsByCause: Record<string, number> = {};
+    for (const skip of heat.skips) skipsByCause[skip.cause] = (skipsByCause[skip.cause] ?? 0) + 1;
+    return {
+      agvs: heat.agvsWithReport,
+      warnings: heat.warnings,
+      cuts: heat.cuts.map((cut) => ({
+        agvId: cut.agvId,
+        startUtcMs: cut.startUtcMs,
+        startRaw: cut.startRaw,
+        durationMs: cut.durationMs,
+        reconnection: cut.reconnection,
+        lastTagId: cut.lastTagId,
+        nextTagId: cut.nextTagId,
+        msSinceLastRead: cut.msSinceLastRead,
+        readsDuring: cut.readsDuring,
+        cutClass: cut.cutClass,
+        aux: cut.aux,
+        evidence: cut.evidence,
+      })),
+      rows: heat.rows.map((row) => ({
+        tagId: row.tagId,
+        position: row.position,
+        preciseStop: preciseStops.has(row.tagId),
+        cuts: row.cuts,
+        cutsPer100: row.cutsPer100,
+        vehiclesWithCuts: row.vehiclesWithCuts,
+        cutsByAgv: Object.fromEntries(row.cutsByAgv),
+        passesByAgv: Object.fromEntries(row.passesByAgv),
+        byClass: Object.fromEntries(row.byClass),
+        skips: Object.fromEntries(row.skips),
+        vehiclesSkippingWithoutCut: row.vehiclesSkippingWithoutCut,
+      })),
+      skipsByCause,
+    };
+  })();
   const fleet = buildFleetTimeline({
     readings,
     coverage,
@@ -1261,6 +1315,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     anchorSections: { declared: lapAnchorsConfig.anchors.length, ...anchorSections },
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
     fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null, production: productionView, blockages },
+    ...(wifiView === undefined ? {} : { wifi: wifiView }),
     franjas: {
       sources: windows.map((entry) => ({
         sourceId: entry.source.sourceId,
@@ -2928,6 +2983,74 @@ async function runFleet(message: Extract<ToWorker, { type: "fleet" }>): Promise<
   }
 }
 
+/**
+ * Carga el informe de conexiones wifi de un AGV (DS-013) y lo **fusiona** con lo guardado de ese AGV:
+ * dos exportaciones que se solapan no duplican eventos. El mapa se ve al volver a importar lecturas.
+ */
+async function runWifi(message: Extract<ToWorker, { type: "wifi" }>): Promise<void> {
+  const { jobId, file, circuitId, agvId } = message;
+  const fail = (code: "INTERNAL" | "SCHEMA_UNRECOGNISED", cause: string, recovery: string): void =>
+    emit({ type: "error", code, cause, recovery }, jobId);
+  if (!isAvailable()) {
+    fail("INTERNAL", "Este navegador no permite guardar datos de sitio.", "Sin almacén local no hay dónde guardar el informe.");
+    return;
+  }
+  try {
+    const existing = await loadCircuit(circuitId);
+    if (existing === undefined) {
+      fail(
+        "INTERNAL",
+        `El circuito «${circuitId}» todavía no existe.`,
+        "Importa al menos una fuente de lecturas en ese circuito y vuelve a intentarlo.",
+      );
+      return;
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const result = looksLikeZip(bytes)
+      ? importWifiRows(await readXlsxRows(bytes), existing.zone, true)
+      : importWifiText(decodeSource(bytes.buffer).text, existing.zone);
+    const previous = existing.wifi?.byAgv[agvId];
+    const merged = mergeWifiEvents(previous?.events ?? [], result.events);
+    const loadedAt = Date.now();
+    const byAgv = {
+      ...(existing.wifi?.byAgv ?? {}),
+      [agvId]: { events: merged.events, fileNames: [...(previous?.fileNames ?? []), file.name], loadedAt },
+    };
+    await saveCircuit({ ...existing, wifi: { byAgv }, updatedAt: loadedAt });
+
+    const rejectedBy = new Map<string, number>();
+    for (const row of result.rejected) {
+      const label = WIFI_REJECTION_LABEL[row.reason];
+      rejectedBy.set(label, (rejectedBy.get(label) ?? 0) + 1);
+    }
+    emit(
+      {
+        type: "wifi-loaded",
+        circuitId,
+        agvId,
+        accepted: result.events.length,
+        added: merged.added,
+        rejected: [...rejectedBy.entries()].map(([reason, rows]) => ({ reason, rows })),
+        agvs: Object.keys(byAgv).sort(),
+        warnings: result.warnings,
+      },
+      jobId,
+    );
+  } catch (error) {
+    const failure =
+      error instanceof WifiFailure
+        ? error
+        : error instanceof XlsxError
+          ? { reason: error.reason, recovery: "Guarda el libro de nuevo en Excel (.xlsx) o expórtalo como CSV." }
+          : null;
+    fail(
+      "SCHEMA_UNRECOGNISED",
+      failure?.reason ?? "No se pudo leer el informe de conexiones.",
+      failure?.recovery ?? `Se espera una cabecera con «${WIFI_STRUCTURE.header.join("» y «")}».`,
+    );
+  }
+}
+
 scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   const message = event.data;
   if (message.protocolVersion !== PROTOCOL_VERSION) return;
@@ -2943,6 +3066,13 @@ scope.onmessage = (event: MessageEvent<ToWorker>): void => {
     currentJobId = message.jobId;
     seq = 0;
     void runFleet(message);
+    return;
+  }
+
+  if (message.type === "wifi") {
+    currentJobId = message.jobId;
+    seq = 0;
+    void runWifi(message);
     return;
   }
 

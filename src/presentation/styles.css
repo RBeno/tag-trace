@@ -204,6 +204,14 @@ table.data th { color: var(--muted); font-weight: 600; }
 /* La matriz completa es bidimensional por naturaleza: se desplaza **dentro de su caja**, que es
    distinto de romper el ancho de la página. Lo que hay que mirar ya está arriba, sin desplegar. */
 .scrollbox { overflow-x: auto; max-width: 100%; }
+/* Mapa de calor wifi: la escala secuencial de la paleta, del más claro al más oscuro. */
+.wifi-heat td { text-align: center; font-variant-numeric: tabular-nums; }
+.wifi-heat td.heat-1 { background: var(--viz-1); }
+.wifi-heat td.heat-2 { background: var(--viz-2); color: #fff; }
+.wifi-heat td.heat-3 { background: var(--viz-3); color: #fff; }
+.wifi-heat td.heat-4 { background: var(--viz-4); color: #fff; }
+.wifi-heat td.heat-5 { background: var(--viz-5); color: #fff; }
+.wifi-heat td.flag { color: var(--viz-accent); font-weight: 600; }
 .scrollbox table.data { width: auto; min-width: 100%; white-space: nowrap; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 0;
   color: var(--muted); font-size: 0.8rem; list-style: none; padding: 0; }

@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.47.2
+version: 0.48.0
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-06
 ---
 
 # Especificación de experiencia de usuario
@@ -24,7 +24,7 @@ la página era una sola lista de cuarenta y tres secciones en el orden en que se
 de alto sin abrir nada, sin índice, y «Lo que hay que mirar» era la sección 22. Ahora una barra fija
 bajo la cabecera (`nav` con `role="tablist"`, botones `role="tab"` con `aria-selected`, flechas de
 teclado; en el móvil, fichas desplazables en horizontal de 44 px con dedo) reparte el análisis en
-siete pestañas (la séptima, Memoria, desde 3.51.0). La activa va en el `hash` de la URL (`#tags`, `#agv`…) y se restaura al recargar; por
+ocho pestañas (Memoria desde 3.51.0; Wifi, desde 3.64.0). La activa va en el `hash` de la URL (`#tags`, `#agv`…) y se restaura al recargar; por
 defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 
 | Pestaña | Qué contiene |
@@ -32,10 +32,11 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 | **Resumen** | La **portada** (3.49.0): la tira de siete cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta, línea y memoria—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. |
 | **Tags** | Inventario de tags; «Lo que hay que mirar» (tags); rotura y degradación de cada tag; mapa de omisión; cambios de tag; tags leídos fuera de la lista; limpieza de la lista; contraste contra Vsystem; orden del circuito según las lecturas; comparación entre dos periodos. |
 | **AGV** | Flota del circuito, flota en el circuito y vida de cada AGV (con las paradas de la producción y los primeros de cola); lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; ritmo de cada AGV y quién retiene; y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
+| **Wifi** | Cortes de comunicación frente a huecos de lectura (3.64.0, R-COM-004 a R-COM-008): tarjetas por clase de corte (microcorte, en marcha, espera al servidor, parado, fuera del recorrido, apagado), los huecos de lectura por causa (comunicación, lectura, tag, sin contraste, sin informe) y el **mapa de calor**: tags en orden de ruta, un AGV con informe por columna, la celda con los cortes que empezaron con ese tag como el último leído, más oscura cuantos más; al lado, cortes por 100 pasadas, la clase dominante y los huecos por causa, con «lectura» y «tag» resaltados. De entrada, solo los tags con algún corte o hueco; todos, y la lista de cortes uno por uno con su frase, en el cajón. Sin informe, la pestaña dice cómo conseguirlo. |
 | **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito en palabras, con el enlace al dibujo del Resumen, su lista ordenada y los tags fuera del anillo. |
 | **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
 | **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje; debajo, el **plano del circuito** (§6.1). |
-| **Datos** | Valores de planta del circuito (3.59.0: el provisional y el confirmado de cada uno, con su fecha y su razón, «Cambiar…» con razón obligatoria, dónde mide el programa algo relacionado e historial; aviso si un valor cambia dentro de lo cargado; desde 3.60.0, «Propuesta de la memoria: X (coincide en v4, v5 y v6)» con «Confirmar la propuesta…», o «Sin propuesta: … Introduce el valor.» con la estimación de cada versión); listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
+| **Datos** | Informes de conexiones wifi de cada AGV (3.64.0: el AGV se toma del nombre del fichero y se puede escribir antes de cargar); valores de planta del circuito (3.59.0: el provisional y el confirmado de cada uno, con su fecha y su razón, «Cambiar…» con razón obligatoria, dónde mide el programa algo relacionado e historial; aviso si un valor cambia dentro de lo cargado; desde 3.60.0, «Propuesta de la memoria: X (coincide en v4, v5 y v6)» con «Confirmar la propuesta…», o «Sin propuesta: … Introduce el valor.» con la estimación de cada versión); listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
 
 **Más hallazgos del periodo (3.57.0).** Los hallazgos que guarda la instantánea del fichero y que
 ninguna sección pinta —cada sección enseña los primeros de cada tipo— van a la bandeja con su propia
