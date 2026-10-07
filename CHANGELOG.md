@@ -34,6 +34,20 @@ prueba WiFi ausente (R-OPP-003, OQ-105): el mapa dice dónde, nunca por qué.
   una sola vez, con y sin el segundo fichero; el anillo tiene cinco capas y «Señal» lleva el
   gradiente, la pérdida de señal y «La causa no la dice el dato»).
 
+### Propuesto (sin código)
+
+- **ADR-0017, proposed**: mapa de estado de conexión por AGV a partir del **registro de conexiones
+  del terminal** que el propietario aportó el 2026-10-07 (un fichero por AGV con `Desconexión`,
+  `Conexión` y `Conexión tras apagado` al segundo). Analizado fuera del repositorio: es evidencia
+  directa, se localiza entre la última lectura anterior y la primera posterior del mismo AGV, y diez
+  tags concentran casi la mitad de los cortes. LECTURAS por AGV resulta ser el informe ampliado
+  filtrado. El ADR propone el contrato DS-013, la carga en lote, el corte como par con duración y
+  clase, la localización, el mapa observado frente al inferido y cómo cargar toda la flota.
+- **OQ-159 a OQ-162**: la contradicción con R-DAT-020 (durante los cortes largos las lecturas
+  siguen llegando con fecha dentro del corte y a cadencia normal, sin ráfaga al reconectar), el AGV
+  del nombre del fichero, qué corte importa y qué hacer con LECTURAS por AGV. Nada se construye
+  hasta que el propietario decida.
+
 ## [3.63.0] - 2026-09-27
 
 **F5 abierta** por el propietario («pasa a Fase 5»), tras fusionar el PR #12 (3.50.0 a 3.62.0,

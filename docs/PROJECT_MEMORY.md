@@ -424,6 +424,19 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## Registro de conexiones por AGV: propuesta y contradicción (2026-10-07)
+
+El propietario aportó exportaciones por AGV del terminal (CONEXIONES y LECTURAS) para medio PO4 y
+preguntó cómo construir un mapa de estado de conexión real. Analizado fuera del repositorio
+(ADR-0017, proposed): **CONEXIONES es evidencia directa** (pares `Desconexión`→`Conexión` al
+segundo) y se localiza por las lecturas del mismo AGV; diez tags concentran casi la mitad de los
+cortes. **LECTURAS por AGV es el informe ampliado filtrado** (filas idénticas). **Contradicción**
+(OQ-159): durante cortes de WiFi de minutos u horas las lecturas siguen llegando con fecha dentro
+del corte y a cadencia normal, sin ráfaga al reconectar, así que la hora del fichero no parece la
+de recepción por ese enlace, contra lo dicho el 2026-09-25 (R-DAT-020). Hasta que decida OQ-159 a
+OQ-162, R-DAT-020 no se toca, el mapa de 3.64.0 sigue llamándose «lecturas que llegaron juntas» y
+no se escribe código del registro de conexiones. Los datos reales se quedaron fuera del repositorio.
+
 ## Estado al 2026-09-27 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
