@@ -167,7 +167,7 @@ ordena al revés de como se calcula:
 
 **El anillo con capas (3.49.0).** El anillo radial vive en la portada del Resumen, entre la tira de
 cifras y la bandeja, y lleva encima un selector segmentado (`.seg`, `role="radiogroup"`, botones
-`role="radio"` con `aria-checked`, flechas de teclado) de cuatro **capas exclusivas** que cambian solo
+`role="radio"` con `aria-checked`, flechas de teclado) de cinco **capas exclusivas** que cambian solo
 lo que pinta la banda principal; la banda exterior de zona y las marcas numeradas de críticos se
 quedan siempre:
 
@@ -176,6 +176,7 @@ quedan siempre:
 | **Omisión** (por defecto) | la de siempre: gris lo normal, la rampa azul lo que se deja de leer, trama sin pasadas, tinta el ancla; el tramo declarado en la banda fina interior | las cinco clases de omisión |
 | **Tramos** | el tramo declarado (`section`) con la paleta `--viz-tramo-*`; gris sin tramo | un color por tramo |
 | **Paradas** | cuántas incidencias toca cada tag según el estado normal (`circuitState`): paradas sin explicación que empiezan en él, colas de un cuello de botella, y una más si está en una zona oscura; punto conflictivo se dice en la lectura (sus paradas ya son paradas sin explicación). Rampa de un solo tono por recuento | los cortes de la rampa: ninguna, 1, 2, 3–4, 5–9, 10 o más |
+| **Señal** (3.64.0) | el mapa de calor de comunicación (R-DAT-020) sobre el anillo: la parte de las pasadas por cada tag leídas sin señal, con la rampa continua de un solo tono **relativa al tag más caliente**; gris lo que no tiene nada, trama sin pasadas; en la banda fina interior, dónde se perdió la señal (`--viz-desconexion`), con acento si es más de lo que da el azar. Sin evaluar, o sin ninguna ráfaga, la leyenda lo dice en vez de pintar | el gradiente con sus dos extremos escritos (0 % y el máximo), pérdida de señal, acento, sin pasadas |
 | **Calles** | el tag del que cuelga cada calle (`laneJunctions`) en el azul de serie, con el nombre de la calle junto a su ramal; con trama si nadie entró en ella; gris sin calle | servida, sin servicio, sin calle |
 
 La lectura al puntero y al foco dice lo de la capa activa además del tag. **Tocar un tag** —clic,
@@ -556,15 +557,22 @@ lo de la sección usa solo producción (R-TIM-009). Después, destacados primero
   tarjetas **«AGV: le llegan lecturas juntas»** y **«Lecturas juntas al pasar por X»** para lo que se
   concentra más de lo que da el azar, con la última ráfaga y si paró o no. Sin causa: «apunta a la
   comunicación». Todas, en tabla plegada. Sin evaluar con resolución de minuto, y se dice.
-- **Mapa de calor de comunicación (WiFi)**, solo si existe evidencia (alguna ráfaga): una barra por
-  tag en el orden del anillo con la parte de sus pasadas que se leyó sin que la lectura llegara al
-  servidor hasta después; la altura y el tono dicen lo mismo, trama para «sin pasadas», naranja bajo
-  los sitios donde la señal se pierde más de lo que da el azar (los mismos de las tarjetas), los tags
-  de fuera del anillo al final y separados. La lectura al puntero da pasadas, leídas sin señal, AGV,
-  cuántas veces se perdió la señal al salir de ahí y cuántas volvió ahí; tabla equivalente plegada.
-  «Apunta a la cobertura de ese punto o a la comunicación del AGV; la causa no la dice el dato»
-  (OQ-105, R-OPP-003). Sin ráfagas, una línea dice que no hay evidencia con que dibujarlo y que eso
-  no prueba que la cobertura sea buena; sin evaluar, se dice lo mismo con el motivo.
+- **Mapa de calor de comunicación (WiFi)**, solo si existe evidencia (alguna ráfaga). Arriba, cuatro
+  cifras (`.heat-stats`): ráfagas, tags leídos sin señal de cuántos, AGV con lecturas sin señal y el
+  tag más caliente con su parte. Debajo, el mapa: una celda por tag en el orden del anillo, con la
+  parte de sus pasadas que se leyó sin que la lectura llegara al servidor hasta después, en la rampa
+  continua de un solo tono **relativa al tag más caliente** (lo frío se funde en una banda del fondo,
+  trama para «sin pasadas»); rótulo directo con la cifra en los tres más calientes; una fila fina
+  inferior con dónde se perdió la señal (`--viz-desconexion`), en naranja y con su identificador
+  donde se pierde más de lo que da el azar (los mismos sitios de las tarjetas); la banda del tramo
+  declarado si hay lista `tramo`; los tags de fuera del anillo al final, separados y rotulados. Al
+  puntero, un marco sobre la celda y la lectura: pasadas, leídas sin señal con su parte, AGV, cuántas
+  veces se perdió la señal al salir de ahí y cuántas volvió ahí. Leyenda del gradiente con sus dos
+  extremos escritos y tabla equivalente plegada. «Apunta a la cobertura de ese punto o a la
+  comunicación del AGV; la causa no la dice el dato» (OQ-105, R-OPP-003). Sin ráfagas, una línea
+  dice que no hay evidencia con que dibujarlo y que eso no prueba que la cobertura sea buena; sin
+  evaluar, se dice lo mismo con el motivo. El mismo dato se ve sobre el anillo de Resumen en la capa
+  **Señal** (§4.2).
 - **Ritmo de cada AGV** (R-AGV-019): «7122 va un 10 % más lento que la flota, en toda la línea» (o
   «solo en la zona X»), con la mitad de sus tramos frente a la de la flota y cuántos tramos; y **quién
   retiene a otros** (R-AGV-020): «7107 retiene a otros AGV», cuántas veces, a cuántos AGV distintos

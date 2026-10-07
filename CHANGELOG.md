@@ -13,19 +13,26 @@ prueba WiFi ausente (R-OPP-003, OQ-105): el mapa dice dónde, nunca por qué.
 ### Añadido
 
 - **Mapa de calor de comunicación (WiFi)** en Tiempos (`deliveryHeat`, `deliveryHeatChart`,
-  `ALGORITHM_CATALOG.md` §6.8, `UX_SPEC.md`). Por tag del anillo, en su orden, la parte de sus pasadas
-  que se leyó sin que la lectura llegara hasta después; además, cuántas veces se perdió la señal al
-  salir de ahí, cuántas volvió ahí y qué AGV. La altura y el tono dicen lo mismo, trama para «sin
-  pasadas», naranja bajo los sitios que `summarizeDeliveries` ya destaca (ningún umbral nuevo), los
-  tags de fuera del anillo al final y separados, lectura al puntero y tabla equivalente plegada.
-  **Solo se dibuja si existe evidencia**: con alguna ráfaga. Sin ninguna, una línea dice que no hay
-  evidencia con que dibujarlo y que eso no prueba que la cobertura sea buena; sin evaluar (resolución
-  de minuto), se dice con el motivo.
+  `ALGORITHM_CATALOG.md` §6.8, `UX_SPEC.md`). Arriba, cuatro cifras: ráfagas, tags leídos sin señal,
+  AGV con lecturas sin señal y el tag más caliente con su parte. El mapa: una celda por tag del
+  anillo, en su orden, con la parte de sus pasadas que se leyó sin que la lectura llegara hasta
+  después, en una rampa continua de un solo tono relativa al tag más caliente; rótulo directo con la
+  cifra en los tres más calientes; una fila fina con dónde se perdió la señal, en naranja y con su
+  identificador donde `summarizeDeliveries` ya lo destaca (ningún umbral nuevo); la banda del tramo
+  declarado; los tags de fuera del anillo al final y separados; marco y lectura al puntero (pasadas,
+  leídas sin señal, AGV, señal perdida y de vuelta); leyenda del gradiente con sus dos extremos
+  escritos y tabla equivalente plegada. **Solo se dibuja si existe evidencia**: con alguna ráfaga.
+  Sin ninguna, una línea dice que no hay evidencia con que dibujarlo y que eso no prueba que la
+  cobertura sea buena; sin evaluar (resolución de minuto), se dice con el motivo.
+- **Capa «Señal» del anillo** en Resumen (`UX_SPEC.md` §4.2): el mismo mapa de calor sobre el
+  anillo, con la misma rampa relativa, la pérdida de señal en la banda fina interior y la leyenda del
+  gradiente; sin evaluar o sin ráfagas, la leyenda lo dice en vez de pintar.
 - `circuitState.cohorts[].groupedDelivery.heat` en el protocolo, calculado en el Worker sobre todas las
   ráfagas (no solo las mil más recientes de `deliveries`) y las transiciones del cohorte sin recortar.
 - Pruebas: TC-321 (unitaria), TC-322 (auditoría: el calor cae exactamente en las cuatro ráfagas
   plantadas, atribuido solo a ese AGV, y en ningún tag sano) y TC-323 (navegador: la figura existe
-  una sola vez, con y sin el segundo fichero).
+  una sola vez, con y sin el segundo fichero; el anillo tiene cinco capas y «Señal» lleva el
+  gradiente, la pérdida de señal y «La causa no la dice el dato»).
 
 ## [3.63.0] - 2026-09-27
 

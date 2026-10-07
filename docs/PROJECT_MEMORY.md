@@ -415,10 +415,14 @@ contramedidas y verificación antes/después.
 El propietario pidió «una visualización del mapa de calor WiFi si existe evidencia». **La evidencia
 que hay** son las lecturas que llegaron juntas (R-DAT-020): no existe ninguna columna de señal o
 cobertura en las fuentes, y un silencio solo no prueba WiFi ausente (R-OPP-003, OQ-105 sigue
-abierta). Así que el mapa (`deliveryHeat` en el Worker, `deliveryHeatChart` en Tiempos) pinta por tag
-del anillo la parte de sus pasadas leídas sin señal, dónde se perdió y dónde volvió, y **solo se dibuja
-con alguna ráfaga**; sin ninguna lo dice y añade que eso no prueba cobertura buena. No introduce
-umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por qué (R-EVI-006).
+abierta). Así que el mapa (`deliveryHeat` en el Worker, `deliveryHeatChart` en Tiempos y la capa
+«Señal» del anillo en Resumen) pinta por tag del anillo la parte de sus pasadas leídas sin señal
+—rampa continua relativa al tag más caliente, cifras de cabecera, rótulos en los más calientes,
+fila de pérdida de señal—, y **solo se dibuja con alguna ráfaga**; sin ninguna lo dice y añade que
+eso no prueba cobertura buena. El propietario pidió después que fuera «buena, profesional, que
+muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
+versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
+qué (R-EVI-006).
 
 ## Estado al 2026-09-27 (relevo a un chat nuevo)
 

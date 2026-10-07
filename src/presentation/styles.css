@@ -422,6 +422,25 @@ table.data th { color: var(--muted); font-weight: 600; }
 .chart svg path[data-index]:focus-visible { stroke: var(--viz-accent); stroke-width: 2.5px; }
 .chart .ring-legend .legend { margin-top: 8px; }
 
+/* --- Mapa de calor de comunicación (3.64.0): cifras de cabecera y leyenda del gradiente ----------
+   Las cifras siguen la tira de la portada (misma sans, proporcionales, tinta normal); la leyenda del
+   gradiente escribe sus dos extremos, porque el tono solo no dice la cifra. */
+.heat-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 12px; }
+.heat-stat { display: grid; align-content: start; gap: 2px; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--bg); min-width: 0; }
+.heat-stat p { margin: 0; max-width: none; }
+.heat-stat-label { font-size: 0.78rem; color: var(--muted); }
+.heat-stat-value { font-size: clamp(1.2rem, 5vw, 1.6rem); font-weight: 600; line-height: 1.15;
+  font-variant-numeric: proportional-nums; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.heat-stat-note { font-size: 0.78rem; color: var(--muted); line-height: 1.35; overflow-wrap: anywhere; }
+@media (min-width: 700px) { .heat-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.heat-scale { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 0.8rem; color: var(--muted);
+  font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.heat-scale-bar { display: inline-block; width: 140px; max-width: 40vw; height: 10px; border-radius: 5px; border: 1px solid var(--line); }
+.heat-scale-what { flex-basis: 100%; }
+@media (min-width: 700px) { .heat-scale-what { flex-basis: auto; } }
+
+
 /* --- Cajón de tablas (UX_SPEC §5.3, 3.49.0) ---------------------------------------------------------
    Un solo cajón para toda la aplicación: en escritorio ocupa el tercio derecho con desplazamiento
    propio y la página sigue visible; en el móvil, la pantalla entera con la barra de cierre fija. El

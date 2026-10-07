@@ -80,7 +80,7 @@ test.describe("portada: cifras, anillo con capas y cajón de tablas", () => {
     const ring = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Anillo del circuito" }) });
     await expect(ring).toBeVisible();
     const layers = ring.getByRole("radiogroup", { name: "Capa del anillo" });
-    await expect(layers.getByRole("radio")).toHaveCount(4);
+    await expect(layers.getByRole("radio")).toHaveCount(5);
     await expect(layers.getByRole("radio", { name: "Omisión" })).toHaveAttribute("aria-checked", "true");
     await expect(ring.locator(".ring-legend")).toContainText("omisión menos del 5 %");
     await layers.getByRole("radio", { name: "Tramos" }).click();
@@ -89,12 +89,19 @@ test.describe("portada: cifras, anillo con capas y cajón de tablas", () => {
     await expect(ring.locator(".ring-legend")).not.toContainText("omisión");
     await layers.getByRole("radio", { name: "Paradas" }).click();
     await expect(ring.locator(".ring-legend")).toContainText("incidencias: ninguna");
+    // La capa «Señal» es el mapa de calor de comunicación sobre el anillo (R-DAT-020): con la ráfaga
+    // plantada hay evidencia, así que la leyenda lleva el gradiente con sus dos extremos y la banda
+    // interior de pérdida de señal; nunca una causa.
+    await layers.getByRole("radio", { name: "Señal" }).click();
+    await expect(ring.locator(".ring-legend .heat-scale")).toContainText("de las pasadas por el tag, leídas sin señal");
+    await expect(ring.locator(".ring-legend")).toContainText("la señal se perdió al salir de este tag");
+    await expect(ring.locator("figcaption")).toContainText("La causa no la dice el dato");
     await layers.getByRole("radio", { name: "Calles" }).click();
     await expect(ring.locator(".ring-legend")).toContainText("entrada de una calle servida");
     // Con teclado: la flecha cambia de capa.
     await layers.getByRole("radio", { name: "Calles" }).focus();
     await page.keyboard.press("ArrowLeft");
-    await expect(layers.getByRole("radio", { name: "Paradas" })).toHaveAttribute("aria-checked", "true");
+    await expect(layers.getByRole("radio", { name: "Señal" })).toHaveAttribute("aria-checked", "true");
     // La lectura al tocar dice lo de la capa activa.
     await ring.locator("path[data-index='2']").hover();
     await expect(ring.locator(".readout")).toContainText(/Tag \d+ · posición 3 de 145 .*— /);

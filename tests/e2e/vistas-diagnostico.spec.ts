@@ -188,7 +188,7 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(calor).toHaveCount(1);
     await expect(calor.locator("svg[role=img]")).toBeVisible();
     await expect(calor).toContainText("la causa no la dice el dato");
-    await expect(calor.getByRole("button", { name: /tags con alguna lectura sin señal en tabla/ })).toBeVisible();
+    await expect(calor.getByRole("button", { name: /tags con lecturas sin señal o señal perdida en tabla/ })).toBeVisible();
 
     // Con un solo fichero cargado, la retención lo dice así en Datos (ADR-0015 §2).
     await openTab(page, "Datos");

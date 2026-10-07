@@ -2463,7 +2463,7 @@ function renderCircuitState(views: CircuitViews): void {
       );
       // El mapa de calor de comunicación: solo con evidencia (hay ráfagas), en el orden del anillo, y
       // con los sitios que el Worker ya destacó. Dónde, no por qué (OQ-105).
-      out.append(deliveryHeatChart(grouped.heat, shape?.tags ?? [], new Set(grouped.sites.map((site) => site.id)), grouped.total));
+      out.append(deliveryHeatChart(grouped.heat, shape?.tags ?? [], new Set(grouped.sites.map((site) => site.id)), grouped.total, views.sections));
       for (const vehicle of grouped.vehicles.slice(0, PER_KIND)) {
         const latest = [...grouped.deliveries].reverse().find((delivery) => delivery.agvId === vehicle.id);
         out.append(
@@ -2872,6 +2872,11 @@ function ringDataOf(shape: CircuitViews["shapes"][number], matrix: Matrix | unde
   const bottleneckAt = new Map((measured?.bottlenecks ?? []).map((entry) => [entry.tagId, entry.episodes]));
   const conflictTags = new Set((measured?.conflictPoints ?? []).flatMap((entry) => entry.tags));
   const darkTags = new Set((measured?.darkZones ?? []).flatMap((entry) => entry.tags.slice(0, -1)));
+  // La capa «Señal»: el mapa de calor de comunicación (R-DAT-020), ya calculado por el Worker. Sin
+  // evaluar, ningún tag lleva `signal`, y la capa lo dice.
+  const grouped = views.circuitState.cohorts.find((cohort) => cohort.cohortId === shape.cohortId)?.groupedDelivery;
+  const heatOf = new Map((grouped?.evaluated ? grouped.heat : []).map((cell) => [cell.tagId, cell]));
+  const flaggedSites = new Set((grouped?.sites ?? []).map((site) => site.id));
   return {
     tags: shape.tags.map((tagId, index) => {
       const row = rowOf.get(tagId);
@@ -2893,6 +2898,17 @@ function ringDataOf(shape: CircuitViews["shapes"][number], matrix: Matrix | unde
                 dark: darkTags.has(tagId),
               },
             }),
+        ...(grouped?.evaluated
+          ? {
+              signal: {
+                passes: heatOf.get(tagId)?.passes ?? 0,
+                late: heatOf.get(tagId)?.late ?? 0,
+                lostAfter: heatOf.get(tagId)?.lostAfter ?? 0,
+                vehicles: heatOf.get(tagId)?.vehicles.length ?? 0,
+                flagged: flaggedSites.has(tagId),
+              },
+            }
+          : {}),
       };
     }),
     anchorTagId: shape.anchorTagId,
