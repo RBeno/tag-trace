@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.47.0
+version: 0.47.1
 status: baseline-candidate
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Catálogo de algoritmos
@@ -1252,7 +1252,10 @@ declaradas y los umbrales `wifi` de la configuración (`CONFIG_SCHEMA.md` §3.10
    siguiente, cuántas lee hasta la reconexión, los saltos de ruta entre las dos (hasta
    `far_reappearance_hops`), qué otros AGV pasaron por su último tag y llegaron al de reaparición
    antes que él, y si el tiempo entre las dos lecturas cabe en `max_pace_factor` veces lo habitual
-   de esos tramos más un microcorte. La clase sigue el orden de R-COM-007.
+   de esos tramos más un microcorte. La clase sigue el orden de R-COM-007. En una espera al servidor se
+   busca, siguiendo el sucesor dominante desde la parada, el primer cruce declarado (función `cruce` o
+   tramo «cruce») antes de la siguiente parada precisa: es el que un temporizador le haría ocupar
+   (R-COM-006). Sin cruces declarados, la frase dice que no se sabe.
 3. **Huecos de lectura.** Entre dos lecturas seguidas del mismo AGV con instantes distintos, si el
    paso es poco habitual (menos del 10 % de las salidas del primero) y el camino dominante los une
    en 2 a `max_skipped_tags + 1` saltos, cada tag intermedio es un hueco. Su causa sigue R-COM-008.

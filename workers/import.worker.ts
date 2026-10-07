@@ -1205,10 +1205,16 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         .filter(([, funcion]) => funcion === "parada-precisa" || /precisa/i.test(funcion))
         .map(([tagId]) => tagId),
     );
+    // Los cruces están descritos en el circuito (propietario, 2026-10-07): función `cruce` o tramo «cruce».
+    const crossings = new Set(
+      [...sections].filter(([, section]) => section.trim().toLowerCase() === "cruce").map(([tagId]) => tagId),
+    );
+    for (const [tagId, funcion] of criticalPointsConfig.funcionOf) if (funcion === "cruce") crossings.add(tagId);
     const heat = buildWifiHeatmap({
       readings,
       connections: new Map(Object.entries(wifiStored).map(([agvId, entry]) => [agvId, entry.events])),
       preciseStops,
+      crossings,
       thresholds: config.wifi,
     });
     const skipsByCause: Record<string, number> = {};
@@ -1227,6 +1233,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         msSinceLastRead: cut.msSinceLastRead,
         readsDuring: cut.readsDuring,
         cutClass: cut.cutClass,
+        crossingAhead: cut.crossingAhead,
         aux: cut.aux,
         evidence: cut.evidence,
       })),
@@ -1234,6 +1241,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         tagId: row.tagId,
         position: row.position,
         preciseStop: preciseStops.has(row.tagId),
+        crossing: row.crossing,
         cuts: row.cuts,
         cutsPer100: row.cutsPer100,
         vehiclesWithCuts: row.vehiclesWithCuts,

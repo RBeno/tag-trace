@@ -774,6 +774,8 @@ export interface CircuitViews {
       readonly msSinceLastRead: number | null;
       readonly readsDuring: number;
       readonly cutClass: string;
+      /** En una espera al servidor, el cruce declarado que queda antes de la siguiente parada precisa. */
+      readonly crossingAhead: { readonly tagId: string; readonly hops: number } | null;
       readonly aux: string;
       readonly evidence: string;
     }[];
@@ -782,6 +784,8 @@ export interface CircuitViews {
       readonly position: number | null;
       /** Si es una parada precisa declarada. */
       readonly preciseStop: boolean;
+      /** Si es un cruce declarado. */
+      readonly crossing: boolean;
       readonly cuts: number;
       readonly cutsPer100: number | null;
       readonly vehiclesWithCuts: number;

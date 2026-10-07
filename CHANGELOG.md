@@ -2,6 +2,32 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.65.0] - 2026-10-07
+
+Respuestas del propietario a las preguntas de la entrega de cortes wifi: «1 sí», «3 de momento nada»,
+«4 de momento lo del temporizado queda pendiente. Los cruces están descritos en el circuito», «5
+pueden ser tags que se ejecuten bajo una condición, por ejemplo que no tenga wifi o si va en un MTC
+concreto». OQ-160 sigue sin respuesta.
+
+### Añadido
+
+- **Cruce por delante de una espera al servidor** (R-COM-006, OQ-162 parcial): el corte nombra el
+  primer cruce declarado —función `cruce` o tramo «cruce»— que el recorrido alcanza antes de la
+  siguiente parada precisa, y a cuántos tags. Sin cruces declarados lo dice, y no afirma que no haya.
+  El mapa marca los cruces junto al tag y la lista de cortes trae la columna «Cruce por delante».
+- **R-AGV-022**: un tag que el lector no detecta no se ejecuta; el AGV sigue con la orden del último
+  leído (OQ-159, cerrada). Su consecuencia se calculará cuando entre la acción de cada tag (DS-014).
+- **R-AGV-023**: «No ejecutado» en todas las lecturas puede ser un tag condicional, sin wifi o con un
+  MTC concreto (OQ-163, cerrada).
+
+### Cambiado
+
+- OQ-161 cerrada: `Datos Aux` y `Cober.` no se interpretan de momento (`DATA_CONTRACTS.md` §3.9).
+
+### Pruebas
+
+- TC-327 (`TEST_STRATEGY.md`).
+
 ## [3.64.0] - 2026-10-06
 
 **Cortes wifi frente a huecos de lectura**, primera entrega de F5. El propietario la pidió tras

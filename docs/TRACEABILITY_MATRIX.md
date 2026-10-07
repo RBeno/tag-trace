@@ -1,8 +1,8 @@
 ---
 document_id: TT-TRACE-001
-version: 0.61.0
+version: 0.61.1
 status: baseline-candidate
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Matriz de trazabilidad
@@ -20,7 +20,7 @@ La matriz se ampliará hasta una relación automática cuando exista código. En
 | FR-017, FR-030 | R-TIM-001–007, `CONFIG_SCHEMA.md` | ALG-010, ALG-013 | TC-012–013 | F1/G1 y F3/G3 |
 | FR-018–021, FR-027 | R-MEM-001–005, R-INC-004, R-GRA-019–021, ADR-0005, ADR-0012, ADR-0015, ADR-0016 | ALG-014 (§6.22, §6.23) | TC-017–018, TC-283–320, INV-006–011 | F1/G1 y F4/G4 (consolidación con versiones implementada el 2026-09-27; revisión de interfaz, lógica y consolidación en `[3.61.0]`; OQ-154 a OQ-158 en `[3.62.0]`) |
 | FR-022–026 | R-INC-001–003, ADR-0006 | ALG-015–017 | TC-012, TC-017, INV-008 | F5/G5 |
-| FR-035 (cortes wifi) | R-COM-001, R-COM-004–008, R-AGV-021, R-OPP-014, DS-013 | ALG-024 (§6.28) | TC-321–326 | F5 |
+| FR-035 (cortes wifi) | R-COM-001, R-COM-004–008, R-AGV-021, R-OPP-014, DS-013 | ALG-024 (§6.28) | TC-321–327 | F5 |
 | FR-028–029 | ADR-0008 | Todos vía vistas | E2E por flujo, accesibilidad | F3–F6/G6 |
 | FR-031–032 | ADR-0003, ADR-0010 | Registro común | INV-010–012 | F1–F6 |
 | NFR-001–002, NFR-015 | ADR-0001, ADR-0007, ADR-0014 | N/A | Pruebas de red/secretos, guardián de datos en CI | Todas |

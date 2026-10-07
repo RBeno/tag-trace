@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.69.0
+version: 0.69.1
 status: baseline-candidate
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Estrategia de pruebas y evaluación
@@ -374,6 +374,7 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-323 | Huecos por causa (`wifi-cuts.test.ts`, R-COM-004, R-COM-008) | Hueco dentro de un corte: `comunicacion`; de un solo AGV sin corte: `lectura`; el mismo tag saltado sin corte por dos AGV con informe: `tag`; AGV sin informe: `sin-informe`; exactamente cinco huecos; dos lecturas en el mismo instante no son hueco; el resultado no depende del orden de entrada | Culpar al lector de un hueco de comunicación; inventar huecos | Unitaria |
 | TC-324 | Mapa por tag (`wifi-cuts.test.ts`) | El corte va al último tag leído y al AGV; cortes por 100 pasadas con las pasadas de los AGV con informe dentro de su periodo (100/17); filas en orden de ruta | Un mapa que pone el corte donde no se leyó | Unitaria |
 | TC-325 | Importador del informe de conexiones (`wifi-connections.test.ts`, DS-013) | Los tres tipos con y sin relleno; día/mes declarado (6 de octubre, no 10 de junio); `Datos Aux` tal cual; tipo desconocido y fecha imposible rechazados con su motivo; cabecera sin `Fecha` o `Conexión` rechazada entera; el mismo informe en texto; el AGV del nombre conserva ceros y es `null` sin número; dos informes solapados no duplican | Adivinar columnas o el AGV; perder filas en silencio | Unitaria |
+| TC-327 | Cruce por delante de una espera al servidor (`wifi-cuts.test.ts`, R-COM-006, OQ-162) | Parada precisa T05 con el cruce T07 declarado: el corte nombra «cruce declarado T07, a 2 tags»; con otra parada precisa en T06, ninguno y «no pasa por ningún cruce declarado»; sin cruces declarados, ninguno y «Sin cruces declarados» | Atribuir a una parada un cruce que protege otra; decir que no hay cruce cuando no se ha declarado ninguno | Unitaria |
 | TC-326 | Navegador: informe wifi de punta a punta (`wifi.spec.ts`) | Sin AGV escrito ni número en el nombre, «Falta el AGV»; el escrito manda sobre el del nombre; «4 eventos leídos, 4 nuevos»; tras reimportar las lecturas, la pestaña Wifi enseña las tarjetas de microcorte y en marcha, el mapa con la columna del AGV y la celda del tag del corte coloreada, y el aviso de que no hay paradas precisas declaradas. La importación de lecturas conserva el informe guardado (lo destapó esta prueba) | Perder el informe al importar; una pestaña vacía | Navegador |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las ocho pestañas existen (Wifi desde 3.64.0) y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no

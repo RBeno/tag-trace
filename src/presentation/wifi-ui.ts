@@ -66,6 +66,9 @@ function heatmapTable(view: WifiView, rows: WifiView["rows"]): HTMLElement {
     if (row.preciseStop) {
       tag.append(node("span", "muted", " · parada precisa"));
     }
+    if (row.crossing) {
+      tag.append(node("span", "muted", " · cruce"));
+    }
     line.append(tag);
     for (const agv of view.agvs) {
       const count = row.cutsByAgv[agv] ?? 0;
@@ -142,7 +145,7 @@ export function renderWifi(out: HTMLElement, views: CircuitViews, deps: WifiUiDe
   out.append(
     lazyTable(`Los ${view.cuts.length} cortes, uno por uno`, () =>
       plainTable(
-        ["AGV", "Inicio", "Duración", "Último tag", "Reaparece en", "Lecturas durante", "Clase", "Datos Aux", "Lectura"],
+        ["AGV", "Inicio", "Duración", "Último tag", "Reaparece en", "Lecturas durante", "Clase", "Cruce por delante", "Datos Aux", "Lectura"],
         view.cuts.map((cut) => [
           cut.agvId,
           deps.formatInstant(cut.startUtcMs),
@@ -151,6 +154,7 @@ export function renderWifi(out: HTMLElement, views: CircuitViews, deps: WifiUiDe
           cut.nextTagId ?? "—",
           String(cut.readsDuring),
           CUT_CLASS_LABEL[cut.cutClass as CutClass] ?? cut.cutClass,
+          cut.crossingAhead === null ? "" : `${cut.crossingAhead.tagId} (a ${cut.crossingAhead.hops})`,
           cut.aux,
           cut.evidence,
         ]),

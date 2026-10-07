@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.46.0
+version: 0.47.0
 status: baseline-candidate
-last_updated: 2026-10-06
+last_updated: 2026-10-07
 ---
 
 # Memoria compacta del proyecto
@@ -433,7 +433,10 @@ reaparece cae a veces dentro del corte; y **otro AGV que lo adelanta prueba que 
 reaparecía a 7 tags y por el sitio pasaron decenas de AGV mientras tanto. Contrastado con ese dato,
 la clasificación coincide con el análisis a mano. Quedan abiertas OQ-159 a OQ-163; la siguiente pieza
 prevista es el catálogo de tags por tag y MTC a partir de las acciones (DS-014) y la consecuencia de
-un tag no leído, que espera a OQ-159.
+un tag no leído, que ya tiene regla (R-AGV-022, 2026-10-07: el AGV sigue con la orden del anterior).
+Ese mismo día el propietario contestó las preguntas de la entrega (3.65.0): los cruces están descritos
+en el circuito, así que cada espera al servidor nombra el cruce declarado que queda por delante; el
+temporizador queda pendiente.
 
 ## Estado al 2026-09-27 (relevo a un chat nuevo)
 
@@ -469,10 +472,11 @@ conversación siguiente.
      como fichero, y decide qué tags leídos que la lista no tiene se declaran.
   3. Resuelto el 2026-09-26: el propietario dio el número correcto del tag de noche; está en el libro
      de listas, fuera del repositorio.
-  4. Cortes wifi (2026-10-06): qué hace el AGV con un tag que no detecta (OQ-159), si los cortes
-     largos fuera del recorrido son extracciones (OQ-160), qué significan `Datos Aux` y `Cober.`
-     (OQ-161), qué paradas precisas protegen un cruce y dónde hay temporizador (OQ-162), y los tags
-     «No ejecutado» siempre (OQ-163).
+  4. Cortes wifi: si los cortes largos fuera del recorrido son extracciones y dónde se hacen
+     (OQ-160, sin respuesta todavía) y en qué AGV hay temporizador para continuar sin wifi y cuánto
+     dura (OQ-162, pendiente por decisión del propietario). Cerradas el 2026-10-07: un tag no
+     detectado deja la orden del anterior (R-AGV-022), `Datos Aux` y `Cober.` no se interpretan, y
+     «No ejecutado» siempre puede ser un tag condicional (R-AGV-023).
   5. El resto de preguntas abiertas, en `OPEN_QUESTIONS.md`.
 - **Fuera del repositorio**: los scripts y las salidas de los análisis con datos de planta vivían en
   `local/` (ignorado por git) y se le entregaron al propietario en un paquete. Para analizar datos

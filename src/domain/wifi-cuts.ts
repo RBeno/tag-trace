@@ -119,6 +119,11 @@ export interface WifiCut {
   readonly hops: number | null;
   /** Otros AGV que pasaron por su último tag y llegaron al de reaparición antes que él. */
   readonly overtakenBy: readonly string[];
+  /**
+   * En una espera al servidor, el primer cruce declarado que el recorrido alcanza antes de la siguiente
+   * parada precisa, y a cuántos tags: el cruce que un temporizador le haría ocupar (R-COM-006).
+   */
+  readonly crossingAhead: { readonly tagId: string; readonly hops: number } | null;
   readonly cutClass: CutClass;
   readonly aux: string;
   readonly sourceRow: number;
@@ -143,6 +148,8 @@ export interface HeatRow {
   readonly tagId: string;
   /** Posición en el anillo dominante; `null` si el tag está fuera de él. */
   readonly position: number | null;
+  /** Si es un cruce declarado. */
+  readonly crossing: boolean;
   /** Cortes que empezaron con este tag como último leído, por AGV. */
   readonly cutsByAgv: ReadonlyMap<string, number>;
   /** Pasadas (lecturas) de cada AGV con informe, dentro del periodo de su informe. */
@@ -177,6 +184,11 @@ export interface WifiHeatmapInput {
   readonly connections: ReadonlyMap<string, readonly ConnectionEvent[]>;
   /** Las paradas precisas declaradas (lista `critico` o columna `funcion`). Vacío si no hay. */
   readonly preciseStops: ReadonlySet<string>;
+  /**
+   * Los tags de cruce declarados en el circuito (función `cruce` o tramo «cruce»; propietario,
+   * 2026-10-07: «los cruces están descritos en el circuito»). Vacío si no hay.
+   */
+  readonly crossings?: ReadonlySet<string>;
   readonly thresholds: WifiCutThresholds;
 }
 
@@ -435,6 +447,30 @@ function overtakers(
   return found.sort();
 }
 
+/**
+ * El primer cruce declarado siguiendo el sucesor dominante desde una parada precisa, sin pasar de la
+ * siguiente parada precisa: un cruce más allá lo protege esa otra. `null` si no hay ninguno.
+ */
+function crossingAheadOf(
+  route: Route,
+  from: string,
+  preciseStops: ReadonlySet<string>,
+  crossings: ReadonlySet<string>,
+): { readonly tagId: string; readonly hops: number } | null {
+  if (crossings.size === 0) return null;
+  const seen = new Set<string>([from]);
+  let current = from;
+  for (let hop = 1; hop <= route.next.size; hop += 1) {
+    const step = route.next.get(current);
+    if (step === undefined || seen.has(step)) return null;
+    if (crossings.has(step)) return { tagId: step, hops: hop };
+    if (preciseStops.has(step)) return null;
+    seen.add(step);
+    current = step;
+  }
+  return null;
+}
+
 function classify(
   agvId: string,
   start: ConnectionEvent,
@@ -470,6 +506,8 @@ function classify(
 
   let cutClass: CutClass;
   let evidence: string;
+  let crossingAhead: { readonly tagId: string; readonly hops: number } | null = null;
+  const crossings = input.crossings ?? new Set<string>();
   const lasted = seconds(durationMs ?? 0);
   const where = last === null ? "" : ` Último tag ${last.tagId}${following === null ? "" : `, reaparece en ${following.tagId}`}.`;
   if (end === null) {
@@ -503,10 +541,18 @@ function classify(
       "se movía y los ejecutaba desde su memoria." + where;
   } else if (preciseStops.has(last.tagId)) {
     cutClass = "espera-servidor";
+    crossingAhead = crossingAheadOf(route, last.tagId, preciseStops, crossings);
+    const crossingText =
+      crossingAhead !== null
+        ? `Antes de la siguiente parada precisa el recorrido pasa por el cruce declarado ${crossingAhead.tagId}, ` +
+          `a ${crossingAhead.hops} ${crossingAhead.hops === 1 ? "tag" : "tags"}: un temporizador que lo hiciera ` +
+          "continuar sin wifi podría ocuparlo."
+        : crossings.size > 0
+          ? "Hasta la siguiente parada precisa no pasa por ningún cruce declarado."
+          : "Sin cruces declarados en el circuito no se sabe si esta parada protege uno.";
     evidence =
       `Su último tag es una parada precisa y no siguió durante ${lasted} sin wifi: ` +
-      "esperaba la orden de continuar del servidor. Si esa parada protege un cruce, un temporizador que lo " +
-      "hiciera continuar podría ocuparlo." + where;
+      `esperaba la orden de continuar del servidor. ${crossingText}` + where;
   } else {
     cutClass = "parado";
     evidence =
@@ -528,6 +574,7 @@ function classify(
     readsDuring,
     hops,
     overtakenBy,
+    crossingAhead,
     cutClass,
     aux: end?.aux ?? start.aux,
     sourceRow: start.sourceRow,
@@ -697,6 +744,7 @@ export function buildWifiHeatmap(input: WifiHeatmapInput): WifiHeatmap {
     return {
       tagId,
       position: route.position.get(tagId) ?? null,
+      crossing: input.crossings?.has(tagId) ?? false,
       cutsByAgv: row.cutsByAgv,
       passesByAgv: row.passesByAgv,
       cuts: cutsTotal,

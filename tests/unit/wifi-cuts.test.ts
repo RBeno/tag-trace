@@ -128,6 +128,31 @@ describe("cortes wifi: parado, espera al servidor y fuera del recorrido (R-COM-0
     expect(heat.cuts[0]?.evidence).toMatch(/cruce/);
   });
 
+  it("nombra el cruce declarado que queda antes de la siguiente parada precisa (R-COM-006)", () => {
+    const start = readAt("T05", 3) + 5_000;
+    const run = (preciseStops: ReadonlySet<string>, crossings: ReadonlySet<string>) =>
+      buildWifiHeatmap({
+        readings,
+        connections: new Map([["A1", cut(start, start + 100_000)]]),
+        preciseStops,
+        crossings,
+        thresholds: THRESHOLDS,
+      });
+    const conCruce = run(new Set(["T05"]), new Set(["T07"]));
+    expect(conCruce.cuts[0]?.crossingAhead).toEqual({ tagId: "T07", hops: 2 });
+    expect(conCruce.cuts[0]?.evidence).toMatch(/cruce declarado T07, a 2 tags/);
+    // El mapa marca el cruce en su fila; aquí solo hay fila de lo que el informe abarca, la parada.
+    expect(conCruce.rows.find((row) => row.tagId === "T05")?.crossing).toBe(false);
+    // Otra parada precisa antes del cruce: ese cruce lo protege la otra, no esta.
+    const tapado = run(new Set(["T05", "T06"]), new Set(["T07"]));
+    expect(tapado.cuts[0]?.crossingAhead).toBeNull();
+    expect(tapado.cuts[0]?.evidence).toMatch(/no pasa por ningún cruce declarado/);
+    // Sin cruces declarados no se dice que no haya cruce: no se sabe.
+    const sinDeclarar = run(new Set(["T05"]), new Set());
+    expect(sinDeclarar.cuts[0]?.crossingAhead).toBeNull();
+    expect(sinDeclarar.cuts[0]?.evidence).toMatch(/Sin cruces declarados/);
+  });
+
   it("el mismo corte sin parada precisa declarada es «parado» y lo dice", () => {
     const start = readAt("T05", 3) + 5_000;
     const heat = buildWifiHeatmap({
