@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.32.2
+version: 0.33.0
 status: baseline-candidate
 last_updated: 2026-10-07
 ---
@@ -28,7 +28,7 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-011 | Informe ampliado de Vsystem | Tipo, fecha con segundos, AGV, circuito y, según el tipo, tag o uso | Enriquecida, opcional |
 | DS-012 | Historial de flota | AGV y fecha de alta; circuito, fecha de baja y nota opcionales | Configuración, incremental (§3.6) |
 | DS-013 | Informe de conexiones wifi de un AGV | Fecha con segundos y tipo de conexión; el AGV lo da el nombre del fichero | Enriquecida, opcional, incremental por AGV (§3.9) |
-| DS-014 | Lecturas de un AGV con acciones | Fecha, tag, MTC, la acción que el tag ordenó y las marcas «No en memoria» y «No ejecutado» | **Todavía no se importa**; la necesitan R-AGV-022 a R-AGV-024 |
+| DS-014 | Lecturas de un AGV con acciones | Fecha, tag y la acción que el tag ordenó; MTC y las marcas «No en memoria» y «No ejecutado» opcionales | Enriquecida, opcional, incremental por AGV (§3.10) |
 
 El **orden** de la lista del circuito es lo declarado: puede tener erratas al transcribir o un orden
 distinto al real, y la posición de un tag la dan las lecturas (R-GRA-015).
@@ -358,6 +358,28 @@ lectura o de tag (R-COM-004 a R-COM-008).
   Una desconexión sin conexión detrás es un corte `sin-cierre`.
 - El mapa se rehace en cada importación de lecturas: cargar un informe nuevo pide volver a importar
   las lecturas para verlo.
+
+### 3.10 Lecturas con acciones de un AGV (DS-014)
+
+Vsystem exporta, por AGV, sus lecturas con la acción que ordenó cada tag. Se carga en «Datos», junto
+al informe de conexiones, y da el catálogo de la acción de cada tag por MTC y los avisos para
+verificar (R-AGV-023, R-AGV-024).
+
+- **Columnas obligatorias**: `Fecha` (día/mes/año con segundos, en la zona del circuito), `Nº Tag`
+  (texto, con sus ceros) y `Acciones` («Continuar / Continuar, Pin Abajo, Seguir recto, Mapa
+  Aproximación, vel 20 m/min»). **Opcionales**: `MTC` («MTC nº 7» se guarda como `7`; vacío o 0 es el
+  modo normal), `No en memoria` y `No ejecutado` (casillas que llegan como «True»/«False»,
+  «Verdadero», 1 o «sí»). Sin una de las marcas, se avisa de que no se puede notificar. `MTD` se
+  ignora.
+- **El AGV no es una columna**: como en DS-013, se propone desde el nombre del fichero y se confirma.
+- Una fila sin fecha, con fecha imposible o sin tag se rechaza con su motivo.
+- **Se fusiona por AGV**: misma hora, tag y acción es la misma lectura. Se guarda con el circuito y no
+  viaja en el `.agvproj`.
+- **No son lecturas del circuito**: no entran en el análisis de lecturas (DS-001), que ya trae las de
+  ese AGV desde el servidor.
+- La acción se descompone en orden, pin, giro, mapa, velocidad, espera y baliza; lo que no se
+  reconoce se conserva aparte, nunca se descarta. **No se calcula todavía la consecuencia** de no leer
+  un tag (R-AGV-022): el propietario pidió no incorporarla aún.
 
 ## 4. Proceso de importación
 

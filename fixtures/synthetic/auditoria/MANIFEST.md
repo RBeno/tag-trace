@@ -1,6 +1,6 @@
 # Circuito de auditoría con verdad conocida
 
-- Dataset ID/version: `auditoria/30`
+- Dataset ID/version: `auditoria/31`
 - Generador: `tests/support/circuito-auditoria.ts`, con semilla `20260920`
 - `synthetic: true`
 - Propósito: medir **cuánto de lo que puede ir mal en un circuito real llega a decirse**. Cada clase
@@ -141,4 +141,11 @@ cubre uno de los tags sueltos que ya se salta —el hueco de un tag que cae en m
 otro papel plantado—. La clase `hueco-de-comunicacion` afirma que ese hueco sale como comunicación y
 que ninguno de sus otros huecos, fuera de cortes, lo hace (R-COM-004, R-COM-008). Ninguna lectura
 cambia. Todas las clases siguen DETECTA.
+
+## Avisos de acciones (2026-10-07): `auditoria/31`
+
+Se añade el informe de lecturas con acciones (DS-014) del mismo AGV: sus mismas lecturas, todas
+«Continuar», con un tag sin otro papel marcado «No ejecutado» en todas y una sola lectura de otro
+marcada «No en memoria». La clase `avisos-de-acciones` afirma esos dos avisos y ningún otro (R-AGV-023,
+R-AGV-024). Ninguna lectura cambia. Todas las clases siguen DETECTA.
 

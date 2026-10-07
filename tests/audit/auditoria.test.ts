@@ -21,7 +21,9 @@ import { describe, expect, it } from "vitest";
 import { buildAuditScenario, toRealUtc, type DefectClass } from "../support/circuito-auditoria.js";
 import { importReadings } from "../../src/ingestion/importer.js";
 import { importWifiText } from "../../src/ingestion/wifi-connections.js";
-import { buildWifiHeatmap } from "../../src/domain/wifi-cuts.js";
+import { buildWifiHeatmap, cutWindows } from "../../src/domain/wifi-cuts.js";
+import { buildTagActions } from "../../src/domain/tag-actions.js";
+import { importActionText } from "../../src/ingestion/vehicle-actions.js";
 import { buildTransitions } from "../../src/domain/graph.js";
 import { assignCohorts } from "../../src/domain/cohort.js";
 import { dominantNeighbours, locateUndeclaredTags, type UndeclaredTagReport } from "../../src/domain/undeclared-tags.js";
@@ -1634,6 +1636,25 @@ describe("auditoría del circuito con verdad conocida", () => {
         detail:
           `${escrito} → ${fila?.verdict ?? "sin fila"} con ${fila?.observedTag ?? "—"}; ${real}: ${fuera?.verdict ?? "no sale fuera de la lista"}` +
           `${fuera === undefined ? "" : `, la lista pone ahí ${fuera.declaredWithoutReadings.join(", ") || "nada"}`}; juntos en el orden leído: ${juntos ? "sí" : "no"}`,
+      };
+    },
+    "avisos-de-acciones": () => {
+      const [noEjecutado, noEnMemoria] = scenario.defects.find((d) => d.kind === "avisos-de-acciones")?.tags ?? [];
+      const agv = scenario.wifiAgv;
+      const report = buildTagActions({
+        readingsByAgv: new Map([[agv, importActionText(scenario.actionsCsv, "Europe/Madrid").readings]]),
+        cutsByAgv: new Map([[agv, cutWindows(importWifiText(scenario.wifiCsv, "Europe/Madrid").events)]]),
+      });
+      const ne = report.notExecuted.map((notice) => `${notice.tagId}:${notice.pattern}`);
+      const nm = report.notInMemory.map((notice) => `${notice.tagId}:${notice.reads.length}`);
+      return {
+        ok:
+          ne.length === 1 &&
+          ne[0] === `${noEjecutado}:nunca` &&
+          nm.length === 1 &&
+          nm[0] === `${noEnMemoria}:1` &&
+          report.catalog.every((entry) => entry.parsed.kind === "Continuar"),
+        detail: `no ejecutado: ${ne.join(", ") || "ninguno"}; no en memoria: ${nm.join(", ") || "ninguno"}; catálogo ${report.catalog.length}`,
       };
     },
     "hueco-de-comunicacion": () => {

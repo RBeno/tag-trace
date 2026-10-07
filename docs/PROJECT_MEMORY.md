@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.47.1
+version: 0.48.0
 status: baseline-candidate
 last_updated: 2026-10-07
 ---
@@ -438,6 +438,15 @@ Ese mismo día el propietario contestó las preguntas de la entrega (3.65.0): lo
 en el circuito, así que cada espera al servidor nombra el cruce declarado que queda por delante; el
 temporizador queda pendiente.
 
+## Lecturas con acciones (2026-10-07, 3.66.0)
+
+Segunda entrega de F5. Petición: «sí, hazla, pero no incorpores aún consecuencias». Entra el informe de
+lecturas con acciones de cada AGV (DS-014), con el AGV propuesto desde el nombre del fichero como en
+DS-013; el catálogo de la acción de cada tag **por tag y MTC**, porque la acción cambia con el MTC; y
+los avisos para verificar de R-AGV-023 y R-AGV-024 como tarjetas revisables de rango 3 en la bandeja.
+Un «No ejecutado» se contrasta con los cortes wifi y el MTC y el patrón se dice, nunca la causa. Lo
+que no se hace, a propósito: la consecuencia de no leer un tag (R-AGV-022).
+
 ## Estado al 2026-09-27 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
@@ -463,7 +472,7 @@ conversación siguiente.
   anclas en puntos críticos miden tiempos por sección con nombre de tramo (R-TIM-012). La última entrega es la posición de un tag según las lecturas (R-GRA-015,
   `CHANGELOG.md` `[3.32.0]`), publicada en `main` y en la web.
 - **Cómo se ha trabajado**: una entrega por petición del propietario, con su documentación, su clase
-  plantada en la auditoría sintética (`tests/audit/`, 54 clases) y un solo commit en la rama de
+  plantada en la auditoría sintética (`tests/audit/`, 55 clases) y un solo commit en la rama de
   trabajo; PR y fusión solo cuando él lo pide. Las decisiones de cada entrega están en las secciones
   de arriba y en el `CHANGELOG`.
 - **Pendiente de planta**, sin identificadores:
@@ -476,8 +485,9 @@ conversación siguiente.
      (OQ-160, sin respuesta todavía) y en qué AGV hay temporizador para continuar sin wifi y cuánto
      dura (OQ-162, pendiente por decisión del propietario). Cerradas el 2026-10-07: un tag no
      detectado deja la orden del anterior (R-AGV-022), `Datos Aux` y `Cober.` no se interpretan, y
-     «No ejecutado» siempre puede ser un tag condicional (R-AGV-023). «No ejecutado» y «No en memoria»,
-     si aparecen, se notifican para su verificación (R-AGV-023, R-AGV-024), cuando entre DS-014.
+     «No ejecutado» siempre puede ser un tag condicional (R-AGV-023). «No ejecutado» y «No en memoria»
+     se notifican para su verificación (R-AGV-023, R-AGV-024), implementado en 3.66.0. La consecuencia
+     de un tag no leído (R-AGV-022) **no se incorpora todavía**, por decisión del propietario.
   5. El resto de preguntas abiertas, en `OPEN_QUESTIONS.md`.
 - **Fuera del repositorio**: los scripts y las salidas de los análisis con datos de planta vivían en
   `local/` (ignorado por git) y se le entregaron al propietario en un paquete. Para analizar datos

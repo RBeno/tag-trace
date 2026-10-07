@@ -224,6 +224,28 @@ export interface WifiLoadedMessage extends Envelope {
   readonly warnings: readonly string[];
 }
 
+/** Cargar el informe de lecturas con acciones de un AGV (DS-014). */
+export interface LoadActionsMessage {
+  readonly type: "actions";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly file: File;
+  readonly circuitId: string;
+  /** El AGV del informe, confirmado por la persona: el fichero no lo trae en ninguna columna. */
+  readonly agvId: string;
+}
+
+export interface ActionsLoadedMessage extends Envelope {
+  readonly type: "actions-loaded";
+  readonly circuitId: string;
+  readonly agvId: string;
+  readonly accepted: number;
+  readonly added: number;
+  readonly rejected: readonly { readonly reason: string; readonly rows: number }[];
+  readonly agvs: readonly string[];
+  readonly warnings: readonly string[];
+}
+
 /**
  * Consolidar un periodo (F4; `MEMORY_CONSOLIDATION.md` §6). `mode: "preview"` devuelve qué pasaría
  * sin escribir nada; `mode: "commit"` escribe vN+1 y solo se envía tras la confirmación humana. El
@@ -348,6 +370,7 @@ export type ToWorker =
   | LoadListsMessage
   | LoadFleetMessage
   | LoadWifiMessage
+  | LoadActionsMessage
   | ConsolidateMessage
   | RevokeMessage
   | ResolveForkMessage;
@@ -757,6 +780,44 @@ export interface CircuitViews {
     }[];
   };
   /**
+   * La acción de cada tag por MTC y los avisos para verificar (DS-014, R-AGV-023, R-AGV-024). Solo si
+   * el circuito tiene algún informe de lecturas con acciones; se rehace en cada importación.
+   */
+  readonly tagActions?: {
+    readonly agvs: readonly string[];
+    readonly catalog: readonly {
+      readonly tagId: string;
+      readonly mtc: string;
+      readonly reads: number;
+      readonly agvs: readonly string[];
+      readonly action: string;
+      readonly kind: string;
+      readonly pin: string | null;
+      readonly turn: string | null;
+      readonly map: string | null;
+      readonly speedMPerMin: number | null;
+      readonly waitS: number | null;
+      readonly beacon: string | null;
+      readonly variants: number;
+      readonly notExecuted: number;
+      readonly notInMemory: number;
+    }[];
+    readonly notExecuted: readonly {
+      readonly tagId: string;
+      readonly reads: number;
+      readonly notExecuted: number;
+      readonly agvs: readonly string[];
+      readonly byMtc: readonly { readonly mtc: string; readonly reads: number; readonly notExecuted: number }[];
+      readonly pattern: string;
+      readonly evidence: string;
+    }[];
+    readonly notInMemory: readonly {
+      readonly tagId: string;
+      readonly reads: readonly { readonly agvId: string; readonly utcMs: number; readonly mtc: string }[];
+      readonly evidence: string;
+    }[];
+  };
+  /**
    * Cortes wifi cruzados con las lecturas y mapa de calor por tag (R-COM-004 a R-COM-008). Solo si
    * el circuito tiene algún informe de conexiones (DS-013); se rehace en cada importación.
    */
@@ -1070,6 +1131,7 @@ export type FromWorker =
   | FleetLoadedMessage
   | FleetChooseCircuitMessage
   | WifiLoadedMessage
+  | ActionsLoadedMessage
   | ConsolidationPreviewMessage
   | ConsolidatedMessage
   | RevokedMessage

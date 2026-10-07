@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.47.1
+version: 0.48.0
 status: baseline-candidate
 last_updated: 2026-10-07
 ---
@@ -65,6 +65,7 @@ flowchart TD
 | ALG-022 | Cambios de tag dentro de un periodo | Pasadas por el sitio del tag; racha fuera de su vida larga e improbable por azar; pareja unívoca por vecino compartido | Cambios, tags que dejan o empiezan a leerse, su vida, y la diferencia de cada AGV frente al nuevo | O(n) sobre las lecturas | F3 |
 | ALG-023 | Lectura por AGV | Celdas dentro de la vida del tag; nunca, desde una hora, poco con cola binomial frente al resto | Por AGV y por tag, la diferencia medida y si pasa en muchos o en pocos tags | O(celdas) | F3 |
 | ALG-024 | Cortes wifi y mapa de calor | Emparejar desconexión y conexión; situar cada corte con la lectura anterior y la siguiente del AGV; ruta por sucesor dominante; adelantamientos y ritmo frente a lo habitual del tramo | Clase de cada corte, causa de cada hueco de lectura y cortes por tag y AGV | O(n log n) sobre las lecturas más O(c·n) por los adelantamientos de c cortes | F5 |
+| ALG-025 | Acciones de los tags y avisos | Descomponer la acción de cada lectura; agrupar por tag y MTC; contrastar las lecturas «No ejecutado» con los cortes wifi y el MTC | Catálogo por tag y MTC, tags no ejecutados con su patrón y lecturas fuera de memoria | O(n·c) con c cortes por AGV | F5 |
 
 ## 4. Oportunidades y salud
 
@@ -1272,3 +1273,27 @@ cortes, 28 microcortes, 2 en marcha, 3 parados, 3 apagados, 1 sin lecturas antes
 recorrido —los tres de más de 15 min, que el análisis a mano había identificado como extracciones
 porque otros AGV seguían pasando por el sitio—. Límite conocido: con un solo AGV con informe, ningún
 hueco puede apuntar al tag (hace falta que lo salten al menos dos con informe).
+
+## 6.29 Acciones de los tags y avisos para verificar, implementado (ALG-025, R-AGV-023, R-AGV-024)
+
+`buildTagActions` (`src/domain/tag-actions.ts`), llamado por el Worker al montar las vistas si el
+circuito tiene algún informe de lecturas con acciones (DS-014). Entran las lecturas con acciones de
+cada AGV y, de los AGV que tienen informe de conexiones, sus cortes (`cutWindows`).
+
+1. **Catálogo.** Las lecturas se agrupan por tag y MTC. De cada par: lecturas, AGV, la acción más
+   leída descompuesta (`parseAction`: orden, pin, giro, mapa, velocidad, espera, baliza y lo no
+   reconocido) y cuántas otras acciones se leyeron para el mismo par.
+2. **«No ejecutado».** Cada tag con alguna lectura así es un aviso. Su patrón, en este orden: `nunca`
+   si no se ejecutó en ninguna lectura (y la frase dice si llegó a pasar sin wifi, para saber si se
+   pudo comprobar); `solo-sin-wifi` si se ejecutó solo dentro de cortes y ninguna lectura no ejecutada
+   cayó en un corte (se comporta como un `control-wifi`); `segun-mtc` si los MTC con lecturas
+   ejecutadas y los MTC con no ejecutadas no se solapan; `sin-patron` si no. Siempre termina en
+   «Verificar».
+3. **«No en memoria».** Cada tag con alguna lectura así es un aviso, con el AGV, la hora y el MTC de
+   cada una.
+
+Los avisos son tarjetas revisables de rango 3 (`tag-no-ejecutado`, `lectura-no-en-memoria`): van a la
+bandeja, no a la instantánea, y no bloquean la consolidación. Contrastado con el primer informe real
+(dos días de un AGV, en local): 122 tags en 143 pares, dos tags que no se ejecutan nunca y ninguna
+lectura no ejecutada sin wifi, así que el wifi no se pudo contrastar; ninguna lectura fuera de memoria.
+

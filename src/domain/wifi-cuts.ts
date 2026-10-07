@@ -359,6 +359,14 @@ function tagsBetween(route: Route, from: string, hops: number): readonly string[
   return between;
 }
 
+/**
+ * Los cortes de un informe como intervalos `[inicio, fin]`; un corte sin reconexión llega hasta el
+ * infinito. Para quien solo necesita saber si un instante cayó sin wifi (R-AGV-023).
+ */
+export function cutWindows(events: readonly ConnectionEvent[]): readonly (readonly [number, number])[] {
+  return pairCuts(events).map(({ start, end }) => [start.utcMs, end?.utcMs ?? Number.POSITIVE_INFINITY] as const);
+}
+
 /** Empareja cada desconexión con la conexión que la cierra. */
 function pairCuts(events: readonly ConnectionEvent[]): readonly {
   readonly start: ConnectionEvent;

@@ -104,7 +104,9 @@ import {
 } from "../src/domain/flow-stops.js";
 import { FLEET_STRUCTURE, FleetFailure, importFleetHistory, importFleetRows } from "../src/ingestion/fleet-history.js";
 import { WIFI_REJECTION_LABEL, WIFI_STRUCTURE, WifiFailure, importWifiRows, importWifiText, mergeWifiEvents } from "../src/ingestion/wifi-connections.js";
-import { buildWifiHeatmap } from "../src/domain/wifi-cuts.js";
+import { buildWifiHeatmap, cutWindows } from "../src/domain/wifi-cuts.js";
+import { ACTIONS_REJECTION_LABEL, ActionsFailure, importActionRows, importActionText, mergeActionReadings } from "../src/ingestion/vehicle-actions.js";
+import { buildTagActions } from "../src/domain/tag-actions.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -372,6 +374,8 @@ async function accumulate(
     ...(existing?.fleet === undefined ? {} : { fleet: existing.fleet }),
     // Y los informes de conexiones wifi (DS-013): lo destapó la prueba de navegador de 3.64.0.
     ...(existing?.wifi === undefined ? {} : { wifi: existing.wifi }),
+    // Y los informes de lecturas con acciones (DS-014), por lo mismo.
+    ...(existing?.actions === undefined ? {} : { actions: existing.actions }),
     updatedAt: Date.now(),
   };
   // Un repetido cuyas lecturas ya no estaban guardadas las recupera, con la procedencia de su primera
@@ -1254,6 +1258,49 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       skipsByCause,
     };
   })();
+  // Acción de cada tag por MTC y avisos para verificar (DS-014): solo con algún informe de acciones.
+  const actionsStored = stored?.actions?.byAgv;
+  const tagActionsView: CircuitViews["tagActions"] | undefined = (() => {
+    if (actionsStored === undefined || Object.keys(actionsStored).length === 0) return undefined;
+    const report = buildTagActions({
+      readingsByAgv: new Map(Object.entries(actionsStored).map(([agvId, entry]) => [agvId, entry.readings])),
+      cutsByAgv: new Map(Object.entries(wifiStored ?? {}).map(([agvId, entry]) => [agvId, cutWindows(entry.events)])),
+    });
+    return {
+      agvs: report.agvs,
+      catalog: report.catalog.map((entry) => ({
+        tagId: entry.tagId,
+        mtc: entry.mtc,
+        reads: entry.reads,
+        agvs: entry.agvs,
+        action: entry.action,
+        kind: entry.parsed.kind,
+        pin: entry.parsed.pin,
+        turn: entry.parsed.turn,
+        map: entry.parsed.map,
+        speedMPerMin: entry.parsed.speedMPerMin,
+        waitS: entry.parsed.waitS,
+        beacon: entry.parsed.beacon,
+        variants: entry.variants.length,
+        notExecuted: entry.notExecuted,
+        notInMemory: entry.notInMemory,
+      })),
+      notExecuted: report.notExecuted.map((notice) => ({
+        tagId: notice.tagId,
+        reads: notice.reads,
+        notExecuted: notice.notExecuted,
+        agvs: notice.agvs,
+        byMtc: notice.byMtc,
+        pattern: notice.pattern,
+        evidence: notice.evidence,
+      })),
+      notInMemory: report.notInMemory.map((notice) => ({
+        tagId: notice.tagId,
+        reads: notice.reads.map((read) => ({ agvId: read.agvId, utcMs: read.utcMs, mtc: read.mtc })),
+        evidence: notice.evidence,
+      })),
+    };
+  })();
   const fleet = buildFleetTimeline({
     readings,
     coverage,
@@ -1324,6 +1371,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
     fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null, production: productionView, blockages },
     ...(wifiView === undefined ? {} : { wifi: wifiView }),
+    ...(tagActionsView === undefined ? {} : { tagActions: tagActionsView }),
     franjas: {
       sources: windows.map((entry) => ({
         sourceId: entry.source.sourceId,
@@ -3059,6 +3107,74 @@ async function runWifi(message: Extract<ToWorker, { type: "wifi" }>): Promise<vo
   }
 }
 
+/**
+ * Carga el informe de lecturas con acciones de un AGV (DS-014) y lo **fusiona** con lo guardado de
+ * ese AGV. El catálogo y los avisos se ven al volver a importar las lecturas.
+ */
+async function runActions(message: Extract<ToWorker, { type: "actions" }>): Promise<void> {
+  const { jobId, file, circuitId, agvId } = message;
+  const fail = (code: "INTERNAL" | "SCHEMA_UNRECOGNISED", cause: string, recovery: string): void =>
+    emit({ type: "error", code, cause, recovery }, jobId);
+  if (!isAvailable()) {
+    fail("INTERNAL", "Este navegador no permite guardar datos de sitio.", "Sin almacén local no hay dónde guardar el informe.");
+    return;
+  }
+  try {
+    const existing = await loadCircuit(circuitId);
+    if (existing === undefined) {
+      fail(
+        "INTERNAL",
+        `El circuito «${circuitId}» todavía no existe.`,
+        "Importa al menos una fuente de lecturas en ese circuito y vuelve a intentarlo.",
+      );
+      return;
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const result = looksLikeZip(bytes)
+      ? importActionRows(await readXlsxRows(bytes), existing.zone, true)
+      : importActionText(decodeSource(bytes.buffer).text, existing.zone);
+    const previous = existing.actions?.byAgv[agvId];
+    const merged = mergeActionReadings(previous?.readings ?? [], result.readings);
+    const loadedAt = Date.now();
+    const byAgv = {
+      ...(existing.actions?.byAgv ?? {}),
+      [agvId]: { readings: merged.readings, fileNames: [...(previous?.fileNames ?? []), file.name], loadedAt },
+    };
+    await saveCircuit({ ...existing, actions: { byAgv }, updatedAt: loadedAt });
+
+    const rejectedBy = new Map<string, number>();
+    for (const row of result.rejected) {
+      const label = ACTIONS_REJECTION_LABEL[row.reason];
+      rejectedBy.set(label, (rejectedBy.get(label) ?? 0) + 1);
+    }
+    emit(
+      {
+        type: "actions-loaded",
+        circuitId,
+        agvId,
+        accepted: result.readings.length,
+        added: merged.added,
+        rejected: [...rejectedBy.entries()].map(([reason, rows]) => ({ reason, rows })),
+        agvs: Object.keys(byAgv).sort(),
+        warnings: result.warnings,
+      },
+      jobId,
+    );
+  } catch (error) {
+    const failure =
+      error instanceof ActionsFailure
+        ? error
+        : error instanceof XlsxError
+          ? { reason: error.reason, recovery: "Guarda el libro de nuevo en Excel (.xlsx) o expórtalo como CSV." }
+          : null;
+    fail(
+      "SCHEMA_UNRECOGNISED",
+      failure?.reason ?? "No se pudo leer el informe de lecturas con acciones.",
+      failure?.recovery ?? "Se espera una cabecera con «Fecha», «Nº Tag» y «Acciones».",
+    );
+  }
+}
+
 scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   const message = event.data;
   if (message.protocolVersion !== PROTOCOL_VERSION) return;
@@ -3081,6 +3197,13 @@ scope.onmessage = (event: MessageEvent<ToWorker>): void => {
     currentJobId = message.jobId;
     seq = 0;
     void runWifi(message);
+    return;
+  }
+
+  if (message.type === "actions") {
+    currentJobId = message.jobId;
+    seq = 0;
+    void runActions(message);
     return;
   }
 

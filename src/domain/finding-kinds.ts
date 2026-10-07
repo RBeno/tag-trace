@@ -93,6 +93,9 @@ export const FINDING_KINDS: Readonly<Record<string, FindingKind>> = {
   "calle-uso": { theme: "linea", label: "uso de la calle", rank: 3 },
   "arranque-en-frio": { theme: "linea", label: "cargando al empezar los datos", rank: 3 },
   "punto-critico": { theme: "tiempos", label: "candidato a punto crítico", rank: 3 },
+  // Avisos para verificar del informe de lecturas con acciones (R-AGV-023, R-AGV-024): no son fallos.
+  "tag-no-ejecutado": { theme: "tags", label: "tag no ejecutado", rank: 3 },
+  "lectura-no-en-memoria": { theme: "tags", label: "lectura fuera de memoria", rank: 3 },
 };
 
 /** El tipo de un hallazgo por su clave; uno que no esté en el catálogo va a contexto, y se enseña tal cual. */

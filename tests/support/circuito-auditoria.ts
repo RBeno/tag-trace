@@ -143,7 +143,13 @@ export type DefectClass =
    * Un corte wifi del AGV de lector degradado que cubre uno de los tags que ya se salta: ese hueco es
    * comunicación y no lectura; los demás huecos del mismo AGV, fuera de cortes, no (R-COM-004, R-COM-008).
    */
-  | "hueco-de-comunicacion";
+  | "hueco-de-comunicacion"
+  /**
+   * El informe de lecturas con acciones del mismo AGV marca un tag «No ejecutado» en todas sus lecturas
+   * y una lectura de otro tag «No en memoria»: los dos se avisan para verificar, y nada más (R-AGV-023,
+   * R-AGV-024).
+   */
+  | "avisos-de-acciones";
 
 export interface PlantedDefect {
   readonly kind: DefectClass;
@@ -210,6 +216,8 @@ export interface AuditScenario {
   /** Informe de conexiones wifi (DS-013) de `wifiAgv`, en forma `Fecha;Conexión`. */
   readonly wifiCsv: string;
   readonly wifiAgv: string;
+  /** Informe de lecturas con acciones (DS-014) de `wifiAgv`. */
+  readonly actionsCsv: string;
   readonly fleetCircuit: string;
   readonly fleetNeverRead: string;
   readonly fleetLeavesMidway: string;
@@ -1064,6 +1072,26 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
   }
   const huecoWifi = huecosDegradado[Math.floor(huecosDegradado.length / 2)];
   if (huecoWifi === undefined) throw new Error("el lector degradado no se salta ningún tag suelto");
+  // Lecturas con acciones del mismo AGV (DS-014), también después de generar y sin `random()`: las
+  // mismas lecturas, todas «Continuar»; un tag sin otro papel marcado «No ejecutado» siempre y una
+  // sola lectura de otro marcada «No en memoria».
+  const sinPapel = (tag: string): boolean =>
+    ![...nuncaLeidos, ...lecturaAlta, ...lecturaMedia, ...porMemoria, ...tramoConvoy, ...rotos, ...degradados].includes(tag);
+  const leidosDegradado = ring.filter((tag) => sinPapel(tag) && propiasDegradado.filter((fila) => fila.tag === tag).length >= 5);
+  const tagNoEjecutado = leidosDegradado[2] as string;
+  const tagNoEnMemoria = leidosDegradado[leidosDegradado.length - 3] as string;
+  const lecturaNoEnMemoria = propiasDegradado.find((fila) => fila.tag === tagNoEnMemoria);
+  const actionsCsv = ["Fecha;Nº Tag;MTC;Acciones;No en memoria;No ejecutado"]
+    .concat(
+      [...propiasDegradado]
+        .reverse()
+        .map(
+          (fila) =>
+            `${stamp(fila.t)};${fila.tag};;Continuar / Continuar, Pin Arriba, Seguir recto, Mapa Crucero, vel 30 m/min;` +
+            `${fila === lecturaNoEnMemoria ? "True" : "False"};${fila.tag === tagNoEjecutado ? "True" : "False"}`,
+        ),
+    )
+    .join("\r\n");
   const wifiCsv = ["Fecha;Conexión"]
     .concat([`${stamp(huecoWifi.b.t - 2_000)};Conexión`, `${stamp(huecoWifi.a.t + 2_000)};Desconexión`])
     .join("\r\n");
@@ -1263,6 +1291,13 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
       vehicles: [],
       expect: "la zona se enumera y las calles caen dentro de ella (R-FLO-003)",
       mustNotSay: "que declarar la zona cambie el veredicto de ningún tag sano",
+    },
+    {
+      kind: "avisos-de-acciones",
+      tags: [tagNoEjecutado, tagNoEnMemoria],
+      vehicles: [lectorDegradado],
+      expect: "un aviso «No ejecutado» del primer tag y uno «No en memoria» del segundo, y ningún otro",
+      mustNotSay: "que esos tags estén averiados o que la memoria del AGV esté mal",
     },
     {
       kind: "hueco-de-comunicacion",
@@ -1612,6 +1647,7 @@ export function buildAuditScenario(seed = 20260920): AuditScenario {
     fleetCsv,
     wifiCsv,
     wifiAgv: lectorDegradado,
+    actionsCsv,
     fleetCircuit,
     fleetNeverRead,
     fleetLeavesMidway,

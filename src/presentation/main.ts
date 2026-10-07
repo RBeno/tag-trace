@@ -65,6 +65,7 @@ import { bandsCsv } from "../domain/segment-bands.js";
 import { anchorSectionsCsv } from "../domain/anchor-sections.js";
 import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
 import { renderWifi } from "./wifi-ui.js";
+import { renderTagActions } from "./actions-ui.js";
 import { WIFI_STRUCTURE, agvFromFileName } from "../domain/wifi-cuts.js";
 import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow, Reading } from "../domain/reading.js";
@@ -336,6 +337,23 @@ wifiAgvInput.placeholder = "del nombre del fichero";
 const wifiAgvLabel = element("label", undefined, "AGV del informe");
 wifiAgvLabel.htmlFor = "wifi-agv";
 const wifiNote = element("p", "muted", "");
+/**
+ * El informe de lecturas con acciones de un AGV (DS-014): qué ordenó cada tag y las marcas «No en
+ * memoria» y «No ejecutado». Como el de conexiones, el AGV sale del nombre del fichero y se confirma.
+ */
+const actionsInput = element("input");
+actionsInput.type = "file";
+actionsInput.accept = ".xlsx,.csv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+actionsInput.id = "actions-file";
+const actionsLabel = element("label", undefined, "Lecturas con acciones de un AGV");
+actionsLabel.htmlFor = "actions-file";
+const actionsAgvInput = element("input");
+actionsAgvInput.type = "text";
+actionsAgvInput.id = "actions-agv";
+actionsAgvInput.placeholder = "del nombre del fichero";
+const actionsAgvLabel = element("label", undefined, "AGV del informe de acciones");
+actionsAgvLabel.htmlFor = "actions-agv";
+const actionsNote = element("p", "muted", "");
 const wifiEmpty = element(
   "p",
   "muted tab-empty",
@@ -404,6 +422,21 @@ const wifiEmpty = element(
   const wifiAgvRow = element("div", "filters");
   wifiAgvRow.append(wifiAgvLabel, wifiAgvInput);
   listsPanel.append(wifiLabel, wifiAgvRow, filePicker(wifiInput), wifiStructure, wifiNote);
+
+  const actionsStructure = element("details");
+  actionsStructure.append(element("summary", undefined, "Qué forma tiene que tener el informe de acciones"));
+  actionsStructure.append(
+    element(
+      "p",
+      "muted",
+      "Las lecturas de un AGV con la acción de cada tag, tal como las exporta Vsystem: «Fecha», «Nº Tag» y " +
+        "«Acciones»; «MTC», «No en memoria» y «No ejecutado» si las trae. El AGV se toma del nombre del " +
+        "fichero y se puede corregir aquí. Cada carga se suma a lo guardado de ese AGV.",
+    ),
+  );
+  const actionsAgvRow = element("div", "filters");
+  actionsAgvRow.append(actionsAgvLabel, actionsAgvInput);
+  listsPanel.append(actionsLabel, actionsAgvRow, filePicker(actionsInput), actionsStructure, actionsNote);
 }
 
 /**
@@ -1103,6 +1136,21 @@ function handleMessage(message: FromWorker): void {
       return;
     }
 
+    case "actions-loaded": {
+      actionsNote.textContent =
+        `Circuito «${message.circuitId}» — informes de acciones de ${message.agvs.length} AGV: ${message.agvs.join(", ")}.`;
+      const lines = [
+        `AGV ${message.agvId}: ${message.accepted.toLocaleString("es-ES")} lecturas leídas, ${message.added.toLocaleString("es-ES")} nuevas.`,
+        ...message.rejected.map((entry) => `${entry.rows} ${entry.rows === 1 ? "fila no cargada" : "filas no cargadas"}: ${entry.reason}.`),
+        ...message.warnings,
+        "El catálogo y los avisos se verán en la pestaña «Tags» al volver a importar las lecturas del circuito.",
+      ];
+      showMessage(message.warnings.length > 0 || message.rejected.length > 0 ? "warn" : "info", "Informe de acciones cargado", lines);
+      setBusy(false);
+      disposeWorker();
+      return;
+    }
+
     case "lists-loaded": {
       const detail = message.lists
         .map((entry) => `${entry.list}: ${entry.tags.toLocaleString("es-ES")} ${entry.tags === 1 ? "tag" : "tags"}`)
@@ -1461,6 +1509,31 @@ function startFleet(file: File, circuitId: string, circuitName?: string): void {
   worker.postMessage(load);
 }
 
+/** Arranca la carga de un informe auxiliar por AGV (DS-014): mismo Worker y mismo protocolo. */
+function startAuxiliary(load: { type: "actions"; file: File; circuitId: string; agvId: string }, progress: string): void {
+  disposeWorker();
+  clearMessages();
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    showMessage("error", "El proceso auxiliar se detuvo", [
+      "El informe no llegó a cargarse y el circuito no se ha modificado.",
+    ]);
+    setBusy(false);
+    disposeWorker();
+  };
+  setBusy(true);
+  progressNote.textContent = progress;
+  progressBar.value = 0;
+  const message: ToWorker = { ...load, protocolVersion: PROTOCOL_VERSION, jobId };
+  worker.postMessage(message);
+}
+
 /** Arranca la carga de un informe de conexiones wifi (DS-013). */
 function startWifi(file: File, circuitId: string, agvId: string): void {
   disposeWorker();
@@ -1530,7 +1603,7 @@ function startLists(file: File, circuitId: string): void {
  * la carga se rechaza sola. Es exactamente el defecto que introdujo el primer intento de arreglo
  * de esto, y lo destapó la prueba de navegador en la misma ejecución.
  */
-for (const input of [fileInput, projectInput, listsInput, fleetInput, wifiInput]) {
+for (const input of [fileInput, projectInput, listsInput, fleetInput, wifiInput, actionsInput]) {
   input.addEventListener("click", () => {
     input.value = "";
   });
@@ -1583,6 +1656,28 @@ wifiInput.addEventListener("change", () => {
   }
   if (typed === "") wifiAgvInput.value = agvId;
   startWifi(file, circuitId, agvId);
+});
+
+actionsInput.addEventListener("change", () => {
+  const file = actionsInput.files?.[0];
+  if (file === undefined) return;
+  const circuitId = circuitInput.value.trim();
+  if (circuitId === "") {
+    showMessage("warn", "Falta el circuito", [
+      "El informe de acciones pertenece a un circuito concreto: escribe cuál antes de cargarlo.",
+    ]);
+    return;
+  }
+  const typed = actionsAgvInput.value.trim();
+  const agvId = typed === "" ? agvFromFileName(file.name) : typed;
+  if (agvId === null || agvId === "") {
+    showMessage("warn", "Falta el AGV", [
+      "El informe de acciones no dice de qué AGV es y su nombre no trae un número: escríbelo en «AGV del informe de acciones».",
+    ]);
+    return;
+  }
+  if (typed === "") actionsAgvInput.value = agvId;
+  startAuxiliary({ type: "actions", file, circuitId, agvId }, "Leyendo el informe de lecturas con acciones");
 });
 
 fileInput.addEventListener("change", () => {
@@ -1825,6 +1920,7 @@ function renderViews(views: CircuitViews): void {
   renderTagChanges(views);
   renderUndeclaredTags(views);
   renderListCleanup(views);
+  renderTagActions(out, views, { finding, formatInstant });
   if (views.vsystemContrast !== undefined) {
     out.append(element("h3", undefined, "Contraste contra Vsystem"));
     out.append(
@@ -4415,6 +4511,8 @@ function tagsOfReview(review: readonly string[] | undefined): readonly string[] 
     case "zona-oscura":
     case "cambio-tag":
     case "tag-fuera-del-circuito":
+    case "tag-no-ejecutado":
+    case "lectura-no-en-memoria":
       return rest;
     case "punto-conflictivo":
       return (rest[0] ?? "").split("+");

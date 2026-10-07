@@ -2,6 +2,29 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.66.0] - 2026-10-07
+
+**Lecturas con acciones de un AGV** (DS-014), segunda entrega de F5. El propietario la pidió así: «sí,
+hazla, pero no incorpores aún consecuencias». No hay consecuencia de no leer un tag (R-AGV-022).
+
+### Añadido
+
+- **Informe de lecturas con acciones** (`DATA_CONTRACTS.md` §3.10): se carga en «Datos» en `.xlsx` o
+  texto, con el AGV propuesto desde el nombre del fichero y confirmado; se fusiona por AGV.
+  `src/ingestion/vehicle-actions.ts`.
+- **Catálogo de la acción de cada tag por tag y MTC**: orden, pin, giro, mapa, velocidad, espera y
+  baliza, con las variantes leídas. En la pestaña Tags, sección «Acciones de los tags», en el cajón.
+- **Avisos para verificar** (R-AGV-023, R-AGV-024): cada tag con lecturas «No ejecutado», con su
+  patrón frente a los cortes wifi y el MTC —nunca, solo sin wifi, según el MTC o sin patrón—, y cada
+  tag con lecturas «No en memoria». Son tarjetas revisables de rango 3 que van a la bandeja.
+  `src/domain/tag-actions.ts` (ALG-025, `ALGORITHM_CATALOG.md` §6.29).
+- Clase de auditoría `avisos-de-acciones` (`auditoria/31`).
+- La importación de lecturas conserva también los informes de acciones guardados.
+
+### Pruebas
+
+- TC-328 a TC-332 (`TEST_STRATEGY.md`).
+
 ## [3.65.1] - 2026-10-07
 
 El propietario precisa cómo tratar las marcas del informe de lecturas con acciones (DS-014): «No

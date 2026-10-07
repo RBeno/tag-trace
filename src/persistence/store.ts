@@ -35,6 +35,7 @@ import type { PlanEvent } from "../domain/plan.js";
 import type { PlantValueEvent } from "../domain/plant-values.js";
 import type { FleetPeriod } from "../domain/fleet.js";
 import type { ConnectionEvent } from "../domain/wifi-cuts.js";
+import type { ActionReading } from "../domain/tag-actions.js";
 import { sortVersions, type ConsolidatedVersion, type LineageState } from "../domain/memory.js";
 import type { Reading } from "../domain/reading.js";
 import type { ReviewEntry } from "../domain/review.js";
@@ -155,6 +156,8 @@ export interface StoredCircuit {
   readonly fleet?: StoredFleet;
   /** Informes de conexiones wifi por AGV (DS-013). Ausente hasta que se carga el primero. */
   readonly wifi?: StoredWifi;
+  /** Informes de lecturas con acciones por AGV (DS-014). Ausente hasta que se carga el primero. */
+  readonly actions?: StoredActions;
   readonly updatedAt: number;
 }
 
@@ -256,6 +259,13 @@ export interface StoredFleet {
 export interface StoredWifi {
   readonly byAgv: Readonly<
     Record<string, { readonly events: readonly ConnectionEvent[]; readonly fileNames: readonly string[]; readonly loadedAt: number }>
+  >;
+}
+
+/** Los informes de lecturas con acciones (DS-014), acumulados por AGV como los de conexiones. */
+export interface StoredActions {
+  readonly byAgv: Readonly<
+    Record<string, { readonly readings: readonly ActionReading[]; readonly fileNames: readonly string[]; readonly loadedAt: number }>
   >;
 }
 

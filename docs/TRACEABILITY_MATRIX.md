@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.61.1
+version: 0.62.0
 status: baseline-candidate
 last_updated: 2026-10-07
 ---
@@ -21,6 +21,7 @@ La matriz se ampliará hasta una relación automática cuando exista código. En
 | FR-018–021, FR-027 | R-MEM-001–005, R-INC-004, R-GRA-019–021, ADR-0005, ADR-0012, ADR-0015, ADR-0016 | ALG-014 (§6.22, §6.23) | TC-017–018, TC-283–320, INV-006–011 | F1/G1 y F4/G4 (consolidación con versiones implementada el 2026-09-27; revisión de interfaz, lógica y consolidación en `[3.61.0]`; OQ-154 a OQ-158 en `[3.62.0]`) |
 | FR-022–026 | R-INC-001–003, ADR-0006 | ALG-015–017 | TC-012, TC-017, INV-008 | F5/G5 |
 | FR-035 (cortes wifi) | R-COM-001, R-COM-004–008, R-AGV-021, R-OPP-014, DS-013 | ALG-024 (§6.28) | TC-321–327 | F5 |
+| FR-012–015 (acciones de los tags) | R-AGV-023, R-AGV-024, R-DAT-004, DS-014 | ALG-025 (§6.29) | TC-328–332 | F5 |
 | FR-028–029 | ADR-0008 | Todos vía vistas | E2E por flujo, accesibilidad | F3–F6/G6 |
 | FR-031–032 | ADR-0003, ADR-0010 | Registro común | INV-010–012 | F1–F6 |
 | NFR-001–002, NFR-015 | ADR-0001, ADR-0007, ADR-0014 | N/A | Pruebas de red/secretos, guardián de datos en CI | Todas |
@@ -135,6 +136,7 @@ regla exista: la matriz no es una lista de intenciones.
 | R-GRA-018 / TC-238 tramos en las gráficas | `src/domain/tag-info.ts` (`tagSections`), `src/domain/tag-lists.ts` (`tramo`), `src/presentation/diagnostic-charts.ts`, `src/presentation/main.ts`, `src/presentation/franjas-ui.ts`, `src/presentation/styles.css` | `tests/unit/tag-info.test.ts` |
 | R-AGV-021 / TC-239–240 batería de mediciones de cada incidencia | `src/domain/incident-battery.ts`, `src/domain/line-feed.ts` (`passTimes`, `nightCadence`), `workers/import.worker.ts` (`incidents`), `src/application/protocol.ts`, `src/presentation/main.ts` (`withBattery`, `renderAbandoned`) | `tests/unit/incident-battery.test.ts`, `tests/audit/auditoria.test.ts` |
 | R-GRA-014 / TC-241 zona oscura por tag sin lecturas; R-AGV-018 / TC-242 orden solo con posición fiable; R-AGV-021 / TC-243–245 batería en la auditoría e invariantes | `src/domain/circuit-state.ts` (`declaredWithoutReadings`), `src/domain/flow-stops.ts` (`orderable`), `workers/import.worker.ts`, `src/presentation/main.ts`, `tests/support/circuito-auditoria.ts` (`ocupacionAislada`) | `tests/unit/circuit-state.test.ts`, `tests/unit/flow-stops.test.ts`, `tests/audit/auditoria.test.ts` |
+| R-AGV-023–024 acciones de los tags y avisos para verificar | `src/domain/tag-actions.ts`, `src/ingestion/vehicle-actions.ts`, `src/presentation/actions-ui.ts` | `tests/unit/tag-actions.test.ts`, `tests/e2e/acciones.spec.ts` |
 | R-COM-004–008 cortes wifi, huecos por causa y mapa de calor | `src/domain/wifi-cuts.ts`, `src/ingestion/wifi-connections.ts`, `src/presentation/wifi-ui.ts` | `tests/unit/wifi-cuts.test.ts`, `tests/unit/wifi-connections.test.ts`, `tests/e2e/wifi.spec.ts` |
 
 **Sin fila porque no está implementado**, aunque su regla exista: la importación de las listas de
