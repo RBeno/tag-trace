@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.46.0
+version: 0.47.0
 status: baseline-candidate
 last_updated: 2026-10-07
 ---
@@ -424,6 +424,28 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## Registro de conexiones construido (3.65.0, 2026-10-07)
+
+El propietario aceptó ADR-0017 con las cuatro recomendaciones y pidió el importador. Hecho de punta
+a punta: fuente **DS-013** (un fichero por AGV, carga en lote, AGV del nombre corregible, huella por
+fichero, guardado con el circuito en el almacén v11), **cortes** emparejados, clasificados por
+`connection_cuts.*` (provisionales 10 s / 10 min), situados entre P y Q con los anillos, resumidos por
+tag, tramo y AGV con la prueba de azar, **contraste** con las ráfagas y lecturas dentro de caídas
+(R-COM-004 a R-COM-007), **Mapa de estado de conexión (WiFi)** en Tiempos y capa «Conexión» del
+anillo. El mapa de 3.64.0 se renombra «de lecturas que llegaron juntas» y su capa «Ráfagas»: lo
+observado y lo inferido nunca se mezclan. OQ-159 sigue abierta a la espera del fabricante, y el
+producto enseña la cifra que la decide (lecturas con fecha dentro de una caída). OQ-163 nueva (`No
+ejecutado`). Los datos reales siguen fuera del repositorio.
+
+**Hechos de planta del propietario (2026-10-07), ya aplicados (R-COM-008):** los AGV se apagan hacia
+las 5 de la mañana hasta las 6 (a veces encendidos a las 5:30), así que una desconexión de todos a esa
+hora es apagado, no cobertura; el registro lo confirma (el 6 de octubre, seis AGV se desconectan entre
+las 4:50 y las 4:58 y vuelven «tras apagado» entre las 5:33 y las 6:00). Las horas de los demás cortes
+siguen la producción (más de 7 a 9 y de 15 a 21, casi nada de 2 a 4). Dice también que la frecuencia
+de cortes por AGV aumenta con el tiempo: con dos días no se ve; el producto enseña los cortes propios
+por día de cada AGV y no afirma tendencia con menos de tres. Horas y clases de apagado nunca van como
+constante: clase por el cierre «tras apagado» y colectivos por `connection_cuts.*`.
+
 ## Registro de conexiones por AGV: propuesta y contradicción (2026-10-07)
 
 El propietario aportó exportaciones por AGV del terminal (CONEXIONES y LECTURAS) para medio PO4 y
@@ -445,9 +467,10 @@ conversación siguiente.
 
 - **Fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
-  6` (ADR-0010). **La única entrega desde entonces es el mapa de calor de comunicación** (3.64.0,
-  sección anterior), una visualización sobre evidencia ya medida, no un entregable de `ROADMAP.md`
-  §F5: el primer trabajo de la fase sigue siendo el punto de partida en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron
+  juntas** (3.64.0) y **el registro de conexiones con su mapa de estado de conexión** (3.65.0,
+  ADR-0017, secciones anteriores), ninguna un entregable de `ROADMAP.md` §F5: el primer trabajo de
+  la fase sigue siendo el punto de partida en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
   (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
   antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**

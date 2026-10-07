@@ -2,6 +2,59 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.65.0] - 2026-10-07
+
+El propietario aceptó ADR-0017 con las recomendaciones de OQ-159 a OQ-162 («Usa tu recomendación en
+las cuatro y construye el importador»). El registro de conexiones del terminal entra como fuente DS-013
+y el estado de conexión observado se mide, se sitúa y se dibuja. Lo observado y lo inferido no se
+mezclan (R-COM-006): el mapa de 3.64.0 pasa a llamarse «de lecturas que llegaron juntas».
+
+### Añadido
+
+- **Importador del registro de conexiones** (`src/ingestion/connection-log.ts`, `DATA_CONTRACTS.md`
+  §3.10): la exportación del terminal tal cual, en `.xlsx` o CSV; `Fecha` y `Conexión` obligatorias,
+  el resto conservado; tipos normalizados al catálogo cerrado y lo demás `desconocido` sin perderse;
+  el AGV del nombre del fichero (`agvFromFileName`), enseñado y corregible antes de cargar (OQ-160);
+  avisos por más de una IP. **Carga en lote** en Datos («Registro de conexiones (un fichero por
+  AGV)», `#connections-file`, selección múltiple): una lista de confirmación con el AGV de cada
+  fichero; un fichero que no se lee no impide los demás. En el Worker (`runConnections`), cada
+  fichero con su huella: el mismo fichero sustituye a su carga anterior y un evento repetido de otro
+  no se duplica. Guardado con el circuito (`StoredConnections`, almacén versión 11), sobrevive a la
+  siguiente importación de lecturas y no viaja en el `.agvproj`, como las listas y la flota.
+- **Cortes situados** (`src/domain/connection-cuts.ts`, R-COM-004, R-COM-005, `ALGORITHM_CATALOG.md`
+  §6.28): par `desconexion` → siguiente `conexion`, con duración y clase de la configuración
+  (`connection_cuts.*`: microcorte hasta 10 s, corte hasta 10 min, caída; provisionales, OQ-161);
+  «tras apagado» cierra pero es un encendido; sin cierre, abierto «al menos»; situado entre la última
+  lectura anterior (P) y la primera posterior (Q) del mismo AGV, `tramo` si Q sigue a P en el anillo;
+  resumen por tag, tramo y AGV con la prueba de azar por sitio y por vehículo; **contraste** con las
+  ráfagas y lecturas con fecha dentro de caídas (R-COM-007, OQ-159).
+- **Estado de conexión en Tiempos** (`renderConnections`) y **Mapa de estado de conexión (WiFi)**
+  (`connectionHeatChart`): cifras, celdas con la parte de las pasadas que salen de cada tag que
+  perdieron la señal justo después, caídas en la fila inferior, acento donde se pierde más de lo que
+  da el azar, tarjetas por sitio y por AGV, la línea de contraste y tablas por AGV y de cortes. Sin
+  registro cargado, lo dice y dónde se carga. **Capa «Conexión» del anillo** con el mismo dato.
+- `heatStripChart`: la forma común de los dos mapas, cada uno con sus propias celdas.
+- **Apagados, cortes colectivos, horas y días** (R-COM-008; propietario, 2026-10-07: «si se
+  desconectan todos a las 5 de la mañana es por apagado hasta las 6», «la frecuencia por AGV aumenta
+  con el tiempo»). Un corte cerrado por «Conexión tras apagado» es de clase `apagado`; un corte en
+  cuya ventana (`connection_cuts.collective_window_ms`, 2 min) pierden la señal la mitad o más de los
+  AGV con registro (`collective_min_share`) es **colectivo**: apagado o infraestructura, no cobertura.
+  Ninguno de los dos entra en el mapa, en la concentración, en las horas ni en los días; se cuentan,
+  los colectivos se listan agrupados (desde, hasta, AGV, clases) con su tarjeta. **Cortes por hora del
+  día** (`hourHistogramChart`, cortes propios por hora local) y **cortes propios por día por AGV** en
+  la tarjeta y la tabla por AGV, sin afirmar tendencia con menos de tres días. `localDayReader` junto a
+  `localHourReader`.
+
+### Cambiado
+
+- **«Mapa de calor de comunicación (WiFi)» pasa a «Mapa de calor de lecturas que llegaron juntas»**
+  y la capa «Señal» del anillo a **«Ráfagas»** (R-COM-006, OQ-159): es una firma de la entrega, no
+  una medida de la señal. Las cifras y las celdas no cambian.
+- ADR-0017 pasa a **accepted**; OQ-160, OQ-161 y OQ-162 cerradas con la recomendación; OQ-159
+  sigue abierta con la recomendación aplicada; **OQ-163** nueva (`No ejecutado`).
+- Pruebas: TC-324 a TC-327 (importador, cortes, resumen y contraste, navegador con carga en lote);
+  TC-323 y TC-275 actualizados (seis capas).
+
 ## [3.64.0] - 2026-10-07
 
 El propietario pidió «una visualización del mapa de calor WiFi si existe evidencia». La única evidencia

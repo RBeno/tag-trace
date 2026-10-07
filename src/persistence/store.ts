@@ -30,6 +30,7 @@
  * `add`, nunca se reescriben—. Lo vigente para un fichero se resuelve recorriéndolos (`plantValuesAt`).
  */
 
+import type { ConnectionEvent } from "../domain/connection-log.js";
 import type { Interval } from "../domain/coverage.js";
 import type { PlanEvent } from "../domain/plan.js";
 import type { PlantValueEvent } from "../domain/plant-values.js";
@@ -42,7 +43,7 @@ import { gunzip, gunzipJson, gzip, gzipJson } from "./compression.js";
 import { splitLegacyCircuit, type LegacyCircuitRecord } from "./retention.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 10;
+export const STORE_VERSION = 11;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
@@ -152,6 +153,8 @@ export interface StoredCircuit {
   readonly lists?: readonly StoredTagList[];
   /** Historial de flota (DS-012). Ausente hasta que se carga, y en circuitos anteriores a la versión 4. */
   readonly fleet?: StoredFleet;
+  /** Registro de conexiones del terminal (DS-013, ADR-0017). Ausente hasta que se carga, y en circuitos anteriores a la versión 11. */
+  readonly connections?: StoredConnections;
   readonly updatedAt: number;
 }
 
@@ -243,6 +246,26 @@ export interface StoredFleet {
   readonly periods: readonly FleetPeriod[];
   readonly loadedAt: number;
   readonly fileNames: readonly string[];
+}
+
+/** Un evento del registro de conexiones, con la huella del fichero del que salió (procedencia). */
+export type StoredConnectionEvent = ConnectionEvent & { readonly sourceHash: string };
+
+/**
+ * El registro de conexiones del circuito (DS-013), **acumulado**: un fichero por AGV y periodo; el
+ * mismo fichero (misma huella) sustituye a su carga anterior, y un evento repetido (mismo AGV,
+ * instante y tipo) de otro fichero no se duplica.
+ */
+export interface StoredConnections {
+  readonly files: readonly {
+    readonly agvId: string;
+    readonly fileName: string;
+    readonly sourceHash: string;
+    readonly loadedAt: number;
+    readonly events: number;
+    readonly ips: readonly string[];
+  }[];
+  readonly events: readonly StoredConnectionEvent[];
 }
 
 /** Todas las claves `[circuitId, *]` de una tabla con clave compuesta: un array ordena después de cualquier texto. */
@@ -359,6 +382,13 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
     apply: (db) => {
       db.createObjectStore(PLANT_VALUES, { keyPath: ["circuitId", "seq"] });
     },
+  },
+  {
+    to: 11,
+    // El registro de conexiones del terminal entra en el circuito (DS-013, ADR-0017). Campo
+    // opcional: un circuito anterior se abre sin registro y el mapa de estado de conexión dice que
+    // no hay registro cargado, que es la verdad.
+    apply: () => {},
   },
 ];
 

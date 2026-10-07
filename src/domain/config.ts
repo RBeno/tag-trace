@@ -28,6 +28,7 @@ import type { FlowStopThresholds } from "./flow-stops.js";
 import type { FranjaThresholds } from "./franjas.js";
 import type { GraphThresholds } from "./graph.js";
 import type { GroupedDeliveryThresholds } from "./grouped-delivery.js";
+import type { ConnectionCutThresholds } from "./connection-cuts.js";
 import type { PlantEstimatorThresholds } from "./plant-values.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
 import type { SilenceKindThresholds } from "./silence-kind.js";
@@ -73,6 +74,8 @@ export interface AnalysisConfig {
   readonly bands: BandThresholds;
   readonly circuitState: CircuitStateThresholds;
   readonly groupedDelivery: GroupedDeliveryThresholds;
+  /** Cortes del registro de conexiones del terminal (DS-013, ADR-0017, OQ-161): clases por duración y margen del contraste. */
+  readonly connectionCuts: ConnectionCutThresholds;
   readonly franjas: FranjaThresholds;
   readonly anchorSums: AnchorSumThresholds;
   readonly pace: PaceThresholds;
@@ -294,6 +297,11 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   bands: { minBandSamples: 20 },
   circuitState: { darkZoneFactor: 1.5, maxFalsePoints: 0.01 },
   groupedDelivery: { minFastSteps: 2 },
+  // Provisionales (OQ-161): hasta 10 s es un microcorte (cambio de punto de acceso), hasta 10 min un
+  // corte, más es una caída; una ráfaga y un corte a menos de 30 s son el mismo episodio.
+  // Un corte colectivo (R-COM-008): la mitad o más de los AGV con registro pierden la señal en la
+  // misma ventana de dos minutos; con dos AGV, los dos.
+  connectionCuts: { microcutMaxMs: 10_000, cutMaxMs: 10 * 60_000, contrastToleranceMs: 30_000, collectiveWindowMs: 2 * 60_000, collectiveMinShare: 0.5 },
   franjas: { minPositionSamples: 4 },
   anchorSums: { minAnchorPasses: 5 },
   pace: { minPaceShift: 0.05 },

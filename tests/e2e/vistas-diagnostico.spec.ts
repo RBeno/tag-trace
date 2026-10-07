@@ -41,6 +41,47 @@ function wallClock(row: string): number {
   return Date.UTC(year, month - 1, day, hour, minute, second);
 }
 
+/** Una hora de pared, como la escribe el terminal: `d/m/aaaa h:mm:ss`. */
+function wallText(ms: number): string {
+  const date = new Date(ms);
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return `${date.getUTCDate()}/${date.getUTCMonth() + 1}/${date.getUTCFullYear()} ${date.getUTCHours()}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
+}
+
+/**
+ * El registro de conexiones del terminal de un AGV (DS-013), como lo exporta: de más reciente a más
+ * antiguo, con la cabecera del terminal. Un microcorte de 2 s justo después de una lectura y una
+ * caída de 700 s con lecturas dentro, las dos en la ventana temprana.
+ */
+function connectionsBook(early: Buffer, agvId: string): Promise<Uint8Array> {
+  const own = early
+    .toString("utf8")
+    .split("\r\n")
+    .slice(1)
+    .filter((row) => row.split(";")[1] === agvId)
+    .map(wallClock)
+    .sort((a, b) => a - b);
+  const micro = (own[20] as number) + 2_000;
+  const fall = (own[40] as number) + 3_000;
+  const row = (ms: number, kind: string, cover: string): string[] => [
+    "Checked", wallText(ms), kind, "2", "0", cover, "2.00", "2", "17", "1", "MTC 0 MTD 0; 07 15 00 00", "0", "10.216.0.9",
+  ];
+  return writeXlsx([
+    {
+      name: "Sheet",
+      rows: [
+        ["Linea", "Fecha", "Conexión", "Nº Motor", "Op.", "Cober.", "Ver.", "RFID", "LCD", "PID", "Datos Aux", "Cimi", "IP Terminal"],
+        row(fall + 700_000, "Conexión", "255"),
+        row(fall, "Desconexión", "0"),
+        row(micro + 2_000, "Conexión", "255"),
+        row(micro, "Desconexión", "0"),
+      ],
+      header: true,
+      widths: [10, 20, 24, 8, 6, 8, 8, 6, 6, 6, 30, 6, 18],
+    },
+  ]);
+}
+
 /** Parte la exportación en dos, dejando 40 min sin datos en medio: dos periodos distantes. */
 function splitInTwo(csv: string): readonly [Buffer, Buffer] {
   const [header = "", ...rows] = csv.split("\r\n");
@@ -114,6 +155,27 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await page.getByRole("button", { name: "Cargar las filas de este circuito" }).click();
     await expect(page.getByText("Historial de flota cargado")).toBeVisible({ timeout: 30_000 });
 
+    // El registro de conexiones del terminal (DS-013, ADR-0017): el AGV sale del nombre del fichero y
+    // se enseña antes de cargar (OQ-160); un fichero sin AGV en el nombre queda en blanco y se escribe.
+    const agrupadoAgv = of("entrega-agrupada")?.vehicles[0] ?? "";
+    const connectionsXlsx = Buffer.from(await connectionsBook(early, agrupadoAgv));
+    await page.locator("#connections-file").setInputFiles([
+      { name: `CONEXIONES${agrupadoAgv}.xlsx`, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: connectionsXlsx },
+      { name: "registro.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: connectionsXlsx },
+    ]);
+    // La confirmación vive en Datos, junto al selector.
+    await openTab(page, "Datos");
+    await expect(page.locator("#connections-agv-0")).toHaveValue(agrupadoAgv);
+    await expect(page.locator("#connections-agv-1")).toHaveValue("");
+    await page.getByRole("button", { name: "Cargar los 2 ficheros" }).click();
+    await expect(page.getByText("Falta el AGV de algún fichero")).toBeVisible();
+    await page.locator("#connections-agv-1").fill(agrupadoAgv);
+    await page.getByRole("button", { name: "Cargar los 2 ficheros" }).click();
+    await expect(page.getByRole("heading", { name: "Registro de conexiones cargado" })).toBeVisible({ timeout: 30_000 });
+    // El mismo fichero dos veces (misma huella) no duplica eventos: 4 eventos de 1 AGV.
+    await expect(page.getByText("4 eventos de 1 AGV guardados")).toBeVisible();
+    await openTab(page, "Resumen");
+
     // Se vuelve a cargar el mismo temprano: una exportación repetida no es una fuente nueva ni mueve
     // la retención (R-DAT-005, R-DAT-023), pero se vuelve a analizar con las listas y la flota ya
     // cargadas. La señal de que la vista es la nueva es un hallazgo que solo existe con listas: la
@@ -184,11 +246,34 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(page.locator(".finding", { hasText: `${agrupado}: le llegan lecturas juntas` })).toContainText("no paró");
     // Y con esa evidencia, el mapa de calor de comunicación (WiFi) se dibuja: tiene figura, lectura al
     // puntero y tabla equivalente, sin nombrar una causa.
-    const calor = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Mapa de calor de comunicación (WiFi)" }) });
+    const calor = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Mapa de calor de lecturas que llegaron juntas" }) });
     await expect(calor).toHaveCount(1);
     await expect(calor.locator("svg[role=img]")).toBeVisible();
-    await expect(calor).toContainText("la causa no la dice el dato");
-    await expect(calor.getByRole("button", { name: /tags con lecturas sin señal o señal perdida en tabla/ })).toBeVisible();
+    await expect(calor).toContainText("no una medida de la señal");
+    await expect(calor.getByRole("button", { name: /tags con lecturas tardías o hueco en tabla/ })).toBeVisible();
+    // El estado de conexión observado (DS-013): los dos cortes del registro, situados, el mapa con su
+    // tabla, y el contraste que cuenta las lecturas con fecha dentro de la caída (OQ-159).
+    await expect(page.getByText(/2 cortes en la ventana cargada \(1 microcortes de hasta 10 s, 0 cortes de hasta 10 min, 1 caídas/)).toBeVisible();
+    const conexion = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Mapa de estado de conexión (WiFi)" }) });
+    await expect(conexion).toHaveCount(1);
+    await expect(conexion.locator("svg[role=img]")).toBeVisible();
+    await expect(conexion).toContainText("la causa no la dice el dato");
+    await expect(conexion.getByRole("button", { name: /tags donde se perdió la señal en tabla/ })).toBeVisible();
+    await expect(page.getByText(/Lecturas con fecha dentro de una caída: [1-9]\d* en 1 caída\. Con la hora de recepción/)).toBeVisible();
+    await page.getByRole("button", { name: "Ver los 2 cortes" }).click();
+    const cortes = page.locator(".drawer-body table.data");
+    await expect(cortes.locator("tr")).toHaveCount(3);
+    await expect(cortes).toContainText("microcorte");
+    await expect(cortes).toContainText("caída");
+    await expect(cortes).toContainText("en el tramo");
+    await page.keyboard.press("Escape");
+    // Y la capa «Conexión» del anillo pinta el mismo dato observado.
+    await openTab(page, "Resumen");
+    const anillo = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Anillo del circuito" }) });
+    await anillo.getByRole("radio", { name: "Conexión" }).click();
+    await expect(anillo.locator(".ring-legend")).toContainText("banda interior: caídas");
+    await anillo.getByRole("radio", { name: "Omisión" }).click();
+    await openTab(page, "Tiempos");
 
     // Con un solo fichero cargado, la retención lo dice así en Datos (ADR-0015 §2).
     await openTab(page, "Datos");
@@ -381,7 +466,9 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     // Las lecturas que llegaron juntas al servidor (R-DAT-020): el AGV plantado, y el hueco no es parada.
     const agrupado = of("entrega-agrupada")?.vehicles[0] ?? "";
     await expect(page.locator(".finding", { hasText: `${agrupado}: le llegan lecturas juntas` })).toContainText("no paró");
-    await expect(page.getByRole("heading", { name: "Mapa de calor de comunicación (WiFi)" })).toHaveCount(1);
+    await expect(page.getByRole("heading", { name: "Mapa de calor de lecturas que llegaron juntas" })).toHaveCount(1);
+    // Sin registro de conexiones cargado, el estado de conexión lo dice en vez de callarse.
+    await expect(page.getByText("Sin registro de conexiones cargado: el mapa de estado de conexión (WiFi) necesita")).toBeVisible();
 
     // La horquilla se descarga en CSV, una fila por tramo y régimen.
     const [download] = await Promise.all([

@@ -18,6 +18,7 @@ import type { FleetTimeline } from "../domain/fleet.js";
 import type { Blockage, ProductionStop } from "../domain/flow-stops.js";
 import type { CircuitState } from "../domain/circuit-state.js";
 import type { DeliveryConcentration, DeliveryHeatCell, GroupedDelivery } from "../domain/grouped-delivery.js";
+import type { ConnectionCut, ConnectionCutThresholds, ConnectionSummary } from "../domain/connection-cuts.js";
 import type { FranjaCohort, SegmentHistory } from "../domain/franjas.js";
 import type { StructureSet } from "../domain/anchor-sums.js";
 import type { SnapshotDelta, SnapshotFinding } from "../domain/snapshot.js";
@@ -193,6 +194,37 @@ export interface FleetLoadedMessage extends Envelope {
   readonly warnings: readonly string[];
 }
 
+/**
+ * Cargar el registro de conexiones del terminal (DS-013, ADR-0017): un fichero por AGV, varios de
+ * una vez. El AGV de cada fichero lo decide la interfaz —del nombre del fichero, corregible— antes
+ * de enviarlo (OQ-160).
+ */
+export interface LoadConnectionsMessage {
+  readonly type: "connections";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly files: readonly { readonly file: File; readonly agvId: string }[];
+}
+
+export interface ConnectionsLoadedMessage extends Envelope {
+  readonly type: "connections-loaded";
+  readonly circuitId: string;
+  /** Un resultado por fichero: un fichero que no se pudo leer no impide cargar los demás. */
+  readonly files: readonly {
+    readonly fileName: string;
+    readonly agvId: string;
+    readonly events: number;
+    readonly rejected: readonly { readonly reason: string; readonly rows: number }[];
+    readonly ips: readonly string[];
+    readonly warnings: readonly string[];
+    readonly failure: string | null;
+  }[];
+  /** Eventos y AGV que quedan guardados tras la fusión. */
+  readonly totalEvents: number;
+  readonly vehicles: number;
+}
+
 /** El fichero trae varios circuitos y ninguno está elegido todavía: hay que preguntar cuál es este. */
 export interface FleetChooseCircuitMessage extends Envelope {
   readonly type: "fleet-choose-circuit";
@@ -323,6 +355,7 @@ export type ToWorker =
   | CancelMessage
   | LoadListsMessage
   | LoadFleetMessage
+  | LoadConnectionsMessage
   | ConsolidateMessage
   | RevokeMessage
   | ResolveForkMessage;
@@ -668,6 +701,20 @@ export interface CircuitViews {
    * lecturas, y `historyLoaded` y `historySource` lo dicen (un historial cargado sin periodos válidos
    * es «historial vacío», OQ-139).
    */
+  /**
+   * El estado de conexión observado (DS-013, ADR-0017): los cortes del registro de conexiones del
+   * terminal, situados con las lecturas de cada AGV, y su resumen por tag, tramo y AGV. Ausente sin
+   * registro cargado. `cuts` trae los más recientes; `summary.total`, cuántos hubo en la ventana.
+   */
+  readonly connections?: {
+    readonly files: number;
+    readonly vehicles: number;
+    readonly thresholds: ConnectionCutThresholds;
+    readonly summary: ConnectionSummary;
+    readonly cuts: readonly ConnectionCut[];
+    /** Cortes del registro que caen fuera de la ventana de lecturas cargada: no se sitúan ni se cuentan. */
+    readonly outsideWindow: number;
+  };
   readonly fleet: FleetTimeline & {
     readonly circuitName: string | null;
     /**
@@ -1008,6 +1055,7 @@ export type FromWorker =
   | ListsLoadedMessage
   | FleetLoadedMessage
   | FleetChooseCircuitMessage
+  | ConnectionsLoadedMessage
   | ConsolidationPreviewMessage
   | ConsolidatedMessage
   | RevokedMessage

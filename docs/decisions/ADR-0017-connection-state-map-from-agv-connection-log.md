@@ -1,6 +1,6 @@
 ---
 adr: ADR-0017
-status: proposed
+status: accepted
 date: 2026-10-07
 ---
 
@@ -40,7 +40,14 @@ Un análisis fuera del repositorio (datos reales, nunca versionados: ADR-0007) s
    propietario dijo el 2026-09-25 que la hora es la de recepción en el servidor; la evidencia nueva no
    lo sostiene para este enlace. Decidirlo es suyo (OQ-159).
 
-## Decisión propuesta
+## Decisión
+
+Aceptada por el propietario el 2026-10-07 («Usa tu recomendación en las cuatro y construye el
+importador»), con las recomendaciones de OQ-159 a OQ-162 aplicadas. Implementada en 3.65.0:
+`src/ingestion/connection-log.ts`, `src/domain/connection-cuts.ts`, el almacén (versión 11), el
+protocolo (`connections`, `connections-loaded`, `views.connections`), el Worker y la interfaz
+(Datos, Tiempos y la capa «Conexión» del anillo). Lo que sigue es la propuesta tal como se aprobó.
+
 
 1. **Nueva fuente DS-013, «Registro de conexiones del terminal», por AGV.** Contrato mínimo:
    instante al segundo, tipo de evento (enum cerrado con los tres valores vistos; un valor nuevo se
@@ -78,9 +85,9 @@ Un análisis fuera del repositorio (datos reales, nunca versionados: ADR-0007) s
 
 ## Consecuencias
 
-- Nada de esto se construye antes de que el propietario cierre OQ-159 a OQ-162: OQ-159 cambia lo
-  que significa la hora de cada lectura y afecta a R-DAT-020, a las firmas de tiempo y a la
-  clasificación de huecos; las otras tres fijan el contrato de la fuente.
+- OQ-160 a OQ-162 quedaron cerradas con la recomendación; OQ-159 sigue abierta con la
+  recomendación aplicada: R-DAT-020 no se toca, el mapa inferido se renombra y el producto mide y
+  enseña el contraste (R-COM-007) para que la respuesta del fabricante se pueda comprobar.
 - Si OQ-159 concluye que la hora es la del AGV (lectura, no recepción), el fenómeno «lecturas que
   llegaron juntas» necesita otra explicación y la regla se revisa; el mapa inferido pasaría a ser
   una señal de otra cosa.
