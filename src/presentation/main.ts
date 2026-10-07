@@ -38,6 +38,7 @@ import type { CircuitSnapshot } from "../domain/snapshot.js";
 import { FLEET_STRUCTURE } from "../domain/fleet.js";
 import {
   agvTimelineChart,
+  deliveryHeatChart,
   driftChart,
   dwellChart,
   evolutionChart,
@@ -2432,8 +2433,24 @@ function renderCircuitState(views: CircuitViews): void {
       `el recorrido entero tardó ${duration(delivery.totalMs)}, lo normal ${duration(delivery.usualMs)}: ` +
       (delivery.kind === "sin-parada" ? "no paró" : "hubo una espera en algún punto de ese tramo, sin poder situarla");
     if (!grouped.evaluated) {
-      out.append(element("p", "muted", `Lecturas que llegaron juntas al servidor: sin evaluar (${grouped.reason ?? "—"}).`));
-    } else if (grouped.total > 0) {
+      out.append(
+        element(
+          "p",
+          "muted",
+          `Lecturas que llegaron juntas al servidor: sin evaluar (${grouped.reason ?? "—"}). Sin ellas no hay evidencia ` +
+            "con que dibujar el mapa de calor de comunicación (WiFi).",
+        ),
+      );
+    } else if (grouped.total === 0) {
+      out.append(
+        element(
+          "p",
+          "muted",
+          "Ninguna lectura llegó junta con otras tras un hueco: no hay evidencia de lecturas sin señal con que dibujar " +
+            "el mapa de calor de comunicación (WiFi). Eso no prueba que la cobertura sea buena (R-OPP-003).",
+        ),
+      );
+    } else {
       out.append(
         element(
           "p",
@@ -2444,6 +2461,9 @@ function renderCircuitState(views: CircuitViews): void {
             "hueco no cuenta como parada.",
         ),
       );
+      // El mapa de calor de comunicación: solo con evidencia (hay ráfagas), en el orden del anillo, y
+      // con los sitios que el Worker ya destacó. Dónde, no por qué (OQ-105).
+      out.append(deliveryHeatChart(grouped.heat, shape?.tags ?? [], new Set(grouped.sites.map((site) => site.id)), grouped.total));
       for (const vehicle of grouped.vehicles.slice(0, PER_KIND)) {
         const latest = [...grouped.deliveries].reverse().find((delivery) => delivery.agvId === vehicle.id);
         out.append(

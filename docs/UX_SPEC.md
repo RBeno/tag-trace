@@ -556,6 +556,15 @@ lo de la sección usa solo producción (R-TIM-009). Después, destacados primero
   tarjetas **«AGV: le llegan lecturas juntas»** y **«Lecturas juntas al pasar por X»** para lo que se
   concentra más de lo que da el azar, con la última ráfaga y si paró o no. Sin causa: «apunta a la
   comunicación». Todas, en tabla plegada. Sin evaluar con resolución de minuto, y se dice.
+- **Mapa de calor de comunicación (WiFi)**, solo si existe evidencia (alguna ráfaga): una barra por
+  tag en el orden del anillo con la parte de sus pasadas que se leyó sin que la lectura llegara al
+  servidor hasta después; la altura y el tono dicen lo mismo, trama para «sin pasadas», naranja bajo
+  los sitios donde la señal se pierde más de lo que da el azar (los mismos de las tarjetas), los tags
+  de fuera del anillo al final y separados. La lectura al puntero da pasadas, leídas sin señal, AGV,
+  cuántas veces se perdió la señal al salir de ahí y cuántas volvió ahí; tabla equivalente plegada.
+  «Apunta a la cobertura de ese punto o a la comunicación del AGV; la causa no la dice el dato»
+  (OQ-105, R-OPP-003). Sin ráfagas, una línea dice que no hay evidencia con que dibujarlo y que eso
+  no prueba que la cobertura sea buena; sin evaluar, se dice lo mismo con el motivo.
 - **Ritmo de cada AGV** (R-AGV-019): «7122 va un 10 % más lento que la flota, en toda la línea» (o
   «solo en la zona X»), con la mitad de sus tramos frente a la de la flota y cuántos tramos; y **quién
   retiene a otros** (R-AGV-020): «7107 retiene a otros AGV», cuántas veces, a cuántos AGV distintos

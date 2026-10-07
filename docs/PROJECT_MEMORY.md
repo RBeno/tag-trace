@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.45.0
+version: 0.46.0
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-07
 ---
 
 # Memoria compacta del proyecto
@@ -410,6 +410,16 @@ síntoma, intervalo o hallazgo; retroceso temporal y topológico; replay multi-A
 incertidumbre; biblioteca de casos y similitud explicada; informe vivo y exportación local;
 contramedidas y verificación antes/después.
 
+## Mapa de calor de comunicación (3.64.0, 2026-10-07)
+
+El propietario pidió «una visualización del mapa de calor WiFi si existe evidencia». **La evidencia
+que hay** son las lecturas que llegaron juntas (R-DAT-020): no existe ninguna columna de señal o
+cobertura en las fuentes, y un silencio solo no prueba WiFi ausente (R-OPP-003, OQ-105 sigue
+abierta). Así que el mapa (`deliveryHeat` en el Worker, `deliveryHeatChart` en Tiempos) pinta por tag
+del anillo la parte de sus pasadas leídas sin señal, dónde se perdió y dónde volvió, y **solo se dibuja
+con alguna ráfaga**; sin ninguna lo dice y añade que eso no prueba cobertura buena. No introduce
+umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por qué (R-EVI-006).
+
 ## Estado al 2026-09-27 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
@@ -418,8 +428,9 @@ conversación siguiente.
 
 - **Fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
-  6` (ADR-0010). **Aún no hay ninguna entrega de F5**: el primer trabajo de esta fase es el punto de
-  partida en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  6` (ADR-0010). **La única entrega desde entonces es el mapa de calor de comunicación** (3.64.0,
+  sección anterior), una visualización sobre evidencia ya medida, no un entregable de `ROADMAP.md`
+  §F5: el primer trabajo de la fase sigue siendo el punto de partida en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
   (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
   antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**

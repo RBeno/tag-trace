@@ -19,6 +19,7 @@
  */
 
 import type { CircuitViews } from "../application/protocol.js";
+import type { DeliveryHeatCell } from "../domain/grouped-delivery.js";
 import { HATCH_ID, figure, hatchPattern, lazyTable, legendList, plainTable, scrollBox, svg, table, text } from "./charts.js";
 import { patternLabel, zoneLabel } from "./labels.js";
 import { inspect } from "./pointer.js";
@@ -994,6 +995,185 @@ export function readMatrixHeatmap(
     ]),
   );
   return wrapper;
+}
+
+// --- 3b. Mapa de calor de comunicación (WiFi) ------------------------------
+
+/**
+ * Escalones de la parte de pasadas leídas sin señal. Clases de pantalla, como las de omisión: la
+ * rampa de un solo tono ordena por magnitud y lo que no tiene nada se funde con el fondo. No son
+ * umbrales de diagnóstico: lo que se destaca lo decide `summarizeDeliveries` con su prueba de azar.
+ */
+const HEAT_CLASSES: readonly (readonly [number, string, string])[] = [
+  [Number.EPSILON, "var(--viz-grid)", "ninguna"],
+  [0.02, "var(--viz-1)", "menos del 2 %"],
+  [0.05, "var(--viz-2)", "2–5 %"],
+  [0.1, "var(--viz-3)", "5–10 %"],
+  [0.25, "var(--viz-4)", "10–25 %"],
+  [Number.POSITIVE_INFINITY, "var(--viz-5)", "25 % o más"],
+];
+/**
+ * Una parte pequeña con los decimales que hacen falta para leerla: 2 de 1.638 pasadas es «0,12 %»,
+ * no «0 %». Con `percent` —entero— el eje entero del mapa de calor decía «0 %, 1 %, 1 %».
+ */
+function sharePercent(rate: number): string {
+  if (rate === 0) return "0 %";
+  const decimals = rate >= 0.1 ? 0 : rate >= 0.01 ? 1 : 2;
+  return `${(rate * 100).toFixed(decimals).replace(".", ",")} %`;
+}
+
+function heatFill(share: number): string {
+  return (HEAT_CLASSES.find(([limit]) => share < limit) ?? HEAT_CLASSES[5])?.[1] ?? "var(--viz-5)";
+}
+
+function describeHeat(cell: DeliveryHeatCell, offRing: boolean): string {
+  const where = offRing ? " (fuera del anillo)" : "";
+  if (cell.passes === 0 && cell.late === 0) return `Tag ${cell.tagId}${where} — sin pasadas`;
+  const parts: string[] = [];
+  if (cell.late > 0) {
+    const who = ` de ${cell.vehicles.length} AGV (${cell.vehicles.slice(0, 4).join(", ")}${cell.vehicles.length > 4 ? "…" : ""})`;
+    parts.push(
+      cell.passes > 0
+        ? `${cell.late} de ${cell.passes} pasadas leídas sin señal (${sharePercent(cell.late / cell.passes)})${who}`
+        : `leído sin señal ${cell.late} ${cell.late === 1 ? "vez" : "veces"}, sin pasadas medidas${who}`,
+    );
+  } else parts.push(`ninguna de ${cell.passes} pasadas leída sin señal`);
+  if (cell.lostAfter > 0) parts.push(`la señal se perdió al salir de aquí ${cell.lostAfter} ${cell.lostAfter === 1 ? "vez" : "veces"}`);
+  if (cell.returnedAt > 0) parts.push(`volvió a llegar aquí ${cell.returnedAt} ${cell.returnedAt === 1 ? "vez" : "veces"}`);
+  return `Tag ${cell.tagId}${where} — ${parts.join(" · ")}`;
+}
+
+/**
+ * Dónde se leyó sin comunicación (R-DAT-020): una barra por tag en el orden del anillo, con la parte
+ * de sus pasadas cuya lectura llegó al servidor después, junta con otras tras un hueco. La altura y
+ * el tono dicen lo mismo; el color nunca es el único canal, y la tabla equivalente está debajo.
+ *
+ * Solo se dibuja cuando hay evidencia: `main.ts` no lo llama sin ráfagas. Los tags que no están en
+ * el anillo pero se leyeron en alguna ráfaga van al final, separados, para no callarlos. `flaggedSites`
+ * son los sitios donde la señal se pierde más de lo que da el azar, ya decididos por el Worker: el
+ * color de atención no introduce ningún umbral nuevo. Nada de esto nombra una causa (OQ-105).
+ */
+export function deliveryHeatChart(
+  cells: readonly DeliveryHeatCell[],
+  ringTags: readonly string[],
+  flaggedSites: ReadonlySet<string>,
+  total: number,
+): HTMLElement {
+  const wrapper = figure(
+    "Mapa de calor de comunicación (WiFi)",
+    `Por cada tag del anillo, qué parte de sus pasadas se leyó sin que la lectura llegara al servidor hasta ` +
+      `después, junta con otras tras un hueco (${total} ${total === 1 ? "vez" : "veces"}). Cuanto más oscuro, más ` +
+      "pasadas leídas sin señal. Apunta a la cobertura de ese punto o a la comunicación del AGV; la causa no la dice " +
+      "el dato. En naranja, donde la señal se pierde más de lo que da el azar. Con trama: sin pasadas.",
+  );
+  const byId = new Map(cells.map((cell) => [cell.tagId, cell]));
+  const empty = (tagId: string): DeliveryHeatCell => ({ tagId, passes: 0, late: 0, lostAfter: 0, returnedAt: 0, vehicles: [] });
+  const inRing = new Set(ringTags);
+  const ringCells = ringTags.map((tagId) => byId.get(tagId) ?? empty(tagId));
+  const offRing = cells.filter((cell) => !inRing.has(cell.tagId) && (cell.late > 0 || cell.lostAfter > 0 || cell.returnedAt > 0));
+  const rows = ringTags.length === 0 ? [...cells].sort((a, b) => shareOf(b) - shareOf(a) || a.tagId.localeCompare(b.tagId)) : [...ringCells, ...offRing];
+  const firstOffRing = ringTags.length === 0 ? rows.length : ringCells.length;
+
+  const area = host();
+  const line = readout("Toca o pasa el puntero por una barra para leer un tag.");
+  const maxShare = Math.max(0.01, ...rows.map(shareOf));
+  const redraw = responsive(area, (width) => {
+    area.replaceChildren();
+    const left = 46;
+    const right = 8;
+    const top = 10;
+    const plot = 90;
+    const bottom = 22;
+    const gapWidth = offRing.length > 0 && ringTags.length > 0 ? 10 : 0;
+    const columns = Math.max(1, rows.length);
+    const slot = Math.max(2, (width - left - right - gapWidth) / columns);
+    const bar = slot > 5 ? slot - 1 : slot;
+    const height = top + plot + bottom;
+    const node = svg("svg", { viewBox: `0 0 ${width} ${height}`, width, height, role: "img" });
+    node.setAttribute("aria-label", `Mapa de calor de comunicación de ${rows.length} tags`);
+    node.append(hatchPattern());
+    const xOf = (index: number): number => left + index * slot + (index >= firstOffRing ? gapWidth : 0);
+    const step = niceStep(maxShare / 3);
+    for (let value = 0; value <= maxShare + 1e-9; value += step) {
+      const y = top + plot - (value / maxShare) * plot;
+      node.append(svg("line", { x1: left, x2: width - right, y1: y, y2: y, class: "grid" }));
+      node.append(text(left - 4, y + 3, sharePercent(value), "axis", { "text-anchor": "end" }));
+    }
+    rows.forEach((cell, index) => {
+      const x = xOf(index);
+      if (cell.passes === 0 && cell.late === 0) {
+        node.append(svg("rect", { x, y: top, width: bar, height: plot, fill: HATCH_FILL }));
+        return;
+      }
+      const share = shareOf(cell);
+      const barHeight = share === 0 ? 1 : Math.max(2, (share / maxShare) * plot);
+      node.append(svg("rect", { x, y: top + plot - barHeight, width: bar, height: barHeight, fill: heatFill(share), rx: bar > 4 ? 1 : 0 }));
+      if (flaggedSites.has(cell.tagId)) {
+        node.append(svg("rect", { x, y: top + plot + 2, width: bar, height: 3, fill: "var(--viz-accent)" }));
+      }
+    });
+    if (gapWidth > 0) {
+      const x = xOf(firstOffRing) - gapWidth / 2;
+      node.append(svg("line", { x1: x, x2: x, y1: top, y2: top + plot, stroke: "var(--viz-empty)", "stroke-dasharray": "2 3" }));
+    }
+    const every = Math.max(1, Math.ceil(44 / slot));
+    rows.forEach((cell, index) => {
+      if (index % every !== 0 && index !== firstOffRing) return;
+      node.append(text(xOf(index) + bar / 2, height - 6, cell.tagId, "axis", { "text-anchor": "middle" }));
+    });
+    area.append(node);
+
+    inspect(node, (point) => {
+      if (point === null) {
+        line.show(null);
+        return;
+      }
+      const box = node.getBoundingClientRect();
+      const x = point.clientX - box.left;
+      let index = Math.floor((x - left) / slot);
+      if (gapWidth > 0 && x >= xOf(firstOffRing) - gapWidth) index = Math.floor((x - left - gapWidth) / slot);
+      const cell = rows[index];
+      if (cell === undefined || x < left) {
+        line.show(null);
+        return;
+      }
+      line.show(describeHeat(cell, index >= firstOffRing));
+    });
+  });
+  redraw();
+
+  wrapper.append(area, line.node);
+  wrapper.append(
+    legendList([
+      ["var(--viz-grid)", "ninguna pasada leída sin señal"],
+      ["var(--viz-2)", "algunas"],
+      ["var(--viz-5)", "25 % o más"],
+      [HATCH_SWATCH, "sin pasadas"],
+      ["var(--viz-accent)", "la señal se pierde aquí más de lo que da el azar"],
+    ]),
+  );
+  const withEvidence = rows.filter((cell) => cell.late > 0 || cell.lostAfter > 0 || cell.returnedAt > 0);
+  wrapper.append(
+    lazyTable(`Ver los ${withEvidence.length} tags con alguna lectura sin señal en tabla`, () =>
+      plainTable(
+        ["Tag", "Pasadas", "Leídas sin señal", "Parte", "AGV", "Señal perdida al salir", "Señal de vuelta"],
+        withEvidence.map((cell) => [
+          inRing.has(cell.tagId) || ringTags.length === 0 ? cell.tagId : `${cell.tagId} (fuera del anillo)`,
+          String(cell.passes),
+          String(cell.late),
+          cell.passes > 0 ? sharePercent(cell.late / cell.passes) : "—",
+          cell.vehicles.join(", "),
+          String(cell.lostAfter),
+          String(cell.returnedAt),
+        ]),
+      ),
+    ),
+  );
+  return wrapper;
+}
+
+function shareOf(cell: DeliveryHeatCell): number {
+  return cell.passes > 0 ? cell.late / cell.passes : 0;
 }
 
 // --- 4. Rotura y degradación en pequeños múltiplos -------------------------

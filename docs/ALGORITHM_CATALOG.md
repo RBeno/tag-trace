@@ -590,6 +590,15 @@ P, con sus pasadas; la misma prueba de Poisson que los cuellos de botella (`conc
 
 **Sin evaluar** con resolución de minuto (`resolutionMs` > 1 s), y se dice.
 
+**Mapa de calor de comunicación** (`deliveryHeat`, 3.64.0). Por tag, sobre todas las ráfagas y las
+transiciones del cohorte sin recortar: `passes`, las transiciones que llegan al tag; `late`, en cuántas
+ráfagas está el tag (se leyó sin señal y llegó al reconectar); `lostAfter`, cuántas veces fue el P de
+una ráfaga (la última lectura que llegó a su hora); `returnedAt`, cuántas veces fue su Q; y los AGV con
+alguna lectura tardía ahí. Como la ráfaga es un subconjunto de las transiciones que llegan al tag,
+`late` nunca supera `passes`. No tiene umbral propio: lo destacado sigue siendo lo que `summarizeDeliveries`
+decide con su prueba de azar, y el mapa solo se dibuja cuando hay alguna ráfaga. Es evidencia de dónde,
+no de por qué (R-EVI-006, OQ-105).
+
 ## 6.9 Medición por fichero y posición en tiempo, implementado (R-TIM-011, R-TIM-010)
 
 `src/domain/franjas.ts`, por circuito y fichero, con las transiciones ya limpias (lecturas agrupadas

@@ -82,7 +82,7 @@ import {
   transitionRegime,
 } from "../src/domain/segment-bands.js";
 import { buildCircuitState } from "../src/domain/circuit-state.js";
-import { collapseGroupedDeliveries, summarizeDeliveries } from "../src/domain/grouped-delivery.js";
+import { collapseGroupedDeliveries, deliveryHeat, summarizeDeliveries } from "../src/domain/grouped-delivery.js";
 import { franjaWindows, measureFranjaCohort, segmentHistories } from "../src/domain/franjas.js";
 import { paceInWindow, vehiclePace, type VehiclePaceThresholds } from "../src/domain/vehicle-pace.js";
 import {
@@ -1106,6 +1106,9 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
           measurableTransitions(cohortTransitions, coverage, laneTags),
           config.circuitState.maxFalsePoints,
         ),
+        // Sobre las transiciones sin recortar, las mismas de las que salieron las ráfagas: así una
+        // lectura tardía nunca supera las pasadas del tag.
+        heat: deliveryHeat(grouped.deliveries, cohortTransitions),
       },
       changes: bandChangesBetweenPeriods(
         measuredTimed,

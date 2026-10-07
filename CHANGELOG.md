@@ -2,6 +2,31 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.64.0] - 2026-10-07
+
+El propietario pidió «una visualización del mapa de calor WiFi si existe evidencia». La única evidencia
+de comunicación que hay en el dato son las lecturas que llegaron juntas al servidor (R-DAT-020): un AGV
+sin señal sigue leyendo y vuelca al reconectar, así que cada tag de una ráfaga se leyó sin señal. No
+hay columna de señal ni de cobertura en ninguna fuente (`DATA_CONTRACTS.md`), y un silencio solo no
+prueba WiFi ausente (R-OPP-003, OQ-105): el mapa dice dónde, nunca por qué.
+
+### Añadido
+
+- **Mapa de calor de comunicación (WiFi)** en Tiempos (`deliveryHeat`, `deliveryHeatChart`,
+  `ALGORITHM_CATALOG.md` §6.8, `UX_SPEC.md`). Por tag del anillo, en su orden, la parte de sus pasadas
+  que se leyó sin que la lectura llegara hasta después; además, cuántas veces se perdió la señal al
+  salir de ahí, cuántas volvió ahí y qué AGV. La altura y el tono dicen lo mismo, trama para «sin
+  pasadas», naranja bajo los sitios que `summarizeDeliveries` ya destaca (ningún umbral nuevo), los
+  tags de fuera del anillo al final y separados, lectura al puntero y tabla equivalente plegada.
+  **Solo se dibuja si existe evidencia**: con alguna ráfaga. Sin ninguna, una línea dice que no hay
+  evidencia con que dibujarlo y que eso no prueba que la cobertura sea buena; sin evaluar (resolución
+  de minuto), se dice con el motivo.
+- `circuitState.cohorts[].groupedDelivery.heat` en el protocolo, calculado en el Worker sobre todas las
+  ráfagas (no solo las mil más recientes de `deliveries`) y las transiciones del cohorte sin recortar.
+- Pruebas: TC-321 (unitaria), TC-322 (auditoría: el calor cae exactamente en las cuatro ráfagas
+  plantadas, atribuido solo a ese AGV, y en ningún tag sano) y TC-323 (navegador: la figura existe
+  una sola vez, con y sin el segundo fichero).
+
 ## [3.63.0] - 2026-09-27
 
 **F5 abierta** por el propietario («pasa a Fase 5»), tras fusionar el PR #12 (3.50.0 a 3.62.0,

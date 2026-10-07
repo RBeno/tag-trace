@@ -182,6 +182,13 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     ).toContainText("Qué lo paró no lo dice el dato");
     const agrupado = of("entrega-agrupada")?.vehicles[0] ?? "";
     await expect(page.locator(".finding", { hasText: `${agrupado}: le llegan lecturas juntas` })).toContainText("no paró");
+    // Y con esa evidencia, el mapa de calor de comunicación (WiFi) se dibuja: tiene figura, lectura al
+    // puntero y tabla equivalente, sin nombrar una causa.
+    const calor = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Mapa de calor de comunicación (WiFi)" }) });
+    await expect(calor).toHaveCount(1);
+    await expect(calor.locator("svg[role=img]")).toBeVisible();
+    await expect(calor).toContainText("la causa no la dice el dato");
+    await expect(calor.getByRole("button", { name: /tags con alguna lectura sin señal en tabla/ })).toBeVisible();
 
     // Con un solo fichero cargado, la retención lo dice así en Datos (ADR-0015 §2).
     await openTab(page, "Datos");
@@ -374,6 +381,7 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     // Las lecturas que llegaron juntas al servidor (R-DAT-020): el AGV plantado, y el hueco no es parada.
     const agrupado = of("entrega-agrupada")?.vehicles[0] ?? "";
     await expect(page.locator(".finding", { hasText: `${agrupado}: le llegan lecturas juntas` })).toContainText("no paró");
+    await expect(page.getByRole("heading", { name: "Mapa de calor de comunicación (WiFi)" })).toHaveCount(1);
 
     // La horquilla se descarga en CSV, una fila por tramo y régimen.
     const [download] = await Promise.all([
