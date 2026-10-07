@@ -1,6 +1,6 @@
 ---
 document_id: TT-DATA-001
-version: 0.32.1
+version: 0.32.2
 status: baseline-candidate
 last_updated: 2026-10-07
 ---
@@ -28,7 +28,7 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-011 | Informe ampliado de Vsystem | Tipo, fecha con segundos, AGV, circuito y, según el tipo, tag o uso | Enriquecida, opcional |
 | DS-012 | Historial de flota | AGV y fecha de alta; circuito, fecha de baja y nota opcionales | Configuración, incremental (§3.6) |
 | DS-013 | Informe de conexiones wifi de un AGV | Fecha con segundos y tipo de conexión; el AGV lo da el nombre del fichero | Enriquecida, opcional, incremental por AGV (§3.9) |
-| DS-014 | Lecturas de un AGV con acciones | Fecha, tag, MTC y la acción que el tag ordenó | **Todavía no se importa**; la necesitan R-AGV-022 y R-AGV-023 |
+| DS-014 | Lecturas de un AGV con acciones | Fecha, tag, MTC, la acción que el tag ordenó y las marcas «No en memoria» y «No ejecutado» | **Todavía no se importa**; la necesitan R-AGV-022 a R-AGV-024 |
 
 El **orden** de la lista del circuito es lo declarado: puede tener erratas al transcribir o un orden
 distinto al real, y la posición de un tag la dan las lecturas (R-GRA-015).

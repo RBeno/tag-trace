@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.47.0
+version: 0.47.1
 status: baseline-candidate
 last_updated: 2026-10-07
 ---
@@ -476,7 +476,8 @@ conversación siguiente.
      (OQ-160, sin respuesta todavía) y en qué AGV hay temporizador para continuar sin wifi y cuánto
      dura (OQ-162, pendiente por decisión del propietario). Cerradas el 2026-10-07: un tag no
      detectado deja la orden del anterior (R-AGV-022), `Datos Aux` y `Cober.` no se interpretan, y
-     «No ejecutado» siempre puede ser un tag condicional (R-AGV-023).
+     «No ejecutado» siempre puede ser un tag condicional (R-AGV-023). «No ejecutado» y «No en memoria»,
+     si aparecen, se notifican para su verificación (R-AGV-023, R-AGV-024), cuando entre DS-014.
   5. El resto de preguntas abiertas, en `OPEN_QUESTIONS.md`.
 - **Fuera del repositorio**: los scripts y las salidas de los análisis con datos de planta vivían en
   `local/` (ignorado por git) y se le entregaron al propietario en un paquete. Para analizar datos

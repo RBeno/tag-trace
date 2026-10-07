@@ -2,6 +2,19 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.65.1] - 2026-10-07
+
+El propietario precisa cómo tratar las marcas del informe de lecturas con acciones (DS-014): «No
+ejecutado como No en memoria: si existiera, se notifica para su verificación». Solo documentación:
+DS-014 todavía no se importa.
+
+### Cambiado
+
+- **R-AGV-023**: un tag con lecturas «No ejecutado» se notifica para su verificación, con sus
+  lecturas, el AGV y el MTC; sigue sin ser un fallo por sí solo.
+- **R-AGV-024** (nueva): una lectura «No en memoria» se notifica para su verificación; contradice la
+  memoria del vehículo (R-OPP-009, DS-008) y el dato no dice qué parte falla.
+
 ## [3.65.0] - 2026-10-07
 
 Respuestas del propietario a las preguntas de la entrega de cortes wifi: «1 sí», «3 de momento nada»,
