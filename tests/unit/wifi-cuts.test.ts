@@ -213,6 +213,17 @@ describe("cortes wifi: parado, espera al servidor y fuera del recorrido (R-COM-0
     });
     expect(heat.cuts[0]?.cutClass).toBe("fuera-del-recorrido");
     expect(heat.cuts[0]?.nextTagId).toBe("T03");
+    // Las causas se enumeran, no se elige (OQ-160); la retirada nocturna solo si empezó de noche.
+    expect(heat.cuts[0]?.evidence).toMatch(/avería, un cambio de batería o un carro en mal estado\./);
+    expect(heat.cuts[0]?.evidence).not.toMatch(/de noche/);
+    const deNoche = buildWifiHeatmap({
+      readings,
+      connections: new Map([["A1", cut(start, start + 29 * 60_000)]]),
+      preciseStops: new Set(["T12"]),
+      isNight: () => true,
+      thresholds: THRESHOLDS,
+    });
+    expect(deNoche.cuts[0]?.evidence).toMatch(/retirada de noche por menor producción/);
   });
 });
 

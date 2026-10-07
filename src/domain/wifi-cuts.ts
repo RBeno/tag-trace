@@ -189,6 +189,11 @@ export interface WifiHeatmapInput {
    * 2026-10-07: «los cruces están descritos en el circuito»). Vacío si no hay.
    */
   readonly crossings?: ReadonlySet<string>;
+  /**
+   * Si un instante cae en la noche (`regimes` de la configuración). Opcional: sin él, un corte fuera
+   * del recorrido no dice si fue de noche.
+   */
+  readonly isNight?: (utcMs: number) => boolean;
   readonly thresholds: WifiCutThresholds;
 }
 
@@ -516,6 +521,12 @@ function classify(
   let evidence: string;
   let crossingAhead: { readonly tagId: string; readonly hops: number } | null = null;
   const crossings = input.crossings ?? new Set<string>();
+  // Por qué sale un AGV del recorrido lo sabe planta, no el dato (OQ-160, propietario 2026-10-07): se
+  // enumera, y de noche se añade la retirada por menor producción, que solo es posible entonces.
+  const atNight = input.isNight?.(start.utcMs) ?? false;
+  const outsideCauses =
+    "Puede ser una avería, un cambio de batería o un carro en mal estado" +
+    (atNight ? ", o una retirada de noche por menor producción: empezó de noche." : ".");
   const lasted = seconds(durationMs ?? 0);
   const where = last === null ? "" : ` Último tag ${last.tagId}${following === null ? "" : `, reaparece en ${following.tagId}`}.`;
   if (end === null) {
@@ -536,12 +547,14 @@ function classify(
     cutClass = "fuera-del-recorrido";
     evidence =
       `Durante ${lasted} sin wifi no siguió la ruta: reaparece a más de ${thresholds.farReappearanceHops} ` +
-      "tags del último leído. Salió del recorrido, no esperaba." + where;
+      "tags del último leído. Salió del recorrido, no esperaba. " + outsideCauses + where;
   } else if (overtakenBy.length > 0) {
     cutClass = "fuera-del-recorrido";
     evidence =
       `Durante ${lasted} sin wifi, ${overtakenBy.length} ${overtakenBy.length === 1 ? "AGV pasó" : "AGV pasaron"} por su último tag y ` +
-      "llegaron antes que él al de reaparición: no ocupaba la guía. Salió del recorrido, no esperaba." + where;
+      "llegaron antes que él al de reaparición: no ocupaba la guía. Salió del recorrido, no esperaba. " +
+      outsideCauses +
+      where;
   } else if (readsDuring > 0 && atPace) {
     cutClass = "en-marcha";
     evidence =

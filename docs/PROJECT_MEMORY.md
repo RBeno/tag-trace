@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.48.0
+version: 0.48.1
 status: baseline-candidate
 last_updated: 2026-10-07
 ---
@@ -481,9 +481,9 @@ conversación siguiente.
      como fichero, y decide qué tags leídos que la lista no tiene se declaran.
   3. Resuelto el 2026-09-26: el propietario dio el número correcto del tag de noche; está en el libro
      de listas, fuera del repositorio.
-  4. Cortes wifi: si los cortes largos fuera del recorrido son extracciones y dónde se hacen
-     (OQ-160, sin respuesta todavía) y en qué AGV hay temporizador para continuar sin wifi y cuánto
-     dura (OQ-162, pendiente por decisión del propietario). Cerradas el 2026-10-07: un tag no
+  4. Cortes wifi: en qué AGV hay temporizador para continuar sin wifi y cuánto
+     dura (OQ-162, pendiente por decisión del propietario). Cerradas el 2026-10-07: salir del
+     recorrido puede ser avería, batería, carro en mal estado o retirada nocturna (OQ-160); un tag no
      detectado deja la orden del anterior (R-AGV-022), `Datos Aux` y `Cober.` no se interpretan, y
      «No ejecutado» siempre puede ser un tag condicional (R-AGV-023). «No ejecutado» y «No en memoria»
      se notifican para su verificación (R-AGV-023, R-AGV-024), implementado en 3.66.0. La consecuencia

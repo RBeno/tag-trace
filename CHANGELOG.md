@@ -2,6 +2,17 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.66.1] - 2026-10-07
+
+Respuesta del propietario a OQ-160: un AGV sale del recorrido por «ambas» razones —avería, batería,
+carro en mal estado—, «o incluso se sacan unidades por la noche porque tienen una menor producción».
+
+### Cambiado
+
+- Un corte `fuera-del-recorrido` enumera sus causas posibles sin elegir, y añade la retirada nocturna
+  por menor producción solo si empezó de noche (`regimes` de la configuración). R-COM-007; OQ-160
+  cerrada.
+
 ## [3.66.0] - 2026-10-07
 
 **Lecturas con acciones de un AGV** (DS-014), segunda entrega de F5. El propietario la pidió así: «sí,

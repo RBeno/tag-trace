@@ -1219,6 +1219,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       connections: new Map(Object.entries(wifiStored).map(([agvId, entry]) => [agvId, entry.events])),
       preciseStops,
       crossings,
+      isNight: (utcMs: number) => regimeOf(utcMs) === "noche",
       thresholds: config.wifi,
     });
     const skipsByCause: Record<string, number> = {};
