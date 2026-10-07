@@ -260,3 +260,66 @@ export function summarizeDeliveries(
     ),
   };
 }
+
+export interface DeliveryHeatCell {
+  readonly tagId: string;
+  /** Pasadas por el tag con las que se compara: las transiciones del cohorte que llegan a él. */
+  readonly passes: number;
+  /**
+   * Cuántas de esas pasadas se leyeron **sin que la lectura llegara al servidor hasta después**: el
+   * tag está dentro de una ráfaga. Es la cifra que pinta el mapa de calor.
+   */
+  readonly late: number;
+  /** Cuántas veces este tag fue la última lectura que llegó a su hora antes de un hueco (el P de la ráfaga). */
+  readonly lostAfter: number;
+  /** Cuántas veces una ráfaga terminó aquí: la última lectura que llegó, Q. */
+  readonly returnedAt: number;
+  /** AGV distintos con alguna lectura tardía en este tag. */
+  readonly vehicles: readonly string[];
+}
+
+/**
+ * El mapa de calor de comunicación (R-DAT-020): por cada tag, qué parte de sus pasadas se leyó sin
+ * comunicación. Un tag de una ráfaga se leyó cuando el AGV no tenía señal y llegó al servidor al
+ * reconectar; donde eso se repite, con varios AGV, apunta a la cobertura de ese sitio, y donde le pasa
+ * a un solo AGV, a su comunicación. Es evidencia de dónde, nunca de por qué (R-EVI-006, OQ-105).
+ *
+ * Solo tags con pasadas o con alguna lectura tardía; en orden de identificador, que la pantalla
+ * reordena por el anillo. `transitions` son las mismas de las que salieron las ráfagas, sin recortar:
+ * así una lectura tardía nunca supera las pasadas, porque la ráfaga es un subconjunto de las
+ * transiciones que llegan al tag.
+ */
+export function deliveryHeat(deliveries: readonly GroupedDelivery[], transitions: readonly Transition[]): readonly DeliveryHeatCell[] {
+  const passes = new Map<string, number>();
+  for (const transition of transitions) passes.set(transition.to, (passes.get(transition.to) ?? 0) + 1);
+  const late = new Map<string, number>();
+  const lostAfter = new Map<string, number>();
+  const returnedAt = new Map<string, number>();
+  const vehicles = new Map<string, Set<string>>();
+  const bump = (counts: Map<string, number>, tagId: string): void => {
+    counts.set(tagId, (counts.get(tagId) ?? 0) + 1);
+  };
+  for (const delivery of deliveries) {
+    bump(lostAfter, delivery.fromTagId);
+    const last = delivery.tags[delivery.tags.length - 1];
+    if (last !== undefined) bump(returnedAt, last);
+    for (const tagId of delivery.tags) {
+      bump(late, tagId);
+      const own = vehicles.get(tagId);
+      if (own === undefined) vehicles.set(tagId, new Set([delivery.agvId]));
+      else own.add(delivery.agvId);
+    }
+  }
+  const tagIds = new Set<string>([...passes.keys(), ...late.keys(), ...lostAfter.keys(), ...returnedAt.keys()]);
+  return [...tagIds].sort().map((tagId) => {
+    const exposure = passes.get(tagId) ?? 0;
+    return {
+      tagId,
+      passes: exposure,
+      late: late.get(tagId) ?? 0,
+      lostAfter: lostAfter.get(tagId) ?? 0,
+      returnedAt: returnedAt.get(tagId) ?? 0,
+      vehicles: [...(vehicles.get(tagId) ?? [])].sort(),
+    };
+  });
+}

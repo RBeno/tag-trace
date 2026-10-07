@@ -38,7 +38,10 @@ import type { CircuitSnapshot } from "../domain/snapshot.js";
 import { FLEET_STRUCTURE } from "../domain/fleet.js";
 import {
   agvTimelineChart,
+  connectionHeatChart,
+  deliveryHeatChart,
   driftChart,
+  hourHistogramChart,
   dwellChart,
   evolutionChart,
   ringFigure,
@@ -60,6 +63,7 @@ import {
   type TrendPanel,
 } from "./diagnostic-charts.js";
 import { PROVISIONAL_CONFIG } from "../domain/config.js";
+import { agvFromFileName, CONNECTION_STRUCTURE } from "../domain/connection-log.js";
 import { CARDS_SHOWN } from "../domain/finding-kinds.js";
 import { bandsCsv } from "../domain/segment-bands.js";
 import { anchorSectionsCsv } from "../domain/anchor-sections.js";
@@ -317,6 +321,21 @@ const fleetLabel = element("label", undefined, "Historial de flota");
 fleetLabel.htmlFor = "fleet-file";
 const fleetNote = element("p", "muted", "");
 
+/**
+ * El registro de conexiones del terminal (DS-013, ADR-0017): un fichero por AGV, varios de una vez.
+ * El AGV va en el nombre del fichero y se enseña antes de confirmar, corregible (OQ-160).
+ */
+const connectionsInput = element("input");
+connectionsInput.type = "file";
+connectionsInput.multiple = true;
+connectionsInput.accept = ".xlsx,.csv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+connectionsInput.id = "connections-file";
+const connectionsLabel = element("label", undefined, "Registro de conexiones (un fichero por AGV)");
+connectionsLabel.htmlFor = "connections-file";
+const connectionsConfirm = element("div", "connections-confirm");
+connectionsConfirm.hidden = true;
+const connectionsNote = element("p", "muted", "");
+
 {
   listsPanel.append(element("h2", undefined, "Listas del circuito"), listsLabel, filePicker(listsInput));
   const structure = element("details");
@@ -364,6 +383,23 @@ const fleetNote = element("p", "muted", "");
   fleetExample.style.overflowX = "auto";
   fleetStructure.append(fleetExample);
   listsPanel.append(fleetLabel, filePicker(fleetInput), fleetStructure, fleetNote);
+
+  const connectionsStructure = element("details");
+  connectionsStructure.append(element("summary", undefined, "Qué forma tiene que tener el registro"));
+  connectionsStructure.append(
+    element(
+      "p",
+      "muted",
+      `La exportación del terminal de cada AGV, tal cual: una fila por evento con «Fecha» y «Conexión» ` +
+        `(Desconexión, Conexión, Conexión tras apagado); «${CONNECTION_STRUCTURE.optional.join("», «")}» se conservan. ` +
+        `El fichero no trae el AGV: va en su nombre (${CONNECTION_STRUCTURE.fileName}) y se enseña antes de cargar, por si hay ` +
+        "que corregirlo. Se pueden elegir varios ficheros de una vez; el mismo fichero cargado otra vez sustituye a su carga anterior.",
+    ),
+  );
+  const connectionsExample = element("pre", "mono raw", CONNECTION_STRUCTURE.example.join("\n"));
+  connectionsExample.style.overflowX = "auto";
+  connectionsStructure.append(connectionsExample);
+  listsPanel.append(connectionsLabel, filePicker(connectionsInput), connectionsStructure, connectionsConfirm, connectionsNote);
 }
 
 /**
@@ -1045,6 +1081,29 @@ function handleMessage(message: FromWorker): void {
       return;
     }
 
+    case "connections-loaded": {
+      const ok = message.files.filter((file) => file.failure === null);
+      const failed = message.files.filter((file) => file.failure !== null);
+      connectionsNote.textContent =
+        `Circuito «${message.circuitId}» — ${message.totalEvents.toLocaleString("es-ES")} eventos de ${message.vehicles} AGV guardados.`;
+      const lines = [
+        ...ok.map(
+          (file) =>
+            `${file.fileName} → AGV ${file.agvId}: ${file.events.toLocaleString("es-ES")} eventos` +
+            (file.ips.length > 0 ? ` (terminal ${file.ips.join(", ")})` : "") +
+            (file.rejected.length > 0 ? `; ${file.rejected.map((entry) => `${entry.rows} ${entry.rows === 1 ? "fila no cargada" : "filas no cargadas"}: ${entry.reason}`).join("; ")}` : "") +
+            ".",
+        ),
+        ...ok.flatMap((file) => file.warnings.map((warning) => `${file.fileName}: ${warning}`)),
+        ...failed.map((file) => `${file.fileName}: no se cargó. ${file.failure ?? ""}`),
+        "Se verá al volver a importar las lecturas del circuito.",
+      ];
+      showMessage(failed.length > 0 || ok.some((file) => file.warnings.length > 0 || file.rejected.length > 0) ? "warn" : "info", "Registro de conexiones cargado", lines);
+      setBusy(false);
+      disposeWorker();
+      return;
+    }
+
     case "lists-loaded": {
       const detail = message.lists
         .map((entry) => `${entry.list}: ${entry.tags.toLocaleString("es-ES")} ${entry.tags === 1 ? "tag" : "tags"}`)
@@ -1435,6 +1494,82 @@ function startLists(file: File, circuitId: string): void {
   worker.postMessage(load);
 }
 
+function startConnections(files: readonly { readonly file: File; readonly agvId: string }[], circuitId: string): void {
+  disposeWorker();
+  clearMessages();
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    showMessage("error", "El proceso auxiliar se detuvo", [
+      "El registro de conexiones no llegó a cargarse y el circuito no se ha modificado.",
+    ]);
+    setBusy(false);
+    disposeWorker();
+  };
+  setBusy(true);
+  progressNote.textContent = `Leyendo ${files.length} ${files.length === 1 ? "fichero" : "ficheros"} del registro de conexiones`;
+  progressBar.value = 0;
+  const load: ToWorker = { type: "connections", protocolVersion: PROTOCOL_VERSION, jobId, circuitId, files };
+  worker.postMessage(load);
+}
+
+/**
+ * Antes de cargar el registro de conexiones se enseña a qué AGV va cada fichero —sacado de su nombre—
+ * y se puede corregir (OQ-160). Un fichero cuyo nombre no lo lleva queda en blanco y hay que escribirlo.
+ */
+function confirmConnections(files: readonly File[], circuitId: string): void {
+  connectionsConfirm.replaceChildren();
+  connectionsConfirm.hidden = false;
+  connectionsConfirm.append(
+    element("p", "muted", `${files.length} ${files.length === 1 ? "fichero" : "ficheros"} para el circuito «${circuitId}». Comprueba el AGV de cada uno y confirma.`),
+  );
+  const list = element("ul", "connections-files");
+  const inputs: { file: File; input: HTMLInputElement }[] = [];
+  files.forEach((file, index) => {
+    const item = element("li");
+    const name = element("span", "mono", file.name);
+    const label = element("label", undefined, " AGV ");
+    const input = element("input");
+    input.type = "text";
+    input.id = `connections-agv-${index}`;
+    input.value = agvFromFileName(file.name) ?? "";
+    input.placeholder = "escribe el AGV";
+    input.setAttribute("aria-label", `AGV del fichero ${file.name}`);
+    label.htmlFor = input.id;
+    item.append(name, label, input);
+    list.append(item);
+    inputs.push({ file, input });
+  });
+  const load = element("button", undefined, `Cargar ${files.length === 1 ? "el fichero" : `los ${files.length} ficheros`}`);
+  load.type = "button";
+  load.addEventListener("click", () => {
+    const missing = inputs.filter((entry) => entry.input.value.trim() === "");
+    if (missing.length > 0) {
+      showMessage("warn", "Falta el AGV de algún fichero", [
+        `${missing.map((entry) => entry.file.name).join(", ")}: el nombre no lleva el AGV. Escríbelo antes de cargar.`,
+      ]);
+      return;
+    }
+    connectionsConfirm.hidden = true;
+    startConnections(
+      inputs.map((entry) => ({ file: entry.file, agvId: entry.input.value.trim() })),
+      circuitId,
+    );
+  });
+  const cancel = element("button", undefined, "Cancelar");
+  cancel.type = "button";
+  cancel.addEventListener("click", () => {
+    connectionsConfirm.hidden = true;
+    connectionsConfirm.replaceChildren();
+  });
+  connectionsConfirm.append(list, load, cancel);
+}
+
 /**
  * Permite volver a elegir **el mismo fichero** y que vuelva a importarse.
  *
@@ -1447,7 +1582,7 @@ function startLists(file: File, circuitId: string): void {
  * la carga se rechaza sola. Es exactamente el defecto que introdujo el primer intento de arreglo
  * de esto, y lo destapó la prueba de navegador en la misma ejecución.
  */
-for (const input of [fileInput, projectInput, listsInput, fleetInput]) {
+for (const input of [fileInput, projectInput, listsInput, fleetInput, connectionsInput]) {
   input.addEventListener("click", () => {
     input.value = "";
   });
@@ -1477,6 +1612,19 @@ fleetInput.addEventListener("change", () => {
     return;
   }
   startFleet(file, circuitId);
+});
+
+connectionsInput.addEventListener("change", () => {
+  const files = [...(connectionsInput.files ?? [])];
+  if (files.length === 0) return;
+  const circuitId = circuitInput.value.trim();
+  if (circuitId === "") {
+    showMessage("warn", "Falta el circuito", [
+      "El registro de conexiones pertenece a un circuito concreto: escribe cuál antes de cargarlo.",
+    ]);
+    return;
+  }
+  confirmConnections(files, circuitId);
 });
 
 fileInput.addEventListener("change", () => {
@@ -2432,8 +2580,24 @@ function renderCircuitState(views: CircuitViews): void {
       `el recorrido entero tardó ${duration(delivery.totalMs)}, lo normal ${duration(delivery.usualMs)}: ` +
       (delivery.kind === "sin-parada" ? "no paró" : "hubo una espera en algún punto de ese tramo, sin poder situarla");
     if (!grouped.evaluated) {
-      out.append(element("p", "muted", `Lecturas que llegaron juntas al servidor: sin evaluar (${grouped.reason ?? "—"}).`));
-    } else if (grouped.total > 0) {
+      out.append(
+        element(
+          "p",
+          "muted",
+          `Lecturas que llegaron juntas al servidor: sin evaluar (${grouped.reason ?? "—"}). Sin ellas no hay nada ` +
+            "con que dibujar su mapa de calor.",
+        ),
+      );
+    } else if (grouped.total === 0) {
+      out.append(
+        element(
+          "p",
+          "muted",
+          "Ninguna lectura llegó junta con otras tras un hueco: no hay nada con que dibujar su mapa de calor. Eso no " +
+            "dice nada de la cobertura (R-OPP-003): el estado de conexión observado está en el registro de conexiones.",
+        ),
+      );
+    } else {
       out.append(
         element(
           "p",
@@ -2444,6 +2608,9 @@ function renderCircuitState(views: CircuitViews): void {
             "hueco no cuenta como parada.",
         ),
       );
+      // El mapa de calor de las lecturas que llegaron juntas (inferido): solo con evidencia (hay
+      // ráfagas), en el orden del anillo, y con los sitios que el Worker ya destacó. Dónde, no por qué.
+      out.append(deliveryHeatChart(grouped.heat, shape?.tags ?? [], new Set(grouped.sites.map((site) => site.id)), grouped.total, views.sections));
       for (const vehicle of grouped.vehicles.slice(0, PER_KIND)) {
         const latest = [...grouped.deliveries].reverse().find((delivery) => delivery.agvId === vehicle.id);
         out.append(
@@ -2489,6 +2656,10 @@ function renderCircuitState(views: CircuitViews): void {
         ),
       );
     }
+
+    // El estado de conexión observado (DS-013, ADR-0017): el registro de conexiones del terminal,
+    // situado con las lecturas. Es del circuito entero; va con el primer cohorte, con su anillo.
+    if (cohort === circuitState.cohorts[0]) renderConnections(out, views, shape?.tags ?? [], few, chance);
 
     // La noche, medida aparte.
     const nightDiffers = measured.night.filter(
@@ -2821,6 +2992,190 @@ const RING_MARKS = 20;
  * y las marcas — primero los tags con función declarada (dato de planta), después los candidatos por
  * firma, en orden del anillo.
  */
+/**
+ * El estado de conexión observado (DS-013, ADR-0017), en Tiempos: lo que trae el registro, el mapa
+ * de estado de conexión, dónde y a quién le pasa más de lo que da el azar, el contraste con las
+ * ráfagas (OQ-159) y las tablas. Sin registro cargado, una línea que lo dice.
+ */
+function renderConnections(
+  out: HTMLElement,
+  views: CircuitViews,
+  ringTags: readonly string[],
+  few: (ids: readonly string[]) => string,
+  chance: (expected: number) => string,
+): void {
+  const connections = views.connections;
+  out.append(element("h3", undefined, "Estado de conexión (registro del terminal)"));
+  if (connections === undefined) {
+    out.append(
+      element(
+        "p",
+        "muted",
+        "Sin registro de conexiones cargado: el mapa de estado de conexión (WiFi) necesita la exportación del terminal de " +
+          "cada AGV, un fichero por vehículo, en «Listas del circuito» (Datos). Hasta entonces no hay evidencia directa de la señal.",
+      ),
+    );
+    return;
+  }
+  const { summary, thresholds } = connections;
+  const minutes = (ms: number): string => (ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(1).replace(".", ",")} h` : ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`);
+  const classLabels = {
+    microcorte: `microcortes de hasta ${minutes(thresholds.microcutMaxMs)}`,
+    corte: `cortes de hasta ${minutes(thresholds.cutMaxMs)}`,
+    caida: `caídas de más de ${minutes(thresholds.cutMaxMs)}`,
+  };
+  out.append(
+    element(
+      "p",
+      "muted",
+      `Registro de conexiones de ${connections.vehicles} AGV (${connections.files} ${connections.files === 1 ? "fichero" : "ficheros"}): ` +
+        `${summary.total} cortes en la ventana cargada (${summary.byClass.microcorte} ${classLabels.microcorte}, ${summary.byClass.corte} ` +
+        `${classLabels.corte}, ${summary.byClass.caida} ${classLabels.caida}, ${summary.byClass.apagado} ${summary.byClass.apagado === 1 ? "apagado" : "apagados"}), ` +
+        `${minutes(summary.withoutSignalMs)} sin señal en total` +
+        (connections.outsideWindow > 0 ? `; ${connections.outsideWindow} cortes del registro caen fuera de la ventana y no se cuentan` : "") +
+        `. Miden cobertura ${summary.individual}: un corte cerrado por «Conexión tras apagado» es un apagado (el terminal se apagó durante el corte) ` +
+        `y un corte colectivo —${Math.round(thresholds.collectiveMinShare * 100)} % o más de los AGV con registro a menos de ${minutes(thresholds.collectiveWindowMs)}— ` +
+        "es apagado o infraestructura: los dos se cuentan, pero no entran en el mapa. Cada corte se sitúa entre la última lectura anterior y la " +
+        "primera posterior del mismo AGV.",
+    ),
+  );
+  if (summary.total === 0) {
+    out.append(element("p", "muted", "El registro no trae ningún corte dentro de la ventana cargada: nada que situar."));
+    return;
+  }
+  out.append(
+    connectionHeatChart(
+      summary.heat,
+      ringTags,
+      new Set(summary.sites.map((site) => site.id)),
+      { cuts: summary.individual, byClass: summary.byClass, withoutSignalMs: summary.withoutSignalMs, vehicles: connections.vehicles, files: connections.files },
+      classLabels,
+      views.sections,
+    ),
+  );
+  // Las horas: un patrón horario es un apagado o un turno, no un sitio (propietario, 2026-10-07).
+  out.append(
+    hourHistogramChart(
+      summary.byHour,
+      "Cortes por hora del día",
+      "Solo los cortes que miden cobertura (sin apagados ni colectivos), por la hora local en que se perdió la señal. Un pico a una " +
+        "misma hora todos los días apunta a un apagado o a un turno, no a un sitio; los apagados y los colectivos van aparte, abajo.",
+    ),
+  );
+  if (summary.collectives.length > 0) {
+    const biggest = Math.max(...summary.collectives.map((entry) => entry.vehicles.length));
+    out.append(
+      finding(
+        `Cortes colectivos: ${summary.collectives.length} ${summary.collectives.length === 1 ? "vez" : "veces"}`,
+        `hasta ${biggest} AGV a la vez, de ${connections.vehicles} con registro` +
+          (summary.collectives.some((entry) => entry.byClass.apagado > 0) ? "; alguno cerrado por un encendido: apagado" : ""),
+        "Varios AGV pierden la señal a la vez: apagado o infraestructura común (R-COM-003), no la cobertura de un sitio. No entran en el mapa.",
+        ["conexion-colectivo", String(summary.collectives[0]?.fromUtcMs ?? 0)],
+      ),
+    );
+    out.append(
+      lazyTable(`Ver los ${summary.collectives.length} cortes colectivos`, () =>
+        plainTable(
+          ["Desde", "Hasta", "AGV", "Microcortes", "Cortes medios", "Caídas", "Apagados"],
+          summary.collectives.map((entry) => [
+            formatTick(entry.fromUtcMs),
+            formatTick(entry.toUtcMs),
+            `${entry.vehicles.length}: ${entry.vehicles.join(", ")}`,
+            String(entry.byClass.microcorte),
+            String(entry.byClass.corte),
+            String(entry.byClass.caida),
+            String(entry.byClass.apagado),
+          ]),
+        ),
+      ),
+    );
+  }
+  // El contraste con las ráfagas (OQ-159): si la hora del fichero fuera la de recepción por este
+  // enlace, ninguna lectura tendría fecha dentro de una caída y cada ráfaga coincidiría con un corte.
+  const contrast = summary.contrast;
+  out.append(
+    element(
+      "p",
+      "muted",
+      `Contraste con las lecturas que llegaron juntas (OQ-159): ${contrast.bursts} ${contrast.bursts === 1 ? "ráfaga" : "ráfagas"}, ` +
+        `${contrast.burstsWithCut} con un corte del registro a menos de ${minutes(thresholds.contrastToleranceMs)}; ${contrast.cuts} cortes, ` +
+        `${contrast.cutsWithBurst} con ráfaga. Lecturas con fecha dentro de una caída: ${contrast.readingsInsideFalls.toLocaleString("es-ES")} ` +
+        `en ${contrast.falls} ${contrast.falls === 1 ? "caída" : "caídas"}` +
+        (contrast.readingsInsideFalls > 0 && contrast.falls > 0
+          ? ". Con la hora de recepción por este enlace serían cero: la hora del fichero o el enlace de las lecturas es otro. La pregunta sigue abierta."
+          : "."),
+    ),
+  );
+  for (const site of summary.sites.slice(0, PER_KIND)) {
+    const cell = summary.heat.find((entry) => entry.tagId === site.id);
+    out.append(
+      finding(
+        `La señal se pierde al salir de ${site.id}`,
+        `${site.count} veces de ${cell?.passes ?? 0} pasadas, de ${cell?.vehicles.length ?? 0} AGV (${few(cell?.vehicles ?? [])}), cuando el azar daría ${chance(site.expected)}`,
+        "Apunta a la cobertura en ese punto del circuito; la causa no la dice el dato.",
+        ["conexion-sitio", site.id],
+      ),
+    );
+  }
+  for (const vehicle of summary.concentratedVehicles.slice(0, PER_KIND)) {
+    const own = summary.vehicles.find((entry) => entry.agvId === vehicle.id);
+    out.append(
+      finding(
+        `${vehicle.id}: pierde la señal más que el resto`,
+        `${vehicle.count} cortes propios con los tramos que recorre, cuando el azar daría ${chance(vehicle.expected)}` +
+          (own === undefined
+            ? ""
+            : ` · ${own.byClass.microcorte} microcortes, ${own.byClass.corte} cortes, ${own.byClass.caida} caídas; ${minutes(own.withoutSignalMs)} sin señal` +
+              (own.perDay.length > 1 ? ` · por día: ${own.perDay.map((entry) => entry.cuts).join(" → ")}` : "")),
+        "Apunta al terminal de ese AGV, no al sitio; la causa no la dice el dato.",
+        ["conexion-agv", vehicle.id],
+      ),
+    );
+  }
+  out.append(
+    lazyTable(`Ver el registro por AGV (${summary.vehicles.length})`, () =>
+      plainTable(
+        ["AGV", "Eventos", "Cortes", "Microcortes", "Cortes medios", "Caídas", "Apagados", "Colectivos", "Sin señal", "Sin situar", "Propios por día", "Terminal"],
+        summary.vehicles.map((own) => [
+          own.agvId,
+          String(own.events),
+          String(own.cuts),
+          String(own.byClass.microcorte),
+          String(own.byClass.corte),
+          String(own.byClass.caida),
+          String(own.byClass.apagado),
+          String(own.collective),
+          minutes(own.withoutSignalMs),
+          String(own.unlocated),
+          own.perDay.map((entry) => `${entry.day.slice(5)}: ${entry.cuts}`).join(" · "),
+          own.ips.join(", "),
+        ]),
+      ),
+    ),
+  );
+  out.append(
+    lazyTable(
+      `Ver los ${summary.total} cortes` + (connections.cuts.length < summary.total ? ` (los ${connections.cuts.length} más recientes)` : ""),
+      () =>
+        plainTable(
+          ["AGV", "Desde", "Hasta", "Duración", "Clase", "Cierre", "Última lectura", "Siguiente lectura", "Situado", "Lecturas dentro"],
+          connections.cuts.map((cut) => [
+            cut.agvId,
+            formatTick(cut.fromUtcMs),
+            cut.toUtcMs === null ? "no vuelve en la ventana" : formatTick(cut.toUtcMs),
+            `${cut.end === "abierto" ? "al menos " : ""}${minutes(cut.durationMs)}`,
+            (cut.cutClass === "caida" ? "caída" : cut.cutClass) + (cut.collective ? " (colectivo)" : ""),
+            cut.end === "conexion" ? "conexión" : cut.end === "tras-apagado" ? "tras apagado (encendido)" : "abierto",
+            cut.lastTagId === null ? "—" : `${cut.lastTagId} (${cut.lastReadUtcMs === null ? "" : formatTick(cut.lastReadUtcMs)})`,
+            cut.nextTagId === null ? "—" : `${cut.nextTagId} (${cut.nextReadUtcMs === null ? "" : formatTick(cut.nextReadUtcMs)})`,
+            cut.location === "tramo" ? "en el tramo" : cut.location === "entre" ? "entre las dos, sin situar más" : "sin situar",
+            String(cut.readingsInside),
+          ]),
+        ),
+    ),
+  );
+}
+
 function ringDataOf(shape: CircuitViews["shapes"][number], matrix: Matrix | undefined, views: CircuitViews): RingData {
   const rowOf = new Map((matrix?.tags ?? []).map((row) => [row.tagId, row]));
   const declared = new Map(
@@ -2852,6 +3207,15 @@ function ringDataOf(shape: CircuitViews["shapes"][number], matrix: Matrix | unde
   const bottleneckAt = new Map((measured?.bottlenecks ?? []).map((entry) => [entry.tagId, entry.episodes]));
   const conflictTags = new Set((measured?.conflictPoints ?? []).flatMap((entry) => entry.tags));
   const darkTags = new Set((measured?.darkZones ?? []).flatMap((entry) => entry.tags.slice(0, -1)));
+  // La capa «Señal»: el mapa de calor de comunicación (R-DAT-020), ya calculado por el Worker. Sin
+  // evaluar, ningún tag lleva `signal`, y la capa lo dice.
+  const grouped = views.circuitState.cohorts.find((cohort) => cohort.cohortId === shape.cohortId)?.groupedDelivery;
+  const heatOf = new Map((grouped?.evaluated ? grouped.heat : []).map((cell) => [cell.tagId, cell]));
+  const flaggedSites = new Set((grouped?.sites ?? []).map((site) => site.id));
+  // La capa «Conexión»: el registro de conexiones del terminal (DS-013), observado, ya resumido.
+  const connections = views.connections;
+  const connectionOf = new Map((connections?.summary.heat ?? []).map((cell) => [cell.tagId, cell]));
+  const connectionSites = new Set((connections?.summary.sites ?? []).map((site) => site.id));
   return {
     tags: shape.tags.map((tagId, index) => {
       const row = rowOf.get(tagId);
@@ -2871,6 +3235,28 @@ function ringDataOf(shape: CircuitViews["shapes"][number], matrix: Matrix | unde
                 bottleneckEpisodes: bottleneckAt.get(tagId) ?? 0,
                 conflict: conflictTags.has(tagId),
                 dark: darkTags.has(tagId),
+              },
+            }),
+        ...(grouped?.evaluated
+          ? {
+              signal: {
+                passes: heatOf.get(tagId)?.passes ?? 0,
+                late: heatOf.get(tagId)?.late ?? 0,
+                lostAfter: heatOf.get(tagId)?.lostAfter ?? 0,
+                vehicles: heatOf.get(tagId)?.vehicles.length ?? 0,
+                flagged: flaggedSites.has(tagId),
+              },
+            }
+          : {}),
+        ...(connections === undefined
+          ? {}
+          : {
+              connection: {
+                passes: connectionOf.get(tagId)?.passes ?? 0,
+                cuts: connectionOf.get(tagId)?.cuts ?? 0,
+                falls: connectionOf.get(tagId)?.byClass.caida ?? 0,
+                vehicles: connectionOf.get(tagId)?.vehicles.length ?? 0,
+                flagged: connectionSites.has(tagId),
               },
             }),
       };

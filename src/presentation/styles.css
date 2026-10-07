@@ -166,6 +166,13 @@ tr.resolved td:first-child { text-decoration: underline dotted; }
 #show-more { margin-top: 12px; }
 /* La salida de una fuente de fecha ambigua: el usuario elige, el programa no adivina. */
 .chooser { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
+/* El registro de conexiones (DS-013): la confirmación del AGV de cada fichero antes de cargar. */
+.connections-confirm { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.connections-confirm p { margin: 0 0 8px; }
+.connections-files { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
+.connections-files li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.connections-files input { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); width: 9ch; }
+.connections-confirm button { margin-right: 8px; }
 /* Una descarga por fichero (R-TIM-011): se parten en varias líneas en el móvil en vez de desbordar. */
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .button-row button { overflow-wrap: anywhere; text-align: left; }
@@ -234,7 +241,8 @@ table.data th { color: var(--muted); font-weight: 600; }
 }
 /* Horquilla de tiempos: la leyenda no va pegada a la franja de tramos ni a los puntos de hallazgo. */
 .chart .legend + .viz-host, .chart .legend + .legend + .viz-host { margin-top: 10px; }
-.chart .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; padding: 2px; margin: 0 0 8px; }
+/* Envuelve: con seis capas del anillo (3.65.0) una sola fila desbordaba un móvil de 390 px. */
+.chart .seg { display: inline-flex; flex-wrap: wrap; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 2px; margin: 0 0 8px; }
 .chart .seg button { border: 0; background: transparent; color: var(--muted); padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; min-height: 28px; }
 .chart .seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
 .chart .multiples, .chart .forks { display: grid; gap: 14px 24px; }
@@ -421,6 +429,25 @@ table.data th { color: var(--muted); font-weight: 600; }
 .chart svg path[data-index] { cursor: pointer; outline: none; }
 .chart svg path[data-index]:focus-visible { stroke: var(--viz-accent); stroke-width: 2.5px; }
 .chart .ring-legend .legend { margin-top: 8px; }
+
+/* --- Mapa de calor de comunicación (3.64.0): cifras de cabecera y leyenda del gradiente ----------
+   Las cifras siguen la tira de la portada (misma sans, proporcionales, tinta normal); la leyenda del
+   gradiente escribe sus dos extremos, porque el tono solo no dice la cifra. */
+.heat-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 12px; }
+.heat-stat { display: grid; align-content: start; gap: 2px; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--bg); min-width: 0; }
+.heat-stat p { margin: 0; max-width: none; }
+.heat-stat-label { font-size: 0.78rem; color: var(--muted); }
+.heat-stat-value { font-size: clamp(1.2rem, 5vw, 1.6rem); font-weight: 600; line-height: 1.15;
+  font-variant-numeric: proportional-nums; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.heat-stat-note { font-size: 0.78rem; color: var(--muted); line-height: 1.35; overflow-wrap: anywhere; }
+@media (min-width: 700px) { .heat-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.heat-scale { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 0.8rem; color: var(--muted);
+  font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.heat-scale-bar { display: inline-block; width: 140px; max-width: 40vw; height: 10px; border-radius: 5px; border: 1px solid var(--line); }
+.heat-scale-what { flex-basis: 100%; }
+@media (min-width: 700px) { .heat-scale-what { flex-basis: auto; } }
+
 
 /* --- Cajón de tablas (UX_SPEC §5.3, 3.49.0) ---------------------------------------------------------
    Un solo cajón para toda la aplicación: en escritorio ocupa el tercio derecho con desplazamiento

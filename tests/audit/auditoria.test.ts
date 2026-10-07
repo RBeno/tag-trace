@@ -86,7 +86,9 @@ import {
 } from "../../src/domain/anchor-sums.js";
 import {
   collapseGroupedDeliveries,
+  deliveryHeat,
   summarizeDeliveries,
+  type DeliveryHeatCell,
   type DeliverySummary,
   type GroupedDeliveryReport,
 } from "../../src/domain/grouped-delivery.js";
@@ -185,6 +187,8 @@ interface Analysis {
   /** Lecturas que llegaron juntas al servidor, y dónde se concentran (R-DAT-020). */
   readonly groupedDelivery: GroupedDeliveryReport;
   readonly deliverySummary: DeliverySummary;
+  /** El mapa de calor de comunicación: por tag, pasadas leídas sin señal (R-DAT-020). */
+  readonly deliveryHeat: readonly DeliveryHeatCell[];
   /** Para poder decir en el informe sobre cuánto dato se está midiendo. */
   readonly readings: number;
   /** Tags leídos fuera de la lista del circuito, con su sitio y si de noche (R-DAT-022). */
@@ -412,6 +416,7 @@ function analyse(
     measurableTransitions(cohortTransitions, window, laneTags),
     PROVISIONAL_CONFIG.circuitState.maxFalsePoints,
   );
+  const heat = deliveryHeat(groupedDelivery.deliveries, cohortTransitions);
   const timedTransitions = outsideLineStops(outsideProductionStops(cohortTimeline, production.stops), lineExclusion);
   const productionTimed = timedTransitions.filter((transition) => transitionRegime(transition, regimeOf) === "produccion");
 
@@ -726,6 +731,7 @@ function analyse(
     vehicleReading,
     groupedDelivery,
     deliverySummary,
+    deliveryHeat: heat,
     franjas,
     structure: { entreFicheros, dentroDelFichero },
     pace,
@@ -1961,6 +1967,28 @@ describe("auditoría del circuito con verdad conocida", () => {
     const abandonados = abandonedReadings(incidentContext, scenario.toUtcMs).map((entry) => entry.agvId);
     expect(abandonados, "AGV que dejan de leer sin plantar").toEqual([]);
   }, PLAZO);
+
+  it("el mapa de calor de comunicación solo calienta los tags de las ráfagas plantadas, y a nadie más (R-DAT-020)", () => {
+    // La evidencia del mapa son las ráfagas: cada tag leído en una se leyó sin señal. Lo plantado es un
+    // solo AGV con cuatro ráfagas de tres lecturas, así que el calor tiene que caer exactamente en esos
+    // tags, atribuido solo a ese AGV, y ningún tag sano puede calentarse.
+    const agv = (scenario.defects.find((d) => d.kind === "entrega-agrupada")?.vehicles ?? [])[0] as string;
+    const { deliveryHeat: heat, groupedDelivery: grouped } = analysis;
+    const esperado = new Map<string, number>();
+    for (const delivery of grouped.deliveries) for (const tagId of delivery.tags) esperado.set(tagId, (esperado.get(tagId) ?? 0) + 1);
+    const calientes = heat.filter((cell) => cell.late > 0);
+    expect(calientes.length, "tags con alguna lectura sin señal").toBeGreaterThan(0);
+    expect(new Map(calientes.map((cell) => [cell.tagId, cell.late]))).toEqual(esperado);
+    expect(calientes.flatMap((cell) => cell.vehicles), "solo el AGV plantado lee sin señal").toEqual(calientes.map(() => agv));
+    for (const cell of heat) {
+      expect(cell.late, `lecturas sin señal de ${cell.tagId} frente a sus pasadas`).toBeLessThanOrEqual(cell.passes);
+      expect(cell.passes, `el tag ${cell.tagId} tiene pasadas`).toBeGreaterThan(0);
+    }
+    expect(heat.reduce((sum, cell) => sum + cell.lostAfter, 0), "una pérdida de señal por ráfaga").toBe(grouped.deliveries.length);
+    expect(heat.reduce((sum, cell) => sum + cell.returnedAt, 0), "una vuelta de la señal por ráfaga").toBe(grouped.deliveries.length);
+    // Sin ráfagas no hay evidencia: el mapa queda frío entero.
+    expect(deliveryHeat([], []).length).toBe(0);
+  });
 
   it("con una sola exportación, los cambios de tag y la lectura por AGV coinciden con lo plantado", () => {
     const of = (kind: DefectClass) => scenario.defects.find((d) => d.kind === kind);

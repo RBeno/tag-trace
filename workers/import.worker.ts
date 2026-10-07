@@ -71,7 +71,7 @@ import {
 } from "../src/domain/critical-points.js";
 import type { DriftComparison } from "../src/domain/drift.js";
 import { buildFleetTimeline, mergeFleetPeriods } from "../src/domain/fleet.js";
-import { classifySilence, usualSegmentTimes, type UsualTimes } from "../src/domain/silence-kind.js";
+import { classifySilence, usualSegmentTimes, type UsualTimes, localHourReader, localDayReader } from "../src/domain/silence-kind.js";
 import {
   bandChangesBetweenPeriods,
   bandFor,
@@ -82,7 +82,7 @@ import {
   transitionRegime,
 } from "../src/domain/segment-bands.js";
 import { buildCircuitState } from "../src/domain/circuit-state.js";
-import { collapseGroupedDeliveries, summarizeDeliveries } from "../src/domain/grouped-delivery.js";
+import { collapseGroupedDeliveries, deliveryHeat, summarizeDeliveries, type GroupedDelivery } from "../src/domain/grouped-delivery.js";
 import { franjaWindows, measureFranjaCohort, segmentHistories } from "../src/domain/franjas.js";
 import { paceInWindow, vehiclePace, type VehiclePaceThresholds } from "../src/domain/vehicle-pace.js";
 import {
@@ -103,6 +103,8 @@ import {
   type VehicleStop,
 } from "../src/domain/flow-stops.js";
 import { FLEET_STRUCTURE, FleetFailure, importFleetHistory, importFleetRows } from "../src/ingestion/fleet-history.js";
+import { ConnectionFailure, importConnectionLog, importConnectionRows } from "../src/ingestion/connection-log.js";
+import { locateCuts, pairCuts, summarizeConnections } from "../src/domain/connection-cuts.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -129,7 +131,7 @@ import {
   type PlantValueProposals,
   type PlantValuesView,
 } from "../src/domain/plant-values.js";
-import type { CircuitViews, MemoryViews, PlanViews, VersionSummary } from "../src/application/protocol.js";
+import type { CircuitViews, MemoryViews, PlanViews, VersionSummary, ConnectionsLoadedMessage } from "../src/application/protocol.js";
 import {
   appendPlanEvents,
   appendPlantValue,
@@ -153,6 +155,7 @@ import {
   saveSnapshot,
   saveVersion,
   type StoredCircuit,
+  type StoredConnectionEvent,
   type StoredSource,
 } from "../src/persistence/store.js";
 import {
@@ -368,6 +371,8 @@ async function accumulate(
     ...(existing?.lists === undefined ? {} : { lists: existing.lists }),
     // Y el historial de flota, por la misma razón: lo destapó la prueba de navegador de la Parte 39.
     ...(existing?.fleet === undefined ? {} : { fleet: existing.fleet }),
+    // Y el registro de conexiones (DS-013), por la misma razón.
+    ...(existing?.connections === undefined ? {} : { connections: existing.connections }),
     updatedAt: Date.now(),
   };
   // Un repetido cuyas lecturas ya no estaban guardadas las recupera, con la procedencia de su primera
@@ -471,6 +476,8 @@ const DURATION_SAMPLE_MAX = 1000;
  * que `DURATION_SAMPLE_MAX`; la vista dice cuántas hubo en total.
  */
 const DELIVERY_LIST_MAX = 1000;
+/** Cortes del registro de conexiones que viajan a la interfaz: los más recientes. */
+const CUT_LIST_MAX = 2000;
 
 /** Una muestra de paso fijo: determinista, sin azar, y declarada por quien la enseña. */
 function strideSample(values: readonly number[], max: number): number[] {
@@ -719,6 +726,8 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         );
   const flowReports: FlowReport[] = [];
   const circuitStateCohorts: CircuitViews["circuitState"]["cohorts"][number][] = [];
+  /** Las ráfagas de todos los cohortes, para contrastarlas con el registro de conexiones (ADR-0017). */
+  const allDeliveries: GroupedDelivery[] = [];
   // Una franja es un fichero (R-TIM-011): su ventana completa. Sin almacén, la del fichero importado.
   const windows = franjaWindows(
     stored !== undefined
@@ -817,6 +826,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       config.groupedDelivery,
     );
     const cohortTimeline = grouped.transitions;
+    allDeliveries.push(...grouped.deliveries);
 
     // Las transiciones que cruzan una parada de la producción no miden ningún tramo, ni las de la cola
     // del pulmón mientras la línea estaba parada con AGV esperando.
@@ -1106,6 +1116,9 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
           measurableTransitions(cohortTransitions, coverage, laneTags),
           config.circuitState.maxFalsePoints,
         ),
+        // Sobre las transiciones sin recortar, las mismas de las que salieron las ráfagas: así una
+        // lectura tardía nunca supera las pasadas del tag.
+        heat: deliveryHeat(grouped.deliveries, cohortTransitions),
       },
       changes: bandChangesBetweenPeriods(
         measuredTimed,
@@ -1192,6 +1205,34 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     );
     return stopped >= 0.5 * (to - from) ? ("produccion" as const) : null;
   };
+  // El estado de conexión observado (DS-013, ADR-0017): los cortes del registro, situados con las
+  // lecturas de cada AGV y los anillos de los cohortes; solo los que empiezan dentro de la ventana
+  // cargada, porque fuera de ella no hay lecturas con que situarlos ni pasadas con que compararlos.
+  const connectionsView = ((): NonNullable<CircuitViews["connections"]> | null => {
+    const stored_ = stored?.connections;
+    if (stored_ === undefined || stored_.events.length === 0) return null;
+    const inWindow = (utcMs: number): boolean => coverage.some((span) => utcMs >= span.from && utcMs <= span.to);
+    const windowEndUtcMs = Math.max(0, ...coverage.map((span) => span.to));
+    const paired = pairCuts(stored_.events, windowEndUtcMs, config.connectionCuts);
+    const inside = paired.filter((cut) => inWindow(cut.fromUtcMs));
+    const cuts = locateCuts(
+      inside,
+      readings.map((reading) => ({ agvId: reading.agvId, tagId: reading.tagId, utcMs: reading.time.utcMs })),
+      shapes.map((shape) => shape.tags),
+    );
+    return {
+      files: stored_.files.length,
+      vehicles: new Set(stored_.files.map((file) => file.agvId)).size,
+      thresholds: config.connectionCuts,
+      summary: summarizeConnections(cuts, stored_.events, transitions, allDeliveries, config.connectionCuts, config.circuitState.maxFalsePoints, {
+        hourOf: localHourReader(zone),
+        dayOf: localDayReader(zone),
+      }),
+      cuts: cuts.slice(-CUT_LIST_MAX),
+      outsideWindow: paired.length - inside.length,
+    };
+  })();
+
   const fleet = buildFleetTimeline({
     readings,
     coverage,
@@ -1260,6 +1301,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     ...(sections.size === 0 ? {} : { sections: Object.fromEntries(sections) }),
     anchorSections: { declared: lapAnchorsConfig.anchors.length, ...anchorSections },
     replay: replayFrames.map((frame) => ({ atUtcMs: frame.atUtcMs, vehicles: [...frame.vehicles] })),
+    ...(connectionsView === null ? {} : { connections: connectionsView }),
     fleet: { ...fleet, circuitName: stored?.fleet?.circuitName ?? null, production: productionView, blockages },
     franjas: {
       sources: windows.map((entry) => ({
@@ -2928,6 +2970,113 @@ async function runFleet(message: Extract<ToWorker, { type: "fleet" }>): Promise<
   }
 }
 
+const CONNECTION_REJECTION_LABEL: Readonly<Record<string, string>> = {
+  FECHA_INVALIDA: "fecha no válida (día/mes/año y hora)",
+  SIN_TIPO: "sin tipo de evento",
+  CAMPOS_INSUFICIENTES: "faltan columnas en la fila",
+};
+
+/**
+ * Carga el registro de conexiones del terminal (DS-013, ADR-0017): varios ficheros de una vez, uno
+ * por AGV, cada uno con su huella. Un fichero que no se puede leer no impide cargar los demás: su
+ * fallo viaja en el resultado. El mismo fichero (misma huella) sustituye a su carga anterior; un
+ * evento repetido de otro fichero (mismo AGV, instante y tipo) no se duplica.
+ */
+async function runConnections(message: Extract<ToWorker, { type: "connections" }>): Promise<void> {
+  const { jobId, circuitId } = message;
+  const fail = (cause: string, recovery: string): void =>
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  if (!isAvailable()) {
+    fail("Este navegador no permite guardar datos de sitio.", "Sin almacén local no hay dónde guardar el registro de conexiones.");
+    return;
+  }
+  try {
+    const existing = await loadCircuit(circuitId);
+    if (existing === undefined) {
+      fail(
+        `El circuito «${circuitId}» todavía no existe.`,
+        "Importa al menos una fuente de lecturas en ese circuito y vuelve a intentarlo.",
+      );
+      return;
+    }
+    const files: ConnectionsLoadedMessage["files"][number][] = [];
+    const loadedAt = Date.now();
+    let kept = existing.connections?.events ?? [];
+    let keptFiles = existing.connections?.files ?? [];
+    for (const entry of message.files) {
+      const agvId = entry.agvId.trim();
+      if (agvId === "") {
+        files.push({ fileName: entry.file.name, agvId, events: 0, rejected: [], ips: [], warnings: [], failure: "sin AGV: el nombre del fichero no lo lleva y no se escribió" });
+        continue;
+      }
+      try {
+        const buffer = await entry.file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        const sourceHash = await hashFile(buffer);
+        const result = looksLikeZip(bytes)
+          ? importConnectionRows(await readXlsxRows(bytes), existing.zone, agvId)
+          : importConnectionLog(decodeSource(buffer).text, existing.zone, agvId);
+        // El mismo fichero cargado otra vez sustituye a su carga anterior, fila a fila.
+        kept = kept.filter((event) => event.sourceHash !== sourceHash);
+        keptFiles = keptFiles.filter((file) => file.sourceHash !== sourceHash);
+        const seen = new Set(kept.map((event) => `${event.agvId}\u0000${event.utcMs}\u0000${event.rawKind}`));
+        const fresh: StoredConnectionEvent[] = [];
+        for (const event of result.events) {
+          const key = `${event.agvId}\u0000${event.utcMs}\u0000${event.rawKind}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          fresh.push({ ...event, sourceHash });
+        }
+        kept = [...kept, ...fresh];
+        const warnings = [...result.warnings];
+        const otherIps = new Set(keptFiles.filter((file) => file.agvId === agvId).flatMap((file) => file.ips));
+        const newIps = result.ips.filter((ip) => !otherIps.has(ip));
+        if (otherIps.size > 0 && newIps.length > 0) {
+          warnings.push(`El AGV ${agvId} ya tenía ficheros con otra IP de terminal (${[...otherIps].join(", ")}); este trae ${newIps.join(", ")}.`);
+        }
+        keptFiles = [...keptFiles, { agvId, fileName: entry.file.name, sourceHash, loadedAt, events: result.events.length, ips: result.ips }];
+        const rejectedBy = new Map<string, number>();
+        for (const row of result.rejected) {
+          const label = CONNECTION_REJECTION_LABEL[row.reason] ?? row.reason;
+          rejectedBy.set(label, (rejectedBy.get(label) ?? 0) + 1);
+        }
+        files.push({
+          fileName: entry.file.name,
+          agvId,
+          events: result.events.length,
+          rejected: [...rejectedBy.entries()].map(([reason, rows]) => ({ reason, rows })),
+          ips: result.ips,
+          warnings,
+          failure: null,
+        });
+      } catch (error) {
+        const failure =
+          error instanceof ConnectionFailure
+            ? `${error.reason} ${error.recovery}`
+            : error instanceof XlsxError
+              ? `${error.reason} Guarda el libro de nuevo en Excel (.xlsx) o expórtalo como CSV.`
+              : "No se pudo leer el fichero.";
+        files.push({ fileName: entry.file.name, agvId, events: 0, rejected: [], ips: [], warnings: [], failure });
+      }
+    }
+    if (files.some((file) => file.failure === null)) {
+      await saveCircuit({ ...existing, connections: { files: keptFiles, events: kept }, updatedAt: loadedAt });
+    }
+    emit(
+      {
+        type: "connections-loaded",
+        circuitId,
+        files,
+        totalEvents: kept.length,
+        vehicles: new Set(keptFiles.map((file) => file.agvId)).size,
+      },
+      jobId,
+    );
+  } catch {
+    fail("No se pudo guardar el registro de conexiones.", "Vuelve a intentarlo; el circuito no se ha modificado.");
+  }
+}
+
 scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   const message = event.data;
   if (message.protocolVersion !== PROTOCOL_VERSION) return;
@@ -2943,6 +3092,13 @@ scope.onmessage = (event: MessageEvent<ToWorker>): void => {
     currentJobId = message.jobId;
     seq = 0;
     void runFleet(message);
+    return;
+  }
+
+  if (message.type === "connections") {
+    currentJobId = message.jobId;
+    seq = 0;
+    void runConnections(message);
     return;
   }
 

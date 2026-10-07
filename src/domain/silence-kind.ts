@@ -135,6 +135,29 @@ export function localHourReader(zone: string): (utcMs: number) => number {
   return reader;
 }
 
+/** El día local de un instante, como `aaaa-mm-dd`, con la misma caché por cuartos que la hora. */
+const dayReaders = new Map<string, (utcMs: number) => string>();
+
+export function localDayReader(zone: string): (utcMs: number) => string {
+  const known = dayReaders.get(zone);
+  if (known !== undefined) return known;
+  const formatter = new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
+  const cache = new Map<number, string>();
+  const reader = (utcMs: number): string => {
+    const quarter = Math.floor(utcMs / QUARTER_MS);
+    let day = cache.get(quarter);
+    if (day === undefined) {
+      const parts = formatter.formatToParts(new Date(quarter * QUARTER_MS));
+      const of = (type: string): string => parts.find((entry) => entry.type === type)?.value ?? "00";
+      day = `${of("year")}-${of("month")}-${of("day")}`;
+      cache.set(quarter, day);
+    }
+    return day;
+  };
+  dayReaders.set(zone, reader);
+  return reader;
+}
+
 /** Índice del turno de una hora local: el último inicio que no la pasa; antes del primero, el último. */
 export function shiftIndexOfHour(hour: number, shiftStartHours: readonly number[]): number {
   const starts = [...shiftStartHours].sort((a, b) => a - b);

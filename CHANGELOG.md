@@ -2,6 +2,105 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.65.0] - 2026-10-07
+
+El propietario aceptó ADR-0017 con las recomendaciones de OQ-159 a OQ-162 («Usa tu recomendación en
+las cuatro y construye el importador»). El registro de conexiones del terminal entra como fuente DS-013
+y el estado de conexión observado se mide, se sitúa y se dibuja. Lo observado y lo inferido no se
+mezclan (R-COM-006): el mapa de 3.64.0 pasa a llamarse «de lecturas que llegaron juntas».
+
+### Añadido
+
+- **Importador del registro de conexiones** (`src/ingestion/connection-log.ts`, `DATA_CONTRACTS.md`
+  §3.10): la exportación del terminal tal cual, en `.xlsx` o CSV; `Fecha` y `Conexión` obligatorias,
+  el resto conservado; tipos normalizados al catálogo cerrado y lo demás `desconocido` sin perderse;
+  el AGV del nombre del fichero (`agvFromFileName`), enseñado y corregible antes de cargar (OQ-160);
+  avisos por más de una IP. **Carga en lote** en Datos («Registro de conexiones (un fichero por
+  AGV)», `#connections-file`, selección múltiple): una lista de confirmación con el AGV de cada
+  fichero; un fichero que no se lee no impide los demás. En el Worker (`runConnections`), cada
+  fichero con su huella: el mismo fichero sustituye a su carga anterior y un evento repetido de otro
+  no se duplica. Guardado con el circuito (`StoredConnections`, almacén versión 11), sobrevive a la
+  siguiente importación de lecturas y no viaja en el `.agvproj`, como las listas y la flota.
+- **Cortes situados** (`src/domain/connection-cuts.ts`, R-COM-004, R-COM-005, `ALGORITHM_CATALOG.md`
+  §6.28): par `desconexion` → siguiente `conexion`, con duración y clase de la configuración
+  (`connection_cuts.*`: microcorte hasta 10 s, corte hasta 10 min, caída; provisionales, OQ-161);
+  «tras apagado» cierra pero es un encendido; sin cierre, abierto «al menos»; situado entre la última
+  lectura anterior (P) y la primera posterior (Q) del mismo AGV, `tramo` si Q sigue a P en el anillo;
+  resumen por tag, tramo y AGV con la prueba de azar por sitio y por vehículo; **contraste** con las
+  ráfagas y lecturas con fecha dentro de caídas (R-COM-007, OQ-159).
+- **Estado de conexión en Tiempos** (`renderConnections`) y **Mapa de estado de conexión (WiFi)**
+  (`connectionHeatChart`): cifras, celdas con la parte de las pasadas que salen de cada tag que
+  perdieron la señal justo después, caídas en la fila inferior, acento donde se pierde más de lo que
+  da el azar, tarjetas por sitio y por AGV, la línea de contraste y tablas por AGV y de cortes. Sin
+  registro cargado, lo dice y dónde se carga. **Capa «Conexión» del anillo** con el mismo dato.
+- `heatStripChart`: la forma común de los dos mapas, cada uno con sus propias celdas.
+- **Apagados, cortes colectivos, horas y días** (R-COM-008; propietario, 2026-10-07: «si se
+  desconectan todos a las 5 de la mañana es por apagado hasta las 6», «la frecuencia por AGV aumenta
+  con el tiempo»). Un corte cerrado por «Conexión tras apagado» es de clase `apagado`; un corte en
+  cuya ventana (`connection_cuts.collective_window_ms`, 2 min) pierden la señal la mitad o más de los
+  AGV con registro (`collective_min_share`) es **colectivo**: apagado o infraestructura, no cobertura.
+  Ninguno de los dos entra en el mapa, en la concentración, en las horas ni en los días; se cuentan,
+  los colectivos se listan agrupados (desde, hasta, AGV, clases) con su tarjeta. **Cortes por hora del
+  día** (`hourHistogramChart`, cortes propios por hora local) y **cortes propios por día por AGV** en
+  la tarjeta y la tabla por AGV, sin afirmar tendencia con menos de tres días. `localDayReader` junto a
+  `localHourReader`.
+
+### Cambiado
+
+- **«Mapa de calor de comunicación (WiFi)» pasa a «Mapa de calor de lecturas que llegaron juntas»**
+  y la capa «Señal» del anillo a **«Ráfagas»** (R-COM-006, OQ-159): es una firma de la entrega, no
+  una medida de la señal. Las cifras y las celdas no cambian.
+- ADR-0017 pasa a **accepted**; OQ-160, OQ-161 y OQ-162 cerradas con la recomendación; OQ-159
+  sigue abierta con la recomendación aplicada; **OQ-163** nueva (`No ejecutado`).
+- Pruebas: TC-324 a TC-327 (importador, cortes, resumen y contraste, navegador con carga en lote);
+  TC-323 y TC-275 actualizados (seis capas).
+
+## [3.64.0] - 2026-10-07
+
+El propietario pidió «una visualización del mapa de calor WiFi si existe evidencia». La única evidencia
+de comunicación que hay en el dato son las lecturas que llegaron juntas al servidor (R-DAT-020): un AGV
+sin señal sigue leyendo y vuelca al reconectar, así que cada tag de una ráfaga se leyó sin señal. No
+hay columna de señal ni de cobertura en ninguna fuente (`DATA_CONTRACTS.md`), y un silencio solo no
+prueba WiFi ausente (R-OPP-003, OQ-105): el mapa dice dónde, nunca por qué.
+
+### Añadido
+
+- **Mapa de calor de comunicación (WiFi)** en Tiempos (`deliveryHeat`, `deliveryHeatChart`,
+  `ALGORITHM_CATALOG.md` §6.8, `UX_SPEC.md`). Arriba, cuatro cifras: ráfagas, tags leídos sin señal,
+  AGV con lecturas sin señal y el tag más caliente con su parte. El mapa: una celda por tag del
+  anillo, en su orden, con la parte de sus pasadas que se leyó sin que la lectura llegara hasta
+  después, en una rampa continua de un solo tono relativa al tag más caliente; rótulo directo con la
+  cifra en los tres más calientes; una fila fina con dónde se perdió la señal, en naranja y con su
+  identificador donde `summarizeDeliveries` ya lo destaca (ningún umbral nuevo); la banda del tramo
+  declarado; los tags de fuera del anillo al final y separados; marco y lectura al puntero (pasadas,
+  leídas sin señal, AGV, señal perdida y de vuelta); leyenda del gradiente con sus dos extremos
+  escritos y tabla equivalente plegada. **Solo se dibuja si existe evidencia**: con alguna ráfaga.
+  Sin ninguna, una línea dice que no hay evidencia con que dibujarlo y que eso no prueba que la
+  cobertura sea buena; sin evaluar (resolución de minuto), se dice con el motivo.
+- **Capa «Señal» del anillo** en Resumen (`UX_SPEC.md` §4.2): el mismo mapa de calor sobre el
+  anillo, con la misma rampa relativa, la pérdida de señal en la banda fina interior y la leyenda del
+  gradiente; sin evaluar o sin ráfagas, la leyenda lo dice en vez de pintar.
+- `circuitState.cohorts[].groupedDelivery.heat` en el protocolo, calculado en el Worker sobre todas las
+  ráfagas (no solo las mil más recientes de `deliveries`) y las transiciones del cohorte sin recortar.
+- Pruebas: TC-321 (unitaria), TC-322 (auditoría: el calor cae exactamente en las cuatro ráfagas
+  plantadas, atribuido solo a ese AGV, y en ningún tag sano) y TC-323 (navegador: la figura existe
+  una sola vez, con y sin el segundo fichero; el anillo tiene cinco capas y «Señal» lleva el
+  gradiente, la pérdida de señal y «La causa no la dice el dato»).
+
+### Propuesto (sin código)
+
+- **ADR-0017, proposed**: mapa de estado de conexión por AGV a partir del **registro de conexiones
+  del terminal** que el propietario aportó el 2026-10-07 (un fichero por AGV con `Desconexión`,
+  `Conexión` y `Conexión tras apagado` al segundo). Analizado fuera del repositorio: es evidencia
+  directa, se localiza entre la última lectura anterior y la primera posterior del mismo AGV, y diez
+  tags concentran casi la mitad de los cortes. LECTURAS por AGV resulta ser el informe ampliado
+  filtrado. El ADR propone el contrato DS-013, la carga en lote, el corte como par con duración y
+  clase, la localización, el mapa observado frente al inferido y cómo cargar toda la flota.
+- **OQ-159 a OQ-162**: la contradicción con R-DAT-020 (durante los cortes largos las lecturas
+  siguen llegando con fecha dentro del corte y a cadencia normal, sin ráfaga al reconectar), el AGV
+  del nombre del fichero, qué corte importa y qué hacer con LECTURAS por AGV. Nada se construye
+  hasta que el propietario decida.
+
 ## [3.63.0] - 2026-09-27
 
 **F5 abierta** por el propietario («pasa a Fase 5»), tras fusionar el PR #12 (3.50.0 a 3.62.0,

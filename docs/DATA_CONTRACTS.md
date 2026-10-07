@@ -2,7 +2,7 @@
 document_id: TT-DATA-001
 version: 0.31.2
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-07
 ---
 
 # Contratos de datos y procedencia
@@ -27,6 +27,7 @@ Las fuentes se cargan localmente y se tratan como evidencia inmutable. La normal
 | DS-010 | Proyecto anterior | `.agvproj` con manifiesto y versión | Persistencia local |
 | DS-011 | Informe ampliado de Vsystem | Tipo, fecha con segundos, AGV, circuito y, según el tipo, tag o uso | Enriquecida, opcional |
 | DS-012 | Historial de flota | AGV y fecha de alta; circuito, fecha de baja y nota opcionales | Configuración, incremental (§3.6) |
+| DS-013 | Registro de conexiones del terminal | Por AGV: instante al segundo y tipo de evento (`Desconexión`, `Conexión`, `Conexión tras apagado`); cobertura, versión, IP del terminal y campo auxiliar conservados | Observada, opcional, un fichero por AGV (§3.10, ADR-0017) |
 
 El **orden** de la lista del circuito es lo declarado: puede tener erratas al transcribir o un orden
 distinto al real, y la posición de un tag la dan las lecturas (R-GRA-015).
@@ -333,6 +334,37 @@ que el texto:
   `xlsx`.
 - Un libro que no se puede leer se rechaza entero, con el motivo y la salida: guardarlo de nuevo en
   Excel o exportarlo como CSV.
+
+### 3.10 Registro de conexiones del terminal (DS-013, ADR-0017)
+
+El terminal de cada AGV exporta su registro de conexiones: **un fichero por vehículo**, con una fila
+por evento. La hora es la del terminal, al segundo. Columnas obligatorias: `Fecha` y `Conexión` (el
+tipo de evento). Se conservan como atributos, sin semántica propia, `Cober.` (0 sin señal, 255 con
+señal, 1 tras apagado), `Ver.`, `IP Terminal` y `Datos Aux` (de donde se extrae el MTC vigente).
+
+| Campo canónico | Tipo | Regla |
+|---|---|---|
+| `agv_id` | texto | **No viene en el fichero**: va en su nombre (`CONEXIONES<agv>.xlsx`), se enseña antes de cargar y se puede corregir (OQ-160). Preservar ceros. |
+| `timestamp` | instante | Día/mes/año y hora, en la zona del circuito; una celda de Excel guardada como número se lee como la hora de pared escrita. |
+| `event_kind` | enum cerrado | `desconexion`, `conexion`, `conexion-tras-apagado`. Un valor no previsto se conserva como texto y queda `desconocido`: no abre ni cierra ningún corte. |
+| `source_hash`, `source_row` | derivados | Huella del fichero y fila física, como cualquier lectura (R-EVI-001). |
+
+**Acumulación.** Cada carga admite varios ficheros de una vez. El mismo fichero (misma huella)
+sustituye a su carga anterior fila a fila; un evento repetido de otro fichero (mismo AGV, instante y
+tipo) no se duplica. Un fichero con más de una IP de terminal, o un AGV cuyos ficheros traen IP
+distintas, avisan: es la señal de que se han mezclado dos terminales. El registro se guarda con el
+circuito, como las listas y el historial de flota, y no viaja en el `.agvproj`.
+
+**Qué mide.** Un **corte** es un par `desconexion` → siguiente `conexion` del mismo AGV, con duración;
+`conexion-tras-apagado` cierra el corte pero es un encendido, no una vuelta de la señal; un corte sin
+cierre en la ventana queda abierto con su duración «al menos». Su clase sale de la configuración
+(`connection_cuts.*`, OQ-161). Se sitúa con las lecturas del mismo AGV (R-COM-005). Es evidencia
+**observada** de dónde se pierde la señal; el registro no trae intensidad, así que no dice cuánta
+cobertura hay ni por qué se pierde (R-EVI-006).
+
+**LECTURAS por AGV no es una fuente nueva** (OQ-162): es DS-011 filtrado por ese AGV, fila a fila,
+con una columna más (`No ejecutado`, OQ-163). Para toda la flota basta el informe ampliado del
+circuito más un registro de conexiones por AGV.
 
 ## 4. Proceso de importación
 

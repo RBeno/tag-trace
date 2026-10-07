@@ -2,7 +2,7 @@
 document_id: TT-UX-001
 version: 0.47.2
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-07
 ---
 
 # Especificación de experiencia de usuario
@@ -167,7 +167,7 @@ ordena al revés de como se calcula:
 
 **El anillo con capas (3.49.0).** El anillo radial vive en la portada del Resumen, entre la tira de
 cifras y la bandeja, y lleva encima un selector segmentado (`.seg`, `role="radiogroup"`, botones
-`role="radio"` con `aria-checked`, flechas de teclado) de cuatro **capas exclusivas** que cambian solo
+`role="radio"` con `aria-checked`, flechas de teclado) de seis **capas exclusivas** que cambian solo
 lo que pinta la banda principal; la banda exterior de zona y las marcas numeradas de críticos se
 quedan siempre:
 
@@ -176,6 +176,8 @@ quedan siempre:
 | **Omisión** (por defecto) | la de siempre: gris lo normal, la rampa azul lo que se deja de leer, trama sin pasadas, tinta el ancla; el tramo declarado en la banda fina interior | las cinco clases de omisión |
 | **Tramos** | el tramo declarado (`section`) con la paleta `--viz-tramo-*`; gris sin tramo | un color por tramo |
 | **Paradas** | cuántas incidencias toca cada tag según el estado normal (`circuitState`): paradas sin explicación que empiezan en él, colas de un cuello de botella, y una más si está en una zona oscura; punto conflictivo se dice en la lectura (sus paradas ya son paradas sin explicación). Rampa de un solo tono por recuento | los cortes de la rampa: ninguna, 1, 2, 3–4, 5–9, 10 o más |
+| **Conexión** (3.65.0) | el estado de conexión **observado** (DS-013, R-COM-005): la parte de las pasadas que salen de cada tag que perdieron la señal justo después, con la rampa continua relativa al tag donde más se pierde; gris lo que no tiene nada, trama sin pasadas; en la banda fina interior, las caídas (`--viz-desconexion`), con acento si es más de lo que da el azar. Sin registro cargado, o sin cortes en la ventana, la leyenda lo dice en vez de pintar | el gradiente con sus dos extremos, caídas, acento, sin pasadas |
+| **Ráfagas** (3.64.0, antes «Señal») | el mapa de las lecturas que llegaron juntas (R-DAT-020, **inferido**) sobre el anillo: la parte de las pasadas por cada tag con la lectura llegada tarde, con la rampa continua relativa al tag más caliente; en la banda interior, la última lectura a su hora antes del hueco, con acento si empieza ahí más de lo que da el azar. No se presenta como señal (R-COM-006). Sin evaluar, o sin ninguna ráfaga, la leyenda lo dice | el gradiente con sus dos extremos, hueco, acento, sin pasadas |
 | **Calles** | el tag del que cuelga cada calle (`laneJunctions`) en el azul de serie, con el nombre de la calle junto a su ramal; con trama si nadie entró en ella; gris sin calle | servida, sin servicio, sin calle |
 
 La lectura al puntero y al foco dice lo de la capa activa además del tag. **Tocar un tag** —clic,
@@ -556,6 +558,39 @@ lo de la sección usa solo producción (R-TIM-009). Después, destacados primero
   tarjetas **«AGV: le llegan lecturas juntas»** y **«Lecturas juntas al pasar por X»** para lo que se
   concentra más de lo que da el azar, con la última ráfaga y si paró o no. Sin causa: «apunta a la
   comunicación». Todas, en tabla plegada. Sin evaluar con resolución de minuto, y se dice.
+- **Mapa de calor de lecturas que llegaron juntas** (antes «de comunicación (WiFi)», renombrado en
+  3.65.0 por R-COM-006), solo si existe evidencia (alguna ráfaga). Es `heatStripChart`: arriba,
+  cuatro cifras (`.heat-stats`): ráfagas, tags con lecturas tardías de cuántos, AGV y el tag más
+  caliente con su parte. Debajo, el mapa: una celda por tag en el orden del anillo, con la parte de
+  sus pasadas cuya lectura llegó al servidor después, en la rampa continua de un solo tono **relativa
+  al tag más caliente** (lo frío se funde en una banda del fondo, trama para «sin pasadas»); rótulo
+  directo con la cifra en los tres más calientes; una fila fina inferior con la última lectura a su
+  hora antes del hueco (`--viz-desconexion`), en naranja y con su identificador donde empieza más de
+  lo que da el azar; la banda del tramo declarado si hay lista `tramo`; los tags de fuera del anillo
+  al final, separados y rotulados. Al puntero, un marco sobre la celda y la lectura. Leyenda del
+  gradiente con sus dos extremos escritos y tabla equivalente plegada. «Es una firma de la entrega, no
+  una medida de la señal» (OQ-159). Sin ráfagas o sin evaluar, una línea lo dice. Sobre el anillo, la
+  capa **Ráfagas** (§4.2).
+- **Estado de conexión (registro del terminal)** (DS-013, ADR-0017, 3.65.0), a continuación. Sin
+  registro cargado, una línea dice dónde se carga. Con registro: una línea con AGV y ficheros, cortes
+  por clase con sus umbrales (microcortes, cortes, caídas y apagados), cuántos miden cobertura, tiempo
+  sin señal y cuántos cortes caen fuera de la ventana; el **Mapa de
+  estado de conexión (WiFi)**, el mismo `heatStripChart` con sus propias celdas (observado: nunca
+  mezcla con lo inferido, R-COM-006): cifras de cortes por clase, tiempo sin señal, AGV con registro y
+  el tag donde más se pierde; celdas con la parte de las pasadas que salen de cada tag que perdieron la
+  señal justo después, caídas en la fila inferior, acento donde se pierde más de lo que da el azar;
+  el histograma **Cortes por hora del día** (`hourHistogramChart`: 24 barras de los cortes propios por
+  hora local, rótulo en las tres horas con más, lectura al puntero y tabla; «un pico a la misma hora
+  todos los días apunta a un apagado o a un turno, no a un sitio»); la tarjeta **«Cortes colectivos: N
+  veces»** con hasta cuántos AGV a la vez y si alguno fue apagado, y su tabla (desde, hasta, AGV,
+  clases) (R-COM-008); una línea de **contraste** con las ráfagas (OQ-159): ráfagas con corte, cortes con ráfaga y lecturas
+  con fecha dentro de una caída («con la hora de recepción por este enlace serían cero… la pregunta
+  sigue abierta»); tarjetas «La señal se pierde al salir de X» y «AGV: pierde la señal más que el
+  resto» (con sus cortes propios por día: «12 → 18 → 31»), sin causa; y tablas plegadas por AGV
+  (eventos, cortes por clase con apagados y colectivos, sin señal, sin situar, propios por día, IP) y de
+  cortes (desde, hasta, duración «al menos» si abierto, clase con «(colectivo)», cierre con «tras
+  apagado (encendido)», última y siguiente lectura, situado, lecturas dentro). Sobre el anillo, la capa
+  **Conexión** (§4.2).
 - **Ritmo de cada AGV** (R-AGV-019): «7122 va un 10 % más lento que la flota, en toda la línea» (o
   «solo en la zona X»), con la mitad de sus tramos frente a la de la flota y cuántos tramos; y **quién
   retiene a otros** (R-AGV-020): «7107 retiene a otros AGV», cuántas veces, a cuántos AGV distintos
@@ -608,6 +643,12 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
 - Los dos selectores de «Listas del circuito» —listas de tags e historial de flota— aceptan el
   `.xlsx` tal cual, además del CSV. Un libro que no se puede leer se rechaza con su motivo y la salida:
   guardarlo de nuevo en Excel o exportarlo como CSV.
+- **Registro de conexiones (un fichero por AGV)** (DS-013, 3.65.0), tercer selector del mismo panel,
+  con selección múltiple. Al elegir, antes de cargar, una lista con cada fichero y el AGV sacado de su
+  nombre en un campo editable (`#connections-agv-N`); un fichero cuyo nombre no lo lleva queda en
+  blanco y «Cargar» avisa hasta que se escriba. El resultado («Registro de conexiones cargado») da
+  por fichero el AGV, los eventos, la IP del terminal, los rechazos y los avisos, y los fallos de los
+  que no se pudieron leer; el pie del panel, los eventos y AGV guardados. Se ve al volver a importar.
 - **La aplicación no descarga libros.** Las plantillas y el circuito de cada análisis se entregan como
   ficheros (`DATA_CONTRACTS.md` §3.7); en la interfaz no hay botones de descarga de Excel
   (propietario, 2026-09-25).

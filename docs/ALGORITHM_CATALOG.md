@@ -2,7 +2,7 @@
 document_id: TT-ALG-001
 version: 0.46.3
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-07
 ---
 
 # Catálogo de algoritmos
@@ -589,6 +589,15 @@ ahora de P a Q.
 P, con sus pasadas; la misma prueba de Poisson que los cuellos de botella (`concentrated`).
 
 **Sin evaluar** con resolución de minuto (`resolutionMs` > 1 s), y se dice.
+
+**Mapa de calor de comunicación** (`deliveryHeat`, 3.64.0). Por tag, sobre todas las ráfagas y las
+transiciones del cohorte sin recortar: `passes`, las transiciones que llegan al tag; `late`, en cuántas
+ráfagas está el tag (se leyó sin señal y llegó al reconectar); `lostAfter`, cuántas veces fue el P de
+una ráfaga (la última lectura que llegó a su hora); `returnedAt`, cuántas veces fue su Q; y los AGV con
+alguna lectura tardía ahí. Como la ráfaga es un subconjunto de las transiciones que llegan al tag,
+`late` nunca supera `passes`. No tiene umbral propio: lo destacado sigue siendo lo que `summarizeDeliveries`
+decide con su prueba de azar, y el mapa solo se dibuja cuando hay alguna ráfaga. Es evidencia de dónde,
+no de por qué (R-EVI-006, OQ-105).
 
 ## 6.9 Medición por fichero y posición en tiempo, implementado (R-TIM-011, R-TIM-010)
 
@@ -1234,4 +1243,52 @@ las medidas guardadas, no las medidas).
 Límite conocido (OQ-154), solo la noche: se estima frente a la noche **vigente** (la mediana de
 producción es la de fuera de ella). El estimador no cambia (es la definición aprobada en OQ-151); cada
 estimación lo dice en su explicación.
+
+## 6.28 Estado de conexión observado, implementado (ADR-0017, R-COM-004 a R-COM-007)
+
+`src/ingestion/connection-log.ts` y `src/domain/connection-cuts.ts`, por circuito, sobre el registro
+de conexiones del terminal guardado con el circuito (DS-013).
+
+**Importación** (`importConnectionRows` / `importConnectionLog`). Cabecera por nombre normalizado
+(`fecha`, `conexion` obligatorias; `cober.`, `ver.`, `ip terminal`, `datos aux` conservadas); el AGV
+viene de fuera (`agvFromFileName` sobre el nombre, corregible en la interfaz); el tipo se normaliza al
+catálogo cerrado y lo demás queda `desconocido` con su texto; una fecha de serie de Excel se lee como
+hora de pared; los eventos salen ordenados por instante, y a igual instante en el orden inverso del
+fichero (que va de más reciente a más antiguo). Avisos: más de una IP en el fichero, tipos
+desconocidos. En el Worker, cada fichero lleva su huella; el mismo fichero sustituye a su carga
+anterior y un evento repetido de otro fichero no se duplica.
+
+**Cortes** (`pairCuts`). Por AGV y en orden: una `desconexion` abre; la siguiente `conexion` o
+`conexion-tras-apagado` cierra (con `end` que lo distingue); una segunda `desconexion` sin cierre en
+medio no abre otro; al final de la ventana, el abierto se cierra «al menos» hasta ella. Clase por
+duración con `connection_cuts.*` (`classifyCut`). Solo los cortes que empiezan dentro de la cobertura
+cargada se sitúan y se cuentan; el resto se dice como «fuera de la ventana».
+
+**Apagados y colectivos** (`classifyCut`, `markCollective`, R-COM-008). Un corte cerrado por
+`conexion-tras-apagado` es de clase `apagado`. Un corte es colectivo si, a menos de
+`collective_window_ms` de su inicio (en los dos sentidos), pierden la señal al menos
+`collective_min_share` de los AGV con registro, y nunca menos de dos. Ni los apagados ni los colectivos
+miden cobertura (`measuresCoverage`): se cuentan y se listan —los colectivos agrupados en ventanas, con
+sus AGV y sus clases— pero no entran en el mapa, en la concentración, en las horas ni en los días.
+
+**Horas y días** (`summarizeConnections`, con `localHourReader` y `localDayReader` de la zona del
+circuito): los cortes propios por hora local de inicio (24 posiciones) y, por AGV, por día local, para
+ver si van a más. Con menos de tres días no se afirma ninguna tendencia: se enseña la serie.
+
+**Localización** (`locateCuts`). Con las lecturas de cada AGV ordenadas: P es la última con
+`t < desde`, Q la primera con `t > hasta` (o `> desde` si está abierto); `readingsInside` cuenta las de
+en medio (OQ-159). Con los anillos de los cohortes, `tramo` si Q es el sucesor de P (o el mismo tag),
+`entre` si no, `sin-situar` si falta P o Q.
+
+**Resumen** (`summarizeConnections`). Por tag P: pasadas (transiciones que salen de él), cortes por
+clase, tiempo sin señal y AGV; por tramo P→Q (solo los `tramo`); por AGV: eventos, cortes, clases,
+tiempo sin señal, sin situar e IP. Concentración por sitio (exposición: pasadas) y por AGV
+(exposición: transiciones) con `concentrated`. Contraste: ráfagas con corte y cortes con ráfaga a
+menos de `contrast_tolerance_ms`, y lecturas con fecha dentro de caídas.
+
+**Pantalla.** `connectionHeatChart` en Tiempos (sección «Estado de conexión») y la capa «Conexión»
+del anillo, con `heatStripChart`, la misma forma que el mapa de las lecturas que llegaron juntas
+(que pasa a llamarse así y a la capa «Ráfagas», R-COM-006): celdas en el orden del anillo con la rampa
+relativa al tag donde más se pierde, caídas en la fila inferior, acento en los sitios concentrados,
+cifras de cabecera, lectura al puntero y tablas (por tag, por AGV y la lista de cortes).
 

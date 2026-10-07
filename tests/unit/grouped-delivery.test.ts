@@ -11,7 +11,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Transition } from "../../src/domain/graph.js";
-import { collapseGroupedDeliveries, summarizeDeliveries } from "../../src/domain/grouped-delivery.js";
+import { collapseGroupedDeliveries, deliveryHeat, summarizeDeliveries } from "../../src/domain/grouped-delivery.js";
 import { buildSegmentBands, type Regime } from "../../src/domain/segment-bands.js";
 
 const RING = ["A", "B", "C", "D", "E", "F"];
@@ -150,5 +150,51 @@ describe("dónde se concentran", () => {
     const summary = summarizeDeliveries(deliveries, transitions, 0.01);
     expect(summary.vehicles.map((entry) => entry.id)).toEqual(["V1"]);
     expect(summary.sites).toEqual([]);
+  });
+});
+
+describe("mapa de calor de comunicación (deliveryHeat)", () => {
+  const transitions = base();
+  const delivery = (agvId: string, fromTagId: string, tags: readonly string[], at: number) => ({
+    agvId,
+    fromTagId,
+    fromUtcMs: at,
+    tags,
+    arrivedUtcMs: at + 49 * SECOND,
+    toUtcMs: at + 51 * SECOND,
+    gapMs: 49 * SECOND,
+    spreadMs: 2 * SECOND,
+    totalMs: 51 * SECOND,
+    usualMs: 51 * SECOND,
+    fenceMs: 60 * SECOND,
+    regime: "produccion" as const,
+    kind: "sin-parada" as const,
+  });
+
+  it("cuenta por tag las lecturas que llegaron tarde, dónde se perdió la señal y dónde volvió, con sus pasadas", () => {
+    const cells = deliveryHeat(
+      [delivery("V1", "A", ["B", "C", "D"], 0), delivery("V2", "A", ["B", "C"], 1), delivery("V1", "E", ["F", "A"], 2)],
+      transitions,
+    );
+    const byId = new Map(cells.map((cell) => [cell.tagId, cell]));
+    // Seis AGV × veinte vueltas: 120 pasadas por cada tag del anillo.
+    expect(byId.get("B")).toEqual({ tagId: "B", passes: 120, late: 2, lostAfter: 0, returnedAt: 0, vehicles: ["V1", "V2"] });
+    expect(byId.get("C")).toEqual({ tagId: "C", passes: 120, late: 2, lostAfter: 0, returnedAt: 1, vehicles: ["V1", "V2"] });
+    expect(byId.get("D")).toEqual({ tagId: "D", passes: 120, late: 1, lostAfter: 0, returnedAt: 1, vehicles: ["V1"] });
+    expect(byId.get("A")).toEqual({ tagId: "A", passes: 120, late: 1, lostAfter: 2, returnedAt: 1, vehicles: ["V1"] });
+    expect(byId.get("E")).toEqual({ tagId: "E", passes: 120, late: 0, lostAfter: 1, returnedAt: 0, vehicles: [] });
+    expect(cells.map((cell) => cell.tagId)).toEqual(["A", "B", "C", "D", "E", "F"]);
+    for (const cell of cells) expect(cell.late).toBeLessThanOrEqual(cell.passes);
+  });
+
+  it("sin ráfagas no hay evidencia: cada tag queda a cero y nada se destaca", () => {
+    const cells = deliveryHeat([], transitions);
+    expect(cells).toHaveLength(RING.length);
+    expect(cells.every((cell) => cell.late === 0 && cell.lostAfter === 0 && cell.returnedAt === 0 && cell.vehicles.length === 0)).toBe(true);
+  });
+
+  it("un tag leído en una ráfaga pero sin pasadas medidas se conserva, no se calla", () => {
+    const cells = deliveryHeat([delivery("V1", "A", ["X"], 0)], transitions);
+    expect(cells.find((cell) => cell.tagId === "X")).toEqual({ tagId: "X", passes: 0, late: 1, lostAfter: 0, returnedAt: 1, vehicles: ["V1"] });
   });
 });
