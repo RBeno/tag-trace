@@ -22,6 +22,10 @@ tienen constantemente conexiones y desconexiones pueden ocultar las evidencias d
 - OQ-164 («listas largas») y OQ-165 (la expulsión del servidor: `SUPERADO TIEMPO MAXIMO OFFLINE`
   cae dentro de un corte en todos los casos vistos; conservar los usos para cruzarlos).
 - Pruebas TC-328 y TC-329; TC-327 ampliado con el selector de clase.
+- OQ-164 aclarada por el propietario («listas largas» = dispositivos por punto de acceso donde
+  coinciden varios circuitos) y medida en lo posible fuera del repositorio: dentro de PO4 la ocupación
+  en el momento del corte es igual que al azar; hacen falta los otros circuitos (decisión sobre
+  ADR-0004) y, si existe, el punto de acceso por conexión (OQ-166).
 
 ## [3.65.0] - 2026-10-07
 

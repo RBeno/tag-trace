@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.48.0
+version: 0.49.0
 status: baseline-candidate
 last_updated: 2026-10-08
 ---
@@ -435,7 +435,12 @@ AGV = roaming). **No reconectan** (R-COM-010): corte abierto o cerrado solo por 
 apagado colectivo, ≥ 10 min. En sus datos: un AGV corta 3,8× la mediana (ruidoso); `SUPERADO TIEMPO
 MAXIMO OFFLINE` del informe ampliado cae dentro de un corte 5 de 5 veces (OQ-165: ¿es la marca de la
 expulsión? conservar los usos para cruzarlos); un AGV solo volvió al apagar y encender dos veces fuera
-del apagado nocturno. «Listas largas» sin definir (OQ-164).
+del apagado nocturno. **«Listas largas»** son la lista de dispositivos de cada punto de acceso, que
+crece donde coinciden cinco o seis circuitos (OQ-164): con PO4 solo, la ocupación del propio circuito
+en el momento del corte es igual que al azar (1,1 frente a 1,2 AGV cerca), salvo un sitio aglomerado;
+para medirla hacen falta los informes ampliados de los circuitos que coinciden y, si el terminal lo
+da, el punto de acceso de cada conexión (OQ-166). Es una decisión sobre el aislamiento de circuitos
+(ADR-0004), no se construye sola.
 
 ## Registro de conexiones construido (3.65.0, 2026-10-07)
 
