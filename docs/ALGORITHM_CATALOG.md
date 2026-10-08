@@ -1267,7 +1267,9 @@ cargada se sitúan y se cuentan; el resto se dice como «fuera de la ventana».
 **Apagados y colectivos** (`classifyCut`, `markCollective`, R-COM-008). Un corte cerrado por
 `conexion-tras-apagado` es de clase `apagado`. Un corte es colectivo si, a menos de
 `collective_window_ms` de su inicio (en los dos sentidos), pierden la señal al menos
-`collective_min_share` de los AGV con registro, y nunca menos de dos. Ni los apagados ni los colectivos
+`collective_min_share` de los AGV con registro, y nunca menos de dos; **o, siendo un apagado, si esa
+parte está apagada a la vez con él** en algún momento del corte (apagado escalonado; el solapamiento
+solo cuenta entre apagados). Ni los apagados ni los colectivos
 miden cobertura (`measuresCoverage`): se cuentan y se listan —los colectivos agrupados en ventanas, con
 sus AGV y sus clases— pero no entran en el mapa, en la concentración, en las horas ni en los días.
 

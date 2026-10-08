@@ -25,6 +25,11 @@ tienen constantemente conexiones y desconexiones pueden ocultar las evidencias d
 
 ### Corregido
 
+- **Un apagado escalonado es colectivo** (R-COM-008): además de los inicios a menos de la ventana, un
+  apagado es colectivo si la mitad o más de los AGV con registro están apagados a la vez con él.
+  Lo destapó pasar los datos reales por el producto: el apagado nocturno (seis AGV apagados uno a uno
+  entre las 4:50 y las 4:58, encendidos entre las 5:33 y las 6:00) no caía en la ventana de dos
+  minutos y los seis salían como «no reconectó».
 - `agvFromFileName` admite un prefijo delante de «CONEXIONES» («copia de CONEXIONES395.xlsx», el
   hash de una subida): lo destapó pasar los ficheros reales del propietario por el producto, que
   dejaba los nueve AGV en blanco. «desconexiones1553» sigue sin valer: la palabra no puede ir pegada

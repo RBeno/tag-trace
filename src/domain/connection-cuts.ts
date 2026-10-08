@@ -132,22 +132,29 @@ export function pairCuts(events: readonly ConnectionEvent[], windowEndUtcMs: num
 }
 
 /**
- * Un corte es colectivo si, en la ventana `collectiveWindowMs` alrededor de su inicio, pierden la
- * señal al menos `collectiveMinShare` de los AGV con registro (y al menos dos). Se mira en los dos
- * sentidos: el primero y el último de un grupo también son del grupo.
+ * Un corte es colectivo si al menos `collectiveMinShare` de los AGV con registro (y al menos dos)
+ * **pierden la señal en la ventana `collectiveWindowMs` alrededor de su inicio**, o si, siendo un
+ * apagado, **están apagados a la vez** con él en algún momento del corte. La primera firma es la de
+ * una infraestructura que cae de golpe; la segunda, la de un apagado escalonado (los AGV se apagan
+ * uno a uno durante varios minutos y vuelven juntos una hora después), que una ventana de inicios no
+ * ve. El solapamiento solo cuenta entre apagados: una caída larga de un AGV no hace colectivo a cada
+ * microcorte ajeno que caiga dentro de ella.
  */
 export function markCollective(cuts: readonly ConnectionCut[], vehiclesWithLog: number, thresholds: ConnectionCutThresholds): ConnectionCut[] {
   const ordered = [...cuts].sort((a, b) => a.fromUtcMs - b.fromUtcMs);
   const needed = Math.max(2, Math.ceil(vehiclesWithLog * thresholds.collectiveMinShare));
   const window = thresholds.collectiveWindowMs;
+  const endOf = (cut: ConnectionCut): number => cut.toUtcMs ?? cut.fromUtcMs + cut.durationMs;
   return ordered.map((cut) => {
     const near = new Set<string>();
+    const overlapping = new Set<string>();
     for (const other of ordered) {
-      if (other.fromUtcMs < cut.fromUtcMs - window) continue;
-      if (other.fromUtcMs > cut.fromUtcMs + window) break;
-      near.add(other.agvId);
+      if (other.fromUtcMs >= cut.fromUtcMs - window && other.fromUtcMs <= cut.fromUtcMs + window) near.add(other.agvId);
+      if (cut.end === "tras-apagado" && other.end === "tras-apagado" && other.fromUtcMs <= endOf(cut) && endOf(other) >= cut.fromUtcMs) {
+        overlapping.add(other.agvId);
+      }
     }
-    return { ...cut, collective: near.size >= needed };
+    return { ...cut, collective: near.size >= needed || overlapping.size >= needed };
   });
 }
 
@@ -470,10 +477,16 @@ export function summarizeConnections(
     });
     group = [];
   };
+  let groupEnd = Number.NEGATIVE_INFINITY;
   for (const cut of collectiveCuts) {
     const last = group[group.length - 1];
-    if (last !== undefined && cut.fromUtcMs - last.fromUtcMs > thresholds.collectiveWindowMs) flush();
+    // Un grupo nuevo cuando el corte ni empieza cerca del anterior ni se solapa con el grupo (apagado escalonado).
+    if (last !== undefined && cut.fromUtcMs - last.fromUtcMs > thresholds.collectiveWindowMs && cut.fromUtcMs > groupEnd) {
+      flush();
+      groupEnd = Number.NEGATIVE_INFINITY;
+    }
     group.push(cut);
+    groupEnd = Math.max(groupEnd, cut.toUtcMs ?? cut.fromUtcMs + cut.durationMs);
   }
   flush();
   const orderedDays = [...days].sort();

@@ -235,9 +235,9 @@ describe("cortes del registro (R-COM-004, R-COM-005)", () => {
       event("V1", 100, "desconexion"),
       // V2 pierde la señal y solo vuelve al apagar y encender, 20 min después, él solo.
       event("V2", 5 + 400, "desconexion"), event("V2", 5 + 400 + 1200, "conexion-tras-apagado"),
-      // V3: un microcorte cualquiera, y un apagado corto (no cuenta: menos de cutMaxMs).
+      // V3: un microcorte cualquiera, y un apagado corto cuando nadie más está apagado (no cuenta: menos de cutMaxMs).
       event("V3", 7 + 60 + 12, "desconexion"), event("V3", 7 + 60 + 14, "conexion"),
-      event("V3", 7 + 1500, "desconexion"), event("V3", 7 + 1500 + 30, "conexion-tras-apagado"),
+      event("V3", 7 + 2400, "desconexion"), event("V3", 7 + 2400 + 30, "conexion-tras-apagado"),
     ];
     const cuts = locateCuts(pairCuts(events, T0 + 3100 * S, THRESHOLDS), readings, [RING]);
     const summary = summarizeConnections(cuts, events, transitionsOf(readings), [], THRESHOLDS, 0.01, CLOCK);
@@ -283,5 +283,27 @@ describe("cortes del registro (R-COM-004, R-COM-005)", () => {
     expect(summary.byHour.reduce((sum, value) => sum + value, 0)).toBe(1);
     expect(summary.sites).toEqual([]);
     expect(summary.vehicles.find((own) => own.agvId === "V1")).toMatchObject({ cuts: 2, collective: 2, byClass: { apagado: 1 }, perDay: [{ day: "2026-10-06", cuts: 0 }] });
+  });
+
+  it("un apagado escalonado es colectivo aunque los inicios se separen más que la ventana: basta con estar desconectados a la vez", () => {
+    const readings = [...laps("V1", 0, 20), ...laps("V2", 5, 20), ...laps("V3", 7, 20), ...laps("V4", 9, 20)];
+    // Se apagan uno a uno a lo largo de ocho minutos (fuera de la ventana de dos) y vuelven juntos una hora después.
+    const events: ConnectionEvent[] = [
+      event("V1", 3600, "desconexion"), event("V1", 7200, "conexion-tras-apagado"),
+      event("V2", 3900, "desconexion"), event("V2", 7220, "conexion-tras-apagado"),
+      event("V3", 4080, "desconexion"), event("V3", 7260, "conexion-tras-apagado"),
+      // V4 solo se apaga 20 min, cuando nadie más está desconectado: no reconectó por su cuenta.
+      event("V4", 9 + 600, "desconexion"), event("V4", 9 + 600 + 1200, "conexion-tras-apagado"),
+    ];
+    const cuts = locateCuts(pairCuts(events, T0 + 8000 * S, THRESHOLDS), readings, [RING]);
+    expect(cuts.map((cut) => [cut.agvId, cut.cutClass, cut.collective])).toEqual([
+      ["V4", "apagado", false],
+      ["V1", "apagado", true],
+      ["V2", "apagado", true],
+      ["V3", "apagado", true],
+    ]);
+    const summary = summarizeConnections(cuts, events, transitionsOf(readings), [], THRESHOLDS, 0.01, CLOCK);
+    expect(summary.collectives.map((entry) => entry.vehicles)).toEqual([["V1", "V2", "V3"]]);
+    expect(summary.notReconnecting.map((entry) => entry.agvId)).toEqual(["V4"]);
   });
 });
