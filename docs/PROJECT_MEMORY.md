@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.49.0
+version: 0.50.0
 status: baseline-candidate
 last_updated: 2026-10-08
 ---
@@ -423,6 +423,15 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## PR #15 fusionada y las dos familias de color (3.67.0, 2026-10-08)
+
+La PR #15 (3.66.0: terminales ruidosos, mapa por clase, los que no reconectan, OQ-164 a OQ-166, las
+dos correcciones de los datos reales, la corona del anillo y las cifras del mapa que dicen lo que
+pintan) se fusionó en `main` (`43f0799`, squash, «Haz PR y fusiona»). Después el propietario precisó
+el color: **dos familias**, los tags (omisión) en azul y toda la WiFi —observada (Conexión) e inferida
+(Ráfagas)— en verde azulado, con la intensidad creciendo con el fallo, en un conjunto armónico. Hecho
+en 3.67.0 con el tono afinado y validado; el naranja sigue siendo el patrón y el rojo la caída.
 
 ## Terminales ruidosos, mapa por clase y los que no reconectan (3.66.0, 2026-10-08)
 

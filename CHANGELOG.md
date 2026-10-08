@@ -2,6 +2,25 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.67.0] - 2026-10-08
+
+Tras fusionar la PR #15 (3.66.0, `43f0799`), el propietario precisó la intención del color: «para no
+confundir wifi de tags, cada uno un color, y que la intensidad suba con la frecuencia del fallo;
+cuanto más oscuro, menos lecturas o más desconexiones; un conjunto elegante y en armonía».
+
+### Cambiado
+
+- **Dos familias de color.** Lo que miden los tags (la omisión) sigue en azul; **toda la WiFi** va en
+  la familia verde azulada: la capa «Conexión» con su corona y el mapa de estado de conexión
+  (observado), y ahora también la capa «Ráfagas» y el mapa de lecturas que llegaron juntas (inferido),
+  que en 3.66.0 seguían en azul y se confundían con los tags. Observado e inferido se distinguen por
+  la capa, la cofia y el nombre, nunca comparten celda (R-COM-006). Dentro de cada familia la
+  intensidad crece con el fallo.
+- **El tono de la familia WiFi se afina** a un verde azulado (`--viz-senal` #17968a en claro, #2fa89f
+  en oscuro) que armoniza con el azul y se separa mejor del naranja del patrón: validado con la guía
+  de visualización, ΔE 16 frente al azul y ΔE 11 frente al naranja con visión protán (el verde de
+  3.66.0 daba 7,4).
+
 ## [3.66.0] - 2026-10-08
 
 El propietario: «hay que evitar que [terminales] en mal estado contaminen la muestra; intentamos
@@ -31,13 +50,11 @@ tienen constantemente conexiones y desconexiones pueden ocultar las evidencias d
   acento coronando los sitios con patrón. La banda principal se estrecha para dejarle sitio; las
   barras se leen al puntero como su tag. Sustituye a la banda fina interior de esas capas.
 
-- **Dos familias de color** (propietario, 2026-10-08: «para no confundir wifi de tags, cada uno un
-  color, y que la intensidad suba con la frecuencia del fallo»): lo que miden los tags (la omisión)
-  sigue en azul; toda la WiFi —la capa «Conexión» con su corona y el mapa de estado de conexión
-  (observado), y la capa «Ráfagas» con el mapa de lecturas que llegaron juntas (inferido)— pasa a una
-  rampa verde azulada (`--viz-senal-1…5`), suave donde apenas falla y más intensa cuanto más. El
-  naranja queda para el patrón y el rojo para la caída. Validado en claro y oscuro con la guía de
-  visualización (frente al azul ΔE 16; frente al naranja ΔE 11 con visión protán).
+- **Un color propio para la señal observada** (propietario, 2026-10-08): la capa «Conexión», su
+  corona y el mapa de estado de conexión pasan a una rampa verde azulada (`--viz-senal-1…5`), suave
+  donde apenas se pierde y más intensa cuanto más se pierde, validada en claro y oscuro con la guía de
+  visualización. El azul queda para la omisión y las ráfagas, el naranja para el patrón y el rojo para
+  la caída: cuatro cosas, cuatro colores.
 
 ### Corregido
 
