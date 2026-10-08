@@ -259,6 +259,9 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(conexion.locator("svg[role=img]")).toBeVisible();
     await expect(conexion).toContainText("la causa no la dice el dato");
     await expect(conexion.getByRole("button", { name: /tags donde se perdió la señal en tabla/ })).toBeVisible();
+    // El selector de clase vuelve a dibujar el mapa con una sola clase (R-COM-009: roaming = microcortes por sitio).
+    await page.getByRole("group", { name: "Clase de corte en el mapa" }).getByRole("button", { name: "Microcortes" }).click();
+    await expect(page.locator("figure.chart", { has: page.getByRole("heading", { name: "Mapa de estado de conexión (WiFi)" }) })).toContainText("solo microcortes");
     await expect(page.getByText(/Lecturas con fecha dentro de una caída: [1-9]\d* en 1 caída\. Con la hora de recepción/)).toBeVisible();
     await page.getByRole("button", { name: "Ver los 2 cortes" }).click();
     const cortes = page.locator(".drawer-body table.data");

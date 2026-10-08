@@ -2,7 +2,7 @@
 document_id: TT-ALG-001
 version: 0.46.3
 status: baseline-candidate
-last_updated: 2026-10-07
+last_updated: 2026-10-08
 ---
 
 # Catálogo de algoritmos
@@ -1270,6 +1270,15 @@ cargada se sitúan y se cuentan; el resto se dice como «fuera de la ventana».
 `collective_min_share` de los AGV con registro, y nunca menos de dos. Ni los apagados ni los colectivos
 miden cobertura (`measuresCoverage`): se cuentan y se listan —los colectivos agrupados en ventanas, con
 sus AGV y sus clases— pero no entran en el mapa, en la concentración, en las horas ni en los días.
+
+**Terminales ruidosos** (R-COM-009). Antes de agregar, la tasa de cortes propios por mil pasadas de
+cada AGV con registro (sus transiciones como exposición) frente a la mediana de la flota; ruidoso si
+supera `noisy_vehicle_ratio` veces la mediana con al menos `noisy_vehicle_min_cuts` cortes. Sus cortes
+y sus pasadas no entran en el mapa por tag ni por tramo, ni en la concentración por sitio, ni en las
+horas; sí en su tarjeta, en los días y en la concentración por vehículo. **Los que no reconectan**
+(R-COM-010): cortes de `cut_max_ms` o más abiertos al final de la ventana o cerrados por
+`conexion-tras-apagado` sin ser colectivos. **Clase a la vista**: `connectionHeatChart` lleva un
+selector («Todas», «Microcortes», «Cortes», «Caídas») que vuelve a dibujar el mapa con `byClass`.
 
 **Horas y días** (`summarizeConnections`, con `localHourReader` y `localDayReader` de la zona del
 circuito): los cortes propios por hora local de inicio (24 posiciones) y, por AGV, por día local, para

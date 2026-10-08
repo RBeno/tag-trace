@@ -1,8 +1,8 @@
 ---
 document_id: TT-OPEN-001
-version: 0.60.0
+version: 0.61.0
 status: active
-last_updated: 2026-10-07
+last_updated: 2026-10-08
 ---
 
 # Preguntas abiertas
@@ -83,6 +83,8 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-161 | ¿Qué es un corte que importa? La mitad de los cortes duran dos segundos o menos (microcortes de cambio de punto de acceso) y una minoría pasan de diez minutos. ¿Se clasifican por duración (microcorte, corte, caída), con qué umbrales, y cuenta `Conexión tras apagado` como vuelta de la señal? | Tres clases por duración en `CONFIG_SCHEMA.md` (`connection_cuts.*`, provisionales: 10 s y 10 min) todas en el mapa y separadas, y «tras apagado» como encendido, no como vuelta de la señal (recomendación aplicada, 2026-10-07, R-COM-004). |
 | OQ-162 | LECTURAS por AGV es el informe ampliado filtrado por ese AGV (filas idénticas) con una columna más, `No ejecutado`. ¿Se admite como fuente, se descarta, o se conserva solo `No ejecutado` como atributo de la lectura? | No es una fuente nueva (recomendación aplicada, 2026-10-07, `DATA_CONTRACTS.md` §3.10): para toda la flota basta el informe ampliado más un CONEXIONES por AGV. `No ejecutado` queda para OQ-163: qué significa antes de conservarlo. |
 | OQ-163 | LECTURAS por AGV trae `No ejecutado` (verdadero en un 1,5 % de las lecturas) y `No en memoria` (siempre falso en lo visto). ¿Qué significa «no ejecutado» —la acción del tag no se ejecutó— y cuándo lo pone el terminal? Sin eso no se conserva como atributo con semántica. | Pendiente del propietario. Hasta entonces el importador de lecturas no lo lee. |
+| OQ-164 | El propietario quiere detectar «fallos de roaming, expulsiones de servidor o listas largas, AGVs que no reconectan» (2026-10-08). ¿Qué son las «listas largas»: latencias largas del enlace, colas de reconexión, otra cosa? | Pendiente del propietario. Roaming (microcortes por sitio en muchos AGV, mapa por clase), no reconectan (R-COM-010) y terminales ruidosos (R-COM-009) ya se enseñan. |
+| OQ-165 | ¿Qué evento marca una **expulsión del servidor**? En el informe ampliado, `SUPERADO TIEMPO MAXIMO OFFLINE` cae dentro de un corte del registro en todos los casos vistos (cinco de cinco). ¿Es esa la marca? ¿Se conservan las filas `Uso` del informe (hoy en cuarentena como `NO_TAG`) para cruzarlas con los cortes? | Recomendación: conservar los usos con su código como atributos del AGV y cruzarlos con los cortes (código → cuántos dentro de un corte), sin nombrar causa; mientras tanto los que no reconectan salen por R-COM-010. |
 
 ## Preguntas cerradas
 

@@ -2,7 +2,7 @@
 document_id: TT-UX-001
 version: 0.47.2
 status: baseline-candidate
-last_updated: 2026-10-07
+last_updated: 2026-10-08
 ---
 
 # Especificación de experiencia de usuario
@@ -579,6 +579,12 @@ lo de la sección usa solo producción (R-TIM-009). Después, destacados primero
   mezcla con lo inferido, R-COM-006): cifras de cortes por clase, tiempo sin señal, AGV con registro y
   el tag donde más se pierde; celdas con la parte de las pasadas que salen de cada tag que perdieron la
   señal justo después, caídas en la fila inferior, acento donde se pierde más de lo que da el azar;
+  el mapa lleva encima un selector de clase («Todas», «Microcortes», «Cortes», «Caídas»; los
+  microcortes por sitio en muchos AGV son la firma de un fallo de roaming); la línea de cabecera dice
+  cuántos cortes propios de qué **terminales ruidosos** quedan fuera del mapa (R-COM-009), cada uno
+  con su tarjeta **«AGV: terminal ruidoso, apartado del mapa»** (tasa por mil pasadas, veces la
+  mediana de la flota, clases y cortes por día); las tarjetas **«AGV: no reconectó»** (R-COM-010) con
+  hora, duración, cierre y última lectura con señal, y su tabla si son muchas;
   el histograma **Cortes por hora del día** (`hourHistogramChart`: 24 barras de los cortes propios por
   hora local, rótulo en las tres horas con más, lectura al puntero y tabla; «un pico a la misma hora
   todos los días apunta a un apagado o a un turno, no a un sitio»); la tarjeta **«Cortes colectivos: N
@@ -587,7 +593,8 @@ lo de la sección usa solo producción (R-TIM-009). Después, destacados primero
   con fecha dentro de una caída («con la hora de recepción por este enlace serían cero… la pregunta
   sigue abierta»); tarjetas «La señal se pierde al salir de X» y «AGV: pierde la señal más que el
   resto» (con sus cortes propios por día: «12 → 18 → 31»), sin causa; y tablas plegadas por AGV
-  (eventos, cortes por clase con apagados y colectivos, sin señal, sin situar, propios por día, IP) y de
+  (eventos, cortes por clase con apagados y colectivos, por mil pasadas y frente a la flota, con
+  «(ruidoso, fuera del mapa)» en el AGV, sin señal, sin situar, propios por día, IP) y de
   cortes (desde, hasta, duración «al menos» si abierto, clase con «(colectivo)», cierre con «tras
   apagado (encendido)», última y siguiente lectura, situado, lecturas dentro). Sobre el anillo, la capa
   **Conexión** (§4.2).

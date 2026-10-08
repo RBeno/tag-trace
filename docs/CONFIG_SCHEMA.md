@@ -2,7 +2,7 @@
 document_id: TT-CONFIG-001
 version: 0.29.2
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-08
 ---
 
 # Configuración de circuito
@@ -284,6 +284,7 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `plant_estimators.night_low_share`, `plant_estimators.return_gap_quantile`, `plant_estimators.head_wait_quantile`, `plant_estimators.precise_pause_quantile` | OQ-151: los números de la definición aprobada de los estimadores de los valores de planta —la mitad de la mediana de producción para que una hora sea de noche (0,5), y los cuantiles de los huecos que volvieron (0,99), de las esperas del primero de cola (0,95) y de las esperas en una parada precisa (0,05)—. No son valores de planta: son cómo se miden. El percentil 95 del tránsito de un tramo cargado (margen del FIFO) lo da `fifo.ts` con su mediana y no está aquí. |
 | `connection_cuts.microcut_max_ms`, `connection_cuts.cut_max_ms` | R-COM-004 (OQ-161): hasta dónde un corte del registro de conexiones es un **microcorte** (provisional: 10 s, el cambio de punto de acceso) y hasta dónde un **corte** (provisional: 10 min); por encima, **caída**. Todas se cuentan y se enseñan, separadas. Provisionales hasta calibrar con el registro de planta. |
 | `connection_cuts.contrast_tolerance_ms` | R-COM-007 (OQ-159): margen con que una ráfaga de lecturas (R-DAT-020) y un corte del registro del mismo AGV se consideran el mismo episodio. Provisional: 30 s. |
+| `connection_cuts.noisy_vehicle_ratio`, `connection_cuts.noisy_vehicle_min_cuts` | R-COM-009 (propietario, 2026-10-08): un terminal es **ruidoso** si su tasa de cortes propios por mil pasadas supera tantas veces la mediana de la flota (provisional: 3) con al menos tantos cortes (provisional: 10). Sus cortes y sus pasadas quedan fuera del mapa y de la concentración por sitio; sigue en su tarjeta y en la tabla por AGV. |
 | `connection_cuts.collective_window_ms`, `connection_cuts.collective_min_share` | R-COM-008 (propietario, 2026-10-07): un corte es **colectivo** si, a menos de la ventana (provisional: 2 min) de su inicio, pierden la señal al menos esa parte de los AGV con registro (provisional: la mitad, y nunca menos de dos). Apagado o infraestructura, no cobertura: fuera del mapa. |
 | `plant_estimators.same_time_measure_tolerance_ms` | OQ-154 (propietario, 2026-09-27): margen de hora local con que `measurePlantValues` empareja, **solo para medir**, las paradas de la producción que se repiten otro día. Provisional: 60 min. Es una tolerancia de medida, no operativa: ancha para que la estimación de «a la misma hora» pueda ver una tolerancia de planta mayor que la vigente (`flow_stops.same_time_tolerance_ms`, 15 min), con la que nunca podría salir un valor mayor que ella. El análisis (`productionStops`) sigue emparejando con la vigente; esta no cambia ningún resultado del análisis. |
 

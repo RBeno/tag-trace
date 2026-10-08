@@ -2,6 +2,27 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.66.0] - 2026-10-08
+
+El propietario: «hay que evitar que [terminales] en mal estado contaminen la muestra; intentamos
+detectar fallos de roaming, expulsiones de servidor o listas largas, AGVs que no reconectan; los que
+tienen constantemente conexiones y desconexiones pueden ocultar las evidencias del resto».
+
+### Añadido
+
+- **Terminales ruidosos apartados del mapa** (R-COM-009, `connection_cuts.noisy_vehicle_ratio` 3,
+  `noisy_vehicle_min_cuts` 10, provisionales): la tasa de cortes propios por mil pasadas de cada AGV
+  frente a la mediana de la flota; el ruidoso sale del mapa, de la concentración por sitio y de las
+  horas **con sus pasadas**, y sigue en su tarjeta «terminal ruidoso, apartado del mapa» y en la tabla
+  por AGV (columnas «por mil pasadas» y «frente a la flota»).
+- **Mapa por clase**: selector «Todas / Microcortes / Cortes / Caídas» sobre el mapa de estado de
+  conexión; los microcortes por sitio en muchos AGV son la firma de un fallo de roaming.
+- **Los que no reconectan** (R-COM-010): tarjetas «AGV: no reconectó» para un corte abierto al final
+  de la ventana o cerrado solo por un encendido fuera de un apagado colectivo, de diez minutos o más.
+- OQ-164 («listas largas») y OQ-165 (la expulsión del servidor: `SUPERADO TIEMPO MAXIMO OFFLINE`
+  cae dentro de un corte en todos los casos vistos; conservar los usos para cruzarlos).
+- Pruebas TC-328 y TC-329; TC-327 ampliado con el selector de clase.
+
 ## [3.65.0] - 2026-10-07
 
 El propietario aceptó ADR-0017 con las recomendaciones de OQ-159 a OQ-162 («Usa tu recomendación en

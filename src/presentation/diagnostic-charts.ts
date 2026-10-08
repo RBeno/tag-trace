@@ -1546,6 +1546,20 @@ export interface ConnectionStripInput {
  * corte). La fila inferior son las caídas (la clase más larga); el acento, los sitios donde se
  * pierde más de lo que da el azar. Dónde, no por qué (R-EVI-006).
  */
+export type ConnectionClassFilter = "todas" | "microcorte" | "corte" | "caida";
+
+const CONNECTION_CLASS_FILTERS: readonly (readonly [ConnectionClassFilter, string])[] = [
+  ["todas", "Todas"],
+  ["microcorte", "Microcortes"],
+  ["corte", "Cortes"],
+  ["caida", "Caídas"],
+];
+
+/**
+ * El mapa con un selector de clase encima: «Todas» o una sola. Los microcortes por sitio en muchos
+ * AGV son la firma de un fallo de roaming; las caídas, de otra cosa. Cambiar la clase vuelve a
+ * dibujar el mapa con sus propias celdas; las cifras de cabecera son siempre las de todas.
+ */
 export function connectionHeatChart(
   cells: readonly ConnectionStripInput[],
   ringTags: readonly string[],
@@ -1554,18 +1568,63 @@ export function connectionHeatChart(
   classLabels: { readonly microcorte: string; readonly corte: string; readonly caida: string },
   sections?: Readonly<Record<string, string>>,
 ): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = "connection-map";
+  const toolbar = document.createElement("div");
+  toolbar.className = "seg";
+  toolbar.setAttribute("role", "group");
+  toolbar.setAttribute("aria-label", "Clase de corte en el mapa");
+  let current: ConnectionClassFilter = "todas";
+  let figureNode: HTMLElement | null = null;
+  const buttons = new Map<ConnectionClassFilter, HTMLButtonElement>();
+  const draw = (): void => {
+    const next = connectionHeatFigure(cells, ringTags, flaggedSites, totals, classLabels, current, sections);
+    if (figureNode === null) wrapper.append(next);
+    else figureNode.replaceWith(next);
+    figureNode = next;
+    // La barra de clase va dentro de la figura, bajo el título, como el orden de la matriz.
+    next.querySelector("figcaption")?.after(toolbar);
+  };
+  for (const [id, label] of CONNECTION_CLASS_FILTERS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.setAttribute("aria-pressed", String(id === current));
+    button.addEventListener("click", () => {
+      current = id;
+      for (const [other, node] of buttons) node.setAttribute("aria-pressed", String(other === id));
+      draw();
+    });
+    buttons.set(id, button);
+    toolbar.append(button);
+  }
+  draw();
+  return wrapper;
+}
+
+function connectionHeatFigure(
+  cells: readonly ConnectionStripInput[],
+  ringTags: readonly string[],
+  flaggedSites: ReadonlySet<string>,
+  totals: { readonly cuts: number; readonly byClass: { readonly microcorte: number; readonly corte: number; readonly caida: number }; readonly withoutSignalMs: number; readonly vehicles: number; readonly files: number },
+  classLabels: { readonly microcorte: string; readonly corte: string; readonly caida: string },
+  filter: ConnectionClassFilter,
+  sections?: Readonly<Record<string, string>>,
+): HTMLElement {
   const byId = new Map(cells.map((cell) => [cell.tagId, cell]));
-  const strip: HeatStripCell[] = cells.map((cell) => ({ tagId: cell.tagId, passes: cell.passes, value: cell.cuts, secondary: cell.byClass.caida, vehicles: cell.vehicles }));
-  const withCuts = cells.filter((cell) => cell.cuts > 0);
-  const top = [...withCuts].sort((a, b) => stripShare({ passes: b.passes, value: b.cuts }) - stripShare({ passes: a.passes, value: a.cuts }) || b.cuts - a.cuts || a.tagId.localeCompare(b.tagId))[0];
+  const countOf = (cell: ConnectionStripInput): number => (filter === "todas" ? cell.cuts : cell.byClass[filter]);
+  const strip: HeatStripCell[] = cells.map((cell) => ({ tagId: cell.tagId, passes: cell.passes, value: countOf(cell), secondary: cell.byClass.caida, vehicles: cell.vehicles }));
+  const withCuts = cells.filter((cell) => countOf(cell) > 0);
+  const top = [...withCuts].sort((a, b) => stripShare({ passes: b.passes, value: countOf(b) }) - stripShare({ passes: a.passes, value: countOf(a) }) || countOf(b) - countOf(a) || a.tagId.localeCompare(b.tagId))[0];
   const hours = (ms: number): string => (ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(1).replace(".", ",")} h` : ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`);
+  const classText = filter === "todas" ? `${classLabels.microcorte}, ${classLabels.corte} y ${classLabels.caida}, todas juntas` : `solo ${classLabels[filter]}`;
   return heatStripChart({
     title: "Mapa de estado de conexión (WiFi)",
     caption:
       "Observado en el registro de conexiones del terminal de cada AGV: dónde se pierde la señal. Cada celda es un tag; cuanto más " +
-      `oscuro, mayor parte de las pasadas que salen de él perdieron la señal justo después (${classLabels.microcorte}, ` +
-      `${classLabels.corte} y ${classLabels.caida}, todas juntas). Apunta a la cobertura de ese punto o al terminal del AGV; la causa ` +
-      "no la dice el dato.",
+      `oscuro, mayor parte de las pasadas que salen de él perdieron la señal justo después (${classText}). Microcortes en un mismo ` +
+      "sitio y en muchos AGV son la firma de un fallo de roaming. Sin apagados, cortes colectivos ni terminales ruidosos. Apunta a la " +
+      "cobertura de ese punto o al terminal del AGV; la causa no la dice el dato.",
     cells: strip,
     ringTags,
     flagged: flaggedSites,
@@ -1574,7 +1633,7 @@ export function connectionHeatChart(
       ["Cortes", String(totals.cuts), `${totals.byClass.microcorte} microcortes · ${totals.byClass.corte} cortes · ${totals.byClass.caida} caídas`],
       ["Tiempo sin señal", hours(totals.withoutSignalMs), "sumado en la ventana cargada"],
       ["AGV con registro", String(totals.vehicles), `${totals.files} ${totals.files === 1 ? "fichero" : "ficheros"} cargados`],
-      ["Donde más se pierde", top === undefined ? "—" : top.tagId, top === undefined ? "ningún tag" : `${sharePercent(stripShare({ passes: top.passes, value: top.cuts }))} de sus pasadas (${top.cuts} de ${top.passes})`],
+      ["Donde más se pierde", top === undefined ? "—" : top.tagId, top === undefined ? "ningún tag" : `${sharePercent(stripShare({ passes: top.passes, value: countOf(top) }))} de sus pasadas (${countOf(top)} de ${top.passes})`],
     ],
     scaleWhat: "de las pasadas que salen del tag, con la señal perdida justo después",
     secondaryLegend: `fila inferior: caídas (${classLabels.caida})`,

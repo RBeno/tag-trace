@@ -173,6 +173,7 @@ tr.resolved td:first-child { text-decoration: underline dotted; }
 .connections-files li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .connections-files input { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); width: 9ch; }
 .connections-confirm button { margin-right: 8px; }
+.connection-map .seg { margin: 0 0 8px; }
 /* Una descarga por fichero (R-TIM-011): se parten en varias líneas en el móvil en vez de desbordar. */
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .button-row button { overflow-wrap: anywhere; text-align: left; }
