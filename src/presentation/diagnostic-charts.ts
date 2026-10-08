@@ -1788,7 +1788,9 @@ function connectionHeatFigure(
  * Cortes por hora local del día: 24 barras, una serie, rótulo directo en las tres horas con más. Es
  * para ver si hay un patrón horario —un apagado, un turno— y leerlo con la lista de cortes colectivos.
  */
-export function hourHistogramChart(counts: readonly number[], title: string, caption: string): HTMLElement {
+export function hourHistogramChart(counts: readonly number[], title: string, caption: string, hue: HeatHue = "viz"): HTMLElement {
+  // La familia de color dice de qué habla la gráfica: azul, los tags; verde azulado, la WiFi.
+  const fill = hue === "viz-senal" ? "var(--viz-senal)" : "var(--viz-series)";
   const wrapper = figure(title, caption);
   const area = host();
   const line = readout("Toca o pasa el puntero por una hora para leer su recuento.");
@@ -1815,7 +1817,7 @@ export function hourHistogramChart(counts: readonly number[], title: string, cap
     counts.forEach((value, hour) => {
       const x = left + hour * slot + 1;
       const barHeight = max > 0 ? (value / max) * plot : 0;
-      node.append(svg("rect", { x, y: top + plot - barHeight, width: bar, height: Math.max(value > 0 ? 2 : 0, barHeight), fill: "var(--viz-series)", rx: 2 }));
+      node.append(svg("rect", { x, y: top + plot - barHeight, width: bar, height: Math.max(value > 0 ? 2 : 0, barHeight), fill, rx: 2 }));
       if (top3.includes(hour) && value > 0) node.append(text(x + bar / 2, top + plot - barHeight - 4, String(value), "value", { "text-anchor": "middle" }));
       if (hour % (slot < 22 ? 6 : 3) === 0) node.append(text(x + bar / 2, height - 6, `${String(hour).padStart(2, "0")}h`, "axis", { "text-anchor": "middle" }));
     });

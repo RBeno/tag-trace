@@ -16,6 +16,10 @@ cuanto más oscuro, menos lecturas o más desconexiones; un conjunto elegante y 
   que en 3.66.0 seguían en azul y se confundían con los tags. Observado e inferido se distinguen por
   la capa, la cofia y el nombre, nunca comparten celda (R-COM-006). Dentro de cada familia la
   intensidad crece con el fallo.
+- **La regla vale en todas las gráficas** (propietario: «esa diferencia sería en todas las gráficas
+  para no malinterpretar datos»): también el histograma «Cortes por hora del día» pasa a la familia
+  WiFi, y queda escrita como norma de color en `UX_SPEC.md` §4: ninguna gráfica de WiFi se pinta en
+  azul ni ninguna de lecturas de tags en verde azulado.
 - **El tono de la familia WiFi se afina** a un verde azulado (`--viz-senal` #17968a en claro, #2fa89f
   en oscuro) que armoniza con el azul y se separa mejor del naranja del patrón: validado con la guía
   de visualización, ΔE 16 frente al azul y ΔE 11 frente al naranja con visión protán (el verde de

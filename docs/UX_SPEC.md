@@ -105,6 +105,17 @@ Cada tarjeta de hallazgo muestra:
 
 El color nunca será el único medio de distinguir estados.
 
+**Dos familias de color, en todas las gráficas** (propietario, 2026-10-08, 3.67.0): lo que miden las
+**lecturas de los tags** —omisión, matriz tag × AGV, tasas de lectura, cambios de tag— va en la
+familia **azul** (`--viz-1…5`, `--viz-series`); lo que mide la **WiFi** —el registro de conexiones
+(observado) y las lecturas que llegaron juntas (inferido): la capa «Conexión» y la capa «Ráfagas» del
+anillo con sus coronas, el mapa de estado de conexión, el mapa de lecturas que llegaron juntas y el
+histograma de cortes por hora— va en la familia **verde azulada** (`--viz-senal-1…5`, `--viz-senal`).
+Dentro de cada familia la intensidad crece con el fallo: cuanto más oscuro, menos lecturas o más
+desconexiones. El naranja de acento marca el patrón (más de lo que da el azar) y el rojo la caída o
+la desconexión larga, en las dos familias. Ninguna gráfica de WiFi se pinta en azul ni ninguna de
+lecturas de tags en verde azulado: la familia dice de qué habla la gráfica antes de leer el título.
+
 ## 4.1 Expediente de un AGV o de un tag
 
 Se entra escribiendo un identificador. Es la vía de trabajo más frecuente —«qué le pasa al 3524»,
