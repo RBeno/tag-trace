@@ -515,7 +515,8 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
     });
     canvas.append(hatchPattern());
 
-    const ramp = layer === "rafagas" || layer === "conexion" ? heatRamp() : null;
+    const ramp = layer === "rafagas" ? heatRamp("viz") : layer === "conexion" ? heatRamp("viz-senal") : null;
+    const barFill = layer === "conexion" ? "var(--viz-senal)" : "var(--viz-series)";
     /** La corona de un tag: cuánto se pierde frente al que más (0..1), si hay patrón y si hubo caída. */
     const outerOf = (tag: RingTag): { readonly ratio: number; readonly flagged: boolean; readonly severe: boolean } | null => {
       if (layer === "conexion") {
@@ -634,7 +635,7 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
         canvas.append(
           svg("path", {
             d: arcPath(center, center, r0, r0 + length, from, to),
-            fill: bar.ratio > 0 ? "var(--viz-series)" : "var(--viz-desconexion)",
+            fill: bar.ratio > 0 ? barFill : "var(--viz-desconexion)",
             "data-bar": index,
           }),
         );
@@ -835,9 +836,9 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
           : !connectionEvidence
             ? [legendList([["var(--viz-grid)", "el registro no trae ningún corte en la ventana cargada"]])]
             : [
-                heatScaleLegend(maxConnectionShare, "de las pasadas que salen del tag, con la señal perdida justo después"),
+                heatScaleLegend(maxConnectionShare, "de las pasadas que salen del tag, con la señal perdida justo después", "viz-senal"),
                 legendList([
-                  ["var(--viz-series)", "corona: barra por tag, más larga cuanto más se pierde"],
+                  ["var(--viz-senal)", "corona: barra por tag, más larga cuanto más se pierde"],
                   ["var(--viz-desconexion)", "cofia: alguna caída larga"],
                   ["var(--viz-accent)", "corona de acento: se pierde aquí más de lo que da el azar"],
                   [HATCH_SWATCH, "sin pasadas"],
@@ -1192,15 +1193,19 @@ export function readMatrixHeatmap(
  * hay, sea un 0,1 % o un 40 %; la cifra absoluta va siempre al lado (leyenda, rótulos, lectura y
  * tabla), porque el tono solo no la dice.
  */
-function heatRamp(): (t: number) => string {
+/** Qué rampa pinta un mapa: la azul de siempre (`viz`) o la verde azulada de la señal observada (`viz-senal`). */
+export type HeatHue = "viz" | "viz-senal";
+
+function heatRamp(hue: HeatHue = "viz"): (t: number) => string {
   const style = getComputedStyle(document.documentElement);
+  const token = (step: number): string => style.getPropertyValue(`--${hue}-${step}`);
   const stops: readonly (readonly [number, [number, number, number]])[] = [
     [0, parseColor(style.getPropertyValue("--viz-grid"))],
-    [0.12, parseColor(style.getPropertyValue("--viz-1"))],
-    [0.32, parseColor(style.getPropertyValue("--viz-2"))],
-    [0.55, parseColor(style.getPropertyValue("--viz-3"))],
-    [0.78, parseColor(style.getPropertyValue("--viz-4"))],
-    [1, parseColor(style.getPropertyValue("--viz-5"))],
+    [0.12, parseColor(token(1))],
+    [0.32, parseColor(token(2))],
+    [0.55, parseColor(token(3))],
+    [0.78, parseColor(token(4))],
+    [1, parseColor(token(5))],
   ];
   return (t) => {
     const value = Math.max(0, Math.min(1, t));
@@ -1217,7 +1222,9 @@ function heatRamp(): (t: number) => string {
 }
 
 /** La muestra de la rampa para una leyenda en HTML: el mismo gradiente, de «nada» al más caliente. */
-const HEAT_GRADIENT = "linear-gradient(90deg, var(--viz-grid), var(--viz-1) 12%, var(--viz-2) 32%, var(--viz-3) 55%, var(--viz-4) 78%, var(--viz-5))";
+function heatGradient(hue: HeatHue): string {
+  return `linear-gradient(90deg, var(--viz-grid), var(--${hue}-1) 12%, var(--${hue}-2) 32%, var(--${hue}-3) 55%, var(--${hue}-4) 78%, var(--${hue}-5))`;
+}
 
 /**
  * Una parte pequeña con los decimales que hacen falta para leerla: 2 de 1.638 pasadas es «0,12 %»,
@@ -1276,14 +1283,14 @@ function heatStat(label: string, value: string, note?: string): HTMLElement {
 }
 
 /** La leyenda del gradiente: la rampa entera con sus dos extremos escritos. */
-function heatScaleLegend(maxShare: number, what: string): HTMLElement {
+function heatScaleLegend(maxShare: number, what: string, hue: HeatHue = "viz"): HTMLElement {
   const scale = document.createElement("div");
   scale.className = "heat-scale";
   const low = document.createElement("span");
   low.textContent = "0 %";
   const bar = document.createElement("span");
   bar.className = "heat-scale-bar";
-  bar.style.background = HEAT_GRADIENT;
+  bar.style.background = heatGradient(hue);
   const high = document.createElement("span");
   high.textContent = sharePercent(maxShare);
   const caption = document.createElement("span");
@@ -1313,6 +1320,8 @@ export interface HeatStripSpec {
   /** Los tags con acento: ya decididos fuera (una prueba de azar), nunca un umbral de pantalla. */
   readonly flagged: ReadonlySet<string>;
   readonly sections?: Readonly<Record<string, string>> | undefined;
+  /** La rampa: la azul de siempre o la verde azulada de la señal observada. */
+  readonly hue?: HeatHue;
   /** Las cifras de cabecera: rótulo, valor y nota. */
   readonly stats: readonly (readonly [string, string, string])[];
   /** Qué es la parte que pinta la rampa, para la leyenda del gradiente. */
@@ -1393,7 +1402,7 @@ export function heatStripChart(spec: HeatStripSpec): HTMLElement {
     const columns = Math.max(1, rows.length);
     const slot = Math.max(2, (width - left - right - gapWidth) / columns);
     const cell = slot > 4 ? slot - 1 : slot;
-    const ramp = heatRamp();
+    const ramp = heatRamp(spec.hue ?? "viz");
     const node = svg("svg", { viewBox: `0 0 ${width} ${height}`, width, height, role: "img" });
     node.setAttribute("aria-label", `${spec.title}: ${rows.length} tags`);
     node.append(hatchPattern());
@@ -1499,7 +1508,7 @@ export function heatStripChart(spec: HeatStripSpec): HTMLElement {
   redraw();
 
   wrapper.append(stats, area, line.node);
-  wrapper.append(heatScaleLegend(maxShare, spec.scaleWhat));
+  wrapper.append(heatScaleLegend(maxShare, spec.scaleWhat, spec.hue ?? "viz"));
   wrapper.append(
     legendList([
       ["var(--viz-desconexion)", spec.secondaryLegend],
@@ -1717,6 +1726,7 @@ function connectionHeatFigure(
     ringTags,
     flagged: flaggedSites,
     sections,
+    hue: "viz-senal",
     stats: [
       [
         filter === "todas" ? "En el mapa" : `En el mapa, solo ${CLASS_NOUNS[filter][1]}`,
