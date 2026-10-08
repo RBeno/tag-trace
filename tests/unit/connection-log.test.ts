@@ -26,6 +26,10 @@ describe("el AGV sale del nombre del fichero (OQ-160)", () => {
     expect(agvFromFileName("conexiones_0040.csv")).toBe("0040");
     expect(agvFromFileName("C:\\exportes\\Conexiones 395 (1).xlsx")).toBe("395");
     expect(agvFromFileName("conexión-7122.xlsx")).toBe("7122");
+    // Con un prefijo delante (una copia, el hash de una subida): la palabra vale en cualquier sitio.
+    expect(agvFromFileName("copia de CONEXIONES395.xlsx")).toBe("395");
+    expect(agvFromFileName("63ddc2eb-CONEXIONES1553.xlsx")).toBe("1553");
+    expect(agvFromFileName("desconexiones1553.xlsx")).toBeNull();
   });
   it("sin AGV en el nombre no inventa uno", () => {
     expect(agvFromFileName("registro.xlsx")).toBeNull();

@@ -22,6 +22,13 @@ tienen constantemente conexiones y desconexiones pueden ocultar las evidencias d
 - OQ-164 («listas largas») y OQ-165 (la expulsión del servidor: `SUPERADO TIEMPO MAXIMO OFFLINE`
   cae dentro de un corte en todos los casos vistos; conservar los usos para cruzarlos).
 - Pruebas TC-328 y TC-329; TC-327 ampliado con el selector de clase.
+
+### Corregido
+
+- `agvFromFileName` admite un prefijo delante de «CONEXIONES» («copia de CONEXIONES395.xlsx», el
+  hash de una subida): lo destapó pasar los ficheros reales del propietario por el producto, que
+  dejaba los nueve AGV en blanco. «desconexiones1553» sigue sin valer: la palabra no puede ir pegada
+  a otra letra.
 - OQ-164 aclarada por el propietario («listas largas» = dispositivos por punto de acceso donde
   coinciden varios circuitos) y medida en lo posible fuera del repositorio: dentro de PO4 la ocupación
   en el momento del corte es igual que al azar; hacen falta los otros circuitos (decisión sobre

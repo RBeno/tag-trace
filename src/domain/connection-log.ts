@@ -30,10 +30,14 @@ export const CONNECTION_STRUCTURE = {
   example: ["Linea;Fecha;Conexión;Nº Motor;Op.;Cober.;Ver.;RFID;LCD;PID;Datos Aux;Cimi;IP Terminal", "Unchecked;06/10/2026 7:12:03;Desconexión;2;0;0;2.00;2;17;1;MTC 0 MTD 0; ...;10.0.0.1"],
 } as const;
 
-/** El AGV que lleva el nombre del fichero: `CONEXIONES1553.xlsx`, `conexiones_0040.csv`, `Conexiones 395 (1).xlsx`. */
+/**
+ * El AGV que lleva el nombre del fichero: `CONEXIONES1553.xlsx`, `conexiones_0040.csv`, `Conexiones 395
+ * (1).xlsx`, y también con un prefijo delante (`copia de CONEXIONES395.xlsx`, `63ddc2eb-CONEXIONES395.xlsx`):
+ * la palabra vale en cualquier sitio del nombre, pero no pegada a otra letra.
+ */
 export function agvFromFileName(fileName: string): string | null {
   const base = fileName.split(/[\\/]/).pop() ?? "";
-  const match = /^conexion(?:es)?[\s_-]*([0-9A-Za-z]+)/i.exec(base.normalize("NFD").replace(/[̀-ͯ]/g, ""));
+  const match = /(?:^|[^a-z])conexion(?:es)?[\s_-]*([0-9A-Za-z]+)/i.exec(base.normalize("NFD").replace(/[̀-ͯ]/g, ""));
   if (match === null) return null;
   const id = match[1] as string;
   // El identificador se conserva tal cual: `0040` no es 40 (R-DAT-001).
