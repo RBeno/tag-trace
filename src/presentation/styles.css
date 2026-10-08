@@ -58,17 +58,18 @@
   --viz-tramo-6: #5f8a12;
   --viz-tramo-7: #8a4a8a;
   --viz-tramo-8: #b34f1f;
-  /* La señal observada (registro de conexiones, 3.66.0): una rampa propia, verde azulada, suave donde
-     apenas se pierde y más intensa cuanto más se pierde. Distinta del azul de la omisión y las
-     ráfagas, del naranja del patrón y del rojo de la caída. Validada: un solo tono, claridad
-     monótona; frente al naranja, ΔE 7,4 con visión protán, que vale porque la corona de acento va en
-     otro radio y las barras llevan la medida en longitud. */
-  --viz-senal: #1b9a6c;
-  --viz-senal-1: #b9e6d3;
-  --viz-senal-2: #8fd9bd;
-  --viz-senal-3: #3fbf93;
-  --viz-senal-4: #1b9a6c;
-  --viz-senal-5: #0f6b4b;
+  /* Dos familias de color (propietario, 2026-10-08): lo que miden los tags va en azul (la omisión) y
+     la WiFi va en verde azulado, sea observada (registro de conexiones) o inferida (lecturas que
+     llegaron juntas). Dentro de cada familia la intensidad crece con el fallo: cuanto más oscuro,
+     menos lecturas o más desconexiones. El naranja queda para el patrón y el rojo para la caída.
+     Validado con la guía de visualización: un solo tono por rampa, claridad monótona; el verde
+     azulado frente al azul ΔE 16 y frente al naranja ΔE 11 con visión protán. */
+  --viz-senal: #17968a;
+  --viz-senal-1: #c3ebe6;
+  --viz-senal-2: #8fd6cf;
+  --viz-senal-3: #4bb9af;
+  --viz-senal-4: #17968a;
+  --viz-senal-5: #0c625b;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -117,12 +118,12 @@
     --viz-tramo-6: #93b93a;
     --viz-tramo-7: #c47fd0;
     --viz-tramo-8: #e8824a;
-    --viz-senal: #2fae84;
-    --viz-senal-1: #14604a;
-    --viz-senal-2: #1b8a5f;
-    --viz-senal-3: #2fae84;
-    --viz-senal-4: #7fd6b4;
-    --viz-senal-5: #c6efdd;
+    --viz-senal: #2fa89f;
+    --viz-senal-1: #12574f;
+    --viz-senal-2: #1a807a;
+    --viz-senal-3: #2fa89f;
+    --viz-senal-4: #7ed0c8;
+    --viz-senal-5: #c3ebe6;
   }
 }
 * { box-sizing: border-box; }

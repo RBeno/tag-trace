@@ -515,8 +515,9 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
     });
     canvas.append(hatchPattern());
 
-    const ramp = layer === "rafagas" ? heatRamp("viz") : layer === "conexion" ? heatRamp("viz-senal") : null;
-    const barFill = layer === "conexion" ? "var(--viz-senal)" : "var(--viz-series)";
+    // Las dos capas de WiFi —observada e inferida— van en la familia verde azulada; el azul es de los tags.
+    const ramp = layer === "rafagas" || layer === "conexion" ? heatRamp("viz-senal") : null;
+    const barFill = "var(--viz-senal)";
     /** La corona de un tag: cuánto se pierde frente al que más (0..1), si hay patrón y si hubo caída. */
     const outerOf = (tag: RingTag): { readonly ratio: number; readonly flagged: boolean; readonly severe: boolean } | null => {
       if (layer === "conexion") {
@@ -822,9 +823,9 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
           : !signalEvidence
             ? [legendList([["var(--viz-grid)", "ninguna lectura llegó junta tras un hueco: nada que pintar"]])]
             : [
-                heatScaleLegend(maxSignalShare, "de las pasadas por el tag, con la lectura llegada tarde"),
+                heatScaleLegend(maxSignalShare, "de las pasadas por el tag, con la lectura llegada tarde", "viz-senal"),
                 legendList([
-                  ["var(--viz-series)", "corona: barra por tag, más larga cuanto más llega tarde"],
+                  ["var(--viz-senal)", "corona: barra por tag, más larga cuanto más llega tarde"],
                   ["var(--viz-desconexion)", "cofia: el hueco empieza aquí"],
                   ["var(--viz-accent)", "corona de acento: empieza aquí más de lo que da el azar"],
                   [HATCH_SWATCH, "sin pasadas"],
@@ -1559,6 +1560,7 @@ export function deliveryHeatChart(
     ringTags,
     flagged: flaggedSites,
     sections,
+    hue: "viz-senal",
     stats: [
       ["Ráfagas", String(total), total === 1 ? "vez que llegaron lecturas juntas" : "veces que llegaron lecturas juntas"],
       ["Tags con lecturas tardías", String(withLate.length), `de ${onMap} en el mapa`],

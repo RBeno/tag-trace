@@ -31,11 +31,13 @@ tienen constantemente conexiones y desconexiones pueden ocultar las evidencias d
   acento coronando los sitios con patrón. La banda principal se estrecha para dejarle sitio; las
   barras se leen al puntero como su tag. Sustituye a la banda fina interior de esas capas.
 
-- **Un color propio para la señal observada** (propietario, 2026-10-08): la capa «Conexión», su
-  corona y el mapa de estado de conexión pasan a una rampa verde azulada (`--viz-senal-1…5`), suave
-  donde apenas se pierde y más intensa cuanto más se pierde, validada en claro y oscuro con la guía de
-  visualización. El azul queda para la omisión y las ráfagas, el naranja para el patrón y el rojo para
-  la caída: cuatro cosas, cuatro colores.
+- **Dos familias de color** (propietario, 2026-10-08: «para no confundir wifi de tags, cada uno un
+  color, y que la intensidad suba con la frecuencia del fallo»): lo que miden los tags (la omisión)
+  sigue en azul; toda la WiFi —la capa «Conexión» con su corona y el mapa de estado de conexión
+  (observado), y la capa «Ráfagas» con el mapa de lecturas que llegaron juntas (inferido)— pasa a una
+  rampa verde azulada (`--viz-senal-1…5`), suave donde apenas falla y más intensa cuanto más. El
+  naranja queda para el patrón y el rojo para la caída. Validado en claro y oscuro con la guía de
+  visualización (frente al azul ΔE 16; frente al naranja ΔE 11 con visión protán).
 
 ### Corregido
 
