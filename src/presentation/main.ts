@@ -30,8 +30,7 @@ import {
   inventoryChart,
   lazyTable,
   plainTable,
-  scrollBox,
-} from "./charts.js";
+  scrollBox, plural } from "./charts.js";
 import { closeDrawer } from "./drawer.js";
 import { changedTagsOf, deltaAround, evolutionDataOf, evolutionSection, ringDataFromSnapshot, sourceStatusList, timeControl } from "./evolution.js";
 import type { CircuitSnapshot } from "../domain/snapshot.js";
@@ -3020,27 +3019,35 @@ function renderConnections(
   const { summary, thresholds } = connections;
   const minutes = (ms: number): string => (ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(1).replace(".", ",")} h` : ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`);
   const classLabels = {
-    microcorte: `microcortes de hasta ${minutes(thresholds.microcutMaxMs)}`,
-    corte: `cortes de hasta ${minutes(thresholds.cutMaxMs)}`,
-    caida: `caídas de más de ${minutes(thresholds.cutMaxMs)}`,
+    microcorte: `de hasta ${minutes(thresholds.microcutMaxMs)}`,
+    corte: `de hasta ${minutes(thresholds.cutMaxMs)}`,
+    caida: `de más de ${minutes(thresholds.cutMaxMs)}`,
   };
+  const n = plural;
+  // Lo que no entra en el mapa, sin solapes: los apagados (colectivos o no), los colectivos que no
+  // son apagados, los propios de terminales ruidosos y los propios sin lecturas con que situarlos.
+  const collectiveOthers = summary.collectives.reduce((sum, entry) => sum + entry.byClass.microcorte + entry.byClass.corte + entry.byClass.caida, 0);
+  const unlocated = summary.vehicles.reduce((sum, own) => sum + own.unlocated, 0);
+  const excludedParts = [
+    ...(summary.byClass.apagado > 0 ? [n(summary.byClass.apagado, "apagado", "apagados")] : []),
+    ...(collectiveOthers > 0 ? [n(collectiveOthers, "colectivo", "colectivos")] : []),
+    ...(summary.excludedNoisy > 0 ? [`${summary.excludedNoisy} de ${n(summary.noisyVehicles.length, "terminal ruidoso", "terminales ruidosos")} (${summary.noisyVehicles.join(", ")})`] : []),
+    ...(unlocated > 0 ? [`${unlocated} sin lecturas con que situarlos`] : []),
+  ];
+  const excluded = excludedParts.join(", ");
+  // Una línea corta: qué hay y qué no entra en el mapa. El porqué de cada exclusión está en las
+  // tarjetas y en la leyenda del mapa, no aquí: la sección ya es larga.
   out.append(
     element(
       "p",
       "muted",
-      `Registro de conexiones de ${connections.vehicles} AGV (${connections.files} ${connections.files === 1 ? "fichero" : "ficheros"}): ` +
-        `${summary.total} cortes en la ventana cargada (${summary.byClass.microcorte} ${classLabels.microcorte}, ${summary.byClass.corte} ` +
-        `${classLabels.corte}, ${summary.byClass.caida} ${classLabels.caida}, ${summary.byClass.apagado} ${summary.byClass.apagado === 1 ? "apagado" : "apagados"}), ` +
-        `${minutes(summary.withoutSignalMs)} sin señal en total` +
-        (connections.outsideWindow > 0 ? `; ${connections.outsideWindow} cortes del registro caen fuera de la ventana y no se cuentan` : "") +
-        `. Miden cobertura ${summary.individual}: un corte cerrado por «Conexión tras apagado» es un apagado (el terminal se apagó durante el corte) ` +
-        `y un corte colectivo —${Math.round(thresholds.collectiveMinShare * 100)} % o más de los AGV con registro a menos de ${minutes(thresholds.collectiveWindowMs)}— ` +
-        "es apagado o infraestructura: los dos se cuentan, pero no entran en el mapa" +
-        (summary.noisyVehicles.length > 0
-          ? `. Y ${summary.excludedNoisy} cortes propios de ${summary.noisyVehicles.length} ${summary.noisyVehicles.length === 1 ? "terminal ruidoso" : "terminales ruidosos"} ` +
-            `(${summary.noisyVehicles.join(", ")}) quedan fuera del mapa para que no tapen la evidencia del resto`
-          : "") +
-        ". Cada corte se sitúa entre la última lectura anterior y la primera posterior del mismo AGV.",
+      `Registro de conexiones de ${n(connections.vehicles, "AGV", "AGV")} (${n(connections.files, "fichero", "ficheros")}): ` +
+        `${n(summary.total, "corte", "cortes")} en la ventana cargada (${n(summary.byClass.microcorte, "microcorte", "microcortes")} ${classLabels.microcorte}, ` +
+        `${n(summary.byClass.corte, "corte", "cortes")} ${classLabels.corte}, ${n(summary.byClass.caida, "caída", "caídas")} ${classLabels.caida}, ` +
+        `${n(summary.byClass.apagado, "apagado", "apagados")}), ${minutes(summary.withoutSignalMs)} sin señal en total` +
+        (connections.outsideWindow > 0 ? `; ${n(connections.outsideWindow, "corte", "cortes")} del registro fuera de la ventana, sin contar` : "") +
+        ". Cada corte se sitúa entre la última lectura anterior y la primera posterior del mismo AGV" +
+        (excluded === "" ? "." : `; no entran en el mapa: ${excluded}.`),
     ),
   );
   if (summary.total === 0) {
@@ -3052,7 +3059,7 @@ function renderConnections(
       summary.heat,
       ringTags,
       new Set(summary.sites.map((site) => site.id)),
-      { cuts: summary.individual, byClass: summary.byClass, withoutSignalMs: summary.withoutSignalMs, vehicles: connections.vehicles, files: connections.files },
+      { cuts: summary.total, byClass: summary.byClass, excluded, withoutSignalMs: summary.withoutSignalMs, vehicles: connections.vehicles, files: connections.files },
       classLabels,
       views.sections,
     ),

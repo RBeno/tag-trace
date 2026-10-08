@@ -253,7 +253,7 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(calor.getByRole("button", { name: /tags con lecturas tardías o hueco en tabla/ })).toBeVisible();
     // El estado de conexión observado (DS-013): los dos cortes del registro, situados, el mapa con su
     // tabla, y el contraste que cuenta las lecturas con fecha dentro de la caída (OQ-159).
-    await expect(page.getByText(/2 cortes en la ventana cargada \(1 microcortes de hasta 10 s, 0 cortes de hasta 10 min, 1 caídas/)).toBeVisible();
+    await expect(page.getByText(/2 cortes en la ventana cargada \(1 microcorte de hasta 10 s, 0 cortes de hasta 10 min, 1 caída de más de 10 min/)).toBeVisible();
     const conexion = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Mapa de estado de conexión (WiFi)" }) });
     await expect(conexion).toHaveCount(1);
     await expect(conexion.locator("svg[role=img]")).toBeVisible();
@@ -274,7 +274,8 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await openTab(page, "Resumen");
     const anillo = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Anillo del circuito" }) });
     await anillo.getByRole("radio", { name: "Conexión" }).click();
-    await expect(anillo.locator(".ring-legend")).toContainText("banda interior: caídas");
+    await expect(anillo.locator(".ring-legend")).toContainText("corona: barra por tag");
+    await expect(anillo.locator("path[data-bar]").first()).toBeVisible();
     await anillo.getByRole("radio", { name: "Omisión" }).click();
     await openTab(page, "Tiempos");
 

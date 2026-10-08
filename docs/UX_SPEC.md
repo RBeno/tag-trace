@@ -176,8 +176,8 @@ quedan siempre:
 | **Omisión** (por defecto) | la de siempre: gris lo normal, la rampa azul lo que se deja de leer, trama sin pasadas, tinta el ancla; el tramo declarado en la banda fina interior | las cinco clases de omisión |
 | **Tramos** | el tramo declarado (`section`) con la paleta `--viz-tramo-*`; gris sin tramo | un color por tramo |
 | **Paradas** | cuántas incidencias toca cada tag según el estado normal (`circuitState`): paradas sin explicación que empiezan en él, colas de un cuello de botella, y una más si está en una zona oscura; punto conflictivo se dice en la lectura (sus paradas ya son paradas sin explicación). Rampa de un solo tono por recuento | los cortes de la rampa: ninguna, 1, 2, 3–4, 5–9, 10 o más |
-| **Conexión** (3.65.0) | el estado de conexión **observado** (DS-013, R-COM-005): la parte de las pasadas que salen de cada tag que perdieron la señal justo después, con la rampa continua relativa al tag donde más se pierde; gris lo que no tiene nada, trama sin pasadas; en la banda fina interior, las caídas (`--viz-desconexion`), con acento si es más de lo que da el azar. Sin registro cargado, o sin cortes en la ventana, la leyenda lo dice en vez de pintar | el gradiente con sus dos extremos, caídas, acento, sin pasadas |
-| **Ráfagas** (3.64.0, antes «Señal») | el mapa de las lecturas que llegaron juntas (R-DAT-020, **inferido**) sobre el anillo: la parte de las pasadas por cada tag con la lectura llegada tarde, con la rampa continua relativa al tag más caliente; en la banda interior, la última lectura a su hora antes del hueco, con acento si empieza ahí más de lo que da el azar. No se presenta como señal (R-COM-006). Sin evaluar, o sin ninguna ráfaga, la leyenda lo dice | el gradiente con sus dos extremos, hueco, acento, sin pasadas |
+| **Conexión** (3.65.0; corona en 3.66.0) | el estado de conexión **observado** (DS-013, R-COM-005): la parte de las pasadas que salen de cada tag que perdieron la señal justo después, con la rampa continua relativa al tag donde más se pierde; gris lo que no tiene nada, trama sin pasadas. Y la **corona exterior** (propietario, 2026-10-08): entre la banda principal y la de zona, una barra radial por tag, más larga cuanto más se pierde (la misma medida que el tono, en longitud: el color nunca va solo); la **cofia** roja (`--viz-desconexion`) en la punta de la barra si hubo alguna caída larga; y un **segmento de acento** coronando, por fuera de las barras, los sitios donde se pierde más de lo que da el azar (los mismos de las tarjetas). La banda principal se estrecha para dejarle sitio; un tag que solo tiene cofia (caída sin pasadas) la lleva sola; y el acento de «cambia frente a la instantánea vecina» pasa por dentro de la banda en estas dos capas, para no confundirse con la corona de acento. Sin registro cargado, o sin cortes en la ventana, la leyenda lo dice en vez de pintar | el gradiente con sus dos extremos, corona, cofia, acento, sin pasadas |
+| **Ráfagas** (3.64.0, antes «Señal»; corona en 3.66.0) | el mapa de las lecturas que llegaron juntas (R-DAT-020, **inferido**) sobre el anillo: la parte de las pasadas por cada tag con la lectura llegada tarde, con la rampa continua relativa al tag más caliente; la misma corona exterior, con la cofia donde empieza el hueco y el acento donde empieza más de lo que da el azar. No se presenta como señal (R-COM-006). Sin evaluar, o sin ninguna ráfaga, la leyenda lo dice | el gradiente con sus dos extremos, corona, cofia, acento, sin pasadas |
 | **Calles** | el tag del que cuelga cada calle (`laneJunctions`) en el azul de serie, con el nombre de la calle junto a su ramal; con trama si nadie entró en ella; gris sin calle | servida, sin servicio, sin calle |
 
 La lectura al puntero y al foco dice lo de la capa activa además del tag. **Tocar un tag** —clic,
@@ -572,12 +572,17 @@ lo de la sección usa solo producción (R-TIM-009). Después, destacados primero
   una medida de la señal» (OQ-159). Sin ráfagas o sin evaluar, una línea lo dice. Sobre el anillo, la
   capa **Ráfagas** (§4.2).
 - **Estado de conexión (registro del terminal)** (DS-013, ADR-0017, 3.65.0), a continuación. Sin
-  registro cargado, una línea dice dónde se carga. Con registro: una línea con AGV y ficheros, cortes
-  por clase con sus umbrales (microcortes, cortes, caídas y apagados), cuántos miden cobertura, tiempo
-  sin señal y cuántos cortes caen fuera de la ventana; el **Mapa de
+  registro cargado, una línea dice dónde se carga. Con registro: **una sola línea corta** con AGV y
+  ficheros, cortes por clase con sus umbrales (microcortes, cortes, caídas y apagados), tiempo sin
+  señal, cuántos cortes caen fuera de la ventana y qué no entra en el mapa («no entran en el mapa: 16
+  apagados, 5 colectivos, 86 de un terminal ruidoso»); el porqué de cada exclusión está en las tarjetas
+  y en la leyenda, no en la línea (propietario, 2026-10-08: no saturar). El **Mapa de
   estado de conexión (WiFi)**, el mismo `heatStripChart` con sus propias celdas (observado: nunca
-  mezcla con lo inferido, R-COM-006): cifras de cortes por clase, tiempo sin señal, AGV con registro y
-  el tag donde más se pierde; celdas con la parte de las pasadas que salen de cada tag que perdieron la
+  mezcla con lo inferido, R-COM-006): cifras «En el mapa» (los cortes que pintan, de cuántos en total
+  y qué queda fuera), tiempo sin señal, AGV con registro y «Donde más se pierde» (primero un sitio con
+  patrón, porque la prueba de azar ya descuenta las pasadas: un tag de rama con cuarenta pasadas no le
+  tapa el sitio a uno del anillo con mil; los rótulos directos del mapa siguen el mismo orden); celdas
+  con la parte de las pasadas que salen de cada tag que perdieron la
   señal justo después, caídas en la fila inferior, acento donde se pierde más de lo que da el azar;
   el mapa lleva encima un selector de clase («Todas», «Microcortes», «Cortes», «Caídas»; los
   microcortes por sitio en muchos AGV son la firma de un fallo de roaming); la línea de cabecera dice

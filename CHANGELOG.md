@@ -23,8 +23,22 @@ tienen constantemente conexiones y desconexiones pueden ocultar las evidencias d
   cae dentro de un corte en todos los casos vistos; conservar los usos para cruzarlos).
 - Pruebas TC-328 y TC-329; TC-327 ampliado con el selector de clase.
 
+- **La corona del anillo** (propietario, 2026-10-08: «un círculo exterior en el que las pérdidas
+  aparezcan como barras que crecen, un segmento de color coronando el patrón y otro color en la larga
+  duración»). En las capas «Conexión» y «Ráfagas», entre la banda principal y la de zona: una barra
+  radial por tag, más larga cuanto más se pierde (la misma medida que el tono, en longitud), la cofia
+  roja en la punta si hubo caída larga (o donde empieza el hueco, en «Ráfagas») y un segmento de
+  acento coronando los sitios con patrón. La banda principal se estrecha para dejarle sitio; las
+  barras se leen al puntero como su tag. Sustituye a la banda fina interior de esas capas.
+
 ### Corregido
 
+- **Las cifras del mapa de estado de conexión dicen lo que pintan**: «En el mapa: 157 de 264 cortes;
+  fuera: 16 apagados, 5 colectivos, 86 de un terminal ruidoso» en vez de «Cortes 243», que no era ni lo
+  pintado ni el total; «Donde más se pierde» y los rótulos directos prefieren un sitio con patrón, para
+  que un tag de rama con cuarenta pasadas no tape a uno del anillo con mil; «1 caída», no «1 caídas»;
+  y la línea de cabecera de la sección se acorta a lo que hay y lo que no entra en el mapa, sin repetir
+  el porqué (las tarjetas y la leyenda ya lo dicen). Todo destapado al pasar los datos reales.
 - **Un apagado escalonado es colectivo** (R-COM-008): además de los inicios a menos de la ventana, un
   apagado es colectivo si la mitad o más de los AGV con registro están apagados a la vez con él.
   Lo destapó pasar los datos reales por el producto: el apagado nocturno (seis AGV apagados uno a uno

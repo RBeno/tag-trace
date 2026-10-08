@@ -94,7 +94,7 @@ test.describe("portada: cifras, anillo con capas y cajón de tablas", () => {
     // gradiente con sus dos extremos y la banda interior; nunca una causa ni una medida de la señal.
     await layers.getByRole("radio", { name: "Ráfagas" }).click();
     await expect(ring.locator(".ring-legend .heat-scale")).toContainText("de las pasadas por el tag, con la lectura llegada tarde");
-    await expect(ring.locator(".ring-legend")).toContainText("última lectura a su hora antes del hueco");
+    await expect(ring.locator(".ring-legend")).toContainText("cofia: el hueco empieza aquí");
     await expect(ring.locator("figcaption")).toContainText("no una medida de la señal");
     // La capa «Conexión» es el estado observado (DS-013): sin registro cargado, lo dice.
     await layers.getByRole("radio", { name: "Conexión" }).click();
