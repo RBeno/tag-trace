@@ -26,6 +26,10 @@ describe("el AGV sale del nombre del fichero (OQ-160)", () => {
     expect(agvFromFileName("conexiones_0040.csv")).toBe("0040");
     expect(agvFromFileName("C:\\exportes\\Conexiones 395 (1).xlsx")).toBe("395");
     expect(agvFromFileName("conexión-7122.xlsx")).toBe("7122");
+    // Con un prefijo delante (una copia, el hash de una subida): la palabra vale en cualquier sitio.
+    expect(agvFromFileName("copia de CONEXIONES395.xlsx")).toBe("395");
+    expect(agvFromFileName("63ddc2eb-CONEXIONES1553.xlsx")).toBe("1553");
+    expect(agvFromFileName("desconexiones1553.xlsx")).toBeNull();
   });
   it("sin AGV en el nombre no inventa uno", () => {
     expect(agvFromFileName("registro.xlsx")).toBeNull();
@@ -87,7 +91,7 @@ describe("importador del registro de conexiones (DS-013)", () => {
 
 // --- Cortes ---------------------------------------------------------------
 
-const THRESHOLDS = { microcutMaxMs: 10_000, cutMaxMs: 600_000, contrastToleranceMs: 30_000, collectiveWindowMs: 120_000, collectiveMinShare: 0.5 };
+const THRESHOLDS = { microcutMaxMs: 10_000, cutMaxMs: 600_000, contrastToleranceMs: 30_000, collectiveWindowMs: 120_000, collectiveMinShare: 0.5, noisyVehicleRatio: 3, noisyVehicleMinCuts: 10 };
 /** Reloj de pruebas: hora y día en UTC, sin zona. */
 const CLOCK = {
   hourOf: (utcMs: number): number => new Date(utcMs).getUTCHours(),
@@ -195,20 +199,53 @@ describe("cortes del registro (R-COM-004, R-COM-005)", () => {
     const summary = summarizeConnections(cuts, events, transitionsOf(readings), [], THRESHOLDS, 0.01, CLOCK);
     expect(summary.total).toBe(15);
     expect(summary.individual).toBe(15);
+    // V1 corta doce veces en 120 pasadas (100 por mil) frente a una mediana de la flota de 8,3 por mil
+    // (V2 con una caída y un microcorte, V3 con uno): es un terminal ruidoso y se aparta del mapa.
+    expect(summary.noisyVehicles).toEqual(["V1"]);
+    expect(summary.excludedNoisy).toBe(12);
+    expect(summary.vehicles[0]).toMatchObject({ agvId: "V1", noisy: true });
+    expect(summary.vehicles[0]?.rateRatio ?? 0).toBeGreaterThan(3);
     expect(summary.byClass).toEqual({ microcorte: 14, corte: 0, caida: 1, apagado: 0 });
-    expect(summary.byHour.reduce((sum, value) => sum + value, 0)).toBe(15);
-    expect(summary.byHour[5]).toBe(15);
+    expect(summary.byHour.reduce((sum, value) => sum + value, 0)).toBe(3);
+    expect(summary.byHour[5]).toBe(3);
     expect(summary.collectives).toEqual([]);
+    // En el mapa no queda nada de V1: ni sus cortes ni sus pasadas. B tiene 40 pasadas (V2 y V3) y
+    // ningún corte; D, los dos de V2 y V3; A, la caída de V2. Sin V1, ningún sitio pasa la prueba de azar.
     const b = summary.heat.find((cell) => cell.tagId === "B");
-    expect(b).toMatchObject({ cuts: 12, passes: 60, vehicles: ["V1"], byClass: { microcorte: 12, corte: 0, caida: 0 } });
-    expect(summary.heat.find((cell) => cell.tagId === "D")).toMatchObject({ cuts: 2, vehicles: ["V2", "V3"] });
-    expect(summary.segments[0]).toMatchObject({ from: "B", to: "C", cuts: 12 });
-    expect(summary.sites.map((site) => site.id)).toEqual(["B"]);
+    expect(b).toMatchObject({ cuts: 0, passes: 40, vehicles: [] });
+    expect(summary.heat.find((cell) => cell.tagId === "D")).toMatchObject({ cuts: 2, passes: 40, vehicles: ["V2", "V3"] });
+    expect(summary.heat.find((cell) => cell.tagId === "A")).toMatchObject({ cuts: 1, byClass: { caida: 1 } });
+    // La caída de V2 no tiene lectura posterior en la ventana: se cuenta en A pero no es de ningún tramo.
+    expect(summary.segments.map((segment) => [segment.from, segment.to, segment.cuts])).toEqual([["D", "E", 2]]);
+    expect(summary.sites).toEqual([]);
+    expect(summary.byHour.reduce((sum, value) => sum + value, 0)).toBe(3);
+    // V1 sigue concentrado por vehículo y en su tarjeta: es un hallazgo de su terminal, no desaparece.
     expect(summary.concentratedVehicles.map((entry) => entry.id)).toEqual(["V1"]);
     expect(summary.vehicles[0]).toMatchObject({ agvId: "V1", cuts: 12, events: 24, ips: ["10.0.0.7"] });
     expect(summary.contrast).toMatchObject({ bursts: 0, burstsWithCut: 0, cuts: 15, falls: 1 });
     expect(summary.contrast.readingsInsideFalls).toBeGreaterThan(10);
     expect(summary.vehicles[0]?.perDay).toEqual([{ day: "2026-10-06", cuts: 12 }]);
+    expect(summary.notReconnecting).toEqual([]);
+  });
+
+  it("los que no reconectan (R-COM-010): un corte abierto largo, o cerrado solo por un encendido fuera del apagado colectivo", () => {
+    const readings = [...laps("V1", 0, 20), ...laps("V2", 5, 20), ...laps("V3", 7, 20)];
+    const events: ConnectionEvent[] = [
+      // V1 pierde la señal y no vuelve en la ventana (abierto, 50 min hasta el final).
+      event("V1", 100, "desconexion"),
+      // V2 pierde la señal y solo vuelve al apagar y encender, 20 min después, él solo.
+      event("V2", 5 + 400, "desconexion"), event("V2", 5 + 400 + 1200, "conexion-tras-apagado"),
+      // V3: un microcorte cualquiera, y un apagado corto cuando nadie más está apagado (no cuenta: menos de cutMaxMs).
+      event("V3", 7 + 60 + 12, "desconexion"), event("V3", 7 + 60 + 14, "conexion"),
+      event("V3", 7 + 2400, "desconexion"), event("V3", 7 + 2400 + 30, "conexion-tras-apagado"),
+    ];
+    const cuts = locateCuts(pairCuts(events, T0 + 3100 * S, THRESHOLDS), readings, [RING]);
+    const summary = summarizeConnections(cuts, events, transitionsOf(readings), [], THRESHOLDS, 0.01, CLOCK);
+    expect(summary.notReconnecting.map((entry) => [entry.agvId, entry.end, Math.round(entry.durationMs / 60_000)])).toEqual([
+      ["V1", "abierto", 50],
+      ["V2", "tras-apagado", 20],
+    ]);
+    expect(summary.noisyVehicles).toEqual([]);
   });
 
   it("un corte colectivo —la mitad o más de los AGV con registro en la misma ventana— es apagado o infraestructura y sale del mapa (R-COM-008)", () => {
@@ -246,5 +283,27 @@ describe("cortes del registro (R-COM-004, R-COM-005)", () => {
     expect(summary.byHour.reduce((sum, value) => sum + value, 0)).toBe(1);
     expect(summary.sites).toEqual([]);
     expect(summary.vehicles.find((own) => own.agvId === "V1")).toMatchObject({ cuts: 2, collective: 2, byClass: { apagado: 1 }, perDay: [{ day: "2026-10-06", cuts: 0 }] });
+  });
+
+  it("un apagado escalonado es colectivo aunque los inicios se separen más que la ventana: basta con estar desconectados a la vez", () => {
+    const readings = [...laps("V1", 0, 20), ...laps("V2", 5, 20), ...laps("V3", 7, 20), ...laps("V4", 9, 20)];
+    // Se apagan uno a uno a lo largo de ocho minutos (fuera de la ventana de dos) y vuelven juntos una hora después.
+    const events: ConnectionEvent[] = [
+      event("V1", 3600, "desconexion"), event("V1", 7200, "conexion-tras-apagado"),
+      event("V2", 3900, "desconexion"), event("V2", 7220, "conexion-tras-apagado"),
+      event("V3", 4080, "desconexion"), event("V3", 7260, "conexion-tras-apagado"),
+      // V4 solo se apaga 20 min, cuando nadie más está desconectado: no reconectó por su cuenta.
+      event("V4", 9 + 600, "desconexion"), event("V4", 9 + 600 + 1200, "conexion-tras-apagado"),
+    ];
+    const cuts = locateCuts(pairCuts(events, T0 + 8000 * S, THRESHOLDS), readings, [RING]);
+    expect(cuts.map((cut) => [cut.agvId, cut.cutClass, cut.collective])).toEqual([
+      ["V4", "apagado", false],
+      ["V1", "apagado", true],
+      ["V2", "apagado", true],
+      ["V3", "apagado", true],
+    ]);
+    const summary = summarizeConnections(cuts, events, transitionsOf(readings), [], THRESHOLDS, 0.01, CLOCK);
+    expect(summary.collectives.map((entry) => entry.vehicles)).toEqual([["V1", "V2", "V3"]]);
+    expect(summary.notReconnecting.map((entry) => entry.agvId)).toEqual(["V4"]);
   });
 });

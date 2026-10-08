@@ -182,6 +182,11 @@ export function scrollBox(node: HTMLElement): HTMLElement {
   return box;
 }
 
+/** «1 corte», «3 cortes»: la cifra con su nombre en singular o plural. */
+export function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
 export function legendList(items: readonly (readonly [string, string])[]): HTMLElement {
   const list = document.createElement("ul");
   list.className = "legend";

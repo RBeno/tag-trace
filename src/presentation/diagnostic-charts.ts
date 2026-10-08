@@ -20,7 +20,7 @@
 
 import type { CircuitViews } from "../application/protocol.js";
 import type { DeliveryHeatCell } from "../domain/grouped-delivery.js";
-import { HATCH_ID, figure, hatchPattern, lazyTable, legendList, plainTable, scrollBox, svg, table, text } from "./charts.js";
+import { HATCH_ID, figure, hatchPattern, lazyTable, legendList, plainTable, plural, scrollBox, svg, table, text } from "./charts.js";
 import { patternLabel, zoneLabel } from "./labels.js";
 import { inspect } from "./pointer.js";
 
@@ -402,14 +402,15 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
       case "rafagas":
         return (
           `${base}Más oscuro, mayor parte de las pasadas por ese tag con la lectura llegada tarde: junta con otras tras un hueco ` +
-          `(R-DAT-020, inferido). En la banda interior, la última lectura a su hora antes del hueco; con acento, donde empieza ` +
-          `más de lo que da el azar. Es una firma de la entrega, no una medida de la señal.${changes}${note}`
+          `(R-DAT-020, inferido). La corona exterior repite la medida en longitud; la cofia marca dónde empieza el hueco y el acento ` +
+          `corona donde empieza más de lo que da el azar. Es una firma de la entrega, no una medida de la señal.${changes}${note}`
         );
       case "conexion":
         return (
           `${base}Más oscuro, mayor parte de las pasadas que salen de ese tag perdieron la señal justo después, según el ` +
-          `registro de conexiones del terminal (observado). En la banda interior, las caídas; con acento, donde se pierde ` +
-          `más de lo que da el azar. La causa no la dice el dato.${changes}${note}`
+          `registro de conexiones del terminal (observado). La corona exterior repite la medida en longitud: cuanto más larga la ` +
+          `barra, más se pierde; la cofia roja, alguna caída larga; el acento corona los sitios donde se pierde más de lo que da ` +
+          `el azar. La causa no la dice el dato.${changes}${note}`
         );
       case "calles":
         return `${base}En color, el tag del que cuelga cada calle de carga, con su nombre; con trama, la calle en la que nadie entró.${changes}${note}`;
@@ -490,7 +491,13 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
     const rMark = center - (small ? 10 : 13);
     const rZoneOut = rMark - (small ? 13 : 16);
     const rZoneIn = rZoneOut - 6;
-    const rOut = hasZones ? rZoneIn - 5 : rZoneOut - 5;
+    // La corona exterior de barras (capas «Conexión» y «Ráfagas»): una barra por tag, más larga
+    // cuanto más se pierde, con la cofia de acento donde hay patrón y la de desconexión donde hubo
+    // caída. Va entre la banda principal y la zona, y la banda principal se estrecha para dejarle sitio.
+    const corona = layer === "conexion" || layer === "rafagas";
+    const barSpace = corona ? (small ? 18 : 26) : 0;
+    const rBand = hasZones ? rZoneIn - 5 : rZoneOut - 5;
+    const rOut = corona ? rBand - barSpace - 5 : rBand;
     const rIn = rOut - (small ? 16 : 24);
     const step = (2 * Math.PI) / Math.max(1, count);
     const start = -Math.PI / 2;
@@ -508,7 +515,23 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
     });
     canvas.append(hatchPattern());
 
-    const ramp = layer === "rafagas" || layer === "conexion" ? heatRamp() : null;
+    const ramp = layer === "rafagas" ? heatRamp("viz") : layer === "conexion" ? heatRamp("viz-senal") : null;
+    const barFill = layer === "conexion" ? "var(--viz-senal)" : "var(--viz-series)";
+    /** La corona de un tag: cuánto se pierde frente al que más (0..1), si hay patrón y si hubo caída. */
+    const outerOf = (tag: RingTag): { readonly ratio: number; readonly flagged: boolean; readonly severe: boolean } | null => {
+      if (layer === "conexion") {
+        const connection = tag.connection;
+        if (connection === undefined || connection.cuts === 0) return null;
+        const share = stripShare({ passes: connection.passes, value: connection.cuts });
+        return { ratio: maxConnectionShare > 0 ? share / maxConnectionShare : 0, flagged: connection.flagged, severe: connection.falls > 0 };
+      }
+      if (layer === "rafagas") {
+        const signal = tag.signal;
+        if (signal === undefined || (signal.late === 0 && signal.lostAfter === 0)) return null;
+        return { ratio: maxSignalShare > 0 ? shareOf(signal) / maxSignalShare : 0, flagged: signal.flagged, severe: signal.lostAfter > 0 };
+      }
+      return null;
+    };
     const fillOf = (tag: RingTag): string => {
       switch (layer) {
         case "omision":
@@ -555,9 +578,13 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
       // principal, que se ve con cualquier capa y no tapa lo que la capa pinta. El acento nunca va
       // solo: la lectura del tag dice qué cambió, y la sección «Evolución» lo lista.
       if (highlight.changed.has(tag.tagId)) {
+        // Con la corona fuera, el acento de cambio va por dentro de la banda: fuera se pisaría con las
+        // barras y se confundiría con la corona de acento, que es otra cosa.
         canvas.append(
           svg("path", {
-            d: arcPath(center, center, rOut + 1.5, rOut + 4.5, start + index * step, start + (index + 1) * step),
+            d: corona
+              ? arcPath(center, center, rIn - 7, rIn - 4, start + index * step, start + (index + 1) * step)
+              : arcPath(center, center, rOut + 1.5, rOut + 4.5, start + index * step, start + (index + 1) * step),
             fill: "var(--viz-accent)",
             "data-change": tag.tagId,
           }),
@@ -599,25 +626,35 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
       if (layer === "omision" && sectionFill !== undefined) {
         canvas.append(svg("path", { d: arcPath(center, center, rIn - 7, rIn - 2, start + index * step, start + (index + 1) * step), fill: sectionFill }));
       }
-      // Capa «Señal»: dónde se perdió la señal, en una banda fina por dentro; con acento si es más
-      // de lo que da el azar. Es el mismo dato que la fila inferior del mapa de calor de Tiempos.
-      if (layer === "conexion" && tag.connection !== undefined && tag.connection.falls > 0) {
+      // La corona: la barra de este tag, su cofia y, si hay patrón, el acento que lo corona.
+      const bar = corona ? outerOf(tag) : null;
+      if (bar !== null && (bar.ratio > 0 || bar.severe)) {
+        // Sin barra (solo empieza aquí el hueco, o una caída sin pasadas) queda la cofia sola, de 3.
+        const r0 = rOut + 4;
+        const length = Math.max(3, barSpace * bar.ratio);
         canvas.append(
           svg("path", {
-            d: arcPath(center, center, rIn - 7, rIn - 2, start + index * step, start + (index + 1) * step),
-            fill: tag.connection.flagged ? "var(--viz-accent)" : "var(--viz-desconexion)",
-            "pointer-events": "none",
+            d: arcPath(center, center, r0, r0 + length, from, to),
+            fill: bar.ratio > 0 ? barFill : "var(--viz-desconexion)",
+            "data-bar": index,
           }),
         );
+        if (bar.severe && bar.ratio > 0) {
+          canvas.append(
+            svg("path", {
+              d: arcPath(center, center, r0 + Math.max(0, length - 3), r0 + length, from, to),
+              fill: "var(--viz-desconexion)",
+              "pointer-events": "none",
+            }),
+          );
+        }
       }
-      if (layer === "rafagas" && tag.signal !== undefined && tag.signal.lostAfter > 0) {
+      if (bar !== null && bar.flagged) {
         canvas.append(
           svg("path", {
-            d: arcPath(center, center, rIn - 7, rIn - 2, start + index * step, start + (index + 1) * step),
-            fill: tag.signal.flagged ? "var(--viz-accent)" : "var(--viz-desconexion)",
-            // Sin `data-index` ni puntero propio: el segmento de encima ya lee este tag, y un segundo
-            // nodo con el mismo índice rompería el foco rotatorio y a quien busque el segmento.
-            "pointer-events": "none",
+            d: arcPath(center, center, rOut + 4 + barSpace + 1, rOut + 4 + barSpace + 4, start + index * step, start + (index + 1) * step),
+            fill: "var(--viz-accent)",
+            "data-bar": index,
           }),
         );
       }
@@ -633,7 +670,7 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
         // En la capa de calles los ramales se abren más, para que sus nombres no se pisen.
         const spread = angle + (k - (lanes.length - 1) / 2) * (layer === "calles" ? 0.16 : 0.07);
         const length = small ? 18 : 26;
-        const inset = (layer === "omision" && sections.size > 0) || layer === "rafagas" || layer === "conexion" ? 9 : 3;
+        const inset = layer === "omision" && sections.size > 0 ? 9 : 3;
         const x0 = center + (rIn - inset) * Math.cos(angle);
         const y0 = center + (rIn - inset) * Math.sin(angle);
         const x1 = center + (rIn - inset - length) * Math.cos(spread);
@@ -704,7 +741,7 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
           return;
         }
         const target = point.target as SVGElement;
-        const index = target.getAttribute("data-index");
+        const index = target.getAttribute("data-index") ?? target.getAttribute("data-bar");
         const markTag = target.getAttribute("data-mark");
         const laneId = target.getAttribute("data-lane");
         const changedTag = target.getAttribute("data-change");
@@ -730,7 +767,7 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
           line.show(null);
         }
       },
-      { snap: "[data-index],[data-mark],[data-lane],[data-change]" },
+      { snap: "[data-index],[data-bar],[data-mark],[data-lane],[data-change]" },
     );
     // Tocar un tag abre su expediente: solo el clic o el toque **encima** del segmento. El imán de
     // toque (UX_SPEC §7) sigue sirviendo para leer: un toque cerca de un tag fija su lectura sin
@@ -752,7 +789,9 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
   legend.className = "ring-legend";
 
   const changesLegend = (): HTMLElement[] =>
-    highlight.changed.size === 0 ? [] : [legendList([["var(--viz-accent)", `cambia frente a la instantánea vecina (${highlight.changed.size} ${highlight.changed.size === 1 ? "tag" : "tags"})`]])];
+    highlight.changed.size === 0
+      ? []
+      : [legendList([["var(--viz-accent)", `${layer === "conexion" || layer === "rafagas" ? "por dentro: " : ""}cambia frente a la instantánea vecina (${plural(highlight.changed.size, "tag", "tags")})`]])];
   const legendOf = (): HTMLElement[] => [...layerLegendOf(), ...changesLegend()];
   const layerLegendOf = (): HTMLElement[] => {
     switch (layer) {
@@ -785,8 +824,9 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
             : [
                 heatScaleLegend(maxSignalShare, "de las pasadas por el tag, con la lectura llegada tarde"),
                 legendList([
-                  ["var(--viz-desconexion)", "banda interior: última lectura a su hora antes del hueco"],
-                  ["var(--viz-accent)", "el hueco empieza aquí más de lo que da el azar"],
+                  ["var(--viz-series)", "corona: barra por tag, más larga cuanto más llega tarde"],
+                  ["var(--viz-desconexion)", "cofia: el hueco empieza aquí"],
+                  ["var(--viz-accent)", "corona de acento: empieza aquí más de lo que da el azar"],
                   [HATCH_SWATCH, "sin pasadas"],
                 ]),
               ];
@@ -796,10 +836,11 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
           : !connectionEvidence
             ? [legendList([["var(--viz-grid)", "el registro no trae ningún corte en la ventana cargada"]])]
             : [
-                heatScaleLegend(maxConnectionShare, "de las pasadas que salen del tag, con la señal perdida justo después"),
+                heatScaleLegend(maxConnectionShare, "de las pasadas que salen del tag, con la señal perdida justo después", "viz-senal"),
                 legendList([
-                  ["var(--viz-desconexion)", "banda interior: caídas"],
-                  ["var(--viz-accent)", "se pierde aquí más de lo que da el azar"],
+                  ["var(--viz-senal)", "corona: barra por tag, más larga cuanto más se pierde"],
+                  ["var(--viz-desconexion)", "cofia: alguna caída larga"],
+                  ["var(--viz-accent)", "corona de acento: se pierde aquí más de lo que da el azar"],
                   [HATCH_SWATCH, "sin pasadas"],
                 ]),
               ];
@@ -1152,15 +1193,19 @@ export function readMatrixHeatmap(
  * hay, sea un 0,1 % o un 40 %; la cifra absoluta va siempre al lado (leyenda, rótulos, lectura y
  * tabla), porque el tono solo no la dice.
  */
-function heatRamp(): (t: number) => string {
+/** Qué rampa pinta un mapa: la azul de siempre (`viz`) o la verde azulada de la señal observada (`viz-senal`). */
+export type HeatHue = "viz" | "viz-senal";
+
+function heatRamp(hue: HeatHue = "viz"): (t: number) => string {
   const style = getComputedStyle(document.documentElement);
+  const token = (step: number): string => style.getPropertyValue(`--${hue}-${step}`);
   const stops: readonly (readonly [number, [number, number, number]])[] = [
     [0, parseColor(style.getPropertyValue("--viz-grid"))],
-    [0.12, parseColor(style.getPropertyValue("--viz-1"))],
-    [0.32, parseColor(style.getPropertyValue("--viz-2"))],
-    [0.55, parseColor(style.getPropertyValue("--viz-3"))],
-    [0.78, parseColor(style.getPropertyValue("--viz-4"))],
-    [1, parseColor(style.getPropertyValue("--viz-5"))],
+    [0.12, parseColor(token(1))],
+    [0.32, parseColor(token(2))],
+    [0.55, parseColor(token(3))],
+    [0.78, parseColor(token(4))],
+    [1, parseColor(token(5))],
   ];
   return (t) => {
     const value = Math.max(0, Math.min(1, t));
@@ -1177,7 +1222,9 @@ function heatRamp(): (t: number) => string {
 }
 
 /** La muestra de la rampa para una leyenda en HTML: el mismo gradiente, de «nada» al más caliente. */
-const HEAT_GRADIENT = "linear-gradient(90deg, var(--viz-grid), var(--viz-1) 12%, var(--viz-2) 32%, var(--viz-3) 55%, var(--viz-4) 78%, var(--viz-5))";
+function heatGradient(hue: HeatHue): string {
+  return `linear-gradient(90deg, var(--viz-grid), var(--${hue}-1) 12%, var(--${hue}-2) 32%, var(--${hue}-3) 55%, var(--${hue}-4) 78%, var(--${hue}-5))`;
+}
 
 /**
  * Una parte pequeña con los decimales que hacen falta para leerla: 2 de 1.638 pasadas es «0,12 %»,
@@ -1236,14 +1283,14 @@ function heatStat(label: string, value: string, note?: string): HTMLElement {
 }
 
 /** La leyenda del gradiente: la rampa entera con sus dos extremos escritos. */
-function heatScaleLegend(maxShare: number, what: string): HTMLElement {
+function heatScaleLegend(maxShare: number, what: string, hue: HeatHue = "viz"): HTMLElement {
   const scale = document.createElement("div");
   scale.className = "heat-scale";
   const low = document.createElement("span");
   low.textContent = "0 %";
   const bar = document.createElement("span");
   bar.className = "heat-scale-bar";
-  bar.style.background = HEAT_GRADIENT;
+  bar.style.background = heatGradient(hue);
   const high = document.createElement("span");
   high.textContent = sharePercent(maxShare);
   const caption = document.createElement("span");
@@ -1273,6 +1320,8 @@ export interface HeatStripSpec {
   /** Los tags con acento: ya decididos fuera (una prueba de azar), nunca un umbral de pantalla. */
   readonly flagged: ReadonlySet<string>;
   readonly sections?: Readonly<Record<string, string>> | undefined;
+  /** La rampa: la azul de siempre o la verde azulada de la señal observada. */
+  readonly hue?: HeatHue;
   /** Las cifras de cabecera: rótulo, valor y nota. */
   readonly stats: readonly (readonly [string, string, string])[];
   /** Qué es la parte que pinta la rampa, para la leyenda del gradiente. */
@@ -1317,9 +1366,18 @@ export function heatStripChart(spec: HeatStripSpec): HTMLElement {
   const maxShare = Math.max(...rows.map(stripShare), 0);
   const maxSecondary = Math.max(...rows.map((cell) => cell.secondary), 0);
   const sectionColor = sections === undefined ? new Map<string, string>() : sectionColors(ringTags.map((tagId) => sections[tagId] ?? null));
+  // Los rótulos directos: primero los sitios con patrón (la prueba de azar ya descuenta las pasadas),
+  // después los más calientes. Así un tag de rama con pocas pasadas no se lleva el rótulo de un sitio
+  // del anillo que pasa la prueba.
   const hottest = [...rows]
     .filter((cell) => cell.value > 0)
-    .sort((a, b) => stripShare(b) - stripShare(a) || b.value - a.value || a.tagId.localeCompare(b.tagId));
+    .sort(
+      (a, b) =>
+        Number(flaggedSites.has(b.tagId)) - Number(flaggedSites.has(a.tagId)) ||
+        stripShare(b) - stripShare(a) ||
+        b.value - a.value ||
+        a.tagId.localeCompare(b.tagId),
+    );
 
   const stats = document.createElement("div");
   stats.className = "heat-stats";
@@ -1344,7 +1402,7 @@ export function heatStripChart(spec: HeatStripSpec): HTMLElement {
     const columns = Math.max(1, rows.length);
     const slot = Math.max(2, (width - left - right - gapWidth) / columns);
     const cell = slot > 4 ? slot - 1 : slot;
-    const ramp = heatRamp();
+    const ramp = heatRamp(spec.hue ?? "viz");
     const node = svg("svg", { viewBox: `0 0 ${width} ${height}`, width, height, role: "img" });
     node.setAttribute("aria-label", `${spec.title}: ${rows.length} tags`);
     node.append(hatchPattern());
@@ -1450,7 +1508,7 @@ export function heatStripChart(spec: HeatStripSpec): HTMLElement {
   redraw();
 
   wrapper.append(stats, area, line.node);
-  wrapper.append(heatScaleLegend(maxShare, spec.scaleWhat));
+  wrapper.append(heatScaleLegend(maxShare, spec.scaleWhat, spec.hue ?? "viz"));
   wrapper.append(
     legendList([
       ["var(--viz-desconexion)", spec.secondaryLegend],
@@ -1546,35 +1604,147 @@ export interface ConnectionStripInput {
  * corte). La fila inferior son las caídas (la clase más larga); el acento, los sitios donde se
  * pierde más de lo que da el azar. Dónde, no por qué (R-EVI-006).
  */
+export type ConnectionClassFilter = "todas" | "microcorte" | "corte" | "caida";
+
+/** Los umbrales de cada clase, ya escritos («de hasta 10 s», «de hasta 10 min», «de más de 10 min»). */
+export interface ConnectionClassLabels {
+  readonly microcorte: string;
+  readonly corte: string;
+  readonly caida: string;
+}
+
+const CLASS_NOUNS: Readonly<Record<keyof ConnectionClassLabels, readonly [string, string]>> = {
+  microcorte: ["microcorte", "microcortes"],
+  corte: ["corte", "cortes"],
+  caida: ["caída", "caídas"],
+};
+
+export interface ConnectionTotals {
+  /** Todos los cortes de la ventana, por clase. */
+  readonly cuts: number;
+  readonly byClass: { readonly microcorte: number; readonly corte: number; readonly caida: number };
+  /** Lo que no entra en el mapa, ya escrito y sin solapes («16 apagados, 5 colectivos, 86 de un terminal ruidoso, 2 sin situar»). */
+  readonly excluded: string;
+  readonly withoutSignalMs: number;
+  readonly vehicles: number;
+  readonly files: number;
+}
+
+const CONNECTION_CLASS_FILTERS: readonly (readonly [ConnectionClassFilter, string])[] = [
+  ["todas", "Todas"],
+  ["microcorte", "Microcortes"],
+  ["corte", "Cortes"],
+  ["caida", "Caídas"],
+];
+
+/**
+ * El mapa con un selector de clase encima: «Todas» o una sola. Los microcortes por sitio en muchos
+ * AGV son la firma de un fallo de roaming; las caídas, de otra cosa. Cambiar la clase vuelve a
+ * dibujar el mapa con sus propias celdas; las cifras de cabecera son siempre las de todas.
+ */
 export function connectionHeatChart(
   cells: readonly ConnectionStripInput[],
   ringTags: readonly string[],
   flaggedSites: ReadonlySet<string>,
-  totals: { readonly cuts: number; readonly byClass: { readonly microcorte: number; readonly corte: number; readonly caida: number }; readonly withoutSignalMs: number; readonly vehicles: number; readonly files: number },
-  classLabels: { readonly microcorte: string; readonly corte: string; readonly caida: string },
+  totals: ConnectionTotals,
+  classLabels: ConnectionClassLabels,
+  sections?: Readonly<Record<string, string>>,
+): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = "connection-map";
+  const toolbar = document.createElement("div");
+  toolbar.className = "seg";
+  toolbar.setAttribute("role", "group");
+  toolbar.setAttribute("aria-label", "Clase de corte en el mapa");
+  let current: ConnectionClassFilter = "todas";
+  let figureNode: HTMLElement | null = null;
+  const buttons = new Map<ConnectionClassFilter, HTMLButtonElement>();
+  const draw = (): void => {
+    const next = connectionHeatFigure(cells, ringTags, flaggedSites, totals, classLabels, current, sections);
+    if (figureNode === null) wrapper.append(next);
+    else figureNode.replaceWith(next);
+    figureNode = next;
+    // La barra de clase va dentro de la figura, bajo el título, como el orden de la matriz.
+    next.querySelector("figcaption")?.after(toolbar);
+  };
+  for (const [id, label] of CONNECTION_CLASS_FILTERS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.setAttribute("aria-pressed", String(id === current));
+    button.addEventListener("click", () => {
+      current = id;
+      for (const [other, node] of buttons) node.setAttribute("aria-pressed", String(other === id));
+      draw();
+    });
+    buttons.set(id, button);
+    toolbar.append(button);
+  }
+  draw();
+  return wrapper;
+}
+
+function connectionHeatFigure(
+  cells: readonly ConnectionStripInput[],
+  ringTags: readonly string[],
+  flaggedSites: ReadonlySet<string>,
+  totals: ConnectionTotals,
+  classLabels: ConnectionClassLabels,
+  filter: ConnectionClassFilter,
   sections?: Readonly<Record<string, string>>,
 ): HTMLElement {
   const byId = new Map(cells.map((cell) => [cell.tagId, cell]));
-  const strip: HeatStripCell[] = cells.map((cell) => ({ tagId: cell.tagId, passes: cell.passes, value: cell.cuts, secondary: cell.byClass.caida, vehicles: cell.vehicles }));
-  const withCuts = cells.filter((cell) => cell.cuts > 0);
-  const top = [...withCuts].sort((a, b) => stripShare({ passes: b.passes, value: b.cuts }) - stripShare({ passes: a.passes, value: a.cuts }) || b.cuts - a.cuts || a.tagId.localeCompare(b.tagId))[0];
+  /** «3 microcortes de hasta 10 s», «1 caída de más de 10 min»: la clase con su umbral. */
+  const named = (count: number, kind: keyof ConnectionClassLabels): string => `${plural(count, CLASS_NOUNS[kind][0], CLASS_NOUNS[kind][1])} ${classLabels[kind]}`;
+  const countOf = (cell: ConnectionStripInput): number => (filter === "todas" ? cell.cuts : cell.byClass[filter]);
+  const strip: HeatStripCell[] = cells.map((cell) => ({ tagId: cell.tagId, passes: cell.passes, value: countOf(cell), secondary: cell.byClass.caida, vehicles: cell.vehicles }));
+  const withCuts = cells.filter((cell) => countOf(cell) > 0);
+  // «Donde más se pierde»: primero un sitio con patrón (la prueba de azar ya descuenta las pasadas);
+  // sin ninguno, el de mayor parte. Un tag de rama con cuarenta pasadas no debe taparle el sitio a uno
+  // del anillo con mil.
+  const top = [...withCuts].sort(
+    (a, b) =>
+      Number(flaggedSites.has(b.tagId)) - Number(flaggedSites.has(a.tagId)) ||
+      stripShare({ passes: b.passes, value: countOf(b) }) - stripShare({ passes: a.passes, value: countOf(a) }) ||
+      countOf(b) - countOf(a) ||
+      a.tagId.localeCompare(b.tagId),
+  )[0];
+  const inMap = cells.reduce((sum, cell) => sum + countOf(cell), 0);
   const hours = (ms: number): string => (ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(1).replace(".", ",")} h` : ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`);
+  const classText =
+    filter === "todas"
+      ? `microcortes ${classLabels.microcorte}, cortes ${classLabels.corte} y caídas ${classLabels.caida}, todas juntas`
+      : `solo ${CLASS_NOUNS[filter][1]} ${classLabels[filter]}`;
   return heatStripChart({
     title: "Mapa de estado de conexión (WiFi)",
     caption:
       "Observado en el registro de conexiones del terminal de cada AGV: dónde se pierde la señal. Cada celda es un tag; cuanto más " +
-      `oscuro, mayor parte de las pasadas que salen de él perdieron la señal justo después (${classLabels.microcorte}, ` +
-      `${classLabels.corte} y ${classLabels.caida}, todas juntas). Apunta a la cobertura de ese punto o al terminal del AGV; la causa ` +
-      "no la dice el dato.",
+      `oscuro, mayor parte de las pasadas que salen de él perdieron la señal justo después (${classText}). Microcortes en un mismo ` +
+      "sitio y en muchos AGV son la firma de un fallo de roaming. Sin apagados, cortes colectivos ni terminales ruidosos. Apunta a la " +
+      "cobertura de ese punto o al terminal del AGV; la causa no la dice el dato.",
     cells: strip,
     ringTags,
     flagged: flaggedSites,
     sections,
+    hue: "viz-senal",
     stats: [
-      ["Cortes", String(totals.cuts), `${totals.byClass.microcorte} microcortes · ${totals.byClass.corte} cortes · ${totals.byClass.caida} caídas`],
+      [
+        filter === "todas" ? "En el mapa" : `En el mapa, solo ${CLASS_NOUNS[filter][1]}`,
+        String(inMap),
+        `de ${plural(totals.cuts, "corte", "cortes")}: ${named(totals.byClass.microcorte, "microcorte")}, ${named(totals.byClass.corte, "corte")}, ` +
+          `${named(totals.byClass.caida, "caida")}` +
+          (totals.excluded === "" ? "" : `; fuera del mapa: ${totals.excluded}`),
+      ],
       ["Tiempo sin señal", hours(totals.withoutSignalMs), "sumado en la ventana cargada"],
       ["AGV con registro", String(totals.vehicles), `${totals.files} ${totals.files === 1 ? "fichero" : "ficheros"} cargados`],
-      ["Donde más se pierde", top === undefined ? "—" : top.tagId, top === undefined ? "ningún tag" : `${sharePercent(stripShare({ passes: top.passes, value: top.cuts }))} de sus pasadas (${top.cuts} de ${top.passes})`],
+      [
+        "Donde más se pierde",
+        top === undefined ? "—" : top.tagId,
+        top === undefined
+          ? "ningún tag"
+          : `${sharePercent(stripShare({ passes: top.passes, value: countOf(top) }))} de sus pasadas (${countOf(top)} de ${top.passes})` +
+            (flaggedSites.has(top.tagId) ? " · más de lo que da el azar" : ""),
+      ],
     ],
     scaleWhat: "de las pasadas que salen del tag, con la señal perdida justo después",
     secondaryLegend: `fila inferior: caídas (${classLabels.caida})`,

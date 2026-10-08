@@ -23,6 +23,13 @@
  * - **Un corte colectivo** —una parte de los AGV con registro pierden la señal en la misma ventana—
  *   es apagado o infraestructura, no cobertura de un sitio (R-COM-003, R-COM-008): se marca, se
  *   lista con su hora y sus AGV, y no entra en el mapa ni en la concentración por sitio.
+ * - **Un terminal ruidoso no contamina la muestra** (propietario, 2026-10-08: «los que tienen
+ *   constantemente conexiones y desconexiones pueden ocultar las evidencias del resto»): un AGV cuya
+ *   tasa de cortes propios por pasada supera `noisyVehicleRatio` veces la mediana de la flota se
+ *   aparta del mapa, de las horas y de la concentración por sitio (R-COM-009). Sigue en su tarjeta y
+ *   en la tabla por AGV: es un hallazgo de ese terminal, no desaparece.
+ * - **Los que no reconectan** (R-COM-010): un corte abierto al final de la ventana, o cerrado solo
+ *   por un encendido fuera de un apagado colectivo, los dos de más de `cutMaxMs`, se listan aparte.
  */
 
 import { concentrated } from "./circuit-state.js";
@@ -40,6 +47,9 @@ export interface ConnectionCutThresholds {
   /** Ventana en la que varios AGV perdiendo la señal son un corte colectivo, y qué parte de los AGV con registro hace falta. */
   readonly collectiveWindowMs: number;
   readonly collectiveMinShare: number;
+  /** Un terminal es ruidoso si su tasa de cortes propios por pasada supera tantas veces la mediana de la flota, con al menos tantos cortes. */
+  readonly noisyVehicleRatio: number;
+  readonly noisyVehicleMinCuts: number;
 }
 
 /** `apagado`: cerrado por un encendido; el terminal se apagó durante el corte y no mide la señal. */
@@ -122,22 +132,29 @@ export function pairCuts(events: readonly ConnectionEvent[], windowEndUtcMs: num
 }
 
 /**
- * Un corte es colectivo si, en la ventana `collectiveWindowMs` alrededor de su inicio, pierden la
- * señal al menos `collectiveMinShare` de los AGV con registro (y al menos dos). Se mira en los dos
- * sentidos: el primero y el último de un grupo también son del grupo.
+ * Un corte es colectivo si al menos `collectiveMinShare` de los AGV con registro (y al menos dos)
+ * **pierden la señal en la ventana `collectiveWindowMs` alrededor de su inicio**, o si, siendo un
+ * apagado, **están apagados a la vez** con él en algún momento del corte. La primera firma es la de
+ * una infraestructura que cae de golpe; la segunda, la de un apagado escalonado (los AGV se apagan
+ * uno a uno durante varios minutos y vuelven juntos una hora después), que una ventana de inicios no
+ * ve. El solapamiento solo cuenta entre apagados: una caída larga de un AGV no hace colectivo a cada
+ * microcorte ajeno que caiga dentro de ella.
  */
 export function markCollective(cuts: readonly ConnectionCut[], vehiclesWithLog: number, thresholds: ConnectionCutThresholds): ConnectionCut[] {
   const ordered = [...cuts].sort((a, b) => a.fromUtcMs - b.fromUtcMs);
   const needed = Math.max(2, Math.ceil(vehiclesWithLog * thresholds.collectiveMinShare));
   const window = thresholds.collectiveWindowMs;
+  const endOf = (cut: ConnectionCut): number => cut.toUtcMs ?? cut.fromUtcMs + cut.durationMs;
   return ordered.map((cut) => {
     const near = new Set<string>();
+    const overlapping = new Set<string>();
     for (const other of ordered) {
-      if (other.fromUtcMs < cut.fromUtcMs - window) continue;
-      if (other.fromUtcMs > cut.fromUtcMs + window) break;
-      near.add(other.agvId);
+      if (other.fromUtcMs >= cut.fromUtcMs - window && other.fromUtcMs <= cut.fromUtcMs + window) near.add(other.agvId);
+      if (cut.end === "tras-apagado" && other.end === "tras-apagado" && other.fromUtcMs <= endOf(cut) && endOf(other) >= cut.fromUtcMs) {
+        overlapping.add(other.agvId);
+      }
     }
-    return { ...cut, collective: near.size >= needed };
+    return { ...cut, collective: near.size >= needed || overlapping.size >= needed };
   });
 }
 
@@ -259,6 +276,21 @@ export interface ConnectionVehicleSummary {
   /** Cortes propios (sin apagados ni colectivos) por día local, en orden: para ver si van a más. */
   readonly perDay: readonly { readonly day: string; readonly cuts: number }[];
   readonly collective: number;
+  /** Cortes propios por mil pasadas, y cuántas veces la mediana de la flota. */
+  readonly rate: number;
+  readonly rateRatio: number;
+  /** Apartado del mapa por ruidoso (R-COM-009). */
+  readonly noisy: boolean;
+}
+
+/** Un AGV que no reconectó: corte abierto al final de la ventana, o cerrado solo por un encendido. */
+export interface NotReconnecting {
+  readonly agvId: string;
+  readonly fromUtcMs: number;
+  readonly toUtcMs: number | null;
+  readonly durationMs: number;
+  readonly end: CutEnd;
+  readonly lastTagId: string | null;
 }
 
 /** Un corte colectivo: la ventana en que una parte de la flota perdió la señal, y quiénes. */
@@ -284,8 +316,14 @@ export interface ConnectionSummary {
   readonly total: number;
   readonly byClass: CutClassCounts;
   readonly withoutSignalMs: number;
-  /** Los cortes que miden cobertura: ni apagados ni colectivos. Son los del mapa. */
+  /** Los cortes que miden cobertura: ni apagados ni colectivos. Son los del mapa, salvo los de terminales ruidosos. */
   readonly individual: number;
+  /** Cortes propios de terminales ruidosos, apartados del mapa (R-COM-009). */
+  readonly excludedNoisy: number;
+  readonly noisyVehicles: readonly string[];
+  /** Mediana de la flota de cortes propios por mil pasadas, con la que se mide cada terminal. */
+  readonly fleetMedianRate: number;
+  readonly notReconnecting: readonly NotReconnecting[];
   /** Cortes propios por hora local de inicio (24 posiciones). */
   readonly byHour: readonly number[];
   readonly collectives: readonly CollectiveCut[];
@@ -331,12 +369,37 @@ export function summarizeConnections(
     return created;
   };
   const days = new Set<string>();
+
+  // Primero, quién es ruidoso: la tasa de cortes propios por mil pasadas de cada AGV frente a la
+  // mediana de la flota. Un terminal que no para de cortar apartaría a los demás del mapa (R-COM-009).
+  const passesByVehicle = new Map<string, number>();
+  for (const transition of transitions) passesByVehicle.set(transition.agvId, (passesByVehicle.get(transition.agvId) ?? 0) + 1);
+  const ownCutsByVehicle = new Map<string, number>();
+  for (const cut of cuts) if (measuresCoverage(cut)) ownCutsByVehicle.set(cut.agvId, (ownCutsByVehicle.get(cut.agvId) ?? 0) + 1);
+  const rateOf = (agvId: string): number => {
+    const passes = passesByVehicle.get(agvId) ?? 0;
+    return passes === 0 ? 0 : (1000 * (ownCutsByVehicle.get(agvId) ?? 0)) / passes;
+  };
+  const logged = [...new Set(events.map((event) => event.agvId))];
+  const rates = logged.map(rateOf).sort((a, b) => a - b);
+  const fleetMedianRate = rates.length === 0 ? 0 : rates.length % 2 === 1 ? (rates[(rates.length - 1) / 2] as number) : ((rates[rates.length / 2 - 1] as number) + (rates[rates.length / 2] as number)) / 2;
+  const noisy = new Set(
+    logged.filter(
+      (agvId) =>
+        (ownCutsByVehicle.get(agvId) ?? 0) >= thresholds.noisyVehicleMinCuts &&
+        fleetMedianRate > 0 &&
+        rateOf(agvId) >= thresholds.noisyVehicleRatio * fleetMedianRate,
+    ),
+  );
+  const inMap = (cut: ConnectionCut): boolean => measuresCoverage(cut) && !noisy.has(cut.agvId);
   for (const event of events) {
     const own = vehicleOf(event.agvId);
     own.events += 1;
     if (event.ipTerminal !== "") own.ips.add(event.ipTerminal);
   }
   for (const transition of transitions) {
+    // Las pasadas de un terminal ruidoso tampoco cuentan: su exposición va con sus cortes.
+    if (noisy.has(transition.agvId)) continue;
     const cell = heat.get(transition.from) ?? { passes: 0, cuts: 0, byClass: emptyClasses(), withoutSignalMs: 0, vehicles: new Set<string>() };
     cell.passes += 1;
     heat.set(transition.from, cell);
@@ -354,12 +417,14 @@ export function summarizeConnections(
     own.withoutSignalMs += cut.durationMs;
     if (cut.collective) own.collective += 1;
     days.add(clock.dayOf(cut.fromUtcMs));
-    // Solo los cortes que miden cobertura van al mapa, a la concentración, a las horas y a los días.
+    // Solo los cortes que miden cobertura van a los días de su AGV; y al mapa, a la concentración y a
+    // las horas solo si su terminal no es ruidoso.
     if (!measuresCoverage(cut)) continue;
-    const hour = clock.hourOf(cut.fromUtcMs);
-    byHour[hour] = (byHour[hour] ?? 0) + 1;
     const day = clock.dayOf(cut.fromUtcMs);
     own.perDay.set(day, (own.perDay.get(day) ?? 0) + 1);
+    if (!inMap(cut)) continue;
+    const hour = clock.hourOf(cut.fromUtcMs);
+    byHour[hour] = (byHour[hour] ?? 0) + 1;
     if (cut.lastTagId === null) {
       own.unlocated += 1;
       continue;
@@ -381,9 +446,8 @@ export function summarizeConnections(
 
   const siteCounts = new Map([...heat].filter(([, cell]) => cell.cuts > 0).map(([tagId, cell]) => [tagId, cell.cuts]));
   const siteExposure = new Map([...heat].map(([tagId, cell]) => [tagId, cell.passes]));
-  const vehicleCounts = new Map([...vehicles].filter(([, own]) => own.cuts > 0).map(([agvId, own]) => [agvId, own.cuts]));
-  const vehicleExposure = new Map<string, number>();
-  for (const transition of transitions) vehicleExposure.set(transition.agvId, (vehicleExposure.get(transition.agvId) ?? 0) + 1);
+  const vehicleCounts = new Map([...ownCutsByVehicle].filter(([, count]) => count > 0));
+  const vehicleExposure = passesByVehicle;
   const flagged = (counts: Map<string, number>, exposure: Map<string, number>): DeliveryConcentration[] =>
     [...concentrated(counts, exposure, maxFalsePoints)]
       .map(([id, expected]) => ({ id, count: counts.get(id) ?? 0, expected }))
@@ -413,19 +477,35 @@ export function summarizeConnections(
     });
     group = [];
   };
+  let groupEnd = Number.NEGATIVE_INFINITY;
   for (const cut of collectiveCuts) {
     const last = group[group.length - 1];
-    if (last !== undefined && cut.fromUtcMs - last.fromUtcMs > thresholds.collectiveWindowMs) flush();
+    // Un grupo nuevo cuando el corte ni empieza cerca del anterior ni se solapa con el grupo (apagado escalonado).
+    if (last !== undefined && cut.fromUtcMs - last.fromUtcMs > thresholds.collectiveWindowMs && cut.fromUtcMs > groupEnd) {
+      flush();
+      groupEnd = Number.NEGATIVE_INFINITY;
+    }
     group.push(cut);
+    groupEnd = Math.max(groupEnd, cut.toUtcMs ?? cut.fromUtcMs + cut.durationMs);
   }
   flush();
   const orderedDays = [...days].sort();
+  const notReconnecting: NotReconnecting[] = cuts
+    .filter(
+      (cut) =>
+        cut.durationMs >= thresholds.cutMaxMs && ((cut.end === "abierto") || (cut.end === "tras-apagado" && !cut.collective)),
+    )
+    .map((cut) => ({ agvId: cut.agvId, fromUtcMs: cut.fromUtcMs, toUtcMs: cut.toUtcMs, durationMs: cut.durationMs, end: cut.end, lastTagId: cut.lastTagId }));
 
   return {
     total: cuts.length,
     byClass,
     withoutSignalMs,
     individual: cuts.filter(measuresCoverage).length,
+    excludedNoisy: cuts.filter((cut) => measuresCoverage(cut) && noisy.has(cut.agvId)).length,
+    noisyVehicles: [...noisy].sort(),
+    fleetMedianRate,
+    notReconnecting,
     byHour,
     collectives,
     vehicles: [...vehicles]
@@ -439,6 +519,9 @@ export function summarizeConnections(
         ips: [...own.ips].sort(),
         perDay: orderedDays.map((day) => ({ day, cuts: own.perDay.get(day) ?? 0 })),
         collective: own.collective,
+        rate: rateOf(agvId),
+        rateRatio: fleetMedianRate > 0 ? rateOf(agvId) / fleetMedianRate : 0,
+        noisy: noisy.has(agvId),
       }))
       .sort((a, b) => b.cuts - a.cuts || a.agvId.localeCompare(b.agvId)),
     heat: [...heat]

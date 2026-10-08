@@ -301,7 +301,17 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   // corte, más es una caída; una ráfaga y un corte a menos de 30 s son el mismo episodio.
   // Un corte colectivo (R-COM-008): la mitad o más de los AGV con registro pierden la señal en la
   // misma ventana de dos minutos; con dos AGV, los dos.
-  connectionCuts: { microcutMaxMs: 10_000, cutMaxMs: 10 * 60_000, contrastToleranceMs: 30_000, collectiveWindowMs: 2 * 60_000, collectiveMinShare: 0.5 },
+  // Un terminal ruidoso (R-COM-009): tres veces la mediana de la flota en cortes propios por pasada,
+  // con al menos diez cortes para que no lo decida el azar de pocos.
+  connectionCuts: {
+    microcutMaxMs: 10_000,
+    cutMaxMs: 10 * 60_000,
+    contrastToleranceMs: 30_000,
+    collectiveWindowMs: 2 * 60_000,
+    collectiveMinShare: 0.5,
+    noisyVehicleRatio: 3,
+    noisyVehicleMinCuts: 10,
+  },
   franjas: { minPositionSamples: 4 },
   anchorSums: { minAnchorPasses: 5 },
   pace: { minPaceShift: 0.05 },

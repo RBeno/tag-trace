@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.47.0
+version: 0.49.0
 status: baseline-candidate
-last_updated: 2026-10-07
+last_updated: 2026-10-08
 ---
 
 # Memoria compacta del proyecto
@@ -423,6 +423,24 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## Terminales ruidosos, mapa por clase y los que no reconectan (3.66.0, 2026-10-08)
+
+El propietario: un terminal que no para de conectar y desconectar contamina la muestra y tapa la
+evidencia del resto; quiere detectar fallos de roaming, expulsiones del servidor, «listas largas» y
+AGV que no reconectan. Hecho: **ruidoso** = tasa de cortes propios por mil pasadas ≥ 3× la mediana de
+la flota con ≥ 10 cortes (R-COM-009): fuera del mapa, de la concentración por sitio y de las horas,
+con sus pasadas; sigue en su tarjeta y en la tabla. **Mapa por clase** (microcortes por sitio en muchos
+AGV = roaming). **No reconectan** (R-COM-010): corte abierto o cerrado solo por encendido fuera de un
+apagado colectivo, ≥ 10 min. En sus datos: un AGV corta 3,8× la mediana (ruidoso); `SUPERADO TIEMPO
+MAXIMO OFFLINE` del informe ampliado cae dentro de un corte 5 de 5 veces (OQ-165: ¿es la marca de la
+expulsión? conservar los usos para cruzarlos); un AGV solo volvió al apagar y encender dos veces fuera
+del apagado nocturno. **«Listas largas»** son la lista de dispositivos de cada punto de acceso, que
+crece donde coinciden cinco o seis circuitos (OQ-164): con PO4 solo, la ocupación del propio circuito
+en el momento del corte es igual que al azar (1,1 frente a 1,2 AGV cerca), salvo un sitio aglomerado;
+para medirla hacen falta los informes ampliados de los circuitos que coinciden y, si el terminal lo
+da, el punto de acceso de cada conexión (OQ-166). Es una decisión sobre el aislamiento de circuitos
+(ADR-0004), no se construye sola.
 
 ## Registro de conexiones construido (3.65.0, 2026-10-07)
 

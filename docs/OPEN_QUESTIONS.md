@@ -1,8 +1,8 @@
 ---
 document_id: TT-OPEN-001
-version: 0.60.0
+version: 0.62.0
 status: active
-last_updated: 2026-10-07
+last_updated: 2026-10-08
 ---
 
 # Preguntas abiertas
@@ -83,6 +83,9 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-161 | ¿Qué es un corte que importa? La mitad de los cortes duran dos segundos o menos (microcortes de cambio de punto de acceso) y una minoría pasan de diez minutos. ¿Se clasifican por duración (microcorte, corte, caída), con qué umbrales, y cuenta `Conexión tras apagado` como vuelta de la señal? | Tres clases por duración en `CONFIG_SCHEMA.md` (`connection_cuts.*`, provisionales: 10 s y 10 min) todas en el mapa y separadas, y «tras apagado» como encendido, no como vuelta de la señal (recomendación aplicada, 2026-10-07, R-COM-004). |
 | OQ-162 | LECTURAS por AGV es el informe ampliado filtrado por ese AGV (filas idénticas) con una columna más, `No ejecutado`. ¿Se admite como fuente, se descarta, o se conserva solo `No ejecutado` como atributo de la lectura? | No es una fuente nueva (recomendación aplicada, 2026-10-07, `DATA_CONTRACTS.md` §3.10): para toda la flota basta el informe ampliado más un CONEXIONES por AGV. `No ejecutado` queda para OQ-163: qué significa antes de conservarlo. |
 | OQ-163 | LECTURAS por AGV trae `No ejecutado` (verdadero en un 1,5 % de las lecturas) y `No en memoria` (siempre falso en lo visto). ¿Qué significa «no ejecutado» —la acción del tag no se ejecutó— y cuándo lo pone el terminal? Sin eso no se conserva como atributo con semántica. | Pendiente del propietario. Hasta entonces el importador de lecturas no lo lee. |
+| OQ-164 | «Listas largas» (propietario, 2026-10-08): la lista de dispositivos asociados a cada punto de acceso, que crece donde coinciden cinco o seis circuitos; no se sabe si afecta al punto de acceso o al servidor. ¿Cómo se mide con lo que hay? | **Parcialmente respondida.** Con un solo circuito solo se puede medir la ocupación del propio circuito: en los datos de PO4, la ocupación a ±3 tags en el momento del corte es igual que al azar (1,1 frente a 1,2 AGV; el 39 % de los cortes sin ningún otro AGV cerca), salvo un sitio con cuatro cortes y casi seis AGV alrededor. Para la hipótesis de la lista del punto de acceso hacen falta **los informes ampliados de los circuitos que coinciden en esos puntos** (mismos días) y, si el terminal lo exporta, **a qué punto de acceso se asocia cada AGV** (OQ-166). Propuesta: cargar esos circuitos como «tráfico ajeno» solo para la ocupación, y medir, por sitio, cortes por pasada frente a cuántos AGV de cualquier circuito había cerca; punto de acceso si depende del sitio, servidor si depende del total conectado a la vez. Requiere decisión sobre ADR-0004 (circuitos aislados). |
+| OQ-165 | ¿Qué evento marca una **expulsión del servidor**? En el informe ampliado, `SUPERADO TIEMPO MAXIMO OFFLINE` cae dentro de un corte del registro en todos los casos vistos (cinco de cinco). ¿Es esa la marca? ¿Se conservan las filas `Uso` del informe (hoy en cuarentena como `NO_TAG`) para cruzarlas con los cortes? | Recomendación: conservar los usos con su código como atributos del AGV y cruzarlos con los cortes (código → cuántos dentro de un corte), sin nombrar causa; mientras tanto los que no reconectan salen por R-COM-010. |
+| OQ-166 | ¿Puede el terminal (MikroTik) exportar, junto a cada conexión, el punto de acceso al que se asoció (BSSID o nombre), la señal y, si existe, el motivo de la desconexión? Con eso la «lista larga» se mide directamente por punto de acceso, y el roaming por el cambio de punto de acceso. | Pendiente del propietario. Si existe, entra en DS-013 como atributos y el mapa se puede agrupar por punto de acceso. |
 
 ## Preguntas cerradas
 

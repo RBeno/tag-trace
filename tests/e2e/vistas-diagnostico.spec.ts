@@ -253,12 +253,15 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(calor.getByRole("button", { name: /tags con lecturas tardías o hueco en tabla/ })).toBeVisible();
     // El estado de conexión observado (DS-013): los dos cortes del registro, situados, el mapa con su
     // tabla, y el contraste que cuenta las lecturas con fecha dentro de la caída (OQ-159).
-    await expect(page.getByText(/2 cortes en la ventana cargada \(1 microcortes de hasta 10 s, 0 cortes de hasta 10 min, 1 caídas/)).toBeVisible();
+    await expect(page.getByText(/2 cortes en la ventana cargada \(1 microcorte de hasta 10 s, 0 cortes de hasta 10 min, 1 caída de más de 10 min/)).toBeVisible();
     const conexion = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Mapa de estado de conexión (WiFi)" }) });
     await expect(conexion).toHaveCount(1);
     await expect(conexion.locator("svg[role=img]")).toBeVisible();
     await expect(conexion).toContainText("la causa no la dice el dato");
     await expect(conexion.getByRole("button", { name: /tags donde se perdió la señal en tabla/ })).toBeVisible();
+    // El selector de clase vuelve a dibujar el mapa con una sola clase (R-COM-009: roaming = microcortes por sitio).
+    await page.getByRole("group", { name: "Clase de corte en el mapa" }).getByRole("button", { name: "Microcortes" }).click();
+    await expect(page.locator("figure.chart", { has: page.getByRole("heading", { name: "Mapa de estado de conexión (WiFi)" }) })).toContainText("solo microcortes");
     await expect(page.getByText(/Lecturas con fecha dentro de una caída: [1-9]\d* en 1 caída\. Con la hora de recepción/)).toBeVisible();
     await page.getByRole("button", { name: "Ver los 2 cortes" }).click();
     const cortes = page.locator(".drawer-body table.data");
@@ -271,7 +274,8 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await openTab(page, "Resumen");
     const anillo = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Anillo del circuito" }) });
     await anillo.getByRole("radio", { name: "Conexión" }).click();
-    await expect(anillo.locator(".ring-legend")).toContainText("banda interior: caídas");
+    await expect(anillo.locator(".ring-legend")).toContainText("corona: barra por tag");
+    await expect(anillo.locator("path[data-bar]").first()).toBeVisible();
     await anillo.getByRole("radio", { name: "Omisión" }).click();
     await openTab(page, "Tiempos");
 

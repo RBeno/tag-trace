@@ -30,8 +30,7 @@ import {
   inventoryChart,
   lazyTable,
   plainTable,
-  scrollBox,
-} from "./charts.js";
+  scrollBox, plural } from "./charts.js";
 import { closeDrawer } from "./drawer.js";
 import { changedTagsOf, deltaAround, evolutionDataOf, evolutionSection, ringDataFromSnapshot, sourceStatusList, timeControl } from "./evolution.js";
 import type { CircuitSnapshot } from "../domain/snapshot.js";
@@ -3020,23 +3019,35 @@ function renderConnections(
   const { summary, thresholds } = connections;
   const minutes = (ms: number): string => (ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(1).replace(".", ",")} h` : ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`);
   const classLabels = {
-    microcorte: `microcortes de hasta ${minutes(thresholds.microcutMaxMs)}`,
-    corte: `cortes de hasta ${minutes(thresholds.cutMaxMs)}`,
-    caida: `caídas de más de ${minutes(thresholds.cutMaxMs)}`,
+    microcorte: `de hasta ${minutes(thresholds.microcutMaxMs)}`,
+    corte: `de hasta ${minutes(thresholds.cutMaxMs)}`,
+    caida: `de más de ${minutes(thresholds.cutMaxMs)}`,
   };
+  const n = plural;
+  // Lo que no entra en el mapa, sin solapes: los apagados (colectivos o no), los colectivos que no
+  // son apagados, los propios de terminales ruidosos y los propios sin lecturas con que situarlos.
+  const collectiveOthers = summary.collectives.reduce((sum, entry) => sum + entry.byClass.microcorte + entry.byClass.corte + entry.byClass.caida, 0);
+  const unlocated = summary.vehicles.reduce((sum, own) => sum + own.unlocated, 0);
+  const excludedParts = [
+    ...(summary.byClass.apagado > 0 ? [n(summary.byClass.apagado, "apagado", "apagados")] : []),
+    ...(collectiveOthers > 0 ? [n(collectiveOthers, "colectivo", "colectivos")] : []),
+    ...(summary.excludedNoisy > 0 ? [`${summary.excludedNoisy} de ${n(summary.noisyVehicles.length, "terminal ruidoso", "terminales ruidosos")} (${summary.noisyVehicles.join(", ")})`] : []),
+    ...(unlocated > 0 ? [`${unlocated} sin lecturas con que situarlos`] : []),
+  ];
+  const excluded = excludedParts.join(", ");
+  // Una línea corta: qué hay y qué no entra en el mapa. El porqué de cada exclusión está en las
+  // tarjetas y en la leyenda del mapa, no aquí: la sección ya es larga.
   out.append(
     element(
       "p",
       "muted",
-      `Registro de conexiones de ${connections.vehicles} AGV (${connections.files} ${connections.files === 1 ? "fichero" : "ficheros"}): ` +
-        `${summary.total} cortes en la ventana cargada (${summary.byClass.microcorte} ${classLabels.microcorte}, ${summary.byClass.corte} ` +
-        `${classLabels.corte}, ${summary.byClass.caida} ${classLabels.caida}, ${summary.byClass.apagado} ${summary.byClass.apagado === 1 ? "apagado" : "apagados"}), ` +
-        `${minutes(summary.withoutSignalMs)} sin señal en total` +
-        (connections.outsideWindow > 0 ? `; ${connections.outsideWindow} cortes del registro caen fuera de la ventana y no se cuentan` : "") +
-        `. Miden cobertura ${summary.individual}: un corte cerrado por «Conexión tras apagado» es un apagado (el terminal se apagó durante el corte) ` +
-        `y un corte colectivo —${Math.round(thresholds.collectiveMinShare * 100)} % o más de los AGV con registro a menos de ${minutes(thresholds.collectiveWindowMs)}— ` +
-        "es apagado o infraestructura: los dos se cuentan, pero no entran en el mapa. Cada corte se sitúa entre la última lectura anterior y la " +
-        "primera posterior del mismo AGV.",
+      `Registro de conexiones de ${n(connections.vehicles, "AGV", "AGV")} (${n(connections.files, "fichero", "ficheros")}): ` +
+        `${n(summary.total, "corte", "cortes")} en la ventana cargada (${n(summary.byClass.microcorte, "microcorte", "microcortes")} ${classLabels.microcorte}, ` +
+        `${n(summary.byClass.corte, "corte", "cortes")} ${classLabels.corte}, ${n(summary.byClass.caida, "caída", "caídas")} ${classLabels.caida}, ` +
+        `${n(summary.byClass.apagado, "apagado", "apagados")}), ${minutes(summary.withoutSignalMs)} sin señal en total` +
+        (connections.outsideWindow > 0 ? `; ${n(connections.outsideWindow, "corte", "cortes")} del registro fuera de la ventana, sin contar` : "") +
+        ". Cada corte se sitúa entre la última lectura anterior y la primera posterior del mismo AGV" +
+        (excluded === "" ? "." : `; no entran en el mapa: ${excluded}.`),
     ),
   );
   if (summary.total === 0) {
@@ -3048,7 +3059,7 @@ function renderConnections(
       summary.heat,
       ringTags,
       new Set(summary.sites.map((site) => site.id)),
-      { cuts: summary.individual, byClass: summary.byClass, withoutSignalMs: summary.withoutSignalMs, vehicles: connections.vehicles, files: connections.files },
+      { cuts: summary.total, byClass: summary.byClass, excluded, withoutSignalMs: summary.withoutSignalMs, vehicles: connections.vehicles, files: connections.files },
       classLabels,
       views.sections,
     ),
@@ -3117,7 +3128,53 @@ function renderConnections(
       ),
     );
   }
-  for (const vehicle of summary.concentratedVehicles.slice(0, PER_KIND)) {
+  // Los terminales ruidosos (R-COM-009): un hallazgo de ese terminal, apartado del mapa.
+  for (const agvId of summary.noisyVehicles.slice(0, PER_KIND)) {
+    const own = summary.vehicles.find((entry) => entry.agvId === agvId);
+    out.append(
+      finding(
+        `${agvId}: terminal ruidoso, apartado del mapa`,
+        `${own?.rate.toFixed(1).replace(".", ",") ?? "—"} cortes propios por mil pasadas, ${own?.rateRatio.toFixed(1).replace(".", ",") ?? "—"} veces la mediana de la flota ` +
+          `(${summary.fleetMedianRate.toFixed(1).replace(".", ",")})` +
+          (own === undefined ? "" : ` · ${own.byClass.microcorte} microcortes, ${own.byClass.corte} cortes, ${own.byClass.caida} caídas` + (own.perDay.length > 1 ? ` · por día: ${own.perDay.map((entry) => entry.cuts).join(" → ")}` : "")),
+        "Conecta y desconecta sin parar: sus cortes y sus pasadas no entran en el mapa ni en la concentración por sitio, para que no " +
+          "oculten la evidencia del resto. Apunta a su terminal; la causa no la dice el dato.",
+        ["conexion-ruidoso", agvId],
+      ),
+    );
+  }
+  // Los que no reconectan (R-COM-010).
+  for (const entry of summary.notReconnecting.slice(0, PER_KIND)) {
+    out.append(
+      finding(
+        `${entry.agvId}: no reconectó`,
+        `Desde ${formatTick(entry.fromUtcMs)}, ${entry.end === "abierto" ? `al menos ${minutes(entry.durationMs)} sin volver en la ventana` : `${minutes(entry.durationMs)} hasta que se apagó y encendió`}` +
+          (entry.lastTagId === null ? "" : ` · última lectura con señal en ${entry.lastTagId}`),
+        entry.end === "abierto"
+          ? "Perdió la señal y no consta ninguna conexión después dentro de la ventana cargada. Apunta al terminal o a una expulsión; la causa no la dice el dato."
+          : "Solo volvió al apagar y encender el AGV, fuera de un apagado colectivo: un terminal que no reconecta solo. La causa no la dice el dato.",
+        ["conexion-no-reconecta", `${entry.agvId} ${entry.fromUtcMs}`],
+      ),
+    );
+  }
+  if (summary.notReconnecting.length > PER_KIND) {
+    out.append(
+      lazyTable(`Ver los ${summary.notReconnecting.length} que no reconectaron`, () =>
+        plainTable(
+          ["AGV", "Desde", "Hasta", "Duración", "Cierre", "Última lectura"],
+          summary.notReconnecting.map((entry) => [
+            entry.agvId,
+            formatTick(entry.fromUtcMs),
+            entry.toUtcMs === null ? "no vuelve en la ventana" : formatTick(entry.toUtcMs),
+            `${entry.end === "abierto" ? "al menos " : ""}${minutes(entry.durationMs)}`,
+            entry.end === "abierto" ? "abierto" : "tras apagado (encendido)",
+            entry.lastTagId ?? "—",
+          ]),
+        ),
+      ),
+    );
+  }
+  for (const vehicle of summary.concentratedVehicles.filter((entry) => !summary.noisyVehicles.includes(entry.id)).slice(0, PER_KIND)) {
     const own = summary.vehicles.find((entry) => entry.agvId === vehicle.id);
     out.append(
       finding(
@@ -3135,9 +3192,9 @@ function renderConnections(
   out.append(
     lazyTable(`Ver el registro por AGV (${summary.vehicles.length})`, () =>
       plainTable(
-        ["AGV", "Eventos", "Cortes", "Microcortes", "Cortes medios", "Caídas", "Apagados", "Colectivos", "Sin señal", "Sin situar", "Propios por día", "Terminal"],
+        ["AGV", "Eventos", "Cortes", "Microcortes", "Cortes medios", "Caídas", "Apagados", "Colectivos", "Por mil pasadas", "Frente a la flota", "Sin señal", "Sin situar", "Propios por día", "Terminal"],
         summary.vehicles.map((own) => [
-          own.agvId,
+          own.noisy ? `${own.agvId} (ruidoso, fuera del mapa)` : own.agvId,
           String(own.events),
           String(own.cuts),
           String(own.byClass.microcorte),
@@ -3145,6 +3202,8 @@ function renderConnections(
           String(own.byClass.caida),
           String(own.byClass.apagado),
           String(own.collective),
+          own.rate.toFixed(1).replace(".", ","),
+          `${own.rateRatio.toFixed(1).replace(".", ",")}×`,
           minutes(own.withoutSignalMs),
           String(own.unlocated),
           own.perDay.map((entry) => `${entry.day.slice(5)}: ${entry.cuts}`).join(" · "),

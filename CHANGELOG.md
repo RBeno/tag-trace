@@ -2,6 +2,63 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.66.0] - 2026-10-08
+
+El propietario: «hay que evitar que [terminales] en mal estado contaminen la muestra; intentamos
+detectar fallos de roaming, expulsiones de servidor o listas largas, AGVs que no reconectan; los que
+tienen constantemente conexiones y desconexiones pueden ocultar las evidencias del resto».
+
+### Añadido
+
+- **Terminales ruidosos apartados del mapa** (R-COM-009, `connection_cuts.noisy_vehicle_ratio` 3,
+  `noisy_vehicle_min_cuts` 10, provisionales): la tasa de cortes propios por mil pasadas de cada AGV
+  frente a la mediana de la flota; el ruidoso sale del mapa, de la concentración por sitio y de las
+  horas **con sus pasadas**, y sigue en su tarjeta «terminal ruidoso, apartado del mapa» y en la tabla
+  por AGV (columnas «por mil pasadas» y «frente a la flota»).
+- **Mapa por clase**: selector «Todas / Microcortes / Cortes / Caídas» sobre el mapa de estado de
+  conexión; los microcortes por sitio en muchos AGV son la firma de un fallo de roaming.
+- **Los que no reconectan** (R-COM-010): tarjetas «AGV: no reconectó» para un corte abierto al final
+  de la ventana o cerrado solo por un encendido fuera de un apagado colectivo, de diez minutos o más.
+- OQ-164 («listas largas») y OQ-165 (la expulsión del servidor: `SUPERADO TIEMPO MAXIMO OFFLINE`
+  cae dentro de un corte en todos los casos vistos; conservar los usos para cruzarlos).
+- Pruebas TC-328 y TC-329; TC-327 ampliado con el selector de clase.
+
+- **La corona del anillo** (propietario, 2026-10-08: «un círculo exterior en el que las pérdidas
+  aparezcan como barras que crecen, un segmento de color coronando el patrón y otro color en la larga
+  duración»). En las capas «Conexión» y «Ráfagas», entre la banda principal y la de zona: una barra
+  radial por tag, más larga cuanto más se pierde (la misma medida que el tono, en longitud), la cofia
+  roja en la punta si hubo caída larga (o donde empieza el hueco, en «Ráfagas») y un segmento de
+  acento coronando los sitios con patrón. La banda principal se estrecha para dejarle sitio; las
+  barras se leen al puntero como su tag. Sustituye a la banda fina interior de esas capas.
+
+- **Un color propio para la señal observada** (propietario, 2026-10-08): la capa «Conexión», su
+  corona y el mapa de estado de conexión pasan a una rampa verde azulada (`--viz-senal-1…5`), suave
+  donde apenas se pierde y más intensa cuanto más se pierde, validada en claro y oscuro con la guía de
+  visualización. El azul queda para la omisión y las ráfagas, el naranja para el patrón y el rojo para
+  la caída: cuatro cosas, cuatro colores.
+
+### Corregido
+
+- **Las cifras del mapa de estado de conexión dicen lo que pintan**: «En el mapa: 157 de 264 cortes;
+  fuera: 16 apagados, 5 colectivos, 86 de un terminal ruidoso» en vez de «Cortes 243», que no era ni lo
+  pintado ni el total; «Donde más se pierde» y los rótulos directos prefieren un sitio con patrón, para
+  que un tag de rama con cuarenta pasadas no tape a uno del anillo con mil; «1 caída», no «1 caídas»;
+  y la línea de cabecera de la sección se acorta a lo que hay y lo que no entra en el mapa, sin repetir
+  el porqué (las tarjetas y la leyenda ya lo dicen). Todo destapado al pasar los datos reales.
+- **Un apagado escalonado es colectivo** (R-COM-008): además de los inicios a menos de la ventana, un
+  apagado es colectivo si la mitad o más de los AGV con registro están apagados a la vez con él.
+  Lo destapó pasar los datos reales por el producto: el apagado nocturno (seis AGV apagados uno a uno
+  entre las 4:50 y las 4:58, encendidos entre las 5:33 y las 6:00) no caía en la ventana de dos
+  minutos y los seis salían como «no reconectó».
+- `agvFromFileName` admite un prefijo delante de «CONEXIONES» («copia de CONEXIONES395.xlsx», el
+  hash de una subida): lo destapó pasar los ficheros reales del propietario por el producto, que
+  dejaba los nueve AGV en blanco. «desconexiones1553» sigue sin valer: la palabra no puede ir pegada
+  a otra letra.
+- OQ-164 aclarada por el propietario («listas largas» = dispositivos por punto de acceso donde
+  coinciden varios circuitos) y medida en lo posible fuera del repositorio: dentro de PO4 la ocupación
+  en el momento del corte es igual que al azar; hacen falta los otros circuitos (decisión sobre
+  ADR-0004) y, si existe, el punto de acceso por conexión (OQ-166).
+
 ## [3.65.0] - 2026-10-07
 
 El propietario aceptó ADR-0017 con las recomendaciones de OQ-159 a OQ-162 («Usa tu recomendación en
