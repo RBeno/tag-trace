@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.50.0
+version: 0.50.1
 status: baseline-candidate
-last_updated: 2026-10-08
+last_updated: 2026-10-09
 ---
 
 # Memoria compacta del proyecto
@@ -423,6 +423,20 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## Otro circuito con tres recorridos: desvíos y dos preguntas (3.67.1, 2026-10-09)
+
+El propietario aportó el registro de conexiones y las lecturas de un segundo circuito, sin cargas
+online externas y con **tres recorridos** de flotas disjuntas bajo un mismo nombre (DATA_CONTRACTS
+§3.2). Analizado fuera del repositorio; se le entregaron tres ficheros: el orden de los tags por
+recorrido, los cortes por tag con los desvíos, y un borrador de listas (`circuito` con los tres
+recorridos como subsecuencias, `tramo` y `ancla`) que el importador acepta sin rechazos y con cada
+recorrido entero «igual» (R-GRA-015). Lo que queda: las estaciones de un recorrido concentran los
+cortes con el AGV parado (seis veces la tasa por hora de la flota); cuatro AGV se salieron de su
+recorrido y en tres el propio AGV registró `PARADA FIJA POR TAG (11)` justo al leer un tag de otro
+recorrido (OQ-167); y LECTURAS por AGV trae tags `Sin asignar` que el informe ampliado omite, contra
+OQ-162 (OQ-168). El emparejamiento de cortes del producto ya resuelve bien el mismo segundo por la
+posición en el fichero (`connection-log.ts`); el error de un primer recuento fue del script externo.
 
 ## PR #15 fusionada y las dos familias de color (3.67.0, 2026-10-08)
 

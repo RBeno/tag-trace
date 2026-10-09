@@ -2,6 +2,23 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.67.1] - 2026-10-09
+
+El propietario aportó el registro de conexiones y las lecturas de otro circuito (tres recorridos con
+flotas propias bajo un mismo nombre) y pidió apuntar dos preguntas que salieron del análisis. El
+análisis y sus ficheros se hicieron fuera del repositorio; aquí solo entran las preguntas, sin
+identificadores de planta.
+
+### Documentación
+
+- **OQ-167** nueva: ¿`PARADA FIJA POR TAG (11)` es la traza de un tag de función `parada`? En los
+  datos aparece solo en el segundo en que un AGV lee un tag de otro recorrido. Recomendación: usarlo
+  como evidencia observada de salida del recorrido y proponer ese tag como punto crítico `parada`,
+  cuando el propietario lo confirme.
+- **OQ-168** nueva, contradicción con OQ-162: LECTURAS por AGV trae lecturas de tags `Sin asignar`
+  que el informe ampliado del mismo periodo no trae. OQ-162 no se toca hasta que decida el
+  propietario.
+
 ## [3.67.0] - 2026-10-08
 
 Tras fusionar la PR #15 (3.66.0, `43f0799`), el propietario precisó la intención del color: «para no
