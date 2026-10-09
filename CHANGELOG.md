@@ -2,6 +2,35 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.67.0] - 2026-10-08
+
+Tras fusionar la PR #15 (3.66.0, `43f0799`), el propietario precisó la intención del color: «para no
+confundir wifi de tags, cada uno un color, y que la intensidad suba con la frecuencia del fallo;
+cuanto más oscuro, menos lecturas o más desconexiones; un conjunto elegante y en armonía».
+
+### Cambiado
+
+- **Dos familias de color.** Lo que miden los tags (la omisión) sigue en azul; **toda la WiFi** va en
+  la familia verde azulada: la capa «Conexión» con su corona y el mapa de estado de conexión
+  (observado), y ahora también la capa «Ráfagas» y el mapa de lecturas que llegaron juntas (inferido),
+  que en 3.66.0 seguían en azul y se confundían con los tags. Observado e inferido se distinguen por
+  la capa, la cofia y el nombre, nunca comparten celda (R-COM-006). Dentro de cada familia la
+  intensidad crece con el fallo.
+- **La regla vale en todas las gráficas** (propietario: «esa diferencia sería en todas las gráficas
+  para no malinterpretar datos»): también el histograma «Cortes por hora del día» pasa a la familia
+  WiFi, y queda escrita como norma de color en `UX_SPEC.md` §4: ninguna gráfica de WiFi se pinta en
+  azul ni ninguna de lecturas de tags en verde azulado.
+- **El tono de la familia WiFi se afina** a un verde azulado (`--viz-senal` #17968a en claro, #2fa89f
+  en oscuro) que armoniza con el azul y se separa mejor del naranja del patrón: validado con la guía
+  de visualización, ΔE 16 frente al azul y ΔE 11 frente al naranja con visión protán (el verde de
+  3.66.0 daba 7,4).
+- **El anillo funde las dos medidas sin mezclar familias** (propietario: «la fusión del anillo con
+  tags y wifi, están todos en verde, no hay diferenciación»): en las capas «Conexión» y «Ráfagas» la
+  banda vuelve a ser la omisión de los tags, en azul, exactamente como en «Omisión», y la WiFi queda
+  solo en la corona exterior, en verde azulado, con la barra más larga **y más intensa** cuanto más
+  se pierde (nunca gris: la más corta ya es un verde azulado claro). La leyenda separa «corona:» y
+  «banda:», y la lectura del tag dice las dos medidas, la omisión y, tras «WiFi:», la de la corona.
+
 ## [3.66.0] - 2026-10-08
 
 El propietario: «hay que evitar que [terminales] en mal estado contaminen la muestra; intentamos

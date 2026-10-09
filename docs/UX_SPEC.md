@@ -105,6 +105,21 @@ Cada tarjeta de hallazgo muestra:
 
 El color nunca será el único medio de distinguir estados.
 
+**Dos familias de color, en todas las gráficas** (propietario, 2026-10-08, 3.67.0): lo que miden las
+**lecturas de los tags** —omisión, matriz tag × AGV, tasas de lectura, cambios de tag— va en la
+familia **azul** (`--viz-1…5`, `--viz-series`); lo que mide la **WiFi** —el registro de conexiones
+(observado) y las lecturas que llegaron juntas (inferido): la capa «Conexión» y la capa «Ráfagas» del
+anillo con sus coronas, el mapa de estado de conexión, el mapa de lecturas que llegaron juntas y el
+histograma de cortes por hora— va en la familia **verde azulada** (`--viz-senal-1…5`, `--viz-senal`).
+Dentro de cada familia la intensidad crece con el fallo: cuanto más oscuro, menos lecturas o más
+desconexiones. El naranja de acento marca el patrón (más de lo que da el azar) y el rojo la caída o
+la desconexión larga, en las dos familias. Ninguna gráfica de WiFi se pinta en azul ni ninguna de
+lecturas de tags en verde azulado: la familia dice de qué habla la gráfica antes de leer el título.
+Donde una gráfica funde las dos medidas —el anillo en sus capas «Conexión» y «Ráfagas»— cada una
+va en su familia y en su sitio: la banda es siempre la omisión de los tags, en azul, y la corona
+exterior es la WiFi, en verde azulado (propietario, 2026-10-08: «la fusión del anillo con tags y
+wifi, están todos en verde, no hay diferenciación»).
+
 ## 4.1 Expediente de un AGV o de un tag
 
 Se entra escribiendo un identificador. Es la vía de trabajo más frecuente —«qué le pasa al 3524»,
@@ -176,8 +191,8 @@ quedan siempre:
 | **Omisión** (por defecto) | la de siempre: gris lo normal, la rampa azul lo que se deja de leer, trama sin pasadas, tinta el ancla; el tramo declarado en la banda fina interior | las cinco clases de omisión |
 | **Tramos** | el tramo declarado (`section`) con la paleta `--viz-tramo-*`; gris sin tramo | un color por tramo |
 | **Paradas** | cuántas incidencias toca cada tag según el estado normal (`circuitState`): paradas sin explicación que empiezan en él, colas de un cuello de botella, y una más si está en una zona oscura; punto conflictivo se dice en la lectura (sus paradas ya son paradas sin explicación). Rampa de un solo tono por recuento | los cortes de la rampa: ninguna, 1, 2, 3–4, 5–9, 10 o más |
-| **Conexión** (3.65.0; corona en 3.66.0) | el estado de conexión **observado** (DS-013, R-COM-005): la parte de las pasadas que salen de cada tag que perdieron la señal justo después, con **su propia rampa verde azulada** (`--viz-senal-1…5`, propietario, 2026-10-08: «que no sea azul, un color que combine, suave y que gane intensidad con las desconexiones»), continua y relativa al tag donde más se pierde; el azul queda para la omisión y las ráfagas, el naranja para el patrón y el rojo para la caída; gris lo que no tiene nada, trama sin pasadas. Y la **corona exterior** (propietario, 2026-10-08): entre la banda principal y la de zona, una barra radial por tag, más larga cuanto más se pierde (la misma medida que el tono, en longitud: el color nunca va solo); la **cofia** roja (`--viz-desconexion`) en la punta de la barra si hubo alguna caída larga; y un **segmento de acento** coronando, por fuera de las barras, los sitios donde se pierde más de lo que da el azar (los mismos de las tarjetas). La banda principal se estrecha para dejarle sitio; un tag que solo tiene cofia (caída sin pasadas) la lleva sola; y el acento de «cambia frente a la instantánea vecina» pasa por dentro de la banda en estas dos capas, para no confundirse con la corona de acento. Sin registro cargado, o sin cortes en la ventana, la leyenda lo dice en vez de pintar | el gradiente con sus dos extremos, corona, cofia, acento, sin pasadas |
-| **Ráfagas** (3.64.0, antes «Señal»; corona en 3.66.0) | el mapa de las lecturas que llegaron juntas (R-DAT-020, **inferido**) sobre el anillo: la parte de las pasadas por cada tag con la lectura llegada tarde, con la rampa continua relativa al tag más caliente; la misma corona exterior, con la cofia donde empieza el hueco y el acento donde empieza más de lo que da el azar. No se presenta como señal (R-COM-006). Sin evaluar, o sin ninguna ráfaga, la leyenda lo dice | el gradiente con sus dos extremos, corona, cofia, acento, sin pasadas |
+| **Conexión** (3.65.0; corona en 3.66.0; fusión en 3.67.0) | las dos medidas, cada una en su familia. La **banda** es la omisión de los tags, en azul, exactamente como en «Omisión» (clases, trama sin pasadas, tinta en el ancla): el anillo no deja de decir lo que leen los tags. La **corona exterior** es el estado de conexión **observado** (DS-013, R-COM-005): la parte de las pasadas que salen de cada tag que perdieron la señal justo después, en **la familia verde azulada de la WiFi** (`--viz-senal-1…5`, propietario, 2026-10-08: «para no confundir wifi de tags, cada uno un color, y que la intensidad suba con la frecuencia del fallo»; y el mismo día: «la fusión del anillo con tags y wifi, están todos en verde, no hay diferenciación», por lo que en 3.67.0 la banda vuelve al azul y la WiFi queda solo en la corona): entre la banda principal y la de zona, una barra radial por tag, **más larga y más intensa** cuanto más se pierde, relativa al tag donde más se pierde (la misma medida dos veces, en longitud y en tono: el color nunca va solo; la barra más corta ya es un verde azulado claro, nunca gris); el naranja es del patrón y el rojo de la caída; la **cofia** roja (`--viz-desconexion`) en la punta de la barra si hubo alguna caída larga; y un **segmento de acento** coronando, por fuera de las barras, los sitios donde se pierde más de lo que da el azar (los mismos de las tarjetas). La banda principal se estrecha para dejarle sitio; un tag que solo tiene cofia (caída sin pasadas) la lleva sola; y el acento de «cambia frente a la instantánea vecina» pasa por dentro de la banda en estas dos capas, para no confundirse con la corona de acento. Sin registro cargado, o sin cortes en la ventana, la leyenda lo dice en vez de pintar | el gradiente de la corona con sus dos extremos, corona, cofia, acento, y debajo las clases de la banda (omisión, sin pasadas, ancla) |
+| **Ráfagas** (3.64.0, antes «Señal»; corona en 3.66.0; fusión en 3.67.0) | la misma fusión que «Conexión»: la banda es la omisión de los tags en azul, y la corona exterior lleva el mapa de las lecturas que llegaron juntas (R-DAT-020, **inferido**): la parte de las pasadas por cada tag con la lectura llegada tarde, en la familia verde azulada de la WiFi (es comunicación, no lectura de tags; observado e inferido se distinguen por la capa y por la cofia, nunca comparten celda, R-COM-006), relativa al tag más caliente, en longitud y en tono; la cofia donde empieza el hueco y el acento donde empieza más de lo que da el azar. No se presenta como señal (R-COM-006). Sin evaluar, o sin ninguna ráfaga, la leyenda lo dice | el gradiente de la corona con sus dos extremos, corona, cofia, acento, y debajo las clases de la banda |
 | **Calles** | el tag del que cuelga cada calle (`laneJunctions`) en el azul de serie, con el nombre de la calle junto a su ramal; con trama si nadie entró en ella; gris sin calle | servida, sin servicio, sin calle |
 
 La lectura al puntero y al foco dice lo de la capa activa además del tag. **Tocar un tag** —clic,
@@ -568,9 +583,9 @@ lo de la sección usa solo producción (R-TIM-009). Después, destacados primero
   hora antes del hueco (`--viz-desconexion`), en naranja y con su identificador donde empieza más de
   lo que da el azar; la banda del tramo declarado si hay lista `tramo`; los tags de fuera del anillo
   al final, separados y rotulados. Al puntero, un marco sobre la celda y la lectura. Leyenda del
-  gradiente con sus dos extremos escritos y tabla equivalente plegada. «Es una firma de la entrega, no
-  una medida de la señal» (OQ-159). Sin ráfagas o sin evaluar, una línea lo dice. Sobre el anillo, la
-  capa **Ráfagas** (§4.2).
+  gradiente con sus dos extremos escritos y tabla equivalente plegada, en la rampa verde azulada de la
+  familia WiFi. «Es una firma de la entrega, no una medida de la señal» (OQ-159). Sin ráfagas o sin
+  evaluar, una línea lo dice. Sobre el anillo, la capa **Ráfagas** (§4.2).
 - **Estado de conexión (registro del terminal)** (DS-013, ADR-0017, 3.65.0), a continuación. Sin
   registro cargado, una línea dice dónde se carga. Con registro: **una sola línea corta** con AGV y
   ficheros, cortes por clase con sus umbrales (microcortes, cortes, caídas y apagados), tiempo sin

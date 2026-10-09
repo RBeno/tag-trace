@@ -401,16 +401,19 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
         return `${base}Más oscuro, más incidencias medidas en ese tag: paradas sin explicación, colas de cuello de botella, punto conflictivo y zona oscura. En gris, ninguna.${changes}${note}`;
       case "rafagas":
         return (
-          `${base}Más oscuro, mayor parte de las pasadas por ese tag con la lectura llegada tarde: junta con otras tras un hueco ` +
-          `(R-DAT-020, inferido). La corona exterior repite la medida en longitud; la cofia marca dónde empieza el hueco y el acento ` +
-          `corona donde empieza más de lo que da el azar. Es una firma de la entrega, no una medida de la señal.${changes}${note}`
+          `${base}Dos medidas, cada una en su color. La banda, en azul, es la omisión de los tags, como en «Omisión». ` +
+          `La corona exterior, en verde azulado, es la parte de las pasadas por ese tag con la lectura llegada tarde: junta con ` +
+          `otras tras un hueco (R-DAT-020, inferido); la barra es más larga y más intensa cuanto mayor es esa parte, la cofia ` +
+          `marca dónde empieza el hueco y el acento corona donde empieza más de lo que da el azar. Es una firma de la entrega, ` +
+          `no una medida de la señal.${changes}${note}`
         );
       case "conexion":
         return (
-          `${base}Más oscuro, mayor parte de las pasadas que salen de ese tag perdieron la señal justo después, según el ` +
-          `registro de conexiones del terminal (observado). La corona exterior repite la medida en longitud: cuanto más larga la ` +
-          `barra, más se pierde; la cofia roja, alguna caída larga; el acento corona los sitios donde se pierde más de lo que da ` +
-          `el azar. La causa no la dice el dato.${changes}${note}`
+          `${base}Dos medidas, cada una en su color. La banda, en azul, es la omisión de los tags, como en «Omisión». ` +
+          `La corona exterior, en verde azulado, es la parte de las pasadas que salen de ese tag que perdieron la señal justo ` +
+          `después, según el registro de conexiones del terminal (observado): la barra es más larga y más intensa cuanto más se ` +
+          `pierde; la cofia roja, alguna caída larga; el acento corona los sitios donde se pierde más de lo que da el azar. ` +
+          `La causa no la dice el dato.${changes}${note}`
         );
       case "calles":
         return `${base}En color, el tag del que cuelga cada calle de carga, con su nombre; con trama, la calle en la que nadie entró.${changes}${note}`;
@@ -470,9 +473,9 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
       case "paradas":
         return `${where} — ${describeIncidents(tag)}${changeText}`;
       case "rafagas":
-        return `${where} — ${describeSignal(tag)}${changeText}`;
+        return `${where} — ${omission} · WiFi: ${describeSignal(tag)}${changeText}`;
       case "conexion":
-        return `${where} — ${describeConnection(tag)}${changeText}`;
+        return `${where} — ${omission} · WiFi: ${describeConnection(tag)}${changeText}`;
       case "calles":
         return `${where} — ${laneText}${changeText}`;
     }
@@ -515,8 +518,12 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
     });
     canvas.append(hatchPattern());
 
-    const ramp = layer === "rafagas" ? heatRamp("viz") : layer === "conexion" ? heatRamp("viz-senal") : null;
-    const barFill = layer === "conexion" ? "var(--viz-senal)" : "var(--viz-series)";
+    // En las dos capas de WiFi —observada e inferida— el anillo funde las dos medidas sin mezclar
+    // familias: la banda sigue siendo la omisión de los tags, en azul, como en «Omisión»; la corona
+    // exterior es la WiFi, en verde azulado, y su barra gana intensidad además de longitud cuanto
+    // más se pierde (nunca el gris de la rampa: la barra más corta ya es un verde azulado claro).
+    const ramp = corona ? heatRamp("viz-senal") : null;
+    const barFill = (ratio: number): string => (ramp === null ? "var(--viz-senal)" : ramp(0.3 + 0.7 * ratio));
     /** La corona de un tag: cuánto se pierde frente al que más (0..1), si hay patrón y si hubo caída. */
     const outerOf = (tag: RingTag): { readonly ratio: number; readonly flagged: boolean; readonly severe: boolean } | null => {
       if (layer === "conexion") {
@@ -535,21 +542,10 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
     const fillOf = (tag: RingTag): string => {
       switch (layer) {
         case "omision":
+        case "rafagas":
+        case "conexion":
+          // La banda es siempre la omisión de los tags; la WiFi va en la corona, nunca en la banda.
           return tag.isAnchor ? "var(--ink)" : tag.omission === null ? HATCH_FILL : omissionFill(tag.omission);
-        case "rafagas": {
-          const signal = tag.signal;
-          if (signal === undefined || ramp === null) return "var(--viz-grid)";
-          if (signal.passes === 0 && signal.late === 0) return HATCH_FILL;
-          const share = shareOf(signal);
-          return share === 0 ? "var(--viz-grid)" : ramp(maxSignalShare > 0 ? share / maxSignalShare : 0);
-        }
-        case "conexion": {
-          const connection = tag.connection;
-          if (connection === undefined || ramp === null) return "var(--viz-grid)";
-          if (connection.passes === 0 && connection.cuts === 0) return HATCH_FILL;
-          const share = stripShare({ passes: connection.passes, value: connection.cuts });
-          return share === 0 ? "var(--viz-grid)" : ramp(maxConnectionShare > 0 ? share / maxConnectionShare : 0);
-        }
         case "tramos":
           return (tag.section === null || tag.section === undefined ? undefined : sections.get(tag.section)) ?? "var(--viz-grid)";
         case "paradas":
@@ -635,7 +631,7 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
         canvas.append(
           svg("path", {
             d: arcPath(center, center, r0, r0 + length, from, to),
-            fill: bar.ratio > 0 ? barFill : "var(--viz-desconexion)",
+            fill: bar.ratio > 0 ? barFill(bar.ratio) : "var(--viz-desconexion)",
             "data-bar": index,
           }),
         );
@@ -793,17 +789,17 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
       ? []
       : [legendList([["var(--viz-accent)", `${layer === "conexion" || layer === "rafagas" ? "por dentro: " : ""}cambia frente a la instantánea vecina (${plural(highlight.changed.size, "tag", "tags")})`]])];
   const legendOf = (): HTMLElement[] => [...layerLegendOf(), ...changesLegend()];
+  /** La banda de omisión de los tags, en azul: la misma leyenda en «Omisión» y bajo las dos coronas de WiFi. */
+  const bandLegend = (prefix = "banda: "): HTMLElement =>
+    legendList([
+      ...OMISSION_CLASSES.map(([, fill, label]) => [fill, `${prefix}omisión ${label}`] as const),
+      [HATCH_SWATCH, `${prefix}sin pasadas`],
+      ["var(--ink)", `${prefix}ancla`],
+    ]);
   const layerLegendOf = (): HTMLElement[] => {
     switch (layer) {
       case "omision":
-        return [
-          legendList([
-            ...OMISSION_CLASSES.map(([, fill, label]) => [fill, `omisión ${label}`] as const),
-            [HATCH_SWATCH, "sin pasadas"],
-            ["var(--ink)", "ancla"],
-          ]),
-          ...(sections.size > 0 ? [sectionLegend(sections, "banda interior")] : []),
-        ];
+        return [bandLegend(""), ...(sections.size > 0 ? [sectionLegend(sections, "banda interior")] : [])];
       case "tramos":
         return [
           sections.size > 0
@@ -822,13 +818,13 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
           : !signalEvidence
             ? [legendList([["var(--viz-grid)", "ninguna lectura llegó junta tras un hueco: nada que pintar"]])]
             : [
-                heatScaleLegend(maxSignalShare, "de las pasadas por el tag, con la lectura llegada tarde"),
+                heatScaleLegend(maxSignalShare, "corona: de las pasadas por el tag, con la lectura llegada tarde", "viz-senal"),
                 legendList([
-                  ["var(--viz-series)", "corona: barra por tag, más larga cuanto más llega tarde"],
+                  ["var(--viz-senal)", "corona: barra por tag, más larga y más intensa cuanto más llega tarde"],
                   ["var(--viz-desconexion)", "cofia: el hueco empieza aquí"],
                   ["var(--viz-accent)", "corona de acento: empieza aquí más de lo que da el azar"],
-                  [HATCH_SWATCH, "sin pasadas"],
                 ]),
+                bandLegend(),
               ];
       case "conexion":
         return !hasConnection
@@ -836,13 +832,13 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
           : !connectionEvidence
             ? [legendList([["var(--viz-grid)", "el registro no trae ningún corte en la ventana cargada"]])]
             : [
-                heatScaleLegend(maxConnectionShare, "de las pasadas que salen del tag, con la señal perdida justo después", "viz-senal"),
+                heatScaleLegend(maxConnectionShare, "corona: de las pasadas que salen del tag, con la señal perdida justo después", "viz-senal"),
                 legendList([
-                  ["var(--viz-senal)", "corona: barra por tag, más larga cuanto más se pierde"],
+                  ["var(--viz-senal)", "corona: barra por tag, más larga y más intensa cuanto más se pierde"],
                   ["var(--viz-desconexion)", "cofia: alguna caída larga"],
                   ["var(--viz-accent)", "corona de acento: se pierde aquí más de lo que da el azar"],
-                  [HATCH_SWATCH, "sin pasadas"],
                 ]),
+                bandLegend(),
               ];
       case "calles":
         return [
@@ -1559,6 +1555,7 @@ export function deliveryHeatChart(
     ringTags,
     flagged: flaggedSites,
     sections,
+    hue: "viz-senal",
     stats: [
       ["Ráfagas", String(total), total === 1 ? "vez que llegaron lecturas juntas" : "veces que llegaron lecturas juntas"],
       ["Tags con lecturas tardías", String(withLate.length), `de ${onMap} en el mapa`],
@@ -1786,7 +1783,9 @@ function connectionHeatFigure(
  * Cortes por hora local del día: 24 barras, una serie, rótulo directo en las tres horas con más. Es
  * para ver si hay un patrón horario —un apagado, un turno— y leerlo con la lista de cortes colectivos.
  */
-export function hourHistogramChart(counts: readonly number[], title: string, caption: string): HTMLElement {
+export function hourHistogramChart(counts: readonly number[], title: string, caption: string, hue: HeatHue = "viz"): HTMLElement {
+  // La familia de color dice de qué habla la gráfica: azul, los tags; verde azulado, la WiFi.
+  const fill = hue === "viz-senal" ? "var(--viz-senal)" : "var(--viz-series)";
   const wrapper = figure(title, caption);
   const area = host();
   const line = readout("Toca o pasa el puntero por una hora para leer su recuento.");
@@ -1813,7 +1812,7 @@ export function hourHistogramChart(counts: readonly number[], title: string, cap
     counts.forEach((value, hour) => {
       const x = left + hour * slot + 1;
       const barHeight = max > 0 ? (value / max) * plot : 0;
-      node.append(svg("rect", { x, y: top + plot - barHeight, width: bar, height: Math.max(value > 0 ? 2 : 0, barHeight), fill: "var(--viz-series)", rx: 2 }));
+      node.append(svg("rect", { x, y: top + plot - barHeight, width: bar, height: Math.max(value > 0 ? 2 : 0, barHeight), fill, rx: 2 }));
       if (top3.includes(hour) && value > 0) node.append(text(x + bar / 2, top + plot - barHeight - 4, String(value), "value", { "text-anchor": "middle" }));
       if (hour % (slot < 22 ? 6 : 3) === 0) node.append(text(x + bar / 2, height - 6, `${String(hour).padStart(2, "0")}h`, "axis", { "text-anchor": "middle" }));
     });

@@ -3071,6 +3071,7 @@ function renderConnections(
       "Cortes por hora del día",
       "Solo los cortes que miden cobertura (sin apagados ni colectivos), por la hora local en que se perdió la señal. Un pico a una " +
         "misma hora todos los días apunta a un apagado o a un turno, no a un sitio; los apagados y los colectivos van aparte, abajo.",
+      "viz-senal",
     ),
   );
   if (summary.collectives.length > 0) {
