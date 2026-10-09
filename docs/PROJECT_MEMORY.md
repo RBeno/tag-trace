@@ -436,10 +436,12 @@ ventana de cada expediente como incidencia excluida, sin que el expediente escri
 lenguaje queda en cinco etiquetas (`precede`, `es compatible con`, `contradice`, `correlaciona`,
 `confirmado como causa`); la última solo la pone una persona, `correlaciona` exige repetición, no hay
 probabilidades y el vocabulario causal está prohibido en el texto generado. Seis entregas, la segunda
-con el caso de oro sintético de TC-012. Abiertas: OQ-167 (identidad y bifurcación), OQ-168 (estado
-`Discarded` y reabrir), OQ-169 (contradicción: ALG-015 se llama «Retroceso causal») y las
-recomendaciones anotadas en OQ-P02, OQ-P03 y OQ-P07. Nada se construye hasta que el propietario lo
-acepte.
+con el caso de oro sintético de TC-012. El mismo día el propietario cerró las preguntas del ADR: el
+expediente es **solo local**, en un dispositivo, sin `.agvproj` ni bifurcaciones (OQ-167); se añaden
+`Discarded` y la reapertura (OQ-168); ALG-015 pasa a llamarse «Retroceso desde el síntoma» (OQ-169);
+y se aceptan las recomendaciones de márgenes y recorte, formatos de informe y verificación de
+contramedidas (OQ-P02, OQ-P03, OQ-P07). El ADR sigue `proposed`: aceptarlo es del propietario y
+nada se construye antes.
 
 ## PR #15 fusionada y las dos familias de color (3.67.0, 2026-10-08)
 

@@ -1,8 +1,8 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.2.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-10-09
 ---
 
 # Incidencias, replay e informes
@@ -87,9 +87,18 @@ stateDiagram-v2
   Investigating --> Inconclusive
   VerifiedEffective --> Closed
   VerifiedIneffective --> Investigating
+  Draft --> Discarded
+  UnderReview --> Discarded
+  Closed --> Investigating
+  Inconclusive --> Investigating
 ```
 
 Puede cerrarse como `inconclusive` conservando lo aprendido y la evidencia que falta.
+
+Desde el 2026-10-09 (OQ-168, ADR-0018 D3): `Discarded` es «no es una incidencia» (por ejemplo, una
+parada planificada que nadie anotó), exige una razón y no propone exclusión del esperado; un
+expediente `Closed` o `Inconclusive` se reabre en `Investigating` cuando aparece evidencia nueva, como
+revisión nueva. Nada se borra. El expediente vive solo en el almacén local del dispositivo (OQ-167).
 
 ## 8. Informe vivo
 

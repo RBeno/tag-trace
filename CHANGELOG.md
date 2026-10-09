@@ -26,6 +26,16 @@ ADR del expediente»).
   `ALGORITHM_CATALOG.md` y `INCIDENTS_REPORTING.md` §4 dice que el orden no es causalidad), que no se
   toca hasta que decida el propietario. Recomendaciones anotadas en OQ-P02, OQ-P03 y OQ-P07.
 
+### Decidido por el propietario (2026-10-09)
+
+- **OQ-167**: «De momento no va a ver dos dispositivos se mantendrá exclusivamente en la memoria
+  local». El expediente vive solo en el almacén local, no viaja en el `.agvproj` y no tiene
+  bifurcaciones; su identificador es `INC-<circuito>-<aaaammdd>-<nn>`.
+- **OQ-168, OQ-169, OQ-P02, OQ-P03 y OQ-P07**, con la recomendación: `Discarded` y reapertura
+  añadidos al diagrama de `INCIDENTS_REPORTING.md` §7; ALG-015 renombrado «Retroceso desde el
+  síntoma» en `ALGORITHM_CATALOG.md`; márgenes y recorte, informe HTML y CSV, y verificación de
+  contramedidas como en ADR-0018 D4, D11 y D9. ADR-0018 incorpora las seis y sigue `proposed`.
+
 ### Gobierno
 
 - `CLAUDE.md` decía que la fase vigente era F4; ahora dice F5, como `project_state.json`.

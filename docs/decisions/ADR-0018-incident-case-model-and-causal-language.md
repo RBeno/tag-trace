@@ -46,17 +46,18 @@ Tres hechos condicionan el diseño:
 2. **«Incidencia» ya nombra dos cosas.** En F4 es una *exclusión* (lo que no entra en el esperado
    de una versión); en F5 es una *investigación*. Si comparten nombre y almacén se confunden en la
    interfaz y en el código.
-3. **Contradicción documental, sin resolver.** `ALGORITHM_CATALOG.md` llama a ALG-015 «Retroceso
-   causal», mientras `INCIDENTS_REPORTING.md` §4 dice que «el orden no representa causalidad
-   demostrada» y la interfaz debe distinguir `precede`, `correlaciona`, `es compatible con` y
-   `confirmado como causa`. Este ADR no cambia el nombre: propone hacerlo y lo deja al propietario
+3. **Contradicción documental, resuelta el 2026-10-09.** `ALGORITHM_CATALOG.md` llamaba a ALG-015
+   «Retroceso causal», mientras `INCIDENTS_REPORTING.md` §4 dice que «el orden no representa
+   causalidad demostrada» y la interfaz debe distinguir `precede`, `correlaciona`, `es compatible
+   con` y `confirmado como causa`. El propietario aceptó renombrarlo «Retroceso desde el síntoma»
    (OQ-169).
 
 ## Decisión propuesta
 
-Pendiente del propietario. Nada de esto se construye hasta que la acepte; las preguntas que el
-dato no resuelve están en `OPEN_QUESTIONS.md` (OQ-167 a OQ-169 y las de producto OQ-P02, OQ-P03 y
-OQ-P07), cada una con su recomendación.
+Pendiente del propietario. Nada de esto se construye hasta que la acepte. Las preguntas que abría
+están **cerradas** desde el 2026-10-09 (`OPEN_QUESTIONS.md`): OQ-167 con la decisión del propietario
+(el expediente es solo local, en un dispositivo), y OQ-168, OQ-169, OQ-P02, OQ-P03 y OQ-P07 con la
+recomendación. El texto de abajo ya las incorpora.
 
 ### D1. Dos nombres para dos cosas
 
@@ -72,10 +73,12 @@ una lista propia.
 
 ### D2. Identidad y revisiones append-only
 
-- **Identidad**: `incident_id` es texto, el hash semántico del registro de creación (circuito,
-  instante de creación, linaje del dispositivo, síntoma y ventana), del que se enseñan los primeros
-  caracteres como `INC-<circuito>-<aaaammdd>-<4 hex>`. No hay contador global, así que dos
-  dispositivos no chocan (OQ-167).
+- **Solo local, en un dispositivo** (propietario, 2026-10-09, OQ-167: «De momento no va a ver dos
+  dispositivos se mantendrá exclusivamente en la memoria local»). El expediente vive en el almacén
+  del navegador y no viaja en el `.agvproj`; no hay bifurcaciones que resolver. La sección
+  `incidencias/` que ADR-0012 prevé queda sin construir mientras siga así.
+- **Identidad**: `incident_id` es texto, `INC-<circuito>-<aaaammdd>-<nn>`, con un contador por
+  circuito y día de creación. Con un solo dispositivo basta y se lee mejor que un hash.
 - **Revisión**: cada vez que una persona guarda, se añade la revisión `n+1` con el hash de la
   anterior, como la memoria (`MEMORY_CONSOLIDATION.md` §10). **Una revisión guarda solo lo humano**
   (síntoma, ventana, hipótesis y su estado, contramedidas, verificaciones, notas y conclusión) y
@@ -102,17 +105,19 @@ exige:
 | `VerificationPending` → `VerifiedEffective` / `VerifiedIneffective` | persona | periodo posterior cargado, métrica calculada y conclusión escrita |
 | `VerifiedIneffective` → `Investigating` | persona | — |
 | `Investigating` → `Inconclusive` | persona | qué evidencia falta |
-| `VerifiedEffective` / `Inconclusive` → `Closed` | persona | conclusión humana |
+| `VerifiedEffective` → `Closed` | persona | conclusión humana |
 
-Ninguna transición la hace el programa. **El programa propone y la persona decide** (R-EVI-006). Dos
-añadidos que pide el propietario o no (OQ-168): `Discarded` («no es una incidencia», por ejemplo una
-parada planificada que nadie anotó) desde `Draft` o `UnderReview`, y reabrir un `Closed` o un
-`Inconclusive` como revisión nueva cuando aparece evidencia.
+| `Draft` / `UnderReview` → `Discarded` | persona | razón («no es una incidencia», por ejemplo una parada planificada que nadie anotó) |
+| `Closed` / `Inconclusive` → `Investigating` | persona | la evidencia nueva que lo reabre; es una revisión nueva |
+
+Ninguna transición la hace el programa. **El programa propone y la persona decide** (R-EVI-006).
+`Discarded` y la reapertura se añaden al diagrama de `INCIDENTS_REPORTING.md` §7 (OQ-168, 2026-10-09).
+Un expediente descartado no propone exclusión en la consolidación (D5).
 
 ### D4. Ventana y evidencia mínima reproducible
 
 - **Ventana**: la persona fija el síntoma `[s0, s1]` y el programa propone márgenes antes y después,
-  que se pueden cambiar. Recomendación provisional (OQ-P02): antes, el mayor de un mínimo configurado,
+  que se pueden cambiar. Aceptado el 2026-10-09 (OQ-P02): antes, el mayor de un mínimo configurado,
   la duración del síntoma y la mediana de una vuelta del circuito, porque el retroceso necesita ver
   pasar al menos una vez a cada AGV por aguas arriba; después, el mayor del mínimo y la duración del
   síntoma, para ver la recuperación. Los mínimos van a `incident_case.*` en configuración versionada
@@ -137,8 +142,7 @@ parada planificada que nadie anotó) desde `Draft` o `UnderReview`, y reabrir un
 ### D5. Separación de la memoria normal
 
 - El expediente vive en su **propio almacén** (`incidents`, IndexedDB, nueva versión del almacén con
-  su migración) y en su **propia sección** del `.agvproj` (`incidencias/`, ya prevista por
-  ADR-0012), con hash por sección.
+  su migración), solo en este dispositivo (D2). No va en el `.agvproj`.
 - Crear, guardar, cambiar de estado, cerrar o descartar un expediente **no escribe** en circuito,
   revisiones, fuentes, instantáneas, memoria, estado de memoria, plano, archivo ni valores de planta.
   La prueba (INV-008, TC-017) compara el hash de cada uno de esos almacenes antes y después.
@@ -181,8 +185,8 @@ hecho con piezas que ya existen: la primera desviación es la primera transició
 su tramo (R-FLO-007); aguas arriba es el anillo de la versión aplicable; los pares son la cohorte;
 comunicación son los cortes de DS-013 y las lecturas que llegaron juntas, separados (R-COM-006). La
 salida es una **cronología** de hechos con su etiqueta (D6), su tiempo antes del síntoma y su
-distancia en tags. **El orden de la lista es temporal, no de importancia ni de causa.** Se propone
-llamar a ALG-015 «Retroceso desde el síntoma» (OQ-169).
+distancia en tags. **El orden de la lista es temporal, no de importancia ni de causa.** ALG-015 se
+llama desde el 2026-10-09 «Retroceso desde el síntoma» (OQ-169).
 
 ### D8. Replay multi-AGV con esperado e incertidumbre (ALG-016)
 
@@ -196,7 +200,7 @@ cronología sincronizados. Se precalcula en el Worker (WP-001) y cumple PERF-D4.
 
 - Una contramedida tiene acción, responsable, fecha prevista y de aplicación, estado, riesgo y
   **métrica de verificación**, que se fija al planificarla y no se cambia después sin revisión nueva.
-- Recomendación (OQ-P07): la métrica es la misma que define el síntoma (por ejemplo, minutos sin paso
+- Aceptado el 2026-10-09 (OQ-P07): la métrica es la misma que define el síntoma (por ejemplo, minutos sin paso
   por un punto crítico por hora de producción), con la misma normalización y las mismas versiones,
   antes y después de la fecha de aplicación, sin las ventanas de otros expedientes, con una prueba de
   azar sobre las tasas. El programa propone **eficaz** (baja más de lo que da el azar y al menos una
@@ -217,8 +221,8 @@ cronología sincronizados. Se precalcula en el Worker (WP-001) y cumple PERF-D4.
 ### D11. Informe vivo y exportación
 
 Se regenera desde la revisión en los diez apartados de `INCIDENTS_REPORTING.md` §8, siempre con la
-revisión, su hash y las versiones de reglas, algoritmos y configuración. Recomendación (OQ-P03): HTML
-autocontenido, sin red, y CSV de la cronología y de la evidencia; el PDF sale de imprimir el HTML
+revisión, su hash y las versiones de reglas, algoritmos y configuración. Aceptado el 2026-10-09
+(OQ-P03): HTML autocontenido, sin red, y CSV de la cronología y de la evidencia; el PDF sale de imprimir el HTML
 desde el navegador, sin dependencia nueva. Un informe es una instantánea con fecha; el expediente
 sigue vivo. Nunca se publica en GitHub (ADR-0007).
 
@@ -235,7 +239,7 @@ sigue vivo. Nunca se publica en GitHub (ADR-0007).
 
 ## Entregas propuestas, una por petición
 
-1. Modelo, almacén y `.agvproj`, creación desde hallazgo, incidencia excluida, intervalo o síntoma,
+1. Modelo y almacén local, creación desde hallazgo, incidencia excluida, intervalo o síntoma,
    recorte congelado y separación probada (INV-008, TC-017).
 2. Retroceso y cronología con el lenguaje de D6, y el **caso de oro sintético de TC-012**: un punto
    crítico sin llegada diez minutos plantado en el circuito de auditoría, con su ventana de impacto y
@@ -250,15 +254,16 @@ datos reales la valida el propietario en su dispositivo, fuera del repositorio (
 
 ## Consecuencias
 
-- Hay un almacén y una sección del `.agvproj` más, con migración y prueba de ida y vuelta (NFR-007).
+- Hay un almacén más, con su migración. Como el expediente no viaja en el `.agvproj`, **borrar los
+  datos del navegador lo pierde** y no hay copia; si un día hace falta, la sección `incidencias/` de
+  ADR-0012 es el sitio, con su prueba de ida y vuelta (NFR-007).
 - El recorte de un expediente es la única copia de lecturas que no caduca con la retención; por
   eso se mide y se enseña.
 - La incidencia excluida de F4 no cambia de forma ni de sitio; solo gana un nombre distinto en la
   interfaz y la posibilidad de abrir un expediente desde ella.
 - Al prohibir el vocabulario causal en texto generado, algunos textos actuales de la batería y de
   los hallazgos pueden necesitar retoque si se reutilizan dentro del expediente; la prueba lo dirá.
-- Sin la decisión de OQ-169, ALG-015 conserva su nombre en el catálogo y la contradicción sigue
-  abierta.
+- ALG-015 cambia de nombre en el catálogo; su contenido no cambia.
 
 ## Alternativas descartadas
 
