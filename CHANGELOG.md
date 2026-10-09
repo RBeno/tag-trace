@@ -24,6 +24,12 @@ cuanto más oscuro, menos lecturas o más desconexiones; un conjunto elegante y 
   en oscuro) que armoniza con el azul y se separa mejor del naranja del patrón: validado con la guía
   de visualización, ΔE 16 frente al azul y ΔE 11 frente al naranja con visión protán (el verde de
   3.66.0 daba 7,4).
+- **El anillo funde las dos medidas sin mezclar familias** (propietario: «la fusión del anillo con
+  tags y wifi, están todos en verde, no hay diferenciación»): en las capas «Conexión» y «Ráfagas» la
+  banda vuelve a ser la omisión de los tags, en azul, exactamente como en «Omisión», y la WiFi queda
+  solo en la corona exterior, en verde azulado, con la barra más larga **y más intensa** cuanto más
+  se pierde (nunca gris: la más corta ya es un verde azulado claro). La leyenda separa «corona:» y
+  «banda:», y la lectura del tag dice las dos medidas, la omisión y, tras «WiFi:», la de la corona.
 
 ## [3.66.0] - 2026-10-08
 

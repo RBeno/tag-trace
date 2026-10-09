@@ -93,8 +93,11 @@ test.describe("portada: cifras, anillo con capas y cajón de tablas", () => {
     // (R-DAT-020, inferido): con la ráfaga plantada hay evidencia, así que la leyenda lleva el
     // gradiente con sus dos extremos y la banda interior; nunca una causa ni una medida de la señal.
     await layers.getByRole("radio", { name: "Ráfagas" }).click();
-    await expect(ring.locator(".ring-legend .heat-scale")).toContainText("de las pasadas por el tag, con la lectura llegada tarde");
+    await expect(ring.locator(".ring-legend .heat-scale")).toContainText("corona: de las pasadas por el tag, con la lectura llegada tarde");
     await expect(ring.locator(".ring-legend")).toContainText("cofia: el hueco empieza aquí");
+    // Y la banda sigue siendo la omisión de los tags, en azul: las dos medidas, cada una en su familia.
+    await expect(ring.locator(".ring-legend")).toContainText("banda: omisión menos del 5 %");
+    await expect(ring.locator("figcaption")).toContainText("La banda, en azul, es la omisión de los tags");
     await expect(ring.locator("figcaption")).toContainText("no una medida de la señal");
     // La capa «Conexión» es el estado observado (DS-013): sin registro cargado, lo dice.
     await layers.getByRole("radio", { name: "Conexión" }).click();

@@ -431,7 +431,9 @@ dos correcciones de los datos reales, la corona del anillo y las cifras del mapa
 pintan) se fusionó en `main` (`43f0799`, squash, «Haz PR y fusiona»). Después el propietario precisó
 el color: **dos familias**, los tags (omisión) en azul y toda la WiFi —observada (Conexión) e inferida
 (Ráfagas)— en verde azulado, con la intensidad creciendo con el fallo, en un conjunto armónico. Hecho
-en 3.67.0 con el tono afinado y validado; el naranja sigue siendo el patrón y el rojo la caída.
+en 3.67.0 con el tono afinado y validado; el naranja sigue siendo el patrón y el rojo la caída. Y como
+en el anillo «estaban todos en verde», las capas «Conexión» y «Ráfagas» funden las dos medidas sin
+mezclarlas: la banda es la omisión en azul, como en «Omisión», y la WiFi va solo en la corona.
 
 ## Terminales ruidosos, mapa por clase y los que no reconectan (3.66.0, 2026-10-08)
 

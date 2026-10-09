@@ -275,7 +275,11 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     const anillo = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Anillo del circuito" }) });
     await anillo.getByRole("radio", { name: "Conexión" }).click();
     await expect(anillo.locator(".ring-legend")).toContainText("corona: barra por tag");
+    await expect(anillo.locator(".ring-legend")).toContainText("banda: omisión");
     await expect(anillo.locator("path[data-bar]").first()).toBeVisible();
+    // La lectura del tag funde las dos medidas, cada una con su nombre.
+    await anillo.locator("path[data-index='1']").hover();
+    await expect(anillo.locator(".readout")).toContainText(/sin leer en el .* · WiFi: /);
     await anillo.getByRole("radio", { name: "Omisión" }).click();
     await openTab(page, "Tiempos");
 
