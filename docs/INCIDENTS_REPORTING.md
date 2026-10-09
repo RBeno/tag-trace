@@ -1,6 +1,6 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.3.0
+version: 0.4.0
 status: baseline-candidate
 last_updated: 2026-10-09
 ---
@@ -38,6 +38,11 @@ El usuario define el instante/intervalo del síntoma y el sistema propone márge
 | Casos similares | similitud explicada y diferencias relevantes |
 | Contramedidas | acción, responsable, fecha, estado, riesgo y verificación prevista |
 | Verificación | periodo posterior, métrica antes/después y conclusión humana |
+
+**Implementado desde 3.69.0 (ADR-0018, entrega 1):** identidad, síntoma con ventana y márgenes,
+origen, recorte congelado de lecturas con su procedencia, referencias a la versión consolidada, la
+configuración y la aplicación, notas, estado e historial de revisiones. Hipótesis, contramedidas,
+verificación, comparación, replay y casos similares llegan en las entregas siguientes.
 
 ## 4. Retroceso desde el síntoma
 

@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.29.2
+version: 0.30.0
 status: baseline-candidate
-last_updated: 2026-10-08
+last_updated: 2026-10-09
 ---
 
 # Configuración de circuito
@@ -287,6 +287,7 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `connection_cuts.noisy_vehicle_ratio`, `connection_cuts.noisy_vehicle_min_cuts` | R-COM-009 (propietario, 2026-10-08): un terminal es **ruidoso** si su tasa de cortes propios por mil pasadas supera tantas veces la mediana de la flota (provisional: 3) con al menos tantos cortes (provisional: 10). Sus cortes y sus pasadas quedan fuera del mapa y de la concentración por sitio; sigue en su tarjeta y en la tabla por AGV. |
 | `connection_cuts.collective_window_ms`, `connection_cuts.collective_min_share` | R-COM-008 (propietario, 2026-10-07): un corte es **colectivo** si, a menos de la ventana (provisional: 2 min) de su inicio, pierden la señal al menos esa parte de los AGV con registro (provisional: la mitad, y nunca menos de dos). Apagado o infraestructura, no cobertura: fuera del mapa. |
 | `plant_estimators.same_time_measure_tolerance_ms` | OQ-154 (propietario, 2026-09-27): margen de hora local con que `measurePlantValues` empareja, **solo para medir**, las paradas de la producción que se repiten otro día. Provisional: 60 min. Es una tolerancia de medida, no operativa: ancha para que la estimación de «a la misma hora» pueda ver una tolerancia de planta mayor que la vigente (`flow_stops.same_time_tolerance_ms`, 15 min), con la que nunca podría salir un valor mayor que ella. El análisis (`productionStops`) sigue emparejando con la vigente; esta no cambia ningún resultado del análisis. |
+| `incident_case.min_margin_before_ms`, `incident_case.min_margin_after_ms` | ADR-0018 D4 (OQ-P02, propietario 2026-10-09): márgenes mínimos que el programa propone antes y después del síntoma de un expediente. Antes se toma el mayor del mínimo, la duración del síntoma y la vuelta mediana del circuito; después, el mayor del mínimo y la duración del síntoma. Provisionales: 30 min a cada lado (tres veces la ausencia de diez minutos de la salida demostrable de F5). No es un valor de planta: es cuánto se mira, y la persona lo cambia en cada expediente en borrador. |
 
 Los valores que hoy viven en `PROVISIONAL_CONFIG` con aspecto de dato de planta —horas de arranque de
 turno, regímenes, la hora sin leer que hace una desconexión, los dos minutos del bloqueo, la

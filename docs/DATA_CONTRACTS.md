@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.31.2
+version: 0.32.0
 status: baseline-candidate
-last_updated: 2026-10-07
+last_updated: 2026-10-09
 ---
 
 # Contratos de datos y procedencia
@@ -589,6 +589,14 @@ los estimadores de los valores de planta (lecturas y cobertura por hora local, p
 con día y minuto, resúmenes de los huecos que vuelven, de las esperas del primero de cola, del
 tránsito del tramo cargado y de las paradas precisas). Unos cientos de bytes por fichero; las
 instantáneas anteriores no lo traen y esa versión no permite estimar.
+
+**Almacén local, versión 12 (3.69.0, ADR-0018).** Dos tablas nuevas, aparte de todo lo demás:
+`incidentCases`, las revisiones de cada expediente de incidencia, con clave `[circuitId, caseId,
+revision]` y append-only con `add` (cada revisión, comprimida, con el hash de la anterior); e
+`incidentEvidence`, los recortes congelados de lecturas, con clave `[circuitId, hash]` (las lecturas
+normalizadas de todos los AGV en la ventana del expediente, con su procedencia, comprimidas). Ninguna
+otra operación escribe en ellas salvo borrar el circuito, que las borra. **No viajan en el
+`.agvproj`** (OQ-167): el expediente es solo de este dispositivo.
 
 **Almacén local, versión 10 (3.59.0).** Tabla `plantValues` con clave `[circuitId, seq]`, append-only
 con `add`: los valores de planta confirmados del circuito (`CONFIG_SCHEMA.md` §3.5). Borrar el

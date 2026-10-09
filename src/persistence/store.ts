@@ -28,6 +28,12 @@
  * **Versión 10 (OQ-140, OQ-151).** La tabla `plantValues`: los valores de planta que una persona
  * confirma para el circuito, clave `[circuitId, seq]`, **append-only** como el plano —se añaden con
  * `add`, nunca se reescriben—. Lo vigente para un fichero se resuelve recorriéndolos (`plantValuesAt`).
+ *
+ * **Versión 12 (F5, ADR-0018).** Dos tablas, aparte de todo lo demás (D5): `incidentCases`, las
+ * revisiones de cada expediente, **append-only** —clave `[circuitId, caseId, revision]`, con `add`—, y
+ * `incidentEvidence`, los recortes congelados de lecturas, por su hash —clave `[circuitId, hash]`—. Un
+ * expediente no escribe en ninguna otra tabla, y ninguna otra operación escribe en estas dos salvo
+ * borrar el circuito. Solo locales: no viajan en el `.agvproj` (OQ-167).
  */
 
 import type { ConnectionEvent } from "../domain/connection-log.js";
@@ -38,12 +44,13 @@ import type { FleetPeriod } from "../domain/fleet.js";
 import { sortVersions, type ConsolidatedVersion, type LineageState } from "../domain/memory.js";
 import type { Reading } from "../domain/reading.js";
 import type { ReviewEntry } from "../domain/review.js";
+import type { CaseRevision } from "../domain/incident-case.js";
 import type { CircuitSnapshot } from "../domain/snapshot.js";
 import { gunzip, gunzipJson, gzip, gzipJson } from "./compression.js";
 import { splitLegacyCircuit, type LegacyCircuitRecord } from "./retention.js";
 
 /** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 11;
+export const STORE_VERSION = 12;
 
 const DATABASE = "tag-trace";
 const CIRCUITS = "circuits";
@@ -71,6 +78,10 @@ const PLAN = "plan";
 const ARCHIVE = "archive";
 /** Los valores de planta confirmados (OQ-140), append-only: clave `[circuitId, seq]`. */
 const PLANT_VALUES = "plantValues";
+/** Las revisiones de los expedientes (ADR-0018), append-only: clave `[circuitId, caseId, revision]`. */
+const INCIDENT_CASES = "incidentCases";
+/** Los recortes congelados de los expedientes, comprimidos: clave `[circuitId, hash]`. */
+const INCIDENT_EVIDENCE = "incidentEvidence";
 
 /** Las marcas de revisión de un circuito, por clave de hallazgo (`src/domain/review.ts`). */
 export interface StoredReviews {
@@ -390,6 +401,15 @@ const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDataba
     // no hay registro cargado, que es la verdad.
     apply: () => {},
   },
+  {
+    to: 12,
+    // Los expedientes de incidencia (F5, ADR-0018): dos tablas nuevas y vacías. Nada que reescribir:
+    // un expediente nace de una acción humana, y ningún circuito anterior lo tiene.
+    apply: (db) => {
+      db.createObjectStore(INCIDENT_CASES, { keyPath: ["circuitId", "caseId", "revision"] });
+      db.createObjectStore(INCIDENT_EVIDENCE, { keyPath: ["circuitId", "hash"] });
+    },
+  },
 ];
 
 if (MIGRATIONS[MIGRATIONS.length - 1]?.to !== STORE_VERSION) {
@@ -577,9 +597,12 @@ export async function loadSnapshots(circuitId: string): Promise<readonly Circuit
 export async function deleteCircuit(circuitId: string): Promise<void> {
   const db = await open();
   try {
-    // El circuito, sus lecturas, sus instantáneas, su revisión, su memoria, su plano y sus valores de
-    // planta se van juntos: nada de eso sin su circuito significa nada.
-    const tx = db.transaction([CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS, MEMORY, MEMORY_STATE, PLAN, ARCHIVE, PLANT_VALUES], "readwrite");
+    // El circuito, sus lecturas, sus instantáneas, su revisión, su memoria, su plano, sus valores de
+    // planta y sus expedientes se van juntos: nada de eso sin su circuito significa nada.
+    const tx = db.transaction(
+      [CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS, MEMORY, MEMORY_STATE, PLAN, ARCHIVE, PLANT_VALUES, INCIDENT_CASES, INCIDENT_EVIDENCE],
+      "readwrite",
+    );
     tx.objectStore(CIRCUITS).delete(circuitId);
     tx.objectStore(REVIEWS).delete(circuitId);
     tx.objectStore(SOURCES).delete(circuitRange(circuitId));
@@ -589,6 +612,8 @@ export async function deleteCircuit(circuitId: string): Promise<void> {
     tx.objectStore(PLAN).delete(circuitRange(circuitId));
     tx.objectStore(ARCHIVE).delete(circuitRange(circuitId));
     tx.objectStore(PLANT_VALUES).delete(circuitRange(circuitId));
+    tx.objectStore(INCIDENT_CASES).delete(circuitRange(circuitId));
+    tx.objectStore(INCIDENT_EVIDENCE).delete(circuitRange(circuitId));
     await settle(tx, "No se pudo borrar el circuito.");
   } finally {
     db.close();
@@ -896,6 +921,97 @@ export async function loadPlantValues(circuitId: string): Promise<readonly Plant
     const store = tx.objectStore(PLANT_VALUES);
     const stored = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<PlantValueEvent[]>);
     return [...stored].sort((a, b) => a.seq - b.seq);
+  } finally {
+    db.close();
+  }
+}
+
+// --- Expedientes de incidencia (F5, ADR-0018) ------------------------------------------------------
+
+/** Una revisión de expediente tal como se guarda: su clave y el JSON comprimido. */
+export interface CaseRevisionRow {
+  readonly circuitId: string;
+  readonly caseId: string;
+  readonly revision: number;
+  readonly gz: Uint8Array;
+}
+
+/** Un recorte congelado tal como se guarda: su hash y las lecturas comprimidas. */
+interface CaseEvidenceRow {
+  readonly circuitId: string;
+  readonly hash: string;
+  readonly gz: Uint8Array;
+}
+
+/** La revisión de una fila de `incidentCases`. */
+export async function caseRevisionOf(row: CaseRevisionRow): Promise<CaseRevision> {
+  return gunzipJson<CaseRevision>(row.gz);
+}
+
+/**
+ * Añade una revisión de expediente y, si trae recorte nuevo, sus lecturas, en **una sola**
+ * transacción. La revisión va con `add`: si ya existe ese número para ese expediente, la transacción se
+ * aborta y no queda nada (append-only, D2). El recorte va con `put`: el mismo hash son las mismas
+ * lecturas. No toca ninguna otra tabla (D5).
+ */
+export async function appendCaseRevision(
+  revision: CaseRevision,
+  evidence: { readonly hash: string; readonly readings: readonly Reading[] } | null,
+): Promise<void> {
+  const row: CaseRevisionRow = { circuitId: revision.circuitId, caseId: revision.caseId, revision: revision.revision, gz: await gzipJson(revision) };
+  const evidenceRow: CaseEvidenceRow | null =
+    evidence === null ? null : { circuitId: revision.circuitId, hash: evidence.hash, gz: await gzipJson(evidence.readings) };
+  const db = await open();
+  try {
+    const tx = db.transaction([INCIDENT_CASES, INCIDENT_EVIDENCE], "readwrite");
+    tx.objectStore(INCIDENT_CASES).add(row);
+    if (evidenceRow !== null) tx.objectStore(INCIDENT_EVIDENCE).put(evidenceRow);
+    await settle(tx, "No se pudo guardar el expediente (¿revisión repetida?).");
+  } finally {
+    db.close();
+  }
+}
+
+/** Todas las revisiones de todos los expedientes de un circuito, en orden de expediente y revisión. */
+export async function loadCaseRevisions(circuitId: string): Promise<readonly CaseRevision[]> {
+  const db = await open();
+  let rows: CaseRevisionRow[];
+  try {
+    const tx = db.transaction(INCIDENT_CASES, "readonly");
+    const store = tx.objectStore(INCIDENT_CASES);
+    rows = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<CaseRevisionRow[]>);
+  } finally {
+    db.close();
+  }
+  return Promise.all(rows.map(caseRevisionOf));
+}
+
+/** Las lecturas de un recorte congelado, o `undefined` si no está. */
+export async function loadCaseEvidence(circuitId: string, hash: string): Promise<readonly Reading[] | undefined> {
+  const db = await open();
+  let row: CaseEvidenceRow | undefined;
+  try {
+    const tx = db.transaction(INCIDENT_EVIDENCE, "readonly");
+    const store = tx.objectStore(INCIDENT_EVIDENCE);
+    row = await run(store, store.get([circuitId, hash]) as IDBRequest<CaseEvidenceRow | undefined>);
+  } finally {
+    db.close();
+  }
+  return row === undefined ? undefined : gunzipJson<Reading[]>(row.gz);
+}
+
+/** Bytes que ocupan los expedientes del circuito tal como están guardados (revisiones y recortes, comprimidos). */
+export async function caseStoredBytes(circuitId: string): Promise<number> {
+  const db = await open();
+  try {
+    const tx = db.transaction([INCIDENT_CASES, INCIDENT_EVIDENCE], "readonly");
+    const cases = tx.objectStore(INCIDENT_CASES);
+    const evidence = tx.objectStore(INCIDENT_EVIDENCE);
+    const [a, b] = await Promise.all([
+      run(cases, cases.getAll(circuitRange(circuitId)) as IDBRequest<CaseRevisionRow[]>),
+      run(evidence, evidence.getAll(circuitRange(circuitId)) as IDBRequest<CaseEvidenceRow[]>),
+    ]);
+    return [...a, ...b].reduce((sum, row) => sum + row.gz.length, 0);
   } finally {
     db.close();
   }

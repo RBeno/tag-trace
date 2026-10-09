@@ -28,6 +28,7 @@ import type { FlowStopThresholds } from "./flow-stops.js";
 import type { FranjaThresholds } from "./franjas.js";
 import type { GraphThresholds } from "./graph.js";
 import type { GroupedDeliveryThresholds } from "./grouped-delivery.js";
+import type { MarginThresholds } from "./incident-case.js";
 import type { ConnectionCutThresholds } from "./connection-cuts.js";
 import type { PlantEstimatorThresholds } from "./plant-values.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
@@ -101,6 +102,11 @@ export interface AnalysisConfig {
    * medirlos, y viven aquí para que ningún número de la definición quede escrito en el código.
    */
   readonly plantEstimators: PlantEstimatorThresholds;
+  /**
+   * El expediente de incidencia (ADR-0018 D4, OQ-P02): los márgenes mínimos que el programa propone
+   * antes y después del síntoma (`incident_case.min_margin_before_ms` y `min_margin_after_ms`).
+   */
+  readonly incidentCase: MarginThresholds;
 }
 
 /**
@@ -246,6 +252,11 @@ export interface AnalysisConfig {
  *   no operativa: ancha para que la estimación de «a la misma hora» pueda ver una tolerancia de planta
  *   mayor que la vigente (15 min), con la que nunca podría salir un valor mayor que ella. Solo sirve
  *   para estimar; el análisis sigue emparejando con `flowStops.sameTimeToleranceMs`.
+ * - **Márgenes del expediente (ADR-0018 D4, OQ-P02).** Media hora a cada lado del síntoma como mínimo:
+ *   la salida demostrable de F5 es una ausencia de diez minutos, y tres veces eso a cada lado deja ver
+ *   el antes y la recuperación. No es un valor de planta: es cuánto se mira, y se alarga solo con la
+ *   vuelta mediana del circuito y con la duración del síntoma. La persona cambia los márgenes de cada
+ *   expediente en borrador.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -327,6 +338,7 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     // planta mayor que la vigente; solo para estimar (OQ-154).
     sameTimeMeasureToleranceMs: 60 * 60_000,
   },
+  incidentCase: { minMarginBeforeMs: 30 * 60_000, minMarginAfterMs: 30 * 60_000 },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

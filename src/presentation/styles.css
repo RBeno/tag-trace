@@ -685,3 +685,30 @@ table.data th { color: var(--muted); font-weight: 600; }
   .plant-value-history > summary { min-height: 44px; display: flex; align-items: center; }
   .plant-value-actions > button, .plant-value-link { min-height: 44px; }
 }
+
+/* --- Expedientes de incidencia (F5, ADR-0018) -------------------------------------------------------
+   Al final de Línea y calles. Un expediente es una fila plegable: identificador, estado en palabras
+   (nunca solo color) y título; al abrirla, la ventana, el recorte, el historial y los cambios de estado
+   posibles, cada uno con lo que falta si no se puede hacer todavía. */
+.cases-panel label { display: block; margin-top: 8px; }
+.cases-panel h4 { margin: 12px 0 4px; font-size: 1rem; }
+.case-new { margin-top: 8px; }
+.cases-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.case-item { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.case-item[data-state="Discarded"], .case-item[data-state="Closed"] { opacity: 0.85; }
+.case-summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.case-id { font-weight: 600; overflow-wrap: anywhere; }
+.case-title { overflow-wrap: anywhere; }
+.cases-panel .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.case-facts p { margin: 4px 0 0; }
+.case-facts .muted { font-size: 0.85rem; }
+.case-integrity { color: var(--error); font-weight: 600; }
+.case-history, .case-notes { margin: 4px 0 0; padding-left: 20px; font-size: 0.9rem; }
+.case-actions { margin-top: 8px; display: grid; gap: 6px; }
+.case-transition { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 10px; }
+.case-transition .plan-field { flex: 1 1 16rem; }
+.case-unmet { margin: 0; font-size: 0.85rem; }
+@media (any-pointer: coarse) {
+  .case-summary { min-height: 44px; align-items: center; }
+  .case-actions button, .case-new { min-height: 44px; }
+}

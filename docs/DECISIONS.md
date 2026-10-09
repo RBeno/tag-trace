@@ -1,6 +1,6 @@
 ---
 document_id: TT-DECISIONS-001
-version: 0.5.0
+version: 0.6.0
 status: active
 last_updated: 2026-10-09
 ---
@@ -26,7 +26,7 @@ last_updated: 2026-10-09
 | [ADR-0015](decisions/ADR-0015-circuit-state-as-evolving-graph.md) | El estado del circuito es un grafo que evoluciona: instantánea por fichero | Accepted |
 | [ADR-0016](decisions/ADR-0016-physical-plan-with-stable-locations.md) | Plano físico: ubicaciones estables, cambios confirmados y estadísticas combinables | Accepted |
 | [ADR-0017](decisions/ADR-0017-connection-state-map-from-agv-connection-log.md) | Mapa de estado de conexión por AGV a partir del registro de conexiones del terminal | Accepted |
-| [ADR-0018](decisions/ADR-0018-incident-case-model-and-causal-language.md) | Expediente de incidencia: modelo, ciclo de vida, evidencia reproducible y lenguaje de causalidad | Proposed |
+| [ADR-0018](decisions/ADR-0018-incident-case-model-and-causal-language.md) | Expediente de incidencia: modelo, ciclo de vida, evidencia reproducible y lenguaje de causalidad | Accepted |
 
 ## Convención
 

@@ -12,6 +12,7 @@ import {
   PROTOCOL_VERSION,
   isCurrent,
   type AccumulationReport,
+  type CaseAction,
   type CircuitViews,
   type FromWorker,
   type MemoryViews,
@@ -22,7 +23,7 @@ import {
 import { EXPECTED_STRUCTURE, FUNCTION_MEANING, LIST_PURPOSE } from "../domain/tag-lists.js";
 import { listCleanupCsv } from "../domain/list-cleanup.js";
 import { lineStopsCsv } from "../domain/line-feed.js";
-import { incidentsCsv } from "../domain/incident-battery.js";
+import { INCIDENT_KIND_TEXT, incidentsCsv } from "../domain/incident-battery.js";
 import {
   activityChart,
   coverageChart,
@@ -80,6 +81,7 @@ import { createReviewSession, type ReviewSession } from "./review-ui.js";
 import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
 import { createPlanPanel, planRelationText } from "./plan-ui.js";
 import { createPlantValuesPanel, plantValuesRelationText, type PlantValueSendRequest } from "./plant-values-ui.js";
+import { createCasesPanel, type CaseStart } from "./cases-ui.js";
 import {
   RANK_LABEL,
   THEMES,
@@ -132,6 +134,8 @@ interface State {
   planJob: boolean;
   /** Un valor de planta confirmado (OQ-140) espera respuesta del Worker. */
   plantValueJob: boolean;
+  /** Una acción sobre un expediente (ADR-0018) espera respuesta del Worker. */
+  caseJob: boolean;
 }
 
 const state: State = {
@@ -153,6 +157,7 @@ const state: State = {
   memoryJob: null,
   planJob: false,
   plantValueJob: false,
+  caseJob: false,
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -626,6 +631,17 @@ const plantValuesPanel = createPlantValuesPanel({
   },
 });
 
+/**
+ * La sección «Expedientes de incidencia» (F5, ADR-0018), en la pestaña Línea y calles. Se rehace con
+ * cada análisis (`views.cases`) y con cada `cases-updated`. Cada acción la confirma una persona con un
+ * botón; el Worker la comprueba contra la revisión guardada y escribe una revisión nueva.
+ */
+const casesPanel = createCasesPanel({
+  formatInstant,
+  zone: ZONE,
+  send: (action) => startCase(action),
+});
+
 {
   const get = (id: TabId): HTMLElement => tabPanels.get(id) as HTMLElement;
   const views = (id: TabId): HTMLElement => viewsOf.get(id) as HTMLElement;
@@ -635,7 +651,8 @@ const plantValuesPanel = createPlantValuesPanel({
   // AGV: las vistas de la flota y, al final, el expediente que abre el buscador de la barra.
   get("agv").append(views("agv"), dossierPanel);
   get("tiempos").append(views("tiempos"));
-  get("linea").append(views("linea"));
+  // Línea y calles: sus vistas y, al final, los expedientes de incidencia (F5).
+  get("linea").append(views("linea"), casesPanel.node);
   // Memoria: la memoria consolidada del circuito, sus versiones y el flujo de consolidar (F4).
   get("memoria").append(memoryPanel.node, planPanel.node);
   // Datos: lo que se carga y lo que entró, tal cual: listas, copia, fuente, cobertura y perfil,
@@ -918,7 +935,8 @@ function setBusy(busy: boolean): void {
   memoryPanel.setBusy(busy);
   planPanel.setBusy(busy);
   plantValuesPanel.setBusy(busy);
-  cancelButton.hidden = !busy || state.memoryJob !== null || state.planJob || state.plantValueJob;
+  casesPanel.setBusy(busy);
+  cancelButton.hidden = !busy || state.memoryJob !== null || state.planJob || state.plantValueJob || state.caseJob;
   progressPanel.hidden = !busy;
 }
 
@@ -934,6 +952,7 @@ function disposeWorker(): void {
   state.memoryJob = null;
   state.planJob = false;
   state.plantValueJob = false;
+  state.caseJob = false;
 }
 
 function handleMessage(message: FromWorker): void {
@@ -980,6 +999,12 @@ function handleMessage(message: FromWorker): void {
       memoryPanel.update({ circuitId: state.circuitId, memory: message.views?.memory ?? null, working });
       planPanel.update({ circuitId: state.circuitId, plan: message.views?.plan ?? null, working });
       plantValuesPanel.update({ circuitId: state.circuitId, view: message.views?.plantValues ?? null });
+      casesPanel.update({
+        circuitId: state.circuitId,
+        views: message.views?.cases ?? null,
+        measured: message.views === undefined ? [] : measuredStarts(message.views),
+        findings: findingStarts(),
+      });
       if (message.views !== undefined) loadEvolution(message.views);
       renderDossier();
       renderReplaySkeleton();
@@ -1007,6 +1032,12 @@ function handleMessage(message: FromWorker): void {
       if (state.plantValueJob) {
         finishPlantValueJob();
         plantValuesPanel.showError(message.cause, message.recovery);
+        return;
+      }
+      // Y el de un expediente, en el suyo.
+      if (state.caseJob) {
+        finishCaseJob();
+        casesPanel.showError(message.cause, message.recovery);
         return;
       }
       // Y el de una acción del plano, en su sección.
@@ -1183,7 +1214,80 @@ function handleMessage(message: FromWorker): void {
       finishPlantValueJob();
       plantValuesPanel.showUpdated(message.written, message.appliesToWorking, message.plantValues);
       return;
+
+    // --- Expedientes de incidencia (ADR-0018): la respuesta se pinta en su sección ------------------
+    case "cases-updated":
+      finishCaseJob();
+      casesPanel.showUpdated(message.written, message.caseId, message.cases);
+      return;
   }
+}
+
+/** Las incidencias de la batería de mediciones (R-AGV-021) como puntos de partida de un expediente. */
+function measuredStarts(views: CircuitViews): readonly CaseStart[] {
+  return (views.incidents?.records ?? []).map((record) => {
+    const { incident, battery } = record;
+    const key = `${incident.agvId} ${incident.fromTagId} ${incident.fromUtcMs}`;
+    const label = `${INCIDENT_KIND_TEXT[record.kind]}: AGV ${incident.agvId} en ${incident.fromTagId}, ${formatInstant(incident.fromUtcMs)}`;
+    return {
+      origin: { kind: "incidencia-medida", key, label },
+      title: label,
+      agvId: incident.agvId,
+      tagIds: [incident.fromTagId],
+      from: incident.fromUtcMs,
+      to: incident.toUtcMs ?? incident.fromUtcMs + battery.durationMs,
+    };
+  });
+}
+
+/** Los hallazgos con tarjeta en la bandeja como puntos de partida; la ventana la pone la persona. */
+function findingStarts(): readonly CaseStart[] {
+  return (reviewSession?.findings() ?? []).map((finding) => {
+    const label = finding.figure === "" ? finding.title : `${finding.title} (${finding.figure})`;
+    return { origin: { kind: "hallazgo", key: finding.key, label }, title: label, agvId: null, tagIds: [], from: null, to: null };
+  });
+}
+
+function finishCaseJob(): void {
+  state.caseJob = false;
+  casesPanel.setBusy(false);
+  setBusy(false);
+  disposeWorker();
+}
+
+/**
+ * Envía una acción sobre un expediente al Worker (ADR-0018). Como `startPlantValue`: mismo Worker,
+ * `jobId` propio, y la presentación solo pide. No vuelve a analizar nada ni toca la memoria.
+ */
+function startCase(action: CaseAction): void {
+  const circuitId = state.circuitId;
+  if (circuitId === null) {
+    casesPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");
+    return;
+  }
+  // Nunca se mata el trabajo en curso para empezar este (WP-004): se rechaza y se dice.
+  if (state.worker !== null) {
+    casesPanel.notice(BUSY_NOTICE);
+    return;
+  }
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  state.caseJob = true;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    finishCaseJob();
+    casesPanel.showError("el proceso auxiliar se detuvo.", "No se ha guardado nada. Vuelve a intentarlo.");
+  };
+  setBusy(true);
+  casesPanel.setBusy(true);
+  progressNote.textContent = action.kind === "crear" ? "Creando el expediente y copiando las lecturas de su ventana" : "Guardando el expediente";
+  progressBar.value = 0;
+  const message: ToWorker = { type: "case-action", protocolVersion: PROTOCOL_VERSION, jobId, circuitId, action };
+  worker.postMessage(message);
 }
 
 function finishPlantValueJob(): void {

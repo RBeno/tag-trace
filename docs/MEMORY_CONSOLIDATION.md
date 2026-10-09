@@ -1,8 +1,8 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.12.2
+version: 0.13.0
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-09
 ---
 
 # Memoria longitudinal y consolidación
@@ -253,6 +253,11 @@ Lo que dicen las cifras:
 comprimir: la versión pasa del 4,9–6,4 % al 9,3–11,1 % del CSV, y comprimida del 0,63–0,85 % al
 0,75–1,03 %. El objetivo aceptado es el 5 % sobre las versiones guardadas comprimidas, así que
 sigue dentro con margen.
+
+**Expedientes (3.69.0, ADR-0018).** El recorte de lecturas de cada expediente queda fuera del 5 %
+(`PERFORMANCE_BUDGET.md`: «excluye recorte deliberado de incidencias») y se guarda comprimido en sus
+propias tablas; la sección de expedientes dice lo que ocupan. Todavía no se ha medido contra el
+circuito de auditoría ni se ha fijado un límite.
 
 **Decidido el 2026-09-27 (OQ-145):** se acepta el objetivo del 5 % sobre el CSV, con las versiones
 guardadas comprimidas; las lecturas retenidas también se guardan comprimidas, y cada fichero

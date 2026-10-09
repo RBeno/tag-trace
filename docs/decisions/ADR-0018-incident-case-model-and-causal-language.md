@@ -1,6 +1,6 @@
 ---
 adr: ADR-0018
-status: proposed
+status: accepted
 date: 2026-10-09
 ---
 
@@ -54,7 +54,11 @@ Tres hechos condicionan el diseño:
 
 ## Decisión propuesta
 
-Pendiente del propietario. Nada de esto se construye hasta que la acepte. Las preguntas que abría
+**Aceptada por el propietario el 2026-10-09** («Acepto el ADR, empieza la entrega 1»). La entrega 1
+está implementada en 3.69.0: `src/domain/incident-case.ts`, el almacén (versión 12, tablas
+`incidentCases` e `incidentEvidence`), el protocolo (`case-action`, `cases-updated`, `views.cases`), el
+Worker y la sección «Expedientes de incidencia» de Línea y calles. Lo que sigue es la decisión tal como
+se aceptó. Las preguntas que abría
 están **cerradas** desde el 2026-10-09 (`OPEN_QUESTIONS.md`): OQ-167 con la decisión del propietario
 (el expediente es solo local, en un dispositivo), y OQ-168, OQ-169, OQ-P02, OQ-P03 y OQ-P07 con la
 recomendación. El texto de abajo ya las incorpora.

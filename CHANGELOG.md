@@ -2,6 +2,54 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.69.0] - 2026-10-09
+
+El propietario aceptó ADR-0018 y pidió la primera entrega («Acepto el ADR, empieza la entrega 1»).
+
+### Añadido
+
+- **Expedientes de incidencia** (ADR-0018 D1–D5, FR-022, FR-024): una sección nueva al final de
+  Línea y calles. Un expediente se crea desde un síntoma descrito a mano, una incidencia medida (la
+  batería de R-AGV-021), una incidencia excluida de la memoria vigente o un hallazgo de la bandeja, y
+  nace en borrador con su identificador `INC-<circuito>-<aaaammdd>-<nn>`.
+- **Márgenes propuestos** (D4, OQ-P02): antes, el mayor de `incident_case.min_margin_before_ms`, la
+  duración del síntoma y la vuelta mediana; después, el mayor de `incident_case.min_margin_after_ms` y
+  la duración. Provisionales: 30 min a cada lado (`CONFIG_SCHEMA.md` §3.5). En borrador se cambian.
+- **Recorte congelado** (D4): al crear o cambiar la ventana se copian las lecturas de **todos** los AGV
+  del circuito en la ventana con márgenes, con su procedencia, de las lecturas retenidas o, si ya no lo
+  están, del original archivado; una lectura que traen dos exportaciones no se repite. Un fichero cuyas
+  lecturas ya no están se nombra para volver a cargarlo, y sin ninguna lectura el expediente queda sin
+  recorte, en desconocido. Nunca se completa nada.
+- **Revisiones append-only** (D2): cada guardado es una revisión nueva con el hash de la anterior; la
+  revisión guarda solo lo humano y referencias (hash del recorte, versión consolidada vigente,
+  configuración y aplicación). La cadena se comprueba al leer y una rota se dice en rojo.
+- **Ciclo de vida** (D3, OQ-168): cada estado ofrece sus transiciones; las que exigen texto lo piden y
+  las que exigen lo que el expediente todavía no tiene (hipótesis y contramedidas, verificación) salen
+  apagadas con lo que falta. `Discarded` exige razón y es final; `Closed` y `Inconclusive` se reabren
+  con la evidencia nueva. Notas en cualquier estado salvo cerrado o descartado.
+- **Almacén versión 12** con dos tablas propias, `incidentCases` e `incidentEvidence`; borrar el
+  circuito las borra. Solo locales: no viajan en el `.agvproj` (OQ-167).
+- Protocolo: `case-action` (crear, ventana, estado, nota, siempre con la revisión que la persona veía)
+  y `cases-updated`; `views.cases` en cada importación.
+- Vocabulario causal (D6): `causalWordsIn` y una prueba que recorre todos los textos que genera el
+  módulo de expedientes.
+- Pruebas: TC-330 y TC-331 (unitarias) y TC-332 y TC-333 (navegador: el resto del almacén queda byte a
+  byte igual tras crear, anotar, cambiar de estado y descartar, INV-008 y TC-017; y el recorte desde el
+  original archivado).
+
+### Cambiado
+
+- ADR-0018 pasa a **accepted**.
+- `INCIDENT_KIND_TEXT` se exporta desde `incident-battery.ts` para nombrar las incidencias medidas.
+- La revisión en campo expone sus hallazgos con tarjeta (`findings`) para abrir un expediente desde uno.
+
+### Pendiente
+
+- D5: que la consolidación **proponga** la ventana de cada expediente no descartado como incidencia
+  excluida. Hoy el expediente no la propone; la consolidación sigue con R-INC-004 como hasta ahora.
+- Las entregas 2 a 6 de ADR-0018: retroceso y cronología con el caso de oro de TC-012, replay con
+  esperado, hipótesis y contramedidas, informe y casos similares.
+
 ## [3.68.0] - 2026-10-09
 
 El propietario pidió empezar el trabajo propio de F5 por el ADR del expediente («sí, empieza por el

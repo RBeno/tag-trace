@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.47.2
+version: 0.48.0
 status: baseline-candidate
-last_updated: 2026-10-08
+last_updated: 2026-10-09
 ---
 
 # Especificación de experiencia de usuario
@@ -33,7 +33,7 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 | **Tags** | Inventario de tags; «Lo que hay que mirar» (tags); rotura y degradación de cada tag; mapa de omisión; cambios de tag; tags leídos fuera de la lista; limpieza de la lista; contraste contra Vsystem; orden del circuito según las lecturas; comparación entre dos periodos. |
 | **AGV** | Flota del circuito, flota en el circuito y vida de cada AGV (con las paradas de la producción y los primeros de cola); lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; ritmo de cada AGV y quién retiene; y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
 | **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito en palabras, con el enlace al dibujo del Resumen, su lista ordenada y los tags fuera del anillo. |
-| **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
+| **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO); al final, los **expedientes de incidencia** (§6.2, F5). |
 | **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje; debajo, el **plano del circuito** (§6.1). |
 | **Datos** | Valores de planta del circuito (3.59.0: el provisional y el confirmado de cada uno, con su fecha y su razón, «Cambiar…» con razón obligatoria, dónde mide el programa algo relacionado e historial; aviso si un valor cambia dentro de lo cargado; desde 3.60.0, «Propuesta de la memoria: X (coincide en v4, v5 y v6)» con «Confirmar la propuesta…», o «Sin propuesta: … Introduce el valor.» con la estimación de cada versión); listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
 
@@ -75,7 +75,7 @@ vez que su pestaña se enseña. Y la bandeja del Resumen necesita todas las tarj
 de la sección que las explica: construirlas dos veces costaría el doble para enseñar lo mismo.
 
 Áreas previstas que todavía no existen en el producto y que irán a su pestaña cuando lleguen:
-gestor de circuitos y preparación del análisis (Datos), incidencias con casos similares y contramedidas (Línea y calles), configuración (Datos).
+gestor de circuitos y preparación del análisis (Datos), casos similares, hipótesis y contramedidas de los expedientes (Línea y calles), configuración (Datos).
 
 ## 3. Flujo de análisis
 
@@ -830,6 +830,34 @@ Debajo de la memoria, en la misma pestaña (`src/presentation/plan-ui.ts`):
 Ningún botón que escribe se activa sin razón. En la evolución, un tag instalado que no se lee sale
 «sin leer en su ubicación», nunca «desaparece». Al abrir un `.agvproj`, el mensaje dice la relación
 de su plano con el local; al exportar, cuántos cambios incluye.
+
+### 6.2 Expedientes de incidencia (3.69.0, ADR-0018)
+
+Al final de Línea y calles, la sección «Expedientes de incidencia». Dice primero lo que es: una
+incidencia conservada para investigarla, aparte de la memoria del circuito —crearla, guardarla o
+cerrarla no cambia el esperado ni ninguna versión—, con una copia de las lecturas de todos los AGV de su
+ventana, y **solo en este dispositivo**: borrar los datos del navegador la pierde.
+
+- **«Nuevo expediente…»** abre el formulario en su sitio. «Empieza desde»: un síntoma que describes,
+  una incidencia medida (la batería de mediciones), una incidencia excluida de la memoria vigente o un
+  hallazgo de la bandeja; un origen sin nada en el análisis sale apagado con «(ninguna en este
+  análisis)». Elegir una incidencia rellena título, AGV, tags y ventana; un hallazgo, solo el título.
+  Hacen falta título, síntoma y principio y fin (en la hora del circuito); sin ellos el botón está
+  apagado. Debajo, cómo se proponen los márgenes: el mínimo provisional a cada lado, más si el síntoma
+  dura más o, antes, si la vuelta del circuito es más larga. «Tu nombre» es opcional y solo local.
+- **Cada expediente** es una fila plegable: identificador, estado en palabras y título. Abierta: la
+  ventana del síntoma y la que se mira con sus márgenes; de qué nace; el recorte («24 lecturas de 2 AGV,
+  congeladas de «x.csv» (lecturas retenidas)», o «Sin recorte: … desconocido» y qué fichero volver a
+  cargar); el síntoma; las referencias (versión de la memoria, configuración, aplicación); la razón del
+  último estado; las notas; y el historial de revisiones con fecha, autor y qué cambió. Si la cadena de
+  revisiones no está entera, se dice en rojo.
+- **Cambiar de estado**: un botón «Pasar a <estado>» por cada transición posible. La que exige texto
+  (por qué no es una incidencia, qué evidencia falta, qué evidencia nueva lo reabre, la conclusión)
+  lleva su campo y el botón está apagado hasta que se escribe. La que exige algo que el expediente no
+  tiene sale apagada con «Falta …». En borrador, además, «Cambiar la ventana», que vuelve a copiar las
+  lecturas. Un expediente cerrado o descartado no admite notas.
+- Tras cada acción, la línea de estado dice lo escrito y el expediente queda abierto. Al pie, lo que
+  ocupan los expedientes en el dispositivo.
 
 ## 7. Móvil, tableta y portátil
 

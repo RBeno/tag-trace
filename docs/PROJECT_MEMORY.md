@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.51.0
+version: 0.52.0
 status: baseline-candidate
 last_updated: 2026-10-09
 ---
@@ -424,6 +424,19 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## Expedientes, entrega 1 (ADR-0018 aceptado, 3.69.0, 2026-10-09)
+
+El propietario aceptó ADR-0018 («Acepto el ADR, empieza la entrega 1»). Hecho: el modelo del
+expediente (`src/domain/incident-case.ts`), el almacén versión 12 con `incidentCases` (revisiones
+append-only encadenadas por hash) e `incidentEvidence` (recortes comprimidos por hash), `case-action` y
+`cases-updated`, el Worker que congela el recorte desde las lecturas retenidas o el original archivado,
+y la sección «Expedientes de incidencia» al final de Línea y calles (crear desde síntoma, incidencia
+medida, incidencia excluida o hallazgo; ventana en borrador; estados con lo que falta; notas). Los
+márgenes mínimos son provisionales (30 min, `incident_case.*`). Probado que nada fuera de las tablas de
+expedientes cambia (TC-332). **Pendiente de D5**: que la consolidación proponga la ventana de cada
+expediente como incidencia excluida; hoy no lo hace. Siguiente: la entrega 2 (retroceso, cronología y
+caso de oro de TC-012).
+
 ## Modelo del expediente propuesto (ADR-0018, 3.68.0, 2026-10-09)
 
 El propietario pidió empezar F5 por el ADR del expediente. ADR-0018 (proposed, sin código) separa
@@ -517,9 +530,8 @@ conversación siguiente.
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
   6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron
   juntas** (3.64.0) y **el registro de conexiones con su mapa de estado de conexión** (3.65.0,
-  ADR-0017, secciones anteriores), ninguna un entregable de `ROADMAP.md` §F5. El primer trabajo de la
-  fase ya tiene propuesta: ADR-0018 (3.68.0), pendiente del propietario; tras aceptarlo, la entrega 1
-  de su lista. Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  ADR-0017, secciones anteriores), ninguna un entregable de `ROADMAP.md` §F5. El trabajo propio de la fase
+  empezó con ADR-0018 (aceptado) y su entrega 1 (3.69.0); lo siguiente es la entrega 2. Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
   (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
   antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**

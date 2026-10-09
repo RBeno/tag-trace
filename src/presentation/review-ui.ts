@@ -46,6 +46,8 @@ export interface ReviewSession {
   refresh(): void;
   /** ¿Hay ya una tarjeta con esta clave de revisión? */
   has(key: string): boolean;
+  /** Los hallazgos con tarjeta, en orden de alta: para abrir un expediente desde uno (ADR-0018 D1). */
+  findings(): readonly { readonly key: string; readonly title: string; readonly figure: string }[];
   /** El filtro de estado activo («» es todos). La bandeja lo combina con el suyo por tema. */
   filter(): string;
   /** Se avisa cada vez que cambia el filtro de estado o una marca, para que la bandeja se rehaga. */
@@ -377,6 +379,7 @@ export function createReviewSession(
     refresh,
     dispose: () => observer?.disconnect(),
     has: (key) => controls.has(key),
+    findings: () => [...controls.values()].map((control) => ({ key: control.key, title: control.title, figure: control.figure })),
     filter: () => container.dataset["reviewFilter"] ?? "",
     onChange: (listener) => {
       listeners.push(listener);

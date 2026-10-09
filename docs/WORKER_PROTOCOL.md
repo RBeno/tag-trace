@@ -1,8 +1,8 @@
 ---
 document_id: TT-WORKER-001
-version: 0.6.2
+version: 0.7.0
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-09
 ---
 
 # Protocolo entre la interfaz y los Workers
@@ -78,6 +78,7 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `revoke` | circuito, número de versión, razón | Marca la versión con fecha y razón; no la borra (R-MEM-002). |
 | `compare-versions` | circuito, dos números de versión | Solo lee: compara los esperados de dos versiones del linaje activo. |
 | `plant-value` | circuito, clave, valor, fecha efectiva, razón | Valida y escribe un valor de planta confirmado; rige al volver a analizar los ficheros de su vigencia. |
+| `case-action` | circuito, acción: `crear` (título, síntoma, origen, AGV, tags, principio y fin del síntoma, autor), `ventana` (expediente, revisión vista, ventana), `estado` (expediente, revisión vista, estado destino, texto) o `nota` (expediente, revisión vista, texto) | Escribe una revisión nueva del expediente, append-only, solo en las tablas de expedientes (ADR-0018 D5). Si la revisión vista ya no es la vigente, no escribe nada. Al crear o cambiar la ventana congela las lecturas de la ventana desde las retenidas o el original archivado. |
 | `plan-action` | circuito, fichero de trabajo, acción: `crear-plano` (desde una versión), `aceptar-propuesta` (id y fichero de la propuesta; en una salida, de qué ubicación cuelga) o `evento` (uno registrado a mano), siempre con razón | El Worker recalcula la propuesta desde la instantánea de su fichero antes de escribirla, valida todos los eventos en orden y los escribe en una transacción (ADR-0016). |
 | `resolve-fork` | circuito, elección (`conservar-local` \| `adoptar-entrante`), razón | Resuelve una bifurcación de linaje; el linaje no elegido queda archivado y la elección, en el historial (`MEMORY_CONSOLIDATION.md` §10). |
 
@@ -108,6 +109,7 @@ se ha guardado nada.»). La respuesta a un `consolidate` con `mode: "commit"` es
 `error` o `cancelled`; a `revoke` y `resolve-fork`, `revoked`/`fork-resolved`, `error` o `cancelled`.
 | `versions-compared` | la comparación: las dos versiones, las de entre medias, lo adoptado por el camino y el delta | |
 | `plant-values-updated` | los valores de planta del circuito: provisional, vigente para el fichero de trabajo, historial y dónde se mide | |
+| `cases-updated` | lo escrito en palabras, el expediente tocado y los expedientes del circuito (`CaseViews`) | |
 | `plan-updated` | los eventos escritos en palabras y el plano (`PlanViews`) leído contra el fichero de trabajo | |
 
 Las vistas de una importación (`complete.views`) llevan `memory` cuando el circuito tiene versiones:
