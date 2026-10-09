@@ -2,6 +2,34 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.68.0] - 2026-10-09
+
+El propietario pidió empezar el trabajo propio de F5 por el ADR del expediente («sí, empieza por el
+ADR del expediente»).
+
+### Propuesto (sin código)
+
+- **ADR-0018, proposed**: modelo del expediente de incidencia, su ciclo de vida, la evidencia mínima
+  reproducible y el lenguaje de causalidad y correlación, lo que `ROADMAP.md` §F5 pide formalizar
+  antes de construir. Separa el **expediente** (F5) de la **incidencia excluida** de F4, que no
+  cambia; revisiones append-only con solo lo humano y referencias a lo calculado; **recorte
+  congelado** de las lecturas de todos los AGV en la ventana con márgenes, porque la retención las
+  suelta (R-DAT-023); almacén y sección `incidencias/` del `.agvproj` propios, sin escribir la memoria
+  normal (INV-008); la ventana de un expediente se **propone** como incidencia excluida en la
+  siguiente consolidación; cinco etiquetas de relación (`precede`, `es compatible con`, `contradice`,
+  `correlaciona`, `confirmado como causa`), sin probabilidades y con el vocabulario causal prohibido
+  en el texto generado; retroceso, replay, contramedidas, similitud e informe construidos sobre lo
+  que ya existe (replay de F2, batería R-AGV-021, horquillas, cortes de conexión). Incluye cómo cubre
+  cada criterio de G5 y seis entregas.
+- **OQ-167 a OQ-169**: identidad del expediente y bifurcación entre dispositivos, estado `Discarded`
+  y reapertura, y una **contradicción entre documentos** (ALG-015 se llama «Retroceso causal» en
+  `ALGORITHM_CATALOG.md` y `INCIDENTS_REPORTING.md` §4 dice que el orden no es causalidad), que no se
+  toca hasta que decida el propietario. Recomendaciones anotadas en OQ-P02, OQ-P03 y OQ-P07.
+
+### Gobierno
+
+- `CLAUDE.md` decía que la fase vigente era F4; ahora dice F5, como `project_state.json`.
+
 ## [3.67.0] - 2026-10-08
 
 Tras fusionar la PR #15 (3.66.0, `43f0799`), el propietario precisó la intención del color: «para no

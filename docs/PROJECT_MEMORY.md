@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.50.0
+version: 0.51.0
 status: baseline-candidate
-last_updated: 2026-10-08
+last_updated: 2026-10-09
 ---
 
 # Memoria compacta del proyecto
@@ -424,6 +424,23 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## Modelo del expediente propuesto (ADR-0018, 3.68.0, 2026-10-09)
+
+El propietario pidió empezar F5 por el ADR del expediente. ADR-0018 (proposed, sin código) separa
+**expediente** (la investigación de F5) de **incidencia excluida** (la exclusión del esperado de F4,
+que no cambia y desde la que se puede abrir un expediente). Propone revisiones append-only que guardan
+solo lo humano y referencias a lo calculado; un **recorte congelado** de las lecturas de todos los AGV
+en la ventana con márgenes, porque la retención suelta las lecturas tras dos exportaciones
+(R-DAT-023); almacén y sección del `.agvproj` propios; y la consolidación siguiente **propone** la
+ventana de cada expediente como incidencia excluida, sin que el expediente escriba la memoria. El
+lenguaje queda en cinco etiquetas (`precede`, `es compatible con`, `contradice`, `correlaciona`,
+`confirmado como causa`); la última solo la pone una persona, `correlaciona` exige repetición, no hay
+probabilidades y el vocabulario causal está prohibido en el texto generado. Seis entregas, la segunda
+con el caso de oro sintético de TC-012. Abiertas: OQ-167 (identidad y bifurcación), OQ-168 (estado
+`Discarded` y reabrir), OQ-169 (contradicción: ALG-015 se llama «Retroceso causal») y las
+recomendaciones anotadas en OQ-P02, OQ-P03 y OQ-P07. Nada se construye hasta que el propietario lo
+acepte.
+
 ## PR #15 fusionada y las dos familias de color (3.67.0, 2026-10-08)
 
 La PR #15 (3.66.0: terminales ruidosos, mapa por clase, los que no reconectan, OQ-164 a OQ-166, las
@@ -498,8 +515,9 @@ conversación siguiente.
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
   6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron
   juntas** (3.64.0) y **el registro de conexiones con su mapa de estado de conexión** (3.65.0,
-  ADR-0017, secciones anteriores), ninguna un entregable de `ROADMAP.md` §F5: el primer trabajo de
-  la fase sigue siendo el punto de partida en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  ADR-0017, secciones anteriores), ninguna un entregable de `ROADMAP.md` §F5. El primer trabajo de la
+  fase ya tiene propuesta: ADR-0018 (3.68.0), pendiente del propietario; tras aceptarlo, la entrega 1
+  de su lista. Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
   (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
   antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**
