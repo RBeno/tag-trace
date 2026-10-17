@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.53.1
+version: 0.54.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -440,7 +440,10 @@ caían en contexto con su identificador en bruto) **y la tercera** (3.70.0: «Av
 la configuración que no se pudo usar y lo que falta o contradice, cada uno con su enlace; rango 3
 plegado en la bandeja). Precisión del propietario, aplicada en 3.70.1: **función y área tienen identidad
 distinta** («una función puede pertenecer a un área»): listas distintas y etiquetas distintas en
-«Declarado en planta». Lo que ya existía y se conserva: la bandeja del
+«Declarado en planta». **Y la cuarta** (3.71.0): «Problemas detectados» al principio de Tags, AGV y WiFi,
+Tags y AGV con los problemas primero y el contexto al final, y «AGV que dejan de leer» en AGV. Las
+cuatro entregas están hechas; la interfaz coherente que `ROADMAP.md` ponía en F6 queda adelantada en
+lo que el propietario pidió. Lo que ya existía y se conserva: la bandeja del
 Resumen con «Ver evidencia», la línea «Declarado en planta» solo en tarjetas con hallazgo y en el
 expediente.
 

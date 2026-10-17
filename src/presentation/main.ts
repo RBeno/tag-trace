@@ -1871,19 +1871,9 @@ function renderViews(views: CircuitViews): void {
   // Qué queda de cada fichero en este dispositivo (R-DAT-023): lecturas, instantánea o nada.
   if (views.snapshots.list.length > 0) out.append(sourceStatusList(views.snapshots, formatTick));
 
-  // --- Tags: inventario, lectura, cambios, listas ----------------------------------------------
+  // --- Tags: los problemas primero, y el inventario como contexto al final (UX_SPEC §4.7) ---------
   out = viewsOf.get("tags") as HTMLElement;
   out.append(element("h2", undefined, "Tags"));
-  out.append(
-    inventoryChart(
-      (views.inventory?.counts ?? []).map((entry) => ({
-        label: entry.tagClass,
-        count: entry.count,
-        truth: entry.truth,
-        action: entry.action,
-      })),
-    ),
-  );
   renderReadMatrix(views);
   renderTagChanges(views);
   renderUndeclaredTags(views);
@@ -1917,14 +1907,27 @@ function renderViews(views: CircuitViews): void {
   }
   renderCircuitOrder(views);
   renderDrift(views);
+  out.append(
+    inventoryChart(
+      (views.inventory?.counts ?? []).map((entry) => ({
+        label: entry.tagClass,
+        count: entry.count,
+        truth: entry.truth,
+        action: entry.action,
+      })),
+    ),
+  );
 
   // --- AGV: la flota, quién lee qué, el ritmo. Después de Tags: las tarjetas de AGV que no leen
   // los mismos tags que un grupo de «Lo que hay que mirar» se pliegan en él. ----------------------
   out = viewsOf.get("agv") as HTMLElement;
   out.append(element("h2", undefined, "AGV"));
-  renderFleet(views);
+  // Los fallos de cada AGV primero (UX_SPEC §4.7): su lectura, los que dejan de leer, su ritmo; la
+  // flota y la vida de cada uno, que son contexto, detrás.
   renderVehicleReadingSection(views);
+  renderAbandonedVehicles(views);
   renderPace(views);
+  renderFleet(views);
 
   // --- Tiempos: el estado normal, las secciones, los ficheros, los críticos y el anillo ----------
   out = viewsOf.get("tiempos") as HTMLElement;
@@ -2035,6 +2038,13 @@ function renderAbandoned(views: CircuitViews): void {
     });
     out.append(download);
   }
+}
+
+/**
+ * Los AGV que dejan de leer (R-AGV-021), en la pestaña AGV desde 3.71.0: es un fallo del vehículo y
+ * ahí es donde se detallan (propietario, 2026-10-17). Sus mediciones siguen en el CSV de incidencias.
+ */
+function renderAbandonedVehicles(views: CircuitViews): void {
   const abandoned = views.incidents?.abandoned ?? [];
   if (abandoned.length === 0) return;
   out.append(element("h3", undefined, "AGV que dejan de leer"));
@@ -5145,6 +5155,7 @@ function buildTray(): void {
       countOf.set(section.id, (countOf.get(section.id) ?? 0) + 1);
       if (!firstOfSection.has(section.id)) firstOfSection.set(section.id, node);
     }
+    renderProblemIndex(tab, panel, entries.filter((entry) => entry.tab === tab));
     // En cada sección, donde salían las tarjetas, la línea que lleva a la bandeja.
     for (const [sectionId, first] of firstOfSection) {
       const count = countOf.get(sectionId) ?? 0;
@@ -5255,6 +5266,76 @@ function buildTray(): void {
   }
   reviewSession?.onChange(applyTrayFilter);
   applyTrayFilter();
+}
+
+/**
+ * «Problemas detectados» (UX_SPEC §4.7): al principio de Tags, AGV y WiFi, el índice de lo que esa
+ * pestaña encontró, por tipo —con su rango, cuántos y en qué sección—, para ir directo a una
+ * anomalía sin recorrer la pestaña (propietario, 2026-10-17: «quiero orden para poder ir directo a
+ * buscar una anomalía»). Las tarjetas siguen en la bandeja del Resumen; esto es el índice.
+ */
+function renderProblemIndex(
+  tab: TabId,
+  panel: HTMLElement,
+  entries: readonly { readonly card: HTMLElement; readonly sectionId: string; readonly sectionTitle: string }[],
+): void {
+  if (tab !== "tags" && tab !== "agv" && tab !== "wifi") return;
+  const heading = panel.querySelector(":scope > h2");
+  if (heading === null) return;
+  const block = element("div", "problem-index");
+  block.append(element("h3", undefined, "Problemas detectados"));
+  interface Row {
+    readonly label: string;
+    readonly rank: FindingRank;
+    count: number;
+    readonly sectionId: string;
+    readonly sectionTitle: string;
+  }
+  const rows = new Map<string, Row>();
+  for (const entry of entries) {
+    const kindId = entry.card.dataset["kind"] ?? "";
+    const kind = findingKindOf(kindId);
+    const row = rows.get(kindId);
+    if (row === undefined) rows.set(kindId, { label: kind.label, rank: kind.rank, count: 1, sectionId: entry.sectionId, sectionTitle: entry.sectionTitle });
+    else row.count += 1;
+  }
+  if (rows.size === 0) {
+    block.append(element("p", "muted", "Ningún problema detectado en esta pestaña con lo cargado."));
+    heading.after(block);
+    return;
+  }
+  const total = entries.length;
+  block.append(
+    element(
+      "p",
+      "muted",
+      `${total} ${total === 1 ? "hallazgo" : "hallazgos"} en ${rows.size} ${rows.size === 1 ? "tipo" : "tipos"}, de mayor a menor gravedad. Cada línea lleva a la sección que lo detalla; las tarjetas están en el Resumen.`,
+    ),
+  );
+  const list = element("ul", "problem-list");
+  const sorted = [...rows.values()].sort((a, b) => a.rank - b.rank || b.count - a.count || a.label.localeCompare(b.label));
+  for (const row of sorted) {
+    const item = element("li");
+    item.dataset["rank"] = String(row.rank);
+    const strong = element("strong", undefined, `${row.count} × ${row.label}`);
+    item.append(strong, ` — ${RANK_LABEL[row.rank].toLowerCase()} · `);
+    const link = element("a", undefined, `ver en «${row.sectionTitle}»`);
+    link.href = `#${tab}`;
+    const sectionId = row.sectionId;
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      const target = document.getElementById(sectionId);
+      (target ?? panel).scrollIntoView({ block: "start" });
+      if (target instanceof HTMLElement) {
+        target.tabIndex = -1;
+        target.focus({ preventScroll: true });
+      }
+    });
+    item.append(link);
+    list.append(item);
+  }
+  block.append(list);
+  heading.after(block);
 }
 
 function setTrayTheme(theme: Theme | ""): void {

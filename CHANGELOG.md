@@ -2,6 +2,30 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.71.0] - 2026-10-17
+
+Cuarta y última entrega de la organización de TAG TRACE (propietario, 2026-10-17: «quiero orden para
+poder ir directo a buscar una anomalía»; «AGV, que es donde se detallan los fallos detectados de cada
+AGV»; «en Tags está todo organizado por los problemas de los tags»).
+
+### Añadido
+
+- **«Problemas detectados»** (`UX_SPEC.md` §4.7) al principio de Tags, AGV y WiFi: el índice de lo
+  que esa pestaña encontró, por tipo, con su rango y su recuento, y el enlace a la sección que lo
+  detalla. Se construye con la misma pasada que la bandeja, así que cuenta lo mismo que ella.
+
+### Cambiado
+
+- **Tags y AGV, los problemas primero.** En Tags, el inventario pasa al final como contexto y «Lo
+  que hay que mirar» abre la pestaña; en AGV, la lectura de cada AGV, los que dejan de leer y el
+  ritmo van antes que la flota y la vida de cada uno.
+- **«AGV que dejan de leer» pasa de Línea y calles a AGV**: es un fallo del vehículo. El CSV de
+  incidencias de Línea y calles sigue trayéndolos.
+
+### Documentación
+
+- `UX_SPEC.md` §2 y §4.7 nueva; TC-335; `TRACEABILITY_MATRIX.md`.
+
 ## [3.70.1] - 2026-10-17
 
 ### Cambiado

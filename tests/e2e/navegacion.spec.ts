@@ -123,6 +123,26 @@ test.describe("pestañas y bandeja de hallazgos", () => {
     await page.getByRole("group", { name: "Tema" }).getByRole("button", { name: "Todos los temas" }).click();
     expect(await tray.locator(".finding.reviewable:not([hidden])").count()).toBe(total);
 
+    // «Problemas detectados» abre Tags y AGV (3.71.0): el índice por tipo, con su rango y su recuento,
+    // y cada línea lleva a la sección que lo detalla. En Tags los problemas van antes que el inventario.
+    await openTab(page, "Tags");
+    const indice = page.locator("#panel-tags .problem-index");
+    await expect(indice.getByRole("heading", { name: "Problemas detectados" })).toBeVisible();
+    const lineas = indice.locator(".problem-list li");
+    expect(await lineas.count()).toBeGreaterThan(0);
+    await expect(lineas.first()).toContainText(/\d+ × /);
+    const sectionLink = lineas.first().getByRole("link", { name: /^ver en «/ });
+    const sectionTitle = (await sectionLink.textContent())?.replace(/^ver en «|»$/g, "") ?? "";
+    await sectionLink.click();
+    await expect(page.getByRole("heading", { name: sectionTitle, exact: true })).toBeInViewport();
+    const tagsOrder = await page.locator("#panel-tags h3, #panel-tags figure.chart h3").evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ""));
+    expect(tagsOrder.indexOf("Lo que hay que mirar")).toBeLessThan(tagsOrder.indexOf("Inventario de tags"));
+    await openTab(page, "AGV");
+    await expect(page.locator("#panel-agv .problem-index").getByRole("heading", { name: "Problemas detectados" })).toBeVisible();
+    const agvOrder = await page.locator("#panel-agv h3").evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ""));
+    expect(agvOrder.indexOf("Lectura de cada AGV")).toBeLessThan(agvOrder.indexOf("Flota del circuito"));
+    await openTab(page, "Resumen");
+
     // Una sección conserva su contexto con la línea que lleva a la bandeja; sin repetir la tarjeta.
     await openTab(page, "Línea y calles");
     const elsewhere = page.locator("#panel-linea .findings-elsewhere").first();

@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.50.1
+version: 0.51.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -32,11 +32,11 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 | Pestaña | Qué contiene |
 |---|---|
 | **Resumen** | La **portada** (3.49.0): la tira de siete cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta, línea y memoria—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), los **avisos** (§4.6, 3.70.0: lo que falta, contradice o no se pudo usar, cada uno con el enlace a su sitio), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. Es el puesto de mando (propietario, 2026-10-17): lo importante a la vista y, desde cada cosa, directo a donde se detalla. |
-| **Tags** | Inventario de tags; «Lo que hay que mirar» (tags); rotura y degradación de cada tag; mapa de omisión; cambios de tag; tags leídos fuera de la lista; limpieza de la lista; contraste contra Vsystem; orden del circuito según las lecturas; comparación entre dos periodos. |
-| **AGV** | Flota del circuito, flota en el circuito y vida de cada AGV (con las paradas de la producción y los primeros de cola); lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; ritmo de cada AGV y quién retiene; y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
+| **Tags** | **«Problemas detectados»** (§4.7) y después, los problemas primero (3.71.0): «Lo que hay que mirar» (tags), rotura y degradación de cada tag, mapa de omisión, cambios de tag, tags leídos fuera de la lista, limpieza de la lista, contraste contra Vsystem, orden del circuito según las lecturas, comparación entre dos periodos; y al final, como contexto, el inventario de tags. |
+| **AGV** | **«Problemas detectados»** (§4.7) y después, los fallos de cada AGV primero (3.71.0): lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; **AGV que dejan de leer** (hasta 3.70.1 en Línea y calles: es un fallo del vehículo y aquí es donde se detalla); ritmo de cada AGV y quién retiene; y como contexto la flota del circuito, la flota en el circuito y la vida de cada AGV (con las paradas de la producción y los primeros de cola); y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
 | **WiFi** | Solo con registro de conexiones (DS-013, ADR-0017): el estado de conexión del circuito —cortes en la ventana por clase, cortes colectivos, el contraste con las ráfagas (OQ-159), el mapa de estado de conexión con su selector de clase, los sitios donde se pierde la señal más de lo que da el azar, los terminales ruidosos, los que no reconectan, los AGV que pierden la señal más que el resto y el registro por AGV—. Hasta 3.68.0 era una subsección de Tiempos; ahí queda «El estado de conexión está en WiFi», o, sin registro, por qué no hay nada que enseñar. |
 | **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito en palabras, con el enlace al dibujo del Resumen, su lista ordenada y los tags fuera del anillo. |
-| **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
+| **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones (el CSV sigue trayendo también los AGV que dejan de leer); calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
 | **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje; debajo, el **plano del circuito** (§6.1). |
 | **Datos** | Valores de planta del circuito (3.59.0: el provisional y el confirmado de cada uno, con su fecha y su razón, «Cambiar…» con razón obligatoria, dónde mide el programa algo relacionado e historial; aviso si un valor cambia dentro de lo cargado; desde 3.60.0, «Propuesta de la memoria: X (coincide en v4, v5 y v6)» con «Confirmar la propuesta…», o «Sin propuesta: … Introduce el valor.» con la estimación de cada versión); listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
 
@@ -342,6 +342,18 @@ acceder a alguno te mandará automáticamente a su ubicación»):
 No se inventa gravedad ni orden: la lista va en el orden en que se recogen, y sin avisos lo dice
 («Ningún aviso: toda la configuración cargada se pudo usar…»). Es `div.notices-host` con `h3` «Avisos»,
 una línea de recuento y `ul.notices`.
+
+## 4.7 Problemas detectados
+
+Tags, AGV y WiFi empiezan, bajo su título, con el bloque **«Problemas detectados»** (3.71.0;
+propietario, 2026-10-17: «quiero orden para poder ir directo a buscar una anomalía»): el índice de lo
+que esa pestaña encontró, **por tipo**, de mayor a menor gravedad y, a igual rango, de más a menos
+casos. Cada línea dice «N × <tipo> — <rango> · ver en «<sección>»», y el enlace desplaza hasta la
+sección que lo detalla y le deja el foco. Las tarjetas no se repiten: siguen en la bandeja del Resumen
+(§4.5); esto es el índice de la pestaña, y se construye con la misma pasada que la bandeja
+(`buildTray` → `renderProblemIndex`), así que cuenta exactamente lo mismo. Sin hallazgos en la pestaña,
+lo dice. Las secciones de cada pestaña van después en el orden de §2: los problemas primero y el
+contexto (inventario, flota) al final.
 
 ## 5. Grafo y plano
 
