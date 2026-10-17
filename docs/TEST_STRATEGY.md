@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.83.0
+version: 0.84.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -411,6 +411,8 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-360 | Banco de medida (`perf-bench.test.ts`, `PERFORMANCE_BUDGET.md` §2, §3) | PERF-D2 con 100.000 lecturas y PERF-D4 con 48 h, 40 AGV y 120 tags; determinista con su semilla; orden de pila descendente y el importador lo lee entero sin cuarentena; cada métrica contra su presupuesto; lo no medido, «sin medir»; una cancelación no atendida, «fuera»; el informe solo con sintético, equipo y cifras |
 | TC-361 | Navegador: medir este dispositivo (`medida.spec.ts`) | Con un circuito escrito, mide los tres volúmenes y el almacén sigue sin circuitos; cada tabla con su volumen y el hueco p95 juzgado; PERF-D4 con primera vista y paso del replay; PERF-D3 con la cancelación juzgada; el informe JSON con versión, equipo, huella y memoria medida en Chromium |
 | TC-362 | Navegador: cancelar a mitad de la lectura (`concurrencia.spec.ts`, WP-004, INV-006) | Con un circuito de un fichero, una importación de 400.000 filas cancelada mientras dice «Normalizando filas» se confirma en menos de 1,5 s, «Cancelar» desaparece, los ficheros vuelven a encenderse y el circuito sigue con su único fichero |
+| TC-363 | Lecturas por columnas (`reading-columns.test.ts`, `PERFORMANCE_BUDGET.md` §4) | Cada fila de la tabla sale igual que de la lectura, con acentos y textos de distinta longitud; los buffers se transfieren; el filtro compara el texto exacto con sus ceros (INV-002: `0040` ≠ `40`, `2032` ≠ `20321`); sin lecturas, cero filas |
+| TC-364 | Fichero mayor que lo medido (`perf-bench.test.ts`) | Hasta 500.000 lecturas, ningún aviso; por encima, el aviso con el número de lecturas y, si el navegador la declara, su memoria |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las siete pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

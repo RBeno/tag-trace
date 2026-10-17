@@ -13,7 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { BENCH_SCENARIOS, benchMetrics, benchReport, formatMetric, percentile, scenarioCsv, scenarioRows, type BenchRaw } from "../../src/application/perf-bench.js";
+import { BENCH_SCENARIOS, benchMetrics, largeImportWarning, LARGEST_MEASURED_READINGS, benchReport, formatMetric, percentile, scenarioCsv, scenarioRows, type BenchRaw } from "../../src/application/perf-bench.js";
 import { importReadings } from "../../src/ingestion/importer.js";
 
 const scenario = (id: string) => BENCH_SCENARIOS.find((entry) => entry.id === id)!;
@@ -92,5 +92,13 @@ describe("métricas frente al presupuesto", () => {
     });
     expect(Object.keys(report)).toEqual(["kind", "format", "appVersion", "measuredAt", "device", "visibleThroughout", "runs"]);
     expect(report.measuredAt).toBe("2026-10-17T00:00:00.000Z");
+  });
+
+  it("un fichero mayor que lo medido avisa, con la memoria que declara el navegador si la hay", () => {
+    expect(largeImportWarning(LARGEST_MEASURED_READINGS, 8)).toBeNull();
+    const warning = largeImportWarning(800_000, 4);
+    expect(warning).toContain("800.000 lecturas");
+    expect(warning).toContain("declara 4 GB");
+    expect(largeImportWarning(800_000, null)).not.toContain("declara");
   });
 });

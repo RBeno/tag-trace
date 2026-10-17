@@ -13,6 +13,7 @@
  * hacia la presentación**. La interfaz no puede parsear aunque quiera.
  */
 
+import type { ReadingColumns } from "./reading-columns.js";
 import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
 import type { FleetTimeline } from "../domain/fleet.js";
 import type { Blockage, ProductionStop } from "../domain/flow-stops.js";
@@ -56,7 +57,7 @@ import type { TagChangeReport } from "../domain/tag-changes.js";
 import type { VehicleReadingReport } from "../domain/vehicle-reading.js";
 import type { VehicleReplayState } from "../domain/replay.js";
 import type { VsystemComparisonRow } from "../domain/vsystem.js";
-import type { QuarantinedRow, Reading } from "../domain/reading.js";
+import type { QuarantinedRow } from "../domain/reading.js";
 import type { SourceDirection } from "../domain/order.js";
 import type { MonotonicityReport } from "../ingestion/monotonicity.js";
 import type { FieldOrder } from "../domain/time.js";
@@ -1211,7 +1212,11 @@ export interface SerializedReplayFrame {
 export interface CompleteMessage extends Envelope {
   readonly type: "complete";
   readonly summary: SourceSummary;
-  readonly readings: readonly Reading[];
+  /**
+   * Las lecturas, por columnas y con sus buffers transferidos (3.84.0): la página solo las usa para la
+   * tabla, y copiarlas como objetos paraba el hilo principal (`PERFORMANCE_BUDGET.md` §3.2).
+   */
+  readonly readings: ReadingColumns;
   readonly quarantine: readonly QuarantinedRow[];
   readonly warnings: readonly string[];
   /** Presente solo si la importación se acumuló en un circuito. */

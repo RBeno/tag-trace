@@ -2,6 +2,27 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.84.0] - 2026-10-17
+
+Entrega 3 de F6.
+
+### Cambiado
+
+- **Las lecturas llegan a la página por columnas** (`PERFORMANCE_BUDGET.md` §3.2 y §4). Medido antes de
+  cambiar nada: el tirón de más de un segundo al terminar una importación grande no era dibujar (unos
+  60 ms), sino copiar las lecturas como objetos del Worker a la página (~800 ms con 461.000). La página
+  solo las usa para la tabla «Lecturas», así que ahora viajan como números en buffers transferidos, AGV
+  y tags en diccionario y los textos originales en una sola cadena. El filtro de la tabla sigue
+  comparando el texto exacto, con sus ceros. En el banco, solo en el contenedor: el peor hueco de
+  fotograma baja de 0,3 / 1,1 / 1,3 s a 106 / 113 / 87 ms en PERF-D2, D3 y D4, y la memoria del hilo
+  principal de 78 / 361 / 648 MiB a 41 / 183 / 156 MiB.
+
+### Añadido
+
+- **Aviso de fichero mayor que lo medido**: por encima de 500.000 lecturas (PERF-D3) la importación sigue
+  y advierte de que en este dispositivo no está comprobado, con la memoria que declare el navegador.
+- Pruebas: TC-363 y TC-364 (unitarias).
+
 ## [3.83.1] - 2026-10-17
 
 ### Corregido

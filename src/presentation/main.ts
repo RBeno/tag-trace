@@ -76,7 +76,7 @@ import { bandsCsv } from "../domain/segment-bands.js";
 import { anchorSectionsCsv } from "../domain/anchor-sections.js";
 import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
 import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
-import type { QuarantinedRow, Reading } from "../domain/reading.js";
+import type { QuarantinedRow } from "../domain/reading.js";
 import { wallClockToUtc, type FieldOrder } from "../domain/time.js";
 import type { IncidentCut } from "../domain/incident-cut.js";
 import { ProjectError, readMemorySection, readPlanSection, readPlantValuesSection, readProject, writeProject } from "../persistence/agvproj.js";
@@ -87,6 +87,7 @@ import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots, STOR
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
 import { createBenchPanel, type BenchObserver } from "./bench-ui.js";
 import { startUpdates } from "./update.js";
+import { EMPTY_COLUMNS, filterReadings, readingRow, type ReadingColumns } from "../application/reading-columns.js";
 import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
 import { createPlanPanel, planRelationText } from "./plan-ui.js";
 import { createPlantValuesPanel, plantValuesRelationText, type PlantValueSendRequest } from "./plant-values-ui.js";
@@ -117,9 +118,11 @@ interface State {
   worker: Worker | null;
   jobId: string | null;
   summary: SourceSummary | null;
-  readings: readonly Reading[];
+  /** Las lecturas de la última importación, por columnas (3.84.0). */
+  readings: ReadingColumns;
   /** Lo que la tabla está mostrando: todas las lecturas, o las que pasan el filtro. */
-  visible: readonly Reading[];
+  /** Las posiciones que pasan el filtro de la tabla; `null`, todas. */
+  visible: Uint32Array | null;
   quarantine: readonly QuarantinedRow[];
   warnings: readonly string[];
   shown: number;
@@ -155,8 +158,8 @@ const state: State = {
   worker: null,
   jobId: null,
   summary: null,
-  readings: [],
-  visible: [],
+  readings: EMPTY_COLUMNS,
+  visible: null,
   quarantine: [],
   warnings: [],
   shown: 0,
@@ -890,12 +893,7 @@ function renderSummary(summary: SourceSummary): void {
 function applyFilter(): void {
   const agv = agvFilter.value.trim();
   const tag = tagFilter.value.trim();
-  state.visible =
-    agv === "" && tag === ""
-      ? state.readings
-      : state.readings.filter(
-          (entry) => (agv === "" || entry.agvId === agv) && (tag === "" || entry.tagId === tag),
-        );
+  state.visible = filterReadings(state.readings, agv, tag);
   state.shown = 0;
   const body = tablePanel.querySelector("tbody");
   if (body !== null) body.replaceChildren();
@@ -903,11 +901,14 @@ function applyFilter(): void {
   appendRows();
 }
 
+/** Cuántas lecturas pasan el filtro. */
+const visibleCount = (): number => state.visible?.length ?? state.readings.count;
+
 function renderCount(): void {
-  const total = state.readings.length.toLocaleString("es-ES");
-  const shown = state.visible.length.toLocaleString("es-ES");
+  const total = state.readings.count.toLocaleString("es-ES");
+  const shown = visibleCount().toLocaleString("es-ES");
   filterNote.textContent =
-    state.visible.length === state.readings.length
+    state.visible === null
       ? `${total} lecturas`
       : state.visible.length === 0
         ? `Ninguna de las ${total} lecturas coincide (se compara el número entero, con sus ceros).`
@@ -948,29 +949,30 @@ function appendRows(): void {
   const body = tablePanel.querySelector("tbody");
   if (body === null) return;
 
-  const end = Math.min(state.shown + PAGE_SIZE, state.visible.length);
+  const visible = visibleCount();
+  const end = Math.min(state.shown + PAGE_SIZE, visible);
   for (let index = state.shown; index < end; index += 1) {
-    const reading = state.visible[index] as Reading;
+    const reading = readingRow(state.readings, state.visible === null ? index : (state.visible[index] as number));
     const row = element("tr");
     // La hora repetida resuelta por posición (ADR-0013, nota 2026-09-26) ordena como cualquier otra:
     // se marca aparte y no como sospechosa.
-    if (reading.time.flag === "dst_by_position") row.className = "resolved";
-    else if (reading.time.flag !== "ok") row.className = "flagged";
+    if (reading.flag === "dst_by_position") row.className = "resolved";
+    else if (reading.flag !== "ok") row.className = "flagged";
 
-    row.append(element("td", undefined, formatInstant(reading.time.utcMs)));
+    row.append(element("td", undefined, formatInstant(reading.utcMs)));
     row.append(element("td", "mono", reading.agvId));
     row.append(element("td", "mono", reading.tagId));
     // La procedencia es navegable: la fila física del fichero está siempre a la vista.
-    row.append(element("td", "mono", String(reading.provenance.sourceRow)));
-    row.append(element("td", "mono raw", reading.time.raw));
+    row.append(element("td", "mono", String(reading.sourceRow)));
+    row.append(element("td", "mono raw", reading.raw));
     body.append(row);
   }
   state.shown = end;
 
   const more = tablePanel.querySelector<HTMLButtonElement>("#show-more");
   if (more !== null) {
-    more.hidden = state.shown >= state.visible.length;
-    more.textContent = `Mostrar más (${(state.visible.length - state.shown).toLocaleString("es-ES")} restantes)`;
+    more.hidden = state.shown >= visible;
+    more.textContent = `Mostrar más (${(visible - state.shown).toLocaleString("es-ES")} restantes)`;
   }
 }
 
@@ -1053,7 +1055,7 @@ function handleMessage(message: FromWorker): void {
       benchObserver?.arrived();
       state.summary = message.summary;
       state.readings = message.readings;
-      state.visible = message.readings;
+      state.visible = null;
       state.quarantine = message.quarantine;
       state.warnings = message.warnings;
       state.shown = 0;

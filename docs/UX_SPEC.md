@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.61.0
+version: 0.62.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -1071,6 +1071,11 @@ La aplicación diferencia:
 - circuito en proceso de borrado, con lo que se pierde enumerado antes de confirmar.
 
 Un error nunca debe mostrar `0 lecturas válidas` sin explicar esquema detectado, causa, filas de ejemplo y acción de recuperación.
+
+Un fichero con más lecturas que el mayor volumen medido (500.000, PERF-D3) se importa igual y trae una
+advertencia (3.84.0): cuántas tiene, que en este dispositivo no está comprobado —con la memoria que
+declare el navegador—, que si va lento o se cierra se exporte un periodo más corto y que «Medir este
+dispositivo» dice cómo responde.
 
 ## 9. Actualización PWA
 

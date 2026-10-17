@@ -10,6 +10,8 @@
  * puntos de control. `terminate()` queda como último recurso de la interfaz, no como mecanismo.
  */
 
+import { largeImportWarning } from "../src/application/perf-bench.js";
+import { packReadings } from "../src/application/reading-columns.js";
 import {
   PROTOCOL_VERSION,
   type FromWorker,
@@ -268,9 +270,9 @@ let currentJobId: string | null = null;
 let cancelRequested = false;
 let seq = 0;
 
-function emit(message: OutgoingPayload, jobId: string): void {
+function emit(message: OutgoingPayload, jobId: string, transfer: readonly Transferable[] = []): void {
   seq += 1;
-  scope.postMessage({ ...message, protocolVersion: PROTOCOL_VERSION, jobId, seq } as FromWorker);
+  scope.postMessage({ ...message, protocolVersion: PROTOCOL_VERSION, jobId, seq } as FromWorker, [...transfer]);
 }
 
 /** Hash del contenido completo: identidad del fichero (DATA_CONTRACTS §3). */
@@ -2109,18 +2111,23 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
       };
     }
 
+    // Las lecturas viajan por columnas y sus buffers se transfieren: sin copia en la página.
+    const packed = packReadings(result.readings);
+    // Más que lo medido: se dice, y se importa igual (F6, degradación por capacidad).
+    const largeWarning = largeImportWarning(result.readings.length, (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? null);
     emit(
       {
         type: "complete",
         summary: result.summary,
-        readings: result.readings,
+        readings: packed.columns,
         quarantine: result.quarantine,
         // Lo que no se pudo construir o comparar se dice con el resto de advertencias (R-EVI-006).
-        warnings: [...result.warnings, ...(built?.problems ?? []), ...archiveProblems],
+        warnings: [...result.warnings, ...(built?.problems ?? []), ...archiveProblems, ...(largeWarning === null ? [] : [largeWarning])],
         ...(accumulation === undefined ? {} : { accumulation }),
         ...(built === undefined ? {} : { views: built.views }),
       },
       jobId,
+      packed.transfer,
     );
   } catch (error) {
     if (error instanceof ImportCancelled) {

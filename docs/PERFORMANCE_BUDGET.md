@@ -1,6 +1,6 @@
 ---
 document_id: TT-PERF-001
-version: 0.9.0
+version: 0.10.0
 status: provisional-budget
 last_updated: 2026-10-17
 ---
@@ -135,6 +135,28 @@ llegaba hasta que terminaba y los puntos de control nunca lo veían, así que la
 entera. Corregido en 3.83.1 con el plazo de cortesía de WP-004: la misma medida da ahora **501 ms**,
 dentro del segundo.
 
+**Tras la entrega 3 (3.84.0).** Medido dónde se iba el tirón: dibujar los resultados costaba unos 60 ms;
+los ~800 ms eran **copiar las lecturas como objetos** del Worker a la página, y sin ellas el tirón
+desaparecía. La página solo las usa para la tabla «Lecturas», así que ahora viajan **por columnas**
+(§4): números en `ArrayBuffer` transferidos, sin copia; AGV y tags en diccionario; los textos originales
+en una sola cadena con sus cortes (`src/application/reading-columns.ts`). La misma tanda, sola en el
+contenedor:
+
+| | PERF-D2 | PERF-D3 | PERF-D4 |
+|---|---:|---:|---:|
+| Hueco de fotograma p95 / máximo | 18 / **106 ms** (antes 306) | 17 / **113 ms** (antes 1.053) | 17 / **87 ms** (antes 1.332) |
+| Memoria del hilo principal | **41 MiB** (antes 78) | **183 MiB** (antes 361) | **156 MiB** (antes 648) |
+| Importar, analizar y dibujar | 3,6 s | 17,2 s | 15,4 s |
+| Primera vista del replay | — | — | 31 ms |
+| Confirmación de cancelación | — | 501 ms | — |
+
+Con el resto de las pruebas corriendo en paralelo, el máximo de PERF-D2 sube a 0,3–0,5 s por la carga de
+la máquina; el p95 no se mueve. **Degradación por capacidad**: sin medidas de los dispositivos no se
+inventa un umbral de capacidad; un fichero con más lecturas que el mayor volumen medido (PERF-D3,
+500.000) se importa igual y avisa de que en ese dispositivo no está comprobado, con la memoria que
+declare el navegador. Cuando lleguen los informes del propietario, esto se revisa con sus cifras.
+
+
 ## 4. Modelo de memoria
 
 La representación ingenua de una fila como varios objetos y cadenas JS puede multiplicar varias veces el tamaño del CSV. El diseño perseguirá:
@@ -145,7 +167,7 @@ La representación ingenua de una fila como varios objetos y cadenas JS puede mu
 - columnas/arrays tipados;
 - offsets de procedencia compactos;
 - índices temporales construidos bajo demanda;
-- transferencia de buffers, no copias;
+- transferencia de buffers, no copias (desde 3.84.0, las lecturas que llegan a la página: §3.2);
 - agregación por lote y liberación temprana.
 
 Presupuesto técnico candidato para la representación canónica: 16–40 bytes base por evento más índices/procedencia. El valor real se comprobará con perfiles; no incluye el `File` mantenido por el navegador ni estructuras temporales.

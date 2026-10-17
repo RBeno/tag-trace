@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.67.0
+version: 0.68.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -423,6 +423,15 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## F6, entrega 3: optimización y degradación (3.84.0, 2026-10-17)
+
+Medido antes de tocar: el tirón de más de un segundo no era dibujar (60 ms) sino copiar las lecturas
+como objetos al hilo principal (~800 ms con 461.000). Ahora viajan por columnas con buffers transferidos
+y la tabla «Lecturas» lee de ahí: el máximo baja a ~0,1 s en D2, D3 y D4 y la memoria del hilo principal
+de 648 a 156 MiB en D4. Degradación: sin medidas de los dispositivos no se inventa umbral; por encima de
+500.000 lecturas (lo medido) se avisa y se importa igual. Pendiente: revisar con los informes del
+propietario. Siguiente: entrega 4, interfaz coherente.
 
 ## «Cancelar» corregido (3.83.1, 2026-10-17)
 

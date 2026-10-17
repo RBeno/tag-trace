@@ -1,6 +1,6 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.12.0
+version: 0.13.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -217,7 +217,9 @@ Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria port
    fotograma, memoria, primera vista del replay y reapertura, con un informe descargable. El
    propietario lo ejecuta en sus dispositivos (OQ-173). **Hecha en 3.83.0**; destapó que «Cancelar» no se
    atiende mientras se leen las filas (`PERFORMANCE_BUDGET.md` §3.2).
-3. **Optimización y degradación por capacidad**, guiada por esa medida.
+3. **Optimización y degradación por capacidad**, guiada por esa medida. **Hecha en 3.84.0** con las cifras del
+   contenedor (lecturas por columnas; aviso por encima de lo medido); se revisa con los informes del
+   propietario.
 4. **Interfaz coherente de escritorio y móvil**.
 5. **Accesibilidad y estados de error completos**: WCAG 2.2 AA con axe-core en las pruebas (OQ-175) y una
    prueba por estado de `UX_SPEC.md` §8.

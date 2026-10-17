@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.15.0
+version: 0.16.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -91,7 +91,7 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `accepted` | etapas previstas | Confirma que el trabajo empezó; sirve para detectar Workers que no arrancan. |
 | `progress` | etapa, unidades hechas, unidades previstas, mensaje | Sin porcentajes inventados. |
 | `partial` | resultado incompleto | Siempre `partial: true`. |
-| `complete` | resultado, métricas, hash semántico, advertencias | Único mensaje que autoriza a persistir. |
+| `complete` | resultado, métricas, hash semántico, advertencias | Único mensaje que autoriza a persistir. Desde 3.84.0 las lecturas viajan **por columnas** (`ReadingColumns`) y sus buffers se transfieren, sin copia (`PERFORMANCE_BUDGET.md` §3.2). |
 | `error` | código, causa, esquema detectado, filas de ejemplo, acción sugerida | Ver §6. |
 | `saving` | — | Solo en una importación con circuito, justo antes de su primera escritura (3.83.1). Hasta aquí no se ha escrito nada y la interfaz puede detener el Worker; desde aquí ya no se cancela y la escritura termina entera (WP-004). |
 | `cancelled` | etapa alcanzada, recursos liberados | El estado anterior permanece intacto. |

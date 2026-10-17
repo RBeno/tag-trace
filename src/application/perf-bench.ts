@@ -39,6 +39,23 @@ export const BENCH_SCENARIOS: readonly BenchScenario[] = [
   { id: "PERF-D4", label: "48 h, 40 AGV, 120 tags (replay)", vehicles: 40, tags: 120, cadenceSeconds: 15, durationHours: 48, seed: 20261019 },
 ];
 
+/**
+ * El mayor volumen que el banco mide (PERF-D3). Por encima, la aplicación lo dice al importar: en el
+ * dispositivo no está comprobado (`PERFORMANCE_BUDGET.md` §3, «el móvil degradará o advertirá según
+ * capacidad»). No es un límite: el fichero se importa igual.
+ */
+export const LARGEST_MEASURED_READINGS = 500_000;
+
+/** El aviso de un fichero mayor que lo medido; `null` si no lo es. `memoryGb`, la memoria que declara el navegador. */
+export function largeImportWarning(readings: number, memoryGb: number | null): string | null {
+  if (readings <= LARGEST_MEASURED_READINGS) return null;
+  const device = memoryGb === null ? "" : ` (este navegador declara ${memoryGb.toLocaleString("es-ES")} GB de memoria)`;
+  return (
+    `El fichero tiene ${readings.toLocaleString("es-ES")} lecturas, más que el mayor volumen medido (${LARGEST_MEASURED_READINGS.toLocaleString("es-ES")}): ` +
+    `en este dispositivo${device} no está comprobado cuánto aguanta. Si la página va lenta o se cierra, exporta un periodo más corto. «Medir este dispositivo», en Datos, dice cómo responde con los volúmenes medidos.`
+  );
+}
+
 /** Generador con semilla: determinista y sin dependencias. */
 function seeded(seed: number): () => number {
   let state = seed >>> 0;
