@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.64.0
+version: 0.65.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -423,6 +423,16 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## F6, entrega 1: actualización segura y versión identificable (3.82.0, 2026-10-17)
+
+Hecho: el service worker se sella al compilar con su versión, la del almacén y la lista de ficheros;
+la versión nueva se instala **en espera** y la página avisa con su número y qué pasa con lo guardado; se
+activa solo a petición y sin trabajo en curso, aquí ni en otra pestaña (se pregunta por
+`BroadcastChannel`). La versión abierta se sirve de su caché, también sin red. Cada publicación deja la
+etiqueta `vX.Y.Z`; el retorno es lanzar la publicación sobre una etiqueta anterior (`VERSIONING.md`).
+Encontrado al probar: la caché no encontraba los módulos con `Vary: Origin` y la aplicación no abría sin
+red una vez de cada pocas; se compara con `ignoreVary`. Siguiente: entrega 2, el banco de medida.
 
 ## F6: orden de entregas y cuatro decisiones (2026-10-17)
 

@@ -1,8 +1,8 @@
 ---
 document_id: TT-SEC-001
-version: 0.3.0
+version: 0.4.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-10-17
 ---
 
 # Seguridad, privacidad y separación industrial
@@ -39,7 +39,7 @@ TAG TRACE es estrictamente observacional:
 | TH-005 | Proyecto manipulado/corrupto | Esquema, hashes, límites de tamaño y carga transaccional. Un libro de Excel de listas o flota se lee con los mismos límites de zip, sin evaluar fórmulas, y se rechaza si declara un tipo de documento (expansión de entidades) |
 | TH-006 | CSV malicioso o agotamiento de memoria | Parser defensivo, límites, cuotas, cancelación y cuarentena |
 | TH-007 | XSS mediante valores importados | Renderizado como texto, sanitización, sin scripts en línea y CSP restrictiva |
-| TH-008 | Service Worker obsoleto | Versión visible, actualización controlada y retorno |
+| TH-008 | Service Worker obsoleto | Versión visible, actualización controlada y retorno (implementado en 3.82.0, `VERSIONING.md` §Publicación y retorno) |
 | TH-009 | Pérdida por limpieza del navegador | Exportación `.agvproj`, avisos de persistencia y verificación de guardado |
 | TH-010 | Mezcla de circuitos | `circuit_id`, afinidad, cuarentena y bloqueo de consolidación |
 

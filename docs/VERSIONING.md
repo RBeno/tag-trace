@@ -1,8 +1,8 @@
 ---
 document_id: TT-VERSION-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-10-17
 ---
 
 # Versionado y compatibilidad
@@ -54,4 +54,27 @@ Tienen `valid_from`, `valid_to` opcional, origen y estado. Una consolidación cr
 
 - `docs-v0.2.0`: candidata documental vigente. `docs-v0.1.0` fue la primera, sin gobierno ejecutable.
 - `phase-fN-approved`: checkpoint aprobado de fase.
-- `vX.Y.Z`: release ejecutable futura.
+- `vX.Y.Z`: versión ejecutable publicada. Desde 3.82.0 la crea el workflow de publicación en el commit
+  publicado, con la versión del `CHANGELOG.md`; una etiqueta publicada no se mueve.
+
+## Publicación y retorno
+
+Desde 3.82.0 (NFR-011, NFR-016, ADR-0014):
+
+- **Identificar.** La versión abierta se ve en la cabecera («Versión X.Y.Z»), sale del `CHANGELOG.md` y
+  coincide con la etiqueta `vX.Y.Z` del commit publicado y con la caché del service worker
+  (`tag-trace-X.Y.Z`).
+- **Actualizar.** Cada compilación sella su `sw.js` con la versión, la del almacén local y la lista de
+  ficheros. El navegador instala la versión nueva en espera y la página avisa con su número y qué pasa
+  con lo guardado; se activa solo cuando la persona lo pide y no hay importación, análisis, exportación
+  ni consolidación en curso, ni en otra pestaña (`UX_SPEC.md` §9). Mientras, se sigue sirviendo la
+  versión abierta, también sin red. Se conservan la caché de la versión activa y la de la anterior.
+- **Volver a una versión anterior.** En GitHub, Actions → «Publicar en GitHub Pages» → «Run workflow» y,
+  en «Use workflow from», la etiqueta `vX.Y.Z` a la que se vuelve. Se verifica, compila y publica esa
+  versión tal cual; su etiqueta ya existe y no se toca. Cada dispositivo ve el aviso «Se ha vuelto a
+  publicar una versión anterior» y cambia cuando la persona lo pide.
+- **Cuidado con el almacén.** Si la versión a la que se vuelve abre un almacén anterior al de lo
+  guardado (`STORE_VERSION`), no podrá leerlo: el aviso lo dice antes de cambiar. Para no perder nada,
+  antes se exporta cada circuito (`.agvproj`); tras volver, se borran los datos del sitio y se abren
+  las copias. Un retorno sin cambio de almacén no necesita nada de esto.
+- Las versiones anteriores a 3.82.0 no tienen etiqueta ni este aviso.

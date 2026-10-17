@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.27.0
+version: 0.28.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -213,14 +213,19 @@ Criterio de rechazo (OQ-B05, propietario 2026-10-17): el piloto se rechaza si oc
 - [ ] PERF-D2–D4 dentro de presupuesto aprobado.
 - [ ] Accesibilidad esencial y errores recuperables.
 - [ ] Pruebas de ausencia de red y datos reales.
-- [ ] Actualización PWA no interrumpe tareas críticas.
+- [ ] Actualización PWA no interrumpe tareas críticas. **Evidencia (3.82.0)**: la versión nueva queda en
+      espera y la activa la persona, nunca con una importación, análisis, exportación o consolidación en
+      curso, ni en otra pestaña (TC-357, TC-359). Falta probarla en el móvil físico.
 - [x] GitHub Pages publica solo builds aprobadas. **Adelantado en F3 (2026-09-20)**: no es la
       aprobación del piloto, es la infraestructura que la hace posible. `deploy-pages.yml` llama a
       los tres workflows de verificación como *reusable workflows* y solo despliega si los tres
       terminan en verde (ADR-0014), sin repetir sus pasos. Se abrió ahora porque medir PERF-D2 en el
       dispositivo de referencia (Samsung Galaxy S23 FE) —deuda declarada desde G1— exige una URL
       real, y hasta hoy no existía ninguna.
-- [ ] Release identificable, changelog y retorno verificados.
+- [ ] Release identificable, changelog y retorno verificados. **Evidencia parcial (3.82.0)**: versión en la
+      cabecera, en la caché y en la etiqueta `vX.Y.Z` que deja cada publicación; retorno desde el workflow
+      eligiendo la etiqueta (`VERSIONING.md` §Publicación y retorno). Falta ejecutar un retorno de verdad
+      cuando haya dos versiones etiquetadas.
 - [ ] Informe de aceptación del propietario.
 
 ## G7/G8

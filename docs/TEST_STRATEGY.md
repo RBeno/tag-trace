@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.80.0
+version: 0.81.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -405,6 +405,9 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-354 | Navegador: informe y exportación (`expedientes.spec.ts`) | Se descargan el informe del expediente (diez apartados, recorte, sin recursos externos ni botones), la cronología y las lecturas (24 filas); el informe del circuito trae «Expedientes de incidencia · 1» con su fila; exportar no escribe nada |
 | TC-355 | Casos parecidos (`case-similarity.test.ts`, ALG-017, D10) | La misma parada aguas arriba del mismo punto va antes que otro tag con otra duración; cada característica igual, parecida, distinta o sin dato; lo confirmado en otro caso aparte y sin tocar el actual; un hecho repetido se cuenta sin decir «correlaciona»; ni descartados ni el propio caso; a igualdad, el más reciente; determinista; sin vocabulario causal |
 | TC-356 | Navegador: casos parecidos (`expedientes.spec.ts`) | Con un expediente, «No hay otros expedientes»; con dos, cada uno enseña al otro y no a sí mismo, con «coinciden N de M» y los tags del síntoma iguales; sin vocabulario causal ni referencias internas; comparar no escribe nada fuera de los expedientes |
+| TC-357 | Aviso de versión nueva (`update.test.ts`, NFR-011, NFR-016) | Dice la versión que se abrirá y la abierta, y «versión anterior» en un retorno; con el mismo almacén, «se abre igual»; con uno nuevo, la conversión sin vuelta atrás y exportar antes; con uno anterior, que no podrá abrirlo; con trabajo aquí o en otra pestaña, no se activa y lo dice; sin referencias internas |
+| TC-358 | Navegador: versión y sin red (`actualizacion.spec.ts`, NFR-010, NFR-016) | La cabecera dice la versión del `CHANGELOG.md`; la caché se llama `tag-trace-<versión>` y tiene el documento, el Worker y el resto de la compilación sin mapas de fuente; sin red, la aplicación se recarga e importa un fichero |
+| TC-359 | Navegador: actualización segura (`actualizacion.spec.ts`, NFR-011) | Una versión nueva queda en espera y se avisa con su número y «se abre igual»; con una importación en curso, «Cambiar a» está apagado y dice por qué; al terminar se enciende; al pulsarlo, la página se recarga y manda la versión nueva |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las siete pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

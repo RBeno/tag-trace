@@ -83,8 +83,9 @@ import { ProjectError, readMemorySection, readPlanSection, readPlantValuesSectio
 import { exportProjectMemory, importProjectMemory } from "../persistence/project-memory.js";
 import { exportProjectPlan, importProjectPlan } from "../persistence/project-plan.js";
 import { exportProjectPlantValues, importProjectPlantValues } from "../persistence/project-plant-values.js";
-import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots } from "../persistence/store.js";
+import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots, STORE_VERSION } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
+import { startUpdates } from "./update.js";
 import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
 import { createPlanPanel, planRelationText } from "./plan-ui.js";
 import { createPlantValuesPanel, plantValuesRelationText, type PlantValueSendRequest } from "./plant-values-ui.js";
@@ -238,7 +239,10 @@ const subtitle = element(
   "muted",
   "Diagnóstico de circuitos AGV · los datos no salen de este dispositivo",
 );
-header.append(title, subtitle);
+// La versión abierta, a la vista: lo que se publica se puede identificar (NFR-016).
+const versionNote = element("p", "muted app-version", `Versión ${APP_VERSION}`);
+header.append(title, subtitle, versionNote);
+const updates = startUpdates({ currentVersion: APP_VERSION, storeVersion: STORE_VERSION });
 
 /**
  * Un selector de fichero que parece un botón propio. El `input` nativo sigue existiendo con su
@@ -698,6 +702,7 @@ const casesPanel = createCasesPanel({
 
 app.append(
   header,
+  updates.node,
   tabsBar,
   reviewHost,
   // El selector de lecturas, el progreso y los mensajes se ven en todas las pestañas: son la
@@ -972,6 +977,18 @@ function setBusy(busy: boolean): void {
   casesPanel.setBusy(busy);
   cancelButton.hidden = !busy || state.memoryJob !== null || state.planJob || state.plantValueJob || state.caseJob;
   progressPanel.hidden = !busy;
+  workerBusy = busy;
+  syncUpdateBusy();
+}
+
+/**
+ * Con un trabajo en curso no se activa una versión nueva (NFR-011): ni con el Worker ocupado ni
+ * mientras se exporta un `.agvproj`, que lee el almacén desde aquí sin pasar por el Worker.
+ */
+let workerBusy = false;
+let exportsInFlight = 0;
+function syncUpdateBusy(): void {
+  updates.setBusy(workerBusy || exportsInFlight > 0);
 }
 
 /** Lo que dice el panel cuyo botón se pulsó con otro trabajo en marcha. */
@@ -6058,6 +6075,8 @@ function renderReplayFrame(): void {
 
 
 exportButton.addEventListener("click", () => {
+  exportsInFlight += 1;
+  syncUpdateBusy();
   void (async () => {
     const circuitId = circuitInput.value.trim();
     if (circuitId === "") {
@@ -6124,7 +6143,10 @@ exportButton.addEventListener("click", () => {
     link.download = `${circuitId}.agvproj`;
     link.click();
     URL.revokeObjectURL(url);
-  })();
+  })().finally(() => {
+    exportsInFlight -= 1;
+    syncUpdateBusy();
+  });
 });
 
 projectInput.addEventListener("change", () => {
@@ -6231,19 +6253,7 @@ if (isAvailable()) {
   });
 }
 
-// --- Sin red -----------------------------------------------------------------
+// --- Sin red y actualización ------------------------------------------------
 
-/**
- * Registra el service worker para que la aplicación abra sin conexión.
- *
- * Va al final y sin bloquear nada: si el registro falla —contexto no seguro, permisos del
- * navegador, modo privado— la aplicación sigue funcionando exactamente igual con red. Una PWA que
- * se rompe porque no pudo instalarse es peor que no tenerla.
- */
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {
-      // No se informa al usuario: no ha perdido ninguna capacidad, solo la de abrir sin red.
-    });
-  });
-}
+// El registro del service worker y el aviso de versión nueva viven en `update.ts` (NFR-011): la
+// versión nueva espera a que la persona la pida y no se activa con un trabajo en curso.

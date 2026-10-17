@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.59.0
+version: 0.60.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -1080,3 +1080,15 @@ Si existe una versión nueva:
 - se bloquea su activación durante importación, análisis, exportación o consolidación;
 - se solicita guardar el proyecto;
 - se muestra la versión que se abrirá y compatibilidad esperada.
+
+**Implementado desde 3.82.0** (`src/presentation/update.ts`, `public/sw.js`): la cabecera dice «Versión
+X.Y.Z». Con una versión en espera aparece, bajo la cabecera y sin interrumpir, un aviso con
+`role="status"`: «Hay una versión nueva: X (abierta: Y).» —o «Se ha vuelto a publicar una versión
+anterior: …» en un retorno—; qué pasa con lo guardado («se abre igual»; o que se convertirá a un formato
+nuevo sin vuelta atrás, o que una versión anterior no podrá abrirlo, y en esos dos casos «exporta una
+copia de cada circuito (.agvproj)»); el botón «Cambiar a X»; y «La página se recargará con la versión
+nueva. Lo guardado en este dispositivo se conserva.». Con un trabajo en curso el botón está apagado y
+dice «Se podrá actualizar cuando termine la operación en curso.»; si trabaja otra pestaña, «Otra pestaña
+de TAG TRACE está trabajando; actualiza cuando termine.». Una pestaña a mitad de trabajo cuando otra
+actualiza no se recarga: dice «Se ha actualizado la aplicación desde otra pestaña.» y pide recargar al
+terminar.

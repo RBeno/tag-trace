@@ -427,7 +427,13 @@ function open(): Promise<IDBDatabase> {
         if (step.to > from) step.apply(db, tx);
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      // Si otra pestaña abre una versión nueva del almacén, esta conexión se suelta para no
+      // bloquear su migración; la operación siguiente de esta pestaña abrirá de nuevo (NFR-011).
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     request.onerror = () => reject(request.error ?? new Error("No se pudo abrir el almacén local."));
   });
 }

@@ -1,6 +1,6 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -212,7 +212,7 @@ Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria port
 1. **Actualización segura y versión identificable** (NFR-011, NFR-016, `UX_SPEC.md` §9): la versión nueva
    espera y avisa; no se activa durante importación, análisis, exportación o consolidación; caché por
    versión; cada publicación etiquetada, con su procedimiento de retorno. Va primera porque hoy el
-   service worker activa la versión nueva en el acto.
+   service worker activa la versión nueva en el acto. **Hecha en 3.82.0.**
 2. **Banco de medida en la aplicación**: PERF-D2, D3 y D4 sintéticos generados en local, huecos de
    fotograma, memoria, primera vista del replay y reapertura, con un informe descargable. El
    propietario lo ejecuta en sus dispositivos (OQ-173).

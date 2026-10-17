@@ -2,6 +2,30 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.82.0] - 2026-10-17
+
+Entrega 1 de F6.
+
+### Cambiado
+
+- **Actualización segura** (NFR-011, `UX_SPEC.md` §9). Antes el service worker activaba la versión nueva
+  en el acto (`skipWaiting` al instalar). Ahora se sella al compilar con su versión, la del almacén y la
+  lista de ficheros, se instala **en espera** y la página avisa sin interrumpir: «Hay una versión nueva:
+  X (abierta: Y).», qué pasa con lo guardado y «Cambiar a X». No se activa con una importación,
+  análisis, exportación o consolidación en curso, ni si trabaja otra pestaña; una pestaña a mitad de
+  trabajo no se recarga por otra.
+- **Sin red, la versión abierta entera**: su caché `tag-trace-<versión>` guarda la compilación completa
+  al instalarse y se sirve primero; se conserva también la de la versión anterior.
+
+### Añadido
+
+- **Versión a la vista** en la cabecera (NFR-016) y **etiqueta `vX.Y.Z`** en cada publicación, con el
+  procedimiento de retorno en `VERSIONING.md` §Publicación y retorno.
+- El almacén suelta su conexión cuando otra pestaña lo migra (`onversionchange`).
+- Pruebas: TC-357 (unitaria), TC-358 y TC-359 (navegador). La prueba sin red destapó, antes de publicar,
+  que con `Vary: Origin` la caché nueva no encontraba los módulos una vez de cada pocas; se busca con
+  `ignoreVary`.
+
 ## [3.81.1] - 2026-10-17
 
 ### Gobierno
