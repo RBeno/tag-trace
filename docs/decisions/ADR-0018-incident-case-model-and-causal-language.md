@@ -50,17 +50,17 @@ Tres hechos condicionan el diseño:
    «Retroceso causal», mientras `INCIDENTS_REPORTING.md` §4 dice que «el orden no representa
    causalidad demostrada» y la interfaz debe distinguir `precede`, `correlaciona`, `es compatible
    con` y `confirmado como causa`. El propietario aceptó renombrarlo «Retroceso desde el síntoma»
-   (OQ-169).
+   (OQ-171).
 
 ## Decisión propuesta
 
 **Aceptada por el propietario el 2026-10-09** («Acepto el ADR, empieza la entrega 1»). La entrega 1
-está implementada en 3.69.0: `src/domain/incident-case.ts`, el almacén (versión 12, tablas
+está implementada en 3.74.0: `src/domain/incident-case.ts`, el almacén (versión 12, tablas
 `incidentCases` e `incidentEvidence`), el protocolo (`case-action`, `cases-updated`, `views.cases`), el
 Worker y la sección «Expedientes de incidencia» de Línea y calles. Lo que sigue es la decisión tal como
 se aceptó. Las preguntas que abría
-están **cerradas** desde el 2026-10-09 (`OPEN_QUESTIONS.md`): OQ-167 con la decisión del propietario
-(el expediente es solo local, en un dispositivo), y OQ-168, OQ-169, OQ-P02, OQ-P03 y OQ-P07 con la
+están **cerradas** desde el 2026-10-09 (`OPEN_QUESTIONS.md`): OQ-169 con la decisión del propietario
+(el expediente es solo local, en un dispositivo), y OQ-170, OQ-171, OQ-P02, OQ-P03 y OQ-P07 con la
 recomendación. El texto de abajo ya las incorpora.
 
 ### D1. Dos nombres para dos cosas
@@ -77,7 +77,7 @@ una lista propia.
 
 ### D2. Identidad y revisiones append-only
 
-- **Solo local, en un dispositivo** (propietario, 2026-10-09, OQ-167: «De momento no va a ver dos
+- **Solo local, en un dispositivo** (propietario, 2026-10-09, OQ-169: «De momento no va a ver dos
   dispositivos se mantendrá exclusivamente en la memoria local»). El expediente vive en el almacén
   del navegador y no viaja en el `.agvproj`; no hay bifurcaciones que resolver. La sección
   `incidencias/` que ADR-0012 prevé queda sin construir mientras siga así.
@@ -115,7 +115,7 @@ exige:
 | `Closed` / `Inconclusive` → `Investigating` | persona | la evidencia nueva que lo reabre; es una revisión nueva |
 
 Ninguna transición la hace el programa. **El programa propone y la persona decide** (R-EVI-006).
-`Discarded` y la reapertura se añaden al diagrama de `INCIDENTS_REPORTING.md` §7 (OQ-168, 2026-10-09).
+`Discarded` y la reapertura se añaden al diagrama de `INCIDENTS_REPORTING.md` §7 (OQ-170, 2026-10-09).
 Un expediente descartado no propone exclusión en la consolidación (D5).
 
 ### D4. Ventana y evidencia mínima reproducible
@@ -190,7 +190,7 @@ su tramo (R-FLO-007); aguas arriba es el anillo de la versión aplicable; los pa
 comunicación son los cortes de DS-013 y las lecturas que llegaron juntas, separados (R-COM-006). La
 salida es una **cronología** de hechos con su etiqueta (D6), su tiempo antes del síntoma y su
 distancia en tags. **El orden de la lista es temporal, no de importancia ni de causa.** ALG-015 se
-llama desde el 2026-10-09 «Retroceso desde el síntoma» (OQ-169).
+llama desde el 2026-10-09 «Retroceso desde el síntoma» (OQ-171).
 
 ### D8. Replay multi-AGV con esperado e incertidumbre (ALG-016)
 

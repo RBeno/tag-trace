@@ -33,7 +33,7 @@
  * revisiones de cada expediente, **append-only** —clave `[circuitId, caseId, revision]`, con `add`—, y
  * `incidentEvidence`, los recortes congelados de lecturas, por su hash —clave `[circuitId, hash]`—. Un
  * expediente no escribe en ninguna otra tabla, y ninguna otra operación escribe en estas dos salvo
- * borrar el circuito. Solo locales: no viajan en el `.agvproj` (OQ-167).
+ * borrar el circuito. Solo locales: no viajan en el `.agvproj` (OQ-169).
  */
 
 import type { ConnectionEvent } from "../domain/connection-log.js";

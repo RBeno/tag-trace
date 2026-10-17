@@ -424,7 +424,7 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
-## Expedientes, entrega 1 (ADR-0018 aceptado, 3.69.0, 2026-10-09)
+## Expedientes, entrega 1 (ADR-0018 aceptado, 3.74.0, 2026-10-09)
 
 El propietario aceptó ADR-0018 («Acepto el ADR, empieza la entrega 1»). Hecho: el modelo del
 expediente (`src/domain/incident-case.ts`), el almacén versión 12 con `incidentCases` (revisiones
@@ -433,11 +433,11 @@ append-only encadenadas por hash) e `incidentEvidence` (recortes comprimidos por
 y la sección «Expedientes de incidencia» al final de Línea y calles (crear desde síntoma, incidencia
 medida, incidencia excluida o hallazgo; ventana en borrador; estados con lo que falta; notas). Los
 márgenes mínimos son provisionales (30 min, `incident_case.*`). Probado que nada fuera de las tablas de
-expedientes cambia (TC-332). **Pendiente de D5**: que la consolidación proponga la ventana de cada
+expedientes cambia (TC-340). **Pendiente de D5**: que la consolidación proponga la ventana de cada
 expediente como incidencia excluida; hoy no lo hace. Siguiente: la entrega 2 (retroceso, cronología y
 caso de oro de TC-012).
 
-## Modelo del expediente propuesto (ADR-0018, 3.68.0, 2026-10-09)
+## Modelo del expediente propuesto (ADR-0018, 3.73.0, 2026-10-09)
 
 El propietario pidió empezar F5 por el ADR del expediente. ADR-0018 (proposed, sin código) separa
 **expediente** (la investigación de F5) de **incidencia excluida** (la exclusión del esperado de F4,
@@ -450,8 +450,8 @@ lenguaje queda en cinco etiquetas (`precede`, `es compatible con`, `contradice`,
 `confirmado como causa`); la última solo la pone una persona, `correlaciona` exige repetición, no hay
 probabilidades y el vocabulario causal está prohibido en el texto generado. Seis entregas, la segunda
 con el caso de oro sintético de TC-012. El mismo día el propietario cerró las preguntas del ADR: el
-expediente es **solo local**, en un dispositivo, sin `.agvproj` ni bifurcaciones (OQ-167); se añaden
-`Discarded` y la reapertura (OQ-168); ALG-015 pasa a llamarse «Retroceso desde el síntoma» (OQ-169);
+expediente es **solo local**, en un dispositivo, sin `.agvproj` ni bifurcaciones (OQ-169); se añaden
+`Discarded` y la reapertura (OQ-170); ALG-015 pasa a llamarse «Retroceso desde el síntoma» (OQ-171);
 y se aceptan las recomendaciones de márgenes y recorte, formatos de informe y verificación de
 contramedidas (OQ-P02, OQ-P03, OQ-P07). El ADR sigue `proposed`: aceptarlo es del propietario y
 nada se construye antes.
@@ -531,7 +531,7 @@ conversación siguiente.
   6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron
   juntas** (3.64.0) y **el registro de conexiones con su mapa de estado de conexión** (3.65.0,
   ADR-0017, secciones anteriores), ninguna un entregable de `ROADMAP.md` §F5. El trabajo propio de la fase
-  empezó con ADR-0018 (aceptado) y su entrega 1 (3.69.0); lo siguiente es la entrega 2. Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  empezó con ADR-0018 (aceptado) y su entrega 1 (3.74.0); lo siguiente es la entrega 2. Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
   (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
   antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**

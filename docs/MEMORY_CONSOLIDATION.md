@@ -254,7 +254,7 @@ comprimir: la versión pasa del 4,9–6,4 % al 9,3–11,1 % del CSV, y comprimid
 0,75–1,03 %. El objetivo aceptado es el 5 % sobre las versiones guardadas comprimidas, así que
 sigue dentro con margen.
 
-**Expedientes (3.69.0, ADR-0018).** El recorte de lecturas de cada expediente queda fuera del 5 %
+**Expedientes (3.74.0, ADR-0018).** El recorte de lecturas de cada expediente queda fuera del 5 %
 (`PERFORMANCE_BUDGET.md`: «excluye recorte deliberado de incidencias») y se guarda comprimido en sus
 propias tablas; la sección de expedientes dice lo que ocupan. Todavía no se ha medido contra el
 circuito de auditoría ni se ha fijado un límite.

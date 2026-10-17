@@ -2,7 +2,7 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
-## [3.69.0] - 2026-10-09
+## [3.74.0] - 2026-10-09
 
 El propietario aceptó ADR-0018 y pidió la primera entrega («Acepto el ADR, empieza la entrega 1»).
 
@@ -23,17 +23,17 @@ El propietario aceptó ADR-0018 y pidió la primera entrega («Acepto el ADR, em
 - **Revisiones append-only** (D2): cada guardado es una revisión nueva con el hash de la anterior; la
   revisión guarda solo lo humano y referencias (hash del recorte, versión consolidada vigente,
   configuración y aplicación). La cadena se comprueba al leer y una rota se dice en rojo.
-- **Ciclo de vida** (D3, OQ-168): cada estado ofrece sus transiciones; las que exigen texto lo piden y
+- **Ciclo de vida** (D3, OQ-170): cada estado ofrece sus transiciones; las que exigen texto lo piden y
   las que exigen lo que el expediente todavía no tiene (hipótesis y contramedidas, verificación) salen
   apagadas con lo que falta. `Discarded` exige razón y es final; `Closed` y `Inconclusive` se reabren
   con la evidencia nueva. Notas en cualquier estado salvo cerrado o descartado.
 - **Almacén versión 12** con dos tablas propias, `incidentCases` e `incidentEvidence`; borrar el
-  circuito las borra. Solo locales: no viajan en el `.agvproj` (OQ-167).
+  circuito las borra. Solo locales: no viajan en el `.agvproj` (OQ-169).
 - Protocolo: `case-action` (crear, ventana, estado, nota, siempre con la revisión que la persona veía)
   y `cases-updated`; `views.cases` en cada importación.
 - Vocabulario causal (D6): `causalWordsIn` y una prueba que recorre todos los textos que genera el
   módulo de expedientes.
-- Pruebas: TC-330 y TC-331 (unitarias) y TC-332 y TC-333 (navegador: el resto del almacén queda byte a
+- Pruebas: TC-338 y TC-339 (unitarias) y TC-340 y TC-341 (navegador: el resto del almacén queda byte a
   byte igual tras crear, anotar, cambiar de estado y descartar, INV-008 y TC-017; y el recorte desde el
   original archivado).
 
@@ -50,7 +50,7 @@ El propietario aceptó ADR-0018 y pidió la primera entrega («Acepto el ADR, em
 - Las entregas 2 a 6 de ADR-0018: retroceso y cronología con el caso de oro de TC-012, replay con
   esperado, hipótesis y contramedidas, informe y casos similares.
 
-## [3.68.0] - 2026-10-09
+## [3.73.0] - 2026-10-09
 
 El propietario pidió empezar el trabajo propio de F5 por el ADR del expediente («sí, empieza por el
 ADR del expediente»).
@@ -69,17 +69,17 @@ ADR del expediente»).
   en el texto generado; retroceso, replay, contramedidas, similitud e informe construidos sobre lo
   que ya existe (replay de F2, batería R-AGV-021, horquillas, cortes de conexión). Incluye cómo cubre
   cada criterio de G5 y seis entregas.
-- **OQ-167 a OQ-169**: identidad del expediente y bifurcación entre dispositivos, estado `Discarded`
+- **OQ-169 a OQ-171**: identidad del expediente y bifurcación entre dispositivos, estado `Discarded`
   y reapertura, y una **contradicción entre documentos** (ALG-015 se llama «Retroceso causal» en
   `ALGORITHM_CATALOG.md` y `INCIDENTS_REPORTING.md` §4 dice que el orden no es causalidad), que no se
   toca hasta que decida el propietario. Recomendaciones anotadas en OQ-P02, OQ-P03 y OQ-P07.
 
 ### Decidido por el propietario (2026-10-09)
 
-- **OQ-167**: «De momento no va a ver dos dispositivos se mantendrá exclusivamente en la memoria
+- **OQ-169**: «De momento no va a ver dos dispositivos se mantendrá exclusivamente en la memoria
   local». El expediente vive solo en el almacén local, no viaja en el `.agvproj` y no tiene
   bifurcaciones; su identificador es `INC-<circuito>-<aaaammdd>-<nn>`.
-- **OQ-168, OQ-169, OQ-P02, OQ-P03 y OQ-P07**, con la recomendación: `Discarded` y reapertura
+- **OQ-170, OQ-171, OQ-P02, OQ-P03 y OQ-P07**, con la recomendación: `Discarded` y reapertura
   añadidos al diagrama de `INCIDENTS_REPORTING.md` §7; ALG-015 renombrado «Retroceso desde el
   síntoma» en `ALGORITHM_CATALOG.md`; márgenes y recorte, informe HTML y CSV, y verificación de
   contramedidas como en ADR-0018 D4, D11 y D9. ADR-0018 incorpora las seis y sigue `proposed`.

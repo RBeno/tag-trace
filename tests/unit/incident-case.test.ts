@@ -8,7 +8,7 @@
  * - el recorte lleva las lecturas de todos los AGV en la ventana, sin repetir las de dos exportaciones
  *   que se solapan, y dice qué ficheros faltan sin inventar nada;
  * - cada revisión enlaza con la anterior, y una cadena manipulada se detecta;
- * - las transiciones son las de `INCIDENTS_REPORTING.md` §7 con `Discarded` y la reapertura (OQ-168),
+ * - las transiciones son las de `INCIDENTS_REPORTING.md` §7 con `Discarded` y la reapertura (OQ-170),
  *   cada una con lo que exige;
  * - ningún texto que genera el módulo afirma una causa.
  */
@@ -84,7 +84,7 @@ async function walk(start: CaseRevision, steps: readonly [CaseState, string | nu
   return out;
 }
 
-describe("identidad del expediente (OQ-167)", () => {
+describe("identidad del expediente (OQ-169)", () => {
   it("es INC-<circuito>-<día en la zona>-<nn> y cuenta por circuito y día", () => {
     expect(nextCaseId("SINT", T0, ZONE, [])).toBe("INC-SINT-20261009-01");
     expect(nextCaseId("SINT", T0, ZONE, ["INC-SINT-20261009-01", "INC-SINT-20261009-03", "INC-OTRO-20261009-07"])).toBe("INC-SINT-20261009-04");
@@ -216,7 +216,7 @@ describe("creación y revisiones (D2)", () => {
   });
 });
 
-describe("ciclo de vida (D3, OQ-168)", () => {
+describe("ciclo de vida (D3, OQ-170)", () => {
   it("borrador → revisión → investigando, sin nada más que la decisión", async () => {
     const steps = await walk(await createCase(input()), [
       ["UnderReview", null],

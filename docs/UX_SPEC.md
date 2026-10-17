@@ -831,7 +831,7 @@ Ningún botón que escribe se activa sin razón. En la evolución, un tag instal
 «sin leer en su ubicación», nunca «desaparece». Al abrir un `.agvproj`, el mensaje dice la relación
 de su plano con el local; al exportar, cuántos cambios incluye.
 
-### 6.2 Expedientes de incidencia (3.69.0, ADR-0018)
+### 6.2 Expedientes de incidencia (3.74.0, ADR-0018)
 
 Al final de Línea y calles, la sección «Expedientes de incidencia». Dice primero lo que es: una
 incidencia conservada para investigarla, aparte de la memoria del circuito —crearla, guardarla o

@@ -39,7 +39,7 @@ El usuario define el instante/intervalo del síntoma y el sistema propone márge
 | Contramedidas | acción, responsable, fecha, estado, riesgo y verificación prevista |
 | Verificación | periodo posterior, métrica antes/después y conclusión humana |
 
-**Implementado desde 3.69.0 (ADR-0018, entrega 1):** identidad, síntoma con ventana y márgenes,
+**Implementado desde 3.74.0 (ADR-0018, entrega 1):** identidad, síntoma con ventana y márgenes,
 origen, recorte congelado de lecturas con su procedencia, referencias a la versión consolidada, la
 configuración y la aplicación, notas, estado e historial de revisiones. Hipótesis, contramedidas,
 verificación, comparación, replay y casos similares llegan en las entregas siguientes.
@@ -100,10 +100,10 @@ stateDiagram-v2
 
 Puede cerrarse como `inconclusive` conservando lo aprendido y la evidencia que falta.
 
-Desde el 2026-10-09 (OQ-168, ADR-0018 D3): `Discarded` es «no es una incidencia» (por ejemplo, una
+Desde el 2026-10-09 (OQ-170, ADR-0018 D3): `Discarded` es «no es una incidencia» (por ejemplo, una
 parada planificada que nadie anotó), exige una razón y no propone exclusión del esperado; un
 expediente `Closed` o `Inconclusive` se reabre en `Investigating` cuando aparece evidencia nueva, como
-revisión nueva. Nada se borra. El expediente vive solo en el almacén local del dispositivo (OQ-167).
+revisión nueva. Nada se borra. El expediente vive solo en el almacén local del dispositivo (OQ-169).
 
 ## 8. Informe vivo
 

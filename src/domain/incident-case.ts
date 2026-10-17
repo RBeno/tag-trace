@@ -16,7 +16,7 @@
  * aquí solo se dice cuáles se pueden hacer y qué falta para las demás, y se construye la revisión
  * que una persona confirma.
  *
- * **Solo local (OQ-167).** Un solo dispositivo: no hay linaje ni bifurcaciones, y el identificador es
+ * **Solo local (OQ-169).** Un solo dispositivo: no hay linaje ni bifurcaciones, y el identificador es
  * un contador legible por circuito y día.
  */
 
@@ -29,7 +29,7 @@ export const CASE_SCHEMA_VERSION = 1;
 /** Versión del procedimiento que congela el recorte; viaja en cada revisión (`VERSIONING.md`). */
 export const EVIDENCE_ALGORITHM = "recorte-1";
 
-/** Estados del ciclo de vida (`INCIDENTS_REPORTING.md` §7, OQ-168). */
+/** Estados del ciclo de vida (`INCIDENTS_REPORTING.md` §7, OQ-170). */
 export type CaseState =
   | "Draft"
   | "UnderReview"
@@ -183,7 +183,7 @@ export class CaseRefusal extends Error {
 // --- Identidad ------------------------------------------------------------------------------------
 
 /**
- * `INC-<circuito>-<aaaammdd>-<nn>` (OQ-167): el día de creación en la zona del circuito y un contador
+ * `INC-<circuito>-<aaaammdd>-<nn>` (OQ-169): el día de creación en la zona del circuito y un contador
  * por circuito y día, a partir de los que ya existen. Con un solo dispositivo no choca.
  */
 export function nextCaseId(circuitId: string, now: number, zone: string, existing: readonly string[]): string {
@@ -499,7 +499,7 @@ const RULES: readonly Rule[] = [
   { from: ["VerifiedIneffective"], to: "Investigating", input: null, inputLabel: null, check: NONE },
   { from: ["Investigating"], to: "Inconclusive", input: "falta", inputLabel: "Qué evidencia falta", check: NONE },
   { from: ["VerifiedEffective"], to: "Closed", input: "conclusion", inputLabel: "Conclusión", check: NONE },
-  // OQ-168: descartar («no es una incidencia») y reabrir con evidencia nueva.
+  // OQ-170: descartar («no es una incidencia») y reabrir con evidencia nueva.
   { from: ["Draft", "UnderReview"], to: "Discarded", input: "razon", inputLabel: "Por qué no es una incidencia", check: NONE },
   { from: ["Closed", "Inconclusive"], to: "Investigating", input: "evidencia-nueva", inputLabel: "Qué evidencia nueva lo reabre", check: NONE },
 ];
