@@ -142,8 +142,13 @@ import type {
   ConnectionsLoadedMessage,
 } from "../src/application/protocol.js";
 import {
+  addCountermeasure,
+  addHypothesis,
   addNote,
+  applyCountermeasure,
   CASE_STATE_TEXT,
+  decideHypothesis,
+  recordVerification,
   caseSpan,
   contextText,
   CaseRefusal,
@@ -166,6 +171,8 @@ import {
   type EvidenceCandidate,
 } from "../src/domain/incident-case.js";
 import { backtrack, type Chronology } from "../src/domain/case-backtrack.js";
+import { caseHypotheses, viableCount, type HypothesisView } from "../src/domain/case-hypotheses.js";
+import { proposeMetric, verifyCountermeasure, type VerificationResult } from "../src/domain/case-verification.js";
 import {
   appendCaseRevision,
   appendPlanEvents,
@@ -3145,6 +3152,45 @@ function lapAround(snapshots: readonly CircuitSnapshot[], at: number | null): nu
 }
 
 /**
+ * Lo calculado de un expediente desde su recorte congelado: la cronología del retroceso (ALG-015) y sus
+ * hipótesis (D6), con las decisiones guardadas. Sin recorte, sin cronología y solo lo guardado.
+ */
+async function caseAnalysisOf(circuitId: string, current: CaseRevision): Promise<{ readonly chronology: Chronology | null; readonly hypotheses: readonly HypothesisView[] }> {
+  const evidence = current.evidence.hash === null ? undefined : await loadCaseEvidence(circuitId, current.evidence.hash);
+  if (evidence === undefined) return { chronology: null, hypotheses: caseHypotheses({ algorithm: "", facts: [], firstDeviation: null, declared: [], limits: [] }, { readings: [], connections: [], context: null }, current.hypotheses) };
+  const chronology = backtrack({ window: current.window, agvId: current.agvId, tagIds: current.tagIds, evidence });
+  return { chronology, hypotheses: caseHypotheses(chronology, evidence, current.hypotheses) };
+}
+
+/**
+ * La verificación de una contramedida aplicada (D9): la métrica contada antes y después de su
+ * aplicación sobre las lecturas del circuito (retenidas o del original archivado), en tiempo cubierto,
+ * en producción y sin las ventanas de los demás expedientes.
+ */
+async function verificationFor(stored: StoredCircuit, current: CaseRevision, countermeasureId: string): Promise<VerificationResult> {
+  const measure = current.countermeasures.find((entry) => entry.id === countermeasureId);
+  if (measure === undefined || measure.appliedAt === null) {
+    throw new CaseRefusal(`La contramedida ${countermeasureId} no consta como aplicada.`, "Registra antes su fecha de aplicación.");
+  }
+  const config = await configForFile(stored.circuitId, measure.appliedAt);
+  const thresholds = config.incidentCase.verification;
+  const period = { from: measure.appliedAt - thresholds.windowMs, to: measure.appliedAt + thresholds.windowMs };
+  const frozen = await freezeEvidence(await evidenceCandidates(stored, period), period);
+  const others = (await caseExclusionsOf(stored.circuitId)).filter((entry) => entry.caseId !== current.caseId).map((entry) => ({ from: entry.from, to: entry.to }));
+  return verifyCountermeasure({
+    metric: measure.metric,
+    appliedAt: measure.appliedAt,
+    readings: frozen.evidence.readings,
+    coverage: stored.coverage,
+    excluded: others,
+    zone: stored.zone,
+    regimes: config.regimes,
+    thresholds,
+    sources: frozen.summary.sources.map((source) => ({ sourceHash: source.sourceHash, fileName: source.fileName })),
+  });
+}
+
+/**
  * Los expedientes que la consolidación propone como incidencia excluida (ADR-0018 D5): todos los no
  * descartados, con su ventana completa, su título, su estado y lo que nombran. Cuáles tocan el fichero
  * lo decide `previewConsolidation`.
@@ -3190,17 +3236,15 @@ async function buildCaseViews(circuitId: string): Promise<CaseViews> {
     const current = currentRevision(sorted);
     // El retroceso (ALG-015) se calcula desde el recorte congelado, nunca desde lo que hay ahora en el
     // circuito: con el mismo recorte, la misma cronología.
-    let chronology: Chronology | null = null;
-    if (current.evidence.hash !== null) {
-      const evidence = await loadCaseEvidence(circuitId, current.evidence.hash);
-      if (evidence !== undefined) chronology = backtrack({ window: current.window, agvId: current.agvId, tagIds: current.tagIds, evidence });
-    }
+    const { chronology, hypotheses } = await caseAnalysisOf(circuitId, current);
     cases.push({
       chronology,
+      hypotheses,
+      metricProposal: proposeMetric({ tagIds: current.tagIds, agvId: current.agvId, symptomFrom: current.window.symptomFrom, symptomTo: current.window.symptomTo }),
       contextText: contextText(current.evidence.context),
       current,
       history: sorted.map((entry) => ({ revision: entry.revision, createdAt: entry.createdAt, author: entry.author, change: entry.change, state: entry.state })),
-      transitions: transitionsFrom(current),
+      transitions: transitionsFrom(current, { viableHypotheses: viableCount(hypotheses) }),
       span: caseSpan(current.window),
       originText: originText(current.origin),
       evidenceText: evidenceText(current.evidence),
@@ -3453,7 +3497,39 @@ async function applyCaseAction(stored: StoredCircuit, action: CaseAction, now: n
     return { caseId: action.caseId, text: `Nota añadida a ${action.caseId} (revisión ${revision.revision}).` };
   }
   if (action.kind === "estado") {
-    const revision = await transition(previous, action.to, action.text, now, action.author);
+    // Las mismas hipótesis en pie que enseña la vista: las calcula el recorte, no lo que trae la interfaz.
+    const { hypotheses } = await caseAnalysisOf(circuitId, previous);
+    const revision = await transition(previous, action.to, action.text, now, action.author, { viableHypotheses: viableCount(hypotheses) });
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
+  }
+  if (action.kind === "hipotesis") {
+    const revision = await addHypothesis(previous, action.text, now, action.author);
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
+  }
+  if (action.kind === "decidir-hipotesis") {
+    // El texto de una hipótesis del programa sale del recorte, no de la interfaz.
+    const { hypotheses } = await caseAnalysisOf(circuitId, previous);
+    const known = hypotheses.find((entry) => entry.key === action.key);
+    if (known === undefined) throw new CaseRefusal("Esa hipótesis ya no está en el expediente.", "Vuelve a mirarlo.");
+    const revision = await decideHypothesis(previous, { key: action.key, text: known.text, state: action.state, note: action.note }, now, action.author);
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
+  }
+  if (action.kind === "contramedida") {
+    const revision = await addCountermeasure(previous, action.countermeasure, now, action.author);
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
+  }
+  if (action.kind === "aplicar") {
+    const revision = await applyCountermeasure(previous, action.countermeasureId, action.appliedAt, now, action.author);
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
+  }
+  if (action.kind === "verificar") {
+    const result = await verificationFor(stored, previous, action.countermeasureId);
+    const revision = await recordVerification(previous, result, action.countermeasureId, now, action.author);
     await appendCaseRevision(revision, null);
     return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
   }

@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.59.0
+version: 0.60.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -424,6 +424,19 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## Expedientes, entrega 4: hipótesis, contramedidas y verificación (3.78.0, 2026-10-17)
+
+Hecho: **hipótesis candidatas** desde los hechos de la cronología que preceden al síntoma (AGV detenido
+aguas arriba, pérdida de conexión, AGV sin lecturas, turno o régimen), con evidencia a favor y **en
+contra observada** (otro AGV ya parado delante; lecturas de tags distintos durante el corte), estado
+compatible/contradicha/abierta sin probabilidades, y la comprobación que discrimina. La persona añade
+las suyas y confirma (con la comprobación) o descarta (con razón); la decisión se guarda por clave y la
+hipótesis del programa se recalcula del recorte. **Contramedidas** con la métrica del síntoma, fija, y
+fecha de aplicación; **verificación** (ALG-024) una semana antes y otra después, en producción, en tiempo
+cubierto y sin otros expedientes, con prueba binomial exacta, que propone eficaz/parcial/ineficaz/sin
+exposición con umbrales provisionales (`incident_case.verification_*`). Siguiente: la entrega 5
+(informe vivo y exportación, que tiene que juntarse con el informe del circuito de 3.72.0).
+
 ## Expedientes, entrega 3: replay con esperado (3.77.0, 2026-10-17)
 
 Tras D5, la entrega 3. Hecho: el **replay del expediente** (`buildCaseReplay` en `replay.ts`, que se
@@ -615,8 +628,8 @@ conversación siguiente.
   juntas** (3.64.0) y **el registro de conexiones con su mapa de estado de conexión** (3.65.0,
   ADR-0017, secciones anteriores), ninguna un entregable de `ROADMAP.md` §F5. El trabajo propio de la fase
   empezó con ADR-0018 (aceptado), su entrega 1 (3.74.0) y su entrega 2 (3.75.0); D5 está hecho
-  (3.76.0) y la entrega 3 también (3.77.0); lo siguiente es la entrega 4 (hipótesis, contramedidas y
-  verificación). Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  (3.76.0) y la entrega 3 también (3.77.0); la entrega 4 también (3.78.0); lo siguiente es la entrega 5
+  (informe vivo y exportación). Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
   (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
   antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**

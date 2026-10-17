@@ -406,4 +406,82 @@ test.describe("expedientes de incidencia", () => {
     // El expediente no se escribió: la consolidación solo lo lee.
     expect(await caseRows(page)).toBe(caseRowsBefore);
   });
+
+  test("hipótesis, contramedida y verificación sobre el caso de TC-012, sin tocar nada fuera del expediente", async ({ page }) => {
+    test.setTimeout(180_000);
+    const scenario = buildCriticalPointScenario();
+    const { truth } = scenario;
+    await freshPage(page);
+    await openTab(page, "Resumen");
+    await page.locator("#circuit-name").fill("hipotesis");
+    await page.locator("#source-file").setInputFiles({ name: "punto-critico.csv", mimeType: "text/csv", buffer: Buffer.from(scenario.csv, "utf8") });
+    await expect(page.getByRole("heading", { name: "Circuito «hipotesis»", exact: true })).toBeVisible({ timeout: 30_000 });
+    await openTab(page, "Línea y calles");
+    const before = await storeOutsideCases(page);
+    const local = (utcMs: number): string => new Date(utcMs + 3_600_000).toISOString().slice(0, 16);
+    const panel = page.locator(".cases-panel");
+    await panel.getByRole("button", { name: "Nuevo expediente…" }).click();
+    const form = panel.locator(".case-create");
+    await form.getByLabel("Título").fill("Punto crítico sin llegada");
+    await form.getByLabel("Síntoma: qué ocurrió, dónde y cuándo").fill("Más de diez minutos sin llegadas al punto crítico.");
+    await form.getByLabel("Principio del síntoma").fill(local(truth.absenceFrom + 60_000));
+    await form.getByLabel("Fin del síntoma").fill(local(truth.absenceTo));
+    await form.getByLabel("Tags (opcionales, separados por comas)").fill(CRITICAL_TAG);
+    await form.getByRole("button", { name: "Crear expediente" }).click();
+    await expect(panel.locator(".cases-status")).toContainText("creado en borrador", { timeout: 30_000 });
+    const item = panel.locator(".case-item").first();
+    await item.getByRole("button", { name: "Pasar a en revisión" }).click();
+    await expect(item).toHaveAttribute("data-state", "UnderReview", { timeout: 15_000 });
+    await item.getByRole("button", { name: "Pasar a investigando" }).click();
+    await expect(item).toHaveAttribute("data-state", "Investigating", { timeout: 15_000 });
+
+    // La primera hipótesis es la del AGV parado, compatible, con lo que la sostiene y su comprobación.
+    const first = item.locator(".case-hypothesis").first();
+    await expect(first).toHaveAttribute("data-status", "compatible");
+    await expect(first).toContainText(`El AGV ${STALLED_AGV} se detiene en ${STALL_TAG}`);
+    await expect(first.locator(".case-hypothesis-status")).toHaveText("es compatible con lo observado");
+    await expect(first.locator(".case-hypothesis-favor li").first()).toContainText(`AGV ${STALLED_AGV} tarda`);
+    await expect(first.locator(".case-hypothesis-check")).toContainText(`qué tuvo parado al AGV ${STALLED_AGV}`);
+    // Los de detrás, contradichos: había alguien parado delante.
+    await expect(item.locator('.case-hypothesis[data-status="contradicha"]').first()).toContainText("ya estaba parado delante");
+    // Confirmar exige la comprobación.
+    const confirm = first.getByRole("button", { name: "Confirmar" });
+    await expect(confirm).toBeDisabled();
+    await first.getByLabel("Comprobación hecha (para confirmar) o razón (para descartar)").fill("El operario confirma un freno bloqueado en 205.");
+    await confirm.click();
+    await expect(panel.locator(`.case-hypothesis[data-decision="confirmada"]`)).toHaveCount(1, { timeout: 15_000 });
+    await expect(panel.locator(".case-hypothesis-decision").first()).toHaveText("confirmada por una persona");
+
+    // Una contramedida con la métrica del síntoma; planificar, aplicar y pasar a verificar.
+    const fresh = panel.locator(".case-item").first();
+    const cm = fresh.locator(".case-countermeasure-form");
+    await expect(cm.locator(".case-cm-metric")).toContainText(`sin paso por ${CRITICAL_TAG}, por hora de producción`);
+    await cm.getByLabel("Acción").fill("Revisar el freno de 205");
+    await cm.getByLabel("Responsable").fill("Mantenimiento");
+    await cm.getByLabel("Fecha prevista").fill(local(truth.absenceTo));
+    await cm.getByRole("button", { name: "Guardar la contramedida" }).click();
+    await expect(panel.locator(".case-countermeasure")).toHaveCount(1, { timeout: 15_000 });
+    await panel.locator(".case-item").first().getByRole("button", { name: "Pasar a contramedida planificada" }).click();
+    await expect(panel.locator(".case-item").first()).toHaveAttribute("data-state", "CountermeasurePlanned", { timeout: 15_000 });
+    const measure = panel.locator(".case-countermeasure").first();
+    await measure.getByLabel("Fecha de aplicación").fill(local(truth.absenceTo + 10 * 60_000));
+    await measure.getByRole("button", { name: "Registrar la aplicación" }).click();
+    await expect(panel.locator(".case-countermeasure-applied").first()).toContainText("Aplicada", { timeout: 15_000 });
+    await panel.locator(".case-item").first().getByRole("button", { name: "Pasar a pendiente de verificar" }).click();
+    await expect(panel.locator(".case-item").first()).toHaveAttribute("data-state", "VerificationPending", { timeout: 15_000 });
+
+    // Verificar mide y propone; con dos horas de datos no hay exposición suficiente, y lo dice.
+    await panel.locator(".case-countermeasure").first().getByRole("button", { name: "Medir y registrar la verificación" }).click();
+    const verification = panel.locator(".case-verification");
+    await expect(verification).toHaveAttribute("data-verdict", "sin-exposicion", { timeout: 30_000 });
+    await expect(verification).toContainText("Propuesta del programa: sin exposición suficiente. La conclusión es tuya.");
+    const ineffective = panel.locator(".case-item").first().locator('.case-transition[data-to="VerifiedIneffective"]');
+    await ineffective.getByLabel("Conclusión de la verificación").fill("Sin datos de la semana siguiente: se vuelve a mirar con la próxima exportación.");
+    await ineffective.getByRole("button", { name: "Pasar a verificada ineficaz" }).click();
+    await expect(panel.locator(".case-item").first()).toHaveAttribute("data-state", "VerifiedIneffective", { timeout: 15_000 });
+    await expect(panel).not.toContainText(/\bcausa\b|debido a|provoc/i);
+    await expect(panel).not.toContainText("OQ-");
+    // Nada fuera de los expedientes cambió.
+    expect(await storeOutsideCases(page)).toBe(before);
+  });
 });

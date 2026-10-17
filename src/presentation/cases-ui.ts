@@ -14,6 +14,8 @@
 
 import type { CaseAction, CaseView, CaseViews, ExcludedIncidentStart } from "../application/protocol.js";
 import type { CaseReplay, CaseReplayVehicle, ConnectionState } from "../domain/replay.js";
+import { HYPOTHESIS_STATUS_TEXT, type HypothesisView } from "../domain/case-hypotheses.js";
+import { metricText, verificationText, type CaseMetric } from "../domain/case-verification.js";
 import { PHASE_TEXT, type Chronology, type ChronologyPhase } from "../domain/case-backtrack.js";
 import { CASE_STATE_TEXT, type CaseOrigin, type CaseState, type TransitionOption } from "../domain/incident-case.js";
 
@@ -612,6 +614,203 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
     return row;
   }
 
+  /** ¿Admite el expediente hipótesis y contramedidas? Solo mientras se investiga. */
+  const working = (view: CaseView): boolean =>
+    ["Investigating", "CountermeasurePlanned", "VerificationPending", "VerifiedIneffective"].includes(view.current.state);
+
+  /**
+   * Las hipótesis (D6): las del programa con lo que las sostiene y lo que las contradice, y las de la
+   * persona. Sin porcentajes: el orden es primero las que siguen en pie. Confirmar exige escribir la
+   * comprobación hecha; descartar, la razón. Lo que decide la persona se enseña como suyo.
+   */
+  function hypothesesBlock(view: CaseView): HTMLElement {
+    const box = node("section", "case-hypotheses");
+    box.append(
+      node("h4", undefined, "Hipótesis"),
+      node(
+        "p",
+        "muted",
+        "Salen de lo que precede al síntoma en la cronología. «Es compatible» no quiere decir que sea la explicación: quiere decir que nada de lo observado la contradice. " +
+          "La que se confirma la confirma una persona, con la comprobación que hizo.",
+      ),
+    );
+    if (view.hypotheses.length === 0) box.append(node("p", "muted", "Todavía no hay hipótesis."));
+    const list = node("ol", "case-hypothesis-list");
+    for (const hypothesis of view.hypotheses) list.append(hypothesisItem(view, hypothesis));
+    box.append(list);
+    if (working(view)) {
+      const text = field("Añadir una hipótesis tuya", "case-hypothesis-text", "text");
+      box.append(
+        text.box,
+        sender("Guardar la hipótesis", "case-hypothesis-send", () => text.input.value.trim() !== "", () =>
+          input.send({ kind: "hipotesis", caseId: view.current.caseId, expectedRevision: view.current.revision, text: text.input.value, author: author.input.value }),
+        ),
+      );
+    }
+    return box;
+  }
+
+  function hypothesisItem(view: CaseView, hypothesis: HypothesisView): HTMLElement {
+    const item = node("li", "case-hypothesis");
+    item.dataset["key"] = hypothesis.key;
+    item.dataset["status"] = hypothesis.status;
+    if (hypothesis.decision !== null) item.dataset["decision"] = hypothesis.decision.state;
+    const head = node("p", "case-hypothesis-head");
+    head.append(node("span", "case-hypothesis-text-value", hypothesis.text), " ");
+    head.append(node("span", "chip case-hypothesis-status", hypothesis.origin === "persona" ? "tuya" : HYPOTHESIS_STATUS_TEXT[hypothesis.status]));
+    if (hypothesis.decision !== null) {
+      head.append(" ", node("span", "chip case-hypothesis-decision", hypothesis.decision.state === "confirmada" ? "confirmada por una persona" : "descartada por una persona"));
+    }
+    item.append(head);
+    const facts = view.chronology?.facts ?? [];
+    if (hypothesis.favor.length > 0) {
+      const favor = node("ul", "case-hypothesis-favor");
+      for (const index of hypothesis.favor) {
+        const fact = facts[index];
+        if (fact !== undefined) favor.append(node("li", undefined, `A favor, ${input.formatInstant(fact.at)}: ${fact.text}`));
+      }
+      item.append(favor);
+    }
+    if (hypothesis.against.length > 0) {
+      const against = node("ul", "case-hypothesis-against");
+      for (const entry of hypothesis.against) {
+        const line = node("li", undefined, `En contra: ${entry.text}`);
+        if (entry.provenance.length > 0) line.title = `Evidencia: ${entry.provenance.map((row) => `fila ${row.sourceRow}`).join(", ")}`;
+        against.append(line);
+      }
+      item.append(against);
+    }
+    item.append(node("p", "muted case-hypothesis-check", `Lo que la separa de las demás: ${hypothesis.check}`));
+    if (hypothesis.decision !== null) item.append(node("p", "case-hypothesis-note", `${hypothesis.decision.state === "confirmada" ? "Comprobación" : "Razón"}: ${hypothesis.decision.note}`));
+    if (working(view) && hypothesis.decision === null) {
+      const note = field("Comprobación hecha (para confirmar) o razón (para descartar)", "case-hypothesis-note-input", "text");
+      const row = node("div", "case-hypothesis-actions");
+      const decide = (state: "confirmada" | "descartada"): void =>
+        input.send({ kind: "decidir-hipotesis", caseId: view.current.caseId, expectedRevision: view.current.revision, key: hypothesis.key, state, note: note.input.value, author: author.input.value });
+      row.append(
+        sender("Confirmar", "case-hypothesis-confirm", () => note.input.value.trim() !== "", () => decide("confirmada")),
+        sender("Descartar", "case-hypothesis-discard", () => note.input.value.trim() !== "", () => decide("descartada")),
+      );
+      item.append(note.box, row);
+    }
+    return item;
+  }
+
+  /**
+   * Las contramedidas (D9): acción, responsable, fecha prevista, riesgo y la métrica, que es la del
+   * síntoma y no cambia. Aplicada, se registra su fecha; pendiente de verificar, se mide y se registra la
+   * verificación, que propone y no concluye.
+   */
+  function countermeasuresBlock(view: CaseView): HTMLElement {
+    const box = node("section", "case-countermeasures");
+    box.append(node("h4", undefined, "Contramedidas y verificación"));
+    const current = view.current;
+    if (current.countermeasures.length === 0) box.append(node("p", "muted", "Todavía no hay contramedidas."));
+    const list = node("ul", "case-countermeasure-list");
+    for (const measure of current.countermeasures) {
+      const item = node("li", "case-countermeasure");
+      item.dataset["id"] = measure.id;
+      item.append(
+        node("p", "case-countermeasure-head", `${measure.id}: ${measure.action} — ${measure.owner}, prevista ${input.formatInstant(measure.plannedAt)}`),
+        node("p", "muted", `Métrica: ${metricText(measure.metric)}.${measure.risk === "" ? "" : ` Riesgo: ${measure.risk}.`}`),
+        node("p", "case-countermeasure-applied", measure.appliedAt === null ? "Sin aplicar." : `Aplicada ${input.formatInstant(measure.appliedAt)}.`),
+      );
+      if (working(view) && measure.appliedAt === null) {
+        const at = field("Fecha de aplicación", "plan-date case-applied-at", "datetime-local");
+        at.input.value = toLocalInput(Date.now(), input.zone);
+        item.append(
+          at.box,
+          sender("Registrar la aplicación", "case-apply-send", () => fromLocalInput(at.input.value, input.zone) !== null, () =>
+            input.send({
+              kind: "aplicar",
+              caseId: current.caseId,
+              expectedRevision: current.revision,
+              countermeasureId: measure.id,
+              appliedAt: fromLocalInput(at.input.value, input.zone) as number,
+              author: author.input.value,
+            }),
+          ),
+        );
+      }
+      if (current.state === "VerificationPending" && measure.appliedAt !== null) {
+        item.append(
+          node("p", "muted", "Se cuenta la métrica una semana antes y otra después de la aplicación, con las lecturas del circuito que haya en este dispositivo."),
+          sender("Medir y registrar la verificación", "case-verify-send", () => true, () =>
+            input.send({ kind: "verificar", caseId: current.caseId, expectedRevision: current.revision, countermeasureId: measure.id, author: author.input.value }),
+          ),
+        );
+      }
+      list.append(item);
+    }
+    box.append(list);
+    if (current.verification !== null) {
+      const verification = node("div", "case-verification");
+      verification.dataset["verdict"] = current.verification.result.verdict;
+      verification.append(
+        node("p", "case-verification-head", `Verificación de ${current.verification.countermeasureId}, medida ${input.formatInstant(current.verification.recordedAt)}:`),
+        node("p", "case-verification-text", verificationText(current.verification.result)),
+        node("p", "muted", `Procedimiento ${current.verification.result.algorithm}. La conclusión se escribe al pasar el expediente a verificada eficaz o ineficaz.`),
+      );
+      box.append(verification);
+    }
+    if (working(view) && current.state !== "VerificationPending") box.append(countermeasureForm(view));
+    return box;
+  }
+
+  function countermeasureForm(view: CaseView): HTMLElement {
+    const box = node("div", "plan-form case-countermeasure-form");
+    box.append(node("p", "plan-form-title", "Nueva contramedida"));
+    const action = field("Acción", "case-cm-action", "text");
+    const owner = field("Responsable", "case-cm-owner", "text");
+    const planned = field("Fecha prevista", "plan-date case-cm-planned", "datetime-local");
+    planned.input.value = toLocalInput(Date.now(), input.zone);
+    const risk = field("Riesgo (opcional)", "case-cm-risk", "text");
+    const proposal: CaseMetric | null = view.metricProposal;
+    const gap = field("Episodio: hueco de al menos (minutos)", "plan-date case-cm-gap", "number");
+    gap.input.min = "1";
+    gap.input.value = proposal === null ? "" : String(Math.round(proposal.minGapMs / MIN));
+    const metricOf = (): CaseMetric | null => {
+      const minutes = Number(gap.input.value);
+      if (proposal === null || !Number.isFinite(minutes) || minutes <= 0) return null;
+      return { ...proposal, minGapMs: minutes * MIN };
+    };
+    const metricNote = node(
+      "p",
+      "muted case-cm-metric",
+      proposal === null
+        ? "El síntoma no nombra un tag ni un AGV: no hay métrica que medir. Añade el tag o el AGV al expediente."
+        : `Métrica, la del síntoma: ${metricText(proposal)}. Queda fija con la contramedida.`,
+    );
+    const ready = (): boolean =>
+      action.input.value.trim() !== "" && owner.input.value.trim() !== "" && fromLocalInput(planned.input.value, input.zone) !== null && metricOf() !== null;
+    box.append(
+      action.box,
+      owner.box,
+      planned.box,
+      risk.box,
+      metricNote,
+      gap.box,
+      sender("Guardar la contramedida", "case-cm-send", ready, () => {
+        const metric = metricOf();
+        if (metric === null) return;
+        input.send({
+          kind: "contramedida",
+          caseId: view.current.caseId,
+          expectedRevision: view.current.revision,
+          countermeasure: {
+            action: action.input.value,
+            owner: owner.input.value,
+            plannedAt: fromLocalInput(planned.input.value, input.zone) as number,
+            risk: risk.input.value,
+            metric,
+          },
+          author: author.input.value,
+        });
+      }),
+    );
+    return box;
+  }
+
   function caseItem(view: CaseView): HTMLElement {
     const current = view.current;
     const item = node("li", "case-item");
@@ -665,7 +864,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       );
     }
     facts.append(node("h4", undefined, "Historial"), history);
-    details.append(facts, chronologyBlock(view), replayBlock(view));
+    details.append(facts, chronologyBlock(view), replayBlock(view), hypothesesBlock(view), countermeasuresBlock(view));
 
     const actions = node("div", "case-actions");
     if (view.transitions.length > 0) {

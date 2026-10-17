@@ -259,7 +259,12 @@ sigue vivo. Nunca se publica en GitHub (ADR-0007).
    vigente. La capa esperada es una banda entre el tag al que llegaría a paso lento (p95) y a paso
    habitual (p50) desde su última lectura; el estado de zonas, calles CO y puntos críticos no entra
    todavía (va con FIFO y calles en el retroceso).
-4. Hipótesis, contramedidas y verificación.
+4. Hipótesis, contramedidas y verificación. **Hecha en 3.78.0.** Las candidatas salen de los hechos
+   de la cronología que preceden al síntoma —AGV detenido aguas arriba, pérdida de conexión, AGV sin
+   lecturas, turno o régimen—; la evidencia en contra es observada (otro AGV ya parado delante; lecturas
+   de tags distintos durante el corte); no hay porcentajes. La métrica de una contramedida es la del
+   síntoma y la verificación es ALG-024. La decisión de la persona sobre una hipótesis del programa se
+   guarda por su clave; la propia hipótesis se recalcula del recorte.
 5. Informe vivo y exportación.
 6. Biblioteca y similitud.
 

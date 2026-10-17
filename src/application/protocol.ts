@@ -45,6 +45,8 @@ import type { LineFeed } from "../domain/line-feed.js";
 import type { Incident, IncidentBattery, IncidentRecord } from "../domain/incident-battery.js";
 import type { Chronology } from "../domain/case-backtrack.js";
 import type { CaseReplay } from "../domain/replay.js";
+import type { HypothesisView } from "../domain/case-hypotheses.js";
+import type { CaseMetric } from "../domain/case-verification.js";
 import type { CaseChange, CaseOrigin, CaseRevision, CaseState, CaseWindow, TransitionOption } from "../domain/incident-case.js";
 import type { CircuitOrder } from "../domain/circuit-order.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
@@ -388,7 +390,31 @@ export type CaseAction =
       readonly text: string | null;
       readonly author: string | null;
     }
-  | { readonly kind: "nota"; readonly caseId: string; readonly expectedRevision: number; readonly text: string; readonly author: string | null };
+  | { readonly kind: "nota"; readonly caseId: string; readonly expectedRevision: number; readonly text: string; readonly author: string | null }
+  /** Una hipótesis escrita por la persona (D6). */
+  | { readonly kind: "hipotesis"; readonly caseId: string; readonly expectedRevision: number; readonly text: string; readonly author: string | null }
+  /** Confirmar (con la comprobación) o descartar (con su razón) una hipótesis, por su clave. */
+  | {
+      readonly kind: "decidir-hipotesis";
+      readonly caseId: string;
+      readonly expectedRevision: number;
+      readonly key: string;
+      readonly state: "confirmada" | "descartada";
+      readonly note: string;
+      readonly author: string | null;
+    }
+  /** Una contramedida con su métrica (D9). */
+  | {
+      readonly kind: "contramedida";
+      readonly caseId: string;
+      readonly expectedRevision: number;
+      readonly countermeasure: { readonly action: string; readonly owner: string; readonly plannedAt: number; readonly risk: string; readonly metric: CaseMetric };
+      readonly author: string | null;
+    }
+  /** La fecha en que se aplicó una contramedida. */
+  | { readonly kind: "aplicar"; readonly caseId: string; readonly expectedRevision: number; readonly countermeasureId: string; readonly appliedAt: number; readonly author: string | null }
+  /** Medir y registrar la verificación de una contramedida aplicada. */
+  | { readonly kind: "verificar"; readonly caseId: string; readonly expectedRevision: number; readonly countermeasureId: string; readonly author: string | null };
 
 export interface CaseActionMessage {
   readonly type: "case-action";
@@ -1038,6 +1064,10 @@ export interface CaseView {
   readonly chronology: Chronology | null;
   /** De dónde salen el anillo y las horquillas del retroceso, en palabras. */
   readonly contextText: string;
+  /** Las hipótesis del expediente (D6): las del programa con su evidencia y las de la persona. */
+  readonly hypotheses: readonly HypothesisView[];
+  /** La métrica que propone el programa para una contramedida: la del síntoma (D9). */
+  readonly metricProposal: CaseMetric | null;
 }
 
 /** Una incidencia excluida de la versión vigente, como punto de partida de un expediente (D1). */

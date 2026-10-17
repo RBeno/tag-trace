@@ -768,3 +768,14 @@ table.data th { color: var(--muted); font-weight: 600; }
 .case-replay-table tr[data-behind="si"] td:first-child { border-left: 3px solid var(--viz-accent); padding-left: 6px; }
 .case-fact-go { padding: 2px 8px; font-size: 0.85rem; }
 @media (any-pointer: coarse) { .case-fact-go, .case-replay-request { min-height: 44px; } }
+/* Hipótesis, contramedidas y verificación del expediente (D6, D9): el estado en palabras —«es
+   compatible con lo observado», «algo observado la contradice», «confirmada por una persona»—, nunca solo
+   por color; lo que contradice, con borde. */
+.case-hypotheses p, .case-countermeasures p { margin: 4px 0 0; }
+.case-hypothesis-list, .case-countermeasure-list { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 8px; }
+.case-hypothesis[data-status="contradicha"] .case-hypothesis-against { border-left: 3px solid var(--viz-accent); padding-left: 6px; }
+.case-hypothesis[data-decision="descartada"] { opacity: 0.8; }
+.case-hypothesis-favor, .case-hypothesis-against { margin: 2px 0 0; padding-left: 18px; font-size: 0.9rem; list-style: disc; }
+.case-hypothesis-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.case-verification { margin-top: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+@media (any-pointer: coarse) { .case-hypothesis-actions button, .case-countermeasures button { min-height: 44px; } }

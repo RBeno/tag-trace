@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.48.0
+version: 0.49.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -55,7 +55,7 @@ flowchart TD
 | ALG-012 | Carga online | Máquina de estados por cada calle configurada | Entradas, ocupación, permanencia, salidas y anomalías | O(n) | F3 |
 | ALG-013 | Puntos críticos | Llegadas frente a takt/calendario y causas aguas arriba | Ventanas de riesgo e impacto | O(n) | F3 |
 | ALG-014 | Consolidación | Reducción versionada y cálculo de delta | Nueva memoria compacta append-only | O(m), no O(histórico bruto) | F4 (implementado, §6.22) |
-| ALG-015 | Retroceso desde el síntoma | Búsqueda temporal/topológica hacia atrás sobre el recorte congelado: último y primer paso por los tags del síntoma, desviaciones sobre la valla de cada tramo del anillo (R-FLO-007), silencios, pares, cortes del registro del terminal, turno y régimen | Cronología por fases con `precede` para lo anterior, la primera desviación, lo declarado de los tags y lo que no se revisa; hipótesis en la entrega 4 | Limitada a ventana/subgrafo; O(n log n) sobre el recorte | F5 (implementado, `retroceso-1`, 3.75.0) |
+| ALG-015 | Retroceso desde el síntoma | Búsqueda temporal/topológica hacia atrás sobre el recorte congelado: último y primer paso por los tags del síntoma, desviaciones sobre la valla de cada tramo del anillo (R-FLO-007), silencios, pares, cortes del registro del terminal, turno y régimen | Cronología por fases con `precede` para lo anterior, la primera desviación, lo declarado de los tags y lo que no se revisa; hipótesis candidatas con evidencia a favor y en contra y la comprobación que las discrimina (pasos 7 y 8, `case-hypotheses.ts`, 3.78.0) | Limitada a ventana/subgrafo; O(n log n) sobre el recorte | F5 (implementado, `retroceso-1`, 3.75.0) |
 | ALG-016 | Replay multi-AGV | Estado observado/inferido por instante (`replay.ts`); en un expediente, sobre su recorte congelado y su ventana entera, con la banda esperada desde la última lectura de cada AGV (p95 lento y p50 habitual de cada tramo del anillo), la conexión del registro del terminal y los hechos de la cronología | Movimiento sobre grafo con incertidumbre: tag visto, tránsito como fracción de tiempo, silencio o sin datos; «por detrás de lo esperado» si ni a paso lento seguiría donde está | Precálculo de 200 fotogramas en el Worker, a petición; 54.000 lecturas de 40 AGV en ~0,13 s | F5 (implementado en el expediente, `replay-caso-1`, 3.77.0) |
 | ALG-017 | Similitud de casos | Características explicables de incidencias | Casos comparables y diferencias | O(k·d) | F5 |
 | ALG-018 | Expediente por objeto | Agregación por AGV o por tag y contraste con su cohorte | Recuentos, tags leídos y no leídos, contraparte que sí leyó, y evidencia navegable | O(n) sobre agregados | F2 reducido, F3 completo |
@@ -64,6 +64,7 @@ flowchart TD
 | ALG-021 | Candidatos a punto crítico | Reparto de sucesores sostenido (bifurcación/cruce), coeficiente de variación (parada precisa), mayor salto proporcional (semáforo) | Candidatos por clase con evidencia y soporte, nunca asignación | O(n) | F3 |
 | ALG-022 | Cambios de tag dentro de un periodo | Pasadas por el sitio del tag; racha fuera de su vida larga e improbable por azar; pareja unívoca por vecino compartido | Cambios, tags que dejan o empiezan a leerse, su vida, y la diferencia de cada AGV frente al nuevo | O(n) sobre las lecturas | F3 |
 | ALG-023 | Lectura por AGV | Celdas dentro de la vida del tag; nunca, desde una hora, poco con cola binomial frente al resto | Por AGV y por tag, la diferencia medida y si pasa en muchos o en pocos tags | O(celdas) | F3 |
+| ALG-024 | Verificación de una contramedida | La métrica del síntoma (huecos sin paso por un tag o silencios de un AGV de al menos tanto) contada una ventana antes y otra después de la aplicación, en tiempo cubierto, en producción y sin las ventanas de los demás expedientes; prueba binomial exacta sobre el reparto de episodios según la exposición | Propuesta eficaz, parcial, ineficaz o sin exposición suficiente, con sus cifras; la conclusión es de una persona (R-INC-003) | O(n) sobre las lecturas de las dos ventanas | F5 (implementado, `verificacion-1`, 3.78.0) |
 
 ## 4. Oportunidades y salud
 

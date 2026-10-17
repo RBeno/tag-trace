@@ -1,6 +1,6 @@
 ---
 document_id: TT-RULES-001
-version: 0.61.0
+version: 0.62.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -198,7 +198,7 @@ Cada regla tiene un estado: **accepted** (decisión ya establecida), **candidate
 | R-INC-001 | accepted | Una incidencia se vincula al circuito pero se almacena separada de la memoria normal. |
 | R-INC-004 | accepted | **Un periodo con incidencia se consolida entero, sin ella en el esperado** (propietario, 2026-09-27, OQ-148). Un hallazgo grave (rango 1) confirmado ya no bloquea la consolidación: queda como incidencia de la versión, guardada aparte del esperado (R-INC-001), y los tags que nombra y los tramos que salen de ellos o llegan a ellos conservan en el esperado su valor anterior, o quedan sin medida si no lo había. Recortar la ventana de la incidencia se hará cuando las lecturas estén archivadas. **Desde 3.57.0 (OQ-149)** también los hallazgos graves que ocurren en un instante, con su ventana: el primero de cola sin avanzar toca su tag y sus tramos; la parada de la línea y el paso por la línea, el tag de entrada de la línea y sus tramos; el AGV que deja de leer, la rotura de un AGV y la producción parada no tocan el grafo y se registran con su AGV o su ventana. Excluir todos los tramos por una producción parada o por un AGV está descartado. **Desde 3.76.0 (ADR-0018 D5)** también la ventana de cada expediente de incidencia no descartado que toque el fichero, propuesta por defecto y que la persona puede soltar; toca los tags que nombra el expediente y sus tramos, o, sin tags, se registra con su AGV o su ventana. El expediente no se escribe. |
 | R-INC-002 | accepted | Guardar una incidencia no modifica el esperado ni el grafo validado. |
-| R-INC-003 | accepted | Una contramedida solo se considera eficaz tras una verificación posterior registrada. |
+| R-INC-003 | accepted | Una contramedida solo se considera eficaz tras una verificación posterior registrada. **Desde 3.78.0 (ADR-0018 D9, ALG-024)** la verificación cuenta la métrica del síntoma antes y después de la aplicación y **propone** eficaz, parcial, ineficaz o sin exposición suficiente; pasar a verificada eficaz o ineficaz exige la verificación registrada y la conclusión escrita por una persona. |
 
 ## Cambio de reglas
 

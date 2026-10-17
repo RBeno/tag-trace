@@ -28,7 +28,7 @@ import type { FlowStopThresholds } from "./flow-stops.js";
 import type { FranjaThresholds } from "./franjas.js";
 import type { GraphThresholds } from "./graph.js";
 import type { GroupedDeliveryThresholds } from "./grouped-delivery.js";
-import type { MarginThresholds } from "./incident-case.js";
+import type { CaseThresholds } from "./incident-case.js";
 import type { ConnectionCutThresholds } from "./connection-cuts.js";
 import type { PlantEstimatorThresholds } from "./plant-values.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
@@ -104,9 +104,10 @@ export interface AnalysisConfig {
   readonly plantEstimators: PlantEstimatorThresholds;
   /**
    * El expediente de incidencia (ADR-0018 D4, OQ-P02): los márgenes mínimos que el programa propone
-   * antes y después del síntoma (`incident_case.min_margin_before_ms` y `min_margin_after_ms`).
+   * antes y después del síntoma (`incident_case.min_margin_before_ms` y `min_margin_after_ms`), y cómo
+   * se verifica una contramedida (D9, OQ-P07: `incident_case.verification_*`).
    */
-  readonly incidentCase: MarginThresholds;
+  readonly incidentCase: CaseThresholds;
 }
 
 /**
@@ -257,6 +258,13 @@ export interface AnalysisConfig {
  *   el antes y la recuperación. No es un valor de planta: es cuánto se mira, y se alarga solo con la
  *   vuelta mediana del circuito y con la duración del síntoma. La persona cambia los márgenes de cada
  *   expediente en borrador.
+ * - **Verificación de una contramedida (ADR-0018 D9, OQ-P07).** Una semana antes y otra después de la
+ *   fecha de aplicación: abarca los turnos y los días de una semana normal. Un 5 % de azar es el listón
+ *   habitual para decir que una tasa bajó con pocos episodios —más estricto, como el 0,1 % de los cambios
+ *   de tag, no se alcanzaría casi nunca con los pocos episodios de una incidencia—. La mitad de bajada
+ *   separa «eficaz» de «parcial», y tres episodios esperados después, con la tasa de antes, son el mínimo
+ *   para que la ausencia de episodios diga algo. Todo es la definición de cómo se mide, no un valor de
+ *   planta, y la conclusión la escribe una persona.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -338,7 +346,13 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     // planta mayor que la vigente; solo para estimar (OQ-154).
     sameTimeMeasureToleranceMs: 60 * 60_000,
   },
-  incidentCase: { minMarginBeforeMs: 30 * 60_000, minMarginAfterMs: 30 * 60_000 },
+  incidentCase: {
+    minMarginBeforeMs: 30 * 60_000,
+    minMarginAfterMs: 30 * 60_000,
+    // Provisionales (OQ-P07): una semana a cada lado de la aplicación, un 5 % de azar, la mitad de bajada
+    // para «eficaz» y al menos tres episodios esperados después con la tasa de antes.
+    verification: { windowMs: 7 * 24 * 3_600_000, maxChance: 0.05, effectiveReduction: 0.5, minExpectedEvents: 3 },
+  },
 };
 
 /** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */

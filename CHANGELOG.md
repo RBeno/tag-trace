@@ -2,6 +2,40 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.78.0] - 2026-10-17
+
+Entrega 4 de ADR-0018.
+
+### Añadido
+
+- **Hipótesis** (ADR-0018 D6, ALG-015 pasos 7 y 8): cada expediente propone candidatas desde los hechos
+  de su cronología que preceden al síntoma —AGV detenido aguas arriba, pérdida de conexión, AGV sin
+  lecturas, turno o régimen—, cada una con los hechos que la sostienen, lo observado que la contradice
+  (otro AGV ya parado delante cuando se detuvo; lecturas de tags distintos durante el corte) y la
+  comprobación que la separa de las demás. Estado en palabras —es compatible, la contradice algo
+  observado, o abierta—, sin porcentajes; primero las que siguen en pie. La persona añade las suyas y
+  confirma (con la comprobación que hizo) o descarta (con la razón); la decisión se guarda por su clave,
+  no cambia la evidencia y se enseña como suya.
+- **Contramedidas** (D9): acción, responsable, fecha prevista, riesgo y **métrica, la del síntoma**
+  (huecos sin paso por el tag, o silencios del AGV, de al menos tanto), fija desde que se planifica; y su
+  fecha de aplicación, una sola vez.
+- **Verificación** (ALG-024, R-INC-003, OQ-P07): con el expediente pendiente de verificar, «Medir y
+  registrar la verificación» cuenta la métrica una semana antes y otra después de la aplicación con las
+  lecturas del circuito (retenidas o del original archivado), en tiempo cubierto, en producción y sin las
+  ventanas de los demás expedientes, y la compara con una prueba binomial exacta. Propone eficaz,
+  parcial, ineficaz o sin exposición suficiente; la conclusión la escribe la persona al pasar a
+  verificada eficaz o ineficaz.
+- El ciclo de vida usa todo lo anterior: planificar exige una hipótesis en pie —calculada desde el
+  recorte— y una contramedida con responsable; pasar a verificar, la fecha de aplicación; verificada,
+  la verificación registrada.
+- Configuración provisional `incident_case.verification_*` (`CONFIG_SCHEMA.md` §3.5). `binomialTail` se
+  exporta desde `charging.ts` para no duplicar la prueba.
+- Pruebas: TC-349 a TC-351 (unitarias) y TC-352 (navegador).
+
+### Cambiado
+
+- Pasar a «pendiente de verificar» pide solo la fecha de aplicación: la métrica se fija ya al planificar.
+
 ## [3.77.0] - 2026-10-17
 
 Entrega 3 de ADR-0018, tras D5.

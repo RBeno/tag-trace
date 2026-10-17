@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.56.0
+version: 0.57.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -969,6 +969,21 @@ ventana, y **solo en este dispositivo**: borrar los datos del navegador la pierd
   (entre dos tags con cuántos tags después de la última lectura; «va por detrás incluso del paso lento»,
   con borde en la fila, nunca solo color) y «Conexión» (conectado o sin conexión según el registro, o sin
   registro). Cada hecho de la cronología gana «Ver en el replay», que lleva a su fotograma.
+- **Hipótesis (3.78.0, D6)**, debajo del replay: una nota fija —salen de lo que precede al síntoma;
+  «es compatible» no quiere decir que sea la explicación, sino que nada observado la contradice; la que
+  se confirma la confirma una persona—, y la lista en orden (primero las que siguen en pie, después las
+  contradichas, al final las descartadas). Cada una: su texto, su estado en palabras («es compatible con
+  lo observado», «algo observado la contradice», «tuya»), la decisión si la hay («confirmada por una
+  persona», «descartada por una persona») con su comprobación o su razón, los hechos a favor con su hora,
+  lo que la contradice (con borde y las filas en el título) y «Lo que la separa de las demás». Sin
+  decidir: el campo de comprobación o razón y «Confirmar» y «Descartar», apagados hasta escribirla. Al
+  final, «Añadir una hipótesis tuya».
+- **Contramedidas y verificación (3.78.0, D9)**: cada contramedida con acción, responsable, fecha
+  prevista, métrica («huecos de al menos N min sin paso por T, por hora de producción») y riesgo; sin
+  aplicar, «Fecha de aplicación» y «Registrar la aplicación»; pendiente de verificar, «Medir y registrar
+  la verificación». La verificación registrada dice antes y después, cuánto baja o sube, el azar y
+  «Propuesta del programa: … La conclusión es tuya.». El formulario «Nueva contramedida» propone la
+  métrica del síntoma, con la duración del episodio editable.
 - Tras cada acción, la línea de estado dice lo escrito y el expediente queda abierto. Al pie, lo que
   ocupan los expedientes en el dispositivo.
 

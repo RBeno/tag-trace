@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.30.0
+version: 0.31.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -289,6 +289,7 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `connection_cuts.collective_window_ms`, `connection_cuts.collective_min_share` | R-COM-008 (propietario, 2026-10-07): un corte es **colectivo** si, a menos de la ventana (provisional: 2 min) de su inicio, pierden la señal al menos esa parte de los AGV con registro (provisional: la mitad, y nunca menos de dos). Apagado o infraestructura, no cobertura: fuera del mapa. |
 | `plant_estimators.same_time_measure_tolerance_ms` | OQ-154 (propietario, 2026-09-27): margen de hora local con que `measurePlantValues` empareja, **solo para medir**, las paradas de la producción que se repiten otro día. Provisional: 60 min. Es una tolerancia de medida, no operativa: ancha para que la estimación de «a la misma hora» pueda ver una tolerancia de planta mayor que la vigente (`flow_stops.same_time_tolerance_ms`, 15 min), con la que nunca podría salir un valor mayor que ella. El análisis (`productionStops`) sigue emparejando con la vigente; esta no cambia ningún resultado del análisis. |
 | `incident_case.min_margin_before_ms`, `incident_case.min_margin_after_ms` | ADR-0018 D4 (OQ-P02, propietario 2026-10-09): márgenes mínimos que el programa propone antes y después del síntoma de un expediente. Antes se toma el mayor del mínimo, la duración del síntoma y la vuelta mediana del circuito; después, el mayor del mínimo y la duración del síntoma. Provisionales: 30 min a cada lado (tres veces la ausencia de diez minutos de la salida demostrable de F5). No es un valor de planta: es cuánto se mira, y la persona lo cambia en cada expediente en borrador. |
+| `incident_case.verification_window_ms`, `incident_case.verification_max_chance`, `incident_case.verification_effective_reduction`, `incident_case.verification_min_expected_events` | ADR-0018 D9, ALG-024 (OQ-P07, propietario 2026-10-09): cómo se verifica una contramedida. Provisionales: una semana a cada lado de la aplicación; un 5 % de azar para decir que bajó; la mitad de bajada para proponer «eficaz» (menos es «parcial»); y al menos tres episodios esperados después con la tasa de antes, o «sin exposición suficiente». Es la definición de cómo se mide, no un valor de planta; la conclusión la escribe una persona. |
 
 Los valores que hoy viven en `PROVISIONAL_CONFIG` con aspecto de dato de planta —horas de arranque de
 turno, regímenes, la hora sin leer que hace una desconexión, los dos minutos del bloqueo, la

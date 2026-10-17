@@ -1,6 +1,6 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -60,7 +60,11 @@ El análisis trabaja hacia atrás en tiempo y topología:
 **Implementado desde 3.75.0 (ALG-015, `retroceso-1`):** los pasos 1 a 6, salvo FIFO, calles de carga
 y proceso, que la cronología declara como no revisados. Los pasos 7 y 8 son de las hipótesis (entrega 4).
 Lo habitual de un paso por el tag del síntoma se mide antes de él. Lo anterior al síntoma lleva
-`precede`; lo de durante y después se sitúa en su fase sin relación.
+`precede`; lo de durante y después se sitúa en su fase sin relación. **Desde 3.78.0**, los pasos 7 y 8:
+hipótesis candidatas con evidencia a favor y en contra (`es compatible con`, `contradice`), ordenadas
+sin probabilidades, cada una con la comprobación que la discrimina; la persona añade las suyas y
+confirma o descarta con texto. Contramedidas con la métrica del síntoma y verificación antes/después
+(ALG-024) que propone y no concluye.
 
 El orden no representa causalidad demostrada. La interfaz debe distinguir `precede`, `correlaciona`, `es compatible con` y `confirmado como causa`.
 

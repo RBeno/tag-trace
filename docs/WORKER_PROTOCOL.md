@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -78,7 +78,7 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `revoke` | circuito, número de versión, razón | Marca la versión con fecha y razón; no la borra (R-MEM-002). |
 | `compare-versions` | circuito, dos números de versión | Solo lee: compara los esperados de dos versiones del linaje activo. |
 | `plant-value` | circuito, clave, valor, fecha efectiva, razón | Valida y escribe un valor de planta confirmado; rige al volver a analizar los ficheros de su vigencia. |
-| `case-action` | circuito, acción: `crear` (título, síntoma, origen, AGV, tags, principio y fin del síntoma, autor), `ventana` (expediente, revisión vista, ventana), `estado` (expediente, revisión vista, estado destino, texto) o `nota` (expediente, revisión vista, texto) | Escribe una revisión nueva del expediente, append-only, solo en las tablas de expedientes (ADR-0018 D5). Si la revisión vista ya no es la vigente, no escribe nada. Al crear o cambiar la ventana congela las lecturas de la ventana desde las retenidas o el original archivado. |
+| `case-action` | circuito, acción: `crear` (título, síntoma, origen, AGV, tags, principio y fin del síntoma, autor), `ventana` (expediente, revisión vista, ventana), `estado` (expediente, revisión vista, estado destino, texto) o `nota` (expediente, revisión vista, texto) | Escribe una revisión nueva del expediente, append-only, solo en las tablas de expedientes (ADR-0018 D5). Si la revisión vista ya no es la vigente, no escribe nada. Al crear o cambiar la ventana congela las lecturas de la ventana desde las retenidas o el original archivado. Desde 3.78.0 también `hipotesis` (texto), `decidir-hipotesis` (clave, `confirmada` o `descartada`, nota), `contramedida` (acción, responsable, fecha prevista, riesgo y métrica), `aplicar` (contramedida y fecha) y `verificar` (contramedida: el Worker mide ALG-024 y lo registra). |
 | `case-replay` | circuito, expediente | Solo lee: calcula el replay del expediente sobre el recorte de su revisión vigente (ALG-016, 3.77.0). |
 | `plan-action` | circuito, fichero de trabajo, acción: `crear-plano` (desde una versión), `aceptar-propuesta` (id y fichero de la propuesta; en una salida, de qué ubicación cuelga) o `evento` (uno registrado a mano), siempre con razón | El Worker recalcula la propuesta desde la instantánea de su fichero antes de escribirla, valida todos los eventos en orden y los escribe en una transacción (ADR-0016). |
 | `resolve-fork` | circuito, elección (`conservar-local` \| `adoptar-entrante`), razón | Resuelve una bifurcación de linaje; el linaje no elegido queda archivado y la elección, en el historial (`MEMORY_CONSOLIDATION.md` §10). |

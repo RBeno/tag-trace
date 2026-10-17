@@ -20,6 +20,7 @@
  * un contador legible por circuito y día.
  */
 
+import type { CaseMetric, VerificationResult, VerificationThresholds } from "./case-verification.js";
 import type { ConnectionCutThresholds } from "./connection-cuts.js";
 import type { ConnectionEvent } from "./connection-log.js";
 import type { Reading } from "./reading.js";
@@ -178,29 +179,47 @@ export function normalizeEvidence(stored: readonly Reading[] | FrozenEvidence): 
   return Array.isArray(stored) ? { readings: stored as readonly Reading[], connections: [], context: null } : (stored as FrozenEvidence);
 }
 
-/** Placeholders del modelo para el ciclo de vida; se rellenan desde la entrega 4 (D9). */
-export interface Hypothesis {
-  readonly text: string;
-  readonly status: "abierta" | "compatible" | "contradicha" | "confirmada" | "descartada";
+/** Lo que una persona decide sobre una hipótesis (D6): confirmarla con su comprobación, o descartarla. */
+export interface HypothesisDecision {
+  readonly state: "confirmada" | "descartada";
+  /** La comprobación hecha (al confirmar) o la razón (al descartar). Obligatoria. */
+  readonly note: string;
+  readonly at: number;
 }
 
+/**
+ * Una hipótesis guardada en la revisión: las que escribe la persona y las del programa **sobre las que
+ * una persona decidió**. Las del programa sin decisión no se guardan: se recalculan desde el recorte
+ * (`case-hypotheses.ts`). Se identifican por su clave, así que la decisión sobrevive a recalcular.
+ */
+export interface Hypothesis {
+  readonly key: string;
+  readonly text: string;
+  readonly origin: "persona" | "programa";
+  readonly decision: HypothesisDecision | null;
+}
+
+/** Una contramedida (D9). La métrica se fija al planificarla y no cambia. */
 export interface Countermeasure {
+  readonly id: string;
   readonly action: string;
   readonly owner: string;
   readonly plannedAt: number;
   readonly appliedAt: number | null;
-  readonly metric: string | null;
+  readonly risk: string;
+  readonly metric: CaseMetric;
 }
 
+/** Una verificación registrada: lo medido con la versión del procedimiento, para la contramedida dada. */
 export interface Verification {
-  readonly afterFrom: number;
-  readonly afterTo: number;
-  readonly conclusion: string;
+  readonly countermeasureId: string;
+  readonly recordedAt: number;
+  readonly result: VerificationResult;
 }
 
 /** Qué cambió una revisión, en palabras y por tipo. */
 export interface CaseChange {
-  readonly kind: "creado" | "estado" | "nota" | "ventana";
+  readonly kind: "creado" | "estado" | "nota" | "ventana" | "hipotesis" | "contramedida" | "verificacion";
   readonly text: string;
 }
 
@@ -285,6 +304,11 @@ export interface MarginThresholds {
   readonly minMarginBeforeMs: number;
   /** Margen mínimo después del síntoma (`incident_case.min_margin_after_ms`). */
   readonly minMarginAfterMs: number;
+}
+
+/** La configuración del expediente: márgenes (D4) y verificación de contramedidas (D9). */
+export interface CaseThresholds extends MarginThresholds {
+  readonly verification: VerificationThresholds;
 }
 
 /**
@@ -531,12 +555,27 @@ export interface TransitionOption {
   readonly inputLabel: string | null;
 }
 
+/**
+ * Lo que las reglas necesitan saber y la revisión no guarda: cuántas hipótesis siguen en pie (las del
+ * programa no contradichas, las de la persona, y ninguna descartada). Lo calcula quien tiene el recorte
+ * (`case-hypotheses.ts`); sin él, solo cuentan las de la persona y las confirmadas.
+ */
+export interface CaseAnalysis {
+  readonly viableHypotheses: number;
+}
+
+function viableStored(revision: CaseRevision): number {
+  return revision.hypotheses.filter((hypothesis) =>
+    hypothesis.decision === null ? hypothesis.origin === "persona" : hypothesis.decision.state === "confirmada",
+  ).length;
+}
+
 interface Rule {
   readonly from: readonly CaseState[];
   readonly to: CaseState;
   readonly input: TransitionInput;
   readonly inputLabel: string | null;
-  readonly check: (revision: CaseRevision) => readonly string[];
+  readonly check: (revision: CaseRevision, analysis: CaseAnalysis) => readonly string[];
 }
 
 const NONE = (): readonly string[] => [];
@@ -556,10 +595,8 @@ const RULES: readonly Rule[] = [
     to: "CountermeasurePlanned",
     input: null,
     inputLabel: null,
-    check: (revision) => [
-      ...(revision.hypotheses.some((hypothesis) => hypothesis.status !== "contradicha" && hypothesis.status !== "descartada")
-        ? []
-        : ["al menos una hipótesis que nada contradiga"]),
+    check: (revision, analysis) => [
+      ...(analysis.viableHypotheses > 0 ? [] : ["al menos una hipótesis que nada contradiga"]),
       ...(revision.countermeasures.some((measure) => measure.action.trim() !== "" && measure.owner.trim() !== "")
         ? []
         : ["una contramedida con responsable y fecha"]),
@@ -571,9 +608,9 @@ const RULES: readonly Rule[] = [
     input: null,
     inputLabel: null,
     check: (revision) =>
-      revision.countermeasures.some((measure) => measure.appliedAt !== null && measure.metric !== null)
+      revision.countermeasures.some((measure) => measure.appliedAt !== null)
         ? []
-        : ["la fecha de aplicación y la métrica de verificación de la contramedida"],
+        : ["la fecha de aplicación de la contramedida"],
   },
   {
     from: ["VerificationPending"],
@@ -603,10 +640,11 @@ function isFinal(state: CaseState): boolean {
 }
 
 /** Las transiciones posibles desde el estado vigente, con lo que falta para cada una. */
-export function transitionsFrom(revision: CaseRevision): readonly TransitionOption[] {
+export function transitionsFrom(revision: CaseRevision, analysis?: CaseAnalysis): readonly TransitionOption[] {
+  const known = analysis ?? { viableHypotheses: viableStored(revision) };
   return RULES.filter((rule) => rule.from.includes(revision.state)).map((rule) => ({
     to: rule.to,
-    unmet: rule.check(revision),
+    unmet: rule.check(revision, known),
     input: rule.input,
     inputLabel: rule.inputLabel,
   }));
@@ -616,8 +654,15 @@ export function transitionsFrom(revision: CaseRevision): readonly TransitionOpti
  * Hace la transición que una persona confirmó. Lanza `CaseRefusal` si no existe desde el estado
  * vigente, si falta algo del expediente o si falta el texto que exige.
  */
-export async function transition(previous: CaseRevision, to: CaseState, text: string | null, now: number, author: string | null): Promise<CaseRevision> {
-  const option = transitionsFrom(previous).find((entry) => entry.to === to);
+export async function transition(
+  previous: CaseRevision,
+  to: CaseState,
+  text: string | null,
+  now: number,
+  author: string | null,
+  analysis?: CaseAnalysis,
+): Promise<CaseRevision> {
+  const option = transitionsFrom(previous, analysis).find((entry) => entry.to === to);
   if (option === undefined) {
     throw new CaseRefusal(
       `Un expediente ${CASE_STATE_TEXT[previous.state]} no pasa a ${CASE_STATE_TEXT[to]}.`,
@@ -640,6 +685,109 @@ export async function transition(previous: CaseRevision, to: CaseState, text: st
     state: to,
     stateReason: option.input === null ? null : written,
     ...(option.input === "conclusion" ? { conclusion: written } : {}),
+  });
+}
+
+// --- Hipótesis, contramedidas y verificación (D6, D9) -----------------------------------------------
+
+/** Estados en que se investiga: se pueden añadir hipótesis y contramedidas. */
+const WORKING: readonly CaseState[] = ["Investigating", "CountermeasurePlanned", "VerificationPending", "VerifiedIneffective"];
+
+function requireWorking(previous: CaseRevision, what: string): void {
+  if (!WORKING.includes(previous.state)) {
+    throw new CaseRefusal(`Un expediente ${CASE_STATE_TEXT[previous.state]} no admite ${what}.`, "Pásalo a «investigando» primero.");
+  }
+}
+
+/** Añade una hipótesis escrita por la persona. */
+export async function addHypothesis(previous: CaseRevision, text: string, now: number, author: string | null): Promise<CaseRevision> {
+  requireWorking(previous, "hipótesis nuevas");
+  const written = text.trim();
+  if (written === "") throw new CaseRefusal("La hipótesis está vacía.", "Escribe la hipótesis.");
+  const n = previous.hypotheses.filter((hypothesis) => hypothesis.origin === "persona").length + 1;
+  return next(previous, now, author, {
+    change: { kind: "hipotesis", text: `Hipótesis añadida: ${written}` },
+    hypotheses: [...previous.hypotheses, { key: `persona|${n}`, text: written, origin: "persona", decision: null }],
+  });
+}
+
+/**
+ * Lo que una persona decide sobre una hipótesis (D6): confirmarla —con la comprobación que hizo— o
+ * descartarla —con su razón—. Una del programa se guarda entonces con su texto; la decisión no cambia la
+ * evidencia, se añade a ella (R-EVI-005).
+ */
+export async function decideHypothesis(
+  previous: CaseRevision,
+  input: { readonly key: string; readonly text: string; readonly state: HypothesisDecision["state"]; readonly note: string },
+  now: number,
+  author: string | null,
+): Promise<CaseRevision> {
+  requireWorking(previous, "decisiones sobre hipótesis");
+  const note = input.note.trim();
+  if (note === "") {
+    throw new CaseRefusal(
+      input.state === "confirmada" ? "Para confirmar una hipótesis hay que escribir la comprobación que se hizo." : "Para descartar una hipótesis hay que escribir por qué.",
+      "Escríbelo y vuelve a intentarlo.",
+    );
+  }
+  const decision: HypothesisDecision = { state: input.state, note, at: now };
+  const known = previous.hypotheses.find((hypothesis) => hypothesis.key === input.key);
+  const hypotheses = known === undefined
+    ? [...previous.hypotheses, { key: input.key, text: input.text.trim(), origin: "programa" as const, decision }]
+    : previous.hypotheses.map((hypothesis) => (hypothesis.key === input.key ? { ...hypothesis, decision } : hypothesis));
+  const text = (known?.text ?? input.text).trim();
+  return next(previous, now, author, {
+    change: { kind: "hipotesis", text: `Hipótesis ${input.state === "confirmada" ? "confirmada por una persona" : "descartada"}: ${text}` },
+    hypotheses,
+  });
+}
+
+/** Añade una contramedida con su métrica, que no cambia después (D9). */
+export async function addCountermeasure(
+  previous: CaseRevision,
+  input: { readonly action: string; readonly owner: string; readonly plannedAt: number; readonly risk: string; readonly metric: CaseMetric },
+  now: number,
+  author: string | null,
+): Promise<CaseRevision> {
+  requireWorking(previous, "contramedidas nuevas");
+  const action = input.action.trim();
+  const owner = input.owner.trim();
+  if (action === "" || owner === "") throw new CaseRefusal("Una contramedida necesita la acción y su responsable.", "Escribe las dos.");
+  if (!Number.isFinite(input.plannedAt)) throw new CaseRefusal("Una contramedida necesita su fecha prevista.", "Escríbela.");
+  if (!(input.metric.minGapMs > 0)) throw new CaseRefusal("La métrica necesita una duración mayor que cero.", "Corrígela.");
+  const id = `C${previous.countermeasures.length + 1}`;
+  return next(previous, now, author, {
+    change: { kind: "contramedida", text: `Contramedida ${id} planificada: ${action} (${owner}).` },
+    countermeasures: [...previous.countermeasures, { id, action, owner, plannedAt: input.plannedAt, appliedAt: null, risk: input.risk.trim(), metric: input.metric }],
+  });
+}
+
+/** Registra cuándo se aplicó una contramedida. Una vez aplicada, la fecha no cambia. */
+export async function applyCountermeasure(previous: CaseRevision, id: string, appliedAt: number, now: number, author: string | null): Promise<CaseRevision> {
+  requireWorking(previous, "cambios en contramedidas");
+  const measure = previous.countermeasures.find((entry) => entry.id === id);
+  if (measure === undefined) throw new CaseRefusal(`La contramedida ${id} no está en el expediente.`, "Vuelve a mirarlo.");
+  if (measure.appliedAt !== null) throw new CaseRefusal(`La contramedida ${id} ya consta como aplicada.`, "Si se volvió a aplicar, planifica otra.");
+  if (!Number.isFinite(appliedAt)) throw new CaseRefusal("Falta la fecha de aplicación.", "Escríbela.");
+  return next(previous, now, author, {
+    change: { kind: "contramedida", text: `Contramedida ${id} aplicada.` },
+    countermeasures: previous.countermeasures.map((entry) => (entry.id === id ? { ...entry, appliedAt } : entry)),
+  });
+}
+
+/**
+ * Registra la verificación medida de una contramedida aplicada. Solo pendiente de verificar; la
+ * conclusión llega con el cambio de estado, y la escribe una persona (R-INC-003).
+ */
+export async function recordVerification(previous: CaseRevision, result: VerificationResult, countermeasureId: string, now: number, author: string | null): Promise<CaseRevision> {
+  if (previous.state !== "VerificationPending") {
+    throw new CaseRefusal("La verificación se registra con el expediente pendiente de verificar.", "Pasa el expediente a «pendiente de verificar».");
+  }
+  const measure = previous.countermeasures.find((entry) => entry.id === countermeasureId);
+  if (measure === undefined || measure.appliedAt === null) throw new CaseRefusal(`La contramedida ${countermeasureId} no consta como aplicada.`, "Registra antes su fecha de aplicación.");
+  return next(previous, now, author, {
+    change: { kind: "verificacion", text: `Verificación de ${countermeasureId} registrada (${result.verdict === "sin-exposicion" ? "sin exposición suficiente" : `propuesta: ${result.verdict}`}).` },
+    verification: { countermeasureId, recordedAt: now, result },
   });
 }
 
