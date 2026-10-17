@@ -747,3 +747,13 @@ table.data th { color: var(--muted); font-weight: 600; }
   .case-summary { min-height: 44px; align-items: center; }
   .case-actions button, .case-new { min-height: 44px; }
 }
+/* La cronología del retroceso (ALG-015): por fases, una línea por hecho, la hora primero; «precede» y
+   «primera desviación» en palabras, nunca solo por color. */
+.case-chronology h5 { margin: 10px 0 2px; font-size: 0.95rem; }
+.case-chronology p { margin: 4px 0 0; }
+.case-facts-list { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 0.9rem; }
+.case-fact { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.case-fact-when { font-weight: 600; white-space: nowrap; }
+.case-fact-text { overflow-wrap: anywhere; }
+.case-fact[data-first="si"] { border-left: 3px solid var(--viz-accent); padding-left: 6px; }
+.case-limits { margin: 2px 0 0; padding-left: 20px; font-size: 0.85rem; color: var(--muted); }

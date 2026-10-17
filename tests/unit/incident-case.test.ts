@@ -139,7 +139,7 @@ describe("recorte congelado (D4)", () => {
       [candidate("s1", [reading("1", "A", T0 - MIN), reading("1", "A", T0 + MIN), reading("2", "B", T0 + 2 * MIN), reading("3", "C", T0 + 11 * MIN)], "retenidas")],
       span,
     );
-    expect(out.readings.map((entry) => entry.agvId)).toEqual(["1", "2"]);
+    expect(out.evidence.readings.map((entry) => entry.agvId)).toEqual(["1", "2"]);
     expect(out.summary).toMatchObject({ readings: 2, vehicles: 2, missing: [] });
     expect(out.summary.hash).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -148,7 +148,7 @@ describe("recorte congelado (D4)", () => {
     const shared = reading("1", "A", T0 + MIN, "s1", 5);
     const again = reading("1", "A", T0 + MIN, "s2", 9);
     const out = await freezeEvidence([candidate("s1", [shared], "retenidas"), candidate("s2", [again, reading("2", "B", T0 + 3 * MIN, "s2", 10)], "archivo")], span);
-    expect(out.readings).toHaveLength(2);
+    expect(out.evidence.readings).toHaveLength(2);
     expect(out.summary.sources.map((source) => [source.sourceId, source.from, source.readings])).toEqual([
       ["s1", "retenidas", 1],
       ["s2", "archivo", 1],

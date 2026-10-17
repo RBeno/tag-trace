@@ -20,14 +20,22 @@
  * un contador legible por circuito y día.
  */
 
-import { semanticHash } from "./semantic-hash.js";
+import type { ConnectionCutThresholds } from "./connection-cuts.js";
+import type { ConnectionEvent } from "./connection-log.js";
 import type { Reading } from "./reading.js";
+import type { RegimeThresholds } from "./segment-bands.js";
+import { semanticHash } from "./semantic-hash.js";
+import type { SnapshotEdge } from "./snapshot.js";
 
 /** Forma de la revisión guardada. Subirla obliga a leer las anteriores sin perderlas. */
 export const CASE_SCHEMA_VERSION = 1;
 
-/** Versión del procedimiento que congela el recorte; viaja en cada revisión (`VERSIONING.md`). */
-export const EVIDENCE_ALGORITHM = "recorte-1";
+/**
+ * Versión del procedimiento que congela el recorte; viaja en cada revisión (`VERSIONING.md`).
+ * `recorte-1` (3.74.0) congelaba solo las lecturas; `recorte-2` (3.75.0) añade los eventos de conexión
+ * de la ventana y el contexto del retroceso. Los de `recorte-1` se siguen leyendo, sin contexto.
+ */
+export const EVIDENCE_ALGORITHM = "recorte-2";
 
 /** Estados del ciclo de vida (`INCIDENTS_REPORTING.md` §7, OQ-170). */
 export type CaseState =
@@ -96,6 +104,78 @@ export interface EvidenceSummary {
   readonly sources: readonly EvidenceSource[];
   /** Ficheros cuya cobertura toca la ventana y cuyas lecturas ya no están: hay que volver a cargarlos. */
   readonly missing: readonly { readonly sourceId: string; readonly fileName: string }[];
+  /** Eventos del registro de conexiones congelados (DS-013). Ausente en `recorte-1`. */
+  readonly connections?: number;
+  /** De dónde sale el contexto del retroceso, o `null` si no lo hay. Ausente en `recorte-1`. */
+  readonly context?: CaseContextOrigin | null;
+}
+
+/** De dónde sale el contexto del retroceso: el esperado de una versión o, sin memoria, el fichero. */
+export type CaseContextOrigin =
+  | { readonly kind: "memoria"; readonly version: number; readonly hash: string }
+  | { readonly kind: "instantanea"; readonly sourceId: string; readonly fileName: string };
+
+/**
+ * Lo que el retroceso (ALG-015) necesita además de las lecturas, congelado con ellas para que el
+ * expediente se pueda volver a calcular igual aunque la memoria, las listas o la configuración cambien:
+ * el anillo y las horquillas de sus tramos, cómo se separa la noche, los umbrales que usa y lo que planta
+ * declara de cada tag.
+ */
+export interface CaseContext {
+  readonly origin: CaseContextOrigin;
+  readonly zone: string;
+  /** El anillo en orden (el del esperado o el del fichero). */
+  readonly ring: readonly string[];
+  /** Las horquillas de los tramos del anillo, por régimen (R-FLO-007). */
+  readonly edges: readonly SnapshotEdge[];
+  readonly regimes: RegimeThresholds;
+  /** Hueco sin lecturas de un AGV que cuenta como silencio (`silence.minGapMs`). */
+  readonly silenceMinGapMs: number;
+  /** Horas de arranque de turno (`silenceKind.shiftStartHours`). */
+  readonly shiftStartHours: readonly number[];
+  /** Pasos mínimos para dar una mediana de paso por un tag (`franjas.minPositionSamples`). */
+  readonly minMedianSamples: number;
+  readonly connectionCuts: ConnectionCutThresholds;
+  /** Lo declarado en planta por tag (R-GRA-022), tal como lo enseña el análisis. */
+  readonly declared: Readonly<Record<string, string>>;
+}
+
+/** Un evento del registro de conexiones congelado, con la huella de su fichero (procedencia). */
+export type FrozenConnection = ConnectionEvent & { readonly sourceHash: string };
+
+/** Lo que se guarda por hash en `incidentEvidence`. */
+export interface FrozenEvidence {
+  readonly readings: readonly Reading[];
+  readonly connections: readonly FrozenConnection[];
+  readonly context: CaseContext | null;
+}
+
+/**
+ * Los eventos de conexión que hacen falta para la ventana: los de dentro y, por AGV, el último de antes
+ * y el primero de después, para saber si un corte ya estaba abierto al empezar o se cierra al acabar.
+ * Sin un margen inventado.
+ */
+export function selectConnections(events: readonly FrozenConnection[], span: { readonly from: number; readonly to: number }): readonly FrozenConnection[] {
+  const kept = new Set<FrozenConnection>();
+  const before = new Map<string, FrozenConnection>();
+  const after = new Map<string, FrozenConnection>();
+  for (const event of events) {
+    if (event.utcMs >= span.from && event.utcMs <= span.to) kept.add(event);
+    else if (event.utcMs < span.from) {
+      const known = before.get(event.agvId);
+      if (known === undefined || event.utcMs > known.utcMs) before.set(event.agvId, event);
+    } else {
+      const known = after.get(event.agvId);
+      if (known === undefined || event.utcMs < known.utcMs) after.set(event.agvId, event);
+    }
+  }
+  for (const event of [...before.values(), ...after.values()]) kept.add(event);
+  return [...kept].sort((a, b) => a.utcMs - b.utcMs || compareText(a.agvId, b.agvId) || a.sourceRow - b.sourceRow);
+}
+
+/** Un recorte guardado, de cualquiera de las dos formas: `recorte-1` era solo la lista de lecturas. */
+export function normalizeEvidence(stored: readonly Reading[] | FrozenEvidence): FrozenEvidence {
+  return Array.isArray(stored) ? { readings: stored as readonly Reading[], connections: [], context: null } : (stored as FrozenEvidence);
 }
 
 /** Placeholders del modelo para el ciclo de vida; se rellenan desde la entrega 4 (D9). */
@@ -273,7 +353,8 @@ export interface EvidenceCandidate {
 export async function freezeEvidence(
   candidates: readonly EvidenceCandidate[],
   span: { readonly from: number; readonly to: number },
-): Promise<{ readonly summary: EvidenceSummary; readonly readings: readonly Reading[] }> {
+  extras: { readonly connections: readonly FrozenConnection[]; readonly context: CaseContext | null } = { connections: [], context: null },
+): Promise<{ readonly summary: EvidenceSummary; readonly evidence: FrozenEvidence }> {
   const touches = (complete: EvidenceCandidate["complete"]): boolean => complete !== null && complete.from <= span.to && complete.to >= span.from;
   const seen = new Set<string>();
   const kept: Reading[] = [];
@@ -298,16 +379,28 @@ export async function freezeEvidence(
   }
   kept.sort((a, b) => a.time.utcMs - b.time.utcMs || compareText(a.agvId, b.agvId) || compareText(a.tagId, b.tagId) || a.provenance.sourceRow - b.provenance.sourceRow);
   const vehicles = new Set(kept.map((reading) => reading.agvId)).size;
-  const hash = kept.length === 0 ? null : await evidenceHash(kept);
+  const connections = selectConnections(extras.connections, span);
+  const evidence: FrozenEvidence = { readings: kept, connections, context: extras.context };
+  // Sin lecturas no hay recorte: lo que pasó en la ventana es desconocido, haya o no contexto.
+  const hash = kept.length === 0 ? null : await evidenceHash(evidence);
   return {
-    summary: { algorithm: EVIDENCE_ALGORITHM, hash, readings: kept.length, vehicles, sources, missing },
-    readings: kept,
+    summary: {
+      algorithm: EVIDENCE_ALGORITHM,
+      hash,
+      readings: kept.length,
+      vehicles,
+      sources,
+      missing,
+      connections: connections.length,
+      context: extras.context?.origin ?? null,
+    },
+    evidence,
   };
 }
 
-/** El hash del recorte: de las lecturas tal como se guardan, en su orden. */
-export function evidenceHash(readings: readonly Reading[]): Promise<string> {
-  return semanticHash(readings.map(plainReading));
+/** El hash del recorte: de las lecturas, los eventos de conexión y el contexto, tal como se guardan. */
+export function evidenceHash(evidence: FrozenEvidence): Promise<string> {
+  return semanticHash({ readings: evidence.readings.map(plainReading), connections: evidence.connections, context: evidence.context });
 }
 
 /** La lectura sin campos accesorios (`alsoFrom` de la unión): solo lo que define la observación. */
@@ -570,6 +663,15 @@ export async function verifyChain(revisions: readonly CaseRevision[]): Promise<r
 
 // --- Texto ----------------------------------------------------------------------------------------------
 
+/** De dónde sale el contexto del retroceso, en palabras. */
+export function contextText(origin: CaseContextOrigin | null | undefined): string {
+  if (origin === undefined) return "Recorte anterior a 3.75.0: sin el anillo ni las horquillas congelados.";
+  if (origin === null) return "Sin anillo ni horquillas: ni versión consolidada ni instantánea del fichero que cubra la ventana.";
+  return origin.kind === "memoria"
+    ? `Anillo y horquillas del esperado de la versión consolidada v${origin.version}.`
+    : `Anillo y horquillas del propio fichero «${origin.fileName}», sin esperado consolidado.`;
+}
+
 export function originText(origin: CaseOrigin): string {
   switch (origin.kind) {
     case "sintoma":
@@ -591,7 +693,13 @@ export function evidenceText(evidence: EvidenceSummary): string {
       : ` Faltan las lecturas de ${evidence.missing.map((entry) => `«${entry.fileName}»`).join(", ")}: vuelve a cargar ${evidence.missing.length === 1 ? "ese fichero" : "esos ficheros"} y abre otro expediente o cambia la ventana en borrador.`;
   if (evidence.hash === null) return `Sin recorte: no hay lecturas guardadas en la ventana, así que lo que pasó en ella es desconocido.${missing}`;
   const files = evidence.sources.map((source) => `«${source.fileName}» (${source.from === "retenidas" ? "lecturas retenidas" : "original archivado"})`).join(", ");
-  return `${evidence.readings.toLocaleString("es-ES")} ${evidence.readings === 1 ? "lectura" : "lecturas"} de ${evidence.vehicles.toLocaleString("es-ES")} AGV, congeladas de ${files}.${missing}`;
+  const connections =
+    evidence.connections === undefined
+      ? ""
+      : evidence.connections === 0
+        ? " Sin registro de conexiones del terminal en la ventana."
+        : ` Con ${evidence.connections.toLocaleString("es-ES")} ${evidence.connections === 1 ? "evento" : "eventos"} del registro de conexiones del terminal.`;
+  return `${evidence.readings.toLocaleString("es-ES")} ${evidence.readings === 1 ? "lectura" : "lecturas"} de ${evidence.vehicles.toLocaleString("es-ES")} AGV, congeladas de ${files}.${connections}${missing}`;
 }
 
 function cleanAuthor(author: string | null): string | null {

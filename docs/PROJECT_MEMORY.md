@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.56.0
+version: 0.57.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -424,6 +424,21 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## Expedientes, entrega 2: retroceso y caso de oro (3.75.0, 2026-10-17)
+
+El propietario pidió la entrega 2 «teniendo en cuenta y adaptando todo el contenido a los cambios
+realizados anteriormente». Antes de construir se integró la rama paralela de «Organizar TAG TRACE»
+(3.68.0–3.72.0: áreas y función, pestaña WiFi, avisos, problemas detectados e informe HTML), que salió
+del mismo punto de `main`; lo de los expedientes pasó detrás (3.73.0, 3.74.0; OQ-169–171; TC-338–341).
+Hecho: el **retroceso desde el síntoma** (`src/domain/case-backtrack.ts`, `retroceso-1`) sobre un
+recorte que ahora congela también los eventos de conexión y el contexto (`recorte-2`: anillo y
+horquillas del esperado vigente o del fichero, umbrales y lo declarado en planta de la rama paralela);
+la cronología por fases en cada expediente, con `precede` solo para lo anterior y la primera desviación
+marcada; y el **caso de oro de TC-012** en un escenario propio (no en el circuito de auditoría, para no
+mover sus clases). Lo habitual de un paso se mide antes del síntoma. Pendiente: D5 (que la
+consolidación proponga la ventana de cada expediente), y las entregas 3 a 6. El informe del circuito
+de la rama paralela (FR-026) todavía no incluye los expedientes: es de la entrega 5.
+
 ## Expedientes, entrega 1 (ADR-0018 aceptado, 3.74.0, 2026-10-09)
 
 Numerada 3.69.0 al hacerse; pasó a 3.74.0 (y la propuesta del ADR, de 3.68.0 a 3.73.0) al integrar el
@@ -578,7 +593,8 @@ conversación siguiente.
   6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron
   juntas** (3.64.0) y **el registro de conexiones con su mapa de estado de conexión** (3.65.0,
   ADR-0017, secciones anteriores), ninguna un entregable de `ROADMAP.md` §F5. El trabajo propio de la fase
-  empezó con ADR-0018 (aceptado) y su entrega 1 (3.74.0); lo siguiente es la entrega 2. Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  empezó con ADR-0018 (aceptado), su entrega 1 (3.74.0) y su entrega 2 (3.75.0); lo siguiente es la
+  entrega 3 (replay con esperado e incertidumbre) o D5. Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
   (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
   antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**

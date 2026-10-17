@@ -22,6 +22,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 
+import { buildCriticalPointScenario, CRITICAL_TAG, STALL_TAG, STALLED_AGV, WIFI_AGV } from "../support/caso-punto-critico.js";
+import { writeXlsx } from "../support/xlsx-writer.js";
 import { openTab } from "./pestanas.js";
 
 const MEMORIA = fileURLToPath(new URL("../../fixtures/synthetic/memoria/", import.meta.url));
@@ -93,6 +95,39 @@ async function caseRows(page: Page): Promise<number> {
   });
 }
 
+/**
+ * Marca todas las tarjetas de la bandeja (como `valores-planta.spec.ts`): las de rango 1 se descartan y
+ * el resto se confirma, para que el periodo se pueda consolidar. Lo hace la persona, no el programa.
+ */
+async function reviewAll(page: Page): Promise<void> {
+  await openTab(page, "Resumen");
+  // El rango 3 va plegado (3.70.0): se despliega para poder marcarlo.
+  for (const fold of await page.locator("details.tray-fold").all()) {
+    if ((await fold.getAttribute("open")) === null) await fold.locator("summary").click();
+  }
+  const cards = page.locator(".finding.reviewable");
+  const total = await cards.count();
+  for (let index = 0; index < total; index += 1) {
+    const card = cards.nth(index);
+    const critical = (await card.locator("xpath=ancestor::*[contains(@class,'tray-group')]").getAttribute("data-rank")) === "1";
+    await card.getByRole("button", { name: /Revisión en campo/ }).click();
+    await card.getByRole("menuitemradio", { name: critical ? /Descartado/ : /Confirmado/ }).click();
+    await page.keyboard.press("Escape");
+    await expect(card).toHaveAttribute("data-review", critical ? "descartado" : "confirmado");
+  }
+}
+
+async function consolidateFirst(page: Page): Promise<void> {
+  await openTab(page, "Memoria");
+  const panel = page.locator(".memory-panel");
+  await panel.getByRole("button", { name: "Previsualizar v1" }).click();
+  const preview = panel.locator(".memory-preview");
+  await expect(preview).toBeVisible({ timeout: 15_000 });
+  await expect(preview.locator(".memory-blockers")).toHaveCount(0);
+  await preview.getByRole("button", { name: "Confirmar y consolidar" }).click();
+  await expect(panel.locator(".memory-status")).toContainText("Versión v1 consolidada", { timeout: 15_000 });
+}
+
 async function createFromSymptom(page: Page, title: string, from: string, to: string): Promise<void> {
   const panel = page.locator(".cases-panel");
   await panel.getByRole("button", { name: "Nuevo expediente…" }).click();
@@ -134,7 +169,7 @@ test.describe("expedientes de incidencia", () => {
     const caseId = (await item.getAttribute("data-case-id")) ?? "";
     expect(caseId).toMatch(/^INC-exp-\d{8}-01$/);
     // El recorte: las 24 lecturas del fichero, de los dos AGV, porque el fichero entero cae en la ventana.
-    await expect(item.locator(".case-evidence")).toHaveText(/^24 lecturas de 2 AGV, congeladas de «periodo-1\.csv» \(lecturas retenidas\)\.$/);
+    await expect(item.locator(".case-evidence")).toHaveText(/^24 lecturas de 2 AGV, congeladas de «periodo-1\.csv» \(lecturas retenidas\)\. Sin registro de conexiones del terminal en la ventana\.$/);
     await expect(item.locator(".case-window-text")).toContainText("30 min antes y 30 min después");
     await expect(item.locator(".case-references")).toContainText("Sin memoria consolidada");
 
@@ -199,7 +234,89 @@ test.describe("expedientes de incidencia", () => {
     const panel = page.locator(".cases-panel");
     await expect(panel.locator(".cases-status")).toContainText("creado en borrador", { timeout: 15_000 });
     await expect(panel.locator(".case-item").first().locator(".case-evidence")).toHaveText(
-      /^24 lecturas de 2 AGV, congeladas de «periodo-1\.csv» \(original archivado\)\.$/,
+      /^24 lecturas de 2 AGV, congeladas de «periodo-1\.csv» \(original archivado\)\. Sin registro de conexiones del terminal en la ventana\.$/,
     );
+  });
+
+  test("TC-012: el punto crítico sin llegada se investiga hacia atrás frente al esperado, sin tocarlo", async ({ page }) => {
+    test.setTimeout(180_000);
+    const scenario = buildCriticalPointScenario();
+    await freshPage(page);
+    await openTab(page, "Resumen");
+    await page.locator("#circuit-name").fill("critico");
+    await page.locator("#source-file").setInputFiles({ name: "punto-critico.csv", mimeType: "text/csv", buffer: Buffer.from(scenario.csv, "utf8") });
+    await expect(page.getByRole("heading", { name: "Circuito «critico»", exact: true })).toBeVisible({ timeout: 30_000 });
+    // El registro de conexiones del AGV 207 (DS-013), con su AGV en el nombre.
+    const book = Buffer.from(await writeXlsx([{ name: "Sheet", rows: scenario.connectionRows, header: true, widths: [10, 20, 24, 8, 6, 8, 8, 6, 6, 6, 30, 6, 18] }]));
+    await page.locator("#connections-file").setInputFiles({
+      name: `CONEXIONES${WIFI_AGV}.xlsx`,
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: book,
+    });
+    await openTab(page, "Datos");
+    await page.getByRole("button", { name: "Cargar el fichero" }).click();
+    await expect(page.getByRole("heading", { name: "Registro de conexiones cargado" })).toBeVisible({ timeout: 30_000 });
+    // Se vuelve a cargar el fichero para que el análisis lea el registro.
+    await openTab(page, "Resumen");
+    await page.locator("#source-file").setInputFiles([]);
+    await page.locator("#source-file").setInputFiles({ name: "punto-critico.csv", mimeType: "text/csv", buffer: Buffer.from(scenario.csv, "utf8") });
+    await expect(page.getByRole("heading", { name: "Circuito «critico»", exact: true })).toBeVisible({ timeout: 30_000 });
+
+    // La persona revisa y consolida el periodo: el expediente se mirará frente a ese esperado.
+    await reviewAll(page);
+    await consolidateFirst(page);
+
+    await openTab(page, "Línea y calles");
+    const before = await storeOutsideCases(page);
+    const { truth } = scenario;
+    const local = (utcMs: number): string => new Date(utcMs + 3_600_000).toISOString().slice(0, 16);
+    const panel = page.locator(".cases-panel");
+    await panel.getByRole("button", { name: "Nuevo expediente…" }).click();
+    const form = panel.locator(".case-create");
+    await form.getByLabel("Título").fill("Punto crítico sin llegada");
+    await form.getByLabel("Síntoma: qué ocurrió, dónde y cuándo").fill("Más de diez minutos sin que llegue ningún AGV al punto crítico.");
+    await form.getByLabel("Principio del síntoma").fill(local(truth.absenceFrom + 60_000));
+    await form.getByLabel("Fin del síntoma").fill(local(truth.absenceTo));
+    await form.getByLabel("Tags (opcionales, separados por comas)").fill(CRITICAL_TAG);
+    await form.getByRole("button", { name: "Crear expediente" }).click();
+    await expect(panel.locator(".cases-status")).toContainText("creado en borrador", { timeout: 30_000 });
+
+    const item = panel.locator(".case-item").first();
+    await expect(item.locator(".case-evidence")).toContainText("8 AGV");
+    await expect(item.locator(".case-evidence")).toContainText("eventos del registro de conexiones del terminal");
+    const chronology = item.locator(".case-chronology");
+    await expect(chronology.getByRole("heading", { name: "Retroceso desde el síntoma" })).toBeVisible();
+    await expect(chronology.locator(".case-context")).toContainText("Anillo y horquillas del esperado de la versión consolidada v1.");
+    await expect(item.locator(".case-references")).toContainText("Memoria v1");
+    // El síntoma en el punto crítico, la primera desviación aguas arriba y el corte de WiFi: todo precede.
+    const absence = chronology.locator('.case-fact[data-kind="sin-paso"]');
+    await expect(absence).toContainText(`Último paso por ${CRITICAL_TAG} antes del síntoma`);
+    await expect(absence.locator(".case-fact-relation")).toHaveText("precede");
+    const first = chronology.locator('.case-fact[data-first="si"]');
+    await expect(first).toHaveCount(1);
+    await expect(first).toContainText(`AGV ${STALLED_AGV} tarda`);
+    await expect(first).toContainText(`de ${STALL_TAG} a 71013, por encima de lo esperado en ese tramo`);
+    await expect(first).toContainText("6 tags antes del síntoma por el anillo");
+    await expect(first.locator(".case-fact-relation")).toHaveText("precede");
+    const wifi = chronology.locator('.case-fact[data-kind="corte-wifi"]');
+    await expect(wifi).toContainText(`AGV ${WIFI_AGV} sin conexión con el servidor`);
+    await expect(wifi.locator(".case-fact-relation")).toHaveText("precede");
+    // Lo de durante no lleva relación, y ninguna línea afirma una causa.
+    await expect(chronology.locator('ol[data-phase="durante"] .case-fact-relation')).toHaveCount(0);
+    await expect(chronology).not.toContainText(/\bcausa\b|debido a|provoc/i);
+    await expect(chronology).toContainText("FIFO, calles de carga, la línea y el proceso no se revisan todavía");
+    await expect(chronology).not.toContainText("OQ-");
+
+    // Sobrevive a recargar con la misma cronología, y nada fuera de los expedientes cambió.
+    const facts = await chronology.locator(".case-fact").allTextContents();
+    expect(await storeOutsideCases(page)).toBe(before);
+    await page.reload();
+    await openTab(page, "Resumen");
+    await page.locator("#circuit-name").fill("critico");
+    await page.locator("#source-file").setInputFiles({ name: "punto-critico.csv", mimeType: "text/csv", buffer: Buffer.from(scenario.csv, "utf8") });
+    await expect(page.getByRole("heading", { name: "Circuito «critico»", exact: true })).toBeVisible({ timeout: 30_000 });
+    await openTab(page, "Línea y calles");
+    await panel.locator(".case-item").first().locator("summary").click();
+    expect(await panel.locator(".case-item").first().locator(".case-fact").allTextContents()).toEqual(facts);
   });
 });

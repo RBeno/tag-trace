@@ -2,6 +2,56 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.75.0] - 2026-10-17
+
+El propietario pidió la entrega 2 de ADR-0018 «teniendo en cuenta y adaptando todo el contenido a los
+cambios realizados anteriormente».
+
+### Integrado
+
+- La rama paralela de «Organizar TAG TRACE» (3.68.0 a 3.72.0), que salió del mismo punto de `main` que
+  los expedientes, queda fusionada. Lo de los expedientes pasa detrás: sus versiones son 3.73.0 y
+  3.74.0, sus preguntas OQ-169 a OQ-171 y sus pruebas TC-338 a TC-341.
+
+### Añadido
+
+- **Retroceso desde el síntoma** (ALG-015, `retroceso-1`, ADR-0018 D6 y D7, FR-023): cada expediente
+  con recorte enseña su cronología por fases —antes, durante y después del síntoma—, en orden de tiempo:
+  último y primer paso por cada tag del síntoma frente a lo habitual **antes** de él; transiciones de un
+  AGV entre dos tags seguidos del anillo por encima de la valla de su tramo (R-FLO-007), con la
+  **primera desviación** marcada; silencios de un AGV; cuántos AGV leen durante el síntoma y cuáles no;
+  los cortes del registro del terminal (DS-013, observados); y los cambios de turno y de régimen. Cada
+  hecho dice a cuántos tags del síntoma está por el anillo y lleva las filas que lo sostienen.
+- **Lenguaje**: lo anterior al síntoma lleva `precede` y nada más; lo de durante y después se sitúa en
+  su fase sin relación. Una nota fija dice que «precede» no es importancia ni relación, y la lista de
+  lo que no se revisa (FIFO, calles de carga, la línea y el proceso; y, si faltan, el contexto o el
+  registro de conexiones) se enseña siempre.
+- **Lo declarado en planta** de los tags del síntoma (R-GRA-022, de la rama paralela), en la cronología.
+- **Recorte `recorte-2`**: además de las lecturas congela los eventos del registro de conexiones de la
+  ventana (y el último de antes y el primero de después de cada AGV) y el **contexto**: el anillo y las
+  horquillas del esperado de la versión vigente o, sin memoria, de la instantánea del fichero que cubre
+  el síntoma; régimen, umbrales y lo declarado en planta. Con el mismo recorte, la misma cronología,
+  cambie lo que cambie después. Los recortes de la entrega 1 (`recorte-1`) se siguen leyendo, sin
+  contexto, y la cronología lo dice.
+- **Caso de oro de TC-012** (`docs/golden/TC-012-punto-critico-sin-llegada.md`) en un escenario propio,
+  `tests/support/caso-punto-critico.ts`: un AGV parado trece minutos seis tags antes del punto crítico
+  y un corte de WiFi de otro AGV; la cronología pone los dos como `precede` y no elige.
+- Pruebas: TC-342 y TC-343 (unitarias) y TC-344 (navegador: importar, cargar el registro, consolidar
+  v1, crear el expediente y leer su cronología frente al esperado, sin que nada fuera de los
+  expedientes cambie).
+
+### Cambiado
+
+- El texto del recorte dice además si hay registro de conexiones en la ventana; las pruebas TC-340 y
+  TC-341 esperan esa frase.
+
+### Pendiente
+
+- D5 (la consolidación todavía no propone la ventana de cada expediente) y las entregas 3 a 6.
+- El informe del circuito (3.72.0) todavía no incluye los expedientes: es la entrega 5.
+- Cuando cambie el procedimiento del retroceso habrá que conservar la cronología de `retroceso-1` para
+  enseñar las dos (`VERSIONING.md`); hoy solo existe una versión.
+
 ## [3.74.0] - 2026-10-09
 
 El propietario aceptó ADR-0018 y pidió la primera entrega («Acepto el ADR, empieza la entrega 1»).

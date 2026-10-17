@@ -1,6 +1,6 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -56,6 +56,11 @@ El análisis trabaja hacia atrás en tiempo y topología:
 6. revisar comunicación, calendario, configuración, FIFO, CO y proceso;
 7. construir hipótesis ordenadas con evidencia a favor y en contra;
 8. señalar qué comprobación discrimina mejor entre hipótesis.
+
+**Implementado desde 3.75.0 (ALG-015, `retroceso-1`):** los pasos 1 a 6, salvo FIFO, calles de carga
+y proceso, que la cronología declara como no revisados. Los pasos 7 y 8 son de las hipótesis (entrega 4).
+Lo habitual de un paso por el tag del síntoma se mide antes de él. Lo anterior al síntoma lleva
+`precede`; lo de durante y después se sitúa en su fase sin relación.
 
 El orden no representa causalidad demostrada. La interfaz debe distinguir `precede`, `correlaciona`, `es compatible con` y `confirmado como causa`.
 

@@ -1,8 +1,8 @@
 ---
 document_id: TT-WORKER-001
-version: 0.7.0
+version: 0.8.0
 status: baseline-candidate
-last_updated: 2026-10-09
+last_updated: 2026-10-17
 ---
 
 # Protocolo entre la interfaz y los Workers
@@ -109,7 +109,7 @@ se ha guardado nada.»). La respuesta a un `consolidate` con `mode: "commit"` es
 `error` o `cancelled`; a `revoke` y `resolve-fork`, `revoked`/`fork-resolved`, `error` o `cancelled`.
 | `versions-compared` | la comparación: las dos versiones, las de entre medias, lo adoptado por el camino y el delta | |
 | `plant-values-updated` | los valores de planta del circuito: provisional, vigente para el fichero de trabajo, historial y dónde se mide | |
-| `cases-updated` | lo escrito en palabras, el expediente tocado y los expedientes del circuito (`CaseViews`) | |
+| `cases-updated` | lo escrito en palabras, el expediente tocado y los expedientes del circuito (`CaseViews`, con la cronología del retroceso de cada uno desde 3.75.0) | |
 | `plan-updated` | los eventos escritos en palabras y el plano (`PlanViews`) leído contra el fichero de trabajo | |
 
 Las vistas de una importación (`complete.views`) llevan `memory` cuando el circuito tiene versiones:

@@ -13,6 +13,7 @@
  */
 
 import type { CaseAction, CaseView, CaseViews, ExcludedIncidentStart } from "../application/protocol.js";
+import { PHASE_TEXT, type Chronology, type ChronologyPhase } from "../domain/case-backtrack.js";
 import { CASE_STATE_TEXT, type CaseOrigin, type CaseState, type TransitionOption } from "../domain/incident-case.js";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -416,6 +417,68 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
     return box;
   }
 
+  /**
+   * El retroceso desde el síntoma (ALG-015): la cronología por fases, en orden de tiempo. Lo anterior al
+   * síntoma lleva «precede» y nada más; el orden no dice qué importa más ni qué lo produjo (D6).
+   */
+  function chronologyBlock(view: CaseView): HTMLElement {
+    const box = node("section", "case-chronology");
+    box.append(node("h4", undefined, "Retroceso desde el síntoma"));
+    const chronology: Chronology | null = view.chronology;
+    if (chronology === null) {
+      box.append(node("p", "muted", "Sin recorte de lecturas no hay retroceso: lo que pasó en la ventana es desconocido."));
+      return box;
+    }
+    box.append(
+      node(
+        "p",
+        "muted case-chronology-note",
+        "En orden de tiempo. «Precede» solo dice que ocurrió antes del síntoma: ni que importe más ni que tenga que ver con él. " +
+          "Nada de aquí dice por qué ocurrió: eso lo confirma una persona.",
+      ),
+      node("p", "muted case-context", `${view.contextText} Procedimiento ${chronology.algorithm}.`),
+    );
+    if (chronology.declared.length > 0) {
+      box.append(
+        node(
+          "p",
+          "case-declared",
+          `Declarado en planta: ${chronology.declared.map((entry) => (chronology.declared.length === 1 ? entry.text : `${entry.tagId}, ${entry.text}`)).join("; ")}.`,
+        ),
+      );
+    }
+    for (const phase of ["antes", "durante", "despues"] as const satisfies readonly ChronologyPhase[]) {
+      const entries = chronology.facts.map((fact, index) => ({ fact, index })).filter((entry) => entry.fact.phase === phase);
+      if (entries.length === 0) continue;
+      const list = node("ol", "case-facts-list");
+      list.dataset["phase"] = phase;
+      for (const { fact, index } of entries) {
+        const item = node("li", "case-fact");
+        item.dataset["kind"] = fact.kind;
+        if (index === chronology.firstDeviation) item.dataset["first"] = "si";
+        const head = node("span", "case-fact-when", input.formatInstant(fact.at));
+        item.append(head);
+        if (fact.relation !== null) item.append(node("span", "chip case-fact-relation", fact.relation));
+        if (index === chronology.firstDeviation) item.append(node("span", "chip case-fact-first", "primera desviación"));
+        item.append(node("span", "case-fact-text", fact.text));
+        if (fact.upstream !== null && fact.upstream > 0) {
+          item.append(node("span", "muted case-fact-upstream", `${fact.upstream.toLocaleString("es-ES")} ${fact.upstream === 1 ? "tag" : "tags"} antes del síntoma por el anillo`));
+        }
+        const rows = fact.provenance.map((row) => `fila ${row.sourceRow}`).concat(fact.connectionRows.map((row) => `registro, fila ${row.sourceRow}`));
+        if (rows.length > 0) item.title = `Evidencia: ${rows.join(", ")}`;
+        list.append(item);
+      }
+      box.append(node("h5", undefined, PHASE_TEXT[phase]), list);
+    }
+    if (chronology.facts.length === 0) box.append(node("p", "muted", "El recorte no muestra nada que contar en la ventana."));
+    if (chronology.limits.length > 0) {
+      const limits = node("ul", "case-limits");
+      for (const limit of chronology.limits) limits.append(node("li", undefined, limit));
+      box.append(node("p", "muted", "Lo que este retroceso no revisa:"), limits);
+    }
+    return box;
+  }
+
   function caseItem(view: CaseView): HTMLElement {
     const current = view.current;
     const item = node("li", "case-item");
@@ -469,7 +532,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       );
     }
     facts.append(node("h4", undefined, "Historial"), history);
-    details.append(facts);
+    details.append(facts, chronologyBlock(view));
 
     const actions = node("div", "case-actions");
     if (view.transitions.length > 0) {

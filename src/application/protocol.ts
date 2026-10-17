@@ -43,6 +43,7 @@ import type { UndeclaredTag } from "../domain/undeclared-tags.js";
 import type { ListCleanup } from "../domain/list-cleanup.js";
 import type { LineFeed } from "../domain/line-feed.js";
 import type { Incident, IncidentBattery, IncidentRecord } from "../domain/incident-battery.js";
+import type { Chronology } from "../domain/case-backtrack.js";
 import type { CaseChange, CaseOrigin, CaseRevision, CaseState, CaseWindow, TransitionOption } from "../domain/incident-case.js";
 import type { CircuitOrder } from "../domain/circuit-order.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
@@ -1014,6 +1015,10 @@ export interface CaseView {
   readonly evidenceText: string;
   /** Problemas de integridad de la cadena de revisiones; vacío si está entera. */
   readonly integrity: readonly string[];
+  /** El retroceso desde el síntoma sobre el recorte congelado (ALG-015); `null` sin recorte. */
+  readonly chronology: Chronology | null;
+  /** De dónde salen el anillo y las horquillas del retroceso, en palabras. */
+  readonly contextText: string;
 }
 
 /** Una incidencia excluida de la versión vigente, como punto de partida de un expediente (D1). */

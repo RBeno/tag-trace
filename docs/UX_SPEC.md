@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.53.0
+version: 0.54.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -944,6 +944,15 @@ ventana, y **solo en este dispositivo**: borrar los datos del navegador la pierd
   lleva su campo y el botón está apagado hasta que se escribe. La que exige algo que el expediente no
   tiene sale apagada con «Falta …». En borrador, además, «Cambiar la ventana», que vuelve a copiar las
   lecturas. Un expediente cerrado o descartado no admite notas.
+- **Retroceso desde el síntoma (3.75.0, ALG-015)**, dentro de cada expediente abierto: una nota fija
+  —en orden de tiempo; «precede» solo dice que ocurrió antes, ni que importe más ni que tenga que ver;
+  nada de aquí dice por qué ocurrió—; de dónde salen el anillo y las horquillas («del esperado de la
+  versión consolidada v1» o «del propio fichero, sin esperado consolidado») y el procedimiento; lo
+  declarado en planta de los tags del síntoma; y tres listas, «Antes del síntoma», «Durante el
+  síntoma» y «Después del síntoma». Cada línea: la hora en negrita, «precede» como etiqueta si es
+  anterior, «primera desviación» en la que lo es (con borde, nunca solo color), el hecho y, si se
+  puede, a cuántos tags del síntoma está por el anillo; las filas que lo sostienen van en su título.
+  Al final, «Lo que este retroceso no revisa».
 - Tras cada acción, la línea de estado dice lo escrito y el expediente queda abierto. Al pie, lo que
   ocupan los expedientes en el dispositivo.
 

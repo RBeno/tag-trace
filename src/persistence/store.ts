@@ -44,7 +44,7 @@ import type { FleetPeriod } from "../domain/fleet.js";
 import { sortVersions, type ConsolidatedVersion, type LineageState } from "../domain/memory.js";
 import type { Reading } from "../domain/reading.js";
 import type { ReviewEntry } from "../domain/review.js";
-import type { CaseRevision } from "../domain/incident-case.js";
+import { normalizeEvidence, type CaseRevision, type FrozenEvidence } from "../domain/incident-case.js";
 import type { CircuitSnapshot } from "../domain/snapshot.js";
 import { gunzip, gunzipJson, gzip, gzipJson } from "./compression.js";
 import { splitLegacyCircuit, type LegacyCircuitRecord } from "./retention.js";
@@ -956,11 +956,11 @@ export async function caseRevisionOf(row: CaseRevisionRow): Promise<CaseRevision
  */
 export async function appendCaseRevision(
   revision: CaseRevision,
-  evidence: { readonly hash: string; readonly readings: readonly Reading[] } | null,
+  evidence: { readonly hash: string; readonly evidence: FrozenEvidence } | null,
 ): Promise<void> {
   const row: CaseRevisionRow = { circuitId: revision.circuitId, caseId: revision.caseId, revision: revision.revision, gz: await gzipJson(revision) };
   const evidenceRow: CaseEvidenceRow | null =
-    evidence === null ? null : { circuitId: revision.circuitId, hash: evidence.hash, gz: await gzipJson(evidence.readings) };
+    evidence === null ? null : { circuitId: revision.circuitId, hash: evidence.hash, gz: await gzipJson(evidence.evidence) };
   const db = await open();
   try {
     const tx = db.transaction([INCIDENT_CASES, INCIDENT_EVIDENCE], "readwrite");
@@ -986,8 +986,11 @@ export async function loadCaseRevisions(circuitId: string): Promise<readonly Cas
   return Promise.all(rows.map(caseRevisionOf));
 }
 
-/** Las lecturas de un recorte congelado, o `undefined` si no está. */
-export async function loadCaseEvidence(circuitId: string, hash: string): Promise<readonly Reading[] | undefined> {
+/**
+ * Un recorte congelado, o `undefined` si no está. Los de `recorte-1` (3.74.0) eran solo la lista de
+ * lecturas y se devuelven igual, sin conexiones ni contexto.
+ */
+export async function loadCaseEvidence(circuitId: string, hash: string): Promise<FrozenEvidence | undefined> {
   const db = await open();
   let row: CaseEvidenceRow | undefined;
   try {
@@ -997,7 +1000,7 @@ export async function loadCaseEvidence(circuitId: string, hash: string): Promise
   } finally {
     db.close();
   }
-  return row === undefined ? undefined : gunzipJson<Reading[]>(row.gz);
+  return row === undefined ? undefined : normalizeEvidence(await gunzipJson<Reading[] | FrozenEvidence>(row.gz));
 }
 
 /** Bytes que ocupan los expedientes del circuito tal como están guardados (revisiones y recortes, comprimidos). */

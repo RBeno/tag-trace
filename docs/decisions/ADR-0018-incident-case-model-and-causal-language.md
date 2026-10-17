@@ -243,11 +243,17 @@ sigue vivo. Nunca se publica en GitHub (ADR-0007).
 
 ## Entregas propuestas, una por petición
 
-1. Modelo y almacén local, creación desde hallazgo, incidencia excluida, intervalo o síntoma,
+1. **Hecha en 3.74.0.** Modelo y almacén local, creación desde hallazgo, incidencia excluida, intervalo o síntoma,
    recorte congelado y separación probada (INV-008, TC-017).
 2. Retroceso y cronología con el lenguaje de D6, y el **caso de oro sintético de TC-012**: un punto
-   crítico sin llegada diez minutos plantado en el circuito de auditoría, con su ventana de impacto y
-   sin una causa única afirmada.
+   crítico sin llegada diez minutos, con su ventana de impacto y sin una causa única afirmada.
+   **Hecha en 3.75.0.** El caso se planta en un escenario propio (`tests/support/caso-punto-critico.ts`)
+   y no en el circuito de auditoría, para no mover las cifras medidas de sus otras clases; el recorte
+   pasa a `recorte-2` y congela también los eventos de conexión y el contexto (anillo, horquillas,
+   umbrales y lo declarado en planta); lo habitual de un paso se mide **antes** del síntoma, porque lo de
+   después viene alterado por él; y la cronología solo usa `precede` (lo de durante y después se sitúa
+   en su fase sin relación), porque `es compatible con` y `contradice` son de las hipótesis (entrega 4)
+   y `correlaciona` exige repetición.
 3. Replay multi-AGV con esperado e incertidumbre.
 4. Hipótesis, contramedidas y verificación.
 5. Informe vivo y exportación.

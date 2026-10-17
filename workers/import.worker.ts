@@ -144,6 +144,7 @@ import type {
 import {
   addNote,
   caseSpan,
+  contextText,
   CaseRefusal,
   changeWindow,
   checkCaseText,
@@ -158,15 +159,18 @@ import {
   transition,
   transitionsFrom,
   verifyChain,
+  type CaseContext,
   type CaseRevision,
   type CaseWindow,
   type EvidenceCandidate,
 } from "../src/domain/incident-case.js";
+import { backtrack, type Chronology } from "../src/domain/case-backtrack.js";
 import {
   appendCaseRevision,
   appendPlanEvents,
   appendPlantValue,
   caseStoredBytes,
+  loadCaseEvidence,
   loadCaseRevisions,
   isAvailable,
   loadCircuit,
@@ -196,6 +200,7 @@ import {
   compareVersions,
   consolidate,
   currentVersion,
+  expectedOf,
   emptyLineageState,
   previewConsolidation,
   previewWithoutSnapshot,
@@ -3149,7 +3154,16 @@ async function buildCaseViews(circuitId: string): Promise<CaseViews> {
   for (const list of byCase.values()) {
     const sorted = [...list].sort((a, b) => a.revision - b.revision);
     const current = currentRevision(sorted);
+    // El retroceso (ALG-015) se calcula desde el recorte congelado, nunca desde lo que hay ahora en el
+    // circuito: con el mismo recorte, la misma cronología.
+    let chronology: Chronology | null = null;
+    if (current.evidence.hash !== null) {
+      const evidence = await loadCaseEvidence(circuitId, current.evidence.hash);
+      if (evidence !== undefined) chronology = backtrack({ window: current.window, agvId: current.agvId, tagIds: current.tagIds, evidence });
+    }
     cases.push({
+      chronology,
+      contextText: contextText(current.evidence.context),
       current,
       history: sorted.map((entry) => ({ revision: entry.revision, createdAt: entry.createdAt, author: entry.author, change: entry.change, state: entry.state })),
       transitions: transitionsFrom(current),
@@ -3224,6 +3238,52 @@ async function evidenceCandidates(stored: StoredCircuit, span: { readonly from: 
   return out;
 }
 
+/**
+ * Lo declarado en planta de cada tag (R-GRA-022), calculado igual que en el análisis: las listas del
+ * circuito y los refuerzos de cada punto crítico seguidos en el orden declarado (R-GRA-016).
+ */
+function declaredOfLists(lists: StoredCircuit["lists"]): Readonly<Record<string, string>> {
+  const all = lists ?? [];
+  const entriesOf = (name: string): readonly ConfigEntry[] => all.find((entry) => entry.list === name)?.entries ?? [];
+  const critical = readCriticalPoints([...entriesOf("critico"), ...entriesOf("circuito").filter((entry) => entry.funcion !== "")]);
+  const declaredOrder = [...new Set(all.find((entry) => entry.list === "circuito")?.tags ?? [])];
+  const groups = reinforcementGroups(declaredOrder, critical.funcionOf, critical.groupOf);
+  return Object.fromEntries(declaredTagInfo(all, groups));
+}
+
+/**
+ * El contexto que se congela con el recorte (ADR-0018 D4, D7): el anillo y las horquillas del esperado
+ * de la versión vigente o, sin memoria, de la instantánea del fichero que cubre el síntoma (o el último);
+ * los umbrales de la configuración que rige al empezar el síntoma; y lo declarado en planta. `null` si no
+ * hay ninguna de las dos fuentes de anillo.
+ */
+async function caseContextFor(stored: StoredCircuit, symptomFrom: number): Promise<CaseContext | null> {
+  const circuitId = stored.circuitId;
+  const [memory, snapshots] = await Promise.all([loadMemory(circuitId), loadSnapshots(circuitId)]);
+  const version = currentVersion(memory.active);
+  const sorted = sortSnapshots(snapshots);
+  const covering = sorted.find((entry) => entry.window.from <= symptomFrom && entry.window.to >= symptomFrom) ?? sorted[sorted.length - 1] ?? null;
+  const base = version !== null ? expectedOf(version) : covering;
+  if (base === null || base.ring.length < 2) return null;
+  const ringEdges = new Set(base.ring.map((tagId, index) => `${tagId}\u0000${base.ring[(index + 1) % base.ring.length] as string}`));
+  const config = await configForFile(circuitId, symptomFrom);
+  return {
+    origin:
+      version !== null
+        ? { kind: "memoria", version: version.version, hash: version.hash }
+        : { kind: "instantanea", sourceId: (covering as CircuitSnapshot).sourceId, fileName: (covering as CircuitSnapshot).fileName },
+    zone: stored.zone,
+    ring: base.ring,
+    edges: base.edges.filter((edge) => ringEdges.has(`${edge.from}\u0000${edge.to}`)),
+    regimes: config.regimes,
+    silenceMinGapMs: config.silence.minGapMs,
+    shiftStartHours: config.silenceKind.shiftStartHours,
+    minMedianSamples: config.franjas.minPositionSamples,
+    connectionCuts: config.connectionCuts,
+    declared: declaredOfLists(stored.lists),
+  };
+}
+
 /** Las referencias de una revisión (D2): la versión vigente, la configuración y la aplicación. */
 async function caseReferences(circuitId: string, at: number): Promise<CaseRevision["references"]> {
   const memory = await loadMemory(circuitId);
@@ -3284,7 +3344,10 @@ async function applyCaseAction(stored: StoredCircuit, action: CaseAction, now: n
     // Se valida antes de reimportar nada: una ventana imposible no cuesta un reanálisis.
     checkCaseText(action.title, action.symptom);
     checkWindow(window);
-    const frozen = await freezeEvidence(await evidenceCandidates(stored, caseSpan(window)), caseSpan(window));
+    const frozen = await freezeEvidence(await evidenceCandidates(stored, caseSpan(window)), caseSpan(window), {
+      connections: stored.connections?.events ?? [],
+      context: await caseContextFor(stored, window.symptomFrom),
+    });
     const revision = await createCase({
       circuitId,
       caseId,
@@ -3299,7 +3362,7 @@ async function applyCaseAction(stored: StoredCircuit, action: CaseAction, now: n
       evidence: frozen.summary,
       references: await caseReferences(circuitId, action.symptomFrom),
     });
-    await appendCaseRevision(revision, frozen.summary.hash === null ? null : { hash: frozen.summary.hash, readings: frozen.readings });
+    await appendCaseRevision(revision, frozen.summary.hash === null ? null : { hash: frozen.summary.hash, evidence: frozen.evidence });
     return { caseId, text: `Expediente ${caseId} creado en borrador. Márgenes propuestos: ${margins.reason}.` };
   }
 
@@ -3328,10 +3391,13 @@ async function applyCaseAction(stored: StoredCircuit, action: CaseAction, now: n
   }
   checkWindow(action.window);
   const span = caseSpan(action.window);
-  const frozen = await freezeEvidence(await evidenceCandidates(stored, span), span);
+  const frozen = await freezeEvidence(await evidenceCandidates(stored, span), span, {
+    connections: stored.connections?.events ?? [],
+    context: await caseContextFor(stored, action.window.symptomFrom),
+  });
   const revision = await changeWindow(previous, action.window, frozen.summary, await caseReferences(circuitId, action.window.symptomFrom), now, action.author);
   const newEvidence = frozen.summary.hash !== null && frozen.summary.hash !== previous.evidence.hash;
-  await appendCaseRevision(revision, newEvidence && frozen.summary.hash !== null ? { hash: frozen.summary.hash, readings: frozen.readings } : null);
+  await appendCaseRevision(revision, newEvidence && frozen.summary.hash !== null ? { hash: frozen.summary.hash, evidence: frozen.evidence } : null);
   return { caseId: action.caseId, text: `${action.caseId}: ventana y recorte cambiados (revisión ${revision.revision}).` };
 }
 

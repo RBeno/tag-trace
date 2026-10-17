@@ -14,9 +14,9 @@ Antes de cualquier tarea, en este orden:
 
 ## Estado actual
 
-La fase vigente la dice `docs/project_state.json`, no este fichero. Al 2026-10-09: fase **F5**
+La fase vigente la dice `docs/project_state.json`, no este fichero. Al 2026-10-17: fase **F5**
 (laboratorio de incidencias), abierta por el propietario el 2026-09-27; F6 espera `CONTINÚA FASE
-6`. El modelo del expediente es ADR-0018 (aceptado); su entrega 1 está hecha (3.74.0). El relevo entre
+6`. El modelo del expediente es ADR-0018 (aceptado); sus entregas 1 y 2 están hechas (3.74.0 y 3.75.0). El relevo entre
 conversaciones está al final de `docs/PROJECT_MEMORY.md`.
 
 ## Límites que no se negocian

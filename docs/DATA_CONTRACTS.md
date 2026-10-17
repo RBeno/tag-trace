@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.32.0
+version: 0.33.0
 status: baseline-candidate
-last_updated: 2026-10-09
+last_updated: 2026-10-17
 ---
 
 # Contratos de datos y procedencia
@@ -594,7 +594,12 @@ instantáneas anteriores no lo traen y esa versión no permite estimar.
 `incidentCases`, las revisiones de cada expediente de incidencia, con clave `[circuitId, caseId,
 revision]` y append-only con `add` (cada revisión, comprimida, con el hash de la anterior); e
 `incidentEvidence`, los recortes congelados de lecturas, con clave `[circuitId, hash]` (las lecturas
-normalizadas de todos los AGV en la ventana del expediente, con su procedencia, comprimidas). Ninguna
+normalizadas de todos los AGV en la ventana del expediente, con su procedencia, comprimidas). Desde
+3.75.0 (`recorte-2`) cada recorte es un objeto con `readings`, `connections` (los eventos del registro
+del terminal de la ventana y, por AGV, el último anterior y el primero posterior, con la huella de su
+fichero) y `context` (anillo y horquillas del esperado vigente o, sin memoria, del fichero; régimen,
+umbrales y lo declarado en planta); su hash cubre las tres partes. Los de `recorte-1` eran solo la lista
+de lecturas y se leen igual, sin conexiones ni contexto. Ninguna
 otra operación escribe en ellas salvo borrar el circuito, que las borra. **No viajan en el
 `.agvproj`** (OQ-169): el expediente es solo de este dispositivo.
 
