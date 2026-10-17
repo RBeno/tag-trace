@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.25.0
+version: 0.26.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -153,13 +153,14 @@ commit `551d4cd`), que reúne la evidencia de los siete criterios.
 ## G5 — Autorizar F6
 
 Evidencia redactada el 2026-10-17, con las seis entregas de ADR-0018 hechas (3.74.0 a 3.80.0, rama
-`ccr-b6e42985-mfx1ho`, commit `9baba66`). Las casillas las marca el propietario. Toda la evidencia es
+`ccr-b6e42985-mfx1ho`, commit `9baba66`; en `main` con el PR #17, `b0f527a`). **Aprobada por el
+propietario el 2026-10-17 con `CONTINÚA FASE 6`**: las casillas se marcan por esa orden. Toda la evidencia es
 sintética; la validación con datos reales en su dispositivo y el criterio de rechazo siguen pendientes
 (OQ-B05). La salida demostrable de F5 —investigar una ausencia de diez minutos en un punto crítico y
 conservar el caso completo sin modificar el esperado— es el caso de oro TC-012
 (`docs/golden/TC-012-punto-critico-sin-llegada.md`, escenario `tests/support/caso-punto-critico.ts`).
 
-- [ ] Incidencia reproducible con ventana antes/durante/después. **Evidencia (3.74.0, 3.75.0)**: el
+- [x] Incidencia reproducible con ventana antes/durante/después. **Evidencia (3.74.0, 3.75.0)**: el
       expediente congela su recorte (`recorte-2`: lecturas, eventos de conexión y contexto del esperado)
       con su hash, en una cadena de revisiones que no se reescribe, y propone márgenes antes y después
       desde configuración (TC-338). El recorte sale también de un original archivado cuando las
@@ -168,40 +169,41 @@ conservar el caso completo sin modificar el esperado— es el caso de oro TC-012
       primera desviación de `205` entre `71012` y `71013` a seis tags y el corte de WiFi de `207` con su
       fila, todo `precede` y nada más (TC-342, TC-343); en el navegador, de punta a punta frente al
       esperado de la versión consolidada v1 (TC-344).
-- [ ] Replay multi-AGV muestra incertidumbre. **Evidencia (3.77.0)**: ALG-016 `replay-caso-1` sobre el
+- [x] Replay multi-AGV muestra incertidumbre. **Evidencia (3.77.0)**: ALG-016 `replay-caso-1` sobre el
       recorte congelado, 200 fotogramas con su fase; cada AGV visto en un tag, entre dos tags como
       fracción de tiempo (inferido) o sin lecturas (desconocido); la banda esperada desde su última
       lectura, con el paso lento (p95) y el habitual (p50) de cada tramo, y «va por detrás incluso del
       paso lento» solo mientras está parado; la conexión según el registro o «sin registro» (TC-347,
       TC-348). Medido: 54.000 lecturas de 40 AGV en unos 0,13 s.
-- [ ] Similitud explica diferencias y no afirma causalidad. **Evidencia (3.80.0)**: ALG-017
+- [x] Similitud explica diferencias y no afirma causalidad. **Evidencia (3.80.0)**: ALG-017
       `similitud-1` compara con los demás expedientes del circuito, sin descartados, característica a
       característica (igual, parecido con su diferencia, distinto, sin dato), ordena por cuántas
       coinciden con el mismo peso y sin puntuación oculta; lo confirmado en otro caso va aparte como «no
       es evidencia para este» y no cambia el actual; un hecho repetido se cuenta sin llamarlo
       correlación (TC-355, TC-356). Ningún texto generado pasa la prueba de vocabulario causal
       (`causalWordsIn`, TC-339). Abierto, sin bloquear: cuándo se dice `correlaciona` (OQ-172).
-- [ ] Contramedida y verificación se registran. **Evidencia (3.78.0)**: hipótesis desde la cronología
+- [x] Contramedida y verificación se registran. **Evidencia (3.78.0)**: hipótesis desde la cronología
       con la evidencia en contra observada y la comprobación que las separa; la confirma o descarta una
       persona, con su comprobación o su razón (TC-349). Contramedida con la métrica del síntoma y su
       fecha de aplicación; verificación (ALG-024 `verificacion-1`) una semana antes y otra después, en
       tiempo de producción y sin las ventanas de otros expedientes, con prueba binomial y propuesta
       eficaz, parcial, ineficaz o sin exposición; la conclusión la escribe una persona (TC-350 a TC-352).
-- [ ] Informe local contiene evidencia y versiones. **Evidencia (3.79.0, 3.80.0)**: un HTML
+- [x] Informe local contiene evidencia y versiones. **Evidencia (3.79.0, 3.80.0)**: un HTML
       autocontenido, sin red ni scripts, con los diez apartados de `INCIDENTS_REPORTING.md` §8, la
       revisión y su hash, los procedimientos (`recorte-2`, `retroceso-1`…), la versión de memoria, de
       configuración y de la aplicación, y lo escrito por una persona marcado como suyo; CSV de la
       cronología y de las lecturas del recorte con fichero, huella y fila; el informe del circuito trae
       el resumen de expedientes (TC-353, TC-354).
-- [ ] Guardar/cerrar incidencia no altera memoria normal. **Evidencia (3.74.0, 3.76.0)**: INV-008 y
+- [x] Guardar/cerrar incidencia no altera memoria normal. **Evidencia (3.74.0, 3.76.0)**: INV-008 y
       TC-017. En el navegador, crear, anotar, revisar, investigar, cerrar no concluyente, reabrir y
       descartar dejan el resto del almacén byte a byte igual (TC-340); lo mismo al ver el replay, decidir
       hipótesis, registrar contramedidas y verificaciones, exportar y comparar casos (TC-348, TC-352,
       TC-354, TC-356). La ventana de un expediente solo entra en la memoria como incidencia excluida si
       la persona la deja marcada al consolidar (D5, TC-345, TC-346).
 
-Pendiente del propietario para G5: validar en su dispositivo con datos reales y fijar el criterio de
-rechazo (OQ-B05), marcar las casillas, decidir el PR y la fusión a `main`, y escribir `CONTINÚA FASE 6`.
+El propietario dio la orden sin dejar escrito el resultado de la validación con datos reales ni el
+criterio de rechazo: OQ-B05 sigue parcial y pasa a G6, cuya salida es el piloto con datos reales.
+OQ-172 sigue abierta y no bloquea. F5 queda cerrada.
 
 ## G6 — Aprobar piloto
 

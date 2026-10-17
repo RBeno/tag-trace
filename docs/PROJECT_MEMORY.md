@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.62.0
+version: 0.63.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -424,6 +424,17 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## F5 cerrada, F6 abierta (2026-10-17)
+
+El PR #17 (3.67.1 a 3.80.1) se fusionó en `main` (`b0f527a`, *squash*, por orden del propietario: «Haz
+PR y fusiona»). El propietario escribió `CONTINÚA FASE 6`: G5 queda marcada con la evidencia de
+`PHASE_GATES.md` y `project_state.json` pasa a `F6 / Piloto profesional`, con `CONTINÚA FASE 7` como
+siguiente transición (G6). Queda abierto: el criterio de rechazo y la validación con datos reales
+(OQ-B05, ahora para G6) y cuándo se dice `correlaciona` (OQ-172). Nada de F6 está implementado
+todavía; su alcance es el de `ROADMAP.md` §F6: interfaz coherente de escritorio y móvil, accesibilidad
+y estados de error, optimización y degradación por capacidad, suite E2E, rendimiento y seguridad,
+Pages, actualización PWA segura con versionado y retorno, y manual de uso y guía de diagnóstico.
+
 ## Expedientes, entrega 6: biblioteca de casos y similitud explicada (3.80.0, 2026-10-17)
 
 Hecho: cada expediente lleva «Casos parecidos» con los demás del circuito (sin descartados),
@@ -635,13 +646,16 @@ de recepción por ese enlace, contra lo dicho el 2026-09-25 (R-DAT-020). Hasta q
 OQ-162, R-DAT-020 no se toca, el mapa de 3.64.0 sigue llamándose «lecturas que llegaron juntas» y
 no se escribe código del registro de conexiones. Los datos reales se quedaron fuera del repositorio.
 
-## Estado al 2026-09-27 (relevo a un chat nuevo)
+## Estado al 2026-10-17 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
 `project_state.json` y en `CHANGELOG.md`; lo que no esté escrito en el repositorio no existe para la
 conversación siguiente.
 
-- **Fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
+- **Fase F6** (piloto profesional), abierta el 2026-10-17 por el propietario (`CONTINÚA FASE 6`)
+  tras fusionar F5 con el PR #17 (`b0f527a`); F7 espera `CONTINÚA FASE 7` (G6). Lo primero de F6 es
+  leer `ROADMAP.md` §F6 y `PHASE_GATES.md` §G6 y proponer el orden de entregas al propietario.
+- Antes, **fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
   6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron
   juntas** (3.64.0) y **el registro de conexiones con su mapa de estado de conexión** (3.65.0,

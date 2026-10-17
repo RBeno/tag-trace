@@ -2,6 +2,22 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.81.0] - 2026-10-17
+
+**F6 abierta** por el propietario (`CONTINÚA FASE 6`), tras fusionar el PR #17 (3.67.1 a 3.80.1,
+`b0f527a`).
+
+### Gobierno
+
+- `docs/project_state.json` pasa a `F6 / Piloto profesional`, con `CONTINÚA FASE 7` como siguiente
+  transición (G6). La aprobación es del propietario; ninguna IA aprueba su propio cambio de fase.
+- `docs/PHASE_GATES.md` §G5: los seis criterios marcados por su orden, con la evidencia de 3.80.1. F5
+  queda cerrada. OQ-B05 (validación con datos reales y criterio de rechazo) sigue parcial y pasa a G6;
+  OQ-172 sigue abierta.
+- `README.md` decía «Fase 4»; ahora dice F6, como `project_state.json`. `CLAUDE.md` y el relevo de
+  `PROJECT_MEMORY.md`, al día.
+- Sin cambios de código: F6 (`ROADMAP.md` §F6) no tiene entregas todavía.
+
 ## [3.80.1] - 2026-10-17
 
 ### Gobierno
