@@ -126,8 +126,16 @@ function sectionOf(button: HTMLElement): string {
  * antes; «Ver los mismos datos en tabla» se abrevia a «Tabla» y el texto largo queda como
  * `aria-label` y `title`, que es lo que leen el lector de pantalla y el tooltip.
  */
+/** Qué tabla construye cada botón del cajón: el informe (UX_SPEC §4.8) la monta sin abrir el cajón. */
+const builders = new WeakMap<Element, { readonly label: string; readonly build: () => HTMLElement }>();
+
+export function drawerBuilder(button: Element): { readonly label: string; readonly build: () => HTMLElement } | undefined {
+  return builders.get(button);
+}
+
 export function tableDrawer(label: string, build: () => HTMLElement): HTMLButtonElement {
   const button = node("button", "drawer-open");
+  builders.set(button, { label, build });
   button.type = "button";
   const short = label === "Ver los mismos datos en tabla" ? "Tabla" : label;
   button.append(tableIcon(), " ", node("span", undefined, short));

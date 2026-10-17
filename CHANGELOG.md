@@ -2,6 +2,37 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.72.0] - 2026-10-17
+
+El propietario: el Resumen «tiene que ser claro, funcional y profesional, con un botón para generar
+un informe con los datos descubiertos» eligiendo qué entra, y pidió mirar «otros programas,
+productos profesionales, estudios de interfaz, hombre-máquina, atención y psicología». Lo revisado y
+lo que se aplica está en `UX_SPEC.md` §4.8.
+
+### Añadido
+
+- **Frase de estado** al abrir el Resumen: la conclusión en una línea antes de las cifras (FR-028),
+  con tono solo si hay riesgo (ISA-101: el color se reserva a lo anormal) y el contexto debajo:
+  cobertura, AGV en el circuito, avisos y hallazgos revisados. Se rehace con cada marca de revisión.
+- **Saltos locales** —Avisos, Anillo, Hallazgos— y el botón **«Generar informe…»**.
+- **Informe del circuito** (FR-026): un cuadro para elegir secciones (la WiFi solo con registro),
+  qué hallazgos (todos con su estado, o solo un estado) y si va el anexo de tablas; genera un solo
+  fichero HTML autocontenido montado desde lo que la pantalla enseña, con la hoja de estilo
+  embebida, los gráficos como imagen o SVG, la conclusión primero, los avisos, los hallazgos por rango
+  con su revisión en campo, las secciones elegidas y la trazabilidad (circuito, fecha, cobertura,
+  ficheros, memoria vigente, versión). Nada sale del dispositivo; «Imprimir → PDF» lo convierte.
+- **Hoja de impresión** de la propia página: la pestaña activa sin barras ni controles.
+
+### Pruebas
+
+- Los recorridos de revisión de las pruebas de navegador (`plano`, `memoria`, `concurrencia`,
+  `valores-planta`, `vistas-diagnostico`) abren el pliegue de limpieza y contexto antes de marcar: desde 3.70.0 esas
+  tarjetas no se pueden pulsar sin abrirlo, como le pasaría a la persona.
+
+### Documentación
+
+- `UX_SPEC.md` §2 y §4.8 nueva (con las referencias y las sugerencias pendientes); `INCIDENTS_REPORTING.md` §8; TC-336 y TC-337; `TRACEABILITY_MATRIX.md`.
+
 ## [3.71.0] - 2026-10-17
 
 Cuarta y última entrega de la organización de TAG TRACE (propietario, 2026-10-17: «quiero orden para

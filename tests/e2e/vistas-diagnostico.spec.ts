@@ -298,7 +298,10 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await openTab(page, "Resumen");
     await page.locator("#source-file").setInputFiles([]);
     await page.locator("#source-file").setInputFiles({ name: "tardio.csv", mimeType: "text/csv", buffer: late });
-    await expect(page.locator(".finding", { hasText: "cambio entre periodos" }).first()).toBeVisible({ timeout: 180_000 });
+    // Es un hallazgo de rango 3, que va plegado (3.70.0): se espera a que exista y se abre el pliegue para verlo.
+    await expect(page.locator(".finding", { hasText: "cambio entre periodos" }).first()).toBeAttached({ timeout: 180_000 });
+    await page.locator("details.tray-fold").evaluateAll((folds) => folds.forEach((fold) => ((fold as HTMLDetailsElement).open = true)));
+    await expect(page.locator(".finding", { hasText: "cambio entre periodos" }).first()).toBeVisible();
     await openTab(page, "Tags");
     await expect(page.getByRole("heading", { name: "Cambios entre los dos periodos" })).toBeVisible();
 

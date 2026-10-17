@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.51.0
+version: 0.52.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -31,7 +31,7 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 
 | Pestaña | Qué contiene |
 |---|---|
-| **Resumen** | La **portada** (3.49.0): la tira de siete cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta, línea y memoria—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), los **avisos** (§4.6, 3.70.0: lo que falta, contradice o no se pudo usar, cada uno con el enlace a su sitio), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. Es el puesto de mando (propietario, 2026-10-17): lo importante a la vista y, desde cada cosa, directo a donde se detalla. |
+| **Resumen** | La **portada** (3.49.0): primero la **frase de estado** con sus saltos y el botón «Generar informe…» (§4.8, 3.72.0), la tira de siete cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta, línea y memoria—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), los **avisos** (§4.6, 3.70.0: lo que falta, contradice o no se pudo usar, cada uno con el enlace a su sitio), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. Es el puesto de mando (propietario, 2026-10-17): lo importante a la vista y, desde cada cosa, directo a donde se detalla. |
 | **Tags** | **«Problemas detectados»** (§4.7) y después, los problemas primero (3.71.0): «Lo que hay que mirar» (tags), rotura y degradación de cada tag, mapa de omisión, cambios de tag, tags leídos fuera de la lista, limpieza de la lista, contraste contra Vsystem, orden del circuito según las lecturas, comparación entre dos periodos; y al final, como contexto, el inventario de tags. |
 | **AGV** | **«Problemas detectados»** (§4.7) y después, los fallos de cada AGV primero (3.71.0): lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; **AGV que dejan de leer** (hasta 3.70.1 en Línea y calles: es un fallo del vehículo y aquí es donde se detalla); ritmo de cada AGV y quién retiene; y como contexto la flota del circuito, la flota en el circuito y la vida de cada AGV (con las paradas de la producción y los primeros de cola); y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
 | **WiFi** | Solo con registro de conexiones (DS-013, ADR-0017): el estado de conexión del circuito —cortes en la ventana por clase, cortes colectivos, el contraste con las ráfagas (OQ-159), el mapa de estado de conexión con su selector de clase, los sitios donde se pierde la señal más de lo que da el azar, los terminales ruidosos, los que no reconectan, los AGV que pierden la señal más que el resto y el registro por AGV—. Hasta 3.68.0 era una subsección de Tiempos; ahí queda «El estado de conexión está en WiFi», o, sin registro, por qué no hay nada que enseñar. |
@@ -354,6 +354,42 @@ sección que lo detalla y le deja el foco. Las tarjetas no se repiten: siguen en
 (`buildTray` → `renderProblemIndex`), así que cuenta exactamente lo mismo. Sin hallazgos en la pestaña,
 lo dice. Las secciones de cada pestaña van después en el orden de §2: los problemas primero y el
 contexto (inventario, flota) al final.
+
+## 4.8 Frase de estado, saltos e informe
+
+**Referencias que lo fundan** (revisadas el 2026-10-17 a petición del propietario: «busca en otros
+programas, estudios de interfaz, de hombre-máquina y de atención»): la HMI de alto rendimiento
+(ISA-101) pone en el nivel 1 la visión general con las alarmas prioritarias y reserva el color
+saturado a lo anormal —«una planta sana no tiene color»—; Stephen Few pide lo importante en una sola
+pantalla, con la conclusión y sin píxeles sin dato; Endsley distingue percibir (las cifras), comprender
+(qué significan) y proyectar (la evolución); Shneiderman, «visión general, acercar, detalle a demanda»;
+y los analizadores de planta (Fluke Power Log, LinkWare) montan el informe eligiendo secciones y lo
+imprimen a PDF. De ahí las cuatro piezas de 3.72.0:
+
+- **La frase de estado** (`p.status[role=status]`), lo primero del Resumen tras el título: la
+  conclusión en una línea (FR-028), con el tono solo si hay riesgo —`status-alerta` con rango 1
+  pendiente, `status-atencion` con rango 2, nada en lo demás— y debajo el contexto en gris: cobertura,
+  AGV en el circuito, avisos y hallazgos revisados. Se rehace con cada marca de revisión. El texto sale
+  de `statusSentence` (`report-text.ts`), probado sin navegador.
+- **Los saltos locales** (`nav.local-jumps`): Avisos, Anillo y Hallazgos desplazan dentro del Resumen; a
+  la derecha, **«Generar informe…»**.
+- **El informe** (FR-026): un cuadro (`dialog.report-dialog`) con las secciones disponibles marcadas
+  (la WiFi solo con registro), el filtro de hallazgos (todos con su estado, o solo un estado) y el anexo
+  de tablas, apagado por defecto porque puede ser largo. Genera **un solo fichero HTML autocontenido**
+  (`informe-<circuito>-AAAA-MM-DD-HHMM.html`) montado **desde lo que la pantalla enseña** (`report.ts`:
+  copia limpia de cada pestaña, sin botones ni enlaces, `canvas` como imagen, `details` abiertos, las
+  tablas del cajón construidas con su mismo constructor), con la hoja de estilo de la aplicación
+  embebida y una de impresión: cabecera con circuito, fecha, cobertura, ficheros, memoria vigente,
+  versión y lo elegido; **Conclusión** (la frase de estado y las cifras); **Avisos**; **Hallazgos** por
+  rango, cada tarjeta con «Revisión en campo: ✓ Confirmado — nota»; las secciones elegidas; y el pie de
+  trazabilidad. Nada sale del dispositivo (descarga por `Blob`, NFR-001); «Imprimir → Guardar como PDF»
+  lo convierte. Es una instantánea: el análisis sigue vivo en la aplicación.
+- **Hoja de impresión de la propia página**: imprime la pestaña activa sin barras, botones ni
+  controles, con los pliegues abiertos.
+
+Sugerido y no hecho, para cuando el propietario lo pida: atajos de teclado 1–8 para las pestañas,
+recordar la última pestaña y el último filtro, miniaturas de tendencia en los tiles con varias
+instantáneas, y una pantalla vacía que guíe los tres pasos (lecturas → listas → conexiones).
 
 ## 5. Grafo y plano
 

@@ -68,6 +68,8 @@ async function prepareCircuit(page: Page): Promise<void> {
  * quede como normal y no como incidencia.
  */
 async function reviewAll(page: Page): Promise<number> {
+  // Limpieza y contexto va plegado (UX_SPEC §4.5, 3.70.0): se abre para revisar también lo de dentro.
+  await page.locator("details.tray-fold").evaluateAll((folds) => folds.forEach((fold) => ((fold as HTMLDetailsElement).open = true)));
   const cards = page.locator(".finding.reviewable");
   const total = await cards.count();
   for (let index = 0; index < total; index += 1) {
@@ -306,6 +308,8 @@ test.describe("memoria consolidada", () => {
     await prepareCircuit(page);
     // `periodo-1` con listas tiene un AGV que deja de leer (rango 1). Se confirma; el resto de rango 1
     // se descarta y lo demás se confirma, para que la única incidencia sea esa.
+    // Limpieza y contexto va plegado (UX_SPEC §4.5, 3.70.0): se abre para revisar también lo de dentro.
+    await page.locator("details.tray-fold").evaluateAll((folds) => folds.forEach((fold) => ((fold as HTMLDetailsElement).open = true)));
     const cards = page.locator(".finding.reviewable");
     const total = await cards.count();
     let abandoned = 0;
@@ -352,6 +356,8 @@ test.describe("memoria consolidada", () => {
     await freshPage(page);
     await prepareCircuit(page);
     // Como en la prueba anterior: la única incidencia es el AGV que deja de leer.
+    // Limpieza y contexto va plegado (UX_SPEC §4.5, 3.70.0): se abre para revisar también lo de dentro.
+    await page.locator("details.tray-fold").evaluateAll((folds) => folds.forEach((fold) => ((fold as HTMLDetailsElement).open = true)));
     const cards = page.locator(".finding.reviewable");
     const total = await cards.count();
     for (let index = 0; index < total; index += 1) {

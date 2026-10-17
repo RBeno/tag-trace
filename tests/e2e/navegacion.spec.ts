@@ -103,6 +103,40 @@ test.describe("pestañas y bandeja de hallazgos", () => {
     expect(await fold.locator(".tray-group[data-rank='3']").count()).toBe(1);
     expect(await tray.locator(".tray-group[data-rank='1'] h3.tray-rank").count()).toBe(1);
 
+    // La conclusión antes de las cifras (3.72.0, FR-028): una frase de estado con su contexto, y los
+    // saltos locales. Con el circuito de auditoría hay rango 1 pendiente, así que es alerta.
+    const estado = page.locator(".status-host .status");
+    await expect(estado).toHaveText(/pueden parar la planta o perder una función/);
+    await expect(estado).toHaveClass(/status-alerta/);
+    await expect(page.locator(".status-host .status-detail")).toHaveText(/cobertura de .* · .*hallazgos revisados\./);
+    await page.locator(".local-jumps").getByRole("button", { name: "Hallazgos" }).click();
+    await expect(page.getByRole("heading", { name: "Hallazgos", exact: true })).toBeInViewport();
+
+    // «Generar informe…» (3.72.0, FR-026): el cuadro deja elegir secciones y hallazgos; el fichero es un
+    // HTML autocontenido con la conclusión, los avisos, los hallazgos con su estado y las secciones
+    // elegidas, sin nada que salga del dispositivo.
+    await page.locator(".local-jumps").getByRole("button", { name: "Generar informe…" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "Generar informe" })).toBeVisible();
+    await expect(dialog.locator("input[name='section'][value='wifi']")).toBeDisabled();
+    await dialog.locator("input[name='section'][value='tiempos']").uncheck();
+    const [informe] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "Generar y descargar" }).click()]);
+    expect(informe.suggestedFilename()).toMatch(/^informe-auditoria-\d{4}-\d{2}-\d{2}-\d{4}\.html$/);
+    const { readFileSync } = await import("node:fs");
+    const html = readFileSync(await informe.path(), "utf8");
+    expect(html).toContain("<h1>Circuito «auditoria»</h1>");
+    expect(html).toContain('<section id="conclusion">');
+    expect(html).toContain('id="avisos"');
+    expect(html).toContain('id="hallazgos"');
+    expect(html).toContain('id="seccion-tags"');
+    expect(html).toContain('id="seccion-agv"');
+    expect(html).not.toContain('id="seccion-tiempos"');
+    expect(html).toContain("Revisión en campo: ○ Pendiente");
+    expect(html).not.toMatch(/<(script|link|img)[^>]+(src|href)="https?:/);
+    expect(html).not.toContain("<button");
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Informe generado" })).toBeVisible();
+
     // Los avisos del Resumen: lo que falta o no se pudo usar, con el enlace a su sitio (3.70.0). Sin
     // registro de conexiones, lo dice y lleva a Datos.
     const avisos = page.locator(".notices-host");

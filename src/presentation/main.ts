@@ -32,6 +32,9 @@ import {
   plainTable,
   scrollBox, plural } from "./charts.js";
 import { closeDrawer } from "./drawer.js";
+import { openReportDialog, type ReportSource } from "./report.js";
+import { statusSentence, type Status } from "./report-text.js";
+import { APP_VERSION } from "../application/version.js";
 import { changedTagsOf, deltaAround, evolutionDataOf, evolutionSection, ringDataFromSnapshot, sourceStatusList, timeControl } from "./evolution.js";
 import type { CircuitSnapshot } from "../domain/snapshot.js";
 import { FLEET_STRUCTURE } from "../domain/fleet.js";
@@ -1838,8 +1841,11 @@ function renderViews(views: CircuitViews): void {
       ? `1 circuito de ${describe(views.cohorts[0])}`
       : `${views.cohorts.length} circuitos detectados en el mismo fichero: ` +
         views.cohorts.map(describe).join("; ");
-  // La portada (UX_SPEC §2): la tira de cifras, la composición y el anillo con capas. Las cifras se
-  // rellenan al final, cuando la bandeja ya existe: el tile de hallazgos cuenta sus tarjetas.
+  // La portada (UX_SPEC §2): la conclusión en una frase y los saltos (§4.8), la tira de cifras, la
+  // composición y el anillo con capas. Las cifras y la frase se rellenan al final, cuando la bandeja ya
+  // existe: cuentan sus tarjetas.
+  statusHost = element("div", "status-host");
+  out.append(statusHost);
   out.append(tiles);
   out.append(element("h3", undefined, "Composición del circuito"));
   out.append(element("p", "muted", cohortLine));
@@ -1962,8 +1968,10 @@ function renderViews(views: CircuitViews): void {
   renderNotices(views);
   reviewSession?.refresh();
   renderTiles(views);
+  renderStatus(views);
   reviewSession?.onChange(() => {
     renderFindingsTile();
+    renderStatus(views);
     // La lista de condiciones de «Consolidar periodo» cuenta las tarjetas de la bandeja.
     memoryPanel.refresh();
   });
@@ -5361,6 +5369,93 @@ function applyTrayFilter(): void {
     const fold = group.closest<HTMLElement>(".tray-fold");
     if (fold !== null) fold.hidden = visible === 0;
   }
+}
+
+// --- La frase de estado, los saltos y el informe (UX_SPEC §4.8) -----------------------------------
+
+let statusHost: HTMLElement | null = null;
+let currentStatus: Status | null = null;
+
+/**
+ * La conclusión antes de las cifras (FR-028), en una frase con el tono reservado al riesgo; debajo, el
+ * contexto y los saltos locales —Avisos, Anillo, Hallazgos— y el botón del informe. Se rehace con cada
+ * marca de revisión: lo pendiente es lo que cuenta.
+ */
+function renderStatus(views: CircuitViews): void {
+  const host = statusHost;
+  if (host === null) return;
+  host.replaceChildren();
+  const cards = [...tray.querySelectorAll<HTMLElement>(".finding.reviewable")];
+  const pending = (rank: string): number =>
+    cards.filter((card) => card.closest<HTMLElement>(".tray-group")?.dataset["rank"] === rank && (card.dataset["review"] ?? "pendiente") === "pendiente").length;
+  const reviewed = cards.filter((card) => (card.dataset["review"] ?? "pendiente") !== "pendiente").length;
+  const notices = noticesHost?.querySelectorAll(".notices li").length ?? 0;
+  const coverageHours = state.coverage.length === 0 ? null : state.coverage.reduce((sum, span) => sum + Math.max(0, span.to - span.from), 0) / 3_600_000;
+  const last = views.fleet.counts[views.fleet.counts.length - 1];
+  const status = statusSentence({
+    pendingRank1: pending("1"),
+    pendingRank2: pending("2"),
+    totalFindings: cards.length,
+    reviewed,
+    notices,
+    coverageHours,
+    agvInCircuit: last?.inCircuit ?? null,
+    agvAssigned: last?.assigned ?? null,
+  });
+  currentStatus = status;
+  const headline = element("p", `status status-${status.tone}`, status.headline);
+  headline.setAttribute("role", "status");
+  host.append(headline, element("p", "muted status-detail", status.detail));
+
+  const jumps = element("nav", "local-jumps");
+  jumps.setAttribute("aria-label", "Saltos del Resumen");
+  const jump = (label: string, go: () => void): void => {
+    const button = element("button", undefined, label);
+    button.type = "button";
+    button.addEventListener("click", go);
+    jumps.append(button);
+  };
+  jump("Avisos", () => noticesHost?.scrollIntoView({ block: "start" }));
+  jump("Anillo", () => jumpTo("resumen", "Anillo del circuito"));
+  jump("Hallazgos", () => trayPanel.scrollIntoView({ block: "start" }));
+  const report = element("button", "primary", "Generar informe…");
+  report.type = "button";
+  report.addEventListener("click", () =>
+    openReportDialog(
+      () => reportSource(views),
+      (name) =>
+        showMessage("info", "Informe generado", [
+          `Descargado como «${name}». Se abre en cualquier navegador sin red; «Imprimir → Guardar como PDF» lo convierte en PDF.`,
+        ]),
+    ),
+  );
+  jumps.append(report);
+  host.append(jumps);
+}
+
+/** Lo que el informe necesita de la página: las pestañas tal como están, la bandeja y la trazabilidad. */
+function reportSource(views: CircuitViews): ReportSource {
+  const panelOf = (id: TabId): HTMLElement => viewsOf.get(id) as HTMLElement;
+  return {
+    circuitId: state.circuitId ?? "circuito",
+    appVersion: APP_VERSION,
+    coverage: state.coverage,
+    files: views.snapshots.list.map((entry) => entry.fileName),
+    memoryVersion: views.memory?.current ?? null,
+    status: currentStatus ?? statusSentence({ pendingRank1: 0, pendingRank2: 0, totalFindings: 0, reviewed: 0, notices: 0, coverageHours: null, agvInCircuit: null, agvAssigned: null }),
+    tiles,
+    notices: noticesHost,
+    tray,
+    sections: [
+      { id: "tags", label: "Tags", panel: panelOf("tags"), available: true },
+      { id: "agv", label: "AGV", panel: panelOf("agv"), available: true },
+      { id: "wifi", label: "WiFi", panel: panelOf("wifi"), available: views.connections !== undefined },
+      { id: "tiempos", label: "Tiempos", panel: panelOf("tiempos"), available: true },
+      { id: "linea", label: "Línea y calles", panel: panelOf("linea"), available: true },
+      { id: "memoria", label: "Memoria", panel: tabPanels.get("memoria") as HTMLElement, available: true },
+    ],
+    formatInstant,
+  };
 }
 
 // --- Avisos del Resumen (UX_SPEC §4.6) -------------------------------------------------------------

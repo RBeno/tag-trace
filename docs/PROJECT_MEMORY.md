@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.54.0
+version: 0.55.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -443,7 +443,11 @@ distinta** («una función puede pertenecer a un área»): listas distintas y et
 «Declarado en planta». **Y la cuarta** (3.71.0): «Problemas detectados» al principio de Tags, AGV y WiFi,
 Tags y AGV con los problemas primero y el contexto al final, y «AGV que dejan de leer» en AGV. Las
 cuatro entregas están hechas; la interfaz coherente que `ROADMAP.md` ponía en F6 queda adelantada en
-lo que el propietario pidió. Lo que ya existía y se conserva: la bandeja del
+lo que el propietario pidió. Después (3.72.0) pidió un Resumen «claro, funcional y profesional» con
+botón de informe y una revisión de referencias (ISA-101, Few, Endsley, Shneiderman, Fluke): frase de
+estado antes de las cifras, saltos locales, **informe HTML autocontenido** por secciones con los
+hallazgos y su revisión (FR-026) y hoja de impresión. Las sugerencias no hechas están en `UX_SPEC.md`
+§4.8. Lo que ya existía y se conserva: la bandeja del
 Resumen con «Ver evidencia», la línea «Declarado en planta» solo en tarjetas con hallazgo y en el
 expediente.
 

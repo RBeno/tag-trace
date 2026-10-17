@@ -334,6 +334,31 @@ table.data th { color: var(--muted); font-weight: 600; }
 .tray-fold > summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 0; }
 .notices { margin: 4px 0 12px; padding-left: 1.2em; }
 .problem-index { margin: 0 0 12px; padding: 6px 10px; border-left: 3px solid var(--line); }
+/* La frase de estado (UX_SPEC §4.8): la conclusión antes de las cifras; el color solo con riesgo. */
+.status-host { margin: 0 0 16px; }
+.status { font-size: 1.15rem; font-weight: 600; margin: 0; line-height: 1.35; }
+.status-alerta { color: var(--viz-accent); }
+.status-detail { margin: 2px 0 10px; }
+.local-jumps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.local-jumps button { border-radius: 999px; padding: 6px 14px; }
+.local-jumps button.primary { margin-left: auto; font-weight: 600; border-color: var(--viz-series); color: var(--viz-series); }
+.report-dialog { max-width: 560px; width: calc(100% - 32px); border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); padding: 20px; }
+.report-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.report-dialog h2 { margin: 0 0 6px; }
+.report-dialog fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 12px 0; padding: 8px 12px; }
+.report-dialog legend { color: var(--muted); font-size: 0.85rem; padding: 0 4px; }
+.report-option { display: block; margin: 6px 0; }
+.report-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.report-actions .primary { font-weight: 600; border-color: var(--viz-series); color: var(--viz-series); }
+@media print {
+  .bar .subtitle, .tabs, .review-host, .local-jumps, .findings-elsewhere, .theme-filter, .review, .drawer, .drawer-open,
+  .picker, input, select, button, .tab-empty, .report-dialog { display: none !important; }
+  .panel, .tabpanel { border: none; box-shadow: none; padding: 0; background: transparent; }
+  .tray-fold > summary { display: none; }
+  .tray-fold:not([open]) > .tray-group { display: block; }
+  figure.chart, .finding { break-inside: avoid; }
+  body { background: #fff; color: #000; }
+}
 .problem-list { margin: 4px 0; padding-left: 1.2em; }
 .problem-list li { margin: 4px 0; }
 .problem-list li[data-rank="1"] strong { color: var(--accent, inherit); }
