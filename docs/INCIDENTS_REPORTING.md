@@ -1,6 +1,6 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.6.0
+version: 0.7.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -132,5 +132,7 @@ Desde 3.72.0 existe el **informe del circuito** (FR-026, `UX_SPEC.md` §4.8): un
 ## 9. Relación con consolidación
 
 - Crear, guardar o cerrar una incidencia no altera la memoria normal.
-- El periodo marcado como incidencia queda excluido del entrenamiento del esperado por defecto.
+- El periodo marcado como incidencia queda excluido del entrenamiento del esperado por defecto. Desde
+  3.76.0 (ADR-0018 D5) la previsualización de la consolidación propone la ventana de cada expediente
+  no descartado que toque el fichero como incidencia excluida, y la persona la puede soltar.
 - Un aprendizaje general puede proponerse posteriormente como cambio de regla/configuración, pero requiere una decisión y consolidación separadas.

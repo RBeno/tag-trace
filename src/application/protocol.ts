@@ -256,6 +256,11 @@ export interface ConsolidateMessage {
    */
   readonly cuts?: readonly { readonly incidentKey: string; readonly from: number; readonly to: number; readonly agvId?: string }[];
   /**
+   * Los expedientes cuya ventana la persona **no** quiere excluir del esperado (ADR-0018 D5), por su
+   * identificador, en `preview` y en `commit`. Por defecto se excluye la de todos los no descartados.
+   */
+  readonly releasedCases?: readonly string[];
+  /**
    * Solo en `commit`: la huella (`previewFingerprint`) de la previsualización que la persona vio y
    * confirmó. El Worker rehace la previsualización desde el almacén y, si su huella no coincide,
    * responde `error` sin escribir: lo confirmado tiene que ser lo que se enseñó.

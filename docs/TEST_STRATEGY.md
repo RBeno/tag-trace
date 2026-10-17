@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.75.0
+version: 0.76.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -393,6 +393,8 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-342 | Retroceso: casos pequeños (`case-backtrack.test.ts`, ALG-015) | Un recorte sin contexto (`recorte-1`) no busca desviaciones ni silencios y lo dice, igual que la falta de registro de conexiones; con contexto, el turno de las 14:00 cae en su fase (durante el síntoma, sin relación), un AGV que salta de tag tras 20 min es un silencio con su distancia por el anillo, uno que no vuelve a leer lo es hasta el final de la ventana, y los pares dicen quién no lee; un síntoma sin tags y un tag que nadie lee lo dicen; ningún texto afirma una causa |
 | TC-343 | Caso de oro TC-012 (`case-backtrack.test.ts`, `caso-punto-critico.ts`) | Ver `golden/TC-012-punto-critico-sin-llegada.md`: último y primer paso por `71018`, primera desviación en `205` de `71012` a `71013` a seis tags, corte de WiFi de `207` con su fila, todo lo anterior `precede` y nada más, más de un tipo de hecho que precede, determinista en cualquier orden |
 | TC-344 | Navegador: TC-012 de punta a punta (`expedientes.spec.ts`) | Se importa el escenario y el registro de conexiones de `207`, se revisa y consolida v1, se crea el expediente: la cronología sale frente al esperado de v1 («por encima de lo esperado en ese tramo»), con la primera desviación marcada, el corte de WiFi y «precede», sin relación durante el síntoma, sin vocabulario causal; se conserva igual al recargar y nada fuera de los expedientes cambia |
+| TC-345 | Expedientes propuestos al consolidar (`memory.test.ts`, ADR-0018 D5, R-INC-004) | Un expediente que toca el fichero se propone marcado y entra como incidencia `expediente|<id>` con su ventana recortada al fichero, su AGV, su tag y los tramos de entrada y salida; soltado, no excluye nada; uno fuera del fichero no se propone; sin tags no toca el grafo; soltar cambia la huella; la versión guarda la incidencia |
+| TC-346 | Navegador: D5 (`expedientes.spec.ts`) | El expediente aparece en «Expedientes del periodo» marcado y entre las incidencias excluidas; quitar la casilla apaga «Confirmar» con su aviso; volver a previsualizar lo suelta; marcado otra vez y consolidado, la versión guardada lleva `expediente|<id>` y el expediente no tiene revisiones nuevas |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las siete pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

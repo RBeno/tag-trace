@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.54.0
+version: 0.55.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -857,6 +857,13 @@ adoptados, 5 pendientes, 1 incidencia excluida»). La condición de incidencias 
 consolidar. Una incidencia enseña su ventana («de lun., 12:05 a lun., 12:40») y, si es de un AGV,
 «AGV X: no toca el grafo; queda registrada con su ventana»; un cambio que vuelve, «Se vio en vN y
 volvió…» (3.57.0).
+
+**Expedientes del periodo (3.76.0, ADR-0018 D5).** Antes de las incidencias, la previsualización lista
+los expedientes de incidencia cuya ventana cae en el fichero: identificador y título, estado y ventana,
+y la casilla «Excluir su ventana del esperado», marcada por defecto. Quitarla apaga «Confirmar y
+consolidar» y enseña «Vuelve a previsualizar con estos expedientes para confirmar»; el botón «Volver a
+previsualizar con estos expedientes» rehace la previsualización con lo elegido (y los recortes que haya).
+Los marcados aparecen también entre las incidencias excluidas, con su ventana y su recorte.
 
 **Recorte de ventana (3.58.0)**: cada incidencia con ventana ofrece «Recortar su ventana al
 consolidar» con «Desde» y «Hasta» (fecha y hora, dentro de la ventana del fichero) y «Volver a

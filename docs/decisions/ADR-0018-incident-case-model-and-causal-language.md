@@ -156,7 +156,7 @@ Un expediente descartado no propone exclusión en la consolidación (D5).
   queda fuera del esperado por defecto. Por eso, al previsualizar la siguiente consolidación, la
   ventana de cada expediente no descartado que caiga en el periodo aparece como **incidencia
   excluida propuesta** junto a las de R-INC-004, y la persona la mantiene o la quita. Es la
-  consolidación la que lee el expediente; el expediente nunca escribe la memoria.
+  consolidación la que lee el expediente; el expediente nunca escribe la memoria. **Hecho en 3.76.0.**
 
 ### D6. Lenguaje de causalidad y correlación
 

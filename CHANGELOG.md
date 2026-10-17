@@ -2,6 +2,26 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.76.0] - 2026-10-17
+
+El propietario pidió completar la parte pendiente de D5 antes de la entrega 3.
+
+### Añadido
+
+- **Expedientes del periodo al consolidar** (ADR-0018 D5, R-INC-004, `INCIDENTS_REPORTING.md` §9): la
+  previsualización propone la ventana de cada expediente no descartado que toca el fichero como
+  incidencia excluida —con su ventana recortada al fichero, su AGV y los tags que nombra con los tramos
+  que salen de ellos o llegan a ellos; sin tags, con su AGV o su ventana—. Cada uno lleva la casilla
+  «Excluir su ventana del esperado», marcada por defecto; quitarla apaga «Confirmar y consolidar» hasta
+  volver a previsualizar. Los soltados viajan en el `commit` (`releasedCases`) y entran en la huella de
+  la previsualización. La versión guarda la incidencia (`expediente|<id>`); el expediente no se escribe.
+  Los recortes de ventana de F4 valen también para estas incidencias.
+- Pruebas: TC-345 (unitaria) y TC-346 (navegador).
+
+### Cambiado
+
+- Las incidencias que nacen de un expediente no se ofrecen como punto de partida de otro expediente.
+
 ## [3.75.0] - 2026-10-17
 
 El propietario pidió la entrega 2 de ADR-0018 «teniendo en cuenta y adaptando todo el contenido a los

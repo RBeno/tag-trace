@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.57.0
+version: 0.58.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -424,6 +424,15 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## D5: expedientes propuestos al consolidar (3.76.0, 2026-10-17)
+
+El propietario pidió hacer D5 antes de la entrega 3. Hecho: la previsualización de la consolidación
+propone la ventana de cada expediente no descartado que toque el fichero como **incidencia excluida**
+(clave `expediente|<id>`), con su ventana recortada al fichero, su AGV y los tags que nombra con sus
+tramos; la persona la suelta quitando su casilla y volviendo a previsualizar, y lo soltado entra en la
+huella. La versión guarda la incidencia; el expediente no se escribe. Los recortes de ventana de F4
+valen también para ellas. Las incidencias de expediente no se ofrecen como punto de partida de otro.
+
 ## Expedientes, entrega 2: retroceso y caso de oro (3.75.0, 2026-10-17)
 
 El propietario pidió la entrega 2 «teniendo en cuenta y adaptando todo el contenido a los cambios
@@ -593,8 +602,8 @@ conversación siguiente.
   6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron
   juntas** (3.64.0) y **el registro de conexiones con su mapa de estado de conexión** (3.65.0,
   ADR-0017, secciones anteriores), ninguna un entregable de `ROADMAP.md` §F5. El trabajo propio de la fase
-  empezó con ADR-0018 (aceptado), su entrega 1 (3.74.0) y su entrega 2 (3.75.0); lo siguiente es la
-  entrega 3 (replay con esperado e incertidumbre) o D5. Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  empezó con ADR-0018 (aceptado), su entrega 1 (3.74.0) y su entrega 2 (3.75.0); D5 está hecho
+  (3.76.0); lo siguiente es la entrega 3 (replay con esperado e incertidumbre). Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
   (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
   antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**

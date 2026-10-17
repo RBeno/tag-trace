@@ -9,7 +9,7 @@
  *
  * La huella resume el contenido que la persona pudo leer en pantalla y que acaba en la versión:
  * fichero base, versión anterior (por su hash, no por su instantánea), número, delta, bloqueos,
- * avisos, decisiones, cambios clasificados, incidencias y recortes. Queda fuera lo que no es contenido:
+ * avisos, decisiones, cambios clasificados, incidencias, expedientes propuestos y recortes. Queda fuera lo que no es contenido:
  * el tamaño estimado y las notas sobre si se puede recortar. El hash es el semántico (INV-010): mismo
  * contenido, misma huella, en el hilo principal y en el Worker.
  */
@@ -29,6 +29,7 @@ export function fingerprintSubject(preview: ConsolidationPreview): Record<string
     decisions: preview.decisions,
     changes: preview.changes ?? null,
     incidents: preview.incidents ?? null,
+    proposedCases: preview.proposedCases ?? null,
     cuts: preview.cuts === undefined || preview.cuts.length === 0 ? null : preview.cuts,
   };
 }

@@ -319,4 +319,70 @@ test.describe("expedientes de incidencia", () => {
     await panel.locator(".case-item").first().locator("summary").click();
     expect(await panel.locator(".case-item").first().locator(".case-fact").allTextContents()).toEqual(facts);
   });
+
+  test("D5: la consolidación propone la ventana del expediente como incidencia excluida, y la persona la puede soltar", async ({ page }) => {
+    await freshPage(page);
+    await importInto(page, "d5", `${MEMORIA}periodo-1.csv`);
+    await openTab(page, "Línea y calles");
+    await createFromSymptom(page, "Sin paso por 0300", "2026-01-24T08:01", "2026-01-24T08:02");
+    const cases = page.locator(".cases-panel");
+    await expect(cases.locator(".cases-status")).toContainText("creado en borrador", { timeout: 15_000 });
+    const caseId = (await cases.locator(".case-item").first().getAttribute("data-case-id")) ?? "";
+    const caseRowsBefore = await caseRows(page);
+
+    await reviewAll(page);
+    await openTab(page, "Memoria");
+    const panel = page.locator(".memory-panel");
+    await panel.getByRole("button", { name: "Previsualizar v1" }).click();
+    const preview = panel.locator(".memory-preview");
+    await expect(preview).toBeVisible({ timeout: 15_000 });
+    const proposed = preview.locator(`.memory-case-list li[data-case-id="${caseId}"]`);
+    await expect(proposed).toContainText("Sin paso por 0300");
+    await expect(proposed).toContainText("borrador");
+    const keep = proposed.getByLabel("Excluir su ventana del esperado");
+    await expect(keep).toBeChecked();
+    // Entra como una incidencia más, con su ventana.
+    await expect(preview.locator(`.memory-incident-list li[data-key="expediente|${caseId}"]`)).toContainText(`Expediente ${caseId}`);
+
+    // Soltarlo apaga «Confirmar» hasta volver a previsualizar.
+    await keep.uncheck();
+    const confirm = preview.getByRole("button", { name: "Confirmar y consolidar" });
+    await expect(confirm).toBeDisabled();
+    await expect(preview.locator(".memory-case-hint")).toBeVisible();
+    await preview.getByRole("button", { name: "Volver a previsualizar con estos expedientes" }).click();
+    await expect(panel.locator(`.memory-case-list li[data-case-id="${caseId}"]`).getByLabel("Excluir su ventana del esperado")).not.toBeChecked({ timeout: 15_000 });
+    await expect(panel.locator(`.memory-incident-list li[data-key="expediente|${caseId}"]`)).toHaveCount(0);
+
+    // Se vuelve a marcar, se previsualiza y se consolida: la versión guarda la incidencia del expediente.
+    await panel.locator(`.memory-case-list li[data-case-id="${caseId}"]`).getByLabel("Excluir su ventana del esperado").check();
+    await panel.getByRole("button", { name: "Volver a previsualizar con estos expedientes" }).click();
+    await expect(panel.locator(`.memory-incident-list li[data-key="expediente|${caseId}"]`)).toHaveCount(1, { timeout: 15_000 });
+    await panel.getByRole("button", { name: "Confirmar y consolidar" }).click();
+    await expect(panel.locator(".memory-status")).toContainText("Versión v1 consolidada", { timeout: 15_000 });
+    const keys = await page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("tag-trace");
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const rows = await new Promise<{ gz?: Uint8Array; incidents?: { key: string }[] }[]>((resolve, reject) => {
+        const request = db.transaction("memory", "readonly").objectStore("memory").getAll();
+        request.onsuccess = () => resolve(request.result as { gz?: Uint8Array }[]);
+        request.onerror = () => reject(request.error);
+      });
+      db.close();
+      const out: string[] = [];
+      for (const row of rows) {
+        const version =
+          row.gz === undefined
+            ? row
+            : (JSON.parse(await new Response(new Blob([row.gz as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream("gzip"))).text()) as { incidents?: { key: string }[] });
+        for (const incident of version.incidents ?? []) out.push(incident.key);
+      }
+      return out;
+    });
+    expect(keys).toContain(`expediente|${caseId}`);
+    // El expediente no se escribió: la consolidación solo lo lee.
+    expect(await caseRows(page)).toBe(caseRowsBefore);
+  });
 });

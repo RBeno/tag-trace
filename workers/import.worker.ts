@@ -143,6 +143,7 @@ import type {
 } from "../src/application/protocol.js";
 import {
   addNote,
+  CASE_STATE_TEXT,
   caseSpan,
   contextText,
   CaseRefusal,
@@ -210,6 +211,7 @@ import {
   versionsOfLineage,
   withConsolidated,
   type ConsolidatedVersion,
+  type CaseExclusion,
   type ConsolidationPreview,
   type LineageState,
 } from "../src/domain/memory.js";
@@ -2334,6 +2336,7 @@ async function previewFor(
   circuitId: string,
   sourceId: string,
   requestedCuts: readonly IncidentCut[] = [],
+  releasedCases: readonly string[] = [],
 ): Promise<{
   readonly preview: ConsolidationPreview;
   readonly snapshot: CircuitSnapshot | null;
@@ -2385,6 +2388,9 @@ async function previewFor(
     { after: since, until: snapshot.window.to },
     current === null ? [snapshot] : [current.expected ?? current.snapshot, snapshot],
   );
+  // D5 (ADR-0018): los expedientes no descartados del circuito, para proponer su ventana como
+  // incidencia excluida. Solo se leen: la consolidación nunca escribe un expediente.
+  const cases = await caseExclusionsOf(circuitId);
   // Si se puede recortar: el original de este fichero está archivado (OQ-145).
   const archived = archive.some((entry) => entry.sourceHash === source.sourceHash);
   const cutState = archived ? { originalArchived: true } : { originalArchived: false, cutUnavailable: `${CUT_NEEDS_ORIGINAL}.` };
@@ -2398,6 +2404,8 @@ async function previewFor(
       thresholds: CONSOLIDATION_THRESHOLDS,
       history: history.map((entry) => (entry.sourceId === consolidated.sourceId ? consolidated : entry)),
       confirmedSubjects,
+      cases,
+      releasedCases,
       ...(cuts === undefined ? {} : { cuts }),
     });
   const preview = run(snapshot);
@@ -2440,7 +2448,7 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
   const readState = (state: LineageState): { readonly activeHashes: readonly string[] | null } => ({ activeHashes: state.active?.hashes ?? null });
   try {
     if (message.type === "consolidate") {
-      const { preview, snapshot, observed, state, cutWarnings: cutNotes } = await previewFor(circuitId, message.sourceId, message.cuts ?? []);
+      const { preview, snapshot, observed, state, cutWarnings: cutNotes } = await previewFor(circuitId, message.sourceId, message.cuts ?? [], message.releasedCases ?? []);
       const previewHash = await previewFingerprint(preview);
       if (message.mode === "preview") {
         emit({ type: "consolidation-preview", circuitId, preview, previewHash, ...(cutNotes.length === 0 ? {} : { cutWarnings: cutNotes }) }, jobId);
@@ -3137,6 +3145,32 @@ function lapAround(snapshots: readonly CircuitSnapshot[], at: number | null): nu
 }
 
 /**
+ * Los expedientes que la consolidación propone como incidencia excluida (ADR-0018 D5): todos los no
+ * descartados, con su ventana completa, su título, su estado y lo que nombran. Cuáles tocan el fichero
+ * lo decide `previewConsolidation`.
+ */
+async function caseExclusionsOf(circuitId: string): Promise<readonly CaseExclusion[]> {
+  const revisions = await loadCaseRevisions(circuitId);
+  const byCase = new Map<string, CaseRevision[]>();
+  for (const revision of revisions) byCase.set(revision.caseId, [...(byCase.get(revision.caseId) ?? []), revision]);
+  return [...byCase.values()]
+    .map((list) => currentRevision(list))
+    .filter((current) => current.state !== "Discarded")
+    .map((current) => {
+      const span = caseSpan(current.window);
+      return {
+        caseId: current.caseId,
+        title: current.title,
+        stateText: CASE_STATE_TEXT[current.state],
+        from: span.from,
+        to: span.to,
+        tagIds: current.tagIds,
+        agvId: current.agvId,
+      };
+    });
+}
+
+/**
  * Las vistas de los expedientes del circuito: cada uno con su revisión vigente, su historial, los
  * cambios de estado posibles y la integridad de su cadena; las incidencias excluidas de la versión
  * vigente para abrir uno desde ellas; y los márgenes de la configuración. Solo lee.
@@ -3176,7 +3210,8 @@ async function buildCaseViews(circuitId: string): Promise<CaseViews> {
   // El más reciente primero: por la fecha de su revisión vigente, y a igualdad por identificador.
   cases.sort((a, b) => b.current.createdAt - a.current.createdAt || (a.current.caseId < b.current.caseId ? -1 : 1));
   const version = currentVersion(memory.active);
-  const excluded = (version?.incidents ?? []).map((incident) => {
+  // Las incidencias que nacen de un expediente (D5) no se ofrecen como punto de partida de otro.
+  const excluded = (version?.incidents ?? []).filter((incident) => incident.kind !== "expediente").map((incident) => {
     const windows = incident.windows ?? (incident.window === undefined ? [] : [incident.window]);
     const from = windows.length === 0 ? null : Math.min(...windows.map((window) => window.from));
     const to = windows.length === 0 ? null : Math.max(...windows.map((window) => window.to));

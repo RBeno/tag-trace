@@ -125,8 +125,13 @@ export interface ConsolidationPreview {
   readonly estimatedBytes: number;
   /** Los cambios frente al esperado vigente con su clase; vacío en la primera versión. */
   readonly changes?: readonly ClassifiedChange[];
-  /** Las incidencias que se excluirán del esperado (OQ-148). */
+  /** Las incidencias que se excluirán del esperado (OQ-148), las de los expedientes incluidas (D5). */
   readonly incidents?: readonly IncidentRecord[];
+  /**
+   * Los expedientes de incidencia cuya ventana toca el periodo (ADR-0018 D5), con si su ventana se
+   * excluye del esperado (`kept`) o la persona la soltó. Ausente si no hay ninguno.
+   */
+  readonly proposedCases?: readonly ProposedCase[];
   /** Los recortes de ventana aplicados (OQ-148), con cuántas lecturas quitó cada uno. Ausente sin recortes. */
   readonly cuts?: readonly AppliedCut[];
   /**
@@ -135,6 +140,29 @@ export interface ConsolidationPreview {
    */
   readonly originalArchived?: boolean;
   readonly cutUnavailable?: string;
+}
+
+/** Un expediente que toca el periodo, tal como lo da quien previsualiza (ADR-0018 D5). */
+export interface CaseExclusion {
+  readonly caseId: string;
+  readonly title: string;
+  /** Su estado en palabras («investigando»…). */
+  readonly stateText: string;
+  /** La ventana del expediente con sus márgenes. */
+  readonly from: number;
+  readonly to: number;
+  readonly tagIds: readonly string[];
+  readonly agvId: string | null;
+}
+
+/** Un expediente propuesto en la previsualización, y si se excluye su ventana. */
+export interface ProposedCase extends CaseExclusion {
+  readonly kept: boolean;
+}
+
+/** La clave de la incidencia excluida que nace de un expediente. */
+export function caseIncidentKey(caseId: string): string {
+  return `expediente|${caseId}`;
 }
 
 export interface ConsolidationInput {
@@ -165,6 +193,13 @@ export interface ConsolidationInput {
    * esas lecturas. Solo se registran; la previsualización no recorta nada.
    */
   readonly cuts?: readonly AppliedCut[];
+  /**
+   * Los expedientes no descartados cuya ventana toca el fichero (ADR-0018 D5). Cada uno se propone como
+   * incidencia excluida, **salvo** los de `releasedCases`, que la persona soltó. El expediente no se
+   * escribe: la consolidación lo lee.
+   */
+  readonly cases?: readonly CaseExclusion[];
+  readonly releasedCases?: readonly string[];
 }
 
 /** El esperado de una versión: `expected` si lo guarda, o la instantánea (anteriores a 3.55.0, o idéntico). */
@@ -350,6 +385,28 @@ export function previewConsolidation(input: ConsolidationInput): ConsolidationPr
       };
     });
 
+  // D5 (ADR-0018): el periodo de un expediente queda fuera del esperado por defecto
+  // (`INCIDENTS_REPORTING.md` §9). Entra como una incidencia más, con su ventana recortada al fichero,
+  // su AGV y los tags que nombra (y los tramos que salen de ellos o llegan a ellos); sin tags, no toca el
+  // grafo y se registra con su AGV o su ventana, como R-INC-004. La persona la puede soltar.
+  const released = new Set(input.releasedCases ?? []);
+  const proposedCases: ProposedCase[] = (input.cases ?? [])
+    .filter((entry) => entry.from <= snapshot.window.to && entry.to >= snapshot.window.from)
+    .map((entry) => ({ ...entry, tagIds: [...entry.tagIds], kept: !released.has(entry.caseId) }))
+    .sort((a, b) => a.from - b.from || a.caseId.localeCompare(b.caseId));
+  for (const entry of proposedCases) {
+    if (!entry.kept) continue;
+    incidents.push({
+      key: caseIncidentKey(entry.caseId),
+      kind: "expediente",
+      title: `Expediente ${entry.caseId}: ${entry.title}`,
+      figure: entry.stateText,
+      subjects: entry.tagIds.length === 0 ? [] : incidentSubjectsOf("", snapshot, entry.tagIds),
+      window: { from: Math.max(entry.from, snapshot.window.from), to: Math.min(entry.to, snapshot.window.to) },
+      ...(entry.agvId === null ? {} : { agvId: entry.agvId }),
+    });
+  }
+
   const twin = versions.filter((version) => version.revoked === null && version.basedOn.sourceHash === snapshot.sourceHash);
   if (twin.length > 0) {
     blockers.push({
@@ -440,6 +497,7 @@ export function previewConsolidation(input: ConsolidationInput): ConsolidationPr
     estimatedBytes: 0,
     ...(changes === undefined ? {} : { changes }),
     incidents,
+    ...(proposedCases.length === 0 ? {} : { proposedCases }),
     ...(input.cuts === undefined || input.cuts.length === 0 ? {} : { cuts: input.cuts }),
   };
   const estimatedBytes = versionBytes({ ...provisional, ...expectationFields(shown, snapshot), ...(shown.cuts === undefined ? {} : { cuts: shown.cuts }) });

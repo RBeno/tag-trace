@@ -603,9 +603,18 @@ const memoryPanel = createMemoryPanel({
     trayPanel.tabIndex = -1;
     trayPanel.focus({ preventScroll: true });
   },
-  preview: (sourceId, cuts) => startMemory({ type: "consolidate", sourceId, mode: "preview", ...(cuts === undefined ? {} : { cuts }) }),
-  commit: (sourceId, note, cuts, previewHash) =>
-    startMemory({ type: "consolidate", sourceId, mode: "commit", previewHash, ...(note === null ? {} : { note }), ...(cuts === undefined ? {} : { cuts }) }),
+  preview: (sourceId, cuts, released) =>
+    startMemory({ type: "consolidate", sourceId, mode: "preview", ...(cuts === undefined ? {} : { cuts }), ...(released === undefined ? {} : { releasedCases: released }) }),
+  commit: (sourceId, note, cuts, previewHash, released) =>
+    startMemory({
+      type: "consolidate",
+      sourceId,
+      mode: "commit",
+      previewHash,
+      ...(note === null ? {} : { note }),
+      ...(cuts === undefined ? {} : { cuts }),
+      ...(released === undefined ? {} : { releasedCases: released }),
+    }),
   toDateTimeInput,
   fromDateTimeInput,
   revoke: (version, reason) => startMemory({ type: "revoke", version, reason }),
@@ -1429,6 +1438,7 @@ function startMemory(
         readonly mode: "preview" | "commit";
         readonly note?: string;
         readonly cuts?: readonly IncidentCut[];
+        readonly releasedCases?: readonly string[];
         readonly previewHash?: string;
       }
     | { readonly type: "revoke"; readonly version: number; readonly reason: string }
