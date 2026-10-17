@@ -1,6 +1,6 @@
 ---
 document_id: TT-PERF-001
-version: 0.8.0
+version: 0.9.0
 status: provisional-budget
 last_updated: 2026-10-17
 ---
@@ -128,11 +128,12 @@ de referencia y no cierra nada):
 | Paso del replay | — | — | 60 fps (el máximo que se cuenta) |
 | Confirmación de cancelación | — | **no se atendió** (15,8 s hasta acabar) | — |
 
-Dos hallazgos para la entrega 3: el tirón máximo crece con el volumen (más de un segundo en D3 y D4, al
-pasar los resultados del Worker y dibujarlos); y **«Cancelar» no se atiende mientras se leen las
-filas**: la lectura es síncrona dentro del Worker, el mensaje de cancelar no llega hasta que termina y
-los puntos de control nunca lo ven, así que la importación acaba entera. WP-004 prevé `terminate()` tras
-un plazo de cortesía y no está hecho.
+Dos hallazgos: el tirón máximo crece con el volumen (más de un segundo en D3 y D4, al pasar los
+resultados del Worker y dibujarlos), que es trabajo de la entrega 3; y **«Cancelar» no se atendía
+mientras se leían las filas**: la lectura es síncrona dentro del Worker, el mensaje de cancelar no
+llegaba hasta que terminaba y los puntos de control nunca lo veían, así que la importación acababa
+entera. Corregido en 3.83.1 con el plazo de cortesía de WP-004: la misma medida da ahora **501 ms**,
+dentro del segundo.
 
 ## 4. Modelo de memoria
 

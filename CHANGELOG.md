@@ -2,6 +2,19 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.83.1] - 2026-10-17
+
+### Corregido
+
+- **«Cancelar» no se atendía mientras se leían las filas** de una importación (encontrado por el banco de
+  medida en 3.83.0): la lectura es síncrona en el Worker y la petición llegaba cuando ya había terminado.
+  Ahora, como prevé WP-004, si la confirmación no llega en 500 ms y la importación todavía no ha empezado
+  a escribir, se detiene el Worker, que no había escrito nada, y el aviso lo dice. Antes de su primera
+  escritura el Worker atiende una cancelación pendiente y avisa con `saving`; desde ahí ya no se ofrece
+  «Cancelar» y la línea de progreso dice «Guardando en este dispositivo; ya no se puede cancelar». En el
+  banco, la confirmación pasa de no llegar (15,8 s hasta acabar) a 501 ms.
+- Prueba: TC-362 (navegador).
+
 ## [3.83.0] - 2026-10-17
 
 Entrega 2 de F6.

@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.66.0
+version: 0.67.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -423,6 +423,14 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## «Cancelar» corregido (3.83.1, 2026-10-17)
+
+Por orden del propietario («Arregla cancelar»): la importación avisa con `saving` antes de escribir;
+hasta entonces, si no atiende «Cancelar» en 500 ms, la interfaz detiene el Worker (WP-004, que lo
+preveía), y como no había escrito nada no se pierde nada. Antes de escribir, el Worker da paso a la cola
+y atiende una cancelación pendiente. Desde `saving`, «Cancelar» desaparece. Banco: 501 ms (antes, 15,8 s
+sin atender). Siguiente: entrega 3.
 
 ## F6, entrega 2: banco de medida (3.83.0, 2026-10-17)
 

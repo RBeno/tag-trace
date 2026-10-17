@@ -8,8 +8,8 @@
  * - el informe descargado es el JSON del banco, con la versión, el equipo y las mismas cifras, y sin
  *   nada que no sea el sintético;
  * - las cifras de este contenedor **no** son las del dispositivo de referencia: no se juzgan aquí.
- *   La cancelación sí se mira, porque es un hecho y no una cifra: hoy la lectura de filas no la
- *   atiende y el banco tiene que decirlo como «fuera», no como «sin medir».
+ *   La cancelación se juzga (dentro o fuera) y lleva cifra: si no se atendiera, el banco tiene que
+ *   decirlo como «fuera», no como «sin medir» (3.83.0 lo destapó; 3.83.1 lo corrige).
  */
 
 import { expect, test } from "@playwright/test";

@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.29.0
+version: 0.30.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -212,8 +212,8 @@ Criterio de rechazo (OQ-B05, propietario 2026-10-17): el piloto se rechaza si oc
 - [ ] Flujos esenciales en PC y móvil físico.
 - [ ] PERF-D2–D4 dentro de presupuesto aprobado. **Instrumento (3.83.0)**: «Medir este dispositivo» en la
       pestaña Datos mide los tres y descarga el informe (`PERFORMANCE_BUDGET.md` §3.2). Falta la medida del
-      propietario en Chrome del S23 FE y del PC de referencia (OQ-173). En el contenedor, la cancelación
-      no se atiende: hoy quedaría fuera.
+      propietario en Chrome del S23 FE y del PC de referencia (OQ-173). La cancelación, que en 3.83.0 no se
+      atendía, se confirma en 501 ms desde 3.83.1 (TC-362).
 - [ ] Accesibilidad esencial y errores recuperables.
 - [ ] Pruebas de ausencia de red y datos reales.
 - [ ] Actualización PWA no interrumpe tareas críticas. **Evidencia (3.82.0)**: la versión nueva queda en

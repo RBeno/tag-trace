@@ -145,6 +145,8 @@ interface State {
   plantValueJob: boolean;
   /** Una acción sobre un expediente (ADR-0018) espera respuesta del Worker. */
   caseJob: boolean;
+  /** Hay una importación en curso que todavía no ha empezado a escribir: se puede detener (WP-004). */
+  importStoppable: boolean;
   /** Los expedientes del circuito tal como llegaron por última vez, para el informe del circuito. */
   cases: CaseViews | null;
 }
@@ -169,6 +171,7 @@ const state: State = {
   planJob: false,
   plantValueJob: false,
   caseJob: false,
+  importStoppable: false,
   cases: null,
 };
 
@@ -1018,6 +1021,7 @@ function disposeWorker(): void {
   state.planJob = false;
   state.plantValueJob = false;
   state.caseJob = false;
+  state.importStoppable = false;
 }
 
 function handleMessage(message: FromWorker): void {
@@ -1036,6 +1040,13 @@ function handleMessage(message: FromWorker): void {
           : message.note;
       progressBar.value = message.total === 0 ? 0 : message.done / message.total;
       benchObserver?.progress(message.done, message.total);
+      return;
+
+    case "saving":
+      // Desde aquí la importación escribe: ya no se detiene, termina entera (WP-004).
+      state.importStoppable = false;
+      cancelButton.hidden = true;
+      progressNote.textContent = "Guardando en este dispositivo; ya no se puede cancelar";
       return;
 
     case "complete": {
@@ -1706,6 +1717,7 @@ function startImport(file: File, fieldOrder?: FieldOrder, withoutCircuit = false
   };
   state.file = file;
   worker.postMessage(start);
+  state.importStoppable = true;
 }
 
 /** Arranca la carga de listas. Mismo Worker y mismo protocolo: el parseo no vive aquí. */
@@ -1911,16 +1923,38 @@ fileInput.addEventListener("change", () => {
   if (file !== undefined) startImport(file);
 });
 
+/**
+ * Plazo de cortesía de la cancelación (WP-004, `WORKER_PROTOCOL.md` §5). La lectura de filas es
+ * síncrona y no atiende `cancel` hasta terminar; si en este plazo no llega `cancelled` y la
+ * importación todavía no ha empezado a escribir, se detiene el Worker: no había escrito nada. Es un
+ * tiempo de la interfaz, no un valor de planta, y deja la confirmación por debajo del segundo del
+ * presupuesto (`PERFORMANCE_BUDGET.md` §3).
+ */
+const CANCEL_GRACE_MS = 500;
+
 cancelButton.addEventListener("click", () => {
   if (state.worker === null || state.jobId === null) return;
   progressNote.textContent = "Cancelando…";
+  const jobId = state.jobId;
   const cancel: ToWorker = {
     type: "cancel",
     protocolVersion: PROTOCOL_VERSION,
-    jobId: state.jobId,
+    jobId,
     reason: "petición del usuario",
   };
   state.worker.postMessage(cancel);
+  if (!state.importStoppable) return;
+  setTimeout(() => {
+    // Ya contestó, terminó o empezó a escribir: no se toca.
+    if (state.jobId !== jobId || !state.importStoppable) return;
+    disposeWorker();
+    showMessage("info", "Importación cancelada", [
+      "No se ha cambiado nada.",
+      "El proceso auxiliar estaba leyendo las filas y no podía atender la petición, así que se ha detenido.",
+    ]);
+    setBusy(false);
+    benchObserver?.cancelled();
+  }, CANCEL_GRACE_MS);
 });
 
 // --- Proyecto: acumular en el dispositivo y llevárselo ----------------------

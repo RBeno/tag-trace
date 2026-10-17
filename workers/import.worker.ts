@@ -2026,6 +2026,18 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
     const plantEvents = message.circuitId === undefined || !isAvailable() ? [] : await loadPlantValues(message.circuitId);
     const circuitConfig = fileStart === null ? PROVISIONAL_CONFIG : resolveAnalysisConfig(PROVISIONAL_CONFIG, plantEvents, fileStart);
 
+    // La lectura de filas es síncrona: una cancelación pedida mientras tanto espera en la cola de
+    // mensajes. Se le da paso aquí, el último punto antes de escribir, y se atiende (WP-004).
+    if (message.circuitId !== undefined) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      if (cancelRequested) {
+        emit({ type: "cancelled", stage: "ordering" }, jobId);
+        return;
+      }
+      // Desde aquí se escribe: la interfaz ya no puede detener el Worker sin dejar algo a medias.
+      emit({ type: "saving" }, jobId);
+    }
+
     // La acumulación ocurre **después** de que la importación haya terminado del todo, y en una
     // sola transacción: cancelar a mitad no deja nada escrito (INV-006).
     const accumulated =

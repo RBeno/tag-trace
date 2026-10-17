@@ -1235,12 +1235,22 @@ export interface CancelledMessage extends Envelope {
   readonly stage: Stage;
 }
 
+/**
+ * La importación va a empezar a escribir en el almacén (WP-004). Hasta aquí no ha escrito nada y la
+ * interfaz puede detener el Worker si no atiende la cancelación; desde aquí ya no se cancela: la
+ * escritura termina entera.
+ */
+export interface SavingMessage extends Envelope {
+  readonly type: "saving";
+}
+
 export type FromWorker =
   | AcceptedMessage
   | ProgressMessage
   | CompleteMessage
   | ErrorMessage
   | CancelledMessage
+  | SavingMessage
   | ListsLoadedMessage
   | FleetLoadedMessage
   | FleetChooseCircuitMessage
