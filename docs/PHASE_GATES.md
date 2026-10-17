@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.32.0
+version: 0.33.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -217,7 +217,10 @@ Criterio de rechazo (OQ-B05, propietario 2026-10-17): el piloto se rechaza si oc
       propietario en Chrome del S23 FE y del PC de referencia (OQ-173). La cancelación, que en 3.83.0 no se
       atendía, se confirma en 501 ms desde 3.83.1 (TC-362). Desde 3.84.0 el peor hueco de fotograma baja
       de 1,3 s a ~0,1 s en PERF-D3 y D4 (`PERFORMANCE_BUDGET.md` §3.2).
-- [ ] Accesibilidad esencial y errores recuperables.
+- [ ] Accesibilidad esencial y errores recuperables. **Evidencia (3.86.0)**: axe-core sin infracciones WCAG 2.2
+      AA en las siete pestañas, en claro y oscuro, y en lo que se abre encima; teclado y foco visible
+      (TC-369). Cada estado de `UX_SPEC.md` §8 con su prueba, incluidos sin espacio y borrar un circuito
+      (TC-368). Falta una revisión con lector de pantalla en el dispositivo.
 - [ ] Pruebas de ausencia de red y datos reales.
 - [ ] Actualización PWA no interrumpe tareas críticas. **Evidencia (3.82.0)**: la versión nueva queda en
       espera y la activa la persona, nunca con una importación, análisis, exportación o consolidación en

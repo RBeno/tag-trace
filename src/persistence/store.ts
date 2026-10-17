@@ -446,12 +446,36 @@ function run<T>(store: IDBObjectStore, request: IDBRequest<T>): Promise<T> {
   });
 }
 
+/**
+ * Sin espacio en el dispositivo (`UX_SPEC.md` §8, F6 entrega 5). El navegador lo dice con
+ * `QuotaExceededError` al confirmar una escritura; aquí se convierte en un error con nombre propio y
+ * un texto que se puede enseñar, para que nadie lo lea como un defecto. La transacción que falla no
+ * deja nada escrito.
+ */
+export class StorageFullError extends Error {
+  constructor() {
+    super("No queda espacio en este dispositivo para guardar: lo de esta operación no se ha escrito.");
+    this.name = "StorageFullError";
+  }
+}
+
+/** ¿Es este error una falta de espacio? Por nombre: llega como `DOMException` desde el almacén. */
+export function isStorageFull(error: unknown): boolean {
+  return error instanceof StorageFullError || (typeof error === "object" && error !== null && (error as { name?: unknown }).name === "QuotaExceededError");
+}
+
+/** El error de una transacción fallida: la falta de espacio con su texto; lo demás, tal cual. */
+function writeFailure(error: DOMException | null, failure: string): Error {
+  if (isStorageFull(error)) return new StorageFullError();
+  return error ?? new Error(failure);
+}
+
 /** Espera a que una transacción de escritura termine; o queda todo lo escrito o no queda nada. */
 function settle(tx: IDBTransaction, failure: string): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error(failure));
-    tx.onabort = () => reject(tx.error ?? new Error(`${failure} La escritura se abortó.`));
+    tx.onerror = () => reject(writeFailure(tx.error, failure));
+    tx.onabort = () => reject(writeFailure(tx.error, `${failure} La escritura se abortó.`));
   });
 }
 
@@ -626,6 +650,59 @@ export async function deleteCircuit(circuitId: string): Promise<void> {
   }
 }
 
+/** Lo que se perdería al borrar un circuito, contado sin leer su contenido (`UX_SPEC.md` §8). */
+export interface CircuitInventory {
+  readonly exists: boolean;
+  readonly sources: number;
+  readonly snapshots: number;
+  readonly archived: number;
+  readonly memoryVersions: number;
+  readonly planEvents: number;
+  readonly plantValues: number;
+  readonly caseRevisions: number;
+  readonly cases: number;
+  readonly reviewed: number;
+}
+
+export async function circuitInventory(circuitId: string): Promise<CircuitInventory> {
+  const db = await open();
+  try {
+    const tx = db.transaction([CIRCUITS, REVIEWS, SOURCES, SNAPSHOTS, MEMORY, PLAN, ARCHIVE, PLANT_VALUES, INCIDENT_CASES], "readonly");
+    const count = (name: string): Promise<number> => {
+      const store = tx.objectStore(name);
+      return run(store, store.count(circuitRange(circuitId)));
+    };
+    const circuits = tx.objectStore(CIRCUITS);
+    const reviews = tx.objectStore(REVIEWS);
+    const cases = tx.objectStore(INCIDENT_CASES);
+    const [circuit, review, sources, snapshots, archived, memoryVersions, planEvents, plantValues, caseKeys] = await Promise.all([
+      run(circuits, circuits.get(circuitId) as IDBRequest<StoredCircuit | undefined>),
+      run(reviews, reviews.get(circuitId) as IDBRequest<StoredReviews | undefined>),
+      count(SOURCES),
+      count(SNAPSHOTS),
+      count(ARCHIVE),
+      count(MEMORY),
+      count(PLAN),
+      count(PLANT_VALUES),
+      run(cases, cases.getAllKeys(circuitRange(circuitId))),
+    ]);
+    return {
+      exists: circuit !== undefined,
+      sources,
+      snapshots,
+      archived,
+      memoryVersions,
+      planEvents,
+      plantValues,
+      caseRevisions: caseKeys.length,
+      cases: new Set(caseKeys.map((key) => (key as readonly unknown[])[1])).size,
+      reviewed: Object.keys(review?.entries ?? {}).length,
+    };
+  } finally {
+    db.close();
+  }
+}
+
 /** Las marcas de revisión de un circuito; vacías si nunca se ha marcado nada. */
 export async function loadReviews(circuitId: string): Promise<ReadonlyMap<string, ReviewEntry>> {
   const db = await open();
@@ -657,8 +734,8 @@ export async function saveReview(circuitId: string, key: string, entry: ReviewEn
         store.put({ circuitId, entries } satisfies StoredReviews);
       };
       tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error("No se pudo guardar la revisión."));
-      tx.onabort = () => reject(tx.error ?? new Error("La escritura de la revisión se abortó."));
+      tx.onerror = () => reject(writeFailure(tx.error, "No se pudo guardar la revisión."));
+      tx.onabort = () => reject(writeFailure(tx.error, "La escritura de la revisión se abortó."));
     });
   } finally {
     db.close();
@@ -732,8 +809,8 @@ export async function saveMemory(
         };
       }
       tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(refused ?? tx.error ?? new Error("No se pudo guardar la memoria del circuito."));
-      tx.onabort = () => reject(refused ?? tx.error ?? new Error("No se pudo guardar la memoria del circuito. La escritura se abortó."));
+      tx.onerror = () => reject(refused ?? writeFailure(tx.error, "No se pudo guardar la memoria del circuito."));
+      tx.onabort = () => reject(refused ?? writeFailure(tx.error, "No se pudo guardar la memoria del circuito. La escritura se abortó."));
     });
   } finally {
     db.close();

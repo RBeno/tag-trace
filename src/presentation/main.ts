@@ -83,10 +83,11 @@ import { ProjectError, readMemorySection, readPlanSection, readPlantValuesSectio
 import { exportProjectMemory, importProjectMemory } from "../persistence/project-memory.js";
 import { exportProjectPlan, importProjectPlan } from "../persistence/project-plan.js";
 import { exportProjectPlantValues, importProjectPlantValues } from "../persistence/project-plant-values.js";
-import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots, STORE_VERSION } from "../persistence/store.js";
+import { ensureStore, isAvailable, isStorageFull, loadCircuit, loadReviews, loadSnapshots, STORE_VERSION } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
 import { createBenchPanel, type BenchObserver } from "./bench-ui.js";
 import { startUpdates } from "./update.js";
+import { createStoragePanel } from "./storage-ui.js";
 import { EMPTY_COLUMNS, filterReadings, readingRow, type ReadingColumns } from "../application/reading-columns.js";
 import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
 import { createPlanPanel, planRelationText } from "./plan-ui.js";
@@ -250,6 +251,8 @@ const subtitle = element(
 const versionNote = element("p", "muted app-version", `Versión ${APP_VERSION}`);
 header.append(title, subtitle, versionNote);
 const updates = startUpdates({ currentVersion: APP_VERSION, storeVersion: STORE_VERSION });
+/** La clave de sesión del aviso «Circuito borrado», que sobrevive a la recarga tras borrarlo. */
+const DELETED_NOTICE = "tag-trace-circuito-borrado";
 
 // El banco de medida (F6): la importación de verdad, sin circuito, observada desde la página.
 let benchObserver: BenchObserver | null = null;
@@ -313,7 +316,25 @@ cancelButton.type = "button";
 cancelButton.hidden = true;
 picker.append(fileLabel, filePicker(fileInput), circuitLabel, circuitInput, cancelButton);
 const projectPanel = element("section", "panel");
-projectPanel.append(element("h2", undefined, "Copia del circuito"), exportButton, projectLabel, filePicker(projectInput));
+// El espacio del dispositivo y borrar un circuito (`UX_SPEC.md` §8): junto a la copia, que es lo que
+// se ofrece antes de borrar.
+const storagePanel = createStoragePanel({
+  circuitName: () => circuitInput.value.trim(),
+  lock: (busy) => setBusy(busy),
+  notify: (kind, title, lines) => showMessage(kind, title, lines),
+  onDeleted: (circuitId) => {
+    // Si lo que se ve es el circuito borrado, se vuelve a la portada para no enseñar datos que ya no
+    // existen; el aviso sobrevive a la recarga.
+    if (state.circuitId !== circuitId) return;
+    try {
+      sessionStorage.setItem(DELETED_NOTICE, circuitId);
+    } catch {
+      // Sin almacenamiento de sesión, la recarga simplemente no repite el aviso.
+    }
+    window.location.reload();
+  },
+});
+projectPanel.append(element("h2", undefined, "Copia del circuito"), exportButton, projectLabel, filePicker(projectInput), storagePanel.node);
 
 const progressPanel = element("section", "panel");
 progressPanel.hidden = true;
@@ -994,6 +1015,7 @@ function setBusy(busy: boolean): void {
   plantValuesPanel.setBusy(busy);
   casesPanel.setBusy(busy);
   benchPanel.setBusy(busy);
+  storagePanel.setBusy(busy);
   cancelButton.hidden = !busy || state.memoryJob !== null || state.planJob || state.plantValueJob || state.caseJob;
   progressPanel.hidden = !busy;
   workerBusy = busy;
@@ -1097,6 +1119,8 @@ function handleMessage(message: FromWorker): void {
       setBusy(false);
       disposeWorker();
       benchObserver?.rendered();
+      // Tras guardar, se mira el espacio y se pide el guardado persistente si aún no lo hay.
+      storagePanel.refresh(message.accumulation?.accumulated === true);
       return;
     }
 
@@ -6297,6 +6321,13 @@ projectInput.addEventListener("change", () => {
         showMessage("error", "No se pudo abrir el proyecto", [error.reason, error.recovery]);
         return;
       }
+      if (isStorageFull(error)) {
+        showMessage("error", "No hay espacio para abrir el proyecto", [
+          "No queda espacio en este dispositivo para guardar: lo de esta operación no se ha escrito.",
+          "Libera espacio —exporta y borra los circuitos que ya no uses o libera espacio del dispositivo— y vuelve a abrirlo.",
+        ]);
+        return;
+      }
       showMessage("error", "No se pudo abrir el proyecto", [
         "El fichero no tiene la forma de un `.agvproj`.",
         "Comprueba que es el fichero correcto. El almacén local no se ha tocado.",
@@ -6306,6 +6337,19 @@ projectInput.addEventListener("change", () => {
 });
 
 // --- Almacén: la migración pendiente se hace al abrir, no a mitad de la primera importación --------
+
+{
+  let deleted: string | null = null;
+  try {
+    deleted = sessionStorage.getItem(DELETED_NOTICE);
+    sessionStorage.removeItem(DELETED_NOTICE);
+  } catch {
+    deleted = null;
+  }
+  if (deleted !== null) {
+    showMessage("info", `Circuito «${deleted}» borrado`, ["Se ha borrado entero de este dispositivo. Las copias exportadas (.agvproj) no se tocan."]);
+  }
+}
 
 if (isAvailable()) {
   void ensureStore().catch(() => {

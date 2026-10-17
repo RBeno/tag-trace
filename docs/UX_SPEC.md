@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.63.0
+version: 0.64.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -1065,6 +1065,15 @@ circuito de auditoría a 360 × 780 táctil y a 1.366 × 768; ninguna se sale de
 
 Lo fija `tests/e2e/interfaz.spec.ts` en cada pestaña de los dos tamaños. Falta el móvil físico (G6).
 
+**Accesibilidad (3.86.0, F6 entrega 5, NFR-013).** axe-core recorre las siete pestañas en tema claro y
+oscuro, y lo que se abre encima (cajón de tabla, cuadro del informe, formulario de expediente,
+confirmación de borrado y un error), sin ninguna infracción WCAG 2.0, 2.1 y 2.2 A y AA
+(`accesibilidad.spec.ts`). Se corrigió el contraste: enlaces y textos de alerta usan `--link` y
+`--accent-text`, distintos en cada tema y de al menos 4,5:1 sobre fondo, panel y lavados de aviso; el
+azul y el naranja de los gráficos no cambian. El foco del teclado se pinta igual en botones, enlaces,
+desplegables y campos (contorno de 2 px); en una marca de un gráfico, con su trazo. Las flechas mueven
+entre pestañas.
+
 ## 8. Estados y errores
 
 La aplicación diferencia:
@@ -1088,6 +1097,34 @@ La aplicación diferencia:
 - circuito en proceso de borrado, con lo que se pierde enumerado antes de confirmar.
 
 Un error nunca debe mostrar `0 lecturas válidas` sin explicar esquema detectado, causa, filas de ejemplo y acción de recuperación.
+
+**Estado de cada uno (3.86.0, F6 entrega 5)** y la prueba que lo sostiene:
+
+| Estado | Cómo se ve | Prueba |
+|---|---|---|
+| Sin datos | «Todavía no hay análisis: elige un fichero de lecturas y escribe el circuito.» | `estados.spec.ts` |
+| Analizando | Progreso con etapa y cifras | `rendimiento.spec.ts`, `medida.spec.ts` |
+| Cancelando | «Cancelando…»; confirmado antes del segundo; «Guardando…» ya no se cancela | `concurrencia.spec.ts` (TC-362) |
+| Otra operación en curso | Entradas apagadas y «Hay otra operación en curso…» | `concurrencia.spec.ts` |
+| Resultado parcial | No existe: el importador es todo o nada y las filas defectuosas van a cuarentena, que se cuenta | — |
+| Fuente inválida | «No se pudo importar (código)» con causa, qué hacer, esquema y ejemplos | `estados.spec.ts` |
+| Archivo de otro circuito | Afinidad: no se acumula y se dice por qué | `vistas.spec.ts` |
+| Evidencia no disponible | El recorte sale del original archivado y lo dice | `expedientes.spec.ts` (TC-341) |
+| Proyecto incompatible | «No se pudo abrir el proyecto» y «El almacén local no se ha tocado» | `estados.spec.ts`, `memoria.spec.ts` |
+| Almacenamiento insuficiente | «No se pudo importar (STORAGE_FULL)»: no queda espacio, no se ha escrito, y qué hacer | `estados.spec.ts` |
+| Actualización disponible | Aviso con versión y compatibilidad (§9) | `actualizacion.spec.ts` |
+| Error recuperable / que invalida | El mensaje dice qué hacer; un defecto del motor, con su tipo y sin datos | `protocolo.spec.ts` |
+| Circuito en proceso de borrado | Datos → Copia del circuito → «Borrar el circuito…» | `estados.spec.ts` |
+
+**Borrar un circuito** (nuevo en 3.86.0): enumera lo que se pierde, contado en el almacén —ficheros con
+lo acumulado, originales archivados, instantáneas, versiones de memoria, cambios del plano, valores de
+planta, expedientes con sus revisiones y hallazgos revisados—, recuerda exportar la copia antes y pide
+escribir el nombre del circuito para encender «Borrar para siempre»; «No borrar» lo cierra. Se borra en
+una sola transacción. Si lo que se veía era ese circuito, la página vuelve a la portada con el aviso.
+
+**Espacio en este dispositivo** (3.86.0), en el mismo sitio: cuánto usa la aplicación de lo que le deja
+el navegador y si el guardado es persistente. Tras la primera importación que guarda, se pide al
+navegador el guardado persistente; sin él, puede borrar los datos si se queda sin espacio, y se dice.
 
 Un fichero con más lecturas que el mayor volumen medido (500.000, PERF-D3) se importa igual y trae una
 advertencia (3.84.0): cuántas tiene, que en este dispositivo no está comprobado —con la memoria que

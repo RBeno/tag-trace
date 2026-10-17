@@ -2,6 +2,31 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.86.0] - 2026-10-17
+
+Entrega 5 de F6.
+
+### Añadido
+
+- **Borrar un circuito** (`UX_SPEC.md` §8), en Datos → Copia del circuito: enumera lo que se pierde
+  —contado en el almacén—, recuerda exportar la copia y pide escribir el nombre del circuito; se borra
+  entero en una sola transacción. Estaba en la especificación y no existía.
+- **Sin espacio en el dispositivo**: la importación responde `STORAGE_FULL` («No queda espacio en este
+  dispositivo para guardar: lo de esta operación no se ha escrito.») con qué hacer; las demás
+  operaciones lo dicen igual, sin llamarlo defecto. Antes acababa en «Fallo no previsto del motor».
+- **Espacio en este dispositivo**: cuánto usa la aplicación y si el guardado es persistente; tras la
+  primera importación que guarda se pide al navegador que no lo borre por falta de espacio.
+- **axe-core 4.13.0**, solo en las pruebas y con versión fija (OQ-175).
+- Pruebas: TC-367 (unitaria), TC-368 y TC-369 (navegador).
+
+### Corregido
+
+- **Contraste** (WCAG 1.4.3): enlaces, «Ver evidencia», «Generar informe…» y los textos de alerta usaban el
+  azul y el naranja de los gráficos, de 3,0 a 4,4:1 sobre el panel. Ahora `--link` y `--accent-text`, por
+  tema y de al menos 4,5:1; axe pasa de 154 infracciones a ninguna en las siete pestañas, en claro y
+  oscuro.
+- **Foco del teclado** igual en botones, enlaces, desplegables y campos; antes dependía del navegador.
+
 ## [3.85.0] - 2026-10-17
 
 Entrega 4 de F6. Revisadas las siete pestañas con el circuito de auditoría en un móvil táctil (360 ×

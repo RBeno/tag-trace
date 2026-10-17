@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.16.0
+version: 0.17.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -151,6 +151,7 @@ de ejemplo saneadas y acción de recuperación. `UX_SPEC.md` §8 lo exige y el p
 | `NO_ACCEPTED_ROWS` | Se leyeron filas pero ninguna superó la validación. Debe detallar por qué. |
 | `LIMIT_EXCEEDED` | Se superó un límite de tamaño, celdas o memoria declarado. |
 | `CIRCUIT_FOREIGN` | La huella de afinidad sitúa la fuente en otro circuito. |
+| `STORAGE_FULL` | No queda espacio en el dispositivo para guardar (3.86.0): el almacén convierte `QuotaExceededError` en `StorageFullError`; la transacción que falla no deja nada escrito. Las demás operaciones del Worker dicen lo mismo con su `error`, nunca como defecto. |
 | `INTERNAL` | Defecto del propio motor; nunca debe usarse para tapar los anteriores. |
 
 Ningún mensaje de error **debe** incluir contenido bruto sin sanear (TH-003).

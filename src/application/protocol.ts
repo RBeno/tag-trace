@@ -76,6 +76,8 @@ export type ImportErrorCode =
   | "DATE_AMBIGUOUS"
   | "NO_ACCEPTED_ROWS"
   | "LIMIT_EXCEEDED"
+  /** Sin espacio en el dispositivo para guardar (3.86.0). */
+  | "STORAGE_FULL"
   | "INTERNAL";
 
 export interface StartMessage {

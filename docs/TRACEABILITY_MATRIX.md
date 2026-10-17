@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.77.0
+version: 0.78.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -27,7 +27,7 @@ La matriz se ampliará hasta una relación automática cuando exista código. En
 | NFR-004–006, NFR-014 | ADR-0002–0003, ADR-0013 | Todos | Casos de oro + determinismo | F2–F6 |
 | NFR-007–008 | ADR-0005 | ALG-014 | Round-trip y crecimiento | F4/G4 |
 | NFR-010–012, NFR-016 | ADR-0001, ADR-0009, ADR-0014 | Build/PWA | Offline, update, rollback (TC-357–359) | F6/G6 |
-| NFR-013 | UX specification | Presentación | E2E/accesibilidad (TC-366: objetivos de 44 px con dedo) | F6/G6 |
+| NFR-013 | UX specification | Presentación | E2E/accesibilidad (TC-366: objetivos de 44 px con dedo; TC-369: axe-core WCAG 2.2 AA) | F6/G6 |
 
 ## Implementación
 
@@ -114,6 +114,7 @@ regla exista: la matriz no es una lista de intenciones.
 | NFR-003, WP-004, INV-006, `WORKER_PROTOCOL.md` §5 / TC-362 cancelar a mitad de la lectura | `workers/import.worker.ts` (paso a la cola y `saving` antes de escribir), `src/application/protocol.ts` (`SavingMessage`), `src/presentation/main.ts` (`CANCEL_GRACE_MS`, `importStoppable`) | `tests/e2e/concurrencia.spec.ts`, `tests/e2e/medida.spec.ts` |
 | NFR-003, NFR-009, INV-002, `PERFORMANCE_BUDGET.md` §3.2 y §4, F6 entrega 3 / TC-363–364 lecturas por columnas y aviso de fichero mayor que lo medido | `src/application/reading-columns.ts` (`packReadings`, `readingRow`, `filterReadings`), `src/application/perf-bench.ts` (`largeImportWarning`), `workers/import.worker.ts` (`emit` con transferencia), `src/application/protocol.ts` (`CompleteMessage.readings`), `src/presentation/main.ts` (tabla «Lecturas») | `tests/unit/reading-columns.test.ts`, `tests/unit/perf-bench.test.ts`, `tests/e2e/medida.spec.ts` |
 | FR-028–029, NFR-013, `UX_SPEC.md` §4.4 y §7, F6 entrega 4 / TC-365–366 interfaz coherente en escritorio y móvil | `src/presentation/styles.css` (escala de títulos, campos, objetivos táctiles), `src/presentation/labels.ts` (`countedLabel`), `src/presentation/main.ts`, `src/presentation/diagnostic-charts.ts`, `src/presentation/franjas-ui.ts` (concordancia) | `tests/unit/labels-count.test.ts`, `tests/e2e/interfaz.spec.ts` |
+| NFR-013, `UX_SPEC.md` §7 y §8, WP §6, OQ-175, F6 entrega 5 / TC-367–369 accesibilidad y estados de error | `src/presentation/styles.css` (`--link`, `--accent-text`, foco), `src/presentation/storage-ui.ts` (`createStoragePanel`, `storageText`, `inventoryLines`), `src/persistence/store.ts` (`StorageFullError`, `isStorageFull`, `circuitInventory`), `workers/import.worker.ts` (`failureOf`, `STORAGE_FULL`), `src/application/protocol.ts` (`STORAGE_FULL`), `src/presentation/main.ts` | `tests/unit/storage-ui.test.ts`, `tests/e2e/estados.spec.ts`, `tests/e2e/accesibilidad.spec.ts` |
 | NFR-010, NFR-011, NFR-016, `UX_SPEC.md` §9, F6 entrega 1 / TC-357–359 actualización segura, versión identificable y retorno | `public/sw.js` (caché por versión, espera, `version` y `activate`), `vite.config.ts` (`serviceWorkerManifest`), `src/presentation/update.ts` (`startUpdates`, `updateText`, `compareVersions`), `src/presentation/main.ts` (versión en la cabecera, `syncUpdateBusy`), `src/persistence/store.ts` (`onversionchange`), `.github/workflows/deploy-pages.yml` (etiqueta `vX.Y.Z`) | `tests/unit/update.test.ts`, `tests/e2e/actualizacion.spec.ts` |
 | ADR-0018 D10 entrega 6, ALG-017, `INCIDENTS_REPORTING.md` §6, OQ-172 / TC-355–356 biblioteca de casos y similitud explicada | `src/domain/case-similarity.ts` (`similarCases`, `VERDICT_WORD`), `src/domain/config.ts` (`incidentCase.similarityDurationRatio`), `workers/import.worker.ts` (`buildCaseViews`, en dos pasadas), `src/application/protocol.ts` (`CaseView.similar`), `src/presentation/cases-ui.ts` (`similarBlock`), `src/presentation/case-report.ts` (apartado 6) | `tests/unit/case-similarity.test.ts`, `tests/e2e/expedientes.spec.ts` |
 | ADR-0018 D11 entrega 5, FR-026, `INCIDENTS_REPORTING.md` §8 / TC-353–354 informe vivo y exportación del expediente | `src/presentation/case-report.ts` (`buildCaseReportHtml`, `casesSummaryHtml`, `caseReportFileName`), `src/domain/case-export.ts` (`chronologyCsv`, `evidenceCsv`), `src/presentation/report.ts` (sección de expedientes, `appCss`), `workers/import.worker.ts` (`runCaseEvidenceCsv`), `src/application/protocol.ts` (`case-evidence-csv`), `src/presentation/cases-ui.ts` (`exportBlock`), `src/presentation/main.ts` (`exportCase`, `saveDownload`) | `tests/unit/case-report.test.ts`, `tests/e2e/expedientes.spec.ts` |

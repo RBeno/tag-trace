@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.69.0
+version: 0.70.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -423,6 +423,17 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## F6, entrega 5: accesibilidad y estados de error (3.86.0, 2026-10-17)
+
+axe-core 4.13.0 fijado, solo en pruebas (OQ-175). Primer barrido: 154 fallos, todos de contraste, por
+usar el azul de los gráficos para los enlaces; ahora `--link` y `--accent-text` por tema y 0 infracciones
+en las siete pestañas, en claro y oscuro, y en lo que se abre encima. Foco visible común. De §8 faltaban
+dos estados y se hicieron: **sin espacio** (`StorageFullError` desde el almacén, `STORAGE_FULL` en la
+importación, y las demás operaciones lo dicen sin llamarlo defecto) y **borrar un circuito** (enumera lo
+que se pierde y pide escribir su nombre; una transacción). Además, el espacio usado y el **guardado
+persistente**, que se pide tras la primera importación que guarda. «Resultado parcial» no existe por
+diseño. Siguiente: entrega 6, sin red y seguridad (incluye los avisos de `npm audit` de Vite y Vitest).
 
 ## F6, entrega 4: interfaz coherente (3.85.0, 2026-10-17)
 

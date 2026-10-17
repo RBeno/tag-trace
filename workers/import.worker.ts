@@ -206,6 +206,8 @@ import {
   type StoredCircuit,
   type StoredConnectionEvent,
   type StoredSource,
+  isStorageFull,
+  StorageFullError,
 } from "../src/persistence/store.js";
 import {
   compareToMemory,
@@ -273,6 +275,19 @@ let seq = 0;
 function emit(message: OutgoingPayload, jobId: string, transfer: readonly Transferable[] = []): void {
   seq += 1;
   scope.postMessage({ ...message, protocolVersion: PROTOCOL_VERSION, jobId, seq } as FromWorker, [...transfer]);
+}
+
+/** Qué hacer cuando no queda espacio (`UX_SPEC.md` §8). */
+const STORAGE_FULL_RECOVERY =
+  "Libera espacio y vuelve a intentarlo: exporta y borra los circuitos que ya no uses (Datos → Copia del circuito) o libera espacio del dispositivo. Sin circuito, un fichero se analiza sin guardar nada.";
+
+/**
+ * El texto de un fallo no previsto de una operación: la falta de espacio, con el suyo y qué hacer; lo
+ * demás, con el tipo y el texto del error y nunca datos (AGENTS.md).
+ */
+function failureOf(error: unknown, what: string, recovery: string): readonly [string, string] {
+  if (isStorageFull(error)) return [new StorageFullError().message, STORAGE_FULL_RECOVERY];
+  return [`${what} (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`, recovery];
 }
 
 /** Hash del contenido completo: identidad del fichero (DATA_CONTRACTS §3). */
@@ -2149,6 +2164,11 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
       );
       return;
     }
+    // Sin espacio no es un defecto: se dice como tal y con qué hacer (`UX_SPEC.md` §8).
+    if (isStorageFull(error)) {
+      emit({ type: "error", code: "STORAGE_FULL", cause: new StorageFullError().message, recovery: STORAGE_FULL_RECOVERY }, jobId);
+      return;
+    }
     // El defecto se enseña con su nombre y su primera línea de pila: sin eso no se puede reproducir con
     // un fixture sintético, que es lo que el mensaje pide. Nunca lleva datos: solo el tipo del error, su
     // texto y dónde saltó.
@@ -2556,10 +2576,7 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
       return;
     }
     // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
-    fail(
-      `La operación de memoria falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
-      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
-    );
+    fail(...failureOf(error, "La operación de memoria falló", "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético."));
   }
 }
 
@@ -2730,10 +2747,7 @@ async function runPlan(message: Extract<ToWorker, { type: "plan-action" }>): Pro
       return;
     }
     // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
-    fail(
-      `La operación del plano falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
-      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
-    );
+    fail(...failureOf(error, "La operación del plano falló", "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético."));
   }
 }
 
@@ -2810,10 +2824,7 @@ async function runPlantValue(message: Extract<ToWorker, { type: "plant-value" }>
     );
   } catch (error) {
     // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
-    fail(
-      `No se pudo guardar el valor de planta (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
-      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
-    );
+    fail(...failureOf(error, "No se pudo guardar el valor de planta", "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético."));
   }
 }
 
@@ -2848,10 +2859,7 @@ async function runCompareVersions(message: Extract<ToWorker, { type: "compare-ve
     emit({ type: "versions-compared", circuitId, comparison }, jobId);
   } catch (error) {
     // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
-    fail(
-      `La comparación de versiones falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
-      "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
-    );
+    fail(...failureOf(error, "La comparación de versiones falló", "Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético."));
   }
 }
 
@@ -2936,6 +2944,11 @@ async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<
       jobId,
     );
   } catch (error) {
+    // Sin espacio no es un fichero mal formado: se dice como tal (`UX_SPEC.md` §8).
+    if (isStorageFull(error)) {
+      emit({ type: "error", code: "STORAGE_FULL", cause: new StorageFullError().message, recovery: STORAGE_FULL_RECOVERY }, jobId);
+      return;
+    }
     const failure =
       error instanceof CatalogFailure
         ? error
@@ -3037,6 +3050,11 @@ async function runFleet(message: Extract<ToWorker, { type: "fleet" }>): Promise<
       jobId,
     );
   } catch (error) {
+    // Sin espacio no es un fichero mal formado: se dice como tal (`UX_SPEC.md` §8).
+    if (isStorageFull(error)) {
+      emit({ type: "error", code: "STORAGE_FULL", cause: new StorageFullError().message, recovery: STORAGE_FULL_RECOVERY }, jobId);
+      return;
+    }
     const failure =
       error instanceof FleetFailure
         ? error
@@ -3157,8 +3175,9 @@ async function runConnections(message: Extract<ToWorker, { type: "connections" }
       },
       jobId,
     );
-  } catch {
-    fail("No se pudo guardar el registro de conexiones.", "Vuelve a intentarlo; el circuito no se ha modificado.");
+  } catch (error) {
+    if (isStorageFull(error)) fail(new StorageFullError().message, STORAGE_FULL_RECOVERY);
+    else fail("No se pudo guardar el registro de conexiones.", "Vuelve a intentarlo; el circuito no se ha modificado.");
   }
 }
 
@@ -3440,10 +3459,7 @@ async function runCase(message: Extract<ToWorker, { type: "case-action" }>): Pro
       return;
     }
     // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
-    fail(
-      `La operación del expediente falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
-      "No se ha guardado nada. Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
-    );
+    fail(...failureOf(error, "La operación del expediente falló", "No se ha guardado nada. Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético."));
   }
 }
 
@@ -3477,10 +3493,7 @@ async function runCaseReplay(message: Extract<ToWorker, { type: "case-replay" }>
     emit({ type: "case-replay-ready", circuitId, caseId, revision: current.revision, replay }, jobId);
   } catch (error) {
     // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
-    fail(
-      `El replay del expediente falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
-      "No se ha cambiado nada. Si persiste, es un defecto y debe reproducirse con un fixture sintético.",
-    );
+    fail(...failureOf(error, "El replay del expediente falló", "No se ha cambiado nada. Si persiste, es un defecto y debe reproducirse con un fixture sintético."));
   }
 }
 
@@ -3505,10 +3518,7 @@ async function runCaseEvidenceCsv(message: Extract<ToWorker, { type: "case-evide
     }
     emit({ type: "case-evidence-csv-ready", circuitId, caseId, revision: current.revision, csv: evidenceCsv(evidence, { caseId, revision: current.revision, hash }) }, jobId);
   } catch (error) {
-    fail(
-      `No se pudo preparar el CSV del recorte (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
-      "No se ha cambiado nada. Vuelve a intentarlo.",
-    );
+    fail(...failureOf(error, "No se pudo preparar el CSV del recorte", "No se ha cambiado nada. Vuelve a intentarlo."));
   }
 }
 
