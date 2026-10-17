@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.51.0
+version: 0.52.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -433,8 +433,10 @@ igual si está cargada); orden para ir directo a una anomalía; el circuito guar
 Decidido con él: WiFi como pestaña propia solo con registro cargado; las áreas como lista nueva
 `area` (una fila por tag y área); el Resumen enseña rango 1 y 2 completos y rango 3 plegado; orden de
 entregas: áreas y función → WiFi → Resumen → Tags y AGV. `ROADMAP.md` ponía la interfaz coherente en
-F6; se adelanta a F5 por su petición. **Hecha la primera** (R-GRA-022): lista `area`, y «Declarado en
-planta» con las áreas y el refuerzo por su lado. Lo que ya existía y se conserva: la bandeja del
+F6; se adelanta a F5 por su petición. **Hechas la primera** (3.68.0, R-GRA-022: lista `area`, y «Declarado
+en planta» con las áreas y el refuerzo por su lado) **y la segunda** (3.69.0: pestaña WiFi solo con
+registro cargado, y los cinco tipos `conexion-*` en el catálogo con tema WiFi y rango; hasta entonces
+caían en contexto con su identificador en bruto). Lo que ya existía y se conserva: la bandeja del
 Resumen con «Ver evidencia», la línea «Declarado en planta» solo en tarjetas con hallazgo y en el
 expediente.
 

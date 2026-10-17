@@ -37,7 +37,10 @@ test.describe("pestañas y bandeja de hallazgos", () => {
     const readings = { name: "auditoria.csv", mimeType: "text/csv", buffer: Buffer.from(scenario.readingsCsv, "utf8") };
 
     await freshPage(page);
-    // Sin nada cargado ya hay pestañas, y la de entrada es el Resumen.
+    // Sin nada cargado ya hay pestañas, y la de entrada es el Resumen. La WiFi no está: solo existe con
+    // un registro de conexiones cargado (3.69.0), y pedirla por el hash vuelve al Resumen.
+    await page.goto("./#wifi");
+    await expect(page.getByRole("tab", { name: "Resumen" })).toHaveAttribute("aria-selected", "true");
     const tabs = page.getByRole("tab");
     await expect(tabs).toHaveText(["Resumen", "Tags", "AGV", "Tiempos", "Línea y calles", "Memoria", "Datos"]);
     await expect(page.getByRole("tab", { name: "Resumen" })).toHaveAttribute("aria-selected", "true");

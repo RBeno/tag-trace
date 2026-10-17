@@ -8,7 +8,7 @@
  */
 
 /** Las pestañas por pregunta (UX_SPEC §2). El orden es el de la barra. */
-export const THEMES = ["tags", "agv", "tiempos", "linea"] as const;
+export const THEMES = ["tags", "agv", "wifi", "tiempos", "linea"] as const;
 export type Theme = (typeof THEMES)[number];
 
 /**
@@ -56,6 +56,8 @@ export const FINDING_KINDS: Readonly<Record<string, FindingKind>> = {
   "tag-rotura": { theme: "tags", label: "rotura de un tag", rank: 1 },
   "agv-rotura": { theme: "agv", label: "rotura de un AGV", rank: 1 },
   "deja-de-leer": { theme: "agv", label: "AGV que deja de leer", rank: 1 },
+  // WiFi (DS-013, ADR-0017): un AGV sin señal que no vuelve pierde su función como el que deja de leer.
+  "conexion-no-reconecta": { theme: "wifi", label: "AGV que no reconecta", rank: 1 },
   "calle-sin-servicio": { theme: "linea", label: "calle sin servicio", rank: 1 },
   linea: { theme: "linea", label: "parada de la línea", rank: 1 },
   "linea-paso": { theme: "linea", label: "paso por la línea", rank: 1 },
@@ -81,6 +83,9 @@ export const FINDING_KINDS: Readonly<Record<string, FindingKind>> = {
   "retiene-agv": { theme: "agv", label: "retiene a otros", rank: 2 },
   "flota-sin-lecturas": { theme: "agv", label: "asignados sin lecturas", rank: 2 },
   "flota-sin-asignar": { theme: "agv", label: "leen sin estar asignados", rank: 2 },
+  "conexion-sitio": { theme: "wifi", label: "sitio donde se pierde la señal", rank: 2 },
+  "conexion-agv": { theme: "wifi", label: "AGV que pierde la señal más que el resto", rank: 2 },
+  "conexion-ruidoso": { theme: "wifi", label: "terminal ruidoso", rank: 2 },
   "calle-lectura": { theme: "linea", label: "tag de calle sin leer", rank: 2 },
   "calle-espera": { theme: "linea", label: "turno saltado en la calle", rank: 2 },
   "calle-permanencia": { theme: "linea", label: "permanencia larga en la calle", rank: 2 },
@@ -93,6 +98,7 @@ export const FINDING_KINDS: Readonly<Record<string, FindingKind>> = {
   "calle-uso": { theme: "linea", label: "uso de la calle", rank: 3 },
   "arranque-en-frio": { theme: "linea", label: "cargando al empezar los datos", rank: 3 },
   "punto-critico": { theme: "tiempos", label: "candidato a punto crítico", rank: 3 },
+  "conexion-colectivo": { theme: "wifi", label: "corte colectivo", rank: 3 },
 };
 
 /** El tipo de un hallazgo por su clave; uno que no esté en el catálogo va a contexto, y se enseña tal cual. */

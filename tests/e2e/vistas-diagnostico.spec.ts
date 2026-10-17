@@ -251,8 +251,11 @@ test.describe("vistas de diagnóstico sobre el circuito de auditoría", () => {
     await expect(calor.locator("svg[role=img]")).toBeVisible();
     await expect(calor).toContainText("no una medida de la señal");
     await expect(calor.getByRole("button", { name: /tags con lecturas tardías o hueco en tabla/ })).toBeVisible();
-    // El estado de conexión observado (DS-013): los dos cortes del registro, situados, el mapa con su
-    // tabla, y el contraste que cuenta las lecturas con fecha dentro de la caída (OQ-159).
+    // El estado de conexión observado (DS-013) vive en su pestaña, que solo existe con registro cargado
+    // (3.69.0): Tiempos deja el enlace. Los dos cortes del registro, situados, el mapa con su tabla, y el
+    // contraste que cuenta las lecturas con fecha dentro de la caída (OQ-159).
+    await expect(page.getByRole("link", { name: "El estado de conexión está en WiFi" })).toBeVisible();
+    await openTab(page, "WiFi");
     await expect(page.getByText(/2 cortes en la ventana cargada \(1 microcorte de hasta 10 s, 0 cortes de hasta 10 min, 1 caída de más de 10 min/)).toBeVisible();
     const conexion = page.locator("figure.chart", { has: page.getByRole("heading", { name: "Mapa de estado de conexión (WiFi)" }) });
     await expect(conexion).toHaveCount(1);

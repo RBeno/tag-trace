@@ -411,6 +411,7 @@ const TABS = [
   ["resumen", "Resumen"],
   ["tags", "Tags"],
   ["agv", "AGV"],
+  ["wifi", "WiFi"],
   ["tiempos", "Tiempos"],
   ["linea", "Línea y calles"],
   ["memoria", "Memoria"],
@@ -435,6 +436,8 @@ for (const [id, label] of TABS) {
   button.setAttribute("aria-selected", "false");
   button.setAttribute("aria-controls", `panel-${id}`);
   button.tabIndex = -1;
+  // La WiFi nace escondida: solo existe con un registro de conexiones cargado (UX_SPEC §2).
+  button.hidden = id === "wifi";
   button.addEventListener("click", () => activateTab(id));
   tabButtons.set(id, button);
   tabList.append(button);
@@ -450,16 +453,17 @@ for (const [id, label] of TABS) {
 }
 // Flechas entre pestañas, y activación al mover el foco (es lo que espera un `tablist`).
 tabList.addEventListener("keydown", (event) => {
-  const index = TAB_IDS.indexOf(activeTab);
+  const tabs = visibleTabs();
+  const index = tabs.indexOf(activeTab);
   const target =
     event.key === "ArrowRight"
-      ? TAB_IDS[(index + 1) % TAB_IDS.length]
+      ? tabs[(index + 1) % tabs.length]
       : event.key === "ArrowLeft"
-        ? TAB_IDS[(index - 1 + TAB_IDS.length) % TAB_IDS.length]
+        ? tabs[(index - 1 + tabs.length) % tabs.length]
         : event.key === "Home"
-          ? TAB_IDS[0]
+          ? tabs[0]
           : event.key === "End"
-            ? TAB_IDS[TAB_IDS.length - 1]
+            ? tabs[tabs.length - 1]
             : undefined;
   if (target === undefined) return;
   event.preventDefault();
@@ -504,7 +508,14 @@ function isTabId(value: string): value is TabId {
   return (TAB_IDS as readonly string[]).includes(value);
 }
 
+/** Las pestañas que se pueden abrir: la WiFi solo existe con un registro de conexiones cargado. */
+function visibleTabs(): readonly TabId[] {
+  return TAB_IDS.filter((tabId) => tabButtons.get(tabId)?.hidden !== true);
+}
+
 function activateTab(id: TabId): void {
+  // Una pestaña escondida (WiFi sin registro) no se abre: el `hash` que la pida vuelve al Resumen.
+  if (tabButtons.get(id)?.hidden === true) id = "resumen";
   activeTab = id;
   for (const [tabId, button] of tabButtons) {
     const selected = tabId === id;
@@ -634,6 +645,8 @@ const plantValuesPanel = createPlantValuesPanel({
   get("tags").append(views("tags"));
   // AGV: las vistas de la flota y, al final, el expediente que abre el buscador de la barra.
   get("agv").append(views("agv"), dossierPanel);
+  // WiFi: solo vistas, y solo con registro de conexiones cargado (la pestaña nace escondida).
+  get("wifi").append(views("wifi"));
   get("tiempos").append(views("tiempos"));
   get("linea").append(views("linea"));
   // Memoria: la memoria consolidada del circuito, sus versiones y el flujo de consolidar (F4).
@@ -1915,6 +1928,14 @@ function renderViews(views: CircuitViews): void {
   renderCriticalPoints(views);
   renderRing(views);
 
+  // --- WiFi: el estado de conexión observado (DS-013, ADR-0017), solo con registro cargado --------
+  out = viewsOf.get("wifi") as HTMLElement;
+  out.append(element("h2", undefined, "WiFi"));
+  const wifiTab = tabButtons.get("wifi") as HTMLButtonElement;
+  wifiTab.hidden = views.connections === undefined;
+  if (views.connections !== undefined) renderWifi(out, views);
+  else if (activeTab === "wifi") activateTab("resumen");
+
   // --- Línea y calles ---------------------------------------------------------------------------
   out = viewsOf.get("linea") as HTMLElement;
   out.append(element("h2", undefined, "Línea y calles"));
@@ -2658,7 +2679,7 @@ function renderCircuitState(views: CircuitViews): void {
 
     // El estado de conexión observado (DS-013, ADR-0017): el registro de conexiones del terminal,
     // situado con las lecturas. Es del circuito entero; va con el primer cohorte, con su anillo.
-    if (cohort === circuitState.cohorts[0]) renderConnections(out, views, shape?.tags ?? [], few, chance);
+    if (cohort === circuitState.cohorts[0]) renderConnectionsPointer(out, views);
 
     // La noche, medida aparte.
     const nightDiffers = measured.night.filter(
@@ -2996,16 +3017,13 @@ const RING_MARKS = 20;
  * de estado de conexión, dónde y a quién le pasa más de lo que da el azar, el contraste con las
  * ráfagas (OQ-159) y las tablas. Sin registro cargado, una línea que lo dice.
  */
-function renderConnections(
-  out: HTMLElement,
-  views: CircuitViews,
-  ringTags: readonly string[],
-  few: (ids: readonly string[]) => string,
-  chance: (expected: number) => string,
-): void {
-  const connections = views.connections;
+/**
+ * En Tiempos, donde vivía el estado de conexión hasta 3.68.0: sin registro, por qué no hay nada que
+ * enseñar; con registro, el enlace a la pestaña WiFi, que es suya desde entonces (UX_SPEC §2).
+ */
+function renderConnectionsPointer(out: HTMLElement, views: CircuitViews): void {
   out.append(element("h3", undefined, "Estado de conexión (registro del terminal)"));
-  if (connections === undefined) {
+  if (views.connections === undefined) {
     out.append(
       element(
         "p",
@@ -3016,6 +3034,37 @@ function renderConnections(
     );
     return;
   }
+  const elsewhere = element("p", "findings-elsewhere");
+  const link = element("a", undefined, "El estado de conexión está en WiFi");
+  link.href = "#wifi";
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    jumpTo("wifi", "Estado de conexión (registro del terminal)");
+  });
+  elsewhere.append(link, ": cortes por sitio y por AGV, terminales ruidosos, los que no reconectan y el contraste con las ráfagas.");
+  out.append(elsewhere);
+}
+
+/** La pestaña WiFi: el estado de conexión del circuito entero, con el anillo del cohorte mayor. */
+function renderWifi(out: HTMLElement, views: CircuitViews): void {
+  const main = views.circuitState.cohorts[0];
+  const shape = main === undefined ? undefined : views.shapes.find((entry) => entry.cohortId === main.cohortId);
+  const few = (ids: readonly string[]): string => (ids.length > 4 ? `${ids.slice(0, 4).join(", ")}…` : ids.join(", "));
+  const chance = (expected: number): string =>
+    expected < 0.1 ? "menos de 0,1" : expected.toFixed(1).replace(".", ",");
+  renderConnections(out, views, shape?.tags ?? [], few, chance);
+}
+
+function renderConnections(
+  out: HTMLElement,
+  views: CircuitViews,
+  ringTags: readonly string[],
+  few: (ids: readonly string[]) => string,
+  chance: (expected: number) => string,
+): void {
+  const connections = views.connections;
+  out.append(element("h3", undefined, "Estado de conexión (registro del terminal)"));
+  if (connections === undefined) return;
   const { summary, thresholds } = connections;
   const minutes = (ms: number): string => (ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(1).replace(".", ",")} h` : ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`);
   const classLabels = {

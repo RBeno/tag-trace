@@ -106,6 +106,7 @@ import type { Theme } from "../domain/finding-kinds.js";
 export const THEME_LABEL: Readonly<Record<Theme, string>> = {
   tags: "Tags",
   agv: "AGV",
+  wifi: "WiFi",
   tiempos: "Tiempos",
   linea: "Línea y calles",
 };

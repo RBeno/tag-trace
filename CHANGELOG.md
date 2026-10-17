@@ -2,6 +2,29 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.69.0] - 2026-10-17
+
+Segunda entrega de la organización de TAG TRACE (propietario, 2026-10-17: «wifi si está disponible
+igual»): la WiFi tiene su pestaña y sus hallazgos entran en la bandeja con su rango.
+
+### Añadido
+
+- **Pestaña WiFi**, entre AGV y Tiempos, **solo con un registro de conexiones cargado**: sin él el
+  botón no está, las flechas la saltan y `#wifi` vuelve al Resumen. Contiene todo el estado de
+  conexión que hasta ahora era una subsección de Tiempos: cortes por clase, colectivos, contraste
+  con las ráfagas, mapa con su selector, sitios, terminales ruidosos, los que no reconectan y el
+  registro por AGV. En Tiempos queda «El estado de conexión está en WiFi» o, sin registro, por qué
+  no hay nada que enseñar.
+- **Tema WiFi en el catálogo de hallazgos** (`finding-kinds.ts`). Los cinco tipos del registro
+  (`conexion-no-reconecta`, rango 1; `conexion-sitio`, `conexion-agv`, `conexion-ruidoso`, rango 2;
+  `conexion-colectivo`, rango 3) caían hasta ahora en «contexto» con su identificador en bruto; ahora
+  la bandeja los ordena por su gravedad, el filtro por tema los aísla y «Ver evidencia» lleva a la
+  pestaña WiFi. El tile de hallazgos del Resumen los cuenta como a los demás.
+
+### Documentación
+
+- `UX_SPEC.md` §2 y §4.5; TC-332 y TC-333; `TRACEABILITY_MATRIX.md`.
+
 ## [3.68.0] - 2026-10-17
 
 El propietario pidió organizar TAG TRACE: un Resumen que enseñe lo importante y lleve a su sitio,

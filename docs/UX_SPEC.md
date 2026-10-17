@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.48.0
+version: 0.49.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -24,7 +24,9 @@ la página era una sola lista de cuarenta y tres secciones en el orden en que se
 de alto sin abrir nada, sin índice, y «Lo que hay que mirar» era la sección 22. Ahora una barra fija
 bajo la cabecera (`nav` con `role="tablist"`, botones `role="tab"` con `aria-selected`, flechas de
 teclado; en el móvil, fichas desplazables en horizontal de 44 px con dedo) reparte el análisis en
-siete pestañas (la séptima, Memoria, desde 3.51.0). La activa va en el `hash` de la URL (`#tags`, `#agv`…) y se restaura al recargar; por
+siete pestañas (la séptima, Memoria, desde 3.51.0) y una octava, **WiFi**, que **solo existe con un
+registro de conexiones cargado** (3.69.0; propietario, 2026-10-17: «wifi si está disponible igual»):
+sin él, el botón no está, las flechas la saltan y `#wifi` vuelve al Resumen. La activa va en el `hash` de la URL (`#tags`, `#agv`…) y se restaura al recargar; por
 defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 
 | Pestaña | Qué contiene |
@@ -32,6 +34,7 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 | **Resumen** | La **portada** (3.49.0): la tira de siete cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta, línea y memoria—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. |
 | **Tags** | Inventario de tags; «Lo que hay que mirar» (tags); rotura y degradación de cada tag; mapa de omisión; cambios de tag; tags leídos fuera de la lista; limpieza de la lista; contraste contra Vsystem; orden del circuito según las lecturas; comparación entre dos periodos. |
 | **AGV** | Flota del circuito, flota en el circuito y vida de cada AGV (con las paradas de la producción y los primeros de cola); lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; ritmo de cada AGV y quién retiene; y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
+| **WiFi** | Solo con registro de conexiones (DS-013, ADR-0017): el estado de conexión del circuito —cortes en la ventana por clase, cortes colectivos, el contraste con las ráfagas (OQ-159), el mapa de estado de conexión con su selector de clase, los sitios donde se pierde la señal más de lo que da el azar, los terminales ruidosos, los que no reconectan, los AGV que pierden la señal más que el resto y el registro por AGV—. Hasta 3.68.0 era una subsección de Tiempos; ahí queda «El estado de conexión está en WiFi», o, sin registro, por qué no hay nada que enseñar. |
 | **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito en palabras, con el enlace al dibujo del Resumen, su lista ordenada y los tags fuera del anillo. |
 | **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
 | **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje; debajo, el **plano del circuito** (§6.1). |
@@ -291,8 +294,8 @@ activa la pestaña de su sección y desplaza hasta su encabezado. Los avisos de 
 clave y se quedan en su sección.
 
 La lista va **ordenada por rango y, dentro del rango, agrupada por tema** en el orden Tags, AGV,
-Tiempos, Línea y calles, y dentro del tema en el orden en que la vista los produce. Los filtros son
-fichas: por tema (todos, Tags, AGV, Tiempos, Línea y calles) y los de estado de revisión de §4.3;
+WiFi, Tiempos, Línea y calles, y dentro del tema en el orden en que la vista los produce. Los filtros son
+fichas: por tema (todos, Tags, AGV, WiFi, Tiempos, Línea y calles) y los de estado de revisión de §4.3;
 un rango que se queda sin tarjetas visibles se esconde entero.
 
 El catálogo vive en `src/presentation/labels.ts` (`FINDING_KINDS`), por el primer elemento de la
@@ -301,9 +304,13 @@ calcula («Ver evidencia» lleva a la sección; el tema es lo que se filtra):
 
 | Rango | Qué es | Tipos (tema) |
 |---|---|---|
-| **1** | Puede parar la planta o perder una función | `bloqueo`, `cuello-de-botella`, `punto-conflictivo`, `produccion-parada` (Tiempos); `tag-rotura` (Tags); `agv-rotura`, `deja-de-leer` (AGV); `calle-sin-servicio`, `linea`, `linea-paso` (Línea y calles) |
-| **2** | Degrada el circuito | `zona-oscura`, `parada-sin-explicacion`, `entrega-agrupada-sitio`, `cambio-de-horquilla`, `tramo-entre-ficheros`, `estructura-entre-ficheros` (Tiempos); `tag-lectura`, `tag-deja`, `tag-empieza`, `tag-degradacion`, `cambio-tag`, `estructura` (Tags); `agv-nunca`, `agv-desde`, `agv-poco`, `agv-degradacion`, `ritmo-agv`, `retiene-agv`, `entrega-agrupada-agv`, `flota-sin-lecturas`, `flota-sin-asignar` (AGV); `calle-lectura`, `calle-espera`, `calle-permanencia`, `sin-carga`, `fifo` (Línea y calles) |
-| **3** | Limpieza y contexto | `deriva`, `tag-fuera-del-circuito` (Tags); `deriva-agv` (AGV); `punto-critico` (Tiempos); `calle-uso`, `arranque-en-frio` (Línea y calles) |
+| **1** | Puede parar la planta o perder una función | `bloqueo`, `cuello-de-botella`, `punto-conflictivo`, `produccion-parada` (Tiempos); `tag-rotura` (Tags); `agv-rotura`, `deja-de-leer` (AGV); `conexion-no-reconecta` (WiFi: un AGV sin señal que no vuelve pierde su función como el que deja de leer); `calle-sin-servicio`, `linea`, `linea-paso` (Línea y calles) |
+| **2** | Degrada el circuito | `zona-oscura`, `parada-sin-explicacion`, `entrega-agrupada-sitio`, `cambio-de-horquilla`, `tramo-entre-ficheros`, `estructura-entre-ficheros` (Tiempos); `tag-lectura`, `tag-deja`, `tag-empieza`, `tag-degradacion`, `cambio-tag`, `estructura` (Tags); `agv-nunca`, `agv-desde`, `agv-poco`, `agv-degradacion`, `ritmo-agv`, `retiene-agv`, `entrega-agrupada-agv`, `flota-sin-lecturas`, `flota-sin-asignar` (AGV); `conexion-sitio`, `conexion-agv`, `conexion-ruidoso` (WiFi); `calle-lectura`, `calle-espera`, `calle-permanencia`, `sin-carga`, `fifo` (Línea y calles) |
+| **3** | Limpieza y contexto | `deriva`, `tag-fuera-del-circuito` (Tags); `deriva-agv` (AGV); `conexion-colectivo` (WiFi); `punto-critico` (Tiempos); `calle-uso`, `arranque-en-frio` (Línea y calles) |
+
+Hasta 3.68.0 los cinco tipos del registro de conexiones no estaban en el catálogo y caían en contexto
+con su identificador en bruto; desde 3.69.0 tienen tema WiFi y rango, y «Ver evidencia» lleva a su
+pestaña.
 
 Un tipo que no esté en el catálogo va a contexto y se enseña con su identificador: antes que
 esconderlo.
