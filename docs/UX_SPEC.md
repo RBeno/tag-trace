@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.62.0
+version: 0.63.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -266,6 +266,10 @@ F4.
 
 La pantalla habla como un producto terminado, no como el proyecto que lo construye:
 
+- **Concordancia con la cifra** (3.85.0). Con uno, singular y su artículo: «Ver el refuerzo declarado»,
+  «Detalle del tramo», «1 tramo de zona cargada»; con varios, plural con la cifra en español. Las
+  etiquetas de las tablas plegables se componen con `countedLabel` (`labels.ts`) y una prueba de
+  navegador busca en todas las pestañas cualquier «1» con el nombre en plural.
 - **Sin referencias internas.** Ningún texto visible cita reglas (`R-…`), preguntas abiertas
   (`OQ-…`), casos de prueba ni fases. Esas referencias viven en la documentación y en el código.
 - **Sin identificadores internos.** Los valores con los que trabaja el dominio (`observed`,
@@ -1047,6 +1051,19 @@ Además, en el móvil:
 - Ninguna pantalla esencial depende de hover o clic secundario.
 
 La emulación móvil no sustituye la prueba en dispositivo físico.
+
+**Coherencia entre escritorio y móvil (3.85.0, F6 entrega 4).** Revisadas las siete pestañas con el
+circuito de auditoría a 360 × 780 táctil y a 1.366 × 768; ninguna se sale del ancho. Se corrigió:
+
+- «Ver los mismos datos en tabla» medía 32 px con dedo: su regla base, posterior al bloque táctil, le
+  ganaba con `min-height: 30px`. Ahora 44 px, y también «Ver evidencia».
+- Una escala de títulos: el de un panel (h2, 1,15 rem) mayor que sus apartados (h3, 1,05 rem) y estos
+  que los suyos (h4, 0,95 rem). Antes h2 medía 1 rem y h3 era mayor.
+- Todos los campos —texto, número, fecha, desplegables— con el aspecto de la aplicación (borde, radio
+  de 8 px, fondo y foco visibles), no el del navegador; antes solo lo tenía el buscador del expediente.
+- La concordancia con la cifra (§4.4).
+
+Lo fija `tests/e2e/interfaz.spec.ts` en cada pestaña de los dos tamaños. Falta el móvil físico (G6).
 
 ## 8. Estados y errores
 

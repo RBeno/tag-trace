@@ -33,7 +33,7 @@ import {
   inventoryChart,
   lazyTable,
   plainTable,
-  scrollBox, plural } from "./charts.js";
+  scrollBox, plural, countedLabel } from "./charts.js";
 import { closeDrawer } from "./drawer.js";
 import { appCss, openReportDialog, type ReportSource } from "./report.js";
 import { buildCaseReportHtml, caseReportFileName } from "./case-report.js";
@@ -1998,7 +1998,7 @@ function renderAccumulation(report: {
     ],
     [
       "Instantáneas",
-      `${report.snapshots.withSnapshot} de ${report.retained.distinctSources} ficheros` +
+      `${report.snapshots.withSnapshot} de ${plural(report.retained.distinctSources, "fichero", "ficheros")}` +
         (report.snapshots.withoutSnapshot === 0
           ? ""
           : `; ${report.snapshots.withoutSnapshot} sin instantánea (anteriores a esta versión o sin construir): vuelve a cargarlos para crearla`),
@@ -2530,10 +2530,10 @@ function renderListCleanup(views: CircuitViews): void {
     element(
       "p",
       undefined,
-      `${cleanup.notPhysical.length} declarados no están en el circuito físico (${critical} con función crítica: ` +
+      `${plural(cleanup.notPhysical.length, "declarado no está", "declarados no están")} en el circuito físico (${critical} con función crítica: ` +
         "comprobar si hay que colocar una copia o eliminarlos de Vsystem); " +
-        `${cleanup.moved.length} están en otra posición que en la lista; de ${cleanup.reinforcements.length} refuerzos declarados, ` +
-        `${byStatus("comprobado")} comprobados en el recorrido, ${byStatus("incompleto")} incompletos y ${byStatus("separado")} separados.`,
+        `${cleanup.moved.length} están en otra posición que en la lista; de ${plural(cleanup.reinforcements.length, "refuerzo declarado", "refuerzos declarados")}, ` +
+        `${plural(byStatus("comprobado"), "comprobado", "comprobados")} en el recorrido, ${plural(byStatus("incompleto"), "incompleto", "incompletos")} y ${plural(byStatus("separado"), "separado", "separados")}.`,
     ),
   );
   const download = element("button", undefined, "Descargar la limpieza (CSV)");
@@ -2550,19 +2550,19 @@ function renderListCleanup(views: CircuitViews): void {
   out.append(download);
   const fn = (funcion: string | null) => (funcion === null ? "—" : criticalFunctionLabel(funcion));
   out.append(
-    lazyTable(`Ver los ${cleanup.notPhysical.length} declarados que no están en el físico`, () =>
+    lazyTable(countedLabel("Ver", cleanup.notPhysical.length, false, "declarado que no está en el físico", "declarados que no están en el físico"), () =>
       plainTable(
         ["Tag", "Función", "En la lista", "Según la lista", "Acción"],
         cleanup.notPhysical.map((tag) => [tag.tagId, fn(tag.funcion), String(tag.listPosition), tag.listBetween ?? "—", tag.action]),
       ),
     ),
-    lazyTable(`Ver los ${cleanup.moved.length} en otra posición`, () =>
+    lazyTable(countedLabel("Ver", cleanup.moved.length, false, "que está en otra posición", "en otra posición"), () =>
       plainTable(
         ["Tag", "Función", "En la lista", "Según las lecturas", "Según la lista", "Leído entre"],
         cleanup.moved.map((tag) => [tag.tagId, fn(tag.funcion), String(tag.listPosition), String(tag.position), tag.listBetween ?? "—", tag.readBetween ?? "—"]),
       ),
     ),
-    lazyTable(`Ver los ${cleanup.reinforcements.length} refuerzos declarados`, () =>
+    lazyTable(countedLabel("Ver", cleanup.reinforcements.length, false, "refuerzo declarado", "refuerzos declarados"), () =>
       plainTable(
         ["Tags", "Función", "Estado", "Detalle"],
         cleanup.reinforcements.map((group) => [group.tags.join(" + "), fn(group.funcion), group.status, group.detail]),
@@ -2611,7 +2611,7 @@ function renderUndeclaredTags(views: CircuitViews): void {
   out.append(cards);
   if (tags.length > HIGHLIGHTS) {
     out.append(
-      lazyTable(`Ver los ${tags.length} tags`, () =>
+      lazyTable(countedLabel("Ver", tags.length, false, "tag", "tags"), () =>
         plainTable(
           ["Tag", "Veredicto", "Día", "Noche", "Entre", "Y", "Pasadas de día (leído)", "Pasadas de noche (leído)"],
           tags.map((tag) => [
@@ -2764,7 +2764,7 @@ function renderFlowStops(fleet: CircuitViews["fleet"]): void {
   }
   if (blockages.length > shown.length) {
     out.append(
-      lazyTable(`Ver los ${blockages.length} primeros de cola sin avanzar`, () =>
+      lazyTable(countedLabel("Ver", blockages.length, false, "primero de cola sin avanzar", "primeros de cola sin avanzar"), () =>
         plainTable(
           ["AGV", "Tag", "Desde", "Hasta", "Lo habitual", "Detrás", "Lecturas mientras tanto"],
           blockages.map((blockage) => [
@@ -2903,7 +2903,7 @@ function renderCircuitState(views: CircuitViews): void {
     const allUnexplained = [...measured.unexplained.produccion, ...measured.unexplained.noche];
     if (allUnexplained.length > PER_KIND) {
       out.append(
-        lazyTable(`Ver las ${allUnexplained.length} paradas sin explicación`, () =>
+        lazyTable(countedLabel("Ver", allUnexplained.length, true, "parada sin explicación", "paradas sin explicación"), () =>
           plainTable(
             ["AGV", "Tramo", "Desde", "Hasta", "Lo normal", "De más", "Régimen"],
             allUnexplained.map((stop) => [
@@ -3269,7 +3269,7 @@ function renderAnchorSections(views: CircuitViews): void {
   };
   if (sourceIds.length > 0) {
     out.append(
-      lazyTable(`Ver el p50 de cada sección por fichero (${sourceIds.length} ficheros) y los tags de cada sección`, () => {
+      lazyTable(`Ver el p50 de cada sección por fichero (${plural(sourceIds.length, "fichero", "ficheros")}) y los tags de cada sección`, () => {
         const body = element("div");
         body.append(
           element("p", "muted", "Tags de cada sección, en el orden del anillo:"),
@@ -3463,7 +3463,7 @@ function renderConnections(
       ),
     );
     out.append(
-      lazyTable(`Ver los ${summary.collectives.length} cortes colectivos`, () =>
+      lazyTable(countedLabel("Ver", summary.collectives.length, false, "corte colectivo", "cortes colectivos"), () =>
         plainTable(
           ["Desde", "Hasta", "AGV", "Microcortes", "Cortes medios", "Caídas", "Apagados"],
           summary.collectives.map((entry) => [
@@ -3537,7 +3537,7 @@ function renderConnections(
   }
   if (summary.notReconnecting.length > PER_KIND) {
     out.append(
-      lazyTable(`Ver los ${summary.notReconnecting.length} que no reconectaron`, () =>
+      lazyTable(countedLabel("Ver", summary.notReconnecting.length, false, "que no reconectó", "que no reconectaron"), () =>
         plainTable(
           ["AGV", "Desde", "Hasta", "Duración", "Cierre", "Última lectura"],
           summary.notReconnecting.map((entry) => [
@@ -3911,7 +3911,7 @@ function renderRing(views: CircuitViews): void {
     out.append(elsewhere);
 
     out.append(
-      lazyTable(`Ver los ${shape.tags.length} tags del anillo, en orden`, () =>
+      lazyTable(`${countedLabel("Ver", shape.tags.length, false, "tag del anillo", "tags del anillo")}, en orden`, () =>
         plainTable(
           ["Posición", "Tag", ...(shape.zones === undefined ? [] : ["Zona"]), "Leído por pasada", "Lectura"],
           shape.tags.map((tagId, index) => {
@@ -4119,7 +4119,7 @@ function groupedTagCard(item: TagHighlight, matrix: Matrix): HTMLElement {
   const key = neverSetOf(ids);
   for (const agvId of item.never) foldedVehicles.set(agvId, key);
   card.append(
-    lazyTable(`Ver los ${item.never.length} AGV con sus pasadas`, () =>
+    lazyTable(`${countedLabel("Ver", item.never.length, false, "AGV", "AGV")} con sus pasadas`, () =>
       plainTable(
         ["AGV", ...ids],
         item.never.map((agvId) => [
@@ -4180,7 +4180,7 @@ function renderVehicleReading(matrix: Matrix, reading: VehicleReadingView | unde
   const unprovenOf = new Map(matrix.vehicles.map((vehicle) => [vehicle.agvId, vehicle.unproven]));
   const extra = (agvId: string): string => {
     const unproven = unprovenOf.get(agvId) ?? 0;
-    return unproven > 0 ? ` Además, ${unproven} tramos recorridos en menos tiempo de lo normal.` : "";
+    return unproven > 0 ? ` Además, ${plural(unproven, "tramo recorrido", "tramos recorridos")} en menos tiempo de lo normal.` : "";
   };
 
   // Por tipo, para que ninguno quede escondido detrás de los demás: nunca, dejó de leer, poco en
@@ -4230,7 +4230,7 @@ function renderVehicleReading(matrix: Matrix, reading: VehicleReadingView | unde
       ["agv-nunca", ...[...group.agvIds].sort()],
     );
     card.append(
-      lazyTable(`Ver los ${group.agvIds.length} AGV con sus pasadas`, () =>
+      lazyTable(`${countedLabel("Ver", group.agvIds.length, false, "AGV", "AGV")} con sus pasadas`, () =>
         plainTable(
           ["AGV", ...tagIds],
           group.agvIds.map((agvId, index) => [agvId, ...(group.tags[index] ?? []).map((entry) => `0 de ${entry.passes}`)]),
@@ -4461,7 +4461,7 @@ function renderTagChanges(views: CircuitViews): void {
   const total = absorbed.length + changes.length;
   if (total > 0) {
     out.append(
-      lazyTable(`Ver los ${total} cambios dentro del periodo`, () =>
+      lazyTable(countedLabel("Ver", total, false, "cambio dentro del periodo", "cambios dentro del periodo"), () =>
         plainTable(["Tag", "Qué pasó", "Hora", "AGV que no lo leen como el resto"], [
           ...absorbed.map(({ gap, atUtcMs }) => [
             gap.changes
@@ -4576,7 +4576,7 @@ function renderCharging(views: CircuitViews): void {
       ),
     );
     out.append(
-      lazyTable(`Ver los ${charging.neverCharged.length} AGV que no entraron a cargar`, () =>
+      lazyTable(countedLabel("Ver", charging.neverCharged.length, false, "AGV que no entró a cargar", "AGV que no entraron a cargar"), () =>
         plainTable(
           ["AGV", "Primera lectura", "Última lectura", "Presente", "Lecturas"],
           charging.neverCharged.map((entry) => [
@@ -4680,7 +4680,7 @@ function renderCharging(views: CircuitViews): void {
 
   const usageOf = new Map(charging.usage.map((entry) => [entry.laneId, entry]));
   out.append(
-    lazyTable(`Detalle de las ${charging.lanes.length} calles`, () =>
+    lazyTable(countedLabel("Detalle de", charging.lanes.length, true, "calle", "calles"), () =>
       plainTable(
         ["Calle", "Capacidad", "Estancias", "Cuota", "Estancia habitual", "Turnos saltados"],
         charging.lanes.map((lane) => {
@@ -4795,7 +4795,7 @@ function renderDrift(views: CircuitViews): void {
   }
   if (sortedTags.length > 0) {
     out.append(
-      lazyTable(`Detalle de los ${sortedTags.length} tags con cambios`, () =>
+      lazyTable(countedLabel("Detalle de", sortedTags.length, false, "tag con cambios", "tags con cambios"), () =>
         plainTable(
           ["Tag", "Cambio", "Antes", "Ahora"],
           sortedTags.map((entry) => [
@@ -4854,7 +4854,7 @@ function renderDrift(views: CircuitViews): void {
   }
   if (sortedVehicles.length > 0) {
     out.append(
-      lazyTable(`Detalle de los ${sortedVehicles.length} AGV con cambios`, () =>
+      lazyTable(countedLabel("Detalle de", sortedVehicles.length, false, "AGV con cambios", "AGV con cambios"), () =>
         plainTable(
           ["AGV", "Tags dejados de leer", "Tags nuevos no adoptados"],
           sortedVehicles.map((entry) => [
@@ -4980,7 +4980,7 @@ function renderCriticalPoints(views: CircuitViews): void {
   }
 
   out.append(
-    lazyTable(`Detalle de los ${candidates.length} candidatos`, () =>
+    lazyTable(countedLabel("Detalle de", candidates.length, false, "candidato", "candidatos"), () =>
       plainTable(
         ["Tag", "Posible función", "Pasadas", "Detalle"],
         sorted.map((candidate) => [
@@ -5019,7 +5019,7 @@ function renderFifo(views: CircuitViews): void {
     element(
       "p",
       "muted",
-      `${spans.length} tramos de zona cargada, ${spans.filter((span) => span.evaluated).length} ` +
+      `${plural(spans.length, "tramo", "tramos")} de zona cargada, ${spans.filter((span) => span.evaluated).length} ` +
         "con pasadas suficientes. Un adelantamiento puede tener explicación (carga, maniobra " +
         "manual): hay que comprobarlo.",
     ),
@@ -5056,7 +5056,7 @@ function renderFifo(views: CircuitViews): void {
   }
 
   out.append(
-    lazyTable(`Detalle de los ${spans.length} tramos`, () =>
+    lazyTable(countedLabel("Detalle de", spans.length, false, "tramo", "tramos"), () =>
       plainTable(
         ["Tramo", "Tags", "Pasadas", "Tránsito habitual", "Adelantamientos"],
         spans.map((span) => [

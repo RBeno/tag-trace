@@ -2,6 +2,27 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.85.0] - 2026-10-17
+
+Entrega 4 de F6. Revisadas las siete pestañas con el circuito de auditoría en un móvil táctil (360 ×
+780) y en un portátil (1.366 × 768): nada se sale del ancho.
+
+### Corregido
+
+- «Ver los mismos datos en tabla» medía 32 px con dedo, no los 44 de `UX_SPEC.md` §7: la regla base del
+  botón, posterior al bloque táctil, le ganaba. Ahora 44 px, y «Ver evidencia» también.
+- **Títulos**: el de un panel era más pequeño que sus apartados (h2 a 1 rem, h3 con el tamaño del
+  navegador). Ahora una escala: h2 1,15 rem, h3 1,05 rem, h4 0,95 rem.
+- **Campos**: solo el buscador del expediente tenía el aspecto de la aplicación; el circuito, las fechas
+  y los desplegables salían con el del navegador. Ahora todos comparten borde, radio, fondo y foco.
+- **Concordancia con la cifra**: «Ver los 1 refuerzos declarados», «1 tramos de zona cargada», «de 1
+  ficheros»… Con uno, ahora singular y su artículo («Ver el refuerzo declarado», «Detalle del tramo»).
+  Las 19 etiquetas de tablas plegables usan `countedLabel`.
+
+### Añadido
+
+- Pruebas: TC-365 (unitaria) y TC-366 (navegador, en las siete pestañas y los dos tamaños).
+
 ## [3.84.0] - 2026-10-17
 
 Entrega 3 de F6.

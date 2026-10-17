@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.68.0
+version: 0.69.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -423,6 +423,15 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## F6, entrega 4: interfaz coherente (3.85.0, 2026-10-17)
+
+Auditadas las siete pestañas con el circuito de auditoría a 360 × 780 táctil y 1.366 × 768: ningún
+desborde. Corregido: «Ver los mismos datos en tabla» a 32 px con dedo (la regla base pisaba la táctil),
+títulos invertidos (h2 menor que h3), campos con el aspecto del navegador y «1» con plural en 19
+etiquetas de tablas y varios textos (`countedLabel`). `interfaz.spec.ts` lo fija en los dos tamaños.
+Aprendido: la captura de página entera de Playwright apaga la emulación táctil; se mide antes de
+capturar. Siguiente: entrega 5, accesibilidad y estados de error.
 
 ## F6, entrega 3: optimización y degradación (3.84.0, 2026-10-17)
 

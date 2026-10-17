@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.31.0
+version: 0.32.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -209,7 +209,9 @@ OQ-172 sigue abierta y no bloquea. F5 queda cerrada.
 
 Criterio de rechazo (OQ-B05, propietario 2026-10-17): el piloto se rechaza si ocurre cualquiera de estas: (a) un resultado que el propietario sabe falso con los datos reales —una afirmación sin respaldo o un `unknown` convertido en certeza—; (b) PERF-D2 a D4 por encima del presupuesto en su dispositivo sin desviación aceptada; (c) pérdida de datos al actualizar, reabrir o restaurar una copia; (d) cualquier petición a la red con datos de planta; (e) un flujo esencial que no se pueda completar en el móvil. Dispositivos y navegadores: OQ-173.
 
-- [ ] Flujos esenciales en PC y móvil físico.
+- [ ] Flujos esenciales en PC y móvil físico. **Evidencia parcial (3.85.0)**: las siete pestañas, con el
+      circuito de auditoría, sin desbordes y con objetivos de 44 px con dedo a 360 × 780 táctil y a 1.366 ×
+      768 (TC-366). Emulado: falta el S23 FE físico.
 - [ ] PERF-D2–D4 dentro de presupuesto aprobado. **Instrumento (3.83.0)**: «Medir este dispositivo» en la
       pestaña Datos mide los tres y descarga el informe (`PERFORMANCE_BUDGET.md` §3.2). Falta la medida del
       propietario en Chrome del S23 FE y del PC de referencia (OQ-173). La cancelación, que en 3.83.0 no se

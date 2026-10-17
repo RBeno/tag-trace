@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.84.0
+version: 0.85.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -413,6 +413,8 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-362 | Navegador: cancelar a mitad de la lectura (`concurrencia.spec.ts`, WP-004, INV-006) | Con un circuito de un fichero, una importación de 400.000 filas cancelada mientras dice «Normalizando filas» se confirma en menos de 1,5 s, «Cancelar» desaparece, los ficheros vuelven a encenderse y el circuito sigue con su único fichero |
 | TC-363 | Lecturas por columnas (`reading-columns.test.ts`, `PERFORMANCE_BUDGET.md` §4) | Cada fila de la tabla sale igual que de la lectura, con acentos y textos de distinta longitud; los buffers se transfieren; el filtro compara el texto exacto con sus ceros (INV-002: `0040` ≠ `40`, `2032` ≠ `20321`); sin lecturas, cero filas |
 | TC-364 | Fichero mayor que lo medido (`perf-bench.test.ts`) | Hasta 500.000 lecturas, ningún aviso; por encima, el aviso con el número de lecturas y, si el navegador la declara, su memoria |
+| TC-365 | Etiquetas con cuenta (`labels-count.test.ts`, `UX_SPEC.md` §4.4) | Con uno, singular y su artículo («Ver el refuerzo declarado», «Ver la parada», «Detalle del tramo», «Detalle de la calle»); con varios, plural con la cifra en español |
+| TC-366 | Navegador: interfaz coherente (`interfaz.spec.ts`, `UX_SPEC.md` §7) | Con el circuito de auditoría, en las siete pestañas, a 360 × 780 táctil y a 1.366 × 768: nada se sale del ancho fuera de una caja con desplazamiento; con dedo, todo control de al menos 44 px; ningún campo con el aspecto del navegador; título de panel mayor que sus apartados; ningún «1» con el nombre en plural |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las siete pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

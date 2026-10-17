@@ -1,6 +1,6 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.13.0
+version: 0.14.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -220,7 +220,7 @@ Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria port
 3. **Optimización y degradación por capacidad**, guiada por esa medida. **Hecha en 3.84.0** con las cifras del
    contenedor (lecturas por columnas; aviso por encima de lo medido); se revisa con los informes del
    propietario.
-4. **Interfaz coherente de escritorio y móvil**.
+4. **Interfaz coherente de escritorio y móvil**. **Hecha en 3.85.0** (`UX_SPEC.md` §7); falta el móvil físico.
 5. **Accesibilidad y estados de error completos**: WCAG 2.2 AA con axe-core en las pruebas (OQ-175) y una
    prueba por estado de `UX_SPEC.md` §8.
 6. **Sin red y seguridad**: el flujo entero sin conexión y sin una sola petición fuera del origen; CSP,

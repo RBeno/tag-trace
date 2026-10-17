@@ -140,7 +140,12 @@ body { margin: 0; background: var(--bg); color: var(--ink);
 #app { max-width: 1440px; margin: 0 auto; padding: 24px 16px 64px; }
 .panel p:not(.readout) { max-width: 90ch; }
 h1 { font-size: 1.4rem; margin: 0; letter-spacing: 0.02em; }
-h2 { font-size: 1rem; margin: 0 0 12px; }
+/* Una escala para todos los títulos (F6, entrega 4): el título de un panel (h2) por encima de sus
+   apartados (h3) y estos de los suyos (h4). Antes h2 medía 1rem y h3 se quedaba con el tamaño del
+   navegador, mayor: el apartado gritaba más que el panel que lo contiene. */
+h2 { font-size: 1.15rem; margin: 0 0 12px; }
+h3 { font-size: 1.05rem; }
+h4 { font-size: 0.95rem; }
 .muted { color: var(--muted); margin: 4px 0 0; }
 .bar { margin-bottom: 20px; }
 .panel { background: var(--panel); border: 1px solid var(--line);
@@ -162,6 +167,14 @@ label { display: block; font-weight: 600; margin-bottom: 8px; }
 button { font: inherit; padding: 8px 14px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
 button.danger { border-color: var(--error); color: var(--error); margin-top: 12px; }
+/* Un mismo aspecto para todos los campos (F6, entrega 4): antes solo el buscador del expediente lo
+   tenía y el resto —el circuito, las fechas de un expediente, los formularios— salían con el del
+   navegador. Las reglas propias de cada sitio, más abajo, siguen mandando en lo que cambien. */
+input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="time"],
+input[type="datetime-local"], select, textarea {
+  font: inherit; padding: 6px 10px; min-height: 36px; max-width: 100%; box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--viz-series); outline-offset: 1px; }
 progress { width: 100%; height: 8px; }
 .message.error h2 { color: var(--error); }
 .message.warn h2 { color: var(--warn); }
@@ -510,6 +523,12 @@ table.data th { color: var(--muted); font-weight: 600; }
 .drawer-open { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted);
   padding: 5px 10px; min-height: 30px; border-radius: 8px; margin: 8px 8px 0 0; text-align: left; }
 .drawer-open:hover { color: var(--ink); border-color: var(--muted); }
+/* Con dedo, 44 px como el resto (UX_SPEC §7). Va aquí y no en el bloque táctil de arriba porque la
+   regla base, que viene después de aquel, le ganaba con su `min-height: 30px` (F6, entrega 4). */
+@media (any-pointer: coarse) {
+  .drawer-open { min-height: 44px; }
+  a.evidence { display: inline-flex; align-items: center; min-height: 44px; }
+}
 .drawer-open svg { flex: none; }
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(33vw, 640px); min-width: 360px; max-width: 100vw;
   z-index: 6; background: var(--bg); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);

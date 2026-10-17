@@ -20,7 +20,7 @@
 
 import type { CircuitViews } from "../application/protocol.js";
 import type { DeliveryHeatCell } from "../domain/grouped-delivery.js";
-import { HATCH_ID, figure, hatchPattern, lazyTable, legendList, plainTable, plural, scrollBox, svg, table, text } from "./charts.js";
+import { HATCH_ID, figure, hatchPattern, lazyTable, legendList, plainTable, plural, countedLabel, scrollBox, svg, table, text } from "./charts.js";
 import { patternLabel, zoneLabel } from "./labels.js";
 import { inspect } from "./pointer.js";
 
@@ -3602,7 +3602,7 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
     ...(sections.size > 0 ? [sectionLegend(sections, "franja de arriba")] : []),
     area,
     line.node,
-    lazyTable(`Ver la horquilla de los ${rows.length} tramos`, () =>
+    lazyTable(rows.length === 1 ? "Ver la horquilla del tramo" : `Ver la horquilla de los ${rows.length} tramos`, () =>
       plainTable(
         ["Posición", "Tramo", "Pasadas", "Mitad", "80 %", "95 %", "Valla", "Noche (mitad)", "Hallazgo"],
         rows.map((row, index) => [
@@ -3887,7 +3887,7 @@ export function segmentHistoryChart(panels: readonly SegmentHistoryPanel[]): HTM
     ]),
     area,
     line.node,
-    lazyTable(`Ver los ${panels.length} tramos en tabla`, () =>
+    lazyTable(`${countedLabel("Ver", panels.length, false, "tramo", "tramos")} en tabla`, () =>
       plainTable(
         ["Tramo", "Fichero", "Mitad", "80 %", "95 %", "Pasadas"],
         panels.flatMap((panel) =>
