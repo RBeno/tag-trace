@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.50.0
+version: 0.50.1
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -722,7 +722,8 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
   expediente del tag— añade una línea «Declarado en planta: …» con lo que las listas dicen de él: su
   nota tal cual, su función y su calle, sin repetir piezas. Es información para el diagnóstico y no
   cambia ningún cálculo (R-GRA-007). Desde 3.68.0 (R-GRA-022) lleva también **sus áreas** del servidor
-  (lista `area`: «áreas: cruce salida, SE6/8 lleno - ME3 vacío») y el **refuerzo con su lado**
+  (lista `area`: «áreas: cruce salida, SE6/8 lleno - ME3 vacío»), la función con su etiqueta
+  («función: parada-precisa (montaje llenos 2)»: función y área son identidades distintas, R-GRA-022) y el **refuerzo con su lado**
   («refuerzo con 58026 (anterior) y 58028 (siguiente)»). Un tag sin hallazgo no enseña nada de esto:
   la función y las áreas se dicen solo cuando hay un riesgo que leer con ellas (propietario,
   2026-10-17).

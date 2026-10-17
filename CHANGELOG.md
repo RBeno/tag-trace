@@ -2,6 +2,16 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.70.1] - 2026-10-17
+
+### Cambiado
+
+- **Función y área con identidad distinta** (propietario, 2026-10-17: «las áreas tienen que tener una
+  identidad diferente a la de función, porque una función puede pertenecer a un área»). Ya iban en
+  listas distintas (`area`, y `critico` o la columna `funcion`); ahora «Declarado en planta» las
+  etiqueta por separado («función: parada-precisa (montaje llenos 2) · refuerzo con … · áreas: …») en
+  vez de fundir la función con la nota. R-GRA-022 lo recoge.
+
 ## [3.70.0] - 2026-10-17
 
 Tercera entrega de la organización de TAG TRACE: el Resumen como puesto de mando (propietario,

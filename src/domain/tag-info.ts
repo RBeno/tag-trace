@@ -31,7 +31,9 @@ export interface DeclaredReinforcement {
 
 /**
  * Por tag, lo declarado en las listas, sin repetir: la nota tal cual, la función, la calle, sus áreas
- * (R-GRA-022) y con qué tags forma refuerzo (R-GRA-016). Se
+ * (R-GRA-022) y con qué tags forma refuerzo (R-GRA-016). **La función y las áreas tienen identidad
+ * distinta** (propietario, 2026-10-17: «una función puede pertenecer a un área»): cada una va con su
+ * etiqueta —«función: …», «áreas: …»— y nunca se funden en una sola pieza. Se
  * compara pieza a pieza (lo separado por « · »): la misma palabra puede venir en la nota del circuito
  * y en la de la zona, y no se enseña dos veces.
  *
@@ -59,7 +61,7 @@ export function declaredTagInfo(
       add(entry.tagId, entry.note);
       if (list === "carga-online") add(entry.tagId, `${entry.grupo}${entry.funcion === "" ? "" : ` (${entry.funcion})`}`);
       else if ((list === "critico" || list === "circuito") && entry.funcion !== "")
-        add(entry.tagId, `${entry.funcion}${entry.grupo === "" ? "" : ` (${entry.grupo})`}`);
+        add(entry.tagId, `función: ${entry.funcion}${entry.grupo === "" ? "" : ` (${entry.grupo})`}`);
       else if (list === "noche") add(entry.tagId, "tag de noche declarado");
       else if (list === "tramo" && entry.grupo !== "") add(entry.tagId, `tramo ${entry.grupo}`);
       else if (list === "area" && entry.grupo !== "") {

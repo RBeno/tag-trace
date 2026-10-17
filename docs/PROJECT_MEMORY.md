@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.53.0
+version: 0.53.1
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -438,7 +438,9 @@ en planta» con las áreas y el refuerzo por su lado) **y la segunda** (3.69.0: 
 registro cargado, y los cinco tipos `conexion-*` en el catálogo con tema WiFi y rango; hasta entonces
 caían en contexto con su identificador en bruto) **y la tercera** (3.70.0: «Avisos» en el Resumen con
 la configuración que no se pudo usar y lo que falta o contradice, cada uno con su enlace; rango 3
-plegado en la bandeja). Lo que ya existía y se conserva: la bandeja del
+plegado en la bandeja). Precisión del propietario, aplicada en 3.70.1: **función y área tienen identidad
+distinta** («una función puede pertenecer a un área»): listas distintas y etiquetas distintas en
+«Declarado en planta». Lo que ya existía y se conserva: la bandeja del
 Resumen con «Ver evidencia», la línea «Declarado en planta» solo en tarjetas con hallazgo y en el
 expediente.
 
