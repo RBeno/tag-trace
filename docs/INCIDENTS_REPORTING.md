@@ -1,8 +1,8 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.4.0
+version: 0.5.0
 status: baseline-candidate
-last_updated: 2026-10-09
+last_updated: 2026-10-17
 ---
 
 # Incidencias, replay e informes
@@ -121,6 +121,8 @@ El informe se regenera desde el expediente y contiene:
 10. versiones de reglas, algoritmos y configuración.
 
 Una exportación es una instantánea; el expediente local continúa vivo. El informe no se publica en GitHub.
+
+Desde 3.72.0 existe el **informe del circuito** (FR-026, `UX_SPEC.md` §4.8): un HTML autocontenido con la conclusión, los avisos, los hallazgos con su estado de revisión y las secciones elegidas, montado desde lo que la aplicación enseña. El informe del expediente de una incidencia, con los diez puntos de arriba, sigue pendiente de F5.
 
 ## 9. Relación con consolidación
 

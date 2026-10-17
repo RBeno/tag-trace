@@ -2,7 +2,7 @@
 document_id: TT-CONFIG-001
 version: 0.30.0
 status: baseline-candidate
-last_updated: 2026-10-09
+last_updated: 2026-10-17
 ---
 
 # Configuración de circuito
@@ -212,7 +212,7 @@ lista;tag;orden;funcion;grupo;capacidad;nota
 
 | Columna | Qué lleva |
 |---|---|
-| `lista` | `circuito`, `memoria`, `mantenimiento`, `emergencia`, `carga-online`, `critico`, `zona`, `ancla`, `noche`, `linea` o `tramo` |
+| `lista` | `circuito`, `memoria`, `mantenimiento`, `emergencia`, `carga-online`, `critico`, `zona`, `ancla`, `noche`, `linea`, `tramo` o `area` |
 | `tag` | El identificador, **tal cual**: `0040` no es `40` (R-DAT-001, INV-002) |
 | `orden` | Posición dentro de la lista. Sin ella vale el orden de las filas del fichero |
 | `funcion` | El papel del tag dentro de su lista |
@@ -228,6 +228,7 @@ Y así se expresan los bloques de §3.4:
 | `critical_points` | `lista=critico`, `funcion` con una de las doce clases de §3.4.1, o la función de planta tal cual (cuenta como crítica y se avisa). **Alternativa**: `lista=circuito` con la misma `funcion` en la fila del tag — las dos vías conviven, `critico` gana en caso de contradicción |
 | `lap_anchors` | `lista=ancla`, `orden` = prioridad cuando se declara más de una (§3.4.2) |
 | tramos | `lista=tramo`, `grupo` = nombre del tramo (kitting, línea, cruce…): se dibuja en las gráficas del anillo y no cambia ningún cálculo (R-GRA-018) |
+| áreas | `lista=area`, `grupo` = nombre del área gestionada por el servidor; **un tag de varias áreas lleva varias filas**. Se enseña junto a las incidencias del tag y en su expediente, y no cambia ningún cálculo (R-GRA-022) |
 | la línea | `lista=linea`, `orden` = 1…n: los tags de la línea de producción; el primero es la entrada, donde se mide la cadencia y el pulmón (R-FLO-010). El pulmón no se declara: sale de las medidas |
 | tags de noche | `lista=noche`, una fila por tag: los que pueden aparecer de noche en el circuito. Explican un tag que solo se lee de noche (R-DAT-022) y son `especial` en el inventario |
 

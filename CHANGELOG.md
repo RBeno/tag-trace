@@ -52,6 +52,11 @@ El propietario aceptó ADR-0018 y pidió la primera entrega («Acepto el ADR, em
 
 ## [3.73.0] - 2026-10-09
 
+Numeradas 3.68.0 y 3.69.0 al hacerse; pasan a 3.73.0 y 3.74.0 al integrar el 2026-10-17 la rama
+paralela de «Organizar TAG TRACE» (3.68.0 a 3.72.0, de abajo), que salió del mismo punto de `main`.
+Por lo mismo, sus preguntas pasan de OQ-167–169 a OQ-169–171 y sus pruebas de TC-330–333 a
+TC-338–341.
+
 El propietario pidió empezar el trabajo propio de F5 por el ADR del expediente («sí, empieza por el
 ADR del expediente»).
 
@@ -87,6 +92,157 @@ ADR del expediente»).
 ### Gobierno
 
 - `CLAUDE.md` decía que la fase vigente era F4; ahora dice F5, como `project_state.json`.
+## [3.72.0] - 2026-10-17
+
+El propietario: el Resumen «tiene que ser claro, funcional y profesional, con un botón para generar
+un informe con los datos descubiertos» eligiendo qué entra, y pidió mirar «otros programas,
+productos profesionales, estudios de interfaz, hombre-máquina, atención y psicología». Lo revisado y
+lo que se aplica está en `UX_SPEC.md` §4.8.
+
+### Añadido
+
+- **Frase de estado** al abrir el Resumen: la conclusión en una línea antes de las cifras (FR-028),
+  con tono solo si hay riesgo (ISA-101: el color se reserva a lo anormal) y el contexto debajo:
+  cobertura, AGV en el circuito, avisos y hallazgos revisados. Se rehace con cada marca de revisión.
+- **Saltos locales** —Avisos, Anillo, Hallazgos— y el botón **«Generar informe…»**.
+- **Informe del circuito** (FR-026): un cuadro para elegir secciones (la WiFi solo con registro),
+  qué hallazgos (todos con su estado, o solo un estado) y si va el anexo de tablas; genera un solo
+  fichero HTML autocontenido montado desde lo que la pantalla enseña, con la hoja de estilo
+  embebida, los gráficos como imagen o SVG, la conclusión primero, los avisos, los hallazgos por rango
+  con su revisión en campo, las secciones elegidas y la trazabilidad (circuito, fecha, cobertura,
+  ficheros, memoria vigente, versión). Nada sale del dispositivo; «Imprimir → PDF» lo convierte.
+- **Hoja de impresión** de la propia página: la pestaña activa sin barras ni controles.
+
+### Pruebas
+
+- Los recorridos de revisión de las pruebas de navegador (`plano`, `memoria`, `concurrencia`,
+  `valores-planta`, `vistas-diagnostico`) abren el pliegue de limpieza y contexto antes de marcar: desde 3.70.0 esas
+  tarjetas no se pueden pulsar sin abrirlo, como le pasaría a la persona.
+
+### Documentación
+
+- `UX_SPEC.md` §2 y §4.8 nueva (con las referencias y las sugerencias pendientes); `INCIDENTS_REPORTING.md` §8; TC-336 y TC-337; `TRACEABILITY_MATRIX.md`.
+
+## [3.71.0] - 2026-10-17
+
+Cuarta y última entrega de la organización de TAG TRACE (propietario, 2026-10-17: «quiero orden para
+poder ir directo a buscar una anomalía»; «AGV, que es donde se detallan los fallos detectados de cada
+AGV»; «en Tags está todo organizado por los problemas de los tags»).
+
+### Añadido
+
+- **«Problemas detectados»** (`UX_SPEC.md` §4.7) al principio de Tags, AGV y WiFi: el índice de lo
+  que esa pestaña encontró, por tipo, con su rango y su recuento, y el enlace a la sección que lo
+  detalla. Se construye con la misma pasada que la bandeja, así que cuenta lo mismo que ella.
+
+### Cambiado
+
+- **Tags y AGV, los problemas primero.** En Tags, el inventario pasa al final como contexto y «Lo
+  que hay que mirar» abre la pestaña; en AGV, la lectura de cada AGV, los que dejan de leer y el
+  ritmo van antes que la flota y la vida de cada uno.
+- **«AGV que dejan de leer» pasa de Línea y calles a AGV**: es un fallo del vehículo. El CSV de
+  incidencias de Línea y calles sigue trayéndolos.
+
+### Documentación
+
+- `UX_SPEC.md` §2 y §4.7 nueva; TC-335; `TRACEABILITY_MATRIX.md`.
+
+## [3.70.1] - 2026-10-17
+
+### Cambiado
+
+- **Función y área con identidad distinta** (propietario, 2026-10-17: «las áreas tienen que tener una
+  identidad diferente a la de función, porque una función puede pertenecer a un área»). Ya iban en
+  listas distintas (`area`, y `critico` o la columna `funcion`); ahora «Declarado en planta» las
+  etiqueta por separado («función: parada-precisa (montaje llenos 2) · refuerzo con … · áreas: …») en
+  vez de fundir la función con la nota. R-GRA-022 lo recoge.
+
+## [3.70.0] - 2026-10-17
+
+Tercera entrega de la organización de TAG TRACE: el Resumen como puesto de mando (propietario,
+2026-10-17: «se mostrarán los datos importantes y generales, las incidencias importantes y posibles
+avisos; cuando se quiera acceder a alguno te mandará automáticamente a su ubicación»).
+
+### Añadido
+
+- **«Avisos» en el Resumen** (`UX_SPEC.md` §4.6), entre la composición del circuito y el anillo: una
+  lista con la configuración que no se pudo usar (las tarjetas que cada sección plantaba y nadie
+  veía: puntos críticos, cortes de vuelta y calles declarados que no se pudieron usar) y lo que
+  falta o contradice (varios circuitos en el fichero; sin lista del circuito; tags declarados sin
+  lecturas, en otro sitio o leídos sin estar en la lista; sin historial de flota; sin registro de
+  conexiones). Cada aviso lleva a su sitio; sin avisos, lo dice.
+
+### Cambiado
+
+- **La bandeja enseña rango 1 y 2 enteros y pliega el rango 3** («Limpieza y contexto: N
+  hallazgos», un `details` cerrado). «Siguiente pendiente» lo abre si la siguiente tarjeta está
+  dentro, y el filtro por tema lo esconde si se queda vacío. Nada cambia en los recuentos.
+
+### Documentación
+
+- `UX_SPEC.md` §2, §4.5 y §4.6 nueva; TC-334; `TRACEABILITY_MATRIX.md`.
+
+## [3.69.0] - 2026-10-17
+
+Segunda entrega de la organización de TAG TRACE (propietario, 2026-10-17: «wifi si está disponible
+igual»): la WiFi tiene su pestaña y sus hallazgos entran en la bandeja con su rango.
+
+### Añadido
+
+- **Pestaña WiFi**, entre AGV y Tiempos, **solo con un registro de conexiones cargado**: sin él el
+  botón no está, las flechas la saltan y `#wifi` vuelve al Resumen. Contiene todo el estado de
+  conexión que hasta ahora era una subsección de Tiempos: cortes por clase, colectivos, contraste
+  con las ráfagas, mapa con su selector, sitios, terminales ruidosos, los que no reconectan y el
+  registro por AGV. En Tiempos queda «El estado de conexión está en WiFi» o, sin registro, por qué
+  no hay nada que enseñar.
+- **Tema WiFi en el catálogo de hallazgos** (`finding-kinds.ts`). Los cinco tipos del registro
+  (`conexion-no-reconecta`, rango 1; `conexion-sitio`, `conexion-agv`, `conexion-ruidoso`, rango 2;
+  `conexion-colectivo`, rango 3) caían hasta ahora en «contexto» con su identificador en bruto; ahora
+  la bandeja los ordena por su gravedad, el filtro por tema los aísla y «Ver evidencia» lleva a la
+  pestaña WiFi. El tile de hallazgos del Resumen los cuenta como a los demás.
+
+### Documentación
+
+- `UX_SPEC.md` §2 y §4.5; TC-332 y TC-333; `TRACEABILITY_MATRIX.md`.
+
+## [3.68.0] - 2026-10-17
+
+El propietario pidió organizar TAG TRACE: un Resumen que enseñe lo importante y lleve a su sitio,
+Tags y AGV ordenados por problemas, la WiFi aparte cuando esté cargada, y que el circuito guarde las
+**áreas** y la **función** de cada tag y las diga solo cuando hay riesgo, con su refuerzo. Son cuatro
+entregas (áreas y función; WiFi; Resumen; Tags y AGV); esta es la primera.
+
+### Añadido
+
+- **Lista `area`** (R-GRA-022, `CONFIG_SCHEMA.md` §3.8): a qué áreas gestionadas por el servidor
+  pertenece cada tag, con el nombre en `grupo` y una fila por tag y área. Se guarda con el circuito
+  como las demás listas y la plantilla de Excel la enseña con su propósito.
+- **«Declarado en planta» con las áreas y el refuerzo por su lado.** La línea que acompaña a cada
+  tarjeta de hallazgo que nombra un tag, y al expediente del tag, dice ahora «áreas: …» y «refuerzo
+  con 58026 (anterior) y 58028 (siguiente)» en vez de solo los números: una omisión en un tag
+  reforzado se lee distinta si el compañero de delante o de detrás sigue leyéndose (R-GRA-016).
+  Nada cambia en un tag sin hallazgo: la función y las áreas se dicen solo con riesgo.
+
+### Documentación
+
+- R-GRA-022 nueva; TC-330 y TC-331; `UX_SPEC.md` §5.9; `TRACEABILITY_MATRIX.md`.
+
+## [3.67.1] - 2026-10-09
+
+El propietario aportó el registro de conexiones y las lecturas de otro circuito (tres recorridos con
+flotas propias bajo un mismo nombre) y pidió apuntar dos preguntas que salieron del análisis. El
+análisis y sus ficheros se hicieron fuera del repositorio; aquí solo entran las preguntas, sin
+identificadores de planta.
+
+### Documentación
+
+- **OQ-167** nueva: ¿`PARADA FIJA POR TAG (11)` es la traza de un tag de función `parada`? En los
+  datos aparece solo en el segundo en que un AGV lee un tag de otro recorrido. Recomendación: usarlo
+  como evidencia observada de salida del recorrido y proponer ese tag como punto crítico `parada`,
+  cuando el propietario lo confirme.
+- **OQ-168** nueva, contradicción con OQ-162: LECTURAS por AGV trae lecturas de tags `Sin asignar`
+  que el informe ampliado del mismo periodo no trae. OQ-162 no se toca hasta que decida el
+  propietario.
 
 ## [3.67.0] - 2026-10-08
 

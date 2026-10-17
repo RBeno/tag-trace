@@ -1183,7 +1183,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
   const vehicleIds = agvDossiers.map((dossier) => dossier.agvId);
   const tagDossiers = buildAllTagDossiers(readings, vehicleIds, criticalPointsConfig.funcionOf);
   // Lo que planta declara de cada tag, para acompañar sus incidencias: información, no regla.
-  const tagInfo = declaredTagInfo(lists, reinforcement);
+  const tagInfo = declaredTagInfo(lists, declaredReinforcements);
   // El tramo de cada tag (kitting, línea, cruce…), para dibujarlo en las gráficas del anillo.
   const sections = tagSections(lists, criticalPointsConfig.funcionOf);
   // Tiempos por sección entre anclas (R-TIM-012), con el cohorte principal: todas las anclas declaradas

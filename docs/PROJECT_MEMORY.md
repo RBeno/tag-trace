@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.52.0
+version: 0.56.0
 status: baseline-candidate
-last_updated: 2026-10-09
+last_updated: 2026-10-17
 ---
 
 # Memoria compacta del proyecto
@@ -426,6 +426,12 @@ qué (R-EVI-006).
 
 ## Expedientes, entrega 1 (ADR-0018 aceptado, 3.74.0, 2026-10-09)
 
+Numerada 3.69.0 al hacerse; pasó a 3.74.0 (y la propuesta del ADR, de 3.68.0 a 3.73.0) al integrar el
+2026-10-17 la rama paralela de «Organizar TAG TRACE» (3.68.0–3.72.0), que salió del mismo punto de
+`main`. Por lo mismo, sus preguntas pasaron de OQ-167–169 a OQ-169–171 y sus pruebas de TC-330–333 a
+TC-338–341.
+
+
 El propietario aceptó ADR-0018 («Acepto el ADR, empieza la entrega 1»). Hecho: el modelo del
 expediente (`src/domain/incident-case.ts`), el almacén versión 12 con `incidentCases` (revisiones
 append-only encadenadas por hash) e `incidentEvidence` (recortes comprimidos por hash), `case-action` y
@@ -455,6 +461,47 @@ expediente es **solo local**, en un dispositivo, sin `.agvproj` ni bifurcaciones
 y se aceptan las recomendaciones de márgenes y recorte, formatos de informe y verificación de
 contramedidas (OQ-P02, OQ-P03, OQ-P07). El ADR sigue `proposed`: aceptarlo es del propietario y
 nada se construye antes.
+
+## Organizar TAG TRACE: cuatro entregas, la primera hecha (3.68.0, 2026-10-17)
+
+El propietario: «Vamos a organizar TAG TRACE»: el Resumen enseña lo importante y lleva a su sitio
+(un AGV con muchas menos lecturas por vuelta manda a AGV; un tag que deja de leerse, a Tags; la WiFi
+igual si está cargada); orden para ir directo a una anomalía; el circuito guarda **áreas** y
+**función** de cada tag y las dice **solo cuando hay riesgo**, con su refuerzo anterior o posterior.
+Decidido con él: WiFi como pestaña propia solo con registro cargado; las áreas como lista nueva
+`area` (una fila por tag y área); el Resumen enseña rango 1 y 2 completos y rango 3 plegado; orden de
+entregas: áreas y función → WiFi → Resumen → Tags y AGV. `ROADMAP.md` ponía la interfaz coherente en
+F6; se adelanta a F5 por su petición. **Hechas la primera** (3.68.0, R-GRA-022: lista `area`, y «Declarado
+en planta» con las áreas y el refuerzo por su lado) **y la segunda** (3.69.0: pestaña WiFi solo con
+registro cargado, y los cinco tipos `conexion-*` en el catálogo con tema WiFi y rango; hasta entonces
+caían en contexto con su identificador en bruto) **y la tercera** (3.70.0: «Avisos» en el Resumen con
+la configuración que no se pudo usar y lo que falta o contradice, cada uno con su enlace; rango 3
+plegado en la bandeja). Precisión del propietario, aplicada en 3.70.1: **función y área tienen identidad
+distinta** («una función puede pertenecer a un área»): listas distintas y etiquetas distintas en
+«Declarado en planta». **Y la cuarta** (3.71.0): «Problemas detectados» al principio de Tags, AGV y WiFi,
+Tags y AGV con los problemas primero y el contexto al final, y «AGV que dejan de leer» en AGV. Las
+cuatro entregas están hechas; la interfaz coherente que `ROADMAP.md` ponía en F6 queda adelantada en
+lo que el propietario pidió. Después (3.72.0) pidió un Resumen «claro, funcional y profesional» con
+botón de informe y una revisión de referencias (ISA-101, Few, Endsley, Shneiderman, Fluke): frase de
+estado antes de las cifras, saltos locales, **informe HTML autocontenido** por secciones con los
+hallazgos y su revisión (FR-026) y hoja de impresión. Las sugerencias no hechas están en `UX_SPEC.md`
+§4.8. Lo que ya existía y se conserva: la bandeja del
+Resumen con «Ver evidencia», la línea «Declarado en planta» solo en tarjetas con hallazgo y en el
+expediente.
+
+## Otro circuito con tres recorridos: desvíos y dos preguntas (3.67.1, 2026-10-09)
+
+El propietario aportó el registro de conexiones y las lecturas de un segundo circuito, sin cargas
+online externas y con **tres recorridos** de flotas disjuntas bajo un mismo nombre (DATA_CONTRACTS
+§3.2). Analizado fuera del repositorio; se le entregaron tres ficheros: el orden de los tags por
+recorrido, los cortes por tag con los desvíos, y un borrador de listas (`circuito` con los tres
+recorridos como subsecuencias, `tramo` y `ancla`) que el importador acepta sin rechazos y con cada
+recorrido entero «igual» (R-GRA-015). Lo que queda: las estaciones de un recorrido concentran los
+cortes con el AGV parado (seis veces la tasa por hora de la flota); cuatro AGV se salieron de su
+recorrido y en tres el propio AGV registró `PARADA FIJA POR TAG (11)` justo al leer un tag de otro
+recorrido (OQ-167); y LECTURAS por AGV trae tags `Sin asignar` que el informe ampliado omite, contra
+OQ-162 (OQ-168). El emparejamiento de cortes del producto ya resuelve bien el mismo segundo por la
+posición en el fichero (`connection-log.ts`); el error de un primer recuento fue del script externo.
 
 ## PR #15 fusionada y las dos familias de color (3.67.0, 2026-10-08)
 

@@ -33,6 +33,9 @@ import {
   plainTable,
   scrollBox, plural } from "./charts.js";
 import { closeDrawer } from "./drawer.js";
+import { openReportDialog, type ReportSource } from "./report.js";
+import { statusSentence, type Status } from "./report-text.js";
+import { APP_VERSION } from "../application/version.js";
 import { changedTagsOf, deltaAround, evolutionDataOf, evolutionSection, ringDataFromSnapshot, sourceStatusList, timeControl } from "./evolution.js";
 import type { CircuitSnapshot } from "../domain/snapshot.js";
 import { FLEET_STRUCTURE } from "../domain/fleet.js";
@@ -416,6 +419,7 @@ const TABS = [
   ["resumen", "Resumen"],
   ["tags", "Tags"],
   ["agv", "AGV"],
+  ["wifi", "WiFi"],
   ["tiempos", "Tiempos"],
   ["linea", "Línea y calles"],
   ["memoria", "Memoria"],
@@ -440,6 +444,8 @@ for (const [id, label] of TABS) {
   button.setAttribute("aria-selected", "false");
   button.setAttribute("aria-controls", `panel-${id}`);
   button.tabIndex = -1;
+  // La WiFi nace escondida: solo existe con un registro de conexiones cargado (UX_SPEC §2).
+  button.hidden = id === "wifi";
   button.addEventListener("click", () => activateTab(id));
   tabButtons.set(id, button);
   tabList.append(button);
@@ -455,16 +461,17 @@ for (const [id, label] of TABS) {
 }
 // Flechas entre pestañas, y activación al mover el foco (es lo que espera un `tablist`).
 tabList.addEventListener("keydown", (event) => {
-  const index = TAB_IDS.indexOf(activeTab);
+  const tabs = visibleTabs();
+  const index = tabs.indexOf(activeTab);
   const target =
     event.key === "ArrowRight"
-      ? TAB_IDS[(index + 1) % TAB_IDS.length]
+      ? tabs[(index + 1) % tabs.length]
       : event.key === "ArrowLeft"
-        ? TAB_IDS[(index - 1 + TAB_IDS.length) % TAB_IDS.length]
+        ? tabs[(index - 1 + tabs.length) % tabs.length]
         : event.key === "Home"
-          ? TAB_IDS[0]
+          ? tabs[0]
           : event.key === "End"
-            ? TAB_IDS[TAB_IDS.length - 1]
+            ? tabs[tabs.length - 1]
             : undefined;
   if (target === undefined) return;
   event.preventDefault();
@@ -509,7 +516,14 @@ function isTabId(value: string): value is TabId {
   return (TAB_IDS as readonly string[]).includes(value);
 }
 
+/** Las pestañas que se pueden abrir: la WiFi solo existe con un registro de conexiones cargado. */
+function visibleTabs(): readonly TabId[] {
+  return TAB_IDS.filter((tabId) => tabButtons.get(tabId)?.hidden !== true);
+}
+
 function activateTab(id: TabId): void {
+  // Una pestaña escondida (WiFi sin registro) no se abre: el `hash` que la pida vuelve al Resumen.
+  if (tabButtons.get(id)?.hidden === true) id = "resumen";
   activeTab = id;
   for (const [tabId, button] of tabButtons) {
     const selected = tabId === id;
@@ -650,6 +664,8 @@ const casesPanel = createCasesPanel({
   get("tags").append(views("tags"));
   // AGV: las vistas de la flota y, al final, el expediente que abre el buscador de la barra.
   get("agv").append(views("agv"), dossierPanel);
+  // WiFi: solo vistas, y solo con registro de conexiones cargado (la pestaña nace escondida).
+  get("wifi").append(views("wifi"));
   get("tiempos").append(views("tiempos"));
   // Línea y calles: sus vistas y, al final, los expedientes de incidencia (F5).
   get("linea").append(views("linea"), casesPanel.node);
@@ -1897,7 +1913,12 @@ function renderViews(views: CircuitViews): void {
           tray,
           formatInstant,
           (reason) => showMessage("error", "Revisión sin guardar", [reason]),
-          () => activateTab("resumen"),
+          (card) => {
+            activateTab("resumen");
+            // Limpieza y contexto va plegado (UX_SPEC §4.5): la siguiente pendiente puede estar dentro.
+            const fold = card.closest<HTMLDetailsElement>("details.tray-fold");
+            if (fold !== null) fold.open = true;
+          },
         );
   reviewHost.hidden = reviewSession === null;
   if (reviewSession !== null) reviewHost.append(reviewSession.bar);
@@ -1924,11 +1945,18 @@ function renderViews(views: CircuitViews): void {
       ? `1 circuito de ${describe(views.cohorts[0])}`
       : `${views.cohorts.length} circuitos detectados en el mismo fichero: ` +
         views.cohorts.map(describe).join("; ");
-  // La portada (UX_SPEC §2): la tira de cifras, la composición y el anillo con capas. Las cifras se
-  // rellenan al final, cuando la bandeja ya existe: el tile de hallazgos cuenta sus tarjetas.
+  // La portada (UX_SPEC §2): la conclusión en una frase y los saltos (§4.8), la tira de cifras, la
+  // composición y el anillo con capas. Las cifras y la frase se rellenan al final, cuando la bandeja ya
+  // existe: cuentan sus tarjetas.
+  statusHost = element("div", "status-host");
+  out.append(statusHost);
   out.append(tiles);
   out.append(element("h3", undefined, "Composición del circuito"));
   out.append(element("p", "muted", cohortLine));
+  // Los avisos (UX_SPEC §4.6) se rellenan al final, cuando todas las pestañas existen y sus secciones
+  // tienen identificador: cada aviso lleva a su sitio.
+  noticesHost = element("div", "notices-host");
+  out.append(noticesHost);
   renderRingFigure(views);
   // La evolución (ADR-0015 §3) se rellena cuando las instantáneas llegan del almacén (`loadEvolution`).
   evolutionHost = element("div", "evolution-host");
@@ -1953,19 +1981,9 @@ function renderViews(views: CircuitViews): void {
   // Qué queda de cada fichero en este dispositivo (R-DAT-023): lecturas, instantánea o nada.
   if (views.snapshots.list.length > 0) out.append(sourceStatusList(views.snapshots, formatTick));
 
-  // --- Tags: inventario, lectura, cambios, listas ----------------------------------------------
+  // --- Tags: los problemas primero, y el inventario como contexto al final (UX_SPEC §4.7) ---------
   out = viewsOf.get("tags") as HTMLElement;
   out.append(element("h2", undefined, "Tags"));
-  out.append(
-    inventoryChart(
-      (views.inventory?.counts ?? []).map((entry) => ({
-        label: entry.tagClass,
-        count: entry.count,
-        truth: entry.truth,
-        action: entry.action,
-      })),
-    ),
-  );
   renderReadMatrix(views);
   renderTagChanges(views);
   renderUndeclaredTags(views);
@@ -1999,14 +2017,27 @@ function renderViews(views: CircuitViews): void {
   }
   renderCircuitOrder(views);
   renderDrift(views);
+  out.append(
+    inventoryChart(
+      (views.inventory?.counts ?? []).map((entry) => ({
+        label: entry.tagClass,
+        count: entry.count,
+        truth: entry.truth,
+        action: entry.action,
+      })),
+    ),
+  );
 
   // --- AGV: la flota, quién lee qué, el ritmo. Después de Tags: las tarjetas de AGV que no leen
   // los mismos tags que un grupo de «Lo que hay que mirar» se pliegan en él. ----------------------
   out = viewsOf.get("agv") as HTMLElement;
   out.append(element("h2", undefined, "AGV"));
-  renderFleet(views);
+  // Los fallos de cada AGV primero (UX_SPEC §4.7): su lectura, los que dejan de leer, su ritmo; la
+  // flota y la vida de cada uno, que son contexto, detrás.
   renderVehicleReadingSection(views);
+  renderAbandonedVehicles(views);
   renderPace(views);
+  renderFleet(views);
 
   // --- Tiempos: el estado normal, las secciones, los ficheros, los críticos y el anillo ----------
   out = viewsOf.get("tiempos") as HTMLElement;
@@ -2019,6 +2050,14 @@ function renderViews(views: CircuitViews): void {
   renderCriticalPoints(views);
   renderRing(views);
 
+  // --- WiFi: el estado de conexión observado (DS-013, ADR-0017), solo con registro cargado --------
+  out = viewsOf.get("wifi") as HTMLElement;
+  out.append(element("h2", undefined, "WiFi"));
+  const wifiTab = tabButtons.get("wifi") as HTMLButtonElement;
+  wifiTab.hidden = views.connections === undefined;
+  if (views.connections !== undefined) renderWifi(out, views);
+  else if (activeTab === "wifi") activateTab("resumen");
+
   // --- Línea y calles ---------------------------------------------------------------------------
   out = viewsOf.get("linea") as HTMLElement;
   out.append(element("h2", undefined, "Línea y calles"));
@@ -2030,10 +2069,13 @@ function renderViews(views: CircuitViews): void {
   renderUncardedFindings(views);
   for (const panel of viewsOf.values()) panel.hidden = panel.childElementCount === 0;
   buildTray();
+  renderNotices(views);
   reviewSession?.refresh();
   renderTiles(views);
+  renderStatus(views);
   reviewSession?.onChange(() => {
     renderFindingsTile();
+    renderStatus(views);
     // La lista de condiciones de «Consolidar periodo» cuenta las tarjetas de la bandeja.
     memoryPanel.refresh();
   });
@@ -2108,6 +2150,13 @@ function renderAbandoned(views: CircuitViews): void {
     });
     out.append(download);
   }
+}
+
+/**
+ * Los AGV que dejan de leer (R-AGV-021), en la pestaña AGV desde 3.71.0: es un fallo del vehículo y
+ * ahí es donde se detallan (propietario, 2026-10-17). Sus mediciones siguen en el CSV de incidencias.
+ */
+function renderAbandonedVehicles(views: CircuitViews): void {
   const abandoned = views.incidents?.abandoned ?? [];
   if (abandoned.length === 0) return;
   out.append(element("h3", undefined, "AGV que dejan de leer"));
@@ -2762,7 +2811,7 @@ function renderCircuitState(views: CircuitViews): void {
 
     // El estado de conexión observado (DS-013, ADR-0017): el registro de conexiones del terminal,
     // situado con las lecturas. Es del circuito entero; va con el primer cohorte, con su anillo.
-    if (cohort === circuitState.cohorts[0]) renderConnections(out, views, shape?.tags ?? [], few, chance);
+    if (cohort === circuitState.cohorts[0]) renderConnectionsPointer(out, views);
 
     // La noche, medida aparte.
     const nightDiffers = measured.night.filter(
@@ -3100,16 +3149,13 @@ const RING_MARKS = 20;
  * de estado de conexión, dónde y a quién le pasa más de lo que da el azar, el contraste con las
  * ráfagas (OQ-159) y las tablas. Sin registro cargado, una línea que lo dice.
  */
-function renderConnections(
-  out: HTMLElement,
-  views: CircuitViews,
-  ringTags: readonly string[],
-  few: (ids: readonly string[]) => string,
-  chance: (expected: number) => string,
-): void {
-  const connections = views.connections;
+/**
+ * En Tiempos, donde vivía el estado de conexión hasta 3.68.0: sin registro, por qué no hay nada que
+ * enseñar; con registro, el enlace a la pestaña WiFi, que es suya desde entonces (UX_SPEC §2).
+ */
+function renderConnectionsPointer(out: HTMLElement, views: CircuitViews): void {
   out.append(element("h3", undefined, "Estado de conexión (registro del terminal)"));
-  if (connections === undefined) {
+  if (views.connections === undefined) {
     out.append(
       element(
         "p",
@@ -3120,6 +3166,37 @@ function renderConnections(
     );
     return;
   }
+  const elsewhere = element("p", "findings-elsewhere");
+  const link = element("a", undefined, "El estado de conexión está en WiFi");
+  link.href = "#wifi";
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    jumpTo("wifi", "Estado de conexión (registro del terminal)");
+  });
+  elsewhere.append(link, ": cortes por sitio y por AGV, terminales ruidosos, los que no reconectan y el contraste con las ráfagas.");
+  out.append(elsewhere);
+}
+
+/** La pestaña WiFi: el estado de conexión del circuito entero, con el anillo del cohorte mayor. */
+function renderWifi(out: HTMLElement, views: CircuitViews): void {
+  const main = views.circuitState.cohorts[0];
+  const shape = main === undefined ? undefined : views.shapes.find((entry) => entry.cohortId === main.cohortId);
+  const few = (ids: readonly string[]): string => (ids.length > 4 ? `${ids.slice(0, 4).join(", ")}…` : ids.join(", "));
+  const chance = (expected: number): string =>
+    expected < 0.1 ? "menos de 0,1" : expected.toFixed(1).replace(".", ",");
+  renderConnections(out, views, shape?.tags ?? [], few, chance);
+}
+
+function renderConnections(
+  out: HTMLElement,
+  views: CircuitViews,
+  ringTags: readonly string[],
+  few: (ids: readonly string[]) => string,
+  chance: (expected: number) => string,
+): void {
+  const connections = views.connections;
+  out.append(element("h3", undefined, "Estado de conexión (registro del terminal)"));
+  if (connections === undefined) return;
   const { summary, thresholds } = connections;
   const minutes = (ms: number): string => (ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(1).replace(".", ",")} h` : ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`);
   const classLabels = {
@@ -5190,6 +5267,7 @@ function buildTray(): void {
       countOf.set(section.id, (countOf.get(section.id) ?? 0) + 1);
       if (!firstOfSection.has(section.id)) firstOfSection.set(section.id, node);
     }
+    renderProblemIndex(tab, panel, entries.filter((entry) => entry.tab === tab));
     // En cada sección, donde salían las tarjetas, la línea que lleva a la bandeja.
     for (const [sectionId, first] of firstOfSection) {
       const count = countOf.get(sectionId) ?? 0;
@@ -5254,8 +5332,18 @@ function buildTray(): void {
       rank = kind.rank;
       group = element("div", "tray-group");
       group.dataset["rank"] = String(rank);
-      group.append(element("h3", "tray-rank", RANK_LABEL[rank]));
-      tray.append(group);
+      if (rank === 3) {
+        // Limpieza y contexto va plegado (propietario, 2026-10-17): lo que puede parar la planta o
+        // degradar el circuito se ve entero; esto se abre a demanda, con su recuento en el pliegue.
+        const fold = element("details", "tray-fold");
+        const count = entries.filter((other) => kindOf(other).rank === 3).length;
+        fold.append(element("summary", undefined, `${RANK_LABEL[rank]}: ${count} ${count === 1 ? "hallazgo" : "hallazgos"}`));
+        fold.append(group);
+        tray.append(fold);
+      } else {
+        group.append(element("h3", "tray-rank", RANK_LABEL[rank]));
+        tray.append(group);
+      }
     }
     const card = entry.card;
     card.dataset["theme"] = kind.theme;
@@ -5292,6 +5380,76 @@ function buildTray(): void {
   applyTrayFilter();
 }
 
+/**
+ * «Problemas detectados» (UX_SPEC §4.7): al principio de Tags, AGV y WiFi, el índice de lo que esa
+ * pestaña encontró, por tipo —con su rango, cuántos y en qué sección—, para ir directo a una
+ * anomalía sin recorrer la pestaña (propietario, 2026-10-17: «quiero orden para poder ir directo a
+ * buscar una anomalía»). Las tarjetas siguen en la bandeja del Resumen; esto es el índice.
+ */
+function renderProblemIndex(
+  tab: TabId,
+  panel: HTMLElement,
+  entries: readonly { readonly card: HTMLElement; readonly sectionId: string; readonly sectionTitle: string }[],
+): void {
+  if (tab !== "tags" && tab !== "agv" && tab !== "wifi") return;
+  const heading = panel.querySelector(":scope > h2");
+  if (heading === null) return;
+  const block = element("div", "problem-index");
+  block.append(element("h3", undefined, "Problemas detectados"));
+  interface Row {
+    readonly label: string;
+    readonly rank: FindingRank;
+    count: number;
+    readonly sectionId: string;
+    readonly sectionTitle: string;
+  }
+  const rows = new Map<string, Row>();
+  for (const entry of entries) {
+    const kindId = entry.card.dataset["kind"] ?? "";
+    const kind = findingKindOf(kindId);
+    const row = rows.get(kindId);
+    if (row === undefined) rows.set(kindId, { label: kind.label, rank: kind.rank, count: 1, sectionId: entry.sectionId, sectionTitle: entry.sectionTitle });
+    else row.count += 1;
+  }
+  if (rows.size === 0) {
+    block.append(element("p", "muted", "Ningún problema detectado en esta pestaña con lo cargado."));
+    heading.after(block);
+    return;
+  }
+  const total = entries.length;
+  block.append(
+    element(
+      "p",
+      "muted",
+      `${total} ${total === 1 ? "hallazgo" : "hallazgos"} en ${rows.size} ${rows.size === 1 ? "tipo" : "tipos"}, de mayor a menor gravedad. Cada línea lleva a la sección que lo detalla; las tarjetas están en el Resumen.`,
+    ),
+  );
+  const list = element("ul", "problem-list");
+  const sorted = [...rows.values()].sort((a, b) => a.rank - b.rank || b.count - a.count || a.label.localeCompare(b.label));
+  for (const row of sorted) {
+    const item = element("li");
+    item.dataset["rank"] = String(row.rank);
+    const strong = element("strong", undefined, `${row.count} × ${row.label}`);
+    item.append(strong, ` — ${RANK_LABEL[row.rank].toLowerCase()} · `);
+    const link = element("a", undefined, `ver en «${row.sectionTitle}»`);
+    link.href = `#${tab}`;
+    const sectionId = row.sectionId;
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      const target = document.getElementById(sectionId);
+      (target ?? panel).scrollIntoView({ block: "start" });
+      if (target instanceof HTMLElement) {
+        target.tabIndex = -1;
+        target.focus({ preventScroll: true });
+      }
+    });
+    item.append(link);
+    list.append(item);
+  }
+  block.append(list);
+  heading.after(block);
+}
+
 function setTrayTheme(theme: Theme | ""): void {
   trayTheme = theme;
   for (const chip of trayPanel.querySelectorAll<HTMLButtonElement>(".theme-filter button")) {
@@ -5312,7 +5470,203 @@ function applyTrayFilter(): void {
       if (shown) visible += 1;
     }
     group.hidden = visible === 0;
+    const fold = group.closest<HTMLElement>(".tray-fold");
+    if (fold !== null) fold.hidden = visible === 0;
   }
+}
+
+// --- La frase de estado, los saltos y el informe (UX_SPEC §4.8) -----------------------------------
+
+let statusHost: HTMLElement | null = null;
+let currentStatus: Status | null = null;
+
+/**
+ * La conclusión antes de las cifras (FR-028), en una frase con el tono reservado al riesgo; debajo, el
+ * contexto y los saltos locales —Avisos, Anillo, Hallazgos— y el botón del informe. Se rehace con cada
+ * marca de revisión: lo pendiente es lo que cuenta.
+ */
+function renderStatus(views: CircuitViews): void {
+  const host = statusHost;
+  if (host === null) return;
+  host.replaceChildren();
+  const cards = [...tray.querySelectorAll<HTMLElement>(".finding.reviewable")];
+  const pending = (rank: string): number =>
+    cards.filter((card) => card.closest<HTMLElement>(".tray-group")?.dataset["rank"] === rank && (card.dataset["review"] ?? "pendiente") === "pendiente").length;
+  const reviewed = cards.filter((card) => (card.dataset["review"] ?? "pendiente") !== "pendiente").length;
+  const notices = noticesHost?.querySelectorAll(".notices li").length ?? 0;
+  const coverageHours = state.coverage.length === 0 ? null : state.coverage.reduce((sum, span) => sum + Math.max(0, span.to - span.from), 0) / 3_600_000;
+  const last = views.fleet.counts[views.fleet.counts.length - 1];
+  const status = statusSentence({
+    pendingRank1: pending("1"),
+    pendingRank2: pending("2"),
+    totalFindings: cards.length,
+    reviewed,
+    notices,
+    coverageHours,
+    agvInCircuit: last?.inCircuit ?? null,
+    agvAssigned: last?.assigned ?? null,
+  });
+  currentStatus = status;
+  const headline = element("p", `status status-${status.tone}`, status.headline);
+  headline.setAttribute("role", "status");
+  host.append(headline, element("p", "muted status-detail", status.detail));
+
+  const jumps = element("nav", "local-jumps");
+  jumps.setAttribute("aria-label", "Saltos del Resumen");
+  const jump = (label: string, go: () => void): void => {
+    const button = element("button", undefined, label);
+    button.type = "button";
+    button.addEventListener("click", go);
+    jumps.append(button);
+  };
+  jump("Avisos", () => noticesHost?.scrollIntoView({ block: "start" }));
+  jump("Anillo", () => jumpTo("resumen", "Anillo del circuito"));
+  jump("Hallazgos", () => trayPanel.scrollIntoView({ block: "start" }));
+  const report = element("button", "primary", "Generar informe…");
+  report.type = "button";
+  report.addEventListener("click", () =>
+    openReportDialog(
+      () => reportSource(views),
+      (name) =>
+        showMessage("info", "Informe generado", [
+          `Descargado como «${name}». Se abre en cualquier navegador sin red; «Imprimir → Guardar como PDF» lo convierte en PDF.`,
+        ]),
+    ),
+  );
+  jumps.append(report);
+  host.append(jumps);
+}
+
+/** Lo que el informe necesita de la página: las pestañas tal como están, la bandeja y la trazabilidad. */
+function reportSource(views: CircuitViews): ReportSource {
+  const panelOf = (id: TabId): HTMLElement => viewsOf.get(id) as HTMLElement;
+  return {
+    circuitId: state.circuitId ?? "circuito",
+    appVersion: APP_VERSION,
+    coverage: state.coverage,
+    files: views.snapshots.list.map((entry) => entry.fileName),
+    memoryVersion: views.memory?.current ?? null,
+    status: currentStatus ?? statusSentence({ pendingRank1: 0, pendingRank2: 0, totalFindings: 0, reviewed: 0, notices: 0, coverageHours: null, agvInCircuit: null, agvAssigned: null }),
+    tiles,
+    notices: noticesHost,
+    tray,
+    sections: [
+      { id: "tags", label: "Tags", panel: panelOf("tags"), available: true },
+      { id: "agv", label: "AGV", panel: panelOf("agv"), available: true },
+      { id: "wifi", label: "WiFi", panel: panelOf("wifi"), available: views.connections !== undefined },
+      { id: "tiempos", label: "Tiempos", panel: panelOf("tiempos"), available: true },
+      { id: "linea", label: "Línea y calles", panel: panelOf("linea"), available: true },
+      { id: "memoria", label: "Memoria", panel: tabPanels.get("memoria") as HTMLElement, available: true },
+    ],
+    formatInstant,
+  };
+}
+
+// --- Avisos del Resumen (UX_SPEC §4.6) -------------------------------------------------------------
+
+let noticesHost: HTMLElement | null = null;
+
+/**
+ * Los avisos: lo que no es un hallazgo del circuito pero condiciona lo que se puede afirmar de él, y
+ * que hasta 3.70.0 se quedaba dentro de cada sección. Dos clases, en una sola lista en el Resumen:
+ *
+ * - **la configuración que no se pudo usar**: las tarjetas sin clave de revisión que cada sección
+ *   planta («Punto crítico declarado que no se pudo usar», «Corte de vuelta declarado…»), tal cual,
+ *   con el enlace a la tarjeta;
+ * - **lo que falta o contradice**: sin lista del circuito, sin registro de conexiones, sin historial
+ *   de flota, varios circuitos en el fichero, y lo que la lista dice distinto de las lecturas
+ *   (declarados sin lecturas, en otro sitio, leídos sin estar en la lista).
+ *
+ * Cada aviso lleva a su sitio (propietario, 2026-10-17: «cuando se quiera acceder a alguno te
+ * mandará automáticamente a su ubicación»). No se inventa gravedad: la lista va en el orden en que
+ * se recogen, y sin avisos lo dice.
+ */
+function renderNotices(views: CircuitViews): void {
+  const host = noticesHost;
+  if (host === null) return;
+  host.replaceChildren();
+  interface Notice {
+    readonly text: string;
+    readonly go: (() => void) | null;
+    readonly where: string;
+  }
+  const notices: Notice[] = [];
+  const taken = new Set<string>();
+  // 1. Las tarjetas de configuración de cada sección, con su sección.
+  for (const tab of TAB_IDS) {
+    const panel = viewsOf.get(tab) as HTMLElement;
+    const tabLabel = TABS.find(([id]) => id === tab)?.[1] ?? tab;
+    for (const card of panel.querySelectorAll<HTMLElement>(".finding:not(.reviewable)")) {
+      const title = card.querySelector(".finding-title")?.textContent ?? "";
+      if (!/que no se pudo usar$/.test(title)) continue;
+      const detail = [...card.querySelectorAll<HTMLElement>(":scope > p")].map((p) => p.textContent ?? "").filter((text) => text !== "" && text !== "—" && text !== title);
+      if (card.id === "") card.id = headingId(`aviso ${title} ${detail.join(" ")}`, taken);
+      const id = card.id;
+      notices.push({
+        text: `${title}: ${detail.join(" ")}`,
+        where: tabLabel,
+        go: () => {
+          activateTab(tab);
+          const target = document.getElementById(id);
+          target?.scrollIntoView({ block: "center" });
+          if (target instanceof HTMLElement) {
+            target.tabIndex = -1;
+            target.focus({ preventScroll: true });
+          }
+        },
+      });
+    }
+  }
+  // 2. Lo que falta o contradice, con las cifras de las vistas.
+  if (views.cohorts.length > 1) {
+    notices.push({ text: `${views.cohorts.length} circuitos detectados en el mismo fichero: cada uno se compara solo con los suyos.`, where: "Resumen", go: null });
+  }
+  const order = views.circuitOrder;
+  if (order === undefined || !order.evaluated) {
+    notices.push({ text: "Sin lista «circuito» cargada: no hay contraste con Vsystem ni orden declarado; el anillo sale solo de las lecturas.", where: "Datos", go: () => jumpTo("datos", "Listas del circuito") });
+  } else {
+    const n = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+    const go = (): void => jumpTo("tags", "Orden del circuito según las lecturas");
+    if (order.summary["sin-lecturas"] > 0) notices.push({ text: `${n(order.summary["sin-lecturas"], "tag declarado sin ninguna lectura", "tags declarados sin ninguna lectura")}: en la lista y en ningún AGV.`, where: "Tags", go });
+    if (order.summary["otro-sitio"] > 0) notices.push({ text: `${n(order.summary["otro-sitio"], "tag en otro sitio que en la lista", "tags en otro sitio que en la lista")}: las lecturas lo colocan en otra posición.`, where: "Tags", go });
+    if (order.summary["no-en-la-lista"] > 0) notices.push({ text: `${n(order.summary["no-en-la-lista"], "tag leído que la lista no tiene", "tags leídos que la lista no tiene")}.`, where: "Tags", go });
+  }
+  if (views.fleet.historySource !== "historial") {
+    notices.push({
+      text: views.fleet.historySource === "historial-vacio" ? "Historial de flota cargado sin ningún periodo válido: los AGV del circuito son los vistos en las lecturas." : "Sin historial de flota: los AGV del circuito son los vistos en las lecturas, y un asignado que no lee no se puede ver.",
+      where: "AGV",
+      go: () => jumpTo("agv", "Flota del circuito"),
+    });
+  }
+  if (views.connections === undefined) {
+    notices.push({ text: "Sin registro de conexiones: no hay evidencia directa de la WiFi. Se carga en «Listas del circuito», un fichero por AGV.", where: "Datos", go: () => jumpTo("datos", "Listas del circuito") });
+  }
+
+  host.append(element("h3", undefined, "Avisos"));
+  if (notices.length === 0) {
+    host.append(element("p", "muted", "Ningún aviso: toda la configuración cargada se pudo usar y nada falta de lo que el análisis sabe pedir."));
+    return;
+  }
+  host.append(
+    element("p", "muted", `${notices.length} ${notices.length === 1 ? "aviso" : "avisos"}: lo que falta, contradice o no se pudo usar. No son hallazgos del circuito; cada uno lleva a su sitio.`),
+  );
+  const list = element("ul", "notices");
+  for (const notice of notices) {
+    const item = element("li");
+    item.append(notice.text);
+    if (notice.go !== null) {
+      const link = element("a", undefined, `ver en ${notice.where}`);
+      link.href = "#";
+      const go = notice.go;
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        go();
+      });
+      item.append(" ", link);
+    }
+    list.append(item);
+  }
+  host.append(list);
 }
 
 /** La frase que acompaña a cada patrón. Enuncia la pregunta; no la responde (R-EVI-006). */
