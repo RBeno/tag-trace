@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.12.0
+version: 0.13.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -111,7 +111,7 @@ se ha guardado nada.»). La respuesta a un `consolidate` con `mode: "commit"` es
 `error` o `cancelled`; a `revoke` y `resolve-fork`, `revoked`/`fork-resolved`, `error` o `cancelled`.
 | `versions-compared` | la comparación: las dos versiones, las de entre medias, lo adoptado por el camino y el delta | |
 | `plant-values-updated` | los valores de planta del circuito: provisional, vigente para el fichero de trabajo, historial y dónde se mide | |
-| `cases-updated` | lo escrito en palabras, el expediente tocado y los expedientes del circuito (`CaseViews`, con la cronología del retroceso de cada uno desde 3.75.0) | |
+| `cases-updated` | lo escrito en palabras, el expediente tocado y los expedientes del circuito (`CaseViews`, con la cronología del retroceso de cada uno desde 3.75.0 y sus casos parecidos desde 3.80.0) | |
 | `case-replay-ready` | el expediente, la revisión de la que sale y el replay (`CaseReplay`: fotogramas con fase, AGV con lo visto, la banda esperada y la conexión, y los hechos de la cronología) | |
 | `case-evidence-csv-ready` | el expediente, la revisión y el CSV | |
 | `plan-updated` | los eventos escritos en palabras y el plano (`PlanViews`) leído contra el fichero de trabajo | |

@@ -2,6 +2,27 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.80.0] - 2026-10-17
+
+Entrega 6 de ADR-0018, la última.
+
+### Añadido
+
+- **Casos parecidos** (ADR-0018 D10, ALG-017 `similitud-1`, `INCIDENTS_REPORTING.md` §6): cada
+  expediente se compara con los demás del mismo circuito, sin los descartados. Cada característica
+  —síntoma, tags, zona y función declaradas, duración, hora del día, turno, AGV que preceden y cuántos,
+  lo que precede, primera desviación, calles de carga y FIFO, diagnóstico confirmado— dice igual,
+  parecido con su diferencia, distinto o sin dato. Se ordena por cuántas coinciden, con el mismo peso,
+  y a igualdad el más reciente. Lo confirmado en otro caso se enseña aparte: «No es evidencia para
+  este». Los hechos que se repiten se cuentan sin llamarlo correlación (OQ-172).
+- El informe del expediente termina su apartado 6 con los casos parecidos.
+- Configuración `incident_case.similarity_duration_ratio` (provisional, 1,5).
+- Pruebas: TC-355 (unitaria) y TC-356 (navegador).
+
+### Preguntas
+
+- OQ-172: con qué frecuencia de base y qué prueba se dice que un hecho `correlaciona` con el síntoma.
+
 ## [3.79.0] - 2026-10-17
 
 Entrega 5 de ADR-0018.

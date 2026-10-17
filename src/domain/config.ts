@@ -265,6 +265,10 @@ export interface AnalysisConfig {
  *   separa «eficaz» de «parcial», y tres episodios esperados después, con la tasa de antes, son el mínimo
  *   para que la ausencia de episodios diga algo. Todo es la definición de cómo se mide, no un valor de
  *   planta, y la conclusión la escribe una persona.
+ * - **Casos parecidos (ADR-0018 D10, ALG-017).** Dos síntomas duran parecido si el largo no pasa de una
+ *   vez y media el corto: un hueco de diez minutos y uno de quince se comparan; uno de diez y uno de una
+ *   hora, no. «A la misma hora» no es un número nuevo: es `flowStops.sameTimeToleranceMs`, la tolerancia
+ *   con que ya se dice que una parada se repite a la misma hora.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -352,6 +356,8 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     // Provisionales (OQ-P07): una semana a cada lado de la aplicación, un 5 % de azar, la mitad de bajada
     // para «eficaz» y al menos tres episodios esperados después con la tasa de antes.
     verification: { windowMs: 7 * 24 * 3_600_000, maxChance: 0.05, effectiveReduction: 0.5, minExpectedEvents: 3 },
+    // Provisional (D10): una vez y media; más que eso ya es otro tamaño de síntoma.
+    similarityDurationRatio: 1.5,
   },
 };
 

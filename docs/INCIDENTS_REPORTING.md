@@ -1,6 +1,6 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.10.0
+version: 0.11.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -92,6 +92,17 @@ interfaz debe representarla como banda y no como punto. El usuario puede filtrar
 ## 6. Comparación con casos anteriores
 
 La similitud utiliza características explícitas: zona, síntoma, duración, patrón colectivo, AGV/cohorte, tags, secuencia, horario, CO/FIFO y diagnóstico confirmado. El resultado debe explicar coincidencias y diferencias. No puede sugerir que una causa anterior sea la causa actual sin nueva evidencia.
+
+**Implementado desde 3.80.0 (ADR-0018 D10, ALG-017 `similitud-1`):** cada expediente lleva «Casos
+parecidos» con los demás del mismo circuito, sin los descartados. Cada característica dice igual,
+parecido (con su diferencia), distinto o sin dato: síntoma, tags del síntoma, zona y función
+declaradas, duración (parecida si la larga no pasa de `incident_case.similarity_duration_ratio` veces la
+corta), hora del día (con la tolerancia de mismo instante), turno, AGV que preceden y cuántos, lo que
+precede, primera desviación, calles de carga y FIFO (sin dato todavía) y diagnóstico confirmado. Se
+ordena por cuántas coinciden, con el mismo peso, y a igualdad el más reciente; no hay puntuación oculta.
+Lo confirmado en otro caso se enseña aparte como «Confirmado en aquel caso: … No es evidencia para
+este.» y no cambia nada del actual. Los hechos del caso que se repiten en otros se cuentan, sin
+llamarlo correlación: para eso falta medir cuánto ocurren fuera de las incidencias (OQ-172).
 
 ## 7. Estados
 

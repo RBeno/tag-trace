@@ -16,6 +16,7 @@ import type { CaseAction, CaseView, CaseViews, ExcludedIncidentStart } from "../
 import type { CaseReplay, CaseReplayVehicle, ConnectionState } from "../domain/replay.js";
 import { HYPOTHESIS_STATUS_TEXT, type HypothesisView } from "../domain/case-hypotheses.js";
 import { metricText, verificationText, type CaseMetric } from "../domain/case-verification.js";
+import { VERDICT_WORD } from "../domain/case-similarity.js";
 import { PHASE_TEXT, type Chronology, type ChronologyPhase } from "../domain/case-backtrack.js";
 import { CASE_STATE_TEXT, type CaseOrigin, type CaseState, type TransitionOption } from "../domain/incident-case.js";
 
@@ -635,6 +636,71 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
     return box;
   }
 
+  /**
+   * Los casos parecidos del mismo circuito (ALG-017, D10): cada característica comparada a la vista, sin
+   * puntuación oculta; lo confirmado en aquel caso, que no es evidencia para este; y los hechos de este
+   * caso que se repiten en otros, contados sin llamarlo correlación.
+   */
+  function similarBlock(view: CaseView): HTMLElement {
+    const box = node("section", "case-similar");
+    box.append(
+      node("h4", undefined, "Casos parecidos"),
+      node(
+        "p",
+        "muted",
+        "Otros expedientes de este circuito, ordenados por cuántas características coinciden, todas con el mismo peso. " +
+          "Lo que se confirmó en otro caso no es evidencia para este.",
+      ),
+    );
+    const similarity = view.similar;
+    if (similarity === null || similarity.similar.length === 0) {
+      box.append(node("p", "muted", "No hay otros expedientes en este circuito con que compararlo."));
+      return box;
+    }
+    if (similarity.repetitions.length > 0) {
+      const repeated = node("ul", "case-repetitions");
+      for (const repetition of similarity.repetitions) {
+        repeated.append(
+          node(
+            "li",
+            undefined,
+            `${repetition.text} También precede en ${repetition.caseIds.join(", ")}. Que se repita no basta para decir que va con el síntoma: hace falta saber cuánto ocurre fuera de las incidencias, y eso todavía no se mide.`,
+          ),
+        );
+      }
+      box.append(node("p", undefined, "Lo que se repite en otros casos:"), repeated);
+    }
+    const list = node("ol", "case-similar-list");
+    for (const entry of similarity.similar) {
+      const item = node("li", "case-similar-item");
+      item.dataset["caseId"] = entry.caseId;
+      const details = node("details");
+      details.append(
+        node(
+          "summary",
+          undefined,
+          `${entry.caseId}: ${entry.title} — ${entry.stateText}, ${input.formatInstant(entry.symptomFrom)} · coinciden ${entry.matches} de ${entry.compared}`,
+        ),
+      );
+      const table = node("table", "case-similar-table");
+      const head = node("tr");
+      for (const title of ["Característica", "Comparación", "Este caso frente a aquel"]) head.append(node("th", undefined, title));
+      table.append(head);
+      for (const feature of entry.features) {
+        const row = node("tr");
+        row.dataset["verdict"] = feature.verdict;
+        for (const text of [feature.feature, VERDICT_WORD[feature.verdict], feature.text]) row.append(node("td", undefined, text));
+        table.append(row);
+      }
+      details.append(table);
+      for (const confirmed of entry.confirmedThere) details.append(node("p", "case-similar-confirmed", `Confirmado en aquel caso: ${confirmed}. No es evidencia para este.`));
+      item.append(details);
+      list.append(item);
+    }
+    box.append(list, node("p", "muted", `Procedimiento ${similarity.algorithm}.`));
+    return box;
+  }
+
   /** ¿Admite el expediente hipótesis y contramedidas? Solo mientras se investiga. */
   const working = (view: CaseView): boolean =>
     ["Investigating", "CountermeasurePlanned", "VerificationPending", "VerifiedIneffective"].includes(view.current.state);
@@ -885,7 +951,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       );
     }
     facts.append(node("h4", undefined, "Historial"), history);
-    details.append(exportBlock(view), facts, chronologyBlock(view), replayBlock(view), hypothesesBlock(view), countermeasuresBlock(view));
+    details.append(exportBlock(view), facts, chronologyBlock(view), replayBlock(view), hypothesesBlock(view), similarBlock(view), countermeasuresBlock(view));
 
     const actions = node("div", "case-actions");
     if (view.transitions.length > 0) {

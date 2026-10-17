@@ -269,7 +269,13 @@ sigue vivo. Nunca se publica en GitHub (ADR-0007).
    (la revisión, la cronología y las hipótesis del recorte, la verificación registrada) y no desde la
    pantalla, a diferencia del informe del circuito de 3.72.0: así sale igual desde la misma revisión y
    se prueba sin navegador. El informe del circuito gana un resumen de los expedientes.
-6. Biblioteca y similitud.
+6. Biblioteca y similitud. **Hecha en 3.80.0** (`similitud-1`). Cada expediente lleva «Casos parecidos»
+   con los demás del circuito, comparados a la vista. Desviación de D10: un hecho que se repite en otros
+   casos se cuenta («también precede en…»), pero **no pasa a `correlaciona`**, porque la prueba de azar
+   necesita la frecuencia del hecho fuera de las incidencias, que no se mide y que es una regla de
+   dominio sin decidir (OQ-172). Las calles de carga y FIFO salen «sin dato» hasta que el expediente las
+   revise. La duración se compara con `incident_case.similarity_duration_ratio` y la hora del día con
+   la tolerancia de mismo instante ya configurada.
 
 Con las seis, la salida demostrable de F5 se recorre de punta a punta con el caso sintético. Con
 datos reales la valida el propietario en su dispositivo, fuera del repositorio (OQ-B05).

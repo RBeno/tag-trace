@@ -309,6 +309,8 @@ export interface MarginThresholds {
 /** La configuración del expediente: márgenes (D4) y verificación de contramedidas (D9). */
 export interface CaseThresholds extends MarginThresholds {
   readonly verification: VerificationThresholds;
+  /** Cuántas veces más larga puede ser la duración de otro síntoma para ser parecida (D10, ALG-017). */
+  readonly similarityDurationRatio: number;
 }
 
 /**

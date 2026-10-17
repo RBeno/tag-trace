@@ -47,6 +47,7 @@ import type { Chronology } from "../domain/case-backtrack.js";
 import type { CaseReplay } from "../domain/replay.js";
 import type { HypothesisView } from "../domain/case-hypotheses.js";
 import type { CaseMetric } from "../domain/case-verification.js";
+import type { CaseSimilarity } from "../domain/case-similarity.js";
 import type { CaseChange, CaseOrigin, CaseRevision, CaseState, CaseWindow, TransitionOption } from "../domain/incident-case.js";
 import type { CircuitOrder } from "../domain/circuit-order.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
@@ -1078,6 +1079,8 @@ export interface CaseView {
   readonly hypotheses: readonly HypothesisView[];
   /** La métrica que propone el programa para una contramedida: la del síntoma (D9). */
   readonly metricProposal: CaseMetric | null;
+  /** Los casos parecidos del mismo circuito, con cada característica comparada (ALG-017, D10). */
+  readonly similar: CaseSimilarity | null;
 }
 
 /** Una incidencia excluida de la versión vigente, como punto de partida de un expediente (D1). */

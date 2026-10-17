@@ -150,6 +150,20 @@ export function buildCaseReportHtml(view: CaseView, options: CaseReportOptions):
     "Sin hipótesis.",
   );
 
+  // 6 (cont.). Casos parecidos: comparación a la vista; lo confirmado allí no es evidencia aquí.
+  const similar =
+    view.similar === null || view.similar.similar.length === 0
+      ? `<p class="muted">Sin otros expedientes del circuito con que compararlo.</p>`
+      : view.similar.similar
+          .map(
+            (entry) =>
+              `<p><strong>${h(entry.caseId)}: ${h(entry.title)}</strong> — ${h(entry.stateText)}; coinciden ${entry.matches} de ${entry.compared}: ` +
+              h(entry.features.filter((feature) => feature.verdict === "igual" || feature.verdict === "parecido").map((feature) => `${feature.feature} (${feature.text})`).join("; ") || "ninguna") +
+              `.</p>` +
+              entry.confirmedThere.map((text) => `<p class="muted">Confirmado en aquel caso: ${h(text)}. No es evidencia para este.</p>`).join(""),
+          )
+          .join("");
+
   // 7. Evidencia y trazabilidad.
   const sources = current.evidence.sources.map(
     (source) => `<tr><td>${h(source.fileName)}</td><td>${h(source.sourceHash)}</td><td>${h(source.from === "retenidas" ? "lecturas retenidas" : "original archivado")}</td><td>${source.readings}</td></tr>`,
@@ -211,7 +225,7 @@ export function buildCaseReportHtml(view: CaseView, options: CaseReportOptions):
     section("cronologia", "3. Cronología antes, durante y después", timeline),
     section("esperado", "4. Observado frente a esperado", expected),
     section("implicados", "5. AGV, tags y sistemas implicados", involved),
-    section("hipotesis", "6. Hipótesis", hypotheses),
+    section("hipotesis", "6. Hipótesis", `${hypotheses}<h3>Casos parecidos</h3>${similar}`),
     section("evidencia", "7. Evidencia y trazabilidad", evidence),
     section("contramedidas", "8. Contramedidas", measures),
     section("verificacion", "9. Verificación posterior", verification),

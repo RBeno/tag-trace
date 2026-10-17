@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.49.0
+version: 0.50.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -57,7 +57,7 @@ flowchart TD
 | ALG-014 | Consolidación | Reducción versionada y cálculo de delta | Nueva memoria compacta append-only | O(m), no O(histórico bruto) | F4 (implementado, §6.22) |
 | ALG-015 | Retroceso desde el síntoma | Búsqueda temporal/topológica hacia atrás sobre el recorte congelado: último y primer paso por los tags del síntoma, desviaciones sobre la valla de cada tramo del anillo (R-FLO-007), silencios, pares, cortes del registro del terminal, turno y régimen | Cronología por fases con `precede` para lo anterior, la primera desviación, lo declarado de los tags y lo que no se revisa; hipótesis candidatas con evidencia a favor y en contra y la comprobación que las discrimina (pasos 7 y 8, `case-hypotheses.ts`, 3.78.0) | Limitada a ventana/subgrafo; O(n log n) sobre el recorte | F5 (implementado, `retroceso-1`, 3.75.0) |
 | ALG-016 | Replay multi-AGV | Estado observado/inferido por instante (`replay.ts`); en un expediente, sobre su recorte congelado y su ventana entera, con la banda esperada desde la última lectura de cada AGV (p95 lento y p50 habitual de cada tramo del anillo), la conexión del registro del terminal y los hechos de la cronología | Movimiento sobre grafo con incertidumbre: tag visto, tránsito como fracción de tiempo, silencio o sin datos; «por detrás de lo esperado» si ni a paso lento seguiría donde está | Precálculo de 200 fotogramas en el Worker, a petición; 54.000 lecturas de 40 AGV en ~0,13 s | F5 (implementado en el expediente, `replay-caso-1`, 3.77.0) |
-| ALG-017 | Similitud de casos | Características explicables de incidencias | Casos comparables y diferencias | O(k·d) | F5 |
+| ALG-017 | Similitud de casos | Los demás expedientes del mismo circuito, sin los descartados: síntoma, tags, zona y función declaradas, duración, hora del día, turno, AGV que preceden y cuántos, tipos de hecho que preceden, primera desviación, calles de carga y FIFO (sin dato todavía) y diagnóstico confirmado (`case-similarity.ts`) | Cada característica igual, parecida con su diferencia, distinta o sin dato; orden por cuántas coinciden, todas con el mismo peso, y a igualdad el más reciente; lo confirmado en otro caso, aparte y «no es evidencia para este»; los hechos que se repiten, contados sin llamarlo correlación (OQ-172) | O(k·d) con k expedientes y d hechos; se calcula al montar la vista | F5 (implementado, `similitud-1`, 3.80.0) |
 | ALG-018 | Expediente por objeto | Agregación por AGV o por tag y contraste con su cohorte | Recuentos, tags leídos y no leídos, contraparte que sí leyó, y evidencia navegable | O(n) sobre agregados | F2 reducido, F3 completo |
 | ALG-019 | Inactividad e instante de cambio | Detección de silencios por objeto y del punto donde el comportamiento cambia | Periodos de inactividad clasificados e instante de cambio con alternativas | O(n) por objeto | F2 reducido, F3 completo |
 | ALG-020 | Rotura y degradación de tasa de lectura | Segmentación binaria de un corte, después caída monótona por tramos | Instante de rotura o tendencia sostenida, por tag y por AGV | O(n) sobre la línea de pasadas | F3 |

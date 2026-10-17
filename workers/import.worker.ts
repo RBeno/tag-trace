@@ -172,6 +172,7 @@ import {
 } from "../src/domain/incident-case.js";
 import { backtrack, type Chronology } from "../src/domain/case-backtrack.js";
 import { evidenceCsv } from "../src/domain/case-export.js";
+import { similarCases } from "../src/domain/case-similarity.js";
 import { caseHypotheses, viableCount, type HypothesisView } from "../src/domain/case-hypotheses.js";
 import { proposeMetric, verifyCountermeasure, type VerificationResult } from "../src/domain/case-verification.js";
 import {
@@ -3231,16 +3232,31 @@ async function buildCaseViews(circuitId: string): Promise<CaseViews> {
   ]);
   const byCase = new Map<string, CaseRevision[]>();
   for (const revision of revisions) byCase.set(revision.caseId, [...(byCase.get(revision.caseId) ?? []), revision]);
-  const cases: CaseView[] = [];
+  // Primero lo de cada expediente; después, cada uno frente a los demás (ALG-017).
+  const analysed: { readonly sorted: readonly CaseRevision[]; readonly current: CaseRevision; readonly chronology: Chronology | null; readonly hypotheses: readonly HypothesisView[] }[] = [];
   for (const list of byCase.values()) {
     const sorted = [...list].sort((a, b) => a.revision - b.revision);
     const current = currentRevision(sorted);
-    // El retroceso (ALG-015) se calcula desde el recorte congelado, nunca desde lo que hay ahora en el
-    // circuito: con el mismo recorte, la misma cronología.
     const { chronology, hypotheses } = await caseAnalysisOf(circuitId, current);
+    analysed.push({ sorted, current, chronology, hypotheses });
+  }
+  const library = analysed.map((entry) => ({ revision: entry.current, chronology: entry.chronology, hypotheses: entry.hypotheses }));
+  const zone = (await loadCircuit(circuitId))?.zone ?? null;
+  const cases: CaseView[] = [];
+  for (const { sorted, current, chronology, hypotheses } of analysed) {
+    const config = await configForFile(circuitId, current.window.symptomFrom);
     cases.push({
       chronology,
       hypotheses,
+      similar:
+        zone === null
+          ? null
+          : similarCases({ revision: current, chronology, hypotheses }, library, {
+              zone,
+              sameTimeToleranceMs: config.flowStops.sameTimeToleranceMs,
+              shiftStartHours: config.silenceKind.shiftStartHours,
+              durationRatio: config.incidentCase.similarityDurationRatio,
+            }),
       metricProposal: proposeMetric({ tagIds: current.tagIds, agvId: current.agvId, symptomFrom: current.window.symptomFrom, symptomTo: current.window.symptomTo }),
       contextText: contextText(current.evidence.context),
       current,

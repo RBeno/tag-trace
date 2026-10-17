@@ -528,4 +528,37 @@ test.describe("expedientes de incidencia", () => {
     // Exportar no escribe nada.
     expect(await storeOutsideCases(page)).toBe(before);
   });
+  test("casos parecidos: cada expediente se compara con los demás del circuito, característica a característica, sin afirmar causas", async ({ page }) => {
+    await freshPage(page);
+    await importInto(page, "parecidos", `${MEMORIA}periodo-1.csv`);
+    await openTab(page, "Línea y calles");
+    const panel = page.locator(".cases-panel");
+    await createFromSymptom(page, "Sin paso por 0300", "2026-01-24T08:01", "2026-01-24T08:02");
+    await expect(panel.locator(".cases-status")).toContainText("creado en borrador", { timeout: 15_000 });
+    // Con uno solo no hay con qué comparar.
+    await expect(panel.locator(".case-item").first().locator(".case-similar")).toContainText("No hay otros expedientes en este circuito");
+    await createFromSymptom(page, "Otra vez sin paso por 0300", "2026-01-24T08:03", "2026-01-24T08:04");
+    await expect(panel.locator(".case-item")).toHaveCount(2, { timeout: 15_000 });
+    const before = await storeOutsideCases(page);
+    const items = panel.locator(".case-item");
+    const ids = await items.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-case-id") ?? ""));
+    expect(new Set(ids).size).toBe(2);
+    for (const [index, id] of ids.entries()) {
+      const other = ids[1 - index]!;
+      const details = items.nth(index).locator(".case-details");
+      if ((await details.getAttribute("open")) === null) await details.locator("> summary").click();
+      const similar = items.nth(index).locator(".case-similar");
+      await expect(similar.getByRole("heading", { name: "Casos parecidos" })).toBeVisible();
+      const entry = similar.locator(`.case-similar-item[data-case-id="${other}"]`);
+      await expect(entry).toHaveCount(1);
+      await expect(similar.locator(`.case-similar-item[data-case-id="${id}"]`)).toHaveCount(0);
+      await expect(entry.locator("summary")).toContainText(/coinciden \d+ de \d+/);
+      await entry.locator("summary").click();
+      await expect(entry.locator('tr:has(td:text-is("Tags del síntoma")) td').nth(1)).toHaveText("igual");
+      const text = (await similar.innerText()).toLowerCase();
+      for (const word of ["causa", "provoca", "debido a", "correlaciona", "oq-", "adr-"]) expect(text, word).not.toContain(word);
+    }
+    // Comparar no escribe nada.
+    expect(await storeOutsideCases(page)).toBe(before);
+  });
 });

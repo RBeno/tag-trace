@@ -75,6 +75,7 @@ async function caseView(): Promise<CaseView> {
     contextText: contextText(decided.evidence.context),
     hypotheses,
     metricProposal: null,
+    similar: null,
   };
 }
 

@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.61.0
+version: 0.62.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -424,6 +424,15 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## Expedientes, entrega 6: biblioteca de casos y similitud explicada (3.80.0, 2026-10-17)
+
+Hecho: cada expediente lleva «Casos parecidos» con los demás del circuito (sin descartados),
+comparados característica a característica (igual, parecido, distinto, sin dato) y ordenados por
+cuántas coinciden, sin pesos ni puntuación oculta (ALG-017 `similitud-1`). Lo confirmado en otro caso
+va aparte y no es evidencia para este. Decisión: un hecho que se repite se cuenta pero **no se llama
+`correlaciona`**; la frecuencia fuera de las incidencias no se mide y queda en OQ-172. Con esta, las seis
+entregas de ADR-0018 están hechas; marcar G5 y escribir `CONTINÚA FASE 6` es del propietario.
+
 ## Expedientes, entrega 5: informe vivo y exportación (3.79.0, 2026-10-17)
 
 Hecho: «Informe del expediente» descarga un HTML autocontenido con los diez apartados de
@@ -638,8 +647,8 @@ conversación siguiente.
   juntas** (3.64.0) y **el registro de conexiones con su mapa de estado de conexión** (3.65.0,
   ADR-0017, secciones anteriores), ninguna un entregable de `ROADMAP.md` §F5. El trabajo propio de la fase
   empezó con ADR-0018 (aceptado), su entrega 1 (3.74.0) y su entrega 2 (3.75.0); D5 está hecho
-  (3.76.0) y la entrega 3 también (3.77.0); las entregas 4 y 5 también (3.78.0, 3.79.0); lo siguiente es la
-  entrega 6 (casos similares). Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
+  (3.76.0) y la entrega 3 también (3.77.0); las entregas 4, 5 y 6 también (3.78.0 a 3.80.0): ADR-0018 está
+  completo y lo siguiente lo decide el propietario (G5, OQ-172). Antes de eso, el punto de partida estaba en `ROADMAP.md` §F5, y `CONTEXT_INDEX.md` dice qué documentos exige antes de tocar nada
   (probablemente ADR nuevo para el modelo del expediente y el lenguaje de causalidad/correlación,
   antes de escribir código). Historial completo de F4 en las secciones de arriba de este documento y
   en `CHANGELOG.md` `[3.50.0]` a `[3.62.0]`. Anterior a F4: **revisión de toda la lógica de medición y análisis**

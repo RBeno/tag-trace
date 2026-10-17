@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.58.0
+version: 0.59.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -993,6 +993,14 @@ ventana, y **solo en este dispositivo**: borrar los datos del navegador la pierd
   `INCIDENTS_REPORTING.md` §8 y lo escrito por una persona marcado como suyo; «Cronología (CSV)» y
   «Lecturas del recorte (CSV)» (esta la prepara el Worker); y la nota «Instantánea de la revisión N. El
   informe se abre sin red; «Imprimir → Guardar como PDF» lo convierte en PDF.».
+- **Casos parecidos (3.80.0, D10)**, entre las hipótesis y las contramedidas: una nota fija —otros
+  expedientes de este circuito, ordenados por cuántas características coinciden, todas con el mismo peso;
+  lo que se confirmó en otro caso no es evidencia para este—; si los hay, «Lo que se repite en otros
+  casos» con cada hecho, «También precede en …» y por qué repetirse no basta; y la lista, cada caso
+  plegado con «<id>: <título> — <estado>, <fecha> · coinciden N de M» y, al abrirlo, una tabla
+  Característica / Comparación / Este caso frente a aquel, con «Confirmado en aquel caso: … No es
+  evidencia para este.» debajo. Sin otros expedientes: «No hay otros expedientes en este circuito con
+  que compararlo.». En el informe del expediente, el apartado 6 termina con «Casos parecidos».
 - Tras cada acción, la línea de estado dice lo escrito y el expediente queda abierto. Al pie, lo que
   ocupan los expedientes en el dispositivo.
 
