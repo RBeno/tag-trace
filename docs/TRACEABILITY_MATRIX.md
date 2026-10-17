@@ -1,8 +1,8 @@
 ---
 document_id: TT-TRACE-001
-version: 0.60.2
+version: 0.61.0
 status: baseline-candidate
-last_updated: 2026-10-08
+last_updated: 2026-10-17
 ---
 
 # Matriz de trazabilidad
@@ -134,6 +134,7 @@ regla exista: la matriz no es una lista de intenciones.
 | R-FLO-010 / TC-231–232 alimentación de la línea | `src/domain/line-feed.ts`, `src/domain/segment-bands.ts` (`bandOf`), `src/domain/tag-lists.ts` (`linea`), `workers/import.worker.ts` (`lineFeed`), `src/application/protocol.ts`, `src/presentation/main.ts` (`renderLineFeed`) | `tests/unit/line-feed.test.ts`, `tests/audit/auditoria.test.ts` Ritmo y tiempo sin paso: TC-235–236. |
 | R-FLO-011 / TC-233–234 pasos por la línea | `src/domain/line-feed.ts` (`passages`), `workers/import.worker.ts`, `src/presentation/main.ts` (`renderLineFeed`) | `tests/unit/line-feed.test.ts`, `tests/audit/auditoria.test.ts` |
 | R-FLO-010 / TC-237 exclusión de las paradas de la línea | `src/domain/line-feed.ts` (`lineStopExclusion`, `outsideLineStops`), `workers/import.worker.ts` | `tests/unit/line-feed.test.ts`, `tests/audit/auditoria.test.ts` (mismo encadenado) |
+| R-GRA-022 / TC-330–331 áreas del servidor y refuerzo con su lado junto a cada incidencia | `src/domain/tag-lists.ts` (`area`), `src/domain/tag-info.ts` (`declaredTagInfo`, `DeclaredReinforcement`), `workers/import.worker.ts` (`tagInfo`), `src/presentation/main.ts` (`finding`, expediente) | `tests/unit/tag-info.test.ts` |
 | R-GRA-018 / TC-238 tramos en las gráficas | `src/domain/tag-info.ts` (`tagSections`), `src/domain/tag-lists.ts` (`tramo`), `src/presentation/diagnostic-charts.ts`, `src/presentation/main.ts`, `src/presentation/franjas-ui.ts`, `src/presentation/styles.css` | `tests/unit/tag-info.test.ts` |
 | R-AGV-021 / TC-239–240 batería de mediciones de cada incidencia | `src/domain/incident-battery.ts`, `src/domain/line-feed.ts` (`passTimes`, `nightCadence`), `workers/import.worker.ts` (`incidents`), `src/application/protocol.ts`, `src/presentation/main.ts` (`withBattery`, `renderAbandoned`) | `tests/unit/incident-battery.test.ts`, `tests/audit/auditoria.test.ts` |
 | R-GRA-014 / TC-241 zona oscura por tag sin lecturas; R-AGV-018 / TC-242 orden solo con posición fiable; R-AGV-021 / TC-243–245 batería en la auditoría e invariantes | `src/domain/circuit-state.ts` (`declaredWithoutReadings`), `src/domain/flow-stops.ts` (`orderable`), `workers/import.worker.ts`, `src/presentation/main.ts`, `tests/support/circuito-auditoria.ts` (`ocupacionAislada`) | `tests/unit/circuit-state.test.ts`, `tests/unit/flow-stops.test.ts`, `tests/audit/auditoria.test.ts` |

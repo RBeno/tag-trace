@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.47.2
+version: 0.48.0
 status: baseline-candidate
-last_updated: 2026-10-08
+last_updated: 2026-10-17
 ---
 
 # Especificación de experiencia de usuario
@@ -686,7 +686,11 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
   deriva, puntos críticos, cuellos de botella, zonas oscuras, puntos conflictivos, paradas y el
   expediente del tag— añade una línea «Declarado en planta: …» con lo que las listas dicen de él: su
   nota tal cual, su función y su calle, sin repetir piezas. Es información para el diagnóstico y no
-  cambia ningún cálculo (R-GRA-007).
+  cambia ningún cálculo (R-GRA-007). Desde 3.68.0 (R-GRA-022) lleva también **sus áreas** del servidor
+  (lista `area`: «áreas: cruce salida, SE6/8 lleno - ME3 vacío») y el **refuerzo con su lado**
+  («refuerzo con 58026 (anterior) y 58028 (siguiente)»). Un tag sin hallazgo no enseña nada de esto:
+  la función y las áreas se dicen solo cuando hay un riesgo que leer con ellas (propietario,
+  2026-10-17).
 - **Tags leídos fuera de la lista del circuito** (R-DAT-022), junto al contraste con Vsystem. Una
   tarjeta por tag, de las más leídas a las menos: «candidato a una posición», «tag de noche»,
   «tag de noche declarado» (en la lista `noche`) o «posiblemente de noche», con su sitio (entre qué tags y en qué orden de la lista), sus lecturas de

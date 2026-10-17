@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.50.1
+version: 0.51.0
 status: baseline-candidate
-last_updated: 2026-10-09
+last_updated: 2026-10-17
 ---
 
 # Memoria compacta del proyecto
@@ -423,6 +423,20 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## Organizar TAG TRACE: cuatro entregas, la primera hecha (3.68.0, 2026-10-17)
+
+El propietario: «Vamos a organizar TAG TRACE»: el Resumen enseña lo importante y lleva a su sitio
+(un AGV con muchas menos lecturas por vuelta manda a AGV; un tag que deja de leerse, a Tags; la WiFi
+igual si está cargada); orden para ir directo a una anomalía; el circuito guarda **áreas** y
+**función** de cada tag y las dice **solo cuando hay riesgo**, con su refuerzo anterior o posterior.
+Decidido con él: WiFi como pestaña propia solo con registro cargado; las áreas como lista nueva
+`area` (una fila por tag y área); el Resumen enseña rango 1 y 2 completos y rango 3 plegado; orden de
+entregas: áreas y función → WiFi → Resumen → Tags y AGV. `ROADMAP.md` ponía la interfaz coherente en
+F6; se adelanta a F5 por su petición. **Hecha la primera** (R-GRA-022): lista `area`, y «Declarado en
+planta» con las áreas y el refuerzo por su lado. Lo que ya existía y se conserva: la bandeja del
+Resumen con «Ver evidencia», la línea «Declarado en planta» solo en tarjetas con hallazgo y en el
+expediente.
 
 ## Otro circuito con tres recorridos: desvíos y dos preguntas (3.67.1, 2026-10-09)
 

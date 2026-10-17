@@ -2,6 +2,28 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.68.0] - 2026-10-17
+
+El propietario pidió organizar TAG TRACE: un Resumen que enseñe lo importante y lleve a su sitio,
+Tags y AGV ordenados por problemas, la WiFi aparte cuando esté cargada, y que el circuito guarde las
+**áreas** y la **función** de cada tag y las diga solo cuando hay riesgo, con su refuerzo. Son cuatro
+entregas (áreas y función; WiFi; Resumen; Tags y AGV); esta es la primera.
+
+### Añadido
+
+- **Lista `area`** (R-GRA-022, `CONFIG_SCHEMA.md` §3.8): a qué áreas gestionadas por el servidor
+  pertenece cada tag, con el nombre en `grupo` y una fila por tag y área. Se guarda con el circuito
+  como las demás listas y la plantilla de Excel la enseña con su propósito.
+- **«Declarado en planta» con las áreas y el refuerzo por su lado.** La línea que acompaña a cada
+  tarjeta de hallazgo que nombra un tag, y al expediente del tag, dice ahora «áreas: …» y «refuerzo
+  con 58026 (anterior) y 58028 (siguiente)» en vez de solo los números: una omisión en un tag
+  reforzado se lee distinta si el compañero de delante o de detrás sigue leyéndose (R-GRA-016).
+  Nada cambia en un tag sin hallazgo: la función y las áreas se dicen solo con riesgo.
+
+### Documentación
+
+- R-GRA-022 nueva; TC-330 y TC-331; `UX_SPEC.md` §5.9; `TRACEABILITY_MATRIX.md`.
+
 ## [3.67.1] - 2026-10-09
 
 El propietario aportó el registro de conexiones y las lecturas de otro circuito (tres recorridos con

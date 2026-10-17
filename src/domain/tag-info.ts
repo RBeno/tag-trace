@@ -23,17 +23,28 @@ export interface DeclaredList {
   readonly entries?: readonly DeclaredEntry[];
 }
 
+/** Un refuerzo tal como lo da `reinforcementGroups`: su función y sus tags en el orden del circuito. */
+export interface DeclaredReinforcement {
+  readonly funcion: string;
+  readonly tags: readonly string[];
+}
+
 /**
- * Por tag, lo declarado en las listas, sin repetir: la nota tal cual, la función, la calle y con qué
- * tags forma refuerzo (R-GRA-016). Se
+ * Por tag, lo declarado en las listas, sin repetir: la nota tal cual, la función, la calle, sus áreas
+ * (R-GRA-022) y con qué tags forma refuerzo (R-GRA-016). Se
  * compara pieza a pieza (lo separado por « · »): la misma palabra puede venir en la nota del circuito
  * y en la de la zona, y no se enseña dos veces.
+ *
+ * El refuerzo se dice con su lado cuando llega como grupos en el orden del circuito («refuerzo con
+ * 58026 (anterior) y 58028 (siguiente)», propietario, 2026-10-17: «si hay refuerzo, un tag o más
+ * anterior o posterior con la misma función»); con solo el mapa de compañeros, sin lado.
  */
 export function declaredTagInfo(
   lists: readonly DeclaredList[],
-  reinforcement: ReadonlyMap<string, readonly string[]> = new Map(),
+  reinforcement: ReadonlyMap<string, readonly string[]> | readonly DeclaredReinforcement[] = new Map(),
 ): ReadonlyMap<string, string> {
   const parts = new Map<string, string[]>();
+  const areas = new Map<string, string[]>();
   const add = (tagId: string, text: string): void => {
     for (const piece of text.split(" · ")) {
       const clean = piece.trim();
@@ -51,11 +62,30 @@ export function declaredTagInfo(
         add(entry.tagId, `${entry.funcion}${entry.grupo === "" ? "" : ` (${entry.grupo})`}`);
       else if (list === "noche") add(entry.tagId, "tag de noche declarado");
       else if (list === "tramo" && entry.grupo !== "") add(entry.tagId, `tramo ${entry.grupo}`);
+      else if (list === "area" && entry.grupo !== "") {
+        const own = areas.get(entry.tagId) ?? [];
+        if (!own.some((area) => area.toLowerCase() === entry.grupo.toLowerCase())) own.push(entry.grupo);
+        areas.set(entry.tagId, own);
+      }
     }
   }
+  // Las áreas del servidor (R-GRA-022), todas juntas: un tag de varias áreas es un solo dato.
+  for (const [tagId, own] of areas) add(tagId, `${own.length === 1 ? "área" : "áreas"}: ${own.join(", ")}`);
   // El refuerzo (R-GRA-016) va detrás de la función: una incidencia en un tag reforzado se lee
   // distinta si el otro tag del refuerzo sigue leyéndose.
-  for (const [tagId, partners] of reinforcement) add(tagId, `refuerzo con ${partners.join(", ")}`);
+  if (reinforcement instanceof Map) {
+    for (const [tagId, partners] of reinforcement) add(tagId, `refuerzo con ${partners.join(", ")}`);
+  } else {
+    for (const group of reinforcement as readonly DeclaredReinforcement[]) {
+      group.tags.forEach((tagId, index) => {
+        const before = group.tags.slice(0, index).map((other) => `${other} (anterior)`);
+        const after = group.tags.slice(index + 1).map((other) => `${other} (siguiente)`);
+        const sides = [...before, ...after];
+        if (sides.length === 0) return;
+        add(tagId, `refuerzo con ${sides.length === 1 ? sides[0] : `${sides.slice(0, -1).join(", ")} y ${sides[sides.length - 1]}`}`);
+      });
+    }
+  }
   return new Map([...parts].map(([tagId, texts]) => [tagId, texts.join(" · ")]));
 }
 
