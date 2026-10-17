@@ -115,7 +115,7 @@ import {
 } from "../src/domain/circuit-config.js";
 import { buildAllAgvDossiers, buildAllTagDossiers } from "../src/domain/dossier.js";
 import { compareAgainstVsystem } from "../src/domain/vsystem.js";
-import { buildReplayFrames } from "../src/domain/replay.js";
+import { buildCaseReplay, buildReplayFrames } from "../src/domain/replay.js";
 import { PROVISIONAL_CONFIG, type AnalysisConfig } from "../src/domain/config.js";
 import {
   formatPlantValue,
@@ -3367,6 +3367,43 @@ async function runCase(message: Extract<ToWorker, { type: "case-action" }>): Pro
   }
 }
 
+/**
+ * El replay de un expediente (ALG-016, ADR-0018 D8), a petición: sobre el recorte congelado de su
+ * revisión vigente, con la cronología del retroceso para sincronizar los hechos. Solo lee.
+ */
+async function runCaseReplay(message: Extract<ToWorker, { type: "case-replay" }>): Promise<void> {
+  const { jobId, circuitId, caseId } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  if (!isAvailable()) {
+    fail("No hay almacén local: los expedientes necesitan IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
+    return;
+  }
+  try {
+    const revisions = (await loadCaseRevisions(circuitId)).filter((revision) => revision.caseId === caseId);
+    if (revisions.length === 0) {
+      fail(`El expediente ${caseId} no está en este dispositivo.`, "Vuelve a cargar la lista de expedientes.");
+      return;
+    }
+    const current = currentRevision(revisions);
+    const evidence = current.evidence.hash === null ? undefined : await loadCaseEvidence(circuitId, current.evidence.hash);
+    if (evidence === undefined) {
+      fail(`El expediente ${caseId} no tiene recorte de lecturas: no hay replay.`, "En borrador, cambia la ventana para volver a copiar las lecturas.");
+      return;
+    }
+    const chronology = backtrack({ window: current.window, agvId: current.agvId, tagIds: current.tagIds, evidence });
+    const replay = buildCaseReplay({ window: current.window, evidence, chronology, frameCount: REPLAY_FRAMES });
+    emit({ type: "case-replay-ready", circuitId, caseId, revision: current.revision, replay }, jobId);
+  } catch (error) {
+    // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
+    fail(
+      `El replay del expediente falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "No se ha cambiado nada. Si persiste, es un defecto y debe reproducirse con un fixture sintético.",
+    );
+  }
+}
+
 async function applyCaseAction(stored: StoredCircuit, action: CaseAction, now: number): Promise<{ readonly caseId: string; readonly text: string }> {
   const circuitId = stored.circuitId;
   const config = PROVISIONAL_CONFIG;
@@ -3439,6 +3476,14 @@ async function applyCaseAction(stored: StoredCircuit, action: CaseAction, now: n
 scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   const message = event.data;
   if (message.protocolVersion !== PROTOCOL_VERSION) return;
+
+  if (message.type === "case-replay") {
+    currentJobId = message.jobId;
+    cancelRequested = false;
+    seq = 0;
+    void runCaseReplay(message);
+    return;
+  }
 
   if (message.type === "case-action") {
     currentJobId = message.jobId;

@@ -663,6 +663,7 @@ const casesPanel = createCasesPanel({
   formatInstant,
   zone: ZONE,
   send: (action) => startCase(action),
+  requestReplay: (caseId) => startCaseReplay(caseId),
 });
 
 {
@@ -1245,6 +1246,11 @@ function handleMessage(message: FromWorker): void {
       finishCaseJob();
       casesPanel.showUpdated(message.written, message.caseId, message.cases);
       return;
+
+    case "case-replay-ready":
+      finishCaseJob();
+      casesPanel.showReplay(message.caseId, message.revision, message.replay);
+      return;
   }
 }
 
@@ -1284,6 +1290,37 @@ function finishCaseJob(): void {
  * Envía una acción sobre un expediente al Worker (ADR-0018). Como `startPlantValue`: mismo Worker,
  * `jobId` propio, y la presentación solo pide. No vuelve a analizar nada ni toca la memoria.
  */
+/** Pide el replay de un expediente (ALG-016). Mismo Worker y `jobId` propio; solo lee. */
+function startCaseReplay(caseId: string): void {
+  const circuitId = state.circuitId;
+  if (circuitId === null) {
+    casesPanel.showError("no hay circuito en pantalla.", "Importa las lecturas del circuito y vuelve a intentarlo.");
+    return;
+  }
+  if (state.worker !== null) {
+    casesPanel.notice(BUSY_NOTICE);
+    return;
+  }
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  state.caseJob = true;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    finishCaseJob();
+    casesPanel.showError("el proceso auxiliar se detuvo.", "No se ha cambiado nada. Vuelve a intentarlo.");
+  };
+  setBusy(true);
+  casesPanel.setBusy(true);
+  progressNote.textContent = "Preparando el replay del expediente";
+  progressBar.value = 0;
+  const message: ToWorker = { type: "case-replay", protocolVersion: PROTOCOL_VERSION, jobId, circuitId, caseId };
+  worker.postMessage(message);
+}
+
 function startCase(action: CaseAction): void {
   const circuitId = state.circuitId;
   if (circuitId === null) {

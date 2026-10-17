@@ -44,6 +44,7 @@ import type { ListCleanup } from "../domain/list-cleanup.js";
 import type { LineFeed } from "../domain/line-feed.js";
 import type { Incident, IncidentBattery, IncidentRecord } from "../domain/incident-battery.js";
 import type { Chronology } from "../domain/case-backtrack.js";
+import type { CaseReplay } from "../domain/replay.js";
 import type { CaseChange, CaseOrigin, CaseRevision, CaseState, CaseWindow, TransitionOption } from "../domain/incident-case.js";
 import type { CircuitOrder } from "../domain/circuit-order.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
@@ -397,7 +398,20 @@ export interface CaseActionMessage {
   readonly action: CaseAction;
 }
 
+/**
+ * Pide el replay de un expediente (ALG-016, ADR-0018 D8). Solo lee: se calcula en el Worker sobre el
+ * recorte congelado y no escribe nada.
+ */
+export interface CaseReplayMessage {
+  readonly type: "case-replay";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly caseId: string;
+}
+
 export type ToWorker =
+  | CaseReplayMessage
   | CaseActionMessage
   | CompareVersionsMessage
   | PlantValueMessage
@@ -1060,6 +1074,16 @@ export interface CasesUpdatedMessage extends Envelope {
   readonly cases: CaseViews;
 }
 
+/** Respuesta a `case-replay`: el replay del expediente, ya calculado. Nada se ha escrito. */
+export interface CaseReplayReadyMessage extends Envelope {
+  readonly type: "case-replay-ready";
+  readonly circuitId: string;
+  readonly caseId: string;
+  /** La revisión con cuyo recorte se calculó. */
+  readonly revision: number;
+  readonly replay: CaseReplay;
+}
+
 export interface VersionsComparedMessage extends Envelope {
   readonly type: "versions-compared";
   readonly circuitId: string;
@@ -1176,6 +1200,7 @@ export type FromWorker =
   | PlanUpdatedMessage
   | PlantValuesUpdatedMessage
   | CasesUpdatedMessage
+  | CaseReplayReadyMessage
   | VersionsComparedMessage;
 
 /**

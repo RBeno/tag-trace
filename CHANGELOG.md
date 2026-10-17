@@ -2,6 +2,31 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.77.0] - 2026-10-17
+
+Entrega 3 de ADR-0018, tras D5.
+
+### Añadido
+
+- **Replay del expediente** (ALG-016, `replay-caso-1`, ADR-0018 D8, FR-023): «Ver el replay» en cada
+  expediente con recorte lo calcula en el Worker sobre el recorte congelado de su revisión vigente (no
+  se calcula al importar). 200 fotogramas por toda la ventana, cada uno con su fase; por AGV, lo
+  **visto** (en un tag; entre dos tags como fracción del tiempo, inferido; en silencio, desconocido; sin
+  datos todavía), lo **esperado** como banda entre el tag al que llegaría a paso lento (p95) y a paso
+  habitual (p50) de cada tramo desde su última lectura —«va por detrás incluso del paso lento» cuando ni
+  así seguiría donde está—, y la **conexión** según el registro del terminal. Los hechos de la
+  cronología caen en su fotograma, y cada uno lleva «Ver en el replay».
+- `buildReplayFrames` admite el intervalo que recorren los fotogramas; sin él, como hasta ahora.
+- Protocolo: `case-replay` (solo lee) y `case-replay-ready`.
+- Medido: 54.000 lecturas de 40 AGV en 3 h, ~0,13 s de cálculo y ~2,4 MB de respuesta.
+- Pruebas: TC-347 (unitaria) y TC-348 (navegador, sobre el caso de TC-012).
+
+### Pendiente
+
+- El estado de zonas cargada/vacía, calles CO y puntos críticos en el replay, y los filtros por AGV,
+  tag o zona (`INCIDENTS_REPORTING.md` §5). Medir el replay en el móvil de referencia.
+- Las entregas 4 a 6.
+
 ## [3.76.0] - 2026-10-17
 
 El propietario pidió completar la parte pendiente de D5 antes de la entrega 3.

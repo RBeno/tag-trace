@@ -21,8 +21,12 @@
  * La fecha es el martes 20 de enero de 2026, de 10:00 a 12:00 en Madrid (UTC+1): sin cambio de hora.
  */
 
-import type { FrozenConnection } from "../../src/domain/incident-case.js";
+import { PROVISIONAL_CONFIG } from "../../src/domain/config.js";
+import { buildTransitions } from "../../src/domain/graph.js";
+import type { CaseContext, FrozenConnection } from "../../src/domain/incident-case.js";
 import type { Reading } from "../../src/domain/reading.js";
+import { buildSegmentBands, regimeReader } from "../../src/domain/segment-bands.js";
+import type { SnapshotEdge } from "../../src/domain/snapshot.js";
 
 export const ZONE = "Europe/Madrid";
 /** 10:00 en Madrid el 20/01/2026. */
@@ -165,5 +169,29 @@ export function buildCriticalPointScenario(seed = 20260120): CriticalPointScenar
       lastBefore: best.before,
       firstAfter: best.after,
     },
+  };
+}
+
+/** El contexto que congelaría el Worker sin memoria: el anillo y las horquillas del propio fichero. */
+export function scenarioContext(readings: readonly Reading[]): CaseContext {
+  const config = PROVISIONAL_CONFIG;
+  const { transitions } = buildTransitions(readings, "oldest-first", []);
+  const bands = buildSegmentBands(transitions, RING, regimeReader(ZONE, config.regimes), config.bands, config.flowStops.minStopExcessMs);
+  const edges: SnapshotEdge[] = RING.map((from, index) => {
+    const to = RING[(index + 1) % RING.length] as string;
+    const band = [...bands.pairs.values()].find((entry) => entry.from === from && entry.to === to);
+    return { from, to, produccion: band?.produccion ?? null, noche: band?.noche ?? null };
+  });
+  return {
+    origin: { kind: "instantanea", sourceId: "punto-critico", fileName: "punto-critico.csv" },
+    zone: ZONE,
+    ring: RING,
+    edges,
+    regimes: config.regimes,
+    silenceMinGapMs: config.silence.minGapMs,
+    shiftStartHours: config.silenceKind.shiftStartHours,
+    minMedianSamples: config.franjas.minPositionSamples,
+    connectionCuts: config.connectionCuts,
+    declared: { [CRITICAL_TAG]: "función: parada precisa" },
   };
 }

@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.76.0
+version: 0.77.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -395,6 +395,8 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-344 | Navegador: TC-012 de punta a punta (`expedientes.spec.ts`) | Se importa el escenario y el registro de conexiones de `207`, se revisa y consolida v1, se crea el expediente: la cronología sale frente al esperado de v1 («por encima de lo esperado en ese tramo»), con la primera desviación marcada, el corte de WiFi y «precede», sin relación durante el síntoma, sin vocabulario causal; se conserva igual al recargar y nada fuera de los expedientes cambia |
 | TC-345 | Expedientes propuestos al consolidar (`memory.test.ts`, ADR-0018 D5, R-INC-004) | Un expediente que toca el fichero se propone marcado y entra como incidencia `expediente|<id>` con su ventana recortada al fichero, su AGV, su tag y los tramos de entrada y salida; soltado, no excluye nada; uno fuera del fichero no se propone; sin tags no toca el grafo; soltar cambia la huella; la versión guarda la incidencia |
 | TC-346 | Navegador: D5 (`expedientes.spec.ts`) | El expediente aparece en «Expedientes del periodo» marcado y entre las incidencias excluidas; quitar la casilla apaga «Confirmar» con su aviso; volver a previsualizar lo suelta; marcado otra vez y consolidado, la versión guardada lleva `expediente|<id>` y el expediente no tiene revisiones nuevas |
+| TC-347 | Replay del expediente (`case-replay.test.ts`, ALG-016, TC-012) | 200 fotogramas de principio a fin de la ventana con su fase; el AGV parado va por detrás de lo esperado mientras está parado y no antes, con la banda lenta y habitual; antes de la parada, menos del 5 % de las comparaciones van por detrás; el tránsito es `inferred` con fracción en [0, 1]; la conexión de `207` es «sin conexión» dentro de su corte y «conectado» fuera, los demás «sin registro»; cada hecho de la cronología cae en un solo fotograma; determinista; sin contexto, ni banda ni conexión, y se dice |
+| TC-348 | Navegador: replay del expediente de TC-012 (`expedientes.spec.ts`) | «Ver el replay» trae 8 filas y la nota del esperado de v1; «Ver en el replay» del corte de WiFi lleva al fotograma con `207` «sin conexión (registro)» y el hecho en la lista; a mitad del síntoma `205` está en `71012` con «va por detrás incluso del paso lento» y la fila marcada; sin vocabulario causal; pedir el replay no escribe nada |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las siete pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

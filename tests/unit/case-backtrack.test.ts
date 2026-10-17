@@ -15,48 +15,20 @@
 import { describe, expect, it } from "vitest";
 
 import { backtrack, formatDuration, type Chronology } from "../../src/domain/case-backtrack.js";
-import { PROVISIONAL_CONFIG } from "../../src/domain/config.js";
-import { buildTransitions } from "../../src/domain/graph.js";
-import { causalWordsIn, type CaseContext, type CaseWindow, type FrozenEvidence } from "../../src/domain/incident-case.js";
+import { causalWordsIn, type CaseWindow, type FrozenEvidence } from "../../src/domain/incident-case.js";
 import type { Reading } from "../../src/domain/reading.js";
-import { buildSegmentBands, regimeReader } from "../../src/domain/segment-bands.js";
-import type { SnapshotEdge } from "../../src/domain/snapshot.js";
 import {
   buildCriticalPointScenario,
   CRITICAL_TAG,
-  RING,
   STALL_TAG,
   STALLED_AGV,
   WIFI_AGV,
   WIFI_FROM,
+  scenarioContext,
   ZONE,
 } from "../support/caso-punto-critico.js";
 
 const MIN = 60_000;
-
-/** El contexto que congelaría el Worker sin memoria: el anillo y las horquillas del propio fichero. */
-function contextOf(readings: readonly Reading[]): CaseContext {
-  const config = PROVISIONAL_CONFIG;
-  const { transitions } = buildTransitions(readings, "oldest-first", []);
-  const bands = buildSegmentBands(transitions, RING, regimeReader(ZONE, config.regimes), config.bands, config.flowStops.minStopExcessMs);
-  const edges: SnapshotEdge[] = RING.map((from, index) => {
-    const to = RING[(index + 1) % RING.length] as string;
-    const band = [...bands.pairs.values()].find((entry) => entry.from === from && entry.to === to);
-    return { from, to, produccion: band?.produccion ?? null, noche: band?.noche ?? null };
-  });
-  return {
-    origin: { kind: "instantanea", sourceId: "punto-critico", fileName: "punto-critico.csv" },
-    zone: ZONE,
-    ring: RING,
-    edges,
-    regimes: config.regimes,
-    silenceMinGapMs: config.silence.minGapMs,
-    shiftStartHours: config.silenceKind.shiftStartHours,
-    minMedianSamples: config.franjas.minPositionSamples,
-    connectionCuts: config.connectionCuts,
-    declared: { [CRITICAL_TAG]: "función: parada precisa" },
-  };
-}
 
 function texts(chronology: Chronology): readonly string[] {
   return [...chronology.facts.map((fact) => fact.text), ...chronology.limits, ...chronology.declared.map((entry) => entry.text)];
@@ -69,7 +41,7 @@ describe("TC-012: punto crítico sin llegada más de diez minutos", () => {
   const window: CaseWindow = { symptomFrom: truth.absenceFrom + MIN, symptomTo: truth.absenceTo, marginBeforeMs: 30 * MIN, marginAfterMs: 30 * MIN };
   const span = { from: window.symptomFrom - window.marginBeforeMs, to: window.symptomTo + window.marginAfterMs };
   const inSpan = scenario.readings.filter((reading) => reading.time.utcMs >= span.from && reading.time.utcMs <= span.to);
-  const evidence: FrozenEvidence = { readings: inSpan, connections: scenario.connections, context: contextOf(scenario.readings) };
+  const evidence: FrozenEvidence = { readings: inSpan, connections: scenario.connections, context: scenarioContext(scenario.readings) };
   const chronology = backtrack({ window, agvId: null, tagIds: [CRITICAL_TAG], evidence });
 
   it("el escenario planta lo que dice: más de diez minutos sin paso por el punto crítico, por la parada aguas arriba", () => {
@@ -154,7 +126,7 @@ describe("retroceso sin contexto o con calendario", () => {
   });
 
   it("con contexto: el cambio de turno de las 14:00 y el silencio del AGV, cada uno en su sitio", () => {
-    const context = { ...contextOf(buildCriticalPointScenario().readings), edges: [] };
+    const context = { ...scenarioContext(buildCriticalPointScenario().readings), edges: [] };
     const out = backtrack({ window, agvId: "2", tagIds: ["71009"], evidence: { readings, connections: [], context } });
     const shift = out.facts.find((fact) => fact.kind === "turno");
     // El síntoma va de 13:55 a 14:05: el turno empieza durante él, y lo de durante no lleva relación.

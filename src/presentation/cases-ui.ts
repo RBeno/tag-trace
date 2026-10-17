@@ -13,6 +13,7 @@
  */
 
 import type { CaseAction, CaseView, CaseViews, ExcludedIncidentStart } from "../application/protocol.js";
+import type { CaseReplay, CaseReplayVehicle, ConnectionState } from "../domain/replay.js";
 import { PHASE_TEXT, type Chronology, type ChronologyPhase } from "../domain/case-backtrack.js";
 import { CASE_STATE_TEXT, type CaseOrigin, type CaseState, type TransitionOption } from "../domain/incident-case.js";
 
@@ -30,6 +31,12 @@ function button(text: string, className?: string): HTMLButtonElement {
 }
 
 const MIN = 60_000;
+
+const CONNECTION_TEXT: Readonly<Record<ConnectionState, string>> = {
+  conectado: "conectado (registro)",
+  "sin-conexion": "sin conexión (registro)",
+  "sin-registro": "sin registro",
+};
 
 /** «2026-10-09T10:40» en la zona del circuito, para un `datetime-local`. */
 export function toLocalInput(utcMs: number, zone: string): string {
@@ -101,6 +108,8 @@ export interface CasesPanelInput {
   readonly zone: string;
   /** Solo lo llama un botón de confirmar. */
   readonly send: (action: CaseAction) => void;
+  /** Pide el replay de un expediente al Worker. Solo lee. */
+  readonly requestReplay: (caseId: string) => void;
 }
 
 export interface CasesPanel {
@@ -108,6 +117,8 @@ export interface CasesPanel {
   update(context: CasesContext): void;
   showUpdated(written: string, caseId: string, views: CaseViews): void;
   showError(cause: string, recovery: string): void;
+  /** El replay de un expediente, calculado sobre el recorte de esa revisión. */
+  showReplay(caseId: string, revision: number, replay: CaseReplay): void;
   notice(text: string): void;
   setBusy(busy: boolean): void;
 }
@@ -146,6 +157,8 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
   let busy = false;
   /** El expediente abierto, para dejarlo abierto al volver a pintar. */
   let open: string | null = null;
+  /** Los replays recibidos, por expediente, con la revisión de la que salen y el fotograma elegido. */
+  const replays = new Map<string, { readonly revision: number; readonly replay: CaseReplay; frame: number }>();
   const senders: { readonly control: HTMLButtonElement; readonly ready: () => boolean }[] = [];
 
   const heading = node("h2", undefined, "Expedientes de incidencia");
@@ -466,6 +479,19 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
         }
         const rows = fact.provenance.map((row) => `fila ${row.sourceRow}`).concat(fact.connectionRows.map((row) => `registro, fila ${row.sourceRow}`));
         if (rows.length > 0) item.title = `Evidencia: ${rows.join(", ")}`;
+        // Con el replay cargado, cada hecho lleva al fotograma en que cae.
+        const loaded = replays.get(view.current.caseId);
+        if (loaded !== undefined && loaded.revision === view.current.revision) {
+          const target = loaded.replay.frames.findIndex((frame) => frame.events.includes(index));
+          if (target >= 0) {
+            const go = button("Ver en el replay", "case-fact-go");
+            go.addEventListener("click", () => {
+              loaded.frame = target;
+              render();
+            });
+            item.append(go);
+          }
+        }
         list.append(item);
       }
       box.append(node("h5", undefined, PHASE_TEXT[phase]), list);
@@ -477,6 +503,113 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       box.append(node("p", "muted", "Lo que este retroceso no revisa:"), limits);
     }
     return box;
+  }
+
+  /**
+   * El replay del expediente (ALG-016): a petición, sobre el recorte de la revisión vigente. Por AGV, lo
+   * observado (tag, tránsito como fracción de tiempo, silencio o sin datos), la banda de lo esperado
+   * desde su última lectura y la conexión del registro del terminal. Lo esperado no se ha visto: se dice.
+   */
+  function replayBlock(view: CaseView): HTMLElement {
+    const box = node("section", "case-replay");
+    box.append(node("h4", undefined, "Replay del expediente"));
+    if (view.chronology === null) {
+      box.append(node("p", "muted", "Sin recorte de lecturas no hay replay."));
+      return box;
+    }
+    const loaded = replays.get(view.current.caseId);
+    if (loaded === undefined || loaded.revision !== view.current.revision) {
+      box.append(
+        node("p", "muted", "Cada AGV en cada momento de la ventana: lo visto, dónde debería estar según lo esperado y su conexión."),
+        sender("Ver el replay", "case-replay-request", () => true, () => input.requestReplay(view.current.caseId)),
+      );
+      return box;
+    }
+    const { replay } = loaded;
+    if (replay.frames.length === 0) {
+      box.append(node("p", "muted", replay.limits.join(" ")));
+      return box;
+    }
+    const index = Math.min(replay.frames.length - 1, Math.max(0, loaded.frame));
+    fieldCount += 1;
+    const sliderId = `case-replay-${fieldCount}`;
+    const label = node("label", undefined, "Momento de la ventana");
+    label.htmlFor = sliderId;
+    const slider = node("input", "case-replay-slider");
+    slider.type = "range";
+    slider.id = sliderId;
+    slider.min = "0";
+    slider.max = String(replay.frames.length - 1);
+    slider.value = String(index);
+    const when = node("p", "case-replay-when");
+    const events = node("ul", "case-replay-events");
+    const table = node("table", "case-replay-table");
+    const paint = (at: number): void => {
+      const current = replay.frames[at] as CaseReplay["frames"][number];
+      when.textContent = `${input.formatInstant(current.atUtcMs)} · ${PHASE_TEXT[current.phase].toLowerCase()}`;
+      when.dataset["phase"] = current.phase;
+      events.replaceChildren();
+      for (const factIndex of current.events) {
+        const fact = view.chronology?.facts[factIndex];
+        if (fact !== undefined) events.append(node("li", undefined, `${input.formatInstant(fact.at)}: ${fact.text}`));
+      }
+      events.hidden = current.events.length === 0;
+      const head = node("thead");
+      const headRow = node("tr");
+      for (const title of ["AGV", "Visto", "Esperado", "Conexión"]) headRow.append(node("th", undefined, title));
+      head.append(headRow);
+      const body = node("tbody");
+      for (const entry of current.vehicles) body.append(replayRow(entry));
+      table.replaceChildren(head, body);
+    };
+    slider.addEventListener("input", () => {
+      loaded.frame = Number(slider.value);
+      paint(loaded.frame);
+    });
+    paint(index);
+    const note = node(
+      "p",
+      "muted case-replay-note",
+      `«Esperado» es dónde debería estar cada AGV desde su última lectura, entre el paso lento (p95) y el habitual (p50) de cada tramo, ` +
+        `${replay.expectedFrom === "memoria" ? "según el esperado de la versión consolidada" : replay.expectedFrom === "instantanea" ? "según lo habitual del propio fichero" : "y aquí no se puede decir"}: no se ha visto. Procedimiento ${replay.algorithm}.`,
+    );
+    const limits = node("ul", "case-limits");
+    for (const limit of replay.limits) limits.append(node("li", undefined, limit));
+    box.append(note, label, slider, when, events, table, limits);
+    return box;
+  }
+
+  function replayRow(entry: CaseReplayVehicle): HTMLTableRowElement {
+    const row = node("tr");
+    row.dataset["agv"] = entry.agvId;
+    row.dataset["state"] = entry.state.kind;
+    if (entry.expected?.behind === true) row.dataset["behind"] = "si";
+    const seen = ((): string => {
+      switch (entry.state.kind) {
+        case "en-tag":
+          return `en ${entry.state.tagId} (visto)`;
+        case "en-transito":
+          return `entre ${entry.state.fromTagId} y ${entry.state.toTagId}, al ${Math.round(entry.state.fraction * 100)} % del tiempo (inferido)`;
+        case "silencio":
+          return `sin lecturas desde ${entry.state.lastTagId}, ${input.formatInstant(entry.state.sinceUtcMs)} (desconocido)`;
+        default:
+          return `aún sin lecturas; la primera, ${input.formatInstant(entry.state.firstReadingUtcMs)}`;
+      }
+    })();
+    const expected = ((): string => {
+      const band = entry.expected;
+      if (band === null) return "no se puede decir";
+      if (band.beyondLap) return `a paso habitual, más de una vuelta desde ${band.fromTagId}`;
+      const range =
+        band.slowTagId === band.typicalTagId
+          ? `en ${band.slowTagId}`
+          : `entre ${band.slowTagId} y ${band.typicalTagId}`;
+      const steps = band.typicalSteps === 0 ? "" : ` (${band.slowSteps} a ${band.typicalSteps} ${band.typicalSteps === 1 ? "tag" : "tags"} después de ${band.fromTagId})`;
+      const behind = band.behind === true ? "; va por detrás incluso del paso lento" : "";
+      return `${range}${steps}${band.truncated ? "; más allá, sin horquilla" : ""}${behind}`;
+    })();
+    for (const text of [entry.agvId, seen, expected, CONNECTION_TEXT[entry.connection]]) row.append(node("td", undefined, text));
+    return row;
   }
 
   function caseItem(view: CaseView): HTMLElement {
@@ -532,7 +665,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       );
     }
     facts.append(node("h4", undefined, "Historial"), history);
-    details.append(facts, chronologyBlock(view));
+    details.append(facts, chronologyBlock(view), replayBlock(view));
 
     const actions = node("div", "case-actions");
     if (view.transitions.length > 0) {
@@ -586,6 +719,12 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       context = { ...context, views };
       open = caseId;
       status = { kind: "info", lines: [written] };
+      render();
+    },
+    showReplay(caseId, revision, replay) {
+      replays.set(caseId, { revision, replay, frame: 0 });
+      open = caseId;
+      status = null;
       render();
     },
     showError(cause, recovery) {

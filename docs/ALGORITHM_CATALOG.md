@@ -1,6 +1,6 @@
 ---
 document_id: TT-ALG-001
-version: 0.47.0
+version: 0.48.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -56,7 +56,7 @@ flowchart TD
 | ALG-013 | Puntos críticos | Llegadas frente a takt/calendario y causas aguas arriba | Ventanas de riesgo e impacto | O(n) | F3 |
 | ALG-014 | Consolidación | Reducción versionada y cálculo de delta | Nueva memoria compacta append-only | O(m), no O(histórico bruto) | F4 (implementado, §6.22) |
 | ALG-015 | Retroceso desde el síntoma | Búsqueda temporal/topológica hacia atrás sobre el recorte congelado: último y primer paso por los tags del síntoma, desviaciones sobre la valla de cada tramo del anillo (R-FLO-007), silencios, pares, cortes del registro del terminal, turno y régimen | Cronología por fases con `precede` para lo anterior, la primera desviación, lo declarado de los tags y lo que no se revisa; hipótesis en la entrega 4 | Limitada a ventana/subgrafo; O(n log n) sobre el recorte | F5 (implementado, `retroceso-1`, 3.75.0) |
-| ALG-016 | Replay multi-AGV | Estado observado/inferido por instante | Movimiento sobre grafo con incertidumbre | Precálculo + consulta incremental | F5 |
+| ALG-016 | Replay multi-AGV | Estado observado/inferido por instante (`replay.ts`); en un expediente, sobre su recorte congelado y su ventana entera, con la banda esperada desde la última lectura de cada AGV (p95 lento y p50 habitual de cada tramo del anillo), la conexión del registro del terminal y los hechos de la cronología | Movimiento sobre grafo con incertidumbre: tag visto, tránsito como fracción de tiempo, silencio o sin datos; «por detrás de lo esperado» si ni a paso lento seguiría donde está | Precálculo de 200 fotogramas en el Worker, a petición; 54.000 lecturas de 40 AGV en ~0,13 s | F5 (implementado en el expediente, `replay-caso-1`, 3.77.0) |
 | ALG-017 | Similitud de casos | Características explicables de incidencias | Casos comparables y diferencias | O(k·d) | F5 |
 | ALG-018 | Expediente por objeto | Agregación por AGV o por tag y contraste con su cohorte | Recuentos, tags leídos y no leídos, contraparte que sí leyó, y evidencia navegable | O(n) sobre agregados | F2 reducido, F3 completo |
 | ALG-019 | Inactividad e instante de cambio | Detección de silencios por objeto y del punto donde el comportamiento cambia | Periodos de inactividad clasificados e instante de cambio con alternativas | O(n) por objeto | F2 reducido, F3 completo |

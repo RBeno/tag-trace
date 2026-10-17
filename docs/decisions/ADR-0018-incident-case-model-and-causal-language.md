@@ -254,7 +254,11 @@ sigue vivo. Nunca se publica en GitHub (ADR-0007).
    después viene alterado por él; y la cronología solo usa `precede` (lo de durante y después se sitúa
    en su fase sin relación), porque `es compatible con` y `contradice` son de las hipótesis (entrega 4)
    y `correlaciona` exige repetición.
-3. Replay multi-AGV con esperado e incertidumbre.
+3. Replay multi-AGV con esperado e incertidumbre. **Hecha en 3.77.0** (`replay-caso-1`), ampliando
+   `replay.ts`: se pide desde el expediente y se calcula en el Worker sobre el recorte de la revisión
+   vigente. La capa esperada es una banda entre el tag al que llegaría a paso lento (p95) y a paso
+   habitual (p50) desde su última lectura; el estado de zonas, calles CO y puntos críticos no entra
+   todavía (va con FIFO y calles en el retroceso).
 4. Hipótesis, contramedidas y verificación.
 5. Informe vivo y exportación.
 6. Biblioteca y similitud.

@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -79,6 +79,7 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `compare-versions` | circuito, dos números de versión | Solo lee: compara los esperados de dos versiones del linaje activo. |
 | `plant-value` | circuito, clave, valor, fecha efectiva, razón | Valida y escribe un valor de planta confirmado; rige al volver a analizar los ficheros de su vigencia. |
 | `case-action` | circuito, acción: `crear` (título, síntoma, origen, AGV, tags, principio y fin del síntoma, autor), `ventana` (expediente, revisión vista, ventana), `estado` (expediente, revisión vista, estado destino, texto) o `nota` (expediente, revisión vista, texto) | Escribe una revisión nueva del expediente, append-only, solo en las tablas de expedientes (ADR-0018 D5). Si la revisión vista ya no es la vigente, no escribe nada. Al crear o cambiar la ventana congela las lecturas de la ventana desde las retenidas o el original archivado. |
+| `case-replay` | circuito, expediente | Solo lee: calcula el replay del expediente sobre el recorte de su revisión vigente (ALG-016, 3.77.0). |
 | `plan-action` | circuito, fichero de trabajo, acción: `crear-plano` (desde una versión), `aceptar-propuesta` (id y fichero de la propuesta; en una salida, de qué ubicación cuelga) o `evento` (uno registrado a mano), siempre con razón | El Worker recalcula la propuesta desde la instantánea de su fichero antes de escribirla, valida todos los eventos en orden y los escribe en una transacción (ADR-0016). |
 | `resolve-fork` | circuito, elección (`conservar-local` \| `adoptar-entrante`), razón | Resuelve una bifurcación de linaje; el linaje no elegido queda archivado y la elección, en el historial (`MEMORY_CONSOLIDATION.md` §10). |
 
@@ -110,6 +111,7 @@ se ha guardado nada.»). La respuesta a un `consolidate` con `mode: "commit"` es
 | `versions-compared` | la comparación: las dos versiones, las de entre medias, lo adoptado por el camino y el delta | |
 | `plant-values-updated` | los valores de planta del circuito: provisional, vigente para el fichero de trabajo, historial y dónde se mide | |
 | `cases-updated` | lo escrito en palabras, el expediente tocado y los expedientes del circuito (`CaseViews`, con la cronología del retroceso de cada uno desde 3.75.0) | |
+| `case-replay-ready` | el expediente, la revisión de la que sale y el replay (`CaseReplay`: fotogramas con fase, AGV con lo visto, la banda esperada y la conexión, y los hechos de la cronología) | |
 | `plan-updated` | los eventos escritos en palabras y el plano (`PlanViews`) leído contra el fichero de trabajo | |
 
 Las vistas de una importación (`complete.views`) llevan `memory` cuando el circuito tiene versiones:

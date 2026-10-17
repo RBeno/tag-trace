@@ -1,6 +1,6 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.7.0
+version: 0.8.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -65,6 +65,12 @@ Lo habitual de un paso por el tag del síntoma se mide antes de él. Lo anterior
 El orden no representa causalidad demostrada. La interfaz debe distinguir `precede`, `correlaciona`, `es compatible con` y `confirmado como causa`.
 
 ## 5. Replay multi-AGV
+
+**Implementado en el expediente desde 3.77.0 (ALG-016, `replay-caso-1`):** posición vista, tránsito
+como fracción de tiempo, silencio y sin datos; la capa esperada como banda entre el paso lento (p95) y
+el habitual (p50) desde la última lectura, con «por detrás de lo esperado»; la conexión del registro del
+terminal; y los hechos de la cronología en su fotograma, con «Ver en el replay» desde cada uno. Falta el
+estado de zonas cargada/vacía, calles CO y puntos críticos, y el filtro por AGV, tag o zona.
 
 El replay muestra por instante:
 

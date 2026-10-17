@@ -307,8 +307,29 @@ test.describe("expedientes de incidencia", () => {
     await expect(chronology).toContainText("FIFO, calles de carga, la línea y el proceso no se revisan todavía");
     await expect(chronology).not.toContainText("OQ-");
 
+    // El replay (ALG-016), a petición: lo visto, lo esperado y la conexión de cada AGV.
+    await item.getByRole("button", { name: "Ver el replay" }).click();
+    const replay = page.locator(".cases-panel .case-item").first().locator(".case-replay");
+    await expect(replay.locator(".case-replay-table")).toBeVisible({ timeout: 30_000 });
+    await expect(replay.locator(".case-replay-table tbody tr")).toHaveCount(8);
+    await expect(replay.locator(".case-replay-note")).toContainText("según el esperado de la versión consolidada");
+    // Desde el corte de WiFi, su fotograma: el AGV 207 sin conexión según el registro.
+    await page.locator('.cases-panel .case-item').first().locator('.case-fact[data-kind="corte-wifi"]').getByRole("button", { name: "Ver en el replay" }).click();
+    await expect(replay.locator(`tr[data-agv="${WIFI_AGV}"] td`).nth(3)).toHaveText("sin conexión (registro)");
+    await expect(replay.locator(`tr[data-agv="201"] td`).nth(3)).toHaveText("sin registro");
+    await expect(replay.locator(".case-replay-events")).toContainText(`AGV ${WIFI_AGV} sin conexión con el servidor`);
+    // A mitad del síntoma, el AGV parado va por detrás de lo esperado, y se dice en palabras.
+    const middle = Math.round(((truth.absenceFrom + 60_000 + truth.absenceTo) / 2 - (truth.absenceFrom + 60_000 - 30 * 60_000)) / ((truth.absenceTo + 30 * 60_000 - (truth.absenceFrom + 60_000 - 30 * 60_000)) / 199));
+    await replay.locator(".case-replay-slider").fill(String(middle));
+    await expect(replay.locator(".case-replay-when")).toHaveAttribute("data-phase", "durante");
+    const stalled = replay.locator(`tr[data-agv="${STALLED_AGV}"]`);
+    await expect(stalled).toHaveAttribute("data-behind", "si");
+    await expect(stalled.locator("td").nth(1)).toContainText(STALL_TAG);
+    await expect(stalled.locator("td").nth(2)).toContainText("va por detrás incluso del paso lento");
+    await expect(replay).not.toContainText(/\bcausa\b|debido a|provoc/i);
+
     // Sobrevive a recargar con la misma cronología, y nada fuera de los expedientes cambió.
-    const facts = await chronology.locator(".case-fact").allTextContents();
+    const facts = await chronology.locator(".case-fact-text").allTextContents();
     expect(await storeOutsideCases(page)).toBe(before);
     await page.reload();
     await openTab(page, "Resumen");
@@ -317,7 +338,7 @@ test.describe("expedientes de incidencia", () => {
     await expect(page.getByRole("heading", { name: "Circuito «critico»", exact: true })).toBeVisible({ timeout: 30_000 });
     await openTab(page, "Línea y calles");
     await panel.locator(".case-item").first().locator("summary").click();
-    expect(await panel.locator(".case-item").first().locator(".case-fact").allTextContents()).toEqual(facts);
+    expect(await panel.locator(".case-item").first().locator(".case-fact-text").allTextContents()).toEqual(facts);
   });
 
   test("D5: la consolidación propone la ventana del expediente como incidencia excluida, y la persona la puede soltar", async ({ page }) => {

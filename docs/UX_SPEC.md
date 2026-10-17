@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.55.0
+version: 0.56.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -960,6 +960,15 @@ ventana, y **solo en este dispositivo**: borrar los datos del navegador la pierd
   anterior, «primera desviación» en la que lo es (con borde, nunca solo color), el hecho y, si se
   puede, a cuántos tags del síntoma está por el anillo; las filas que lo sostienen van en su título.
   Al final, «Lo que este retroceso no revisa».
+- **Replay del expediente (3.77.0, ALG-016)**, debajo del retroceso: «Ver el replay» lo pide (no se
+  calcula al importar). Llega con una nota —«Esperado» es dónde debería estar cada AGV desde su última
+  lectura, entre el paso lento (p95) y el habitual (p50), según el esperado de la versión consolidada o
+  lo habitual del fichero; no se ha visto—, el deslizador «Momento de la ventana», la hora con su fase,
+  los hechos de la cronología que caen en ese momento y una tabla por AGV: «Visto» (en tal tag;
+  entre dos tags al tanto por ciento del tiempo, inferido; sin lecturas desde…, desconocido), «Esperado»
+  (entre dos tags con cuántos tags después de la última lectura; «va por detrás incluso del paso lento»,
+  con borde en la fila, nunca solo color) y «Conexión» (conectado o sin conexión según el registro, o sin
+  registro). Cada hecho de la cronología gana «Ver en el replay», que lleva a su fotograma.
 - Tras cada acción, la línea de estado dice lo escrito y el expediente queda abierto. Al pie, lo que
   ocupan los expedientes en el dispositivo.
 
