@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.47.2
+version: 0.59.0
 status: baseline-candidate
-last_updated: 2026-10-08
+last_updated: 2026-10-17
 ---
 
 # Especificación de experiencia de usuario
@@ -24,16 +24,19 @@ la página era una sola lista de cuarenta y tres secciones en el orden en que se
 de alto sin abrir nada, sin índice, y «Lo que hay que mirar» era la sección 22. Ahora una barra fija
 bajo la cabecera (`nav` con `role="tablist"`, botones `role="tab"` con `aria-selected`, flechas de
 teclado; en el móvil, fichas desplazables en horizontal de 44 px con dedo) reparte el análisis en
-siete pestañas (la séptima, Memoria, desde 3.51.0). La activa va en el `hash` de la URL (`#tags`, `#agv`…) y se restaura al recargar; por
+siete pestañas (la séptima, Memoria, desde 3.51.0) y una octava, **WiFi**, que **solo existe con un
+registro de conexiones cargado** (3.69.0; propietario, 2026-10-17: «wifi si está disponible igual»):
+sin él, el botón no está, las flechas la saltan y `#wifi` vuelve al Resumen. La activa va en el `hash` de la URL (`#tags`, `#agv`…) y se restaura al recargar; por
 defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 
 | Pestaña | Qué contiene |
 |---|---|
-| **Resumen** | La **portada** (3.49.0): la tira de siete cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta, línea y memoria—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. |
-| **Tags** | Inventario de tags; «Lo que hay que mirar» (tags); rotura y degradación de cada tag; mapa de omisión; cambios de tag; tags leídos fuera de la lista; limpieza de la lista; contraste contra Vsystem; orden del circuito según las lecturas; comparación entre dos periodos. |
-| **AGV** | Flota del circuito, flota en el circuito y vida de cada AGV (con las paradas de la producción y los primeros de cola); lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; ritmo de cada AGV y quién retiene; y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
+| **Resumen** | La **portada** (3.49.0): primero la **frase de estado** con sus saltos y el botón «Generar informe…» (§4.8, 3.72.0), la tira de siete cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta, línea y memoria—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), los **avisos** (§4.6, 3.70.0: lo que falta, contradice o no se pudo usar, cada uno con el enlace a su sitio), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. Es el puesto de mando (propietario, 2026-10-17): lo importante a la vista y, desde cada cosa, directo a donde se detalla. |
+| **Tags** | **«Problemas detectados»** (§4.7) y después, los problemas primero (3.71.0): «Lo que hay que mirar» (tags), rotura y degradación de cada tag, mapa de omisión, cambios de tag, tags leídos fuera de la lista, limpieza de la lista, contraste contra Vsystem, orden del circuito según las lecturas, comparación entre dos periodos; y al final, como contexto, el inventario de tags. |
+| **AGV** | **«Problemas detectados»** (§4.7) y después, los fallos de cada AGV primero (3.71.0): lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; **AGV que dejan de leer** (hasta 3.70.1 en Línea y calles: es un fallo del vehículo y aquí es donde se detalla); ritmo de cada AGV y quién retiene; y como contexto la flota del circuito, la flota en el circuito y la vida de cada AGV (con las paradas de la producción y los primeros de cola); y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
+| **WiFi** | Solo con registro de conexiones (DS-013, ADR-0017): el estado de conexión del circuito —cortes en la ventana por clase, cortes colectivos, el contraste con las ráfagas (OQ-159), el mapa de estado de conexión con su selector de clase, los sitios donde se pierde la señal más de lo que da el azar, los terminales ruidosos, los que no reconectan, los AGV que pierden la señal más que el resto y el registro por AGV—. Hasta 3.68.0 era una subsección de Tiempos; ahí queda «El estado de conexión está en WiFi», o, sin registro, por qué no hay nada que enseñar. |
 | **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito en palabras, con el enlace al dibujo del Resumen, su lista ordenada y los tags fuera del anillo. |
-| **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones; AGV que dejan de leer; calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO). |
+| **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones (el CSV sigue trayendo también los AGV que dejan de leer); calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO); al final, los **expedientes de incidencia** (§6.2, F5). |
 | **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje; debajo, el **plano del circuito** (§6.1). |
 | **Datos** | Valores de planta del circuito (3.59.0: el provisional y el confirmado de cada uno, con su fecha y su razón, «Cambiar…» con razón obligatoria, dónde mide el programa algo relacionado e historial; aviso si un valor cambia dentro de lo cargado; desde 3.60.0, «Propuesta de la memoria: X (coincide en v4, v5 y v6)» con «Confirmar la propuesta…», o «Sin propuesta: … Introduce el valor.» con la estimación de cada versión); listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
 
@@ -75,7 +78,7 @@ vez que su pestaña se enseña. Y la bandeja del Resumen necesita todas las tarj
 de la sección que las explica: construirlas dos veces costaría el doble para enseñar lo mismo.
 
 Áreas previstas que todavía no existen en el producto y que irán a su pestaña cuando lleguen:
-gestor de circuitos y preparación del análisis (Datos), incidencias con casos similares y contramedidas (Línea y calles), configuración (Datos).
+gestor de circuitos y preparación del análisis (Datos), casos similares, hipótesis y contramedidas de los expedientes (Línea y calles), configuración (Datos).
 
 ## 3. Flujo de análisis
 
@@ -291,9 +294,15 @@ activa la pestaña de su sección y desplaza hasta su encabezado. Los avisos de 
 clave y se quedan en su sección.
 
 La lista va **ordenada por rango y, dentro del rango, agrupada por tema** en el orden Tags, AGV,
-Tiempos, Línea y calles, y dentro del tema en el orden en que la vista los produce. Los filtros son
-fichas: por tema (todos, Tags, AGV, Tiempos, Línea y calles) y los de estado de revisión de §4.3;
+WiFi, Tiempos, Línea y calles, y dentro del tema en el orden en que la vista los produce. Los filtros son
+fichas: por tema (todos, Tags, AGV, WiFi, Tiempos, Línea y calles) y los de estado de revisión de §4.3;
 un rango que se queda sin tarjetas visibles se esconde entero.
+
+**Rango 1 y 2 a la vista; rango 3 plegado (3.70.0; propietario, 2026-10-17).** Lo que puede parar la
+planta y lo que degrada el circuito se enseñan enteros; limpieza y contexto va dentro de un `details`
+cerrado (`.tray-fold`) cuyo `summary` dice el rango y cuántas tarjetas tiene. «Siguiente pendiente»
+lo abre si la siguiente tarjeta está dentro; el filtro por tema lo esconde si se queda vacío. Las
+tarjetas siguen contando igual en la barra de revisión y en el tile de hallazgos.
 
 El catálogo vive en `src/presentation/labels.ts` (`FINDING_KINDS`), por el primer elemento de la
 clave de revisión. El tema es el de la pregunta que responde el hallazgo, no la sección donde se
@@ -301,12 +310,90 @@ calcula («Ver evidencia» lleva a la sección; el tema es lo que se filtra):
 
 | Rango | Qué es | Tipos (tema) |
 |---|---|---|
-| **1** | Puede parar la planta o perder una función | `bloqueo`, `cuello-de-botella`, `punto-conflictivo`, `produccion-parada` (Tiempos); `tag-rotura` (Tags); `agv-rotura`, `deja-de-leer` (AGV); `calle-sin-servicio`, `linea`, `linea-paso` (Línea y calles) |
-| **2** | Degrada el circuito | `zona-oscura`, `parada-sin-explicacion`, `entrega-agrupada-sitio`, `cambio-de-horquilla`, `tramo-entre-ficheros`, `estructura-entre-ficheros` (Tiempos); `tag-lectura`, `tag-deja`, `tag-empieza`, `tag-degradacion`, `cambio-tag`, `estructura` (Tags); `agv-nunca`, `agv-desde`, `agv-poco`, `agv-degradacion`, `ritmo-agv`, `retiene-agv`, `entrega-agrupada-agv`, `flota-sin-lecturas`, `flota-sin-asignar` (AGV); `calle-lectura`, `calle-espera`, `calle-permanencia`, `sin-carga`, `fifo` (Línea y calles) |
-| **3** | Limpieza y contexto | `deriva`, `tag-fuera-del-circuito` (Tags); `deriva-agv` (AGV); `punto-critico` (Tiempos); `calle-uso`, `arranque-en-frio` (Línea y calles) |
+| **1** | Puede parar la planta o perder una función | `bloqueo`, `cuello-de-botella`, `punto-conflictivo`, `produccion-parada` (Tiempos); `tag-rotura` (Tags); `agv-rotura`, `deja-de-leer` (AGV); `conexion-no-reconecta` (WiFi: un AGV sin señal que no vuelve pierde su función como el que deja de leer); `calle-sin-servicio`, `linea`, `linea-paso` (Línea y calles) |
+| **2** | Degrada el circuito | `zona-oscura`, `parada-sin-explicacion`, `entrega-agrupada-sitio`, `cambio-de-horquilla`, `tramo-entre-ficheros`, `estructura-entre-ficheros` (Tiempos); `tag-lectura`, `tag-deja`, `tag-empieza`, `tag-degradacion`, `cambio-tag`, `estructura` (Tags); `agv-nunca`, `agv-desde`, `agv-poco`, `agv-degradacion`, `ritmo-agv`, `retiene-agv`, `entrega-agrupada-agv`, `flota-sin-lecturas`, `flota-sin-asignar` (AGV); `conexion-sitio`, `conexion-agv`, `conexion-ruidoso` (WiFi); `calle-lectura`, `calle-espera`, `calle-permanencia`, `sin-carga`, `fifo` (Línea y calles) |
+| **3** | Limpieza y contexto | `deriva`, `tag-fuera-del-circuito` (Tags); `deriva-agv` (AGV); `conexion-colectivo` (WiFi); `punto-critico` (Tiempos); `calle-uso`, `arranque-en-frio` (Línea y calles) |
+
+Hasta 3.68.0 los cinco tipos del registro de conexiones no estaban en el catálogo y caían en contexto
+con su identificador en bruto; desde 3.69.0 tienen tema WiFi y rango, y «Ver evidencia» lleva a su
+pestaña.
 
 Un tipo que no esté en el catálogo va a contexto y se enseña con su identificador: antes que
 esconderlo.
+
+## 4.6 Avisos
+
+Lo que no es un hallazgo del circuito pero condiciona lo que se puede afirmar de él, y que hasta
+3.70.0 se quedaba dentro de la sección que lo detectaba: un aviso que nadie ve no avisa. Desde 3.70.0
+el Resumen lleva, entre la composición del circuito y el anillo, el bloque **«Avisos»**, una sola
+lista con dos clases de entradas (propietario, 2026-10-17: «posibles avisos […] cuando se quiera
+acceder a alguno te mandará automáticamente a su ubicación»):
+
+- **La configuración que no se pudo usar**: las tarjetas sin clave de revisión que cada sección planta
+  («Punto crítico declarado que no se pudo usar», «Corte de vuelta declarado que no se pudo usar»,
+  «Configuración que no se pudo usar»), con su texto tal cual; el enlace lleva a la pestaña y deja el
+  foco en la tarjeta. Las tarjetas siguen en su sección: el aviso es el índice, no una copia.
+- **Lo que falta o contradice**, con las cifras de las vistas: varios circuitos en el mismo fichero;
+  sin lista `circuito` (sin contraste con Vsystem ni orden declarado); tags declarados sin ninguna
+  lectura, en otro sitio que en la lista o leídos sin estar en ella (`circuitOrder.summary`); sin
+  historial de flota, o cargado sin periodos válidos; sin registro de conexiones. Cada uno con «ver en
+  <pestaña>», que activa la pestaña y desplaza hasta su sección.
+
+No se inventa gravedad ni orden: la lista va en el orden en que se recogen, y sin avisos lo dice
+(«Ningún aviso: toda la configuración cargada se pudo usar…»). Es `div.notices-host` con `h3` «Avisos»,
+una línea de recuento y `ul.notices`.
+
+## 4.7 Problemas detectados
+
+Tags, AGV y WiFi empiezan, bajo su título, con el bloque **«Problemas detectados»** (3.71.0;
+propietario, 2026-10-17: «quiero orden para poder ir directo a buscar una anomalía»): el índice de lo
+que esa pestaña encontró, **por tipo**, de mayor a menor gravedad y, a igual rango, de más a menos
+casos. Cada línea dice «N × <tipo> — <rango> · ver en «<sección>»», y el enlace desplaza hasta la
+sección que lo detalla y le deja el foco. Las tarjetas no se repiten: siguen en la bandeja del Resumen
+(§4.5); esto es el índice de la pestaña, y se construye con la misma pasada que la bandeja
+(`buildTray` → `renderProblemIndex`), así que cuenta exactamente lo mismo. Sin hallazgos en la pestaña,
+lo dice. Las secciones de cada pestaña van después en el orden de §2: los problemas primero y el
+contexto (inventario, flota) al final.
+
+## 4.8 Frase de estado, saltos e informe
+
+**Referencias que lo fundan** (revisadas el 2026-10-17 a petición del propietario: «busca en otros
+programas, estudios de interfaz, de hombre-máquina y de atención»): la HMI de alto rendimiento
+(ISA-101) pone en el nivel 1 la visión general con las alarmas prioritarias y reserva el color
+saturado a lo anormal —«una planta sana no tiene color»—; Stephen Few pide lo importante en una sola
+pantalla, con la conclusión y sin píxeles sin dato; Endsley distingue percibir (las cifras), comprender
+(qué significan) y proyectar (la evolución); Shneiderman, «visión general, acercar, detalle a demanda»;
+y los analizadores de planta (Fluke Power Log, LinkWare) montan el informe eligiendo secciones y lo
+imprimen a PDF. De ahí las cuatro piezas de 3.72.0:
+
+- **La frase de estado** (`p.status[role=status]`), lo primero del Resumen tras el título: la
+  conclusión en una línea (FR-028), con el tono solo si hay riesgo —`status-alerta` con rango 1
+  pendiente, `status-atencion` con rango 2, nada en lo demás— y debajo el contexto en gris: cobertura,
+  AGV en el circuito, avisos y hallazgos revisados. Se rehace con cada marca de revisión. El texto sale
+  de `statusSentence` (`report-text.ts`), probado sin navegador.
+- **Los saltos locales** (`nav.local-jumps`): Avisos, Anillo y Hallazgos desplazan dentro del Resumen; a
+  la derecha, **«Generar informe…»**.
+- **El informe** (FR-026): un cuadro (`dialog.report-dialog`) con las secciones disponibles marcadas
+  (la WiFi solo con registro), el filtro de hallazgos (todos con su estado, o solo un estado) y el anexo
+  de tablas, apagado por defecto porque puede ser largo. Genera **un solo fichero HTML autocontenido**
+  (`informe-<circuito>-AAAA-MM-DD-HHMM.html`) montado **desde lo que la pantalla enseña** (`report.ts`:
+  copia limpia de cada pestaña, sin botones ni enlaces, `canvas` como imagen, `details` abiertos, las
+  tablas del cajón construidas con su mismo constructor), con la hoja de estilo de la aplicación
+  embebida y una de impresión: cabecera con circuito, fecha, cobertura, ficheros, memoria vigente,
+  versión y lo elegido; **Conclusión** (la frase de estado y las cifras); **Avisos**; **Hallazgos** por
+  rango, cada tarjeta con «Revisión en campo: ✓ Confirmado — nota»; las secciones elegidas; y el pie de
+  trazabilidad. Nada sale del dispositivo (descarga por `Blob`, NFR-001); «Imprimir → Guardar como PDF»
+  lo convierte. Es una instantánea: el análisis sigue vivo en la aplicación.
+- **Expedientes en el informe (3.79.0, ADR-0018 D11)**: el cuadro ofrece «Resumen de los expedientes de
+  incidencia (N)», marcado si hay alguno y apagado si no; el informe gana la sección «Expedientes de
+  incidencia · N», una fila por expediente (identificador, título, estado, síntoma, conclusión de una
+  persona, hipótesis confirmadas y contramedidas). Cada expediente tiene su propio informe (§6.2).
+- **Hoja de impresión de la propia página**: imprime la pestaña activa sin barras, botones ni
+  controles, con los pliegues abiertos.
+
+Sugerido y no hecho, para cuando el propietario lo pida: atajos de teclado 1–8 para las pestañas,
+recordar la última pestaña y el último filtro, miniaturas de tendencia en los tiles con varias
+instantáneas, y una pantalla vacía que guíe los tres pasos (lecturas → listas → conexiones).
 
 ## 5. Grafo y plano
 
@@ -686,7 +773,12 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
   deriva, puntos críticos, cuellos de botella, zonas oscuras, puntos conflictivos, paradas y el
   expediente del tag— añade una línea «Declarado en planta: …» con lo que las listas dicen de él: su
   nota tal cual, su función y su calle, sin repetir piezas. Es información para el diagnóstico y no
-  cambia ningún cálculo (R-GRA-007).
+  cambia ningún cálculo (R-GRA-007). Desde 3.68.0 (R-GRA-022) lleva también **sus áreas** del servidor
+  (lista `area`: «áreas: cruce salida, SE6/8 lleno - ME3 vacío»), la función con su etiqueta
+  («función: parada-precisa (montaje llenos 2)»: función y área son identidades distintas, R-GRA-022) y el **refuerzo con su lado**
+  («refuerzo con 58026 (anterior) y 58028 (siguiente)»). Un tag sin hallazgo no enseña nada de esto:
+  la función y las áreas se dicen solo cuando hay un riesgo que leer con ellas (propietario,
+  2026-10-17).
 - **Tags leídos fuera de la lista del circuito** (R-DAT-022), junto al contraste con Vsystem. Una
   tarjeta por tag, de las más leídas a las menos: «candidato a una posición», «tag de noche»,
   «tag de noche declarado» (en la lista `noche`) o «posiblemente de noche», con su sitio (entre qué tags y en qué orden de la lista), sus lecturas de
@@ -770,6 +862,13 @@ consolidar. Una incidencia enseña su ventana («de lun., 12:05 a lun., 12:40»)
 «AGV X: no toca el grafo; queda registrada con su ventana»; un cambio que vuelve, «Se vio en vN y
 volvió…» (3.57.0).
 
+**Expedientes del periodo (3.76.0, ADR-0018 D5).** Antes de las incidencias, la previsualización lista
+los expedientes de incidencia cuya ventana cae en el fichero: identificador y título, estado y ventana,
+y la casilla «Excluir su ventana del esperado», marcada por defecto. Quitarla apaga «Confirmar y
+consolidar» y enseña «Vuelve a previsualizar con estos expedientes para confirmar»; el botón «Volver a
+previsualizar con estos expedientes» rehace la previsualización con lo elegido (y los recortes que haya).
+Los marcados aparecen también entre las incidencias excluidas, con su ventana y su recorte.
+
 **Recorte de ventana (3.58.0)**: cada incidencia con ventana ofrece «Recortar su ventana al
 consolidar» con «Desde» y «Hasta» (fecha y hora, dentro de la ventana del fichero) y «Volver a
 previsualizar con el recorte»; la previsualización dice qué se recortó y cuántas lecturas quitó. Sin
@@ -830,6 +929,80 @@ Debajo de la memoria, en la misma pestaña (`src/presentation/plan-ui.ts`):
 Ningún botón que escribe se activa sin razón. En la evolución, un tag instalado que no se lee sale
 «sin leer en su ubicación», nunca «desaparece». Al abrir un `.agvproj`, el mensaje dice la relación
 de su plano con el local; al exportar, cuántos cambios incluye.
+
+### 6.2 Expedientes de incidencia (3.74.0, ADR-0018)
+
+Al final de Línea y calles, la sección «Expedientes de incidencia». Dice primero lo que es: una
+incidencia conservada para investigarla, aparte de la memoria del circuito —crearla, guardarla o
+cerrarla no cambia el esperado ni ninguna versión—, con una copia de las lecturas de todos los AGV de su
+ventana, y **solo en este dispositivo**: borrar los datos del navegador la pierde.
+
+- **«Nuevo expediente…»** abre el formulario en su sitio. «Empieza desde»: un síntoma que describes,
+  una incidencia medida (la batería de mediciones), una incidencia excluida de la memoria vigente o un
+  hallazgo de la bandeja; un origen sin nada en el análisis sale apagado con «(ninguna en este
+  análisis)». Elegir una incidencia rellena título, AGV, tags y ventana; un hallazgo, solo el título.
+  Hacen falta título, síntoma y principio y fin (en la hora del circuito); sin ellos el botón está
+  apagado. Debajo, cómo se proponen los márgenes: el mínimo provisional a cada lado, más si el síntoma
+  dura más o, antes, si la vuelta del circuito es más larga. «Tu nombre» es opcional y solo local.
+- **Cada expediente** es una fila plegable: identificador, estado en palabras y título. Abierta: la
+  ventana del síntoma y la que se mira con sus márgenes; de qué nace; el recorte («24 lecturas de 2 AGV,
+  congeladas de «x.csv» (lecturas retenidas)», o «Sin recorte: … desconocido» y qué fichero volver a
+  cargar); el síntoma; las referencias (versión de la memoria, configuración, aplicación); la razón del
+  último estado; las notas; y el historial de revisiones con fecha, autor y qué cambió. Si la cadena de
+  revisiones no está entera, se dice en rojo.
+- **Cambiar de estado**: un botón «Pasar a <estado>» por cada transición posible. La que exige texto
+  (por qué no es una incidencia, qué evidencia falta, qué evidencia nueva lo reabre, la conclusión)
+  lleva su campo y el botón está apagado hasta que se escribe. La que exige algo que el expediente no
+  tiene sale apagada con «Falta …». En borrador, además, «Cambiar la ventana», que vuelve a copiar las
+  lecturas. Un expediente cerrado o descartado no admite notas.
+- **Retroceso desde el síntoma (3.75.0, ALG-015)**, dentro de cada expediente abierto: una nota fija
+  —en orden de tiempo; «precede» solo dice que ocurrió antes, ni que importe más ni que tenga que ver;
+  nada de aquí dice por qué ocurrió—; de dónde salen el anillo y las horquillas («del esperado de la
+  versión consolidada v1» o «del propio fichero, sin esperado consolidado») y el procedimiento; lo
+  declarado en planta de los tags del síntoma; y tres listas, «Antes del síntoma», «Durante el
+  síntoma» y «Después del síntoma». Cada línea: la hora en negrita, «precede» como etiqueta si es
+  anterior, «primera desviación» en la que lo es (con borde, nunca solo color), el hecho y, si se
+  puede, a cuántos tags del síntoma está por el anillo; las filas que lo sostienen van en su título.
+  Al final, «Lo que este retroceso no revisa».
+- **Replay del expediente (3.77.0, ALG-016)**, debajo del retroceso: «Ver el replay» lo pide (no se
+  calcula al importar). Llega con una nota —«Esperado» es dónde debería estar cada AGV desde su última
+  lectura, entre el paso lento (p95) y el habitual (p50), según el esperado de la versión consolidada o
+  lo habitual del fichero; no se ha visto—, el deslizador «Momento de la ventana», la hora con su fase,
+  los hechos de la cronología que caen en ese momento y una tabla por AGV: «Visto» (en tal tag;
+  entre dos tags al tanto por ciento del tiempo, inferido; sin lecturas desde…, desconocido), «Esperado»
+  (entre dos tags con cuántos tags después de la última lectura; «va por detrás incluso del paso lento»,
+  con borde en la fila, nunca solo color) y «Conexión» (conectado o sin conexión según el registro, o sin
+  registro). Cada hecho de la cronología gana «Ver en el replay», que lleva a su fotograma.
+- **Hipótesis (3.78.0, D6)**, debajo del replay: una nota fija —salen de lo que precede al síntoma;
+  «es compatible» no quiere decir que sea la explicación, sino que nada observado la contradice; la que
+  se confirma la confirma una persona—, y la lista en orden (primero las que siguen en pie, después las
+  contradichas, al final las descartadas). Cada una: su texto, su estado en palabras («es compatible con
+  lo observado», «algo observado la contradice», «tuya»), la decisión si la hay («confirmada por una
+  persona», «descartada por una persona») con su comprobación o su razón, los hechos a favor con su hora,
+  lo que la contradice (con borde y las filas en el título) y «Lo que la separa de las demás». Sin
+  decidir: el campo de comprobación o razón y «Confirmar» y «Descartar», apagados hasta escribirla. Al
+  final, «Añadir una hipótesis tuya».
+- **Contramedidas y verificación (3.78.0, D9)**: cada contramedida con acción, responsable, fecha
+  prevista, métrica («huecos de al menos N min sin paso por T, por hora de producción») y riesgo; sin
+  aplicar, «Fecha de aplicación» y «Registrar la aplicación»; pendiente de verificar, «Medir y registrar
+  la verificación». La verificación registrada dice antes y después, cuánto baja o sube, el azar y
+  «Propuesta del programa: … La conclusión es tuya.». El formulario «Nueva contramedida» propone la
+  métrica del síntoma, con la duración del episodio editable.
+- **Informe y exportación (3.79.0, D11)**, lo primero del expediente abierto: «Informe del expediente»
+  descarga `expediente-<id>-AAAA-MM-DD-HHMM.html`, autocontenido, con los diez apartados numerados de
+  `INCIDENTS_REPORTING.md` §8 y lo escrito por una persona marcado como suyo; «Cronología (CSV)» y
+  «Lecturas del recorte (CSV)» (esta la prepara el Worker); y la nota «Instantánea de la revisión N. El
+  informe se abre sin red; «Imprimir → Guardar como PDF» lo convierte en PDF.».
+- **Casos parecidos (3.80.0, D10)**, entre las hipótesis y las contramedidas: una nota fija —otros
+  expedientes de este circuito, ordenados por cuántas características coinciden, todas con el mismo peso;
+  lo que se confirmó en otro caso no es evidencia para este—; si los hay, «Lo que se repite en otros
+  casos» con cada hecho, «También precede en …» y por qué repetirse no basta; y la lista, cada caso
+  plegado con «<id>: <título> — <estado>, <fecha> · coinciden N de M» y, al abrirlo, una tabla
+  Característica / Comparación / Este caso frente a aquel, con «Confirmado en aquel caso: … No es
+  evidencia para este.» debajo. Sin otros expedientes: «No hay otros expedientes en este circuito con
+  que compararlo.». En el informe del expediente, el apartado 6 termina con «Casos parecidos».
+- Tras cada acción, la línea de estado dice lo escrito y el expediente queda abierto. Al pie, lo que
+  ocupan los expedientes en el dispositivo.
 
 ## 7. Móvil, tableta y portátil
 

@@ -82,6 +82,8 @@ async function prepareCircuit(page: Page): Promise<void> {
 }
 
 async function reviewAll(page: Page): Promise<void> {
+  // Limpieza y contexto va plegado (UX_SPEC §4.5, 3.70.0): se abre para revisar también lo de dentro.
+  await page.locator("details.tray-fold").evaluateAll((folds) => folds.forEach((fold) => ((fold as HTMLDetailsElement).open = true)));
   const cards = page.locator(".finding.reviewable");
   const total = await cards.count();
   for (let index = 0; index < total; index += 1) {

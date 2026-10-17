@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.29.2
+version: 0.32.0
 status: baseline-candidate
-last_updated: 2026-10-08
+last_updated: 2026-10-17
 ---
 
 # Configuración de circuito
@@ -212,7 +212,7 @@ lista;tag;orden;funcion;grupo;capacidad;nota
 
 | Columna | Qué lleva |
 |---|---|
-| `lista` | `circuito`, `memoria`, `mantenimiento`, `emergencia`, `carga-online`, `critico`, `zona`, `ancla`, `noche`, `linea` o `tramo` |
+| `lista` | `circuito`, `memoria`, `mantenimiento`, `emergencia`, `carga-online`, `critico`, `zona`, `ancla`, `noche`, `linea`, `tramo` o `area` |
 | `tag` | El identificador, **tal cual**: `0040` no es `40` (R-DAT-001, INV-002) |
 | `orden` | Posición dentro de la lista. Sin ella vale el orden de las filas del fichero |
 | `funcion` | El papel del tag dentro de su lista |
@@ -228,6 +228,7 @@ Y así se expresan los bloques de §3.4:
 | `critical_points` | `lista=critico`, `funcion` con una de las doce clases de §3.4.1, o la función de planta tal cual (cuenta como crítica y se avisa). **Alternativa**: `lista=circuito` con la misma `funcion` en la fila del tag — las dos vías conviven, `critico` gana en caso de contradicción |
 | `lap_anchors` | `lista=ancla`, `orden` = prioridad cuando se declara más de una (§3.4.2) |
 | tramos | `lista=tramo`, `grupo` = nombre del tramo (kitting, línea, cruce…): se dibuja en las gráficas del anillo y no cambia ningún cálculo (R-GRA-018) |
+| áreas | `lista=area`, `grupo` = nombre del área gestionada por el servidor; **un tag de varias áreas lleva varias filas**. Se enseña junto a las incidencias del tag y en su expediente, y no cambia ningún cálculo (R-GRA-022) |
 | la línea | `lista=linea`, `orden` = 1…n: los tags de la línea de producción; el primero es la entrada, donde se mide la cadencia y el pulmón (R-FLO-010). El pulmón no se declara: sale de las medidas |
 | tags de noche | `lista=noche`, una fila por tag: los que pueden aparecer de noche en el circuito. Explican un tag que solo se lee de noche (R-DAT-022) y son `especial` en el inventario |
 
@@ -287,6 +288,9 @@ Aquí viven los umbrales que de otro modo se colarían como constantes:
 | `connection_cuts.noisy_vehicle_ratio`, `connection_cuts.noisy_vehicle_min_cuts` | R-COM-009 (propietario, 2026-10-08): un terminal es **ruidoso** si su tasa de cortes propios por mil pasadas supera tantas veces la mediana de la flota (provisional: 3) con al menos tantos cortes (provisional: 10). Sus cortes y sus pasadas quedan fuera del mapa y de la concentración por sitio; sigue en su tarjeta y en la tabla por AGV. |
 | `connection_cuts.collective_window_ms`, `connection_cuts.collective_min_share` | R-COM-008 (propietario, 2026-10-07): un corte es **colectivo** si, a menos de la ventana (provisional: 2 min) de su inicio, pierden la señal al menos esa parte de los AGV con registro (provisional: la mitad, y nunca menos de dos). Apagado o infraestructura, no cobertura: fuera del mapa. |
 | `plant_estimators.same_time_measure_tolerance_ms` | OQ-154 (propietario, 2026-09-27): margen de hora local con que `measurePlantValues` empareja, **solo para medir**, las paradas de la producción que se repiten otro día. Provisional: 60 min. Es una tolerancia de medida, no operativa: ancha para que la estimación de «a la misma hora» pueda ver una tolerancia de planta mayor que la vigente (`flow_stops.same_time_tolerance_ms`, 15 min), con la que nunca podría salir un valor mayor que ella. El análisis (`productionStops`) sigue emparejando con la vigente; esta no cambia ningún resultado del análisis. |
+| `incident_case.min_margin_before_ms`, `incident_case.min_margin_after_ms` | ADR-0018 D4 (OQ-P02, propietario 2026-10-09): márgenes mínimos que el programa propone antes y después del síntoma de un expediente. Antes se toma el mayor del mínimo, la duración del síntoma y la vuelta mediana del circuito; después, el mayor del mínimo y la duración del síntoma. Provisionales: 30 min a cada lado (tres veces la ausencia de diez minutos de la salida demostrable de F5). No es un valor de planta: es cuánto se mira, y la persona lo cambia en cada expediente en borrador. |
+| `incident_case.verification_window_ms`, `incident_case.verification_max_chance`, `incident_case.verification_effective_reduction`, `incident_case.verification_min_expected_events` | ADR-0018 D9, ALG-024 (OQ-P07, propietario 2026-10-09): cómo se verifica una contramedida. Provisionales: una semana a cada lado de la aplicación; un 5 % de azar para decir que bajó; la mitad de bajada para proponer «eficaz» (menos es «parcial»); y al menos tres episodios esperados después con la tasa de antes, o «sin exposición suficiente». Es la definición de cómo se mide, no un valor de planta; la conclusión la escribe una persona. |
+| `incident_case.similarity_duration_ratio` | ADR-0018 D10, ALG-017: dos expedientes tienen una duración «parecida» si la larga no pasa de tantas veces la corta; más es «distinta». Provisional: 1,5. No es un valor de planta: es cuánto se parecen dos casos para enseñarlos juntos, y la tabla dice siempre las dos duraciones. |
 
 Los valores que hoy viven en `PROVISIONAL_CONFIG` con aspecto de dato de planta —horas de arranque de
 turno, regímenes, la hora sin leer que hace una desconexión, los dos minutos del bloqueo, la

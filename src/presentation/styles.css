@@ -330,6 +330,41 @@ table.data th { color: var(--muted); font-weight: 600; }
 .tray-rank { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;
   margin: 16px 0 4px; }
 .tray-group[hidden] { display: none; }
+.tray-fold[hidden] { display: none; }
+.tray-fold > summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 0; }
+.notices { margin: 4px 0 12px; padding-left: 1.2em; }
+.problem-index { margin: 0 0 12px; padding: 6px 10px; border-left: 3px solid var(--line); }
+/* La frase de estado (UX_SPEC §4.8): la conclusión antes de las cifras; el color solo con riesgo. */
+.status-host { margin: 0 0 16px; }
+.status { font-size: 1.15rem; font-weight: 600; margin: 0; line-height: 1.35; }
+.status-alerta { color: var(--viz-accent); }
+.status-detail { margin: 2px 0 10px; }
+.local-jumps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.local-jumps button { border-radius: 999px; padding: 6px 14px; }
+.local-jumps button.primary { margin-left: auto; font-weight: 600; border-color: var(--viz-series); color: var(--viz-series); }
+.report-dialog { max-width: 560px; width: calc(100% - 32px); border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); padding: 20px; }
+.report-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.report-dialog h2 { margin: 0 0 6px; }
+.report-dialog fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 12px 0; padding: 8px 12px; }
+.report-dialog legend { color: var(--muted); font-size: 0.85rem; padding: 0 4px; }
+.report-option { display: block; margin: 6px 0; }
+.report-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.report-actions .primary { font-weight: 600; border-color: var(--viz-series); color: var(--viz-series); }
+@media print {
+  .bar .subtitle, .tabs, .review-host, .local-jumps, .findings-elsewhere, .theme-filter, .review, .drawer, .drawer-open,
+  .picker, input, select, button, .tab-empty, .report-dialog { display: none !important; }
+  .panel, .tabpanel { border: none; box-shadow: none; padding: 0; background: transparent; }
+  .tray-fold > summary { display: none; }
+  .tray-fold:not([open]) > .tray-group { display: block; }
+  figure.chart, .finding { break-inside: avoid; }
+  body { background: #fff; color: #000; }
+}
+.problem-list { margin: 4px 0; padding-left: 1.2em; }
+.problem-list li { margin: 4px 0; }
+.problem-list li[data-rank="1"] strong { color: var(--accent, inherit); }
+.problem-list a { color: var(--viz-series); }
+.notices li { margin: 4px 0; color: var(--muted); }
+.notices a { color: var(--viz-series); }
 .finding[hidden] { display: none; }
 .finding-where { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 0.8rem; margin: 0 0 2px; }
 .finding-where .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
@@ -685,3 +720,72 @@ table.data th { color: var(--muted); font-weight: 600; }
   .plant-value-history > summary { min-height: 44px; display: flex; align-items: center; }
   .plant-value-actions > button, .plant-value-link { min-height: 44px; }
 }
+
+/* --- Expedientes de incidencia (F5, ADR-0018) -------------------------------------------------------
+   Al final de Línea y calles. Un expediente es una fila plegable: identificador, estado en palabras
+   (nunca solo color) y título; al abrirla, la ventana, el recorte, el historial y los cambios de estado
+   posibles, cada uno con lo que falta si no se puede hacer todavía. */
+.cases-panel label { display: block; margin-top: 8px; }
+.cases-panel h4 { margin: 12px 0 4px; font-size: 1rem; }
+.case-new { margin-top: 8px; }
+.cases-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.case-item { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.case-item[data-state="Discarded"], .case-item[data-state="Closed"] { opacity: 0.85; }
+.case-summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.case-id { font-weight: 600; overflow-wrap: anywhere; }
+.case-title { overflow-wrap: anywhere; }
+.cases-panel .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.case-facts p { margin: 4px 0 0; }
+.case-facts .muted { font-size: 0.85rem; }
+.case-integrity { color: var(--error); font-weight: 600; }
+.case-history, .case-notes { margin: 4px 0 0; padding-left: 20px; font-size: 0.9rem; }
+.case-actions { margin-top: 8px; display: grid; gap: 6px; }
+.case-transition { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 10px; }
+.case-transition .plan-field { flex: 1 1 16rem; }
+.case-unmet { margin: 0; font-size: 0.85rem; }
+@media (any-pointer: coarse) {
+  .case-summary { min-height: 44px; align-items: center; }
+  .case-actions button, .case-new { min-height: 44px; }
+}
+/* La cronología del retroceso (ALG-015): por fases, una línea por hecho, la hora primero; «precede» y
+   «primera desviación» en palabras, nunca solo por color. */
+.case-chronology h5 { margin: 10px 0 2px; font-size: 0.95rem; }
+.case-chronology p { margin: 4px 0 0; }
+.case-facts-list { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 0.9rem; }
+.case-fact { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.case-fact-when { font-weight: 600; white-space: nowrap; }
+.case-fact-text { overflow-wrap: anywhere; }
+.case-fact[data-first="si"] { border-left: 3px solid var(--viz-accent); padding-left: 6px; }
+.case-limits { margin: 2px 0 0; padding-left: 20px; font-size: 0.85rem; color: var(--muted); }
+/* El replay del expediente (ALG-016): deslizador, el momento con su fase, los hechos que caen en él y
+   una tabla por AGV. «Por detrás de lo esperado» va en palabras y con borde, nunca solo color. */
+.case-replay p { margin: 4px 0 0; }
+.case-replay-slider { width: 100%; max-width: 40rem; }
+.case-replay-when { font-weight: 600; }
+.case-replay-events { margin: 4px 0 0; padding-left: 20px; font-size: 0.9rem; }
+.case-replay-table { margin-top: 6px; border-collapse: collapse; font-size: 0.9rem; width: 100%; }
+.case-replay-table th, .case-replay-table td { text-align: left; padding: 2px 8px 2px 0; vertical-align: top; overflow-wrap: anywhere; }
+.case-replay-table tr[data-behind="si"] td:first-child { border-left: 3px solid var(--viz-accent); padding-left: 6px; }
+.case-fact-go { padding: 2px 8px; font-size: 0.85rem; }
+@media (any-pointer: coarse) { .case-fact-go, .case-replay-request { min-height: 44px; } }
+/* Hipótesis, contramedidas y verificación del expediente (D6, D9): el estado en palabras —«es
+   compatible con lo observado», «algo observado la contradice», «confirmada por una persona»—, nunca solo
+   por color; lo que contradice, con borde. */
+.case-hypotheses p, .case-countermeasures p { margin: 4px 0 0; }
+.case-hypothesis-list, .case-countermeasure-list { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 8px; }
+.case-hypothesis[data-status="contradicha"] .case-hypothesis-against { border-left: 3px solid var(--viz-accent); padding-left: 6px; }
+.case-hypothesis[data-decision="descartada"] { opacity: 0.8; }
+.case-hypothesis-favor, .case-hypothesis-against { margin: 2px 0 0; padding-left: 18px; font-size: 0.9rem; list-style: disc; }
+.case-hypothesis-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.case-verification { margin-top: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+@media (any-pointer: coarse) { .case-hypothesis-actions button, .case-countermeasures button { min-height: 44px; } }
+.case-export { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 6px 0; }
+.case-export p { flex: 1 1 100%; margin: 0; }
+/* Casos parecidos (ALG-017): la comparación por característica en palabras; nada de puntuación. */
+.case-similar p { margin: 4px 0 0; }
+.case-similar-list { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+.case-similar-list summary { cursor: pointer; overflow-wrap: anywhere; }
+.case-similar-table { border-collapse: collapse; font-size: 0.9rem; width: 100%; margin-top: 4px; }
+.case-similar-table th, .case-similar-table td { text-align: left; padding: 2px 8px 2px 0; vertical-align: top; overflow-wrap: anywhere; }
+.case-repetitions { margin: 2px 0 0; padding-left: 18px; font-size: 0.9rem; }
+@media (any-pointer: coarse) { .case-similar-list summary { min-height: 44px; } }

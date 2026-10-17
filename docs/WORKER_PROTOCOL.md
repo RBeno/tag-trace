@@ -1,8 +1,8 @@
 ---
 document_id: TT-WORKER-001
-version: 0.6.2
+version: 0.13.0
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-17
 ---
 
 # Protocolo entre la interfaz y los Workers
@@ -74,10 +74,13 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `cancel` | motivo | El Worker debe atenderla en el siguiente punto de control. |
 | `lists` | fichero de listas de tags, circuito | Sustituye las listas del circuito por las del fichero. |
 | `fleet` | fichero de historial de flota (DS-012), circuito, valor de `circuito` elegido si ya lo hay | Se **fusiona** con lo guardado por (AGV, `desde`); no sustituye. |
-| `consolidate` | circuito, fichero base (`sourceId`), `mode: "preview" \| "commit"`, nota opcional (`commit`), `cuts` opcional (los recortes de ventana elegidos, con su incidencia, `from`, `to` y el AGV si es de uno; OQ-148; una incidencia puede llevar varios —uno por parada, OQ-155— siempre que no se solapen entre sí, o el Worker responde `error`), `previewHash` (`commit`) | `preview` no escribe nada. `commit` solo se envía tras la confirmación humana, y el Worker vuelve a calcular la previsualización desde el almacén antes de escribir: con bloqueos responde `error` (R-MEM-001); si la huella de lo recalculado no es la `previewHash` que la interfaz enseñó —o no viene—, responde `error` («La previsualización ha cambiado desde que se mostró.») sin escribir. Justo antes de escribir mira si hay `cancel` pendiente y, si lo hay, responde `cancelled`. |
+| `consolidate` | circuito, fichero base (`sourceId`), `mode: "preview" \| "commit"`, nota opcional (`commit`), `cuts` opcional (los recortes de ventana elegidos, con su incidencia, `from`, `to` y el AGV si es de uno; OQ-148; una incidencia puede llevar varios —uno por parada, OQ-155— siempre que no se solapen entre sí, o el Worker responde `error`), `previewHash` (`commit`) | `preview` no escribe nada. `commit` solo se envía tras la confirmación humana, y el Worker vuelve a calcular la previsualización desde el almacén antes de escribir: con bloqueos responde `error` (R-MEM-001); si la huella de lo recalculado no es la `previewHash` que la interfaz enseñó —o no viene—, responde `error` («La previsualización ha cambiado desde que se mostró.») sin escribir. Justo antes de escribir mira si hay `cancel` pendiente y, si lo hay, responde `cancelled`. Desde 3.76.0, `releasedCases` opcional: los expedientes cuya ventana la persona no quiere excluir (ADR-0018 D5). |
 | `revoke` | circuito, número de versión, razón | Marca la versión con fecha y razón; no la borra (R-MEM-002). |
 | `compare-versions` | circuito, dos números de versión | Solo lee: compara los esperados de dos versiones del linaje activo. |
 | `plant-value` | circuito, clave, valor, fecha efectiva, razón | Valida y escribe un valor de planta confirmado; rige al volver a analizar los ficheros de su vigencia. |
+| `case-action` | circuito, acción: `crear` (título, síntoma, origen, AGV, tags, principio y fin del síntoma, autor), `ventana` (expediente, revisión vista, ventana), `estado` (expediente, revisión vista, estado destino, texto) o `nota` (expediente, revisión vista, texto) | Escribe una revisión nueva del expediente, append-only, solo en las tablas de expedientes (ADR-0018 D5). Si la revisión vista ya no es la vigente, no escribe nada. Al crear o cambiar la ventana congela las lecturas de la ventana desde las retenidas o el original archivado. Desde 3.78.0 también `hipotesis` (texto), `decidir-hipotesis` (clave, `confirmada` o `descartada`, nota), `contramedida` (acción, responsable, fecha prevista, riesgo y métrica), `aplicar` (contramedida y fecha) y `verificar` (contramedida: el Worker mide ALG-024 y lo registra). |
+| `case-replay` | circuito, expediente | Solo lee: calcula el replay del expediente sobre el recorte de su revisión vigente (ALG-016, 3.77.0). |
+| `case-evidence-csv` | circuito, expediente | Solo lee: las lecturas del recorte de la revisión vigente y sus eventos de conexión en CSV, con su procedencia (3.79.0). |
 | `plan-action` | circuito, fichero de trabajo, acción: `crear-plano` (desde una versión), `aceptar-propuesta` (id y fichero de la propuesta; en una salida, de qué ubicación cuelga) o `evento` (uno registrado a mano), siempre con razón | El Worker recalcula la propuesta desde la instantánea de su fichero antes de escribirla, valida todos los eventos en orden y los escribe en una transacción (ADR-0016). |
 | `resolve-fork` | circuito, elección (`conservar-local` \| `adoptar-entrante`), razón | Resuelve una bifurcación de linaje; el linaje no elegido queda archivado y la elección, en el historial (`MEMORY_CONSOLIDATION.md` §10). |
 
@@ -108,6 +111,9 @@ se ha guardado nada.»). La respuesta a un `consolidate` con `mode: "commit"` es
 `error` o `cancelled`; a `revoke` y `resolve-fork`, `revoked`/`fork-resolved`, `error` o `cancelled`.
 | `versions-compared` | la comparación: las dos versiones, las de entre medias, lo adoptado por el camino y el delta | |
 | `plant-values-updated` | los valores de planta del circuito: provisional, vigente para el fichero de trabajo, historial y dónde se mide | |
+| `cases-updated` | lo escrito en palabras, el expediente tocado y los expedientes del circuito (`CaseViews`, con la cronología del retroceso de cada uno desde 3.75.0 y sus casos parecidos desde 3.80.0) | |
+| `case-replay-ready` | el expediente, la revisión de la que sale y el replay (`CaseReplay`: fotogramas con fase, AGV con lo visto, la banda esperada y la conexión, y los hechos de la cronología) | |
+| `case-evidence-csv-ready` | el expediente, la revisión y el CSV | |
 | `plan-updated` | los eventos escritos en palabras y el plano (`PlanViews`) leído contra el fichero de trabajo | |
 
 Las vistas de una importación (`complete.views`) llevan `memory` cuando el circuito tiene versiones:

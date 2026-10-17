@@ -28,6 +28,7 @@ import type { FlowStopThresholds } from "./flow-stops.js";
 import type { FranjaThresholds } from "./franjas.js";
 import type { GraphThresholds } from "./graph.js";
 import type { GroupedDeliveryThresholds } from "./grouped-delivery.js";
+import type { CaseThresholds } from "./incident-case.js";
 import type { ConnectionCutThresholds } from "./connection-cuts.js";
 import type { PlantEstimatorThresholds } from "./plant-values.js";
 import type { ReadRateThresholds } from "./read-matrix.js";
@@ -101,6 +102,12 @@ export interface AnalysisConfig {
    * medirlos, y viven aquí para que ningún número de la definición quede escrito en el código.
    */
   readonly plantEstimators: PlantEstimatorThresholds;
+  /**
+   * El expediente de incidencia (ADR-0018 D4, OQ-P02): los márgenes mínimos que el programa propone
+   * antes y después del síntoma (`incident_case.min_margin_before_ms` y `min_margin_after_ms`), y cómo
+   * se verifica una contramedida (D9, OQ-P07: `incident_case.verification_*`).
+   */
+  readonly incidentCase: CaseThresholds;
 }
 
 /**
@@ -246,6 +253,22 @@ export interface AnalysisConfig {
  *   no operativa: ancha para que la estimación de «a la misma hora» pueda ver una tolerancia de planta
  *   mayor que la vigente (15 min), con la que nunca podría salir un valor mayor que ella. Solo sirve
  *   para estimar; el análisis sigue emparejando con `flowStops.sameTimeToleranceMs`.
+ * - **Márgenes del expediente (ADR-0018 D4, OQ-P02).** Media hora a cada lado del síntoma como mínimo:
+ *   la salida demostrable de F5 es una ausencia de diez minutos, y tres veces eso a cada lado deja ver
+ *   el antes y la recuperación. No es un valor de planta: es cuánto se mira, y se alarga solo con la
+ *   vuelta mediana del circuito y con la duración del síntoma. La persona cambia los márgenes de cada
+ *   expediente en borrador.
+ * - **Verificación de una contramedida (ADR-0018 D9, OQ-P07).** Una semana antes y otra después de la
+ *   fecha de aplicación: abarca los turnos y los días de una semana normal. Un 5 % de azar es el listón
+ *   habitual para decir que una tasa bajó con pocos episodios —más estricto, como el 0,1 % de los cambios
+ *   de tag, no se alcanzaría casi nunca con los pocos episodios de una incidencia—. La mitad de bajada
+ *   separa «eficaz» de «parcial», y tres episodios esperados después, con la tasa de antes, son el mínimo
+ *   para que la ausencia de episodios diga algo. Todo es la definición de cómo se mide, no un valor de
+ *   planta, y la conclusión la escribe una persona.
+ * - **Casos parecidos (ADR-0018 D10, ALG-017).** Dos síntomas duran parecido si el largo no pasa de una
+ *   vez y media el corto: un hueco de diez minutos y uno de quince se comparan; uno de diez y uno de una
+ *   hora, no. «A la misma hora» no es un número nuevo: es `flowStops.sameTimeToleranceMs`, la tolerancia
+ *   con que ya se dice que una parada se repite a la misma hora.
  */
 export const PROVISIONAL_CONFIG: AnalysisConfig = {
   state: "draft",
@@ -326,6 +349,15 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
     // Tolerancia de medida, no operativa: ancha para que la estimación pueda ver una tolerancia de
     // planta mayor que la vigente; solo para estimar (OQ-154).
     sameTimeMeasureToleranceMs: 60 * 60_000,
+  },
+  incidentCase: {
+    minMarginBeforeMs: 30 * 60_000,
+    minMarginAfterMs: 30 * 60_000,
+    // Provisionales (OQ-P07): una semana a cada lado de la aplicación, un 5 % de azar, la mitad de bajada
+    // para «eficaz» y al menos tres episodios esperados después con la tasa de antes.
+    verification: { windowMs: 7 * 24 * 3_600_000, maxChance: 0.05, effectiveReduction: 0.5, minExpectedEvents: 3 },
+    // Provisional (D10): una vez y media; más que eso ya es otro tamaño de síntoma.
+    similarityDurationRatio: 1.5,
   },
 };
 

@@ -115,7 +115,7 @@ import {
 } from "../src/domain/circuit-config.js";
 import { buildAllAgvDossiers, buildAllTagDossiers } from "../src/domain/dossier.js";
 import { compareAgainstVsystem } from "../src/domain/vsystem.js";
-import { buildReplayFrames } from "../src/domain/replay.js";
+import { buildCaseReplay, buildReplayFrames } from "../src/domain/replay.js";
 import { PROVISIONAL_CONFIG, type AnalysisConfig } from "../src/domain/config.js";
 import {
   formatPlantValue,
@@ -131,10 +131,57 @@ import {
   type PlantValueProposals,
   type PlantValuesView,
 } from "../src/domain/plant-values.js";
-import type { CircuitViews, MemoryViews, PlanViews, VersionSummary, ConnectionsLoadedMessage } from "../src/application/protocol.js";
+import type {
+  CaseAction,
+  CaseView,
+  CaseViews,
+  CircuitViews,
+  MemoryViews,
+  PlanViews,
+  VersionSummary,
+  ConnectionsLoadedMessage,
+} from "../src/application/protocol.js";
 import {
+  addCountermeasure,
+  addHypothesis,
+  addNote,
+  applyCountermeasure,
+  CASE_STATE_TEXT,
+  decideHypothesis,
+  recordVerification,
+  caseSpan,
+  contextText,
+  CaseRefusal,
+  changeWindow,
+  checkCaseText,
+  checkWindow,
+  createCase,
+  currentRevision,
+  evidenceText,
+  freezeEvidence,
+  nextCaseId,
+  originText,
+  proposeMargins,
+  transition,
+  transitionsFrom,
+  verifyChain,
+  type CaseContext,
+  type CaseRevision,
+  type CaseWindow,
+  type EvidenceCandidate,
+} from "../src/domain/incident-case.js";
+import { backtrack, type Chronology } from "../src/domain/case-backtrack.js";
+import { evidenceCsv } from "../src/domain/case-export.js";
+import { similarCases } from "../src/domain/case-similarity.js";
+import { caseHypotheses, viableCount, type HypothesisView } from "../src/domain/case-hypotheses.js";
+import { proposeMetric, verifyCountermeasure, type VerificationResult } from "../src/domain/case-verification.js";
+import {
+  appendCaseRevision,
   appendPlanEvents,
   appendPlantValue,
+  caseStoredBytes,
+  loadCaseEvidence,
+  loadCaseRevisions,
   isAvailable,
   loadCircuit,
   loadMemoryState,
@@ -163,6 +210,7 @@ import {
   compareVersions,
   consolidate,
   currentVersion,
+  expectedOf,
   emptyLineageState,
   previewConsolidation,
   previewWithoutSnapshot,
@@ -172,6 +220,7 @@ import {
   versionsOfLineage,
   withConsolidated,
   type ConsolidatedVersion,
+  type CaseExclusion,
   type ConsolidationPreview,
   type LineageState,
 } from "../src/domain/memory.js";
@@ -1150,7 +1199,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
   const vehicleIds = agvDossiers.map((dossier) => dossier.agvId);
   const tagDossiers = buildAllTagDossiers(readings, vehicleIds, criticalPointsConfig.funcionOf);
   // Lo que planta declara de cada tag, para acompañar sus incidencias: información, no regla.
-  const tagInfo = declaredTagInfo(lists, reinforcement);
+  const tagInfo = declaredTagInfo(lists, declaredReinforcements);
   // El tramo de cada tag (kitting, línea, cruce…), para dibujarlo en las gráficas del anillo.
   const sections = tagSections(lists, criticalPointsConfig.funcionOf);
   // Tiempos por sección entre anclas (R-TIM-012), con el cohorte principal: todas las anclas declaradas
@@ -1852,8 +1901,19 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     }
   }
 
+  // Los expedientes de incidencia (F5, ADR-0018): solo se leen; la importación no los toca (D5).
+  let cases: CaseViews | undefined;
+  if (stored !== undefined && isAvailable()) {
+    try {
+      cases = await buildCaseViews(stored.circuitId);
+    } catch (error) {
+      failures.push(`Los expedientes no se pudieron leer: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   const views: CircuitViews = {
     ...baseViews,
+    ...(cases === undefined ? {} : { cases }),
     anchorSections: anchorSectionsFinal,
     franjas: { ...baseViews.franjas, cohorts: franjaCohortsFinal },
     snapshots: snapshotsFinal,
@@ -2285,6 +2345,7 @@ async function previewFor(
   circuitId: string,
   sourceId: string,
   requestedCuts: readonly IncidentCut[] = [],
+  releasedCases: readonly string[] = [],
 ): Promise<{
   readonly preview: ConsolidationPreview;
   readonly snapshot: CircuitSnapshot | null;
@@ -2336,6 +2397,9 @@ async function previewFor(
     { after: since, until: snapshot.window.to },
     current === null ? [snapshot] : [current.expected ?? current.snapshot, snapshot],
   );
+  // D5 (ADR-0018): los expedientes no descartados del circuito, para proponer su ventana como
+  // incidencia excluida. Solo se leen: la consolidación nunca escribe un expediente.
+  const cases = await caseExclusionsOf(circuitId);
   // Si se puede recortar: el original de este fichero está archivado (OQ-145).
   const archived = archive.some((entry) => entry.sourceHash === source.sourceHash);
   const cutState = archived ? { originalArchived: true } : { originalArchived: false, cutUnavailable: `${CUT_NEEDS_ORIGINAL}.` };
@@ -2349,6 +2413,8 @@ async function previewFor(
       thresholds: CONSOLIDATION_THRESHOLDS,
       history: history.map((entry) => (entry.sourceId === consolidated.sourceId ? consolidated : entry)),
       confirmedSubjects,
+      cases,
+      releasedCases,
       ...(cuts === undefined ? {} : { cuts }),
     });
   const preview = run(snapshot);
@@ -2391,7 +2457,7 @@ async function runMemory(message: Extract<ToWorker, { type: "consolidate" | "rev
   const readState = (state: LineageState): { readonly activeHashes: readonly string[] | null } => ({ activeHashes: state.active?.hashes ?? null });
   try {
     if (message.type === "consolidate") {
-      const { preview, snapshot, observed, state, cutWarnings: cutNotes } = await previewFor(circuitId, message.sourceId, message.cuts ?? []);
+      const { preview, snapshot, observed, state, cutWarnings: cutNotes } = await previewFor(circuitId, message.sourceId, message.cuts ?? [], message.releasedCases ?? []);
       const previewHash = await previewFingerprint(preview);
       if (message.mode === "preview") {
         emit({ type: "consolidation-preview", circuitId, preview, previewHash, ...(cutNotes.length === 0 ? {} : { cutWarnings: cutNotes }) }, jobId);
@@ -3077,9 +3143,484 @@ async function runConnections(message: Extract<ToWorker, { type: "connections" }
   }
 }
 
+// --- Expedientes de incidencia (F5, ADR-0018) ---------------------------------------------------------
+
+/** La vuelta mediana de la instantánea cuya ventana contiene el instante, o de la última medida. */
+function lapAround(snapshots: readonly CircuitSnapshot[], at: number | null): number | null {
+  const sorted = sortSnapshots(snapshots);
+  const containing = at === null ? undefined : sorted.find((entry) => entry.window.from <= at && entry.window.to >= at && entry.lapMs !== null);
+  if (containing !== undefined) return containing.lapMs;
+  return [...sorted].reverse().find((entry) => entry.lapMs !== null)?.lapMs ?? null;
+}
+
+/**
+ * Lo calculado de un expediente desde su recorte congelado: la cronología del retroceso (ALG-015) y sus
+ * hipótesis (D6), con las decisiones guardadas. Sin recorte, sin cronología y solo lo guardado.
+ */
+async function caseAnalysisOf(circuitId: string, current: CaseRevision): Promise<{ readonly chronology: Chronology | null; readonly hypotheses: readonly HypothesisView[] }> {
+  const evidence = current.evidence.hash === null ? undefined : await loadCaseEvidence(circuitId, current.evidence.hash);
+  if (evidence === undefined) return { chronology: null, hypotheses: caseHypotheses({ algorithm: "", facts: [], firstDeviation: null, declared: [], limits: [] }, { readings: [], connections: [], context: null }, current.hypotheses) };
+  const chronology = backtrack({ window: current.window, agvId: current.agvId, tagIds: current.tagIds, evidence });
+  return { chronology, hypotheses: caseHypotheses(chronology, evidence, current.hypotheses) };
+}
+
+/**
+ * La verificación de una contramedida aplicada (D9): la métrica contada antes y después de su
+ * aplicación sobre las lecturas del circuito (retenidas o del original archivado), en tiempo cubierto,
+ * en producción y sin las ventanas de los demás expedientes.
+ */
+async function verificationFor(stored: StoredCircuit, current: CaseRevision, countermeasureId: string): Promise<VerificationResult> {
+  const measure = current.countermeasures.find((entry) => entry.id === countermeasureId);
+  if (measure === undefined || measure.appliedAt === null) {
+    throw new CaseRefusal(`La contramedida ${countermeasureId} no consta como aplicada.`, "Registra antes su fecha de aplicación.");
+  }
+  const config = await configForFile(stored.circuitId, measure.appliedAt);
+  const thresholds = config.incidentCase.verification;
+  const period = { from: measure.appliedAt - thresholds.windowMs, to: measure.appliedAt + thresholds.windowMs };
+  const frozen = await freezeEvidence(await evidenceCandidates(stored, period), period);
+  const others = (await caseExclusionsOf(stored.circuitId)).filter((entry) => entry.caseId !== current.caseId).map((entry) => ({ from: entry.from, to: entry.to }));
+  return verifyCountermeasure({
+    metric: measure.metric,
+    appliedAt: measure.appliedAt,
+    readings: frozen.evidence.readings,
+    coverage: stored.coverage,
+    excluded: others,
+    zone: stored.zone,
+    regimes: config.regimes,
+    thresholds,
+    sources: frozen.summary.sources.map((source) => ({ sourceHash: source.sourceHash, fileName: source.fileName })),
+  });
+}
+
+/**
+ * Los expedientes que la consolidación propone como incidencia excluida (ADR-0018 D5): todos los no
+ * descartados, con su ventana completa, su título, su estado y lo que nombran. Cuáles tocan el fichero
+ * lo decide `previewConsolidation`.
+ */
+async function caseExclusionsOf(circuitId: string): Promise<readonly CaseExclusion[]> {
+  const revisions = await loadCaseRevisions(circuitId);
+  const byCase = new Map<string, CaseRevision[]>();
+  for (const revision of revisions) byCase.set(revision.caseId, [...(byCase.get(revision.caseId) ?? []), revision]);
+  return [...byCase.values()]
+    .map((list) => currentRevision(list))
+    .filter((current) => current.state !== "Discarded")
+    .map((current) => {
+      const span = caseSpan(current.window);
+      return {
+        caseId: current.caseId,
+        title: current.title,
+        stateText: CASE_STATE_TEXT[current.state],
+        from: span.from,
+        to: span.to,
+        tagIds: current.tagIds,
+        agvId: current.agvId,
+      };
+    });
+}
+
+/**
+ * Las vistas de los expedientes del circuito: cada uno con su revisión vigente, su historial, los
+ * cambios de estado posibles y la integridad de su cadena; las incidencias excluidas de la versión
+ * vigente para abrir uno desde ellas; y los márgenes de la configuración. Solo lee.
+ */
+async function buildCaseViews(circuitId: string): Promise<CaseViews> {
+  const [revisions, memory, snapshots, storedBytes] = await Promise.all([
+    loadCaseRevisions(circuitId),
+    loadMemory(circuitId),
+    loadSnapshots(circuitId),
+    caseStoredBytes(circuitId),
+  ]);
+  const byCase = new Map<string, CaseRevision[]>();
+  for (const revision of revisions) byCase.set(revision.caseId, [...(byCase.get(revision.caseId) ?? []), revision]);
+  // Primero lo de cada expediente; después, cada uno frente a los demás (ALG-017).
+  const analysed: { readonly sorted: readonly CaseRevision[]; readonly current: CaseRevision; readonly chronology: Chronology | null; readonly hypotheses: readonly HypothesisView[] }[] = [];
+  for (const list of byCase.values()) {
+    const sorted = [...list].sort((a, b) => a.revision - b.revision);
+    const current = currentRevision(sorted);
+    const { chronology, hypotheses } = await caseAnalysisOf(circuitId, current);
+    analysed.push({ sorted, current, chronology, hypotheses });
+  }
+  const library = analysed.map((entry) => ({ revision: entry.current, chronology: entry.chronology, hypotheses: entry.hypotheses }));
+  const zone = (await loadCircuit(circuitId))?.zone ?? null;
+  const cases: CaseView[] = [];
+  for (const { sorted, current, chronology, hypotheses } of analysed) {
+    const config = await configForFile(circuitId, current.window.symptomFrom);
+    cases.push({
+      chronology,
+      hypotheses,
+      similar:
+        zone === null
+          ? null
+          : similarCases({ revision: current, chronology, hypotheses }, library, {
+              zone,
+              sameTimeToleranceMs: config.flowStops.sameTimeToleranceMs,
+              shiftStartHours: config.silenceKind.shiftStartHours,
+              durationRatio: config.incidentCase.similarityDurationRatio,
+            }),
+      metricProposal: proposeMetric({ tagIds: current.tagIds, agvId: current.agvId, symptomFrom: current.window.symptomFrom, symptomTo: current.window.symptomTo }),
+      contextText: contextText(current.evidence.context),
+      current,
+      history: sorted.map((entry) => ({ revision: entry.revision, createdAt: entry.createdAt, author: entry.author, change: entry.change, state: entry.state })),
+      transitions: transitionsFrom(current, { viableHypotheses: viableCount(hypotheses) }),
+      span: caseSpan(current.window),
+      originText: originText(current.origin),
+      evidenceText: evidenceText(current.evidence),
+      integrity: await verifyChain(sorted),
+    });
+  }
+  // El más reciente primero: por la fecha de su revisión vigente, y a igualdad por identificador.
+  cases.sort((a, b) => b.current.createdAt - a.current.createdAt || (a.current.caseId < b.current.caseId ? -1 : 1));
+  const version = currentVersion(memory.active);
+  // Las incidencias que nacen de un expediente (D5) no se ofrecen como punto de partida de otro.
+  const excluded = (version?.incidents ?? []).filter((incident) => incident.kind !== "expediente").map((incident) => {
+    const windows = incident.windows ?? (incident.window === undefined ? [] : [incident.window]);
+    const from = windows.length === 0 ? null : Math.min(...windows.map((window) => window.from));
+    const to = windows.length === 0 ? null : Math.max(...windows.map((window) => window.to));
+    return {
+      version: (version as ConsolidatedVersion).version,
+      versionHash: (version as ConsolidatedVersion).hash,
+      key: incident.key,
+      label: `${incident.title}${incident.figure === "" ? "" : ` (${incident.figure})`}`,
+      agvId: incident.agvId ?? null,
+      // Los sujetos son claves `vertice|tag` y `arista|…` (`subjectKey`): los tags son los vértices.
+      tagIds: incident.subjects.filter((subject) => subject.startsWith("vertice|")).map((subject) => subject.slice("vertice|".length)),
+      from,
+      to,
+    };
+  });
+  const config = PROVISIONAL_CONFIG;
+  return {
+    cases,
+    excluded,
+    storedBytes,
+    margins: {
+      minBeforeMs: config.incidentCase.minMarginBeforeMs,
+      minAfterMs: config.incidentCase.minMarginAfterMs,
+      lapMs: lapAround(snapshots, null),
+      configState: config.state,
+    },
+  };
+}
+
+/**
+ * Las fuentes del circuito como candidatas al recorte (D4): con sus lecturas retenidas si las tiene;
+ * si no y su cobertura toca la ventana, del original archivado; si tampoco, sin lecturas. Solo se
+ * reimporta lo que toca la ventana.
+ */
+async function evidenceCandidates(stored: StoredCircuit, span: { readonly from: number; readonly to: number }): Promise<readonly EvidenceCandidate[]> {
+  const retained = new Map((await loadRetainedReadings(stored.circuitId)).map((entry) => [entry.sourceId, entry.readings]));
+  const archived = new Set((await listArchive(stored.circuitId)).map((entry) => entry.sourceHash));
+  const out: EvidenceCandidate[] = [];
+  for (const source of stored.sources) {
+    const base = { sourceId: source.sourceId, sourceHash: source.sourceHash, fileName: source.fileName, complete: source.complete };
+    const touches = source.complete !== null && source.complete.from <= span.to && source.complete.to >= span.from;
+    if (!touches) continue;
+    const kept = retained.get(source.sourceId);
+    if (kept !== undefined) {
+      out.push({ ...base, readings: kept, from: "retenidas" });
+      continue;
+    }
+    if (archived.has(source.sourceHash)) {
+      try {
+        const { readings } = await reimportArchived(stored.circuitId, source, stored.zone);
+        out.push({ ...base, readings, from: "archivo" });
+        continue;
+      } catch {
+        // Un original que no se puede leer cuenta como que no está: se dice en `missing`.
+      }
+    }
+    out.push({ ...base, readings: null, from: null });
+  }
+  return out;
+}
+
+/**
+ * Lo declarado en planta de cada tag (R-GRA-022), calculado igual que en el análisis: las listas del
+ * circuito y los refuerzos de cada punto crítico seguidos en el orden declarado (R-GRA-016).
+ */
+function declaredOfLists(lists: StoredCircuit["lists"]): Readonly<Record<string, string>> {
+  const all = lists ?? [];
+  const entriesOf = (name: string): readonly ConfigEntry[] => all.find((entry) => entry.list === name)?.entries ?? [];
+  const critical = readCriticalPoints([...entriesOf("critico"), ...entriesOf("circuito").filter((entry) => entry.funcion !== "")]);
+  const declaredOrder = [...new Set(all.find((entry) => entry.list === "circuito")?.tags ?? [])];
+  const groups = reinforcementGroups(declaredOrder, critical.funcionOf, critical.groupOf);
+  return Object.fromEntries(declaredTagInfo(all, groups));
+}
+
+/**
+ * El contexto que se congela con el recorte (ADR-0018 D4, D7): el anillo y las horquillas del esperado
+ * de la versión vigente o, sin memoria, de la instantánea del fichero que cubre el síntoma (o el último);
+ * los umbrales de la configuración que rige al empezar el síntoma; y lo declarado en planta. `null` si no
+ * hay ninguna de las dos fuentes de anillo.
+ */
+async function caseContextFor(stored: StoredCircuit, symptomFrom: number): Promise<CaseContext | null> {
+  const circuitId = stored.circuitId;
+  const [memory, snapshots] = await Promise.all([loadMemory(circuitId), loadSnapshots(circuitId)]);
+  const version = currentVersion(memory.active);
+  const sorted = sortSnapshots(snapshots);
+  const covering = sorted.find((entry) => entry.window.from <= symptomFrom && entry.window.to >= symptomFrom) ?? sorted[sorted.length - 1] ?? null;
+  const base = version !== null ? expectedOf(version) : covering;
+  if (base === null || base.ring.length < 2) return null;
+  const ringEdges = new Set(base.ring.map((tagId, index) => `${tagId}\u0000${base.ring[(index + 1) % base.ring.length] as string}`));
+  const config = await configForFile(circuitId, symptomFrom);
+  return {
+    origin:
+      version !== null
+        ? { kind: "memoria", version: version.version, hash: version.hash }
+        : { kind: "instantanea", sourceId: (covering as CircuitSnapshot).sourceId, fileName: (covering as CircuitSnapshot).fileName },
+    zone: stored.zone,
+    ring: base.ring,
+    edges: base.edges.filter((edge) => ringEdges.has(`${edge.from}\u0000${edge.to}`)),
+    regimes: config.regimes,
+    silenceMinGapMs: config.silence.minGapMs,
+    shiftStartHours: config.silenceKind.shiftStartHours,
+    minMedianSamples: config.franjas.minPositionSamples,
+    connectionCuts: config.connectionCuts,
+    declared: declaredOfLists(stored.lists),
+  };
+}
+
+/** Las referencias de una revisión (D2): la versión vigente, la configuración y la aplicación. */
+async function caseReferences(circuitId: string, at: number): Promise<CaseRevision["references"]> {
+  const memory = await loadMemory(circuitId);
+  const version = currentVersion(memory.active);
+  const events = await loadPlantValues(circuitId);
+  return {
+    memory: version === null ? null : { version: version.version, hash: version.hash },
+    configVersion: resolveAnalysisConfig(PROVISIONAL_CONFIG, events, at).configVersion,
+    appVersion: APP_VERSION,
+  };
+}
+
+/**
+ * Las acciones sobre un expediente (F5, ADR-0018). El Worker no decide nada: escribe lo que una persona
+ * confirmó, como revisión nueva y append-only, después de comprobarlo contra la revisión guardada. Solo
+ * escribe en las tablas de expedientes (D5).
+ */
+async function runCase(message: Extract<ToWorker, { type: "case-action" }>): Promise<void> {
+  const { jobId, circuitId, action } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  if (!isAvailable()) {
+    fail("No hay almacén local: los expedientes necesitan IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
+    return;
+  }
+  try {
+    const stored = await loadCircuit(circuitId);
+    if (stored === undefined) {
+      fail(`El circuito «${circuitId}» no está en este dispositivo.`, "Importa sus lecturas y vuelve a intentarlo.");
+      return;
+    }
+    const now = Date.now();
+    const written = await applyCaseAction(stored, action, now);
+    emit({ type: "cases-updated", circuitId, written: written.text, caseId: written.caseId, cases: await buildCaseViews(circuitId) }, jobId);
+  } catch (error) {
+    if (error instanceof CaseRefusal) {
+      fail(error.reason, error.recovery);
+      return;
+    }
+    // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
+    fail(
+      `La operación del expediente falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "No se ha guardado nada. Vuelve a intentarlo; si persiste, es un defecto y debe reproducirse con un fixture sintético.",
+    );
+  }
+}
+
+/**
+ * El replay de un expediente (ALG-016, ADR-0018 D8), a petición: sobre el recorte congelado de su
+ * revisión vigente, con la cronología del retroceso para sincronizar los hechos. Solo lee.
+ */
+async function runCaseReplay(message: Extract<ToWorker, { type: "case-replay" }>): Promise<void> {
+  const { jobId, circuitId, caseId } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  if (!isAvailable()) {
+    fail("No hay almacén local: los expedientes necesitan IndexedDB.", "Abre la aplicación en un navegador con datos de sitio permitidos.");
+    return;
+  }
+  try {
+    const revisions = (await loadCaseRevisions(circuitId)).filter((revision) => revision.caseId === caseId);
+    if (revisions.length === 0) {
+      fail(`El expediente ${caseId} no está en este dispositivo.`, "Vuelve a cargar la lista de expedientes.");
+      return;
+    }
+    const current = currentRevision(revisions);
+    const evidence = current.evidence.hash === null ? undefined : await loadCaseEvidence(circuitId, current.evidence.hash);
+    if (evidence === undefined) {
+      fail(`El expediente ${caseId} no tiene recorte de lecturas: no hay replay.`, "En borrador, cambia la ventana para volver a copiar las lecturas.");
+      return;
+    }
+    const chronology = backtrack({ window: current.window, agvId: current.agvId, tagIds: current.tagIds, evidence });
+    const replay = buildCaseReplay({ window: current.window, evidence, chronology, frameCount: REPLAY_FRAMES });
+    emit({ type: "case-replay-ready", circuitId, caseId, revision: current.revision, replay }, jobId);
+  } catch (error) {
+    // Solo el tipo del error y su texto: nunca datos (AGENTS.md).
+    fail(
+      `El replay del expediente falló (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "No se ha cambiado nada. Si persiste, es un defecto y debe reproducirse con un fixture sintético.",
+    );
+  }
+}
+
+/** Las lecturas del recorte de un expediente en CSV (D11), para descargarlas. Solo lee. */
+async function runCaseEvidenceCsv(message: Extract<ToWorker, { type: "case-evidence-csv" }>): Promise<void> {
+  const { jobId, circuitId, caseId } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  try {
+    const revisions = (await loadCaseRevisions(circuitId)).filter((revision) => revision.caseId === caseId);
+    if (revisions.length === 0) {
+      fail(`El expediente ${caseId} no está en este dispositivo.`, "Vuelve a cargar la lista de expedientes.");
+      return;
+    }
+    const current = currentRevision(revisions);
+    const hash = current.evidence.hash;
+    const evidence = hash === null ? undefined : await loadCaseEvidence(circuitId, hash);
+    if (hash === null || evidence === undefined) {
+      fail(`El expediente ${caseId} no tiene recorte de lecturas.`, "En borrador, cambia la ventana para volver a copiar las lecturas.");
+      return;
+    }
+    emit({ type: "case-evidence-csv-ready", circuitId, caseId, revision: current.revision, csv: evidenceCsv(evidence, { caseId, revision: current.revision, hash }) }, jobId);
+  } catch (error) {
+    fail(
+      `No se pudo preparar el CSV del recorte (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "No se ha cambiado nada. Vuelve a intentarlo.",
+    );
+  }
+}
+
+async function applyCaseAction(stored: StoredCircuit, action: CaseAction, now: number): Promise<{ readonly caseId: string; readonly text: string }> {
+  const circuitId = stored.circuitId;
+  const config = PROVISIONAL_CONFIG;
+  if (action.kind === "crear") {
+    const snapshots = await loadSnapshots(circuitId);
+    const margins = proposeMargins({ from: action.symptomFrom, to: action.symptomTo }, lapAround(snapshots, action.symptomFrom), config.incidentCase);
+    const window: CaseWindow = { symptomFrom: action.symptomFrom, symptomTo: action.symptomTo, marginBeforeMs: margins.marginBeforeMs, marginAfterMs: margins.marginAfterMs };
+    const existing = [...new Set((await loadCaseRevisions(circuitId)).map((revision) => revision.caseId))];
+    const caseId = nextCaseId(circuitId, now, stored.zone, existing);
+    // Se valida antes de reimportar nada: una ventana imposible no cuesta un reanálisis.
+    checkCaseText(action.title, action.symptom);
+    checkWindow(window);
+    const frozen = await freezeEvidence(await evidenceCandidates(stored, caseSpan(window)), caseSpan(window), {
+      connections: stored.connections?.events ?? [],
+      context: await caseContextFor(stored, window.symptomFrom),
+    });
+    const revision = await createCase({
+      circuitId,
+      caseId,
+      now,
+      author: action.author,
+      title: action.title,
+      symptom: action.symptom,
+      origin: action.origin,
+      agvId: action.agvId,
+      tagIds: action.tagIds,
+      window,
+      evidence: frozen.summary,
+      references: await caseReferences(circuitId, action.symptomFrom),
+    });
+    await appendCaseRevision(revision, frozen.summary.hash === null ? null : { hash: frozen.summary.hash, evidence: frozen.evidence });
+    return { caseId, text: `Expediente ${caseId} creado en borrador. Márgenes propuestos: ${margins.reason}.` };
+  }
+
+  const revisions = (await loadCaseRevisions(circuitId)).filter((revision) => revision.caseId === action.caseId);
+  if (revisions.length === 0) throw new CaseRefusal(`El expediente ${action.caseId} no está en este dispositivo.`, "Vuelve a cargar la lista de expedientes.");
+  const previous = currentRevision(revisions);
+  if (previous.revision !== action.expectedRevision) {
+    throw new CaseRefusal(
+      `El expediente ${action.caseId} cambió desde que se mostró (revisión ${previous.revision}, no ${action.expectedRevision}).`,
+      "Vuelve a mirarlo y repite la acción.",
+    );
+  }
+  if (action.kind === "nota") {
+    const revision = await addNote(previous, action.text, now, action.author);
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `Nota añadida a ${action.caseId} (revisión ${revision.revision}).` };
+  }
+  if (action.kind === "estado") {
+    // Las mismas hipótesis en pie que enseña la vista: las calcula el recorte, no lo que trae la interfaz.
+    const { hypotheses } = await caseAnalysisOf(circuitId, previous);
+    const revision = await transition(previous, action.to, action.text, now, action.author, { viableHypotheses: viableCount(hypotheses) });
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
+  }
+  if (action.kind === "hipotesis") {
+    const revision = await addHypothesis(previous, action.text, now, action.author);
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
+  }
+  if (action.kind === "decidir-hipotesis") {
+    // El texto de una hipótesis del programa sale del recorte, no de la interfaz.
+    const { hypotheses } = await caseAnalysisOf(circuitId, previous);
+    const known = hypotheses.find((entry) => entry.key === action.key);
+    if (known === undefined) throw new CaseRefusal("Esa hipótesis ya no está en el expediente.", "Vuelve a mirarlo.");
+    const revision = await decideHypothesis(previous, { key: action.key, text: known.text, state: action.state, note: action.note }, now, action.author);
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
+  }
+  if (action.kind === "contramedida") {
+    const revision = await addCountermeasure(previous, action.countermeasure, now, action.author);
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
+  }
+  if (action.kind === "aplicar") {
+    const revision = await applyCountermeasure(previous, action.countermeasureId, action.appliedAt, now, action.author);
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
+  }
+  if (action.kind === "verificar") {
+    const result = await verificationFor(stored, previous, action.countermeasureId);
+    const revision = await recordVerification(previous, result, action.countermeasureId, now, action.author);
+    await appendCaseRevision(revision, null);
+    return { caseId: action.caseId, text: `${action.caseId}: ${revision.change.text}` };
+  }
+  // Ventana: se valida en el dominio antes de reimportar, y el recorte se congela otra vez.
+  if (previous.state !== "Draft") {
+    throw new CaseRefusal("La ventana solo se cambia en borrador: al pasar a revisión quedó confirmada.", "Si hace falta otra ventana, abre otro expediente.");
+  }
+  checkWindow(action.window);
+  const span = caseSpan(action.window);
+  const frozen = await freezeEvidence(await evidenceCandidates(stored, span), span, {
+    connections: stored.connections?.events ?? [],
+    context: await caseContextFor(stored, action.window.symptomFrom),
+  });
+  const revision = await changeWindow(previous, action.window, frozen.summary, await caseReferences(circuitId, action.window.symptomFrom), now, action.author);
+  const newEvidence = frozen.summary.hash !== null && frozen.summary.hash !== previous.evidence.hash;
+  await appendCaseRevision(revision, newEvidence && frozen.summary.hash !== null ? { hash: frozen.summary.hash, evidence: frozen.evidence } : null);
+  return { caseId: action.caseId, text: `${action.caseId}: ventana y recorte cambiados (revisión ${revision.revision}).` };
+}
+
 scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   const message = event.data;
   if (message.protocolVersion !== PROTOCOL_VERSION) return;
+
+  if (message.type === "case-evidence-csv") {
+    currentJobId = message.jobId;
+    cancelRequested = false;
+    seq = 0;
+    void runCaseEvidenceCsv(message);
+    return;
+  }
+
+  if (message.type === "case-replay") {
+    currentJobId = message.jobId;
+    cancelRequested = false;
+    seq = 0;
+    void runCaseReplay(message);
+    return;
+  }
+
+  if (message.type === "case-action") {
+    currentJobId = message.jobId;
+    cancelRequested = false;
+    seq = 0;
+    void runCase(message);
+    return;
+  }
 
   if (message.type === "lists") {
     currentJobId = message.jobId;

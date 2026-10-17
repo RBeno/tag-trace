@@ -175,13 +175,22 @@ export interface MemoryPanelInput {
   readonly findings: () => FindingsStatus | null;
   /** Lleva a la bandeja del Resumen, filtrada por pendientes si se puede. */
   readonly goToPending: () => void;
-  /** Con `cuts`, los recortes de ventana que la persona eligió (OQ-148). */
-  readonly preview: (sourceId: string, cuts?: readonly IncidentCut[]) => void;
+  /**
+   * Con `cuts`, los recortes de ventana que la persona eligió (OQ-148); con `released`, los expedientes
+   * cuya ventana no quiere excluir del esperado (ADR-0018 D5).
+   */
+  readonly preview: (sourceId: string, cuts?: readonly IncidentCut[], released?: readonly string[]) => void;
   /**
    * Solo lo llama el botón «Confirmar y consolidar», con los recortes de la previsualización que se
    * confirma y la huella (`previewHash`) con la que llegó: el Worker comprueba que lo que escribe es lo que se vio.
    */
-  readonly commit: (sourceId: string, note: string | null, cuts: readonly IncidentCut[] | undefined, previewHash: string) => void;
+  readonly commit: (
+    sourceId: string,
+    note: string | null,
+    cuts: readonly IncidentCut[] | undefined,
+    previewHash: string,
+    released?: readonly string[],
+  ) => void;
   /**
    * Un instante como valor de un campo de fecha y hora (`aaaa-mm-ddThh:mm:ss`) en la zona del circuito,
    * y al revés (`null` si no es una fecha válida). Sin ellos no se ofrece recortar.
@@ -247,6 +256,8 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
    * previsualizaciones y se olvida con otro análisis.
    */
   const cutChoices = new Map<string, { enabled: boolean; from: string; to: string }>();
+  /** Por expediente propuesto (D5): si su ventana se excluye del esperado. Se fija con cada previsualización. */
+  const caseKeep = new Map<string, boolean>();
 
   const heading = node("h2", undefined, "Memoria del circuito");
   const statusBox = node("div", "memory-status");
@@ -489,6 +500,80 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     return left.every((entry, index) => entry === right[index]);
   }
 
+  /** Los expedientes que la persona soltó en las casillas: su ventana no se excluye (D5). */
+  function releasedChosen(shown: ConsolidationPreview): readonly string[] {
+    return (shown.proposedCases ?? []).filter((entry) => caseKeep.get(entry.caseId) === false).map((entry) => entry.caseId);
+  }
+
+  /** ¿Lo marcado en las casillas de los expedientes es lo que esta previsualización aplicó? */
+  function casesMatchShown(shown: ConsolidationPreview): boolean {
+    return (shown.proposedCases ?? []).every((entry) => (caseKeep.get(entry.caseId) ?? entry.kept) === entry.kept);
+  }
+
+  /** Los expedientes de la previsualización que soltó la persona, tal como se aplicaron: van en el `commit`. */
+  function releasedShown(shown: ConsolidationPreview): readonly string[] {
+    return (shown.proposedCases ?? []).filter((entry) => !entry.kept).map((entry) => entry.caseId);
+  }
+
+  /**
+   * Los expedientes de incidencia cuya ventana toca el periodo (ADR-0018 D5). Por defecto su ventana
+   * queda fuera del esperado; la persona puede soltar uno quitando su casilla y volviendo a
+   * previsualizar. El expediente no cambia: la consolidación solo lo lee.
+   */
+  function casesBlock(shown: ConsolidationPreview): readonly HTMLElement[] {
+    const proposed = shown.proposedCases ?? [];
+    if (proposed.length === 0) return [];
+    const box = node("div", "memory-cases");
+    box.setAttribute("role", "region");
+    box.setAttribute("aria-label", "Expedientes del periodo");
+    box.append(
+      node("h4", undefined, "Expedientes del periodo"),
+      node(
+        "p",
+        "muted",
+        "Expedientes de incidencia cuya ventana cae en este fichero. Por defecto, su ventana queda fuera del esperado como una incidencia más; " +
+          "quita la casilla si lo que pasó en ella es funcionamiento normal. El expediente no cambia.",
+      ),
+    );
+    const list = node("ul", "memory-items memory-case-list");
+    for (const entry of proposed) {
+      const item = node("li");
+      item.dataset["caseId"] = entry.caseId;
+      const id = `memory-case-${entry.caseId}`;
+      const check = node("input", "memory-case-keep");
+      check.type = "checkbox";
+      check.id = id;
+      check.checked = caseKeep.get(entry.caseId) ?? entry.kept;
+      check.addEventListener("change", () => {
+        caseKeep.set(entry.caseId, check.checked);
+        syncConfirm();
+      });
+      const label = node("label", undefined, "Excluir su ventana del esperado");
+      label.htmlFor = id;
+      item.append(
+        node("strong", undefined, `${entry.caseId}: ${entry.title}`),
+        " ",
+        node("span", "muted", `${entry.stateText}, de ${(input.formatTick ?? input.formatInstant)(entry.from)} a ${(input.formatTick ?? input.formatInstant)(entry.to)}`),
+        node("br"),
+        check,
+        " ",
+        label,
+      );
+      list.append(item);
+    }
+    const again = sender("Volver a previsualizar con estos expedientes", "memory-case-preview");
+    again.addEventListener("click", () => {
+      const chosen = chosenCuts(shown);
+      const cuts = "error" in chosen ? (shown.cuts ?? []).map(({ removed: _removed, ...cut }) => cut) : chosen.cuts;
+      status = null;
+      paintStatus();
+      const released = releasedChosen(shown);
+      input.preview(shown.basedOn.sourceId, cuts.length === 0 ? undefined : cuts, released.length === 0 ? undefined : released);
+    });
+    box.append(list, again);
+    return [box];
+  }
+
   /** Se fija al pintar la previsualización; cada cambio en un recorte lo llama para apagar o encender «Confirmar». */
   let syncConfirm: () => void = () => {};
 
@@ -661,7 +746,8 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
         }
         status = null;
         paintStatus();
-        input.preview(shown.basedOn.sourceId, chosen.cuts.length === 0 ? undefined : chosen.cuts);
+        const released = releasedChosen(shown);
+        input.preview(shown.basedOn.sourceId, chosen.cuts.length === 0 ? undefined : chosen.cuts, released.length === 0 ? undefined : released);
       });
       box.append(again);
     }
@@ -765,6 +851,7 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       box.append(warnings);
     }
 
+    box.append(...casesBlock(shown));
     box.append(...incidentsBlock(shown));
     box.append(decisionsBlock(shown.decisions));
     box.append(...changesBlock(shown));
@@ -798,9 +885,15 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
       // Con un recorte tocado después de previsualizar, lo que se confirmaría no es lo que se ve.
       const hint = node("p", "muted memory-confirm-hint", "Vuelve a previsualizar con el recorte para confirmar");
       hint.hidden = true;
+      // Lo mismo con una casilla de expediente tocada (D5).
+      const caseHint = node("p", "muted memory-case-hint", "Vuelve a previsualizar con estos expedientes para confirmar");
+      caseHint.hidden = true;
       syncConfirm = () => {
-        cutsDiffer = !cutsMatchShown(shown);
-        hint.hidden = !cutsDiffer;
+        const cutsOff = !cutsMatchShown(shown);
+        const casesOff = !casesMatchShown(shown);
+        cutsDiffer = cutsOff || casesOff;
+        hint.hidden = !cutsOff;
+        caseHint.hidden = !casesOff;
         confirm.disabled = busy || cutsDiffer;
       };
       const hash = previewHash;
@@ -812,10 +905,11 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
         paintStatus();
         // Con los recortes de esta previsualización, no con lo que se haya tocado después: se consolida lo que se ve.
         const cuts = (shown.cuts ?? []).map(({ removed: _removed, ...cut }) => cut);
-        input.commit(shown.basedOn.sourceId, text === "" ? null : text, cuts.length === 0 ? undefined : cuts, hash);
+        const released = releasedShown(shown);
+        input.commit(shown.basedOn.sourceId, text === "" ? null : text, cuts.length === 0 ? undefined : cuts, hash, released.length === 0 ? undefined : released);
       });
       actions.append(cancel, confirm);
-      box.append(hint);
+      box.append(hint, caseHint);
       syncConfirm();
     } else {
       actions.append(cancel);
@@ -1143,6 +1237,8 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
     },
     showPreview(next, hash, warnings) {
       preview = next;
+      caseKeep.clear();
+      for (const entry of next.proposedCases ?? []) caseKeep.set(entry.caseId, entry.kept);
       previewHash = hash;
       cutNotes = warnings;
       render();

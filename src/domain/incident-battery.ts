@@ -494,7 +494,7 @@ export interface IncidentRecord {
   readonly battery: IncidentBattery;
 }
 
-const KIND_TEXT: Readonly<Record<IncidentKind, string>> = {
+export const INCIDENT_KIND_TEXT: Readonly<Record<IncidentKind, string>> = {
   "parada-sin-explicacion": "parada sin explicación",
   bloqueo: "primero de cola sin avanzar",
   "deja-de-leer": "deja de leer",
@@ -517,7 +517,7 @@ export function incidentsCsv(records: readonly IncidentRecord[], formatTime: (ut
   for (const { kind, incident, battery } of records) {
     lines.push(
       [
-        KIND_TEXT[kind],
+        INCIDENT_KIND_TEXT[kind],
         incident.agvId,
         incident.fromTagId,
         formatTime(incident.fromUtcMs),

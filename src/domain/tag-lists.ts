@@ -20,6 +20,7 @@ export const KNOWN_LISTS = [
   "noche",
   "linea",
   "tramo",
+  "area",
 ] as const;
 
 export type KnownList = (typeof KNOWN_LISTS)[number];
@@ -48,6 +49,8 @@ export const LIST_PURPOSE: Readonly<Record<KnownList, string>> = {
     "los tags de la línea de producción, en su orden: el primero es la entrada, donde se mide la cadencia y el pulmón",
   tramo:
     "a qué tramo pertenece cada tag, con su nombre en `grupo` (kitting, línea, cruce…): se dibuja en las gráficas del anillo y no cambia ningún cálculo",
+  area:
+    "a qué áreas gestionadas por el servidor pertenece cada tag, con el nombre en `grupo`; un tag de varias áreas lleva varias filas. Se enseña junto a sus incidencias y no cambia ningún cálculo",
 };
 
 /**
@@ -118,5 +121,6 @@ export const EXPECTED_STRUCTURE = {
     "zona;51944;;;vacio",
     "critico;102185;;bifurcacion",
     "ancla;51944;1",
+    "area;51944;;;cruce salida",
   ] as const,
 } as const;

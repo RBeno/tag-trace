@@ -2,6 +2,427 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.80.1] - 2026-10-17
+
+### Gobierno
+
+- **Evidencia de G5** en `PHASE_GATES.md` (petición del propietario): cada uno de los seis criterios
+  con lo que lo prueba (TC-338 a TC-356, INV-008, TC-017) y lo que queda suyo —validación con datos
+  reales y criterio de rechazo (OQ-B05), marcar las casillas, PR y `CONTINÚA FASE 6`—. Ninguna casilla
+  se marca: es del propietario.
+
+## [3.80.0] - 2026-10-17
+
+Entrega 6 de ADR-0018, la última.
+
+### Añadido
+
+- **Casos parecidos** (ADR-0018 D10, ALG-017 `similitud-1`, `INCIDENTS_REPORTING.md` §6): cada
+  expediente se compara con los demás del mismo circuito, sin los descartados. Cada característica
+  —síntoma, tags, zona y función declaradas, duración, hora del día, turno, AGV que preceden y cuántos,
+  lo que precede, primera desviación, calles de carga y FIFO, diagnóstico confirmado— dice igual,
+  parecido con su diferencia, distinto o sin dato. Se ordena por cuántas coinciden, con el mismo peso,
+  y a igualdad el más reciente. Lo confirmado en otro caso se enseña aparte: «No es evidencia para
+  este». Los hechos que se repiten se cuentan sin llamarlo correlación (OQ-172).
+- El informe del expediente termina su apartado 6 con los casos parecidos.
+- Configuración `incident_case.similarity_duration_ratio` (provisional, 1,5).
+- Pruebas: TC-355 (unitaria) y TC-356 (navegador).
+
+### Preguntas
+
+- OQ-172: con qué frecuencia de base y qué prueba se dice que un hecho `correlaciona` con el síntoma.
+
+## [3.79.0] - 2026-10-17
+
+Entrega 5 de ADR-0018.
+
+### Añadido
+
+- **Informe del expediente** (ADR-0018 D11, FR-026, `INCIDENTS_REPORTING.md` §8): un solo HTML
+  autocontenido, sin red, con los diez apartados numerados —conclusión, alcance y calidad de datos,
+  cronología, observado frente a esperado, implicados, hipótesis, evidencia y trazabilidad,
+  contramedidas, verificación y versiones—, la revisión con su hash y la hoja de estilo de la aplicación.
+  Se monta desde los datos del expediente, no desde la pantalla. Lo escrito por una persona va marcado
+  como suyo; «Imprimir → Guardar como PDF» lo convierte en PDF (OQ-P03).
+- **Exportación en CSV**: la cronología (una fila por hecho, con relación, primera desviación y filas de
+  evidencia) y las lecturas del recorte con sus eventos de conexión (fichero, huella y fila), con la
+  revisión en la cabecera. Las lecturas las prepara el Worker (`case-evidence-csv`, solo lee).
+- **Informe del circuito** (3.72.0): opción «Resumen de los expedientes de incidencia», marcada si hay
+  alguno; una fila por expediente con su estado, su síntoma, la conclusión de una persona, las hipótesis
+  confirmadas y las contramedidas.
+- Pruebas: TC-353 (unitaria) y TC-354 (navegador).
+
+## [3.78.0] - 2026-10-17
+
+Entrega 4 de ADR-0018.
+
+### Añadido
+
+- **Hipótesis** (ADR-0018 D6, ALG-015 pasos 7 y 8): cada expediente propone candidatas desde los hechos
+  de su cronología que preceden al síntoma —AGV detenido aguas arriba, pérdida de conexión, AGV sin
+  lecturas, turno o régimen—, cada una con los hechos que la sostienen, lo observado que la contradice
+  (otro AGV ya parado delante cuando se detuvo; lecturas de tags distintos durante el corte) y la
+  comprobación que la separa de las demás. Estado en palabras —es compatible, la contradice algo
+  observado, o abierta—, sin porcentajes; primero las que siguen en pie. La persona añade las suyas y
+  confirma (con la comprobación que hizo) o descarta (con la razón); la decisión se guarda por su clave,
+  no cambia la evidencia y se enseña como suya.
+- **Contramedidas** (D9): acción, responsable, fecha prevista, riesgo y **métrica, la del síntoma**
+  (huecos sin paso por el tag, o silencios del AGV, de al menos tanto), fija desde que se planifica; y su
+  fecha de aplicación, una sola vez.
+- **Verificación** (ALG-024, R-INC-003, OQ-P07): con el expediente pendiente de verificar, «Medir y
+  registrar la verificación» cuenta la métrica una semana antes y otra después de la aplicación con las
+  lecturas del circuito (retenidas o del original archivado), en tiempo cubierto, en producción y sin las
+  ventanas de los demás expedientes, y la compara con una prueba binomial exacta. Propone eficaz,
+  parcial, ineficaz o sin exposición suficiente; la conclusión la escribe la persona al pasar a
+  verificada eficaz o ineficaz.
+- El ciclo de vida usa todo lo anterior: planificar exige una hipótesis en pie —calculada desde el
+  recorte— y una contramedida con responsable; pasar a verificar, la fecha de aplicación; verificada,
+  la verificación registrada.
+- Configuración provisional `incident_case.verification_*` (`CONFIG_SCHEMA.md` §3.5). `binomialTail` se
+  exporta desde `charging.ts` para no duplicar la prueba.
+- Pruebas: TC-349 a TC-351 (unitarias) y TC-352 (navegador).
+
+### Cambiado
+
+- Pasar a «pendiente de verificar» pide solo la fecha de aplicación: la métrica se fija ya al planificar.
+
+## [3.77.0] - 2026-10-17
+
+Entrega 3 de ADR-0018, tras D5.
+
+### Añadido
+
+- **Replay del expediente** (ALG-016, `replay-caso-1`, ADR-0018 D8, FR-023): «Ver el replay» en cada
+  expediente con recorte lo calcula en el Worker sobre el recorte congelado de su revisión vigente (no
+  se calcula al importar). 200 fotogramas por toda la ventana, cada uno con su fase; por AGV, lo
+  **visto** (en un tag; entre dos tags como fracción del tiempo, inferido; en silencio, desconocido; sin
+  datos todavía), lo **esperado** como banda entre el tag al que llegaría a paso lento (p95) y a paso
+  habitual (p50) de cada tramo desde su última lectura —«va por detrás incluso del paso lento» cuando ni
+  así seguiría donde está—, y la **conexión** según el registro del terminal. Los hechos de la
+  cronología caen en su fotograma, y cada uno lleva «Ver en el replay».
+- `buildReplayFrames` admite el intervalo que recorren los fotogramas; sin él, como hasta ahora.
+- Protocolo: `case-replay` (solo lee) y `case-replay-ready`.
+- Medido: 54.000 lecturas de 40 AGV en 3 h, ~0,13 s de cálculo y ~2,4 MB de respuesta.
+- Pruebas: TC-347 (unitaria) y TC-348 (navegador, sobre el caso de TC-012).
+
+### Pendiente
+
+- El estado de zonas cargada/vacía, calles CO y puntos críticos en el replay, y los filtros por AGV,
+  tag o zona (`INCIDENTS_REPORTING.md` §5). Medir el replay en el móvil de referencia.
+- Las entregas 4 a 6.
+
+## [3.76.0] - 2026-10-17
+
+El propietario pidió completar la parte pendiente de D5 antes de la entrega 3.
+
+### Añadido
+
+- **Expedientes del periodo al consolidar** (ADR-0018 D5, R-INC-004, `INCIDENTS_REPORTING.md` §9): la
+  previsualización propone la ventana de cada expediente no descartado que toca el fichero como
+  incidencia excluida —con su ventana recortada al fichero, su AGV y los tags que nombra con los tramos
+  que salen de ellos o llegan a ellos; sin tags, con su AGV o su ventana—. Cada uno lleva la casilla
+  «Excluir su ventana del esperado», marcada por defecto; quitarla apaga «Confirmar y consolidar» hasta
+  volver a previsualizar. Los soltados viajan en el `commit` (`releasedCases`) y entran en la huella de
+  la previsualización. La versión guarda la incidencia (`expediente|<id>`); el expediente no se escribe.
+  Los recortes de ventana de F4 valen también para estas incidencias.
+- Pruebas: TC-345 (unitaria) y TC-346 (navegador).
+
+### Cambiado
+
+- Las incidencias que nacen de un expediente no se ofrecen como punto de partida de otro expediente.
+
+## [3.75.0] - 2026-10-17
+
+El propietario pidió la entrega 2 de ADR-0018 «teniendo en cuenta y adaptando todo el contenido a los
+cambios realizados anteriormente».
+
+### Integrado
+
+- La rama paralela de «Organizar TAG TRACE» (3.68.0 a 3.72.0), que salió del mismo punto de `main` que
+  los expedientes, queda fusionada. Lo de los expedientes pasa detrás: sus versiones son 3.73.0 y
+  3.74.0, sus preguntas OQ-169 a OQ-171 y sus pruebas TC-338 a TC-341.
+
+### Añadido
+
+- **Retroceso desde el síntoma** (ALG-015, `retroceso-1`, ADR-0018 D6 y D7, FR-023): cada expediente
+  con recorte enseña su cronología por fases —antes, durante y después del síntoma—, en orden de tiempo:
+  último y primer paso por cada tag del síntoma frente a lo habitual **antes** de él; transiciones de un
+  AGV entre dos tags seguidos del anillo por encima de la valla de su tramo (R-FLO-007), con la
+  **primera desviación** marcada; silencios de un AGV; cuántos AGV leen durante el síntoma y cuáles no;
+  los cortes del registro del terminal (DS-013, observados); y los cambios de turno y de régimen. Cada
+  hecho dice a cuántos tags del síntoma está por el anillo y lleva las filas que lo sostienen.
+- **Lenguaje**: lo anterior al síntoma lleva `precede` y nada más; lo de durante y después se sitúa en
+  su fase sin relación. Una nota fija dice que «precede» no es importancia ni relación, y la lista de
+  lo que no se revisa (FIFO, calles de carga, la línea y el proceso; y, si faltan, el contexto o el
+  registro de conexiones) se enseña siempre.
+- **Lo declarado en planta** de los tags del síntoma (R-GRA-022, de la rama paralela), en la cronología.
+- **Recorte `recorte-2`**: además de las lecturas congela los eventos del registro de conexiones de la
+  ventana (y el último de antes y el primero de después de cada AGV) y el **contexto**: el anillo y las
+  horquillas del esperado de la versión vigente o, sin memoria, de la instantánea del fichero que cubre
+  el síntoma; régimen, umbrales y lo declarado en planta. Con el mismo recorte, la misma cronología,
+  cambie lo que cambie después. Los recortes de la entrega 1 (`recorte-1`) se siguen leyendo, sin
+  contexto, y la cronología lo dice.
+- **Caso de oro de TC-012** (`docs/golden/TC-012-punto-critico-sin-llegada.md`) en un escenario propio,
+  `tests/support/caso-punto-critico.ts`: un AGV parado trece minutos seis tags antes del punto crítico
+  y un corte de WiFi de otro AGV; la cronología pone los dos como `precede` y no elige.
+- Pruebas: TC-342 y TC-343 (unitarias) y TC-344 (navegador: importar, cargar el registro, consolidar
+  v1, crear el expediente y leer su cronología frente al esperado, sin que nada fuera de los
+  expedientes cambie).
+
+### Cambiado
+
+- El texto del recorte dice además si hay registro de conexiones en la ventana; las pruebas TC-340 y
+  TC-341 esperan esa frase.
+
+### Pendiente
+
+- D5 (la consolidación todavía no propone la ventana de cada expediente) y las entregas 3 a 6.
+- El informe del circuito (3.72.0) todavía no incluye los expedientes: es la entrega 5.
+- Cuando cambie el procedimiento del retroceso habrá que conservar la cronología de `retroceso-1` para
+  enseñar las dos (`VERSIONING.md`); hoy solo existe una versión.
+
+## [3.74.0] - 2026-10-09
+
+El propietario aceptó ADR-0018 y pidió la primera entrega («Acepto el ADR, empieza la entrega 1»).
+
+### Añadido
+
+- **Expedientes de incidencia** (ADR-0018 D1–D5, FR-022, FR-024): una sección nueva al final de
+  Línea y calles. Un expediente se crea desde un síntoma descrito a mano, una incidencia medida (la
+  batería de R-AGV-021), una incidencia excluida de la memoria vigente o un hallazgo de la bandeja, y
+  nace en borrador con su identificador `INC-<circuito>-<aaaammdd>-<nn>`.
+- **Márgenes propuestos** (D4, OQ-P02): antes, el mayor de `incident_case.min_margin_before_ms`, la
+  duración del síntoma y la vuelta mediana; después, el mayor de `incident_case.min_margin_after_ms` y
+  la duración. Provisionales: 30 min a cada lado (`CONFIG_SCHEMA.md` §3.5). En borrador se cambian.
+- **Recorte congelado** (D4): al crear o cambiar la ventana se copian las lecturas de **todos** los AGV
+  del circuito en la ventana con márgenes, con su procedencia, de las lecturas retenidas o, si ya no lo
+  están, del original archivado; una lectura que traen dos exportaciones no se repite. Un fichero cuyas
+  lecturas ya no están se nombra para volver a cargarlo, y sin ninguna lectura el expediente queda sin
+  recorte, en desconocido. Nunca se completa nada.
+- **Revisiones append-only** (D2): cada guardado es una revisión nueva con el hash de la anterior; la
+  revisión guarda solo lo humano y referencias (hash del recorte, versión consolidada vigente,
+  configuración y aplicación). La cadena se comprueba al leer y una rota se dice en rojo.
+- **Ciclo de vida** (D3, OQ-170): cada estado ofrece sus transiciones; las que exigen texto lo piden y
+  las que exigen lo que el expediente todavía no tiene (hipótesis y contramedidas, verificación) salen
+  apagadas con lo que falta. `Discarded` exige razón y es final; `Closed` y `Inconclusive` se reabren
+  con la evidencia nueva. Notas en cualquier estado salvo cerrado o descartado.
+- **Almacén versión 12** con dos tablas propias, `incidentCases` e `incidentEvidence`; borrar el
+  circuito las borra. Solo locales: no viajan en el `.agvproj` (OQ-169).
+- Protocolo: `case-action` (crear, ventana, estado, nota, siempre con la revisión que la persona veía)
+  y `cases-updated`; `views.cases` en cada importación.
+- Vocabulario causal (D6): `causalWordsIn` y una prueba que recorre todos los textos que genera el
+  módulo de expedientes.
+- Pruebas: TC-338 y TC-339 (unitarias) y TC-340 y TC-341 (navegador: el resto del almacén queda byte a
+  byte igual tras crear, anotar, cambiar de estado y descartar, INV-008 y TC-017; y el recorte desde el
+  original archivado).
+
+### Cambiado
+
+- ADR-0018 pasa a **accepted**.
+- `INCIDENT_KIND_TEXT` se exporta desde `incident-battery.ts` para nombrar las incidencias medidas.
+- La revisión en campo expone sus hallazgos con tarjeta (`findings`) para abrir un expediente desde uno.
+
+### Pendiente
+
+- D5: que la consolidación **proponga** la ventana de cada expediente no descartado como incidencia
+  excluida. Hoy el expediente no la propone; la consolidación sigue con R-INC-004 como hasta ahora.
+- Las entregas 2 a 6 de ADR-0018: retroceso y cronología con el caso de oro de TC-012, replay con
+  esperado, hipótesis y contramedidas, informe y casos similares.
+
+## [3.73.0] - 2026-10-09
+
+Numeradas 3.68.0 y 3.69.0 al hacerse; pasan a 3.73.0 y 3.74.0 al integrar el 2026-10-17 la rama
+paralela de «Organizar TAG TRACE» (3.68.0 a 3.72.0, de abajo), que salió del mismo punto de `main`.
+Por lo mismo, sus preguntas pasan de OQ-167–169 a OQ-169–171 y sus pruebas de TC-330–333 a
+TC-338–341.
+
+El propietario pidió empezar el trabajo propio de F5 por el ADR del expediente («sí, empieza por el
+ADR del expediente»).
+
+### Propuesto (sin código)
+
+- **ADR-0018, proposed**: modelo del expediente de incidencia, su ciclo de vida, la evidencia mínima
+  reproducible y el lenguaje de causalidad y correlación, lo que `ROADMAP.md` §F5 pide formalizar
+  antes de construir. Separa el **expediente** (F5) de la **incidencia excluida** de F4, que no
+  cambia; revisiones append-only con solo lo humano y referencias a lo calculado; **recorte
+  congelado** de las lecturas de todos los AGV en la ventana con márgenes, porque la retención las
+  suelta (R-DAT-023); almacén y sección `incidencias/` del `.agvproj` propios, sin escribir la memoria
+  normal (INV-008); la ventana de un expediente se **propone** como incidencia excluida en la
+  siguiente consolidación; cinco etiquetas de relación (`precede`, `es compatible con`, `contradice`,
+  `correlaciona`, `confirmado como causa`), sin probabilidades y con el vocabulario causal prohibido
+  en el texto generado; retroceso, replay, contramedidas, similitud e informe construidos sobre lo
+  que ya existe (replay de F2, batería R-AGV-021, horquillas, cortes de conexión). Incluye cómo cubre
+  cada criterio de G5 y seis entregas.
+- **OQ-169 a OQ-171**: identidad del expediente y bifurcación entre dispositivos, estado `Discarded`
+  y reapertura, y una **contradicción entre documentos** (ALG-015 se llama «Retroceso causal» en
+  `ALGORITHM_CATALOG.md` y `INCIDENTS_REPORTING.md` §4 dice que el orden no es causalidad), que no se
+  toca hasta que decida el propietario. Recomendaciones anotadas en OQ-P02, OQ-P03 y OQ-P07.
+
+### Decidido por el propietario (2026-10-09)
+
+- **OQ-169**: «De momento no va a ver dos dispositivos se mantendrá exclusivamente en la memoria
+  local». El expediente vive solo en el almacén local, no viaja en el `.agvproj` y no tiene
+  bifurcaciones; su identificador es `INC-<circuito>-<aaaammdd>-<nn>`.
+- **OQ-170, OQ-171, OQ-P02, OQ-P03 y OQ-P07**, con la recomendación: `Discarded` y reapertura
+  añadidos al diagrama de `INCIDENTS_REPORTING.md` §7; ALG-015 renombrado «Retroceso desde el
+  síntoma» en `ALGORITHM_CATALOG.md`; márgenes y recorte, informe HTML y CSV, y verificación de
+  contramedidas como en ADR-0018 D4, D11 y D9. ADR-0018 incorpora las seis y sigue `proposed`.
+
+### Gobierno
+
+- `CLAUDE.md` decía que la fase vigente era F4; ahora dice F5, como `project_state.json`.
+## [3.72.0] - 2026-10-17
+
+El propietario: el Resumen «tiene que ser claro, funcional y profesional, con un botón para generar
+un informe con los datos descubiertos» eligiendo qué entra, y pidió mirar «otros programas,
+productos profesionales, estudios de interfaz, hombre-máquina, atención y psicología». Lo revisado y
+lo que se aplica está en `UX_SPEC.md` §4.8.
+
+### Añadido
+
+- **Frase de estado** al abrir el Resumen: la conclusión en una línea antes de las cifras (FR-028),
+  con tono solo si hay riesgo (ISA-101: el color se reserva a lo anormal) y el contexto debajo:
+  cobertura, AGV en el circuito, avisos y hallazgos revisados. Se rehace con cada marca de revisión.
+- **Saltos locales** —Avisos, Anillo, Hallazgos— y el botón **«Generar informe…»**.
+- **Informe del circuito** (FR-026): un cuadro para elegir secciones (la WiFi solo con registro),
+  qué hallazgos (todos con su estado, o solo un estado) y si va el anexo de tablas; genera un solo
+  fichero HTML autocontenido montado desde lo que la pantalla enseña, con la hoja de estilo
+  embebida, los gráficos como imagen o SVG, la conclusión primero, los avisos, los hallazgos por rango
+  con su revisión en campo, las secciones elegidas y la trazabilidad (circuito, fecha, cobertura,
+  ficheros, memoria vigente, versión). Nada sale del dispositivo; «Imprimir → PDF» lo convierte.
+- **Hoja de impresión** de la propia página: la pestaña activa sin barras ni controles.
+
+### Pruebas
+
+- Los recorridos de revisión de las pruebas de navegador (`plano`, `memoria`, `concurrencia`,
+  `valores-planta`, `vistas-diagnostico`) abren el pliegue de limpieza y contexto antes de marcar: desde 3.70.0 esas
+  tarjetas no se pueden pulsar sin abrirlo, como le pasaría a la persona.
+
+### Documentación
+
+- `UX_SPEC.md` §2 y §4.8 nueva (con las referencias y las sugerencias pendientes); `INCIDENTS_REPORTING.md` §8; TC-336 y TC-337; `TRACEABILITY_MATRIX.md`.
+
+## [3.71.0] - 2026-10-17
+
+Cuarta y última entrega de la organización de TAG TRACE (propietario, 2026-10-17: «quiero orden para
+poder ir directo a buscar una anomalía»; «AGV, que es donde se detallan los fallos detectados de cada
+AGV»; «en Tags está todo organizado por los problemas de los tags»).
+
+### Añadido
+
+- **«Problemas detectados»** (`UX_SPEC.md` §4.7) al principio de Tags, AGV y WiFi: el índice de lo
+  que esa pestaña encontró, por tipo, con su rango y su recuento, y el enlace a la sección que lo
+  detalla. Se construye con la misma pasada que la bandeja, así que cuenta lo mismo que ella.
+
+### Cambiado
+
+- **Tags y AGV, los problemas primero.** En Tags, el inventario pasa al final como contexto y «Lo
+  que hay que mirar» abre la pestaña; en AGV, la lectura de cada AGV, los que dejan de leer y el
+  ritmo van antes que la flota y la vida de cada uno.
+- **«AGV que dejan de leer» pasa de Línea y calles a AGV**: es un fallo del vehículo. El CSV de
+  incidencias de Línea y calles sigue trayéndolos.
+
+### Documentación
+
+- `UX_SPEC.md` §2 y §4.7 nueva; TC-335; `TRACEABILITY_MATRIX.md`.
+
+## [3.70.1] - 2026-10-17
+
+### Cambiado
+
+- **Función y área con identidad distinta** (propietario, 2026-10-17: «las áreas tienen que tener una
+  identidad diferente a la de función, porque una función puede pertenecer a un área»). Ya iban en
+  listas distintas (`area`, y `critico` o la columna `funcion`); ahora «Declarado en planta» las
+  etiqueta por separado («función: parada-precisa (montaje llenos 2) · refuerzo con … · áreas: …») en
+  vez de fundir la función con la nota. R-GRA-022 lo recoge.
+
+## [3.70.0] - 2026-10-17
+
+Tercera entrega de la organización de TAG TRACE: el Resumen como puesto de mando (propietario,
+2026-10-17: «se mostrarán los datos importantes y generales, las incidencias importantes y posibles
+avisos; cuando se quiera acceder a alguno te mandará automáticamente a su ubicación»).
+
+### Añadido
+
+- **«Avisos» en el Resumen** (`UX_SPEC.md` §4.6), entre la composición del circuito y el anillo: una
+  lista con la configuración que no se pudo usar (las tarjetas que cada sección plantaba y nadie
+  veía: puntos críticos, cortes de vuelta y calles declarados que no se pudieron usar) y lo que
+  falta o contradice (varios circuitos en el fichero; sin lista del circuito; tags declarados sin
+  lecturas, en otro sitio o leídos sin estar en la lista; sin historial de flota; sin registro de
+  conexiones). Cada aviso lleva a su sitio; sin avisos, lo dice.
+
+### Cambiado
+
+- **La bandeja enseña rango 1 y 2 enteros y pliega el rango 3** («Limpieza y contexto: N
+  hallazgos», un `details` cerrado). «Siguiente pendiente» lo abre si la siguiente tarjeta está
+  dentro, y el filtro por tema lo esconde si se queda vacío. Nada cambia en los recuentos.
+
+### Documentación
+
+- `UX_SPEC.md` §2, §4.5 y §4.6 nueva; TC-334; `TRACEABILITY_MATRIX.md`.
+
+## [3.69.0] - 2026-10-17
+
+Segunda entrega de la organización de TAG TRACE (propietario, 2026-10-17: «wifi si está disponible
+igual»): la WiFi tiene su pestaña y sus hallazgos entran en la bandeja con su rango.
+
+### Añadido
+
+- **Pestaña WiFi**, entre AGV y Tiempos, **solo con un registro de conexiones cargado**: sin él el
+  botón no está, las flechas la saltan y `#wifi` vuelve al Resumen. Contiene todo el estado de
+  conexión que hasta ahora era una subsección de Tiempos: cortes por clase, colectivos, contraste
+  con las ráfagas, mapa con su selector, sitios, terminales ruidosos, los que no reconectan y el
+  registro por AGV. En Tiempos queda «El estado de conexión está en WiFi» o, sin registro, por qué
+  no hay nada que enseñar.
+- **Tema WiFi en el catálogo de hallazgos** (`finding-kinds.ts`). Los cinco tipos del registro
+  (`conexion-no-reconecta`, rango 1; `conexion-sitio`, `conexion-agv`, `conexion-ruidoso`, rango 2;
+  `conexion-colectivo`, rango 3) caían hasta ahora en «contexto» con su identificador en bruto; ahora
+  la bandeja los ordena por su gravedad, el filtro por tema los aísla y «Ver evidencia» lleva a la
+  pestaña WiFi. El tile de hallazgos del Resumen los cuenta como a los demás.
+
+### Documentación
+
+- `UX_SPEC.md` §2 y §4.5; TC-332 y TC-333; `TRACEABILITY_MATRIX.md`.
+
+## [3.68.0] - 2026-10-17
+
+El propietario pidió organizar TAG TRACE: un Resumen que enseñe lo importante y lleve a su sitio,
+Tags y AGV ordenados por problemas, la WiFi aparte cuando esté cargada, y que el circuito guarde las
+**áreas** y la **función** de cada tag y las diga solo cuando hay riesgo, con su refuerzo. Son cuatro
+entregas (áreas y función; WiFi; Resumen; Tags y AGV); esta es la primera.
+
+### Añadido
+
+- **Lista `area`** (R-GRA-022, `CONFIG_SCHEMA.md` §3.8): a qué áreas gestionadas por el servidor
+  pertenece cada tag, con el nombre en `grupo` y una fila por tag y área. Se guarda con el circuito
+  como las demás listas y la plantilla de Excel la enseña con su propósito.
+- **«Declarado en planta» con las áreas y el refuerzo por su lado.** La línea que acompaña a cada
+  tarjeta de hallazgo que nombra un tag, y al expediente del tag, dice ahora «áreas: …» y «refuerzo
+  con 58026 (anterior) y 58028 (siguiente)» en vez de solo los números: una omisión en un tag
+  reforzado se lee distinta si el compañero de delante o de detrás sigue leyéndose (R-GRA-016).
+  Nada cambia en un tag sin hallazgo: la función y las áreas se dicen solo con riesgo.
+
+### Documentación
+
+- R-GRA-022 nueva; TC-330 y TC-331; `UX_SPEC.md` §5.9; `TRACEABILITY_MATRIX.md`.
+
+## [3.67.1] - 2026-10-09
+
+El propietario aportó el registro de conexiones y las lecturas de otro circuito (tres recorridos con
+flotas propias bajo un mismo nombre) y pidió apuntar dos preguntas que salieron del análisis. El
+análisis y sus ficheros se hicieron fuera del repositorio; aquí solo entran las preguntas, sin
+identificadores de planta.
+
+### Documentación
+
+- **OQ-167** nueva: ¿`PARADA FIJA POR TAG (11)` es la traza de un tag de función `parada`? En los
+  datos aparece solo en el segundo en que un AGV lee un tag de otro recorrido. Recomendación: usarlo
+  como evidencia observada de salida del recorrido y proponer ese tag como punto crítico `parada`,
+  cuando el propietario lo confirme.
+- **OQ-168** nueva, contradicción con OQ-162: LECTURAS por AGV trae lecturas de tags `Sin asignar`
+  que el informe ampliado del mismo periodo no trae. OQ-162 no se toca hasta que decida el
+  propietario.
+
 ## [3.67.0] - 2026-10-08
 
 Tras fusionar la PR #15 (3.66.0, `43f0799`), el propietario precisó la intención del color: «para no

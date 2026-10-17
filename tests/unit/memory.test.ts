@@ -33,10 +33,13 @@ import {
   withArchivedLineages,
   withConsolidated,
   withIncoming,
+  caseIncidentKey,
+  type CaseExclusion,
   type ConsolidatedVersion,
   type ConsolidationInput,
   type LineageRef,
 } from "../../src/domain/memory.js";
+import { previewFingerprint } from "../../src/domain/consolidation-fingerprint.js";
 import type { ReviewEntry } from "../../src/domain/review.js";
 import { compareSnapshots, buildSnapshot, type CircuitSnapshot, type SnapshotFinding, type SnapshotVertex } from "../../src/domain/snapshot.js";
 
@@ -629,5 +632,64 @@ describe("recortes de ventana · OQ-148", () => {
     const plain = await consolidate(previewConsolidation(input({ snapshot })), { ...CONTEXT, snapshot });
     const empty = await consolidate(previewConsolidation(input({ snapshot, cuts: [] })), { ...CONTEXT, snapshot });
     expect(empty.hash).toBe(plain.hash);
+  });
+});
+
+describe("expedientes propuestos como incidencia excluida (ADR-0018 D5)", () => {
+  const caseEntry = (overrides: Partial<CaseExclusion> = {}): CaseExclusion => ({
+    caseId: "INC-c-20260101-01",
+    title: "Punto crítico sin llegada",
+    stateText: "investigando",
+    from: 0.4 * DAY,
+    to: 0.5 * DAY,
+    tagIds: ["T003"],
+    agvId: "AGV-01",
+    ...overrides,
+  });
+
+  it("un expediente que toca el fichero se propone y entra como incidencia, con su ventana, su AGV y lo que toca", () => {
+    const preview = previewConsolidation(input({ cases: [caseEntry()] }));
+    expect(preview.proposedCases).toEqual([{ ...caseEntry(), kept: true }]);
+    const incident = preview.incidents?.find((entry) => entry.key === caseIncidentKey("INC-c-20260101-01"));
+    expect(incident).toMatchObject({ kind: "expediente", figure: "investigando", window: { from: 0.4 * DAY, to: 0.5 * DAY }, agvId: "AGV-01" });
+    expect(incident?.title).toBe("Expediente INC-c-20260101-01: Punto crítico sin llegada");
+    // El tag y los tramos que entran y salen de él, como cualquier incidencia (R-INC-004).
+    expect(incident?.subjects).toContain("vertice|T003");
+    expect(incident?.subjects.some((subject) => subject.startsWith("arista|T002|T003"))).toBe(true);
+    expect(incident?.subjects.some((subject) => subject.startsWith("arista|T003|T004"))).toBe(true);
+    expect(preview.blockers).toEqual([]);
+  });
+
+  it("soltado por la persona, se enseña sin marcar y no excluye nada", () => {
+    const preview = previewConsolidation(input({ cases: [caseEntry()], releasedCases: ["INC-c-20260101-01"] }));
+    expect(preview.proposedCases?.[0]?.kept).toBe(false);
+    expect(preview.incidents?.some((entry) => entry.kind === "expediente")).toBe(false);
+  });
+
+  it("la ventana se recorta al fichero, uno fuera no se propone, y sin tags no toca el grafo", () => {
+    const preview = previewConsolidation(
+      input({
+        cases: [
+          caseEntry({ caseId: "a", from: -0.2 * DAY, to: 0.1 * DAY, tagIds: [], agvId: null }),
+          caseEntry({ caseId: "fuera", from: 2 * DAY, to: 2.1 * DAY }),
+        ],
+      }),
+    );
+    expect(preview.proposedCases?.map((entry) => entry.caseId)).toEqual(["a"]);
+    const incident = preview.incidents?.find((entry) => entry.key === caseIncidentKey("a"));
+    expect(incident).toMatchObject({ subjects: [], window: { from: 0, to: 0.1 * DAY } });
+    expect(incident?.agvId).toBeUndefined();
+  });
+
+  it("lo que se suelta cambia la huella: confirmar exige haber visto lo mismo", async () => {
+    const kept = await previewFingerprint(previewConsolidation(input({ cases: [caseEntry()] })));
+    const released = await previewFingerprint(previewConsolidation(input({ cases: [caseEntry()], releasedCases: ["INC-c-20260101-01"] })));
+    expect(kept).not.toBe(released);
+  });
+
+  it("la versión guarda la incidencia del expediente, aparte del esperado", async () => {
+    const snapshot = snap();
+    const version = await consolidate(previewConsolidation(input({ snapshot, cases: [caseEntry()] })), { ...CONTEXT, snapshot });
+    expect(version.incidents?.map((entry) => entry.key)).toContain(caseIncidentKey("INC-c-20260101-01"));
   });
 });

@@ -1,8 +1,8 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.2.0
+version: 0.11.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-10-17
 ---
 
 # Incidencias, replay e informes
@@ -39,6 +39,11 @@ El usuario define el instante/intervalo del síntoma y el sistema propone márge
 | Contramedidas | acción, responsable, fecha, estado, riesgo y verificación prevista |
 | Verificación | periodo posterior, métrica antes/después y conclusión humana |
 
+**Implementado desde 3.74.0 (ADR-0018, entrega 1):** identidad, síntoma con ventana y márgenes,
+origen, recorte congelado de lecturas con su procedencia, referencias a la versión consolidada, la
+configuración y la aplicación, notas, estado e historial de revisiones. Hipótesis, contramedidas,
+verificación, comparación, replay y casos similares llegan en las entregas siguientes.
+
 ## 4. Retroceso desde el síntoma
 
 El análisis trabaja hacia atrás en tiempo y topología:
@@ -52,9 +57,24 @@ El análisis trabaja hacia atrás en tiempo y topología:
 7. construir hipótesis ordenadas con evidencia a favor y en contra;
 8. señalar qué comprobación discrimina mejor entre hipótesis.
 
+**Implementado desde 3.75.0 (ALG-015, `retroceso-1`):** los pasos 1 a 6, salvo FIFO, calles de carga
+y proceso, que la cronología declara como no revisados. Los pasos 7 y 8 son de las hipótesis (entrega 4).
+Lo habitual de un paso por el tag del síntoma se mide antes de él. Lo anterior al síntoma lleva
+`precede`; lo de durante y después se sitúa en su fase sin relación. **Desde 3.78.0**, los pasos 7 y 8:
+hipótesis candidatas con evidencia a favor y en contra (`es compatible con`, `contradice`), ordenadas
+sin probabilidades, cada una con la comprobación que la discrimina; la persona añade las suyas y
+confirma o descarta con texto. Contramedidas con la métrica del síntoma y verificación antes/después
+(ALG-024) que propone y no concluye.
+
 El orden no representa causalidad demostrada. La interfaz debe distinguir `precede`, `correlaciona`, `es compatible con` y `confirmado como causa`.
 
 ## 5. Replay multi-AGV
+
+**Implementado en el expediente desde 3.77.0 (ALG-016, `replay-caso-1`):** posición vista, tránsito
+como fracción de tiempo, silencio y sin datos; la capa esperada como banda entre el paso lento (p95) y
+el habitual (p50) desde la última lectura, con «por detrás de lo esperado»; la conexión del registro del
+terminal; y los hechos de la cronología en su fotograma, con «Ver en el replay» desde cada uno. Falta el
+estado de zonas cargada/vacía, calles CO y puntos críticos, y el filtro por AGV, tag o zona.
 
 El replay muestra por instante:
 
@@ -73,6 +93,17 @@ interfaz debe representarla como banda y no como punto. El usuario puede filtrar
 
 La similitud utiliza características explícitas: zona, síntoma, duración, patrón colectivo, AGV/cohorte, tags, secuencia, horario, CO/FIFO y diagnóstico confirmado. El resultado debe explicar coincidencias y diferencias. No puede sugerir que una causa anterior sea la causa actual sin nueva evidencia.
 
+**Implementado desde 3.80.0 (ADR-0018 D10, ALG-017 `similitud-1`):** cada expediente lleva «Casos
+parecidos» con los demás del mismo circuito, sin los descartados. Cada característica dice igual,
+parecido (con su diferencia), distinto o sin dato: síntoma, tags del síntoma, zona y función
+declaradas, duración (parecida si la larga no pasa de `incident_case.similarity_duration_ratio` veces la
+corta), hora del día (con la tolerancia de mismo instante), turno, AGV que preceden y cuántos, lo que
+precede, primera desviación, calles de carga y FIFO (sin dato todavía) y diagnóstico confirmado. Se
+ordena por cuántas coinciden, con el mismo peso, y a igualdad el más reciente; no hay puntuación oculta.
+Lo confirmado en otro caso se enseña aparte como «Confirmado en aquel caso: … No es evidencia para
+este.» y no cambia nada del actual. Los hechos del caso que se repiten en otros se cuentan, sin
+llamarlo correlación: para eso falta medir cuánto ocurren fuera de las incidencias (OQ-172).
+
 ## 7. Estados
 
 ```mermaid
@@ -87,11 +118,26 @@ stateDiagram-v2
   Investigating --> Inconclusive
   VerifiedEffective --> Closed
   VerifiedIneffective --> Investigating
+  Draft --> Discarded
+  UnderReview --> Discarded
+  Closed --> Investigating
+  Inconclusive --> Investigating
 ```
 
 Puede cerrarse como `inconclusive` conservando lo aprendido y la evidencia que falta.
 
+Desde el 2026-10-09 (OQ-170, ADR-0018 D3): `Discarded` es «no es una incidencia» (por ejemplo, una
+parada planificada que nadie anotó), exige una razón y no propone exclusión del esperado; un
+expediente `Closed` o `Inconclusive` se reabre en `Investigating` cuando aparece evidencia nueva, como
+revisión nueva. Nada se borra. El expediente vive solo en el almacén local del dispositivo (OQ-169).
+
 ## 8. Informe vivo
+
+**Implementado desde 3.79.0 (ADR-0018 D11):** «Informe del expediente» descarga un HTML autocontenido
+con los diez apartados de abajo, numerados, montado desde la revisión vigente y lo calculado de su
+recorte, con la revisión y su hash; «Cronología (CSV)» y «Lecturas del recorte (CSV)» exportan lo que lo
+sostiene. El PDF sale de imprimir el HTML. El informe del circuito (3.72.0) puede llevar un resumen de
+los expedientes, uno por fila.
 
 El informe se regenera desde el expediente y contiene:
 
@@ -108,8 +154,12 @@ El informe se regenera desde el expediente y contiene:
 
 Una exportación es una instantánea; el expediente local continúa vivo. El informe no se publica en GitHub.
 
+Desde 3.72.0 existe el **informe del circuito** (FR-026, `UX_SPEC.md` §4.8): un HTML autocontenido con la conclusión, los avisos, los hallazgos con su estado de revisión y las secciones elegidas, montado desde lo que la aplicación enseña. El informe del expediente de una incidencia, con los diez puntos de arriba, sigue pendiente de F5.
+
 ## 9. Relación con consolidación
 
 - Crear, guardar o cerrar una incidencia no altera la memoria normal.
-- El periodo marcado como incidencia queda excluido del entrenamiento del esperado por defecto.
+- El periodo marcado como incidencia queda excluido del entrenamiento del esperado por defecto. Desde
+  3.76.0 (ADR-0018 D5) la previsualización de la consolidación propone la ventana de cada expediente
+  no descartado que toque el fichero como incidencia excluida, y la persona la puede soltar.
 - Un aprendizaje general puede proponerse posteriormente como cambio de regla/configuración, pero requiere una decisión y consolidación separadas.

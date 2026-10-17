@@ -531,7 +531,7 @@ function logFactorial(n: number): number {
 }
 
 /** P(X ≤ k) o P(X ≥ k) con X ~ Binomial(n, p), sumando en logaritmos. */
-function binomialTail(k: number, n: number, p: number, side: "lower" | "upper"): number {
+export function binomialTail(k: number, n: number, p: number, side: "lower" | "upper"): number {
   if (n <= 0) return 1;
   const from = side === "lower" ? 0 : k;
   const to = side === "lower" ? k : n;

@@ -43,6 +43,12 @@ import type { UndeclaredTag } from "../domain/undeclared-tags.js";
 import type { ListCleanup } from "../domain/list-cleanup.js";
 import type { LineFeed } from "../domain/line-feed.js";
 import type { Incident, IncidentBattery, IncidentRecord } from "../domain/incident-battery.js";
+import type { Chronology } from "../domain/case-backtrack.js";
+import type { CaseReplay } from "../domain/replay.js";
+import type { HypothesisView } from "../domain/case-hypotheses.js";
+import type { CaseMetric } from "../domain/case-verification.js";
+import type { CaseSimilarity } from "../domain/case-similarity.js";
+import type { CaseChange, CaseOrigin, CaseRevision, CaseState, CaseWindow, TransitionOption } from "../domain/incident-case.js";
 import type { CircuitOrder } from "../domain/circuit-order.js";
 import type { AgvDossier, TagDossier } from "../domain/dossier.js";
 import type { ReadMatrix } from "../domain/read-matrix.js";
@@ -254,6 +260,11 @@ export interface ConsolidateMessage {
    */
   readonly cuts?: readonly { readonly incidentKey: string; readonly from: number; readonly to: number; readonly agvId?: string }[];
   /**
+   * Los expedientes cuya ventana la persona **no** quiere excluir del esperado (ADR-0018 D5), por su
+   * identificador, en `preview` y en `commit`. Por defecto se excluye la de todos los no descartados.
+   */
+  readonly releasedCases?: readonly string[];
+  /**
    * Solo en `commit`: la huella (`previewFingerprint`) de la previsualización que la persona vio y
    * confirmó. El Worker rehace la previsualización desde el almacén y, si su huella no coincide,
    * responde `error` sin escribir: lo confirmado tiene que ser lo que se enseñó.
@@ -347,7 +358,98 @@ export interface CompareVersionsMessage {
   readonly to: number;
 }
 
+/**
+ * Lo que una persona confirma en un expediente (F5, ADR-0018). El Worker no decide nada: valida contra
+ * la revisión guardada y escribe una revisión nueva, append-only. Toda acción sobre un expediente que
+ * ya existe lleva el número de la revisión que la persona estaba viendo: si ya no es la vigente, no se
+ * escribe nada.
+ */
+export type CaseAction =
+  | {
+      readonly kind: "crear";
+      readonly title: string;
+      readonly symptom: string;
+      readonly origin: CaseOrigin;
+      readonly agvId: string | null;
+      readonly tagIds: readonly string[];
+      readonly symptomFrom: number;
+      readonly symptomTo: number;
+      readonly author: string | null;
+    }
+  | {
+      readonly kind: "ventana";
+      readonly caseId: string;
+      readonly expectedRevision: number;
+      readonly window: CaseWindow;
+      readonly author: string | null;
+    }
+  | {
+      readonly kind: "estado";
+      readonly caseId: string;
+      readonly expectedRevision: number;
+      readonly to: CaseState;
+      readonly text: string | null;
+      readonly author: string | null;
+    }
+  | { readonly kind: "nota"; readonly caseId: string; readonly expectedRevision: number; readonly text: string; readonly author: string | null }
+  /** Una hipótesis escrita por la persona (D6). */
+  | { readonly kind: "hipotesis"; readonly caseId: string; readonly expectedRevision: number; readonly text: string; readonly author: string | null }
+  /** Confirmar (con la comprobación) o descartar (con su razón) una hipótesis, por su clave. */
+  | {
+      readonly kind: "decidir-hipotesis";
+      readonly caseId: string;
+      readonly expectedRevision: number;
+      readonly key: string;
+      readonly state: "confirmada" | "descartada";
+      readonly note: string;
+      readonly author: string | null;
+    }
+  /** Una contramedida con su métrica (D9). */
+  | {
+      readonly kind: "contramedida";
+      readonly caseId: string;
+      readonly expectedRevision: number;
+      readonly countermeasure: { readonly action: string; readonly owner: string; readonly plannedAt: number; readonly risk: string; readonly metric: CaseMetric };
+      readonly author: string | null;
+    }
+  /** La fecha en que se aplicó una contramedida. */
+  | { readonly kind: "aplicar"; readonly caseId: string; readonly expectedRevision: number; readonly countermeasureId: string; readonly appliedAt: number; readonly author: string | null }
+  /** Medir y registrar la verificación de una contramedida aplicada. */
+  | { readonly kind: "verificar"; readonly caseId: string; readonly expectedRevision: number; readonly countermeasureId: string; readonly author: string | null };
+
+export interface CaseActionMessage {
+  readonly type: "case-action";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly action: CaseAction;
+}
+
+/**
+ * Pide el replay de un expediente (ALG-016, ADR-0018 D8). Solo lee: se calcula en el Worker sobre el
+ * recorte congelado y no escribe nada.
+ */
+export interface CaseReplayMessage {
+  readonly type: "case-replay";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly caseId: string;
+}
+
+/** Pide las lecturas del recorte de un expediente en CSV (ADR-0018 D11). Solo lee. */
+export interface CaseEvidenceCsvMessage {
+  readonly type: "case-evidence-csv";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly caseId: string;
+}
+
 export type ToWorker =
+  | CaseEvidenceCsvMessage
+  | CaseReplayMessage
+  | CaseActionMessage
   | CompareVersionsMessage
   | PlantValueMessage
   | PlanActionMessage
@@ -857,6 +959,8 @@ export interface CircuitViews {
    * El Worker lo manda en cada importación.
    */
   readonly plantValues?: PlantValuesView;
+  /** Los expedientes de incidencia del circuito (F5, ADR-0018). Ausente sin almacén local. */
+  readonly cases?: CaseViews;
   /**
    * Comparación entre el primer y el último periodo cubiertos (R-DAT-016, R-AGV-013). Solo cuando
    * el circuito tiene listas de planta cargadas **y** al menos dos periodos distantes: con una sola
@@ -945,6 +1049,91 @@ export interface PlanViews {
   readonly summary: { readonly locations: readonly LocationSummary[]; readonly edges: readonly EdgeSummary[] } | null;
   /** Cambios que el Worker propone con su evidencia; ninguno está escrito. */
   readonly proposals: readonly PlanProposal[];
+}
+
+/** Un expediente tal como lo enseña la interfaz: todo calculado en el Worker. */
+export interface CaseView {
+  /** La revisión vigente, entera. */
+  readonly current: CaseRevision;
+  /** Todas las revisiones, de la primera a la última, en resumen. */
+  readonly history: readonly {
+    readonly revision: number;
+    readonly createdAt: number;
+    readonly author: string | null;
+    readonly change: CaseChange;
+    readonly state: CaseState;
+  }[];
+  /** Los cambios de estado posibles, con lo que falta para cada uno (D3). */
+  readonly transitions: readonly TransitionOption[];
+  /** La ventana completa, con márgenes. */
+  readonly span: { readonly from: number; readonly to: number };
+  readonly originText: string;
+  readonly evidenceText: string;
+  /** Problemas de integridad de la cadena de revisiones; vacío si está entera. */
+  readonly integrity: readonly string[];
+  /** El retroceso desde el síntoma sobre el recorte congelado (ALG-015); `null` sin recorte. */
+  readonly chronology: Chronology | null;
+  /** De dónde salen el anillo y las horquillas del retroceso, en palabras. */
+  readonly contextText: string;
+  /** Las hipótesis del expediente (D6): las del programa con su evidencia y las de la persona. */
+  readonly hypotheses: readonly HypothesisView[];
+  /** La métrica que propone el programa para una contramedida: la del síntoma (D9). */
+  readonly metricProposal: CaseMetric | null;
+  /** Los casos parecidos del mismo circuito, con cada característica comparada (ALG-017, D10). */
+  readonly similar: CaseSimilarity | null;
+}
+
+/** Una incidencia excluida de la versión vigente, como punto de partida de un expediente (D1). */
+export interface ExcludedIncidentStart {
+  readonly version: number;
+  readonly versionHash: string;
+  readonly key: string;
+  readonly label: string;
+  readonly agvId: string | null;
+  readonly tagIds: readonly string[];
+  readonly from: number | null;
+  readonly to: number | null;
+}
+
+export interface CaseViews {
+  /** Los expedientes del circuito, el más reciente primero. */
+  readonly cases: readonly CaseView[];
+  /** Las incidencias excluidas de la versión vigente, para abrir un expediente desde ellas. */
+  readonly excluded: readonly ExcludedIncidentStart[];
+  /** Lo que ocupan revisiones y recortes, comprimidos. */
+  readonly storedBytes: number;
+  /** Los márgenes mínimos de la configuración y la vuelta mediana del último fichero medido (D4). */
+  readonly margins: { readonly minBeforeMs: number; readonly minAfterMs: number; readonly lapMs: number | null; readonly configState: string };
+}
+
+/** Respuesta a `case-action`: lo escrito ya está en el almacén. */
+export interface CasesUpdatedMessage extends Envelope {
+  readonly type: "cases-updated";
+  readonly circuitId: string;
+  /** Lo escrito, en palabras. */
+  readonly written: string;
+  /** El expediente tocado. */
+  readonly caseId: string;
+  readonly cases: CaseViews;
+}
+
+/** Respuesta a `case-replay`: el replay del expediente, ya calculado. Nada se ha escrito. */
+export interface CaseReplayReadyMessage extends Envelope {
+  readonly type: "case-replay-ready";
+  readonly circuitId: string;
+  readonly caseId: string;
+  /** La revisión con cuyo recorte se calculó. */
+  readonly revision: number;
+  readonly replay: CaseReplay;
+}
+
+/** Respuesta a `case-evidence-csv`: el CSV, para que la persona lo descargue. Nada se ha escrito. */
+export interface CaseEvidenceCsvReadyMessage extends Envelope {
+  readonly type: "case-evidence-csv-ready";
+  readonly circuitId: string;
+  readonly caseId: string;
+  readonly revision: number;
+  readonly csv: string;
 }
 
 export interface VersionsComparedMessage extends Envelope {
@@ -1062,6 +1251,9 @@ export type FromWorker =
   | ForkResolvedMessage
   | PlanUpdatedMessage
   | PlantValuesUpdatedMessage
+  | CasesUpdatedMessage
+  | CaseReplayReadyMessage
+  | CaseEvidenceCsvReadyMessage
   | VersionsComparedMessage;
 
 /**

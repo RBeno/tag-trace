@@ -23,7 +23,7 @@ describe("lo declarado en planta de cada tag", () => {
       { list: "zona", entries: [entry("400", "", "vacio", "SIN CARRO")] },
     ]);
     expect(info.get("100")).toBe("GIRO DERECHA · LLENO");
-    expect(info.get("200")).toBe("PARADA CONDICIONADA PRECISA · LLENO · PICKING · parada-precisa");
+    expect(info.get("200")).toBe("PARADA CONDICIONADA PRECISA · LLENO · PICKING · función: parada-precisa");
     expect(info.get("300")).toBe("calle-1 (parada-precisa)");
     expect(info.get("301")).toBe("calle-1");
     expect(info.has("101")).toBe(false);
@@ -39,8 +39,31 @@ describe("lo declarado en planta de cada tag", () => {
         ["201", ["200"]],
       ]),
     );
-    expect(info.get("200")).toBe("parada-precisa · refuerzo con 201");
-    expect(info.get("201")).toBe("parada-precisa · refuerzo con 200");
+    expect(info.get("200")).toBe("función: parada-precisa · refuerzo con 201");
+    expect(info.get("201")).toBe("función: parada-precisa · refuerzo con 200");
+  });
+
+  it("con los grupos en el orden del circuito, el refuerzo dice de qué lado está cada compañero (R-GRA-016)", () => {
+    const info = declaredTagInfo(
+      [{ list: "critico", entries: [entry("200", "parada-precisa"), entry("201", "parada-precisa"), entry("202", "parada-precisa")] }],
+      [{ funcion: "parada-precisa", tags: ["200", "201", "202"] }],
+    );
+    expect(info.get("200")).toBe("función: parada-precisa · refuerzo con 201 (siguiente) y 202 (siguiente)");
+    expect(info.get("201")).toBe("función: parada-precisa · refuerzo con 200 (anterior) y 202 (siguiente)");
+    expect(info.get("202")).toBe("función: parada-precisa · refuerzo con 200 (anterior) y 201 (anterior)");
+  });
+
+  it("las áreas del servidor se juntan en un solo dato, con identidad distinta de la función, y un tag sin área no lo lleva (R-GRA-022)", () => {
+    const info = declaredTagInfo([
+      { list: "circuito", entries: [entry("700", "parada-precisa", "", "PARADA CONDICIONADA PRECISA"), entry("701")] },
+      {
+        list: "area",
+        entries: [entry("700", "", "cruce salida SE6/8"), entry("700", "", "SE6/8 lleno - ME3 vacio"), entry("700", "", "Cruce salida se6/8"), entry("702", "", "bombilla")],
+      },
+    ]);
+    expect(info.get("700")).toBe("PARADA CONDICIONADA PRECISA · función: parada-precisa · áreas: cruce salida SE6/8, SE6/8 lleno - ME3 vacio");
+    expect(info.get("702")).toBe("área: bombilla");
+    expect(info.has("701")).toBe(false);
   });
 
   it("la función crítica lleva su grupo, y la lista de noche se dice", () => {
@@ -48,7 +71,7 @@ describe("lo declarado en planta de cada tag", () => {
       { list: "critico", entries: [entry("500", "cambio-de-mtc", "C.O.1", "MTC 1 C.O")] },
       { list: "noche", entries: [entry("600")] },
     ]);
-    expect(info.get("500")).toBe("MTC 1 C.O · cambio-de-mtc (C.O.1)");
+    expect(info.get("500")).toBe("MTC 1 C.O · función: cambio-de-mtc (C.O.1)");
     expect(info.get("600")).toBe("tag de noche declarado");
   });
 

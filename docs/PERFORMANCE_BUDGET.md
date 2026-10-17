@@ -1,8 +1,8 @@
 ---
 document_id: TT-PERF-001
-version: 0.5.0
+version: 0.6.0
 status: provisional-budget
-last_updated: 2026-09-11
+last_updated: 2026-10-17
 ---
 
 # Presupuesto de rendimiento y recursos
@@ -61,7 +61,7 @@ el hilo principal bloquea cualquier teléfono, por bueno que sea.
 | Pico RAM PERF-D2 | ≤250 MiB | Móvil de referencia |
 | Pico RAM PERF-D3 | ≤512 MiB | PC de referencia; móvil degradará/advertirá según capacidad |
 | Reapertura de memoria consolidada | <3 s | Proyecto piloto en dispositivo de referencia |
-| Primera vista de replay PERF-D4 | <2 s | Tras índices disponibles |
+| Primera vista de replay PERF-D4 | <2 s | Tras índices disponibles. Replay de un expediente (3.77.0): 54.000 lecturas de 40 AGV en 3 h y 200 fotogramas, ~0,13 s de cálculo en Node en el PC de referencia y ~2,4 MB de JSON al hilo principal; sin medir todavía en el móvil |
 | Animación de replay | objetivo 30 fps; mínimo usable 20 fps | Vista y número de capas definidos |
 | Incremento consolidado normal | <5 % del bruto equivalente | Excluye recorte deliberado de incidencias |
 

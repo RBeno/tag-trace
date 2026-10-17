@@ -1,8 +1,8 @@
 ---
 document_id: TT-MEMORY-002
-version: 0.12.2
+version: 0.14.0
 status: baseline-candidate
-last_updated: 2026-09-27
+last_updated: 2026-10-17
 ---
 
 # Memoria longitudinal y consolidación
@@ -57,6 +57,14 @@ mediana, cuantiles/MAD, confianza y versión
 Los AGV que coinciden con el consenso apuntan al estado común. Solo se guardan deltas por AGV cuando divergen: qué cambió, desde cuándo, cuánto soporte existe y cuándo volvió a coincidir. Esto evita almacenar el mismo grafo decenas de veces.
 
 ## 6. Flujo del botón «Consolidar periodo»
+
+**Expedientes del periodo (3.76.0, ADR-0018 D5).** Cada expediente de incidencia no descartado cuya
+ventana (con márgenes) toca el fichero se **propone** como incidencia excluida: entra como una más, con
+la ventana recortada al fichero, su AGV si lo tiene y los tags que nombra con los tramos que salen de
+ellos o llegan a ellos (sin tags no toca el grafo, como R-INC-004). La persona puede soltar cualquiera
+quitando su casilla y volviendo a previsualizar; los soltados viajan en el `commit` (`releasedCases`) y
+entran en la huella. La versión guarda la incidencia del expediente; el expediente no se escribe.
+
 
 ```mermaid
 flowchart TD
@@ -253,6 +261,11 @@ Lo que dicen las cifras:
 comprimir: la versión pasa del 4,9–6,4 % al 9,3–11,1 % del CSV, y comprimida del 0,63–0,85 % al
 0,75–1,03 %. El objetivo aceptado es el 5 % sobre las versiones guardadas comprimidas, así que
 sigue dentro con margen.
+
+**Expedientes (3.74.0, ADR-0018).** El recorte de lecturas de cada expediente queda fuera del 5 %
+(`PERFORMANCE_BUDGET.md`: «excluye recorte deliberado de incidencias») y se guarda comprimido en sus
+propias tablas; la sección de expedientes dice lo que ocupan. Todavía no se ha medido contra el
+circuito de auditoría ni se ha fijado un límite.
 
 **Decidido el 2026-09-27 (OQ-145):** se acepta el objetivo del 5 % sobre el CSV, con las versiones
 guardadas comprimidas; las lecturas retenidas también se guardan comprimidas, y cada fichero
