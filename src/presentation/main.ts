@@ -85,6 +85,7 @@ import { exportProjectPlan, importProjectPlan } from "../persistence/project-pla
 import { exportProjectPlantValues, importProjectPlantValues } from "../persistence/project-plant-values.js";
 import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots, STORE_VERSION } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
+import { createBenchPanel, type BenchObserver } from "./bench-ui.js";
 import { startUpdates } from "./update.js";
 import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
 import { createPlanPanel, planRelationText } from "./plan-ui.js";
@@ -243,6 +244,18 @@ const subtitle = element(
 const versionNote = element("p", "muted app-version", `Versión ${APP_VERSION}`);
 header.append(title, subtitle, versionNote);
 const updates = startUpdates({ currentVersion: APP_VERSION, storeVersion: STORE_VERSION });
+
+// El banco de medida (F6): la importación de verdad, sin circuito, observada desde la página.
+let benchObserver: BenchObserver | null = null;
+const benchPanel = createBenchPanel({
+  startImport: (file) => startImport(file, undefined, true),
+  cancel: () => cancelButton.click(),
+  observe: (observer) => {
+    benchObserver = observer;
+  },
+  appVersion: APP_VERSION,
+  saveDownload: (text, type, name) => saveDownload(text, type, name),
+});
 
 /**
  * Un selector de fichero que parece un botón propio. El `input` nativo sigue existiendo con su
@@ -695,7 +708,7 @@ const casesPanel = createCasesPanel({
   get("memoria").append(memoryPanel.node, planPanel.node);
   // Datos: lo que se carga y lo que entró, tal cual: listas, copia, fuente, cobertura y perfil,
   // replay y lecturas.
-  get("datos").append(listsPanel, plantValuesPanel.node, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel);
+  get("datos").append(listsPanel, plantValuesPanel.node, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel, benchPanel.node);
   const empty = element("p", "muted tab-empty", "Todavía no hay análisis: elige un fichero de lecturas y escribe el circuito.");
   get("resumen").prepend(empty);
 }
@@ -975,6 +988,7 @@ function setBusy(busy: boolean): void {
   planPanel.setBusy(busy);
   plantValuesPanel.setBusy(busy);
   casesPanel.setBusy(busy);
+  benchPanel.setBusy(busy);
   cancelButton.hidden = !busy || state.memoryJob !== null || state.planJob || state.plantValueJob || state.caseJob;
   progressPanel.hidden = !busy;
   workerBusy = busy;
@@ -1021,9 +1035,11 @@ function handleMessage(message: FromWorker): void {
           ? `${message.note} — ${message.done.toLocaleString("es-ES")} de ${message.total.toLocaleString("es-ES")}`
           : message.note;
       progressBar.value = message.total === 0 ? 0 : message.done / message.total;
+      benchObserver?.progress(message.done, message.total);
       return;
 
     case "complete": {
+      benchObserver?.arrived();
       state.summary = message.summary;
       state.readings = message.readings;
       state.visible = message.readings;
@@ -1067,6 +1083,7 @@ function handleMessage(message: FromWorker): void {
       appendRows();
       setBusy(false);
       disposeWorker();
+      benchObserver?.rendered();
       return;
     }
 
@@ -1107,6 +1124,7 @@ function handleMessage(message: FromWorker): void {
         lines.push(...message.sampleRows.map((row) => `Ejemplo: ${row}`));
       }
       showMessage("error", `No se pudo importar (${message.code})`, lines);
+      benchObserver?.failed(message.cause);
       // Una fuente ambigua no es una fuente rota: es una que el programa no puede resolver solo.
       // Se ofrece la salida en lugar de dejar al usuario con una instrucción que no puede seguir.
       if (message.code === "DATE_AMBIGUOUS" && state.file !== null) offerFieldOrder(state.file);
@@ -1215,6 +1233,7 @@ function handleMessage(message: FromWorker): void {
         showMessage("info", "Importación cancelada", [
           "No se ha cambiado nada.",
         ]);
+        benchObserver?.cancelled();
       }
       setBusy(false);
       disposeWorker();
@@ -1636,7 +1655,11 @@ function findingsStatus(): FindingsStatus | null {
   };
 }
 
-function startImport(file: File, fieldOrder?: FieldOrder): void {
+/**
+ * Arranca una importación. `withoutCircuit` la hace sin circuito aunque el campo tenga uno: se
+ * analiza y se dibuja, pero no se acumula ni se guarda nada (el banco de medida).
+ */
+function startImport(file: File, fieldOrder?: FieldOrder, withoutCircuit = false): void {
   disposeWorker();
   clearMessages();
   summaryPanel.hidden = true;
@@ -1661,13 +1684,14 @@ function startImport(file: File, fieldOrder?: FieldOrder): void {
     ]);
     setBusy(false);
     disposeWorker();
+    benchObserver?.failed("El proceso auxiliar se detuvo.");
   };
 
   setBusy(true);
   progressNote.textContent = "Preparando";
   progressBar.value = 0;
 
-  const circuitName = circuitInput.value.trim();
+  const circuitName = withoutCircuit ? "" : circuitInput.value.trim();
   const start: ToWorker = {
     type: "start",
     protocolVersion: PROTOCOL_VERSION,

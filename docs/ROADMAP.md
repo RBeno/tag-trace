@@ -1,6 +1,6 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.11.0
+version: 0.12.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -215,7 +215,8 @@ Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria port
    service worker activa la versión nueva en el acto. **Hecha en 3.82.0.**
 2. **Banco de medida en la aplicación**: PERF-D2, D3 y D4 sintéticos generados en local, huecos de
    fotograma, memoria, primera vista del replay y reapertura, con un informe descargable. El
-   propietario lo ejecuta en sus dispositivos (OQ-173).
+   propietario lo ejecuta en sus dispositivos (OQ-173). **Hecha en 3.83.0**; destapó que «Cancelar» no se
+   atiende mientras se leen las filas (`PERFORMANCE_BUDGET.md` §3.2).
 3. **Optimización y degradación por capacidad**, guiada por esa medida.
 4. **Interfaz coherente de escritorio y móvil**.
 5. **Accesibilidad y estados de error completos**: WCAG 2.2 AA con axe-core en las pruebas (OQ-175) y una

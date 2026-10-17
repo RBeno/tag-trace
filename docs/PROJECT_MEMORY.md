@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.65.0
+version: 0.66.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -423,6 +423,16 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## F6, entrega 2: banco de medida (3.83.0, 2026-10-17)
+
+Hecho: «Medir este dispositivo» (Datos) genera PERF-D2, D3 y D4 con semilla, los importa sin circuito
+—nada se guarda— y mide primer progreso, huecos de fotograma, tiempo, memoria del hilo principal,
+primera vista y paso del replay y cancelación; informe JSON para que el propietario lo devuelva desde
+sus dispositivos. PERF-D4 se fija en 40 AGV, 120 tags y 15 s de cadencia (~461.000 lecturas), elegido
+por el banco. **Hallazgo**: «Cancelar» no se atiende mientras se leen las filas (lectura síncrona en el
+Worker; el `terminate()` de WP-004 no existe); en el contenedor, 15,8 s hasta acabar entera. Y el tirón
+máximo pasa de un segundo en D3 y D4. Las dos cosas van a la entrega 3, con la medida del propietario.
 
 ## F6, entrega 1: actualización segura y versión identificable (3.82.0, 2026-10-17)
 

@@ -1,6 +1,6 @@
 ---
 document_id: TT-PERF-001
-version: 0.7.0
+version: 0.8.0
 status: provisional-budget
 last_updated: 2026-10-17
 ---
@@ -18,7 +18,7 @@ Estos límites son **candidatos medibles**, no promesas definitivas. F1 establec
 | PERF-D1 | 10.000 eventos | Desarrollo rápido y perfilado frecuente |
 | PERF-D2 | 100.000 eventos, 40 AGV, 120 tags sintéticos | Regresión reproducible de escala |
 | PERF-D3 | 500.000 eventos | Prueba de escala móvil/PC |
-| PERF-D4 | 48 h, aproximadamente 40 AGV | Replay operativo |
+| PERF-D4 | 48 h, aproximadamente 40 AGV (en el banco: 120 tags y una lectura cada 15 s por AGV, unas 461.000; la cadencia la elige el banco para quedar entre D2 y D3, no viene de planta) | Replay operativo |
 | PERF-D5 | 1.000.000+ eventos sintéticos | Estrés de escritorio, no puerta de cada cambio |
 
 Los datasets del repositorio serán sintéticos y conservarán solo la forma estadística necesaria, nunca la topología real.
@@ -96,6 +96,43 @@ observación suya, cualitativa, y se registra como tal: **no es el p95 de hueco 
 presupuesto exige**, así que PERF-D2 sigue sin cerrarse. Lo que sí permite afirmar es que el
 producto es usable en el dispositivo donde cayó el prototipo, que no es poco, y que la medida
 formal ya no está bloqueada por no tener dónde ejecutarla.
+
+### 3.2 Banco de medida en la aplicación (3.83.0)
+
+En la pestaña Datos, «Medir este dispositivo» genera PERF-D2, D3 y D4 con semilla
+(`src/application/perf-bench.ts`), los importa como un fichero de lecturas **sin circuito** —se
+analizan y se dibujan, no se guarda nada— y mide desde la página: primer progreso, huecos de
+fotograma durante todo el trabajo (p95 y máximo), lo que tarda en importar, analizar y dibujar, la
+memoria del hilo principal si el navegador la da, la primera vista y el paso del replay (PERF-D4) y la
+confirmación de cancelación (una segunda importación de PERF-D3 cancelada al 30 %). Cada volumen lleva
+su huella SHA-256, así que dos dispositivos que dan la misma han medido lo mismo. El informe se descarga
+en JSON con la versión y el equipo (núcleos, memoria declarada, pantalla, tipo de puntero) y sin nada
+de planta. Lo que no se pudo medir sale «sin medir», nunca «dentro».
+
+Límites que el informe declara: la memoria es solo la del hilo principal (el Worker no se ve desde la
+página y no hay aislamiento entre orígenes en Pages para medirla entera) y crece entre volúmenes de una
+misma tanda; y con la pestaña en segundo plano el navegador para la página, así que el informe dice si
+se vio todo el rato.
+
+**Primera tanda, en el contenedor de desarrollo** (Chromium sin aceleración; no es ningún dispositivo
+de referencia y no cierra nada):
+
+| | PERF-D2 | PERF-D3 | PERF-D4 |
+|---|---:|---:|---:|
+| Lecturas | 100.000 | 500.000 | 461.022 |
+| Primer progreso | 34 ms | 36 ms | 75 ms |
+| Importar, analizar y dibujar | 4,2 s | 19,3 s | 18,5 s |
+| Hueco de fotograma p95 / máximo | 17 / 306 ms | 17 / 1.053 ms | 18 / 1.332 ms |
+| Memoria del hilo principal | 78 MiB | 361 MiB | 648 MiB |
+| Primera vista del replay | — | — | 62 ms |
+| Paso del replay | — | — | 60 fps (el máximo que se cuenta) |
+| Confirmación de cancelación | — | **no se atendió** (15,8 s hasta acabar) | — |
+
+Dos hallazgos para la entrega 3: el tirón máximo crece con el volumen (más de un segundo en D3 y D4, al
+pasar los resultados del Worker y dibujarlos); y **«Cancelar» no se atiende mientras se leen las
+filas**: la lectura es síncrona dentro del Worker, el mensaje de cancelar no llega hasta que termina y
+los puntos de control nunca lo ven, así que la importación acaba entera. WP-004 prevé `terminate()` tras
+un plazo de cortesía y no está hecho.
 
 ## 4. Modelo de memoria
 

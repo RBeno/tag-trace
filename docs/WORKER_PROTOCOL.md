@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.13.0
+version: 0.14.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -26,7 +26,7 @@ habitual.
 | WP-001 | Una fuente **debe** parsearse una sola vez por trabajo, y siempre dentro del Worker. La interfaz no parsea, ni siquiera para validar. |
 | WP-002 | Ningún camino de recuperación **debe** ejecutar parseo o análisis en el hilo principal. Si el Worker falla, el resultado es un error explicado, nunca un cálculo de repuesto. |
 | WP-003 | Todo mensaje **debe** llevar `job_id` y `protocol_version`. Un mensaje cuyo `job_id` no sea el trabajo vigente se descarta sin tocar el estado. |
-| WP-004 | La cancelación **debe** ser cooperativa, mediante puntos de control deterministas. `terminate()` solo se admite como último recurso tras vencer el plazo de cortesía, y deja el estado en `cancelled`, nunca en `complete`. |
+| WP-004 | La cancelación **debe** ser cooperativa, mediante puntos de control deterministas. `terminate()` solo se admite como último recurso tras vencer el plazo de cortesía, y deja el estado en `cancelled`, nunca en `complete`. **Defecto medido (3.83.0, `PERFORMANCE_BUDGET.md` §3.2):** durante la lectura de filas, que es síncrona, el mensaje de cancelar no llega y la importación termina entera; el `terminate()` de último recurso no está hecho. |
 | WP-005 | Un resultado vacío **debe** ser un resultado legítimo y explicado, no un síntoma que la interfaz corrija. Si el Worker devuelve cero lecturas, esa es la respuesta y debe venir con causa y ejemplos. |
 | WP-006 | Los bloques grandes **deben** viajar como `Transferable`. Está prohibido clonar el contenido íntegro de una fuente en cada mensaje. |
 | WP-007 | Un resultado parcial **debe** marcarse `partial: true` y **no** puede consolidarse ni persistirse como memoria normal. |

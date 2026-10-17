@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.60.0
+version: 0.61.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -38,7 +38,7 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 | **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito en palabras, con el enlace al dibujo del Resumen, su lista ordenada y los tags fuera del anillo. |
 | **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones (el CSV sigue trayendo también los AGV que dejan de leer); calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO); al final, los **expedientes de incidencia** (§6.2, F5). |
 | **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje; debajo, el **plano del circuito** (§6.1). |
-| **Datos** | Valores de planta del circuito (3.59.0: el provisional y el confirmado de cada uno, con su fecha y su razón, «Cambiar…» con razón obligatoria, dónde mide el programa algo relacionado e historial; aviso si un valor cambia dentro de lo cargado; desde 3.60.0, «Propuesta de la memoria: X (coincide en v4, v5 y v6)» con «Confirmar la propuesta…», o «Sin propuesta: … Introduce el valor.» con la estimación de cada versión); listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
+| **Datos** | Valores de planta del circuito (3.59.0: el provisional y el confirmado de cada uno, con su fecha y su razón, «Cambiar…» con razón obligatoria, dónde mide el programa algo relacionado e historial; aviso si un valor cambia dentro de lo cargado; desde 3.60.0, «Propuesta de la memoria: X (coincide en v4, v5 y v6)» con «Confirmar la propuesta…», o «Sin propuesta: … Introduce el valor.» con la estimación de cada versión); listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas; al final, **«Medir este dispositivo»** (3.83.0, `PERFORMANCE_BUDGET.md` §3.2): «Medir PERF-D2», «PERF-D3», «PERF-D4» y «Medir los tres», la línea de estado, una tabla por volumen (Métrica, Medida, Presupuesto, Resultado: dentro, fuera —con borde—, sin medir o se informa, con su nota) y «Descargar el informe (JSON)». Avisa de que lo que se ve se sustituye por el sintético, que no se guarda nada y que hay que dejar la pestaña a la vista. |
 
 **Más hallazgos del periodo (3.57.0).** Los hallazgos que guarda la instantánea del fichero y que
 ninguna sección pinta —cada sección enseña los primeros de cada tipo— van a la bandeja con su propia

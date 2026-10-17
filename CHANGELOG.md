@@ -2,6 +2,27 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.83.0] - 2026-10-17
+
+Entrega 2 de F6.
+
+### Añadido
+
+- **«Medir este dispositivo»** al final de la pestaña Datos (`PERFORMANCE_BUDGET.md` §3.2). Genera PERF-D2
+  (100.000 lecturas), PERF-D3 (500.000) y PERF-D4 (48 h, 40 AGV) con semilla y los importa como un fichero
+  de lecturas, pero sin circuito: se analizan y se dibujan y no se guarda nada. Mide el primer progreso,
+  los huecos de fotograma (p95 y máximo), lo que tarda en importar, analizar y dibujar, la memoria del
+  hilo principal si el navegador la da, la primera vista y el paso del replay y la confirmación de
+  cancelación. Cada cifra va contra su presupuesto; lo no medido sale «sin medir». «Descargar el informe
+  (JSON)» trae la versión, el equipo, la huella de cada volumen y las cifras, sin nada de planta.
+- Pruebas: TC-360 (unitaria) y TC-361 (navegador).
+
+### Encontrado
+
+- **«Cancelar» no se atiende mientras se leen las filas** de una importación: la lectura es síncrona en
+  el Worker, el mensaje de cancelar llega cuando ya ha terminado y la importación acaba entera (en el
+  contenedor, 15,8 s con PERF-D3). Defecto anterior a esta entrega, anotado en WP-004; no se corrige aquí.
+
 ## [3.82.0] - 2026-10-17
 
 Entrega 1 de F6.
