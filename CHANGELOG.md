@@ -2,6 +2,31 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.70.0] - 2026-10-17
+
+Tercera entrega de la organización de TAG TRACE: el Resumen como puesto de mando (propietario,
+2026-10-17: «se mostrarán los datos importantes y generales, las incidencias importantes y posibles
+avisos; cuando se quiera acceder a alguno te mandará automáticamente a su ubicación»).
+
+### Añadido
+
+- **«Avisos» en el Resumen** (`UX_SPEC.md` §4.6), entre la composición del circuito y el anillo: una
+  lista con la configuración que no se pudo usar (las tarjetas que cada sección plantaba y nadie
+  veía: puntos críticos, cortes de vuelta y calles declarados que no se pudieron usar) y lo que
+  falta o contradice (varios circuitos en el fichero; sin lista del circuito; tags declarados sin
+  lecturas, en otro sitio o leídos sin estar en la lista; sin historial de flota; sin registro de
+  conexiones). Cada aviso lleva a su sitio; sin avisos, lo dice.
+
+### Cambiado
+
+- **La bandeja enseña rango 1 y 2 enteros y pliega el rango 3** («Limpieza y contexto: N
+  hallazgos», un `details` cerrado). «Siguiente pendiente» lo abre si la siguiente tarjeta está
+  dentro, y el filtro por tema lo esconde si se queda vacío. Nada cambia en los recuentos.
+
+### Documentación
+
+- `UX_SPEC.md` §2, §4.5 y §4.6 nueva; TC-334; `TRACEABILITY_MATRIX.md`.
+
 ## [3.69.0] - 2026-10-17
 
 Segunda entrega de la organización de TAG TRACE (propietario, 2026-10-17: «wifi si está disponible

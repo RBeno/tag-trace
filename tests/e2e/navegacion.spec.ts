@@ -94,6 +94,25 @@ test.describe("pestañas y bandeja de hallazgos", () => {
     const ranks = await tray.locator(".tray-group").evaluateAll((groups) => groups.map((group) => (group as HTMLElement).dataset["rank"]));
     expect(ranks).toEqual([...ranks].sort());
     expect(ranks[0]).toBe("1");
+    // Limpieza y contexto (rango 3) va plegado, con su recuento; lo que puede parar la planta o
+    // degradar el circuito, a la vista (3.70.0).
+    const fold = tray.locator("details.tray-fold");
+    await expect(fold).toHaveCount(1);
+    await expect(fold).not.toHaveAttribute("open", "");
+    await expect(fold.locator("summary")).toHaveText(/Limpieza y contexto: \d+ hallazgos?/);
+    expect(await fold.locator(".tray-group[data-rank='3']").count()).toBe(1);
+    expect(await tray.locator(".tray-group[data-rank='1'] h3.tray-rank").count()).toBe(1);
+
+    // Los avisos del Resumen: lo que falta o no se pudo usar, con el enlace a su sitio (3.70.0). Sin
+    // registro de conexiones, lo dice y lleva a Datos.
+    const avisos = page.locator(".notices-host");
+    await expect(avisos.getByRole("heading", { name: "Avisos" })).toBeVisible();
+    const sinRegistro = avisos.locator("li", { hasText: "Sin registro de conexiones" });
+    await expect(sinRegistro).toHaveCount(1);
+    await sinRegistro.getByRole("link", { name: "ver en Datos" }).click();
+    await expect(page.getByRole("tab", { name: "Datos" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { name: "Listas del circuito", exact: true })).toBeInViewport();
+    await openTab(page, "Resumen");
 
     // El filtro por tema esconde las tarjetas de los demás temas.
     await page.getByRole("group", { name: "Tema" }).getByRole("button", { name: "Tiempos" }).click();

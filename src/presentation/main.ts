@@ -1806,7 +1806,12 @@ function renderViews(views: CircuitViews): void {
           tray,
           formatInstant,
           (reason) => showMessage("error", "Revisión sin guardar", [reason]),
-          () => activateTab("resumen"),
+          (card) => {
+            activateTab("resumen");
+            // Limpieza y contexto va plegado (UX_SPEC §4.5): la siguiente pendiente puede estar dentro.
+            const fold = card.closest<HTMLDetailsElement>("details.tray-fold");
+            if (fold !== null) fold.open = true;
+          },
         );
   reviewHost.hidden = reviewSession === null;
   if (reviewSession !== null) reviewHost.append(reviewSession.bar);
@@ -1838,6 +1843,10 @@ function renderViews(views: CircuitViews): void {
   out.append(tiles);
   out.append(element("h3", undefined, "Composición del circuito"));
   out.append(element("p", "muted", cohortLine));
+  // Los avisos (UX_SPEC §4.6) se rellenan al final, cuando todas las pestañas existen y sus secciones
+  // tienen identificador: cada aviso lleva a su sitio.
+  noticesHost = element("div", "notices-host");
+  out.append(noticesHost);
   renderRingFigure(views);
   // La evolución (ADR-0015 §3) se rellena cuando las instantáneas llegan del almacén (`loadEvolution`).
   evolutionHost = element("div", "evolution-host");
@@ -1947,6 +1956,7 @@ function renderViews(views: CircuitViews): void {
   renderUncardedFindings(views);
   for (const panel of viewsOf.values()) panel.hidden = panel.childElementCount === 0;
   buildTray();
+  renderNotices(views);
   reviewSession?.refresh();
   renderTiles(views);
   reviewSession?.onChange(() => {
@@ -5199,8 +5209,18 @@ function buildTray(): void {
       rank = kind.rank;
       group = element("div", "tray-group");
       group.dataset["rank"] = String(rank);
-      group.append(element("h3", "tray-rank", RANK_LABEL[rank]));
-      tray.append(group);
+      if (rank === 3) {
+        // Limpieza y contexto va plegado (propietario, 2026-10-17): lo que puede parar la planta o
+        // degradar el circuito se ve entero; esto se abre a demanda, con su recuento en el pliegue.
+        const fold = element("details", "tray-fold");
+        const count = entries.filter((other) => kindOf(other).rank === 3).length;
+        fold.append(element("summary", undefined, `${RANK_LABEL[rank]}: ${count} ${count === 1 ? "hallazgo" : "hallazgos"}`));
+        fold.append(group);
+        tray.append(fold);
+      } else {
+        group.append(element("h3", "tray-rank", RANK_LABEL[rank]));
+        tray.append(group);
+      }
     }
     const card = entry.card;
     card.dataset["theme"] = kind.theme;
@@ -5257,7 +5277,116 @@ function applyTrayFilter(): void {
       if (shown) visible += 1;
     }
     group.hidden = visible === 0;
+    const fold = group.closest<HTMLElement>(".tray-fold");
+    if (fold !== null) fold.hidden = visible === 0;
   }
+}
+
+// --- Avisos del Resumen (UX_SPEC §4.6) -------------------------------------------------------------
+
+let noticesHost: HTMLElement | null = null;
+
+/**
+ * Los avisos: lo que no es un hallazgo del circuito pero condiciona lo que se puede afirmar de él, y
+ * que hasta 3.70.0 se quedaba dentro de cada sección. Dos clases, en una sola lista en el Resumen:
+ *
+ * - **la configuración que no se pudo usar**: las tarjetas sin clave de revisión que cada sección
+ *   planta («Punto crítico declarado que no se pudo usar», «Corte de vuelta declarado…»), tal cual,
+ *   con el enlace a la tarjeta;
+ * - **lo que falta o contradice**: sin lista del circuito, sin registro de conexiones, sin historial
+ *   de flota, varios circuitos en el fichero, y lo que la lista dice distinto de las lecturas
+ *   (declarados sin lecturas, en otro sitio, leídos sin estar en la lista).
+ *
+ * Cada aviso lleva a su sitio (propietario, 2026-10-17: «cuando se quiera acceder a alguno te
+ * mandará automáticamente a su ubicación»). No se inventa gravedad: la lista va en el orden en que
+ * se recogen, y sin avisos lo dice.
+ */
+function renderNotices(views: CircuitViews): void {
+  const host = noticesHost;
+  if (host === null) return;
+  host.replaceChildren();
+  interface Notice {
+    readonly text: string;
+    readonly go: (() => void) | null;
+    readonly where: string;
+  }
+  const notices: Notice[] = [];
+  const taken = new Set<string>();
+  // 1. Las tarjetas de configuración de cada sección, con su sección.
+  for (const tab of TAB_IDS) {
+    const panel = viewsOf.get(tab) as HTMLElement;
+    const tabLabel = TABS.find(([id]) => id === tab)?.[1] ?? tab;
+    for (const card of panel.querySelectorAll<HTMLElement>(".finding:not(.reviewable)")) {
+      const title = card.querySelector(".finding-title")?.textContent ?? "";
+      if (!/que no se pudo usar$/.test(title)) continue;
+      const detail = [...card.querySelectorAll<HTMLElement>(":scope > p")].map((p) => p.textContent ?? "").filter((text) => text !== "" && text !== "—" && text !== title);
+      if (card.id === "") card.id = headingId(`aviso ${title} ${detail.join(" ")}`, taken);
+      const id = card.id;
+      notices.push({
+        text: `${title}: ${detail.join(" ")}`,
+        where: tabLabel,
+        go: () => {
+          activateTab(tab);
+          const target = document.getElementById(id);
+          target?.scrollIntoView({ block: "center" });
+          if (target instanceof HTMLElement) {
+            target.tabIndex = -1;
+            target.focus({ preventScroll: true });
+          }
+        },
+      });
+    }
+  }
+  // 2. Lo que falta o contradice, con las cifras de las vistas.
+  if (views.cohorts.length > 1) {
+    notices.push({ text: `${views.cohorts.length} circuitos detectados en el mismo fichero: cada uno se compara solo con los suyos.`, where: "Resumen", go: null });
+  }
+  const order = views.circuitOrder;
+  if (order === undefined || !order.evaluated) {
+    notices.push({ text: "Sin lista «circuito» cargada: no hay contraste con Vsystem ni orden declarado; el anillo sale solo de las lecturas.", where: "Datos", go: () => jumpTo("datos", "Listas del circuito") });
+  } else {
+    const n = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+    const go = (): void => jumpTo("tags", "Orden del circuito según las lecturas");
+    if (order.summary["sin-lecturas"] > 0) notices.push({ text: `${n(order.summary["sin-lecturas"], "tag declarado sin ninguna lectura", "tags declarados sin ninguna lectura")}: en la lista y en ningún AGV.`, where: "Tags", go });
+    if (order.summary["otro-sitio"] > 0) notices.push({ text: `${n(order.summary["otro-sitio"], "tag en otro sitio que en la lista", "tags en otro sitio que en la lista")}: las lecturas lo colocan en otra posición.`, where: "Tags", go });
+    if (order.summary["no-en-la-lista"] > 0) notices.push({ text: `${n(order.summary["no-en-la-lista"], "tag leído que la lista no tiene", "tags leídos que la lista no tiene")}.`, where: "Tags", go });
+  }
+  if (views.fleet.historySource !== "historial") {
+    notices.push({
+      text: views.fleet.historySource === "historial-vacio" ? "Historial de flota cargado sin ningún periodo válido: los AGV del circuito son los vistos en las lecturas." : "Sin historial de flota: los AGV del circuito son los vistos en las lecturas, y un asignado que no lee no se puede ver.",
+      where: "AGV",
+      go: () => jumpTo("agv", "Flota del circuito"),
+    });
+  }
+  if (views.connections === undefined) {
+    notices.push({ text: "Sin registro de conexiones: no hay evidencia directa de la WiFi. Se carga en «Listas del circuito», un fichero por AGV.", where: "Datos", go: () => jumpTo("datos", "Listas del circuito") });
+  }
+
+  host.append(element("h3", undefined, "Avisos"));
+  if (notices.length === 0) {
+    host.append(element("p", "muted", "Ningún aviso: toda la configuración cargada se pudo usar y nada falta de lo que el análisis sabe pedir."));
+    return;
+  }
+  host.append(
+    element("p", "muted", `${notices.length} ${notices.length === 1 ? "aviso" : "avisos"}: lo que falta, contradice o no se pudo usar. No son hallazgos del circuito; cada uno lleva a su sitio.`),
+  );
+  const list = element("ul", "notices");
+  for (const notice of notices) {
+    const item = element("li");
+    item.append(notice.text);
+    if (notice.go !== null) {
+      const link = element("a", undefined, `ver en ${notice.where}`);
+      link.href = "#";
+      const go = notice.go;
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        go();
+      });
+      item.append(" ", link);
+    }
+    list.append(item);
+  }
+  host.append(list);
 }
 
 /** La frase que acompaña a cada patrón. Enuncia la pregunta; no la responde (R-EVI-006). */

@@ -330,6 +330,11 @@ table.data th { color: var(--muted); font-weight: 600; }
 .tray-rank { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;
   margin: 16px 0 4px; }
 .tray-group[hidden] { display: none; }
+.tray-fold[hidden] { display: none; }
+.tray-fold > summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 0; }
+.notices { margin: 4px 0 12px; padding-left: 1.2em; }
+.notices li { margin: 4px 0; color: var(--muted); }
+.notices a { color: var(--viz-series); }
 .finding[hidden] { display: none; }
 .finding-where { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 0.8rem; margin: 0 0 2px; }
 .finding-where .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }

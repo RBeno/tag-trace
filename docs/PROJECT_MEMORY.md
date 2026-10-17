@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.52.0
+version: 0.53.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -436,7 +436,9 @@ entregas: áreas y función → WiFi → Resumen → Tags y AGV. `ROADMAP.md` po
 F6; se adelanta a F5 por su petición. **Hechas la primera** (3.68.0, R-GRA-022: lista `area`, y «Declarado
 en planta» con las áreas y el refuerzo por su lado) **y la segunda** (3.69.0: pestaña WiFi solo con
 registro cargado, y los cinco tipos `conexion-*` en el catálogo con tema WiFi y rango; hasta entonces
-caían en contexto con su identificador en bruto). Lo que ya existía y se conserva: la bandeja del
+caían en contexto con su identificador en bruto) **y la tercera** (3.70.0: «Avisos» en el Resumen con
+la configuración que no se pudo usar y lo que falta o contradice, cada uno con su enlace; rango 3
+plegado en la bandeja). Lo que ya existía y se conserva: la bandeja del
 Resumen con «Ver evidencia», la línea «Declarado en planta» solo en tarjetas con hallazgo y en el
 expediente.
 

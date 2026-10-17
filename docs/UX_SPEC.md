@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.49.0
+version: 0.50.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -31,7 +31,7 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 
 | Pestaña | Qué contiene |
 |---|---|
-| **Resumen** | La **portada** (3.49.0): la tira de siete cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta, línea y memoria—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. |
+| **Resumen** | La **portada** (3.49.0): la tira de siete cifras —AGV en el circuito, tags en el anillo, cobertura, hallazgos, vuelta, línea y memoria—, la composición del circuito («1 circuito de 40 vehículos y 145 tags en el anillo»), los **avisos** (§4.6, 3.70.0: lo que falta, contradice o no se pudo usar, cada uno con el enlace a su sitio), el **anillo con capas** (§4.2) y la **bandeja de hallazgos** (§4.5) con el panel de la revisión en campo: recuento, filtros y exportación. Es el puesto de mando (propietario, 2026-10-17): lo importante a la vista y, desde cada cosa, directo a donde se detalla. |
 | **Tags** | Inventario de tags; «Lo que hay que mirar» (tags); rotura y degradación de cada tag; mapa de omisión; cambios de tag; tags leídos fuera de la lista; limpieza de la lista; contraste contra Vsystem; orden del circuito según las lecturas; comparación entre dos periodos. |
 | **AGV** | Flota del circuito, flota en el circuito y vida de cada AGV (con las paradas de la producción y los primeros de cola); lectura de cada AGV (la parte por AGV de «Lo que hay que mirar») y rotura y degradación de cada AGV; ritmo de cada AGV y quién retiene; y el **expediente** de un AGV o tag. El buscador del expediente vive fijo en la barra de navegación: buscar activa esta pestaña y enseña el resultado al final. |
 | **WiFi** | Solo con registro de conexiones (DS-013, ADR-0017): el estado de conexión del circuito —cortes en la ventana por clase, cortes colectivos, el contraste con las ráfagas (OQ-159), el mapa de estado de conexión con su selector de clase, los sitios donde se pierde la señal más de lo que da el azar, los terminales ruidosos, los que no reconectan, los AGV que pierden la señal más que el resto y el registro por AGV—. Hasta 3.68.0 era una subsección de Tiempos; ahí queda «El estado de conexión está en WiFi», o, sin registro, por qué no hay nada que enseñar. |
@@ -298,6 +298,12 @@ WiFi, Tiempos, Línea y calles, y dentro del tema en el orden en que la vista lo
 fichas: por tema (todos, Tags, AGV, WiFi, Tiempos, Línea y calles) y los de estado de revisión de §4.3;
 un rango que se queda sin tarjetas visibles se esconde entero.
 
+**Rango 1 y 2 a la vista; rango 3 plegado (3.70.0; propietario, 2026-10-17).** Lo que puede parar la
+planta y lo que degrada el circuito se enseñan enteros; limpieza y contexto va dentro de un `details`
+cerrado (`.tray-fold`) cuyo `summary` dice el rango y cuántas tarjetas tiene. «Siguiente pendiente»
+lo abre si la siguiente tarjeta está dentro; el filtro por tema lo esconde si se queda vacío. Las
+tarjetas siguen contando igual en la barra de revisión y en el tile de hallazgos.
+
 El catálogo vive en `src/presentation/labels.ts` (`FINDING_KINDS`), por el primer elemento de la
 clave de revisión. El tema es el de la pregunta que responde el hallazgo, no la sección donde se
 calcula («Ver evidencia» lleva a la sección; el tema es lo que se filtra):
@@ -314,6 +320,28 @@ pestaña.
 
 Un tipo que no esté en el catálogo va a contexto y se enseña con su identificador: antes que
 esconderlo.
+
+## 4.6 Avisos
+
+Lo que no es un hallazgo del circuito pero condiciona lo que se puede afirmar de él, y que hasta
+3.70.0 se quedaba dentro de la sección que lo detectaba: un aviso que nadie ve no avisa. Desde 3.70.0
+el Resumen lleva, entre la composición del circuito y el anillo, el bloque **«Avisos»**, una sola
+lista con dos clases de entradas (propietario, 2026-10-17: «posibles avisos […] cuando se quiera
+acceder a alguno te mandará automáticamente a su ubicación»):
+
+- **La configuración que no se pudo usar**: las tarjetas sin clave de revisión que cada sección planta
+  («Punto crítico declarado que no se pudo usar», «Corte de vuelta declarado que no se pudo usar»,
+  «Configuración que no se pudo usar»), con su texto tal cual; el enlace lleva a la pestaña y deja el
+  foco en la tarjeta. Las tarjetas siguen en su sección: el aviso es el índice, no una copia.
+- **Lo que falta o contradice**, con las cifras de las vistas: varios circuitos en el mismo fichero;
+  sin lista `circuito` (sin contraste con Vsystem ni orden declarado); tags declarados sin ninguna
+  lectura, en otro sitio que en la lista o leídos sin estar en ella (`circuitOrder.summary`); sin
+  historial de flota, o cargado sin periodos válidos; sin registro de conexiones. Cada uno con «ver en
+  <pestaña>», que activa la pestaña y desplaza hasta su sección.
+
+No se inventa gravedad ni orden: la lista va en el orden en que se recogen, y sin avisos lo dice
+(«Ningún aviso: toda la configuración cargada se pudo usar…»). Es `div.notices-host` con `h3` «Avisos»,
+una línea de recuento y `ul.notices`.
 
 ## 5. Grafo y plano
 
