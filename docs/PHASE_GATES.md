@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.26.0
+version: 0.27.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -206,6 +206,8 @@ criterio de rechazo: OQ-B05 sigue parcial y pasa a G6, cuya salida es el piloto 
 OQ-172 sigue abierta y no bloquea. F5 queda cerrada.
 
 ## G6 — Aprobar piloto
+
+Criterio de rechazo (OQ-B05, propietario 2026-10-17): el piloto se rechaza si ocurre cualquiera de estas: (a) un resultado que el propietario sabe falso con los datos reales —una afirmación sin respaldo o un `unknown` convertido en certeza—; (b) PERF-D2 a D4 por encima del presupuesto en su dispositivo sin desviación aceptada; (c) pérdida de datos al actualizar, reabrir o restaurar una copia; (d) cualquier petición a la red con datos de planta; (e) un flujo esencial que no se pueda completar en el móvil. Dispositivos y navegadores: OQ-173.
 
 - [ ] Flujos esenciales en PC y móvil físico.
 - [ ] PERF-D2–D4 dentro de presupuesto aprobado.

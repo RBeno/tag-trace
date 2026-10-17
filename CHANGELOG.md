@@ -2,6 +2,17 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.81.1] - 2026-10-17
+
+### Gobierno
+
+- **Orden de entregas de F6** en `ROADMAP.md` §F6, aceptado por el propietario.
+- **Cuatro decisiones del propietario**, con la sugerencia aceptada: dispositivos y navegadores del piloto
+  (OQ-173, `PERFORMANCE_BUDGET.md` §2.1); copia de los expedientes en el `.agvproj` (OQ-174, enmienda a
+  ADR-0018 D2 y revisión de OQ-169); criterio de rechazo del piloto (OQ-B05, cerrada, `PHASE_GATES.md`
+  §G6); axe-core solo como dependencia de pruebas (OQ-175).
+- Sin cambios de código.
+
 ## [3.81.0] - 2026-10-17
 
 **F6 abierta** por el propietario (`CONTINÚA FASE 6`), tras fusionar el PR #17 (3.67.1 a 3.80.1,

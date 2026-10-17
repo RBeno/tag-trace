@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPEN-001
-version: 0.66.0
+version: 0.67.0
 status: active
 last_updated: 2026-10-17
 ---
@@ -28,7 +28,6 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | ID | Pregunta | Puerta |
 |---|---|---|
 | OQ-B04 | Límites de zona cargada y vacía, calles CO, puntos críticos y anclas de vuelta. **Parcial (2026-09-20)**: SE2/4 pasa a ser el circuito priorizado mientras se recoge más volumen de PC2, con dos hechos operativos cualitativos aportados (servicio inmediato en el punto de carga; descansos de duración larga y a cierta distancia), pero **sin tags exactos todavía** para `critical_points` ni para `lap_anchors` (mecanismo construido el 2026-09-22, ver OQ-102). | G2: son insumos del grafo y el diagnóstico, no de la importación. |
-| OQ-B05 | Qué datos reales se usan para aceptar cada fase y quién valida. **Parcial (2026-09-20)**: el propietario acepta validar en persona F1–F5 con los datos reales ya aportados (PC2, ALF, SE2/4), ejecutados en local en su propio dispositivo. **Sigue sin especificar** el criterio de rechazo — qué resultado haría que una fase no se aceptara —, y no se inventa uno. | G1 para la parte de F1; el resto con cada puerta. |
 
 ## Necesarias durante F1–F3
 
@@ -90,8 +89,12 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 ## Preguntas cerradas
 
 | ID | Pregunta | Respuesta | Fecha | Documentos |
+| OQ-B05 | Qué datos reales se usan para aceptar cada fase, quién valida y qué resultado haría rechazarla. | Valida el propietario en persona, en local y en su dispositivo, con los datos reales ya aportados (2026-09-20). Criterio de rechazo (propietario, 2026-10-17, sugerencia aceptada): el piloto se rechaza si ocurre cualquiera de estas: (a) un resultado que el propietario sabe falso con los datos reales —una afirmación sin respaldo o un `unknown` convertido en certeza—; (b) PERF-D2 a D4 por encima del presupuesto en su dispositivo sin desviación aceptada; (c) pérdida de datos al actualizar, reabrir o restaurar una copia; (d) cualquier petición a la red con datos de planta; (e) un flujo esencial que no se pueda completar en el móvil. Cada punto es un criterio de G6 o un límite que no se negocia. | 2026-10-17 | `PHASE_GATES.md` §G6, `ROADMAP.md` §F6 |
+| OQ-173 | ¿En qué dispositivos y navegadores se valida el piloto de F6? | Chrome en el Samsung Galaxy S23 FE y Chrome o Edge (mismo motor) en el PC de referencia (propietario, 2026-10-17, sugerencia aceptada). Otro navegador o equipo de planta entra solo si el propietario lo pide. | 2026-10-17 | `PERFORMANCE_BUDGET.md` §2.1, `ROADMAP.md` §F6 |
+| OQ-174 | ¿Tienen copia los expedientes de incidencia? Hoy viven solo en el navegador y borrar sus datos los pierde. | Sí: viajan en el `.agvproj`, en la sección `incidencias/` que prevé ADR-0012, con su prueba de ida y vuelta (propietario, 2026-10-17, sugerencia aceptada). Sigue habiendo un solo dispositivo: la copia es para recuperar, no para trabajar en dos sitios, así que no hay bifurcaciones. Revisa la parte de OQ-169 que decía que no viajan. Se construye en la entrega 7 de F6. | 2026-10-17 | ADR-0018 D2, ADR-0012, `ROADMAP.md` §F6 |
+| OQ-175 | ¿Se admite axe-core para comprobar WCAG 2.2 AA de forma automática? | Sí, como dependencia de desarrollo con versión fija y solo en las pruebas de navegador; no entra en la aplicación publicada ni añade red (propietario, 2026-10-17). | 2026-10-17 | NFR-012, NFR-013, `TEST_STRATEGY.md` |
 |---|---|---|---|---|
-| OQ-169 | ¿Cómo se identifica un expediente y qué pasa si dos dispositivos revisan el mismo? | No habrá dos dispositivos (propietario, 2026-10-09, «De momento no va a ver dos dispositivos se mantendrá exclusivamente en la memoria local»). El expediente vive solo en el almacén local, no viaja en el `.agvproj` y no hay bifurcaciones; su identificador es `INC-<circuito>-<aaaammdd>-<nn>`. Borrar los datos del navegador lo pierde. | 2026-10-09 | ADR-0018 D2 y D5 |
+| OQ-169 | ¿Cómo se identifica un expediente y qué pasa si dos dispositivos revisan el mismo? | No habrá dos dispositivos (propietario, 2026-10-09, «De momento no va a ver dos dispositivos se mantendrá exclusivamente en la memoria local»). El expediente vive solo en el almacén local, no viaja en el `.agvproj` y no hay bifurcaciones; su identificador es `INC-<circuito>-<aaaammdd>-<nn>`. Borrar los datos del navegador lo pierde. **Revisada el 2026-10-17 por OQ-174**: los expedientes tendrán copia en el `.agvproj`; lo de un solo dispositivo sigue. | 2026-10-09 | ADR-0018 D2 y D5 |
 | OQ-170 | ¿Añade el ciclo de vida un estado `Discarded` y se puede reabrir un expediente cerrado o no concluyente? | Sí a los dos, con la recomendación (propietario, 2026-10-09): descartar desde `Draft` o `UnderReview` exige razón; reabrir un `Closed` o `Inconclusive` vuelve a `Investigating` como revisión nueva; nada se borra. | 2026-10-09 | `INCIDENTS_REPORTING.md` §7, ADR-0018 D3 |
 | OQ-171 | Contradicción: ALG-015 se llamaba «Retroceso causal» y `INCIDENTS_REPORTING.md` §4 dice que el orden no es causalidad. | Se renombra «Retroceso desde el síntoma», sin cambiar su contenido (recomendación aceptada por el propietario, 2026-10-09). | 2026-10-09 | `ALGORITHM_CATALOG.md`, ADR-0018 D7 |
 | OQ-P02 | ¿Cuánto recorte de eventos conserva una incidencia por defecto? | Las lecturas de todos los AGV del circuito en la ventana con márgenes; antes, el mayor de un mínimo configurado, la duración del síntoma y la mediana de una vuelta; después, el mayor del mínimo y la duración del síntoma; mínimos en `incident_case.*` en `draft` (propietario, 2026-10-09, «Ok»). Los valores provisionales se proponen con la entrega que los use. | 2026-10-09 | ADR-0018 D4 |

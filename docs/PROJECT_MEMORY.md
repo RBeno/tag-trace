@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.63.0
+version: 0.64.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -423,6 +423,14 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## F6: orden de entregas y cuatro decisiones (2026-10-17)
+
+El propietario aceptó el orden de `ROADMAP.md` §F6 (actualización segura, banco de medida, optimización,
+interfaz coherente, accesibilidad y errores, sin red y seguridad, manual y operación, piloto) y las
+cuatro sugerencias: piloto en Chrome del S23 FE y Chrome o Edge del PC (OQ-173); los expedientes
+tendrán copia en el `.agvproj` (OQ-174, enmienda a ADR-0018 D2); criterio de rechazo del piloto en
+cinco puntos (OQ-B05, cerrada); axe-core solo en pruebas (OQ-175).
 
 ## F5 cerrada, F6 abierta (2026-10-17)
 

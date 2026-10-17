@@ -1,6 +1,6 @@
 ---
 document_id: TT-PERF-001
-version: 0.6.0
+version: 0.7.0
 status: provisional-budget
 last_updated: 2026-10-17
 ---
@@ -34,6 +34,7 @@ con y sin ceros iniciales— y no solo el volumen.
 |---|---|---|
 | Equipo | Intel de 6 núcleos y 12 hilos, 32 GB RAM, GPU dedicada | Samsung Galaxy S23 FE |
 | Papel | Medida de escritorio y desarrollo | Medida móvil y puerta de fase |
+| Navegador del piloto (OQ-173) | Chrome o Edge | Chrome |
 
 **Los dos son de gama alta, y eso sesga las medidas hacia el optimismo.** Con 32 GB de RAM el
 presupuesto de memoria de escritorio no se rozará, y el móvil tiene holgura suficiente para que un

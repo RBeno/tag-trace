@@ -1,8 +1,8 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.9.1
+version: 0.10.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-10-17
 ---
 
 # Etapas, entregables y resultados
@@ -206,6 +206,26 @@ Investigar una ausencia de diez minutos en un punto crítico y conservar el caso
 ### Salida demostrable
 
 Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria portable e informe de aceptación.
+
+### Orden de entregas (propietario, 2026-10-17)
+
+1. **Actualización segura y versión identificable** (NFR-011, NFR-016, `UX_SPEC.md` §9): la versión nueva
+   espera y avisa; no se activa durante importación, análisis, exportación o consolidación; caché por
+   versión; cada publicación etiquetada, con su procedimiento de retorno. Va primera porque hoy el
+   service worker activa la versión nueva en el acto.
+2. **Banco de medida en la aplicación**: PERF-D2, D3 y D4 sintéticos generados en local, huecos de
+   fotograma, memoria, primera vista del replay y reapertura, con un informe descargable. El
+   propietario lo ejecuta en sus dispositivos (OQ-173).
+3. **Optimización y degradación por capacidad**, guiada por esa medida.
+4. **Interfaz coherente de escritorio y móvil**.
+5. **Accesibilidad y estados de error completos**: WCAG 2.2 AA con axe-core en las pruebas (OQ-175) y una
+   prueba por estado de `UX_SPEC.md` §8.
+6. **Sin red y seguridad**: el flujo entero sin conexión y sin una sola petición fuera del origen; CSP,
+   dependencias y revisión de seguridad.
+7. **Manual de uso, guía de diagnóstico y operación**: matriz de navegadores y dispositivos, copia y
+   restauración —con los expedientes en el `.agvproj` (OQ-174)— y criterios de soporte.
+8. **Piloto con datos reales**, del propietario, con la plantilla del informe de aceptación y el criterio de
+   rechazo de OQ-B05.
 
 ## F7 — Escalado controlado
 
