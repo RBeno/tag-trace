@@ -2,6 +2,15 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.80.1] - 2026-10-17
+
+### Gobierno
+
+- **Evidencia de G5** en `PHASE_GATES.md` (petición del propietario): cada uno de los seis criterios
+  con lo que lo prueba (TC-338 a TC-356, INV-008, TC-017) y lo que queda suyo —validación con datos
+  reales y criterio de rechazo (OQ-B05), marcar las casillas, PR y `CONTINÚA FASE 6`—. Ninguna casilla
+  se marca: es del propietario.
+
 ## [3.80.0] - 2026-10-17
 
 Entrega 6 de ADR-0018, la última.
