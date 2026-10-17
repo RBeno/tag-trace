@@ -13,6 +13,8 @@ import {
   isCurrent,
   type AccumulationReport,
   type CaseAction,
+  type CaseView,
+  type CaseViews,
   type CircuitViews,
   type FromWorker,
   type MemoryViews,
@@ -33,7 +35,9 @@ import {
   plainTable,
   scrollBox, plural } from "./charts.js";
 import { closeDrawer } from "./drawer.js";
-import { openReportDialog, type ReportSource } from "./report.js";
+import { appCss, openReportDialog, type ReportSource } from "./report.js";
+import { buildCaseReportHtml, caseReportFileName } from "./case-report.js";
+import { chronologyCsv } from "../domain/case-export.js";
 import { statusSentence, type Status } from "./report-text.js";
 import { APP_VERSION } from "../application/version.js";
 import { changedTagsOf, deltaAround, evolutionDataOf, evolutionSection, ringDataFromSnapshot, sourceStatusList, timeControl } from "./evolution.js";
@@ -139,6 +143,8 @@ interface State {
   plantValueJob: boolean;
   /** Una acción sobre un expediente (ADR-0018) espera respuesta del Worker. */
   caseJob: boolean;
+  /** Los expedientes del circuito tal como llegaron por última vez, para el informe del circuito. */
+  cases: CaseViews | null;
 }
 
 const state: State = {
@@ -161,6 +167,7 @@ const state: State = {
   planJob: false,
   plantValueJob: false,
   caseJob: false,
+  cases: null,
 };
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -664,6 +671,7 @@ const casesPanel = createCasesPanel({
   zone: ZONE,
   send: (action) => startCase(action),
   requestReplay: (caseId) => startCaseReplay(caseId),
+  exportCase: (kind, view) => exportCase(kind, view),
 });
 
 {
@@ -1025,6 +1033,7 @@ function handleMessage(message: FromWorker): void {
       memoryPanel.update({ circuitId: state.circuitId, memory: message.views?.memory ?? null, working });
       planPanel.update({ circuitId: state.circuitId, plan: message.views?.plan ?? null, working });
       plantValuesPanel.update({ circuitId: state.circuitId, view: message.views?.plantValues ?? null });
+      state.cases = message.views?.cases ?? null;
       casesPanel.update({
         circuitId: state.circuitId,
         views: message.views?.cases ?? null,
@@ -1244,8 +1253,16 @@ function handleMessage(message: FromWorker): void {
     // --- Expedientes de incidencia (ADR-0018): la respuesta se pinta en su sección ------------------
     case "cases-updated":
       finishCaseJob();
+      state.cases = message.cases;
       casesPanel.showUpdated(message.written, message.caseId, message.cases);
       return;
+
+    case "case-evidence-csv-ready": {
+      finishCaseJob();
+      saveDownload(`\ufeff${message.csv}`, "text/csv;charset=utf-8", caseReportFileName(message.caseId, new Date(), "csv").replace(/^expediente-/, "lecturas-"));
+      casesPanel.notice(`Lecturas del recorte de ${message.caseId} (revisión ${message.revision}) descargadas.`);
+      return;
+    }
 
     case "case-replay-ready":
       finishCaseJob();
@@ -1290,6 +1307,61 @@ function finishCaseJob(): void {
  * Envía una acción sobre un expediente al Worker (ADR-0018). Como `startPlantValue`: mismo Worker,
  * `jobId` propio, y la presentación solo pide. No vuelve a analizar nada ni toca la memoria.
  */
+/** Descarga un fichero generado en la página: un `Blob` local, nada sale del dispositivo (NFR-001). */
+function saveDownload(content: string, type: string, fileName: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * El informe y la exportación de un expediente (ADR-0018 D11). El informe y la cronología se montan aquí
+ * desde la vista que ya está en pantalla; las lecturas del recorte las prepara el Worker, que las tiene.
+ */
+function exportCase(kind: "informe" | "cronologia" | "lecturas", view: CaseView): void {
+  const current = view.current;
+  if (kind === "informe") {
+    const name = caseReportFileName(current.caseId, new Date());
+    saveDownload(buildCaseReportHtml(view, { formatInstant, css: appCss(), appVersion: APP_VERSION, now: Date.now() }), "text/html;charset=utf-8", name);
+    casesPanel.notice(`Informe de ${current.caseId} descargado como «${name}». «Imprimir → Guardar como PDF» lo convierte en PDF.`);
+    return;
+  }
+  if (kind === "cronologia") {
+    if (view.chronology === null) return;
+    const name = caseReportFileName(current.caseId, new Date(), "csv").replace(/^expediente-/, "cronologia-");
+    saveDownload(`\ufeff${chronologyCsv(view.chronology, formatInstant, { caseId: current.caseId, revision: current.revision, hash: current.hash })}`, "text/csv;charset=utf-8", name);
+    casesPanel.notice(`Cronología de ${current.caseId} descargada como «${name}».`);
+    return;
+  }
+  const circuitId = state.circuitId;
+  if (circuitId === null) return;
+  if (state.worker !== null) {
+    casesPanel.notice(BUSY_NOTICE);
+    return;
+  }
+  const jobId = crypto.randomUUID();
+  const worker = new Worker(new URL("../../workers/import.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  state.worker = worker;
+  state.jobId = jobId;
+  state.caseJob = true;
+  worker.onmessage = (event: MessageEvent<FromWorker>) => handleMessage(event.data);
+  worker.onerror = () => {
+    finishCaseJob();
+    casesPanel.showError("el proceso auxiliar se detuvo.", "No se ha cambiado nada. Vuelve a intentarlo.");
+  };
+  setBusy(true);
+  casesPanel.setBusy(true);
+  progressNote.textContent = "Preparando las lecturas del recorte";
+  progressBar.value = 0;
+  const message: ToWorker = { type: "case-evidence-csv", protocolVersion: PROTOCOL_VERSION, jobId, circuitId, caseId: current.caseId };
+  worker.postMessage(message);
+}
+
 /** Pide el replay de un expediente (ALG-016). Mismo Worker y `jobId` propio; solo lee. */
 function startCaseReplay(caseId: string): void {
   const circuitId = state.circuitId;
@@ -5605,6 +5677,7 @@ function reportSource(views: CircuitViews): ReportSource {
       { id: "linea", label: "Línea y calles", panel: panelOf("linea"), available: true },
       { id: "memoria", label: "Memoria", panel: tabPanels.get("memoria") as HTMLElement, available: true },
     ],
+    cases: state.cases?.cases ?? [],
     formatInstant,
   };
 }

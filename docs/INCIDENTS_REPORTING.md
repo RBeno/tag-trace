@@ -1,6 +1,6 @@
 ---
 document_id: TT-INCIDENT-001
-version: 0.9.0
+version: 0.10.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -121,6 +121,12 @@ expediente `Closed` o `Inconclusive` se reabre en `Investigating` cuando aparece
 revisión nueva. Nada se borra. El expediente vive solo en el almacén local del dispositivo (OQ-169).
 
 ## 8. Informe vivo
+
+**Implementado desde 3.79.0 (ADR-0018 D11):** «Informe del expediente» descarga un HTML autocontenido
+con los diez apartados de abajo, numerados, montado desde la revisión vigente y lo calculado de su
+recorte, con la revisión y su hash; «Cronología (CSV)» y «Lecturas del recorte (CSV)» exportan lo que lo
+sostiene. El PDF sale de imprimir el HTML. El informe del circuito (3.72.0) puede llevar un resumen de
+los expedientes, uno por fila.
 
 El informe se regenera desde el expediente y contiene:
 

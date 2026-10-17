@@ -779,3 +779,5 @@ table.data th { color: var(--muted); font-weight: 600; }
 .case-hypothesis-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .case-verification { margin-top: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
 @media (any-pointer: coarse) { .case-hypothesis-actions button, .case-countermeasures button { min-height: 44px; } }
+.case-export { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 6px 0; }
+.case-export p { flex: 1 1 100%; margin: 0; }

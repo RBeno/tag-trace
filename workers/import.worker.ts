@@ -171,6 +171,7 @@ import {
   type EvidenceCandidate,
 } from "../src/domain/incident-case.js";
 import { backtrack, type Chronology } from "../src/domain/case-backtrack.js";
+import { evidenceCsv } from "../src/domain/case-export.js";
 import { caseHypotheses, viableCount, type HypothesisView } from "../src/domain/case-hypotheses.js";
 import { proposeMetric, verifyCountermeasure, type VerificationResult } from "../src/domain/case-verification.js";
 import {
@@ -3448,6 +3449,34 @@ async function runCaseReplay(message: Extract<ToWorker, { type: "case-replay" }>
   }
 }
 
+/** Las lecturas del recorte de un expediente en CSV (D11), para descargarlas. Solo lee. */
+async function runCaseEvidenceCsv(message: Extract<ToWorker, { type: "case-evidence-csv" }>): Promise<void> {
+  const { jobId, circuitId, caseId } = message;
+  const fail = (cause: string, recovery: string): void => {
+    emit({ type: "error", code: "INTERNAL", cause, recovery }, jobId);
+  };
+  try {
+    const revisions = (await loadCaseRevisions(circuitId)).filter((revision) => revision.caseId === caseId);
+    if (revisions.length === 0) {
+      fail(`El expediente ${caseId} no está en este dispositivo.`, "Vuelve a cargar la lista de expedientes.");
+      return;
+    }
+    const current = currentRevision(revisions);
+    const hash = current.evidence.hash;
+    const evidence = hash === null ? undefined : await loadCaseEvidence(circuitId, hash);
+    if (hash === null || evidence === undefined) {
+      fail(`El expediente ${caseId} no tiene recorte de lecturas.`, "En borrador, cambia la ventana para volver a copiar las lecturas.");
+      return;
+    }
+    emit({ type: "case-evidence-csv-ready", circuitId, caseId, revision: current.revision, csv: evidenceCsv(evidence, { caseId, revision: current.revision, hash }) }, jobId);
+  } catch (error) {
+    fail(
+      `No se pudo preparar el CSV del recorte (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`,
+      "No se ha cambiado nada. Vuelve a intentarlo.",
+    );
+  }
+}
+
 async function applyCaseAction(stored: StoredCircuit, action: CaseAction, now: number): Promise<{ readonly caseId: string; readonly text: string }> {
   const circuitId = stored.circuitId;
   const config = PROVISIONAL_CONFIG;
@@ -3552,6 +3581,14 @@ async function applyCaseAction(stored: StoredCircuit, action: CaseAction, now: n
 scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   const message = event.data;
   if (message.protocolVersion !== PROTOCOL_VERSION) return;
+
+  if (message.type === "case-evidence-csv") {
+    currentJobId = message.jobId;
+    cancelRequested = false;
+    seq = 0;
+    void runCaseEvidenceCsv(message);
+    return;
+  }
 
   if (message.type === "case-replay") {
     currentJobId = message.jobId;

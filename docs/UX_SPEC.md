@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.57.0
+version: 0.58.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -384,6 +384,10 @@ imprimen a PDF. De ahí las cuatro piezas de 3.72.0:
   rango, cada tarjeta con «Revisión en campo: ✓ Confirmado — nota»; las secciones elegidas; y el pie de
   trazabilidad. Nada sale del dispositivo (descarga por `Blob`, NFR-001); «Imprimir → Guardar como PDF»
   lo convierte. Es una instantánea: el análisis sigue vivo en la aplicación.
+- **Expedientes en el informe (3.79.0, ADR-0018 D11)**: el cuadro ofrece «Resumen de los expedientes de
+  incidencia (N)», marcado si hay alguno y apagado si no; el informe gana la sección «Expedientes de
+  incidencia · N», una fila por expediente (identificador, título, estado, síntoma, conclusión de una
+  persona, hipótesis confirmadas y contramedidas). Cada expediente tiene su propio informe (§6.2).
 - **Hoja de impresión de la propia página**: imprime la pestaña activa sin barras, botones ni
   controles, con los pliegues abiertos.
 
@@ -984,6 +988,11 @@ ventana, y **solo en este dispositivo**: borrar los datos del navegador la pierd
   la verificación». La verificación registrada dice antes y después, cuánto baja o sube, el azar y
   «Propuesta del programa: … La conclusión es tuya.». El formulario «Nueva contramedida» propone la
   métrica del síntoma, con la duración del episodio editable.
+- **Informe y exportación (3.79.0, D11)**, lo primero del expediente abierto: «Informe del expediente»
+  descarga `expediente-<id>-AAAA-MM-DD-HHMM.html`, autocontenido, con los diez apartados numerados de
+  `INCIDENTS_REPORTING.md` §8 y lo escrito por una persona marcado como suyo; «Cronología (CSV)» y
+  «Lecturas del recorte (CSV)» (esta la prepara el Worker); y la nota «Instantánea de la revisión N. El
+  informe se abre sin red; «Imprimir → Guardar como PDF» lo convierte en PDF.».
 - Tras cada acción, la línea de estado dice lo escrito y el expediente queda abierto. Al pie, lo que
   ocupan los expedientes en el dispositivo.
 

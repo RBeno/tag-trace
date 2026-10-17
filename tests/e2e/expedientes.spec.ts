@@ -484,4 +484,48 @@ test.describe("expedientes de incidencia", () => {
     // Nada fuera de los expedientes cambió.
     expect(await storeOutsideCases(page)).toBe(before);
   });
+
+  test("informe del expediente, sus CSV y el resumen de expedientes en el informe del circuito", async ({ page }) => {
+    const { readFileSync } = await import("node:fs");
+    await freshPage(page);
+    await importInto(page, "informe", `${MEMORIA}periodo-1.csv`);
+    await openTab(page, "Línea y calles");
+    await createFromSymptom(page, "Sin paso por 0300", "2026-01-24T08:01", "2026-01-24T08:02");
+    const panel = page.locator(".cases-panel");
+    await expect(panel.locator(".cases-status")).toContainText("creado en borrador", { timeout: 15_000 });
+    const item = panel.locator(".case-item").first();
+    const caseId = (await item.getAttribute("data-case-id")) ?? "";
+    const before = await storeOutsideCases(page);
+
+    // El informe del expediente: un HTML autocontenido con los diez apartados y su revisión.
+    const [report] = await Promise.all([page.waitForEvent("download"), item.getByRole("button", { name: "Informe del expediente" }).click()]);
+    expect(report.suggestedFilename()).toMatch(/^expediente-inc-informe-\d{8}-01-\d{4}-\d{2}-\d{2}-\d{4}\.html$/);
+    const html = readFileSync(await report.path(), "utf8");
+    expect([...html.matchAll(/<h2>(\d+)\. /g)].map((match) => Number(match[1]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(html).toContain(`<h1>${caseId}: Sin paso por 0300</h1>`);
+    expect(html).toContain("24 lecturas de 2 AGV");
+    expect(html).not.toMatch(/<(script|link|img)[^>]+(src|href)="https?:/);
+    expect(html).not.toContain("<button");
+
+    // La cronología y las lecturas del recorte, en CSV.
+    const [chronology] = await Promise.all([page.waitForEvent("download"), item.getByRole("button", { name: "Cronología (CSV)" }).click()]);
+    expect(chronology.suggestedFilename()).toMatch(/^cronologia-inc-informe-.*\.csv$/);
+    expect(readFileSync(await chronology.path(), "utf8")).toContain("fase;desde;hasta;relacion;tipo;agv;tags;tags_aguas_arriba;primera_desviacion;hecho;filas;filas_registro_conexiones");
+    const [readings] = await Promise.all([page.waitForEvent("download", { timeout: 15_000 }), item.getByRole("button", { name: "Lecturas del recorte (CSV)" }).click()]);
+    expect(readings.suggestedFilename()).toMatch(/^lecturas-inc-informe-.*\.csv$/);
+    const rows = readFileSync(await readings.path(), "utf8").replace(/^\ufeff/, "").split("\r\n");
+    expect(rows.filter((row) => row.startsWith("lectura;"))).toHaveLength(24);
+
+    // El informe del circuito trae el resumen de expedientes.
+    await openTab(page, "Resumen");
+    await page.locator(".local-jumps").getByRole("button", { name: "Generar informe…" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.locator("input[name='cases']")).toBeChecked();
+    const [circuit] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "Generar y descargar" }).click()]);
+    const circuitHtml = readFileSync(await circuit.path(), "utf8");
+    expect(circuitHtml).toContain("Expedientes de incidencia · 1");
+    expect(circuitHtml).toContain(`<tr><td>${caseId}</td><td>Sin paso por 0300</td><td>borrador</td>`);
+    // Exportar no escribe nada.
+    expect(await storeOutsideCases(page)).toBe(before);
+  });
 });

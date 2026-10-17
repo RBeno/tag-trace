@@ -1,6 +1,6 @@
 ---
 document_id: TT-TEST-001
-version: 0.78.0
+version: 0.79.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -401,6 +401,8 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-350 | Verificación de una contramedida (`case-hypotheses.test.ts`, ALG-024) | Métrica del síntoma (tag o AGV, minutos enteros); de 30 a 2 episodios, eficaz; de 40 a 25, parcial; de 20 a 18, ineficaz; sin episodios antes, sin exposición; la noche no suma exposición; las ventanas de otros expedientes no cuentan; el texto dice cifras y propuesta sin causas |
 | TC-351 | Ciclo de vida con hipótesis y contramedidas (`case-hypotheses.test.ts`, D3) | Planificar exige una hipótesis en pie y una contramedida; confirmar exige la comprobación; aplicar una sola vez; verificar solo pendiente de verificar y con la aplicada; verificada ineficaz guarda la conclusión; fuera de la investigación no se añaden |
 | TC-352 | Navegador: hipótesis, contramedida y verificación (`expedientes.spec.ts`) | Sobre TC-012: la hipótesis del AGV parado, compatible con su evidencia y su comprobación; los de detrás contradichos; confirmar apagado hasta escribir; contramedida con la métrica del síntoma, planificada, aplicada y verificada «sin exposición suficiente»; verificada ineficaz con la conclusión; sin vocabulario causal ni referencias internas; nada fuera de los expedientes cambia |
+| TC-353 | Informe del expediente y CSV (`case-report.test.ts`, D11) | Diez apartados numerados en orden, revisión con su hash, procedimientos y memoria; sin URL de fuera ni script; lo de la persona escapado y marcado; el texto del programa sin vocabulario causal ni referencias internas; resumen del circuito con un expediente por fila; nombre de fichero limpio; cronología con una fila por hecho y doce columnas; lecturas y eventos de conexión con fichero, huella y fila |
+| TC-354 | Navegador: informe y exportación (`expedientes.spec.ts`) | Se descargan el informe del expediente (diez apartados, recorte, sin recursos externos ni botones), la cronología y las lecturas (24 filas); el informe del circuito trae «Expedientes de incidencia · 1» con su fila; exportar no escribe nada |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las siete pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

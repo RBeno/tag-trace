@@ -18,6 +18,8 @@
 import { REVIEW_LABEL, REVIEW_STATES, type ReviewState } from "../domain/review.js";
 import { RANK_LABEL, findingKindOf, type FindingRank } from "../domain/finding-kinds.js";
 import { drawerBuilder } from "./drawer.js";
+import type { CaseView } from "../application/protocol.js";
+import { casesSummaryHtml } from "./case-report.js";
 import { escapeHtml, formatHours, reportFileName, type Status } from "./report-text.js";
 
 export interface ReportSection {
@@ -44,6 +46,8 @@ export interface ReportSource {
   /** La bandeja con las tarjetas revisables (`data-tab`, `data-review`, `data-kind`). */
   readonly tray: HTMLElement;
   readonly sections: readonly ReportSection[];
+  /** Los expedientes de incidencia del circuito (ADR-0018 D11), para su resumen. */
+  readonly cases: readonly CaseView[];
   readonly formatInstant: (utcMs: number) => string;
 }
 
@@ -52,6 +56,8 @@ export interface ReportSelection {
   /** `null` = todos los hallazgos, cada uno con su estado. */
   readonly review: ReviewState | null;
   readonly tables: boolean;
+  /** Si va el resumen de los expedientes de incidencia. */
+  readonly cases: boolean;
 }
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -101,7 +107,7 @@ export function cleanClone(original: HTMLElement): HTMLElement {
 }
 
 /** Las reglas de estilo de la propia aplicación, para que el informe se vea como ella sin pedir nada fuera. */
-function appCss(): string {
+export function appCss(): string {
   const rules: string[] = [];
   for (const sheet of document.styleSheets) {
     try {
@@ -134,6 +140,8 @@ body { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
 .report-review { font-size: 0.85rem; color: var(--muted, #666); margin: 0 0 2px; }
 .report-table { margin: 16px 0; }
 .report-table h4 { margin: 0 0 4px; font-size: 0.95rem; }
+.case-report-table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+.case-report-table th, .case-report-table td { text-align: left; padding: 3px 8px 3px 0; vertical-align: top; border-bottom: 1px solid var(--line, #ddd); }
 .report-footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid var(--line, #ccc); font-size: 0.85rem; color: var(--muted, #666); }
 .tabpanel, .panel { background: transparent; border: none; padding: 0; box-shadow: none; }
 figure.chart { break-inside: avoid; }
@@ -241,7 +249,7 @@ export function buildReportHtml(source: ReportSource, selection: ReportSelection
     ["Ficheros", source.files.length === 0 ? "—" : source.files.join(", ")],
     ["Memoria consolidada", source.memoryVersion === null ? "sin consolidar" : `v${source.memoryVersion}`],
     ["Aplicación", `TAG TRACE ${source.appVersion}`],
-    ["Secciones", chosen.map((section) => section.label).join(", ") || "solo el resumen"],
+    ["Secciones", [...chosen.map((section) => section.label), ...(selection.cases ? ["expedientes de incidencia"] : [])].join(", ") || "solo el resumen"],
     [
       "Hallazgos",
       selection.review === null ? "todos, cada uno con su estado de revisión" : `solo ${REVIEW_LABEL[selection.review].text.toLowerCase()}s`,
@@ -262,6 +270,9 @@ export function buildReportHtml(source: ReportSource, selection: ReportSelection
     parts.push(`<section class="report-section" id="avisos"><h2>Avisos</h2>${notices.innerHTML}</section>`);
   }
   parts.push(`<section class="report-section report-findings" id="hallazgos"><h2>Hallazgos · ${findings.total}</h2><p class="muted">${escapeHtml(reviewSummary)}. Cada tarjeta dice qué se midió y dónde; la causa no la dice el dato.</p>${findings.html}</section>`);
+  if (selection.cases) {
+    parts.push(`<section class="report-section" id="expedientes"><h2>Expedientes de incidencia · ${source.cases.length}</h2>${casesSummaryHtml(source.cases, source.formatInstant)}</section>`);
+  }
   for (const section of chosen) parts.push(sectionHtml(section, selection.tables));
   parts.push(
     `<footer class="report-footer"><p>Generado por TAG TRACE ${escapeHtml(source.appVersion)} el ${escapeHtml(source.formatInstant(now))} en este dispositivo: ningún dato salió de él. ` +
@@ -342,6 +353,16 @@ export function openReportDialog(getSource: () => ReportSource, onDone: (fileNam
   tablesLabel.append(tablesBox, " Anexo con las tablas completas de cada sección (puede ser largo)");
   form.append(tablesLabel);
 
+  // Los expedientes (ADR-0018 D11): un resumen, uno por fila; cada uno tiene además su propio informe.
+  const casesLabel = node("label", "report-option");
+  const casesBox = node("input");
+  casesBox.type = "checkbox";
+  casesBox.name = "cases";
+  casesBox.checked = source.cases.length > 0;
+  casesBox.disabled = source.cases.length === 0;
+  casesLabel.append(casesBox, ` Resumen de los expedientes de incidencia${source.cases.length === 0 ? " (no hay ninguno)" : ` (${source.cases.length})`}`);
+  form.append(casesLabel);
+
   const actions = node("div", "report-actions");
   const cancel = node("button", undefined, "Cancelar");
   cancel.type = "button";
@@ -360,6 +381,7 @@ export function openReportDialog(getSource: () => ReportSource, onDone: (fileNam
       sections: chosen,
       review: (REVIEW_STATES as readonly string[]).includes(reviewValue) ? (reviewValue as ReviewState) : null,
       tables: data.get("tables") !== null,
+      cases: data.get("cases") !== null,
     };
     const name = downloadReport(getSource(), selection);
     dialog.close();

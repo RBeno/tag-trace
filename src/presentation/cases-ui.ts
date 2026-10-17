@@ -112,6 +112,8 @@ export interface CasesPanelInput {
   readonly send: (action: CaseAction) => void;
   /** Pide el replay de un expediente al Worker. Solo lee. */
   readonly requestReplay: (caseId: string) => void;
+  /** Descarga el informe del expediente, su cronología en CSV o las lecturas de su recorte (D11). Solo lee. */
+  readonly exportCase: (kind: "informe" | "cronologia" | "lecturas", view: CaseView) => void;
 }
 
 export interface CasesPanel {
@@ -614,6 +616,25 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
     return row;
   }
 
+  /**
+   * El informe del expediente y su exportación (D11): un HTML autocontenido con los diez apartados, que
+   * se imprime a PDF desde el navegador, y dos CSV, la cronología y las lecturas del recorte. Es una
+   * instantánea de la revisión vigente; nada sale del dispositivo.
+   */
+  function exportBlock(view: CaseView): HTMLElement {
+    const box = node("div", "case-export");
+    const report = button("Informe del expediente", "case-export-report");
+    report.addEventListener("click", () => input.exportCase("informe", view));
+    box.append(report);
+    if (view.chronology !== null) {
+      const chronology = button("Cronología (CSV)", "case-export-chronology");
+      chronology.addEventListener("click", () => input.exportCase("cronologia", view));
+      box.append(chronology, sender("Lecturas del recorte (CSV)", "case-export-readings", () => true, () => input.exportCase("lecturas", view)));
+    }
+    box.append(node("p", "muted", `Instantánea de la revisión ${view.current.revision}. El informe se abre sin red; «Imprimir → Guardar como PDF» lo convierte en PDF.`));
+    return box;
+  }
+
   /** ¿Admite el expediente hipótesis y contramedidas? Solo mientras se investiga. */
   const working = (view: CaseView): boolean =>
     ["Investigating", "CountermeasurePlanned", "VerificationPending", "VerifiedIneffective"].includes(view.current.state);
@@ -864,7 +885,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       );
     }
     facts.append(node("h4", undefined, "Historial"), history);
-    details.append(facts, chronologyBlock(view), replayBlock(view), hypothesesBlock(view), countermeasuresBlock(view));
+    details.append(exportBlock(view), facts, chronologyBlock(view), replayBlock(view), hypothesesBlock(view), countermeasuresBlock(view));
 
     const actions = node("div", "case-actions");
     if (view.transitions.length > 0) {

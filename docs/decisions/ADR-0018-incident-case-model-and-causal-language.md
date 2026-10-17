@@ -265,7 +265,10 @@ sigue vivo. Nunca se publica en GitHub (ADR-0007).
    de tags distintos durante el corte); no hay porcentajes. La métrica de una contramedida es la del
    síntoma y la verificación es ALG-024. La decisión de la persona sobre una hipótesis del programa se
    guarda por su clave; la propia hipótesis se recalcula del recorte.
-5. Informe vivo y exportación.
+5. Informe vivo y exportación. **Hecha en 3.79.0.** El informe del expediente se monta desde sus datos
+   (la revisión, la cronología y las hipótesis del recorte, la verificación registrada) y no desde la
+   pantalla, a diferencia del informe del circuito de 3.72.0: así sale igual desde la misma revisión y
+   se prueba sin navegador. El informe del circuito gana un resumen de los expedientes.
 6. Biblioteca y similitud.
 
 Con las seis, la salida demostrable de F5 se recorre de punta a punta con el caso sintético. Con

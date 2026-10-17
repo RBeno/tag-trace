@@ -2,6 +2,26 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.79.0] - 2026-10-17
+
+Entrega 5 de ADR-0018.
+
+### Añadido
+
+- **Informe del expediente** (ADR-0018 D11, FR-026, `INCIDENTS_REPORTING.md` §8): un solo HTML
+  autocontenido, sin red, con los diez apartados numerados —conclusión, alcance y calidad de datos,
+  cronología, observado frente a esperado, implicados, hipótesis, evidencia y trazabilidad,
+  contramedidas, verificación y versiones—, la revisión con su hash y la hoja de estilo de la aplicación.
+  Se monta desde los datos del expediente, no desde la pantalla. Lo escrito por una persona va marcado
+  como suyo; «Imprimir → Guardar como PDF» lo convierte en PDF (OQ-P03).
+- **Exportación en CSV**: la cronología (una fila por hecho, con relación, primera desviación y filas de
+  evidencia) y las lecturas del recorte con sus eventos de conexión (fichero, huella y fila), con la
+  revisión en la cabecera. Las lecturas las prepara el Worker (`case-evidence-csv`, solo lee).
+- **Informe del circuito** (3.72.0): opción «Resumen de los expedientes de incidencia», marcada si hay
+  alguno; una fila por expediente con su estado, su síntoma, la conclusión de una persona, las hipótesis
+  confirmadas y las contramedidas.
+- Pruebas: TC-353 (unitaria) y TC-354 (navegador).
+
 ## [3.78.0] - 2026-10-17
 
 Entrega 4 de ADR-0018.

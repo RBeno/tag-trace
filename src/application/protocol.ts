@@ -436,7 +436,17 @@ export interface CaseReplayMessage {
   readonly caseId: string;
 }
 
+/** Pide las lecturas del recorte de un expediente en CSV (ADR-0018 D11). Solo lee. */
+export interface CaseEvidenceCsvMessage {
+  readonly type: "case-evidence-csv";
+  readonly protocolVersion: number;
+  readonly jobId: string;
+  readonly circuitId: string;
+  readonly caseId: string;
+}
+
 export type ToWorker =
+  | CaseEvidenceCsvMessage
   | CaseReplayMessage
   | CaseActionMessage
   | CompareVersionsMessage
@@ -1114,6 +1124,15 @@ export interface CaseReplayReadyMessage extends Envelope {
   readonly replay: CaseReplay;
 }
 
+/** Respuesta a `case-evidence-csv`: el CSV, para que la persona lo descargue. Nada se ha escrito. */
+export interface CaseEvidenceCsvReadyMessage extends Envelope {
+  readonly type: "case-evidence-csv-ready";
+  readonly circuitId: string;
+  readonly caseId: string;
+  readonly revision: number;
+  readonly csv: string;
+}
+
 export interface VersionsComparedMessage extends Envelope {
   readonly type: "versions-compared";
   readonly circuitId: string;
@@ -1231,6 +1250,7 @@ export type FromWorker =
   | PlantValuesUpdatedMessage
   | CasesUpdatedMessage
   | CaseReplayReadyMessage
+  | CaseEvidenceCsvReadyMessage
   | VersionsComparedMessage;
 
 /**
