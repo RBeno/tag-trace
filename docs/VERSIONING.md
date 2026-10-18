@@ -60,6 +60,11 @@ Tienen `valid_from`, `valid_to` opcional, origen y estado. Una consolidación cr
   la versión de la documentación se lee en `project_state.json`, no en etiquetas.
 - `phase-fN-approved`: checkpoint aprobado de fase. No se ha creado ninguna; cada aprobación queda en
   `project_state.json`, en `PHASE_GATES.md` y en `history/DECISION_LOG.md`.
+- `archivo/<rama>`: el último commit de una rama que no se fusionó, guardado antes de borrarla (decisión
+  del propietario del 2026-10-18). Las dos primeras, que crea el propietario:
+  `archivo/agv-wifi-tags-analysis-hi22lg` (3.64.0–3.66.1 de otra línea) y `archivo/fase-5-puntos-uqfbx6`
+  (una propuesta alternativa de F5). Se leen con `git checkout archivo/<rama>`; no se publican ni se
+  fusionan.
 
 ## Publicación y retorno
 

@@ -20,7 +20,8 @@ Cada cambio debe ser comprensible, medible, reversible y trazable desde una nece
    `npm run test:e2e`. En integración continua corren los mismos.
 8. Obtener la validación funcional del propietario del producto cuando afecte al dominio.
 9. Tras fusionar, borrar la rama. La historia queda en `main`, en el `CHANGELOG.md` y en
-   `docs/history/DECISION_LOG.md`.
+   `docs/history/DECISION_LOG.md`. Una rama que no se va a fusionar se guarda antes como etiqueta
+   `archivo/<rama>` (`docs/VERSIONING.md` §Tags Git) y después se borra.
 
 ## Tamaño y alcance
 

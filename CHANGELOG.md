@@ -20,6 +20,13 @@ Repositorio ordenado: los textos que lo describen dicen lo que hay. Sin cambios 
 - **`README.md`**: la navegación enlaza la visión general, la revisión del 2026-10-18, la historia de
   decisiones, el `CHANGELOG` y `CONTRIBUTING`.
 
+### Gobierno
+
+- **Ramas viejas**: el propietario decide borrar las cinco ya integradas en `main` y, de las dos que nunca
+  se fusionaron, guardar su último commit como etiqueta `archivo/<rama>` antes de borrarlas. La convención
+  queda en `VERSIONING.md` §Tags Git y en `CONTRIBUTING.md`; el borrado lo hace el propietario, porque la
+  sesión de la IA solo puede escribir en su propia rama.
+
 ## [3.90.0] - 2026-10-18
 
 Lo que la revisión general dejó propuesto y no necesitaba una decisión del propietario

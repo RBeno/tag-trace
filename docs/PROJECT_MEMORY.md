@@ -194,8 +194,10 @@ La conversación siguiente solo conocerá lo escrito aquí, en `project_state.js
   comprobada contra el `CHANGELOG`, `VERSIONING.md` sin la etiqueta `docs-v0.2.0` que nunca existió). Todo
   eso está en el PR #19, abierto.
 - **Lo que queda es del propietario**:
-  1. revisar y fusionar el PR #19 y publicar; decidir qué ramas viejas se borran y poner al día la
-     descripción del repositorio en GitHub, que ninguna herramienta de la IA puede cambiar;
+  1. revisar y fusionar el PR #19 y publicar; borrar las siete ramas viejas que ya decidió (cinco
+     integradas; las dos sin integrar, después de guardarlas como `archivo/<rama>`, `VERSIONING.md`
+     §Tags Git) y poner al día la descripción del repositorio en GitHub: la sesión de la IA solo puede
+     escribir en su rama y no tiene herramienta para ninguna de las dos cosas;
   2. medir con el banco («Datos → Medir este dispositivo») en el S23 FE y en el PC;
   3. el piloto de 48 h con datos reales siguiendo `templates/PILOT_ACCEPTANCE.md`;
   4. decidir OQ-172 (cuándo se dice `correlaciona`) y OQ-177 a OQ-184 (las dos contradicciones de la
