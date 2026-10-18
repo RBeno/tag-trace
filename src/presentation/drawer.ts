@@ -16,13 +16,7 @@
  * que lo abrió al cerrar.
  */
 
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  if (className !== undefined) element.className = className;
-  // Siempre como texto: un valor importado nunca se interpreta como marcado (TH-007).
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
+import { node } from "./dom.js";
 
 const drawer = node("aside", "drawer");
 drawer.setAttribute("role", "dialog");
@@ -68,7 +62,7 @@ document.addEventListener("keydown", (event) => {
  * tags del anillo, en orden»), y `section` la figura o el encabezado de donde viene, para que el
  * cajón diga de qué es la tabla aunque la página de detrás se haya desplazado.
  */
-export function openDrawer(label: string, section: string, build: () => HTMLElement, from: HTMLElement): void {
+function openDrawer(label: string, section: string, build: () => HTMLElement, from: HTMLElement): void {
   if (!drawer.isConnected) document.body.append(drawer);
   opener = from;
   title.textContent = label;

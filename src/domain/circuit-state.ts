@@ -148,7 +148,7 @@ function median(values: readonly number[]): number | null {
  * el que se le compara y se escondería a sí mismo—, y con una más repartida por todo el circuito,
  * para que dos paradas solas en un circuito sin ninguna otra no parezcan un patrón.
  */
-export function expectedElsewhere(total: number, count: number, exposure: number, totalExposure: number): number {
+function expectedElsewhere(total: number, count: number, exposure: number, totalExposure: number): number {
   return totalExposure === 0 ? 0 : ((total - count + 1) * exposure) / totalExposure;
 }
 
@@ -427,6 +427,10 @@ export function buildCircuitState(input: CircuitStateInput, thresholds: CircuitS
       const skips = current.reduce((sum, index) => sum + (skipsOf[index] ?? 0), 0);
       const skipShare = samples === 0 ? 0 : skips / samples;
       const missingTags = declaredWithoutReadings(tags);
+      // `salta-tag` si la mitad o más de las transiciones que recorren la zona se saltan algún tag
+      // (ALGORITHM_CATALOG §6.7, «Zona oscura»): un criterio de la regla, no un valor de planta. R-GRA-014
+      // dice «la mayoría», que en la mitad justa no es lo mismo; queda anotado para decisión (revisión
+      // del 2026-10-18, B-14) y no se cambia aquí.
       darkZones.push({
         tags,
         gapMs: Math.max(...current.map((index) => segmentGap[index] ?? 0)),

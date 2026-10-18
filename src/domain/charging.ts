@@ -22,7 +22,8 @@
  */
 
 import type { CoLane } from "./circuit-config.js";
-import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
+import { mergeIntervals, sameSpan, type Interval } from "./coverage.js";
+import { minKeyScanner } from "./graph.js";
 import type { Reading } from "./reading.js";
 import type { TruthState } from "./truth.js";
 
@@ -315,21 +316,40 @@ function staysOf(
  * que la lista se entrega del que más esperó al que menos y quien mire empieza por arriba. El
  * módulo **no recorta** la lista: decidir cuántas merecen mirarse es de la vista, y esconder las
  * demás aquí las haría indistinguibles de no existir.
+ *
+ * Exportada solo para la prueba de equivalencia con la versión cuadrática (B-09); fuera de este
+ * módulo se usa a través de `buildChargingReport`.
  */
-function seniorityBreaches(stays: readonly LaneStay[]): readonly SeniorityBreach[] {
+export function seniorityBreaches(stays: readonly LaneStay[]): readonly SeniorityBreach[] {
   const closed = stays
     .filter(
       (stay): stay is LaneStay & { enteredUtcMs: number; leftUtcMs: number } =>
         stay.state === "completa" && stay.enteredUtcMs !== null && stay.leftUtcMs !== null,
     )
     .sort((a, b) => a.enteredUtcMs - b.enteredUtcMs);
+  // Sin comparar cada estancia con todas las posteriores (B-09): las que entraron estrictamente
+  // después son un sufijo de la lista ordenada (búsqueda binaria), y de ese sufijo el índice de
+  // mínimos da, en orden, las que salieron estrictamente antes.
+  const scan = minKeyScanner(closed.map((stay) => stay.leftUtcMs));
 
   const breaches: SeniorityBreach[] = [];
   for (const [index, stay] of closed.entries()) {
-    const overtakenBy = closed
-      .slice(index + 1)
-      .filter((other) => other.enteredUtcMs > stay.enteredUtcMs && other.leftUtcMs < stay.leftUtcMs)
-      .map((other) => other.agvId);
+    let first = index + 1;
+    let high = closed.length;
+    while (first < high) {
+      const middle = (first + high) >> 1;
+      if ((closed[middle] as { enteredUtcMs: number }).enteredUtcMs > stay.enteredUtcMs) high = middle;
+      else first = middle + 1;
+    }
+    const overtakenBy: string[] = [];
+    scan(
+      first,
+      closed.length,
+      (leftUtcMs) => leftUtcMs < stay.leftUtcMs,
+      (other) => {
+        overtakenBy.push((closed[other] as LaneStay).agvId);
+      },
+    );
     if (overtakenBy.length > 0) {
       breaches.push({
         waited: stay.agvId,
@@ -347,6 +367,12 @@ function seniorityBreaches(stays: readonly LaneStay[]): readonly SeniorityBreach
  * `coverage` fija hasta cuándo hay datos: una estancia que no cierra dentro de la cobertura queda
  * abierta, y una que cruza un tramo entero sin datos queda `incompleta`; ninguna de las dos cuenta
  * como permanencia larga ni en la antigüedad, porque no se sabe cuánto duró (R-DAT-007).
+ *
+ * Precondición (B-10, revisión del 2026-10-18): `readings` llega en orden canónico —`sortReadings`
+ * con el sentido de su fuente (ADR-0013)—. Las ordenaciones por instante de aquí dentro son estables y
+ * conservan ese desempate entre dos lecturas del mismo AGV en el mismo instante; no se puede rehacer
+ * aquí porque el sentido de la pila no llega a esta función, y desempatar por fila ascendente
+ * invertiría el orden de las fuentes `newest-first`.
  */
 export function buildChargingReport(
   readings: readonly Reading[],
@@ -359,9 +385,11 @@ export function buildChargingReport(
   const index = roleIndex(lanes);
   const coverageStartUtcMs =
     coverage.length === 0 ? null : Math.min(...coverage.map((interval) => interval.from));
-  const gaps = uncoveredGaps(mergeIntervals([...coverage]));
-  const straddlesGap = (fromUtcMs: number, toUtcMs: number): boolean =>
-    gaps.some((gap) => fromUtcMs <= gap.from && toUtcMs >= gap.to);
+  // Los dos extremos en el mismo tramo de cobertura, o no vale (R-DAT-007). Hasta 3.89.0 se miraba si
+  // encerraba un hueco entero: la entrada leída en la cola cortada de una exportación —fuera de su
+  // tramo completo— y la salida en la siguiente pasaban por completas.
+  const covered = mergeIntervals([...coverage]);
+  const straddlesGap = (fromUtcMs: number, toUtcMs: number): boolean => !sameSpan(covered, fromUtcMs, toUtcMs);
 
   // Una pasada por las lecturas, agrupando por vehículo. El resto trabaja ya sobre lecturas de
   // calle, que son una fracción diminuta del total (WP-001: nada de recorrer el CSV varias veces).
@@ -403,6 +431,7 @@ export function buildChargingReport(
   const withStay = new Set<string>();
 
   for (const [agvId, hits] of byVehicle) {
+    // Estable: a igual instante, el orden canónico de entrada (precondición de la función, B-10).
     hits.sort((a, b) => a.utcMs - b.utcMs);
     const result = staysOf(agvId, hits, straddlesGap);
     if (result.stays.length > 0) withStay.add(agvId);
@@ -415,6 +444,7 @@ export function buildChargingReport(
     }
   }
 
+  // Estable, como `hits`: a igual instante manda el orden canónico de entrada (B-10).
   for (const list of laneReadsByVehicle.values()) list.sort((a, b) => a.utcMs - b.utcMs);
 
   const report: LaneReport[] = lanes.map((lane) => {

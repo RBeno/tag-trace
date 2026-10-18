@@ -398,9 +398,15 @@ export function detectFieldOrder(samples: readonly string[]): FieldOrderDetectio
   for (const sample of samples) {
     const match = WALL_PATTERN.exec(sample.trim());
     if (match === null) continue;
+    const first = Number(match[1]);
+    const second = Number(match[2]);
+    // Más de doce en las dos posiciones no es una fecha en ningún orden: es una fila inválida (irá a
+    // cuarentena), no evidencia del orden. Hasta 3.89.0 una sola bastaba para declarar el fichero
+    // «contradictorio» y rechazarlo entero.
+    if (first > 12 && second > 12) continue;
     recognised += 1;
-    if (Number(match[1]) > 12) firstExceedsTwelve = true;
-    if (Number(match[2]) > 12) secondExceedsTwelve = true;
+    if (first > 12) firstExceedsTwelve = true;
+    if (second > 12) secondExceedsTwelve = true;
     dates.add(`${match[1]}/${match[2]}/${match[3]}`);
   }
 

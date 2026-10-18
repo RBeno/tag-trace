@@ -160,7 +160,9 @@ export const PLANT_VALUES: readonly PlantValueDefinition[] = [
   },
   {
     key: "misma-hora",
-    label: "Tolerancia de «a la misma hora»",
+    // Hasta 3.89.0, «Tolerancia de «a la misma hora»»: críptica (D-40, revisión del 2026-10-18). La unidad
+    // la pone el formulario («minutos»), como en las demás duraciones.
+    label: "Margen para decir que una parada se repite a la misma hora otro día",
     kind: "duracion",
     inputUnit: "min",
     path: "flowStops.sameTimeToleranceMs",
@@ -706,7 +708,7 @@ export interface PlantProposalThresholds {
 }
 
 /** Forma canónica de un valor para compararlo: un número, o la lista de horas como conjunto ordenado. */
-export function plantValueKey(value: PlantValue): string {
+function plantValueKey(value: PlantValue): string {
   return typeof value === "number" ? String(value) : [...new Set(value)].sort((a, b) => a - b).join(",");
 }
 
@@ -875,7 +877,21 @@ export interface PlantValueView {
    * versión. `null` si no se calculó (sin circuito donde haya memoria).
    */
   readonly proposal: PlantValueProposal | null;
+  /**
+   * Avisos sobre lo que rige para el fichero de trabajo, en frases para enseñar tal cual; ausente si no
+   * hay ninguno. Hoy solo uno: la noche con la misma hora de inicio y de fin (`NO_NIGHT_NOTE`, B-13).
+   */
+  readonly notes?: readonly string[];
 }
+
+/**
+ * La noche con la misma hora de inicio y de fin no existe: `regimeReader` no marca ninguna hora como
+ * noche y todo se mide como producción. No se prohíbe —una planta sin noche puede quererlo—, pero se
+ * dice, en la vista de los dos valores de la noche, cuando el par que rige (confirmado o provisional)
+ * es igual (B-13, revisión del 2026-10-18; `CONFIG_SCHEMA.md` §3.2 solo dice que puede cruzar la
+ * medianoche).
+ */
+export const NO_NIGHT_NOTE = "Con la misma hora de inicio y de fin no hay noche: todo el día se mide como producción.";
 
 export interface PlantValuesView {
   /** El instante con que se resuelve lo vigente: el inicio del fichero de trabajo, o `null` si no hay. */
@@ -904,6 +920,12 @@ export function plantValuesView(input: {
   const current = input.at === null ? new Map<PlantValueKey, PlantValueEvent>() : plantValuesAt(input.events, input.at);
   const ordered = [...input.events].sort((a, b) => a.seq - b.seq);
   const window = input.window;
+  // Lo que rige de cada clave: el confirmado vigente o, sin él, el provisional.
+  const ruling = (key: PlantValueKey): PlantValue | undefined => current.get(key)?.value ?? BY_KEY.get(key)?.read(input.provisional);
+  const nightFrom = ruling("noche-desde");
+  const noNight = typeof nightFrom === "number" && nightFrom === ruling("noche-hasta");
+  const notesOf = (key: PlantValueKey): readonly string[] =>
+    noNight && (key === "noche-desde" || key === "noche-hasta") ? [NO_NIGHT_NOTE] : [];
   return {
     at: input.at,
     fileName: input.fileName,
@@ -926,6 +948,7 @@ export function plantValuesView(input: {
         history,
         measuredIn: definition.measuredIn,
         proposal: input.proposals?.[definition.key] ?? null,
+        ...(notesOf(definition.key).length === 0 ? {} : { notes: notesOf(definition.key) }),
       };
     }),
   };

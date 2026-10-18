@@ -33,7 +33,7 @@
  */
 
 import { concentrated } from "./circuit-state.js";
-import type { Transition } from "./graph.js";
+import { minKeyScanner, type Transition } from "./graph.js";
 import type { DeliveryConcentration, GroupedDelivery } from "./grouped-delivery.js";
 import type { ConnectionEvent } from "./connection-log.js";
 
@@ -96,6 +96,12 @@ export function classifyCut(durationMs: number, thresholds: ConnectionCutThresho
  * Una `desconexion` seguida de otra sin conexión en medio es un corte que no llegó a cerrarse en el
  * registro: se cierra con la siguiente conexión que haya, y la segunda desconexión no abre otro. Los
  * eventos `desconocido` no abren ni cierran nada.
+ *
+ * Dos eventos del mismo AGV en el mismo segundo se ordenan por su fila, de la mayor a la menor: el
+ * registro del terminal va de más reciente a más antiguo (`ingestion/connection-log.ts`), así que la
+ * fila mayor es la anterior. Es el mismo desempate que hace el importador, y con él el resultado no
+ * depende del orden en que lleguen los eventos (B-10): una desconexión y su conexión del mismo segundo
+ * no se cruzan.
  */
 export function pairCuts(events: readonly ConnectionEvent[], windowEndUtcMs: number, thresholds: ConnectionCutThresholds): ConnectionCut[] {
   const byVehicle = new Map<string, ConnectionEvent[]>();
@@ -106,7 +112,7 @@ export function pairCuts(events: readonly ConnectionEvent[], windowEndUtcMs: num
   }
   const cuts: ConnectionCut[] = [];
   for (const own of byVehicle.values()) {
-    const ordered = [...own].sort((a, b) => a.utcMs - b.utcMs);
+    const ordered = [...own].sort((a, b) => a.utcMs - b.utcMs || b.sourceRow - a.sourceRow);
     let open: ConnectionEvent | null = null;
     for (const event of ordered) {
       if (event.kind === "desconexion") {
@@ -145,16 +151,63 @@ export function markCollective(cuts: readonly ConnectionCut[], vehiclesWithLog: 
   const needed = Math.max(2, Math.ceil(vehiclesWithLog * thresholds.collectiveMinShare));
   const window = thresholds.collectiveWindowMs;
   const endOf = (cut: ConnectionCut): number => cut.toUtcMs ?? cut.fromUtcMs + cut.durationMs;
-  return ordered.map((cut) => {
-    const near = new Set<string>();
-    const overlapping = new Set<string>();
-    for (const other of ordered) {
-      if (other.fromUtcMs >= cut.fromUtcMs - window && other.fromUtcMs <= cut.fromUtcMs + window) near.add(other.agvId);
-      if (cut.end === "tras-apagado" && other.end === "tras-apagado" && other.fromUtcMs <= endOf(cut) && endOf(other) >= cut.fromUtcMs) {
-        overlapping.add(other.agvId);
-      }
+
+  // Sin comparar cada corte con todos (B-09). Los inicios a menos de la ventana son una ventana
+  // deslizante sobre la lista ordenada por inicio: sus dos bordes solo avanzan, y un recuento por AGV
+  // dice cuántos AGV distintos hay dentro.
+  const nearVehicles: number[] = [];
+  const inWindow = new Map<string, number>();
+  let low = 0;
+  let high = 0;
+  for (const cut of ordered) {
+    const from = cut.fromUtcMs - window;
+    const to = cut.fromUtcMs + window;
+    while (high < ordered.length && (ordered[high] as ConnectionCut).fromUtcMs <= to) {
+      const agvId = (ordered[high] as ConnectionCut).agvId;
+      inWindow.set(agvId, (inWindow.get(agvId) ?? 0) + 1);
+      high += 1;
     }
-    return { ...cut, collective: near.size >= needed || overlapping.size >= needed };
+    while (low < high && (ordered[low] as ConnectionCut).fromUtcMs < from) {
+      const agvId = (ordered[low] as ConnectionCut).agvId;
+      const left = (inWindow.get(agvId) ?? 0) - 1;
+      if (left === 0) inWindow.delete(agvId);
+      else inWindow.set(agvId, left);
+      low += 1;
+    }
+    nearVehicles.push(inWindow.size);
+  }
+
+  // Los apagados que se solapan con uno: los que empezaron antes de que acabara (un prefijo de los
+  // apagados ordenados por inicio) y acabaron después de que empezara (el índice de mínimos sobre el
+  // final cambiado de signo). Se para al llegar a los AGV que hacen falta.
+  const shutdowns = ordered.filter((cut) => cut.end === "tras-apagado");
+  const scanShutdowns = minKeyScanner(shutdowns.map((cut) => -endOf(cut)));
+  const overlappingShutdowns = (cut: ConnectionCut): number => {
+    const until = endOf(cut);
+    let started = 0;
+    let upper = shutdowns.length;
+    while (started < upper) {
+      const middle = (started + upper) >> 1;
+      if ((shutdowns[middle] as ConnectionCut).fromUtcMs <= until) started = middle + 1;
+      else upper = middle;
+    }
+    const vehicles = new Set<string>();
+    scanShutdowns(
+      0,
+      started,
+      (negatedEnd) => -negatedEnd >= cut.fromUtcMs,
+      (index) => {
+        vehicles.add((shutdowns[index] as ConnectionCut).agvId);
+        return vehicles.size >= needed;
+      },
+    );
+    return vehicles.size;
+  };
+
+  return ordered.map((cut, index) => {
+    const collective =
+      (nearVehicles[index] ?? 0) >= needed || (cut.end === "tras-apagado" && overlappingShutdowns(cut) >= needed);
+    return { ...cut, collective };
   });
 }
 
@@ -180,6 +233,11 @@ function unlocated(open: ConnectionEvent, toUtcMs: number | null, durationMs: nu
 /**
  * Sitúa cada corte con las lecturas de su AGV. `rings` son los anillos de los cohortes del circuito,
  * para decir si P→Q es un tramo; sin anillos, todo lo situado queda «entre P y Q».
+ *
+ * Precondición (B-10, revisión del 2026-10-18): `readings` llega en orden canónico —`sortReadings`
+ * con el sentido de su fuente (ADR-0013)—. El `sort` por instante es estable y conserva ese desempate:
+ * con dos lecturas del mismo AGV en el mismo instante, P es la última de ellas y Q la primera en ese
+ * orden. `CutReading` no lleva fila ni fuente, así que aquí no se puede rehacer.
  */
 export function locateCuts(cuts: readonly ConnectionCut[], readings: readonly CutReading[], rings: readonly (readonly string[])[]): ConnectionCut[] {
   const byVehicle = new Map<string, CutReading[]>();
@@ -336,6 +394,87 @@ export interface ConnectionSummary {
   readonly contrast: ConnectionContrast;
 }
 
+/**
+ * Cuántas ráfagas tienen un corte del mismo AGV en el mismo episodio, y cuántos cortes una ráfaga.
+ * Un corte y una ráfaga son el mismo episodio si `corte.desde − margen ≤ ráfaga.hasta` y
+ * `corte.hasta + margen ≥ ráfaga.desde` (un corte abierto llega hasta el infinito).
+ *
+ * Sin comparar cada ráfaga con cada corte (B-09): por AGV, los cortes ordenados por
+ * `desde − margen` con el máximo acumulado de `hasta + margen` responden a cada ráfaga con una
+ * búsqueda binaria; y las ráfagas ordenadas por `hasta`, con el mínimo de `desde` de ahí en adelante,
+ * a cada corte. Mismas cuentas que la comparación de todos con todos.
+ */
+function contrastWithBursts(
+  cuts: readonly ConnectionCut[],
+  deliveries: readonly GroupedDelivery[],
+  tolerance: number,
+): { readonly burstsWithCut: number; readonly cutsWithBurst: number } {
+  const cutsOf = new Map<string, { start: number; end: number }[]>();
+  for (const cut of cuts) {
+    const own = cutsOf.get(cut.agvId) ?? [];
+    own.push({ start: cut.fromUtcMs - tolerance, end: (cut.toUtcMs ?? Number.POSITIVE_INFINITY) + tolerance });
+    cutsOf.set(cut.agvId, own);
+  }
+  const deliveriesOf = new Map<string, { from: number; to: number }[]>();
+  for (const delivery of deliveries) {
+    const own = deliveriesOf.get(delivery.agvId) ?? [];
+    own.push({ from: delivery.fromUtcMs, to: delivery.toUtcMs });
+    deliveriesOf.set(delivery.agvId, own);
+  }
+
+  // Por AGV, cortes por inicio con el máximo acumulado del final.
+  const cutIndex = new Map<string, { starts: number[]; maxEnd: number[] }>();
+  for (const [agvId, own] of cutsOf) {
+    own.sort((a, b) => a.start - b.start);
+    const maxEnd: number[] = [];
+    for (const [index, entry] of own.entries()) maxEnd.push(index === 0 ? entry.end : Math.max(maxEnd[index - 1] as number, entry.end));
+    cutIndex.set(agvId, { starts: own.map((entry) => entry.start), maxEnd });
+  }
+  // Por AGV, ráfagas por final con el mínimo del inicio de ahí en adelante.
+  const burstIndex = new Map<string, { ends: number[]; minFrom: number[] }>();
+  for (const [agvId, own] of deliveriesOf) {
+    own.sort((a, b) => a.to - b.to);
+    const minFrom: number[] = new Array<number>(own.length);
+    for (let index = own.length - 1; index >= 0; index -= 1) {
+      const from = (own[index] as { from: number }).from;
+      minFrom[index] = index === own.length - 1 ? from : Math.min(minFrom[index + 1] as number, from);
+    }
+    burstIndex.set(agvId, { ends: own.map((entry) => entry.to), minFrom });
+  }
+
+  let burstsWithCut = 0;
+  for (const delivery of deliveries) {
+    const index = cutIndex.get(delivery.agvId);
+    if (index === undefined) continue;
+    // Cuántos cortes empiezan (con el margen) no después del final de la ráfaga.
+    let started = 0;
+    let high = index.starts.length;
+    while (started < high) {
+      const middle = (started + high) >> 1;
+      if ((index.starts[middle] as number) <= delivery.toUtcMs) started = middle + 1;
+      else high = middle;
+    }
+    if (started > 0 && (index.maxEnd[started - 1] as number) >= delivery.fromUtcMs) burstsWithCut += 1;
+  }
+  let cutsWithBurst = 0;
+  for (const cut of cuts) {
+    const index = burstIndex.get(cut.agvId);
+    if (index === undefined) continue;
+    const start = cut.fromUtcMs - tolerance;
+    const end = (cut.toUtcMs ?? Number.POSITIVE_INFINITY) + tolerance;
+    // La primera ráfaga que acaba no antes del inicio del corte (con el margen).
+    let first = 0;
+    let high = index.ends.length;
+    while (first < high) {
+      const middle = (first + high) >> 1;
+      if ((index.ends[middle] as number) >= start) high = middle;
+      else first = middle + 1;
+    }
+    if (first < index.ends.length && (index.minFrom[first] as number) <= end) cutsWithBurst += 1;
+  }
+  return { burstsWithCut, cutsWithBurst };
+}
+
 type Classes = { microcorte: number; corte: number; caida: number; apagado: number };
 function emptyClasses(): Classes {
   return { microcorte: 0, corte: 0, caida: 0, apagado: 0 };
@@ -455,10 +594,7 @@ export function summarizeConnections(
 
   // Contraste con las ráfagas: el mismo AGV y el mismo episodio, con un margen.
   const tolerance = thresholds.contrastToleranceMs;
-  const overlaps = (cut: ConnectionCut, delivery: GroupedDelivery): boolean =>
-    cut.agvId === delivery.agvId && cut.fromUtcMs - tolerance <= delivery.toUtcMs && (cut.toUtcMs ?? Number.POSITIVE_INFINITY) + tolerance >= delivery.fromUtcMs;
-  const burstsWithCut = deliveries.filter((delivery) => cuts.some((cut) => overlaps(cut, delivery))).length;
-  const cutsWithBurst = cuts.filter((cut) => deliveries.some((delivery) => overlaps(cut, delivery))).length;
+  const { burstsWithCut, cutsWithBurst } = contrastWithBursts(cuts, deliveries, tolerance);
   const falls = cuts.filter((cut) => cut.cutClass === "caida");
 
   // Los cortes colectivos, agrupados: una ventana por grupo de inicios seguidos a menos de la ventana.

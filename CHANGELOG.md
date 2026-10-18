@@ -1,6 +1,204 @@
 # Registro de cambios
 
-Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
+Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto siguen versionado semántico (`docs/VERSIONING.md`).
+
+## [3.90.1] - 2026-10-18
+
+Repositorio ordenado: los textos que lo describen dicen lo que hay. Sin cambios en la aplicación.
+
+### Cambiado
+
+- **Versión de `package.json`**: decía 0.1.0 desde el principio; ahora repite la del `CHANGELOG.md`, que
+  sigue siendo la fuente, y `check_docs.py` falla si `package.json` o `package-lock.json` se separan de ella.
+  `package.json` lleva una descripción en llano.
+- **`VERSIONING.md`**: quitada la etiqueta `docs-v0.2.0`, que se daba por vigente y nunca se creó (la pedían
+  `ROADMAP.md` §F0 y el checkpoint F0, que se dejan como están porque son historia); la tabla de ejes dice
+  dónde se lee cada versión, con los valores de hoy, y suma el almacén local (`STORE_VERSION`).
+- **`CLAUDE.md`**: el estado actual cuenta qué hay en `main` y qué espera en el PR #19.
+- **`CONTRIBUTING.md`**: el flujo real, con la entrada en el `CHANGELOG`, todas las comprobaciones que corre
+  la integración continua y borrar la rama tras fusionar.
+- **`README.md`**: la navegación enlaza la visión general, la revisión del 2026-10-18, la historia de
+  decisiones, el `CHANGELOG` y `CONTRIBUTING`.
+
+### Gobierno
+
+- **Ramas viejas**: el propietario decide borrar las cinco ya integradas en `main` y, de las dos que nunca
+  se fusionaron, guardar su último commit como etiqueta `archivo/<rama>` antes de borrarlas. La convención
+  queda en `VERSIONING.md` §Tags Git y en `CONTRIBUTING.md`; el borrado lo hace el propietario, porque la
+  sesión de la IA solo puede escribir en su propia rama.
+
+## [3.90.0] - 2026-10-18
+
+Lo que la revisión general dejó propuesto y no necesitaba una decisión del propietario
+(`docs/REVISION_2026-10-18.md` §8).
+
+**Para quien usa la aplicación:** si el separador de columnas es dudoso, ahora lo eliges tú; se leen los
+ficheros «Texto Unicode» de Excel; dos pestañas importando al mismo circuito ya no lo estropean; la barra
+de progreso no retrocede ni llega al final antes de tiempo; marcar un hallazgo ya no mueve la página; y
+las palabras «horquilla», «valla», «régimen» y «pulmón» tienen su explicación a un toque.
+
+### Corregido
+
+- **Dos pestañas, un circuito**: la acumulación compara dentro de su transacción el circuito guardado con
+  el que leyó y, si otra pestaña escribió entretanto, no escribe nada y lo dice (`CIRCUIT_CHANGED`); antes
+  quedaban lecturas, instantáneas y archivos sin dueño. La instantánea y su marca en el circuito van en una
+  sola transacción, sobre el circuito tal como está. Comprobado en el navegador con la prueba de carrera
+  de la revisión.
+- **Sin espacio a mitad**: si faltó al guardar la instantánea, el mensaje dice que las lecturas sí se
+  guardaron, no «no se ha escrito nada».
+- **Recuentos de hallazgos**: el informe contaba 15 menos que la barra (omitía «Más hallazgos del
+  periodo»); la memoria explica por qué su cifra es menor que la de la bandeja.
+- **El `.agvproj`** solo descomprime el manifiesto antes de validarlo y después solo las secciones que
+  declara; un índice fuera del fichero, un JSON roto o un manifiesto con otra forma son un error con su
+  texto, no un `RangeError` o un `TypeError` (TC-393). El zip descomprime por trozos sin reservar lo declarado.
+- **El análisis que no arranca**: si el Worker no confirma una importación en 15 s, la interfaz lo dice y
+  se libera. El hash y la decodificación del fichero, dentro del manejo de errores del Worker.
+- **Interfaz**: la página ya no salta al marcar un hallazgo; cambiar de pestaña no hereda el
+  desplazamiento; un fichero cargado dos veces no sale «repetido de sí mismo»; la tabla de periodos sin leer del
+  expediente de un AGV va en una caja desplazable (y enfocable con el teclado) y no se parte letra a letra
+  en el móvil.
+
+### Añadido
+
+- **Separador elegido a mano** tras un `DELIMITER_AMBIGUOUS`, como el orden de fecha (R-DAT-002, TC-391).
+- **Codificación**: UTF-16 con BOM; aviso cuando un fichero no es UTF-8 válido pero trae caracteres que sí
+  lo son (TC-392). Aviso si dos columnas de la cabecera podrían ser la misma.
+- **Palabras explicadas** en Tiempos y en Línea y calles; los campos de fecha dicen en qué hora se
+  escriben; la copia exportada se confirma junto a su botón, con nombre y tamaño.
+- **La noche sin horas se dice**: con la misma hora de inicio y de fin no hay noche, y el valor de planta
+  lo avisa (TC-383).
+- **`check_docs.py`** comprueba tablas bien formadas, el estado de cada ADR frente a `DECISIONS.md` y que
+  ninguna pregunta esté abierta y cerrada a la vez.
+
+### Cambiado
+
+- **Rendimiento del dominio sin cambiar resultados**: cortes colectivos, contraste cortes–ráfagas,
+  adelantamientos FIFO, antigüedad en calles e historia por tramo pasan de cuadráticos a ventanas e
+  índices; la salida es la misma, orden incluido, en 400 casos por función (TC-381). Con 20.000 cortes,
+  3,7 s → 27 ms; con 20.000 pasadas FIFO, 2,1 s → 64 ms.
+- **Empates de instante**: los cortes de conexión desempatan por fila (TC-382); las demás funciones
+  declaran que reciben lecturas en orden canónico. Pruebas propias para la cobertura, el orden y los
+  bordes de los cortes (TC-384 a TC-386).
+- **Progreso por etapas**, sin retroceder; tras leer las filas, «analizando».
+- **Textos**: «30,0 h»; «variación 3 %» en vez de «CV 0.03»; los botones del banco dicen qué miden; una
+  tira del inventario al 100 % ya no se pinta; la etiqueta de «a la misma hora» se entiende (TC-387).
+- **Código**: las migraciones del almacén en `store-schema.ts`; 43 símbolos dejan de exportarse y una
+  función sin uso se borra; las constantes de criterio llevan su regla.
+
+### Documentación
+
+- **`PROJECT_MEMORY.md` en 208 líneas** con lo vigente y el relevo; todo lo fechado, íntegro y en orden, en
+  el nuevo `docs/history/DECISION_LOG.md` (comprobado frase a frase).
+- `DOMAIN_MODEL.md` con la tabla del concepto al código; `RISK_REGISTER.md` con el estado de cada riesgo al
+  2026-10-18 (probabilidad e impacto, sin tocar); `ALGORITHM_CATALOG.md` y `UX_SPEC.md` con sus secciones en
+  orden y sin «Parte NN»; `CONTEXT_INDEX.md` señala la sección, no el documento entero; manual y guía en tú,
+  y la guía con los mensajes nuevos.
+- `WORKER_PROTOCOL.md` (`CIRCUIT_CHANGED`, plazo de `accepted`, progreso), `SECURITY_PRIVACY.md` §9,
+  `RULE_CATALOG.md` (R-DAT-002), `CONFIG_SCHEMA.md` §3.2.
+
+### Gobierno
+
+- Cuatro preguntas nuevas: OQ-181 («no lo lee» sin pasada probada, frente a R-OPP-008), OQ-182 (la
+  resolución de minuto decidida con una sola transición), OQ-183 (a dónde vuelve la página tras borrar un
+  circuito) y OQ-184 (R-GRA-014 «la mayoría» frente a §6.7 «la mitad o más»).
+- Dejado a propósito, con su motivo, en `REVISION_2026-10-18.md` §8.3: textos que una prueba fija
+  literalmente, cambios de diseño y los troceos grandes del código.
+
+## [3.89.0] - 2026-10-18
+
+Revisión general del producto y de la documentación: cinco revisiones en paralelo (código, dominio,
+importación y guardado, interfaz y textos, documentación), cada hallazgo reproducido antes de tocarlo.
+Qué se encontró, qué se corrigió y qué queda propuesto o por decidir: `docs/REVISION_2026-10-18.md`,
+con los cinco informes completos en `docs/revisiones/2026-10-18/`.
+
+### Corregido
+
+- **El Worker podía quedarse en un bucle sin fin** si la mitad de los tiempos entre pasos por la
+  línea eran 0 ms (dos AGV en el mismo instante, normal con resolución de minuto): la cadencia salía 0 y
+  el recorrido de cada parada no avanzaba. Esos tiempos no miden cadencia (R-DAT-013) y el paso se
+  exige mayor que cero (TC-375).
+- **La cola cortada fabricaba pasadas y estancias completas**: una entrada leída fuera del tramo
+  completo de una exportación y la salida en la siguiente contaban como pasada FIFO y como estancia de
+  carga de cuatro horas. Las dos exigen ahora los dos extremos en el mismo tramo de cobertura, como el
+  grafo y las vueltas (R-DAT-007, TC-374).
+- **Los campos de fecha de la interfaz** (ventana del expediente, contramedidas, fecha del plano)
+  convertían la hora escrita con el método iterativo que ADR-0013 rechaza: en la hora repetida de
+  octubre daban un instante distinto al de las lecturas. Un solo módulo, `time-input.ts`, sobre
+  `wallClockToUtc` (TC-373).
+- **Una fila con fecha imposible** (`24/13/2026`) declaraba el fichero «contradictorio» y lo rechazaba
+  entero; ahora va a cuarentena como cualquier fecha inválida (R-DAT-014, TC-379).
+- **«A la misma hora» cruza la medianoche**: las 23:55 y las 00:05 distan diez minutos, no 1.430 (TC-377).
+- **La mediana del resto con un AGV solo** es «sin otro AGV con quien comparar», no 0 (TC-378).
+- **El `.agvproj` acota los nombres de sección** y el objeto de secciones no tiene prototipo: una sección
+  `__proto__` ya no toca nada (TC-380).
+- **El límite de 512 MiB se comprueba antes de leer el fichero**; antes, tras leerlo, hashearlo y
+  decodificarlo (42 s y 1,2 GB para 541 MB).
+- **Un rechazo de promesa sin capturar en el Worker** llega ahora a la interfaz como error; antes la
+  página se quedaba ocupada sin mensaje.
+- **El informe del circuito** leía la memoria del último análisis y decía «sin consolidar» tras
+  consolidar; **el mismo fichero cargado tres veces** contaba como «3 ficheros»; **el buscador
+  «Expediente»** dejaba la ficha fuera de la vista; **cambiar de pestaña** conservaba el desplazamiento de
+  la anterior.
+- **Fuga de oyentes**: cada gráfico añadía uno del tema claro/oscuro a `window` que nunca se quitaba.
+  **Descargas**: siete de diez revocaban el `blob:` justo tras el clic, causa conocida de descargas vacías.
+
+### Cambiado
+
+- **Textos**: fuera los identificadores internos que veía la persona (`R-DAT-020`, `OQ-159`, `R-EVI-006`,
+  «(F4)», «el Worker», «Procedimiento …»); las inferencias dichas como inferencias («parece que no se
+  movía», «compatible con una parada real», «apunta a»); «Por azar se esperarían 0,4 esperas»; «68 de
+  68 — revisados: ninguno pendiente»; «1 fichero cargado»; comillas latinas donde había acentos graves. El
+  panel de mensajes se anuncia a los lectores de pantalla.
+- **Código**: `dom.ts` (`node`, `button`, `downloadBlob`) y `time-input.ts` sustituyen las copias
+  repartidas en diez ficheros; diez símbolos sin uso borrados; formateadores de fecha construidos una
+  vez (×80) y perfil horario con la caché de cuartos de hora (300 ms → 4 ms por 100.000 lecturas); un
+  NUL literal en `graph.ts` pasa a `\u0000`. La prueba de capas codifica las reglas que el código cumple
+  (TC-376) y `ARCHITECTURE.md` describe las capas que existen.
+
+### Documentación
+
+- Tablas rotas reparadas en `RULE_CATALOG.md` (R-GRA-011 a R-GRA-021 eran texto corrido),
+  `OPEN_QUESTIONS.md` (cinco cerradas fuera de la tabla), `WORKER_PROTOCOL.md` y ADR-0018.
+- Estados caducos: `PROJECT_MEMORY.md` («F3 en curso»), `ARCHITECTURE.md` (stack «candidato»,
+  «estructura futura»), `DECISIONS.md` (ADR-0009), `UX_SPEC.md` (áreas «que no existen» y existen),
+  `CONTEXT_INDEX.md`, `AGENTS.md`, la cabecera de este fichero, `TRACEABILITY_MATRIX.md`,
+  `LEGACY_ASSESSMENT.md`. `PHASE_GATES.md`: cabeceras de cierre de G0 y G3; afinidad de G1 marcada.
+- `OPEN_QUESTIONS.md`: OQ-P05 ya no está abierta y cerrada a la vez; OQ-160 a OQ-162 pasan a cerradas
+  (lo estaban desde ADR-0017).
+- **Nuevo `docs/VISION_GENERAL.md`**: el proyecto en una página. El `README` abre con una frase llana y
+  tres puertas de entrada: usar, decidir, desarrollar.
+- `MANUAL_DE_USO.md`: consolidar exige que no quede ningún hallazgo pendiente; el orden para las listas
+  (importar, cargar, importar otra vez).
+
+### Gobierno
+
+- Cuatro preguntas nuevas para el propietario: OQ-177 (la definición de terminado exige linter y
+  pruebas de propiedades que no existen), OQ-178 (resolución asimétrica de la hora repetida), OQ-179
+  (relectura del ancla frente a vuelta sin lecturas: una corrección se probó, rompía una prueba
+  legítima y se revirtió), OQ-180 (inventario sin lista `memoria`). Dos contradicciones código↔documento
+  anotadas en el informe (§4).
+
+## [3.88.4] - 2026-10-18
+
+Subida de Vitest, en su propia entrega (condición de G6 por OQ-176).
+
+### Cambiado
+
+- **Vitest 3.2.7 → 5.0.5**, versión exacta. Corrige los tres avisos de `npm audit` (`tinypool` y
+  `@vitest/mocker`); ahora no queda ninguno. Vitest 4.1.x no se instala con npm 10 y 5.0.5 sí. Solo es
+  herramienta de pruebas: nada cambia en lo publicado ni en `vitest.config.ts`.
+- Comprobado: las mismas 962 pruebas unitarias, una a una, pasan con las dos versiones; las 82 de
+  navegador, la compilación y la comprobación de tipos, también.
+
+## [3.88.3] - 2026-10-18
+
+### Gobierno
+
+- **OQ-176 cerrada** por el propietario, con la sugerencia aceptada: el riesgo de los tres avisos de Vitest
+  3.2.7 en dependencias de desarrollo se acepta con fecha límite antes de G6. El piloto no espera; la subida
+  a Vitest 4 o 5 va en su propia entrega y pasa a ser condición de G6 (`PHASE_GATES.md`). Reflejado en
+  `SECURITY_PRIVACY.md` §9, `OPERACION.md` §5, `ROADMAP.md` §F6 y `templates/PILOT_ACCEPTANCE.md` §7.
+- Sin cambios de código.
 
 ## [3.88.2] - 2026-10-18
 

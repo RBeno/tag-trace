@@ -196,7 +196,15 @@ function duration(ms: number): string {
   return ms >= 120_000 ? `${(ms / 60_000).toFixed(1).replace(".", ",")} min` : `${Math.round(ms / 1000)} s`;
 }
 
-/** Las lecturas de cada AGV en orden, con las repeticiones seguidas del mismo tag en una. */
+/**
+ * Las lecturas de cada AGV en orden, con las repeticiones seguidas del mismo tag en una.
+ *
+ * Precondición (B-10, revisión del 2026-10-18): `readings` llega en orden canónico —`sortReadings`
+ * con el sentido de su fuente (ADR-0013)—. El `sort` por instante es estable y conserva ese desempate
+ * entre dos lecturas del mismo AGV en el mismo instante. Aquí no se puede rehacer: el sentido de la
+ * pila no llega a esta función, y desempatar por fila ascendente invertiría el orden de las fuentes
+ * `newest-first`.
+ */
 function vehicleSteps(readings: readonly Reading[]): Map<string, Step[]> {
   const byVehicle = new Map<string, Step[]>();
   for (const reading of readings) {
@@ -295,7 +303,12 @@ export function measureLineFeed(
     const regime = regimeOf((from.utcMs + to.utcMs) / 2);
     if (covered(coverage, from.utcMs, to.utcMs)) gaps.push({ from, to, regime });
   }
-  const productionGaps = gaps.filter((gap) => gap.regime === "produccion");
+  // Dos AGV leídos en el mismo instante no miden tiempo (R-DAT-013): un tiempo entre pasos de 0 ms no
+  // entra en la cadencia. Hasta 3.89.0 entraba y, con la mitad de los pasos así (resolución de minuto),
+  // la cadencia salía 0 y el recorrido de cada parada, más abajo, no avanzaba nunca.
+  const measurable = (gap: { readonly from: { readonly utcMs: number }; readonly to: { readonly utcMs: number } }): boolean =>
+    gap.to.utcMs > gap.from.utcMs;
+  const productionGaps = gaps.filter((gap) => gap.regime === "produccion" && measurable(gap));
   if (productionGaps.length < thresholds.minSamples) {
     return empty(
       `Por la línea pasan ${passes.length} AGV: hacen falta ${thresholds.minSamples} tiempos entre pasos de producción para medir su cadencia.`,
@@ -312,7 +325,7 @@ export function measureLineFeed(
     (cadenceGaps.length >= thresholds.minSamples ? cadenceGaps : productionGaps).map((gap) => gap.to.utcMs - gap.from.utcMs),
     thresholds.minMarginMs,
   );
-  const nightGaps = gaps.filter((gap) => gap.regime === "noche");
+  const nightGaps = gaps.filter((gap) => gap.regime === "noche" && measurable(gap));
   const nightCadence =
     nightGaps.length >= thresholds.minSamples
       ? bandOf(
@@ -420,7 +433,11 @@ export function measureLineFeed(
     // que la línea tarda en tomarlo prueba que la línea no tomaba. Mirar solo al principio llamaba «le
     // faltaron AGV» a una parada en que los AGV llegaron un momento después y se quedaron esperando.
     let waiting = 0;
-    for (let at = due + band.p50Ms; at < gap.to.utcMs; at += band.p50Ms) waiting = Math.max(waiting, waitingIn(at, band.p50Ms));
+    // La cadencia es > 0 porque los tiempos de 0 ms no entran en ella; se exige aquí también: con paso 0 este
+    // recorrido no terminaría.
+    if (band.p50Ms > 0) {
+      for (let at = due + band.p50Ms; at < gap.to.utcMs; at += band.p50Ms) waiting = Math.max(waiting, waitingIn(at, band.p50Ms));
+    }
     const afterAt = positions(due, longest).find((entry) => entry.agvId === gap.to.agvId);
     const arriving: LineStop["arriving"] =
       afterAt === undefined ? null : { agvId: afterAt.agvId, tagId: afterAt.tagId, remainingMs: afterAt.remainingMs };

@@ -22,7 +22,7 @@ import type { PlanEvent } from "../domain/plan.js";
 import { plantValueEventProblem, type PlantValueEvent } from "../domain/plant-values.js";
 import type { CaseRevision, FrozenEvidence } from "../domain/incident-case.js";
 import { canonicalise, semanticHash } from "../domain/semantic-hash.js";
-import { readZip, writeZip, ZipError } from "./zip.js";
+import { readZipDirectory, writeZip, ZipError, type ZipDirectoryEntry } from "./zip.js";
 
 /** Un número desconocido se rechaza sin tocar nada. Subirlo obliga a escribir su migración. */
 export const AGVPROJ_SCHEMA_VERSION = 6;
@@ -106,46 +106,101 @@ export async function writeProject(
   ]);
 }
 
+/** Nombres de sección admitidos: letras, cifras, guiones; nunca una ruta ni `__proto__`. */
+const SECTION_NAME = /^[a-z][a-z0-9_-]*$/;
+
+const ALTERED = "El fichero está alterado o no es un `.agvproj`. No se ha cargado nada.";
+
+/** Un fallo del contenedor, dicho como fallo del proyecto y con qué hacer. */
+function asProjectError(error: unknown): unknown {
+  if (error instanceof ZipError) {
+    return new ProjectError(
+      `El contenedor no es un proyecto válido: ${error.reason}`,
+      "Vuelve a exportarlo desde el dispositivo de origen. El proyecto local no se ha tocado.",
+    );
+  }
+  return error;
+}
+
+/** Descomprime una entrada y la lee como JSON; cualquier fallo es del proyecto, con su texto. */
+async function readJson(entry: ZipDirectoryEntry, what: string): Promise<unknown> {
+  let data: Uint8Array;
+  try {
+    data = await entry.read();
+  } catch (error) {
+    throw asProjectError(error);
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(data)) as unknown;
+  } catch {
+    throw new ProjectError(`${what} no es JSON válido.`, ALTERED);
+  }
+}
+
+/** ¿Tiene el manifiesto la forma que se espera, campo a campo? Sin esto, un `null` era un `TypeError`. */
+function isManifest(value: unknown): value is ProjectManifest {
+  if (typeof value !== "object" || value === null) return false;
+  const manifest = value as Record<string, unknown>;
+  return (
+    typeof manifest["circuit_id"] === "string" &&
+    typeof manifest["exported_at"] === "number" &&
+    typeof manifest["hash"] === "string" &&
+    Array.isArray(manifest["sections"]) &&
+    (manifest["sections"] as unknown[]).every(
+      (digest) =>
+        typeof digest === "object" &&
+        digest !== null &&
+        typeof (digest as Record<string, unknown>)["name"] === "string" &&
+        typeof (digest as Record<string, unknown>)["hash"] === "string",
+    )
+  );
+}
+
 /**
  * Lee un `.agvproj` en el orden que fija ADR-0012.
  *
  * Nada de lo que devuelve es utilizable hasta que **todo** ha validado: una sección corrupta
  * invalida la carga entera. Quien llama recibe un proyecto completo o una excepción, nunca un
- * proyecto a medias — que es lo que hace posible la carga transaccional.
+ * proyecto a medias — que es lo que hace posible la carga transaccional. Desde 3.90.0 solo se
+ * descomprime el manifiesto antes de validarlo, y después solo las secciones que declara; y todo
+ * fallo de forma es un `ProjectError` con su texto.
  */
 export async function readProject(bytes: Uint8Array): Promise<Project> {
-  let entries;
+  let directory: readonly ZipDirectoryEntry[];
   try {
-    entries = await readZip(bytes);
+    directory = readZipDirectory(bytes);
   } catch (error) {
-    if (error instanceof ZipError) {
-      throw new ProjectError(
-        `El contenedor no es un proyecto válido: ${error.reason}`,
-        "Vuelve a exportarlo desde el dispositivo de origen. El proyecto local no se ha tocado.",
-      );
-    }
-    throw error;
+    throw asProjectError(error);
   }
 
   // 1. El manifiesto, antes que ninguna sección.
-  const manifestEntry = entries.find((entry) => entry.name === MANIFEST);
+  const manifestEntry = directory.find((entry) => entry.name === MANIFEST);
   if (manifestEntry === undefined) {
     throw new ProjectError("El contenedor no trae manifiesto.", "No es un `.agvproj`.");
   }
-  const manifest = JSON.parse(new TextDecoder().decode(manifestEntry.data)) as ProjectManifest;
+  const raw = await readJson(manifestEntry, "El manifiesto");
+  const version = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>)["schema_version"] : undefined;
+  if (typeof version !== "number" || !Number.isInteger(version)) {
+    throw new ProjectError("El manifiesto no declara un esquema reconocible.", ALTERED);
+  }
 
   // 2. Una versión desconocida se rechaza sin tocar el almacenamiento local. Las anteriores conocidas
   //    se abren: el esquema 1 es el 2 sin la sección `instantaneas`, el 2 es el 3 sin `memoria`, el 3
   //    es el 4 sin `plano` y el 4 es el 5 sin `valores`.
-  if (!AGVPROJ_READABLE_VERSIONS.includes(manifest.schema_version)) {
+  if (!AGVPROJ_READABLE_VERSIONS.includes(version)) {
     throw new ProjectError(
-      `El proyecto usa el esquema ${manifest.schema_version} y esta versión entiende el ` +
+      `El proyecto usa el esquema ${version} y esta versión entiende el ` +
         `${AGVPROJ_SCHEMA_VERSION}.`,
-      manifest.schema_version > AGVPROJ_SCHEMA_VERSION
+      version > AGVPROJ_SCHEMA_VERSION
         ? "Se creó con una versión más nueva de la aplicación. Actualízala para abrirlo."
         : "Hace falta una migración explícita, que esta versión todavía no incluye.",
     );
   }
+
+  if (!isManifest(raw)) {
+    throw new ProjectError("El manifiesto no tiene la forma de un `.agvproj`.", ALTERED);
+  }
+  const manifest = raw;
 
   // 3. El manifiesto tiene que avalarse a sí mismo antes de creerle los hashes de sección.
   const { hash, ...partial } = manifest;
@@ -157,16 +212,24 @@ export async function readProject(bytes: Uint8Array): Promise<Project> {
   }
 
   // 4. Cada sección contra su hash declarado. Una sola que falle invalida la carga completa.
-  const sections: Record<string, unknown> = {};
+  // Sin prototipo, y con el nombre acotado: una sección llamada `__proto__` o con una ruta dentro
+  // no toca nada que no sea suya.
+  const sections = Object.create(null) as Record<string, unknown>;
   for (const digest of manifest.sections) {
-    const entry = entries.find((item) => item.name === `sections/${digest.name}.json`);
+    if (!SECTION_NAME.test(digest.name)) {
+      throw new ProjectError(
+        "El manifiesto declara una sección con un nombre que no es válido.",
+        "El fichero está alterado. No se ha cargado nada.",
+      );
+    }
+    const entry = directory.find((item) => item.name === `sections/${digest.name}.json`);
     if (entry === undefined) {
       throw new ProjectError(
         `Falta la sección «${digest.name}», que el manifiesto declara.`,
         "El fichero está incompleto. No se ha cargado nada.",
       );
     }
-    const value = JSON.parse(new TextDecoder().decode(entry.data)) as unknown;
+    const value = await readJson(entry, `La sección «${digest.name}»`);
     if ((await semanticHash(value)) !== digest.hash) {
       throw new ProjectError(
         `La sección «${digest.name}» no coincide con su hash.`,
@@ -294,7 +357,7 @@ export function readMemorySection(project: Project): ProjectMemorySection | unde
 // --- Sección `plano` (esquema 4) -------------------------------------------------------------------
 
 /** El nombre de la sección del plano físico en el contenedor. */
-export const PLAN_SECTION = "plano";
+const PLAN_SECTION = "plano";
 
 /** Lo que viaja del plano físico (ADR-0016): sus eventos, tal cual, en orden de registro. */
 export interface ProjectPlanSection {
@@ -362,7 +425,7 @@ export function readPlanSection(project: Project): ProjectPlanSection | undefine
 // --- Sección `valores` (esquema 5) -----------------------------------------------------------------
 
 /** El nombre de la sección de valores de planta confirmados en el contenedor. */
-export const PLANT_VALUES_SECTION = "valores";
+const PLANT_VALUES_SECTION = "valores";
 
 /** Lo que viaja de los valores de planta confirmados (OQ-140): sus eventos, tal cual, en orden de registro. */
 export interface ProjectPlantValuesSection {
@@ -397,7 +460,7 @@ export function readPlantValuesSection(project: Project): ProjectPlantValuesSect
 
 // --- Expedientes de incidencia (esquema 6, OQ-174) -----------------------------------------------------
 
-export const INCIDENTS_SECTION = "incidencias";
+const INCIDENTS_SECTION = "incidencias";
 
 /**
  * Los expedientes del circuito: todas sus revisiones, con su cadena de hashes, y los recortes congelados

@@ -45,7 +45,7 @@ import {
   type Regime,
   type SegmentBands,
 } from "./segment-bands.js";
-import { localHourReader, shiftIndexOfHour, type StopJustification } from "./silence-kind.js";
+import { localHourReader, QUARTER_MS, shiftIndexOfHour, type StopJustification } from "./silence-kind.js";
 
 export interface FlowStopThresholds {
   /** Exceso sobre lo habitual a partir del cual el primero de la cola sin justificar es un bloqueo. */
@@ -179,8 +179,6 @@ export interface FlowReport {
   readonly productionFlow: readonly ProductionStopFlow[];
 }
 
-const QUARTER_MS = 15 * 60_000;
-
 /** Cuántas lecturas hay en `[from, to]` en una lista ordenada. */
 function countBetween(sorted: readonly number[], from: number, to: number): number {
   const lower = (value: number): number => {
@@ -237,7 +235,8 @@ export function productionStops(
       ? mergeIntervals([...coverage])
       : [{ from: events[0] as number, to: events[events.length - 1] as number }];
 
-  // Ritmo de la base por turno: lecturas y tiempo cubierto de cada turno.
+  // Ritmo de la base por turno: lecturas y tiempo cubierto de cada turno. El tiempo se reparte por
+  // cuartos de hora UTC (`QUARTER_MS`): dentro de un cuarto la hora local, y con ella el turno, no cambia.
   const hourOf = localHourReader(zone);
   const shifts = Math.max(1, shiftStartHours.length);
   const shiftOf = (utcMs: number): number => shiftIndexOfHour(hourOf(utcMs), shiftStartHours);
@@ -310,7 +309,9 @@ export function sameTimeRepetitions(startsUtcMs: readonly number[], zone: string
     const own = local[index] as { day: string; minute: number };
     return startsUtcMs.filter((_, other) => {
       const them = local[other] as { day: string; minute: number };
-      return other !== index && them.day !== own.day && Math.abs(them.minute - own.minute) <= tolerance;
+      // Por el camino corto del reloj: las 23:55 y las 00:05 distan 10 minutos, no 1.430.
+      const apart = Math.abs(them.minute - own.minute);
+      return other !== index && them.day !== own.day && Math.min(apart, 24 * 60 - apart) <= tolerance;
     });
   });
 }
@@ -598,6 +599,10 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
     production.stops.findIndex(
       (entry) => overlapMs({ from, to }, { from: entry.fromUtcMs, to: entry.toUtcMs }) >= minOverlap,
     );
+  // Justificada por la producción parada (R-AGV-018, primera justificación) si se solapa con una parada
+  // de la producción en **la mitad de su exceso o más** (ALGORITHM_CATALOG §6.6): el exceso sobre lo
+  // habitual del tramo, no la duración, porque lo habitual lo habría tardado igual. Es un criterio de
+  // la regla, no un valor de planta.
   const productionOf = (stop: Raw): number =>
     overlapsProduction(stop.transition.fromTime, stop.transition.toTime, 0.5 * stop.excessMs);
 
@@ -721,6 +726,10 @@ export function flowStops(input: FlowInput, thresholds: FlowStopThresholds): Flo
   const productionFlow: ProductionStopFlow[] = production.stops.map((entry, stopIndex) => {
     // Todas las transiciones, no solo las medibles: el que entró a una calle de carga durante la parada
     // también estaba en el circuito y siguió por su sitio; dejarlo fuera restaba AGV al recuento.
+    // «Dentro» es solaparse con la parada **la mitad de su duración o más**: la transición de un AGV
+    // que la esperó; las que solo rozan un borde son de antes o de después. Ni R-AGV-018 ni
+    // ALGORITHM_CATALOG §6.6 («Cómo salen de una parada de la producción») escriben esta mitad: es el
+    // criterio con que se implementó, no un valor de planta.
     const inside = transitions.filter(
       (transition) =>
         overlapMs({ from: transition.fromTime, to: transition.toTime }, { from: entry.fromUtcMs, to: entry.toUtcMs }) >=

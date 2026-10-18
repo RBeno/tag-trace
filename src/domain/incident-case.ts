@@ -29,14 +29,14 @@ import { semanticHash } from "./semantic-hash.js";
 import type { SnapshotEdge } from "./snapshot.js";
 
 /** Forma de la revisión guardada. Subirla obliga a leer las anteriores sin perderlas. */
-export const CASE_SCHEMA_VERSION = 1;
+const CASE_SCHEMA_VERSION = 1;
 
 /**
  * Versión del procedimiento que congela el recorte; viaja en cada revisión (`VERSIONING.md`).
  * `recorte-1` (3.74.0) congelaba solo las lecturas; `recorte-2` (3.75.0) añade los eventos de conexión
  * de la ventana y el contexto del retroceso. Los de `recorte-1` se siguen leyendo, sin contexto.
  */
-export const EVIDENCE_ALGORITHM = "recorte-2";
+const EVIDENCE_ALGORITHM = "recorte-2";
 
 /** Estados del ciclo de vida (`INCIDENTS_REPORTING.md` §7, OQ-170). */
 export type CaseState =
@@ -156,7 +156,7 @@ export interface FrozenEvidence {
  * y el primero de después, para saber si un corte ya estaba abierto al empezar o se cierra al acabar.
  * Sin un margen inventado.
  */
-export function selectConnections(events: readonly FrozenConnection[], span: { readonly from: number; readonly to: number }): readonly FrozenConnection[] {
+function selectConnections(events: readonly FrozenConnection[], span: { readonly from: number; readonly to: number }): readonly FrozenConnection[] {
   const kept = new Set<FrozenConnection>();
   const before = new Map<string, FrozenConnection>();
   const after = new Map<string, FrozenConnection>();
@@ -501,7 +501,7 @@ export async function createCase(input: CreateCaseInput): Promise<CaseRevision> 
 }
 
 /** El hash de una revisión: su contenido sin el propio hash. */
-export function revisionHash(revision: CaseRevision): Promise<string> {
+function revisionHash(revision: CaseRevision): Promise<string> {
   return semanticHash({ ...revision, hash: "" });
 }
 
@@ -861,7 +861,7 @@ function cleanAuthor(author: string | null): string | null {
  * Palabras que afirman causa (D6). El texto que genera el programa no las usa: solo una persona
  * confirma una causa, y eso lo escribe ella. La prueba de lenguaje recorre los textos de este módulo.
  */
-export const CAUSAL_VOCABULARY: readonly RegExp[] = [
+const CAUSAL_VOCABULARY: readonly RegExp[] = [
   "causa",
   "causas",
   "causado",

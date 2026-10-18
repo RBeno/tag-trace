@@ -62,6 +62,14 @@ describe("régimen", () => {
     expect(exposure).toEqual({ produccionMs: 1.75 * HOUR, nocheMs: 2 * HOUR, paradaMs: 0.25 * HOUR });
   });
 
+  it("con la misma hora de inicio y de fin no hay noche: todo el día es producción (B-13, TC-383)", () => {
+    // Se fija tal cual: una planta sin noche puede quererlo, y por eso no se prohíbe; la vista de los
+    // valores de planta lo dice (`NO_NIGHT_NOTE`, plant-values.test.ts).
+    const reader = regimeReader("Europe/Madrid", { nightFromHour: 22, nightToHour: 22 });
+    const hours = Array.from({ length: 24 }, (_, hour) => reader(Date.UTC(2026, 8, 24, hour, 30)));
+    expect(new Set(hours)).toEqual(new Set(["produccion"]));
+  });
+
   it("la resolución de la fuente es de un minuto si ningún intervalo baja del minuto", () => {
     expect(sourceResolutionMs([step("A", "B", 0, 60_000), step("A", "B", 0, 120_000)])).toBe(60_000);
     expect(sourceResolutionMs([step("A", "B", 0, 60_000), step("A", "B", 0, 17_000)])).toBe(1_000);

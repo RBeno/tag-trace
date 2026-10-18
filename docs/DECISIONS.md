@@ -1,8 +1,8 @@
 ---
 document_id: TT-DECISIONS-001
-version: 0.6.0
+version: 0.7.0
 status: active
-last_updated: 2026-10-09
+last_updated: 2026-10-18
 ---
 
 # Índice de decisiones arquitectónicas
@@ -17,7 +17,7 @@ last_updated: 2026-10-09
 | [ADR-0006](decisions/ADR-0006-incidents-separated-from-baseline.md) | Incidencias separadas de memoria normal | Accepted |
 | [ADR-0007](decisions/ADR-0007-no-real-data-in-github.md) | Prohibición de datos industriales en GitHub | Accepted |
 | [ADR-0008](decisions/ADR-0008-modular-core-and-workers.md) | Núcleo modular independiente y Workers | Accepted |
-| [ADR-0009](decisions/ADR-0009-candidate-web-stack.md) | Stack web candidato y selección por prueba | Proposed |
+| [ADR-0009](decisions/ADR-0009-candidate-web-stack.md) | Stack web candidato y selección por prueba | Accepted |
 | [ADR-0010](decisions/ADR-0010-phase-gated-ai-development.md) | Desarrollo con IA gobernado por fases y pruebas | Accepted |
 | [ADR-0011](decisions/ADR-0011-greenfield-repository.md) | Nuevo repositorio; prototipo como referencia | Accepted |
 | [ADR-0012](decisions/ADR-0012-agvproj-container.md) | Contenedor `.agvproj`: zip, manifiesto y hash por sección | Accepted |

@@ -605,6 +605,8 @@ export function inventoryChart(bars: readonly InventoryBar[]): HTMLElement {
     summary.push(`${label} ${count}`);
   }
   strip.setAttribute("aria-label", `Inventario: ${summary.join(", ")}`);
+  // Una tira con un solo tramo al 100 % no dice nada que no digan las barras de abajo.
+  const stripTells = summary.length > 1;
 
   const rows = document.createElement("div");
   rows.className = "inv-rows";
@@ -629,7 +631,7 @@ export function inventoryChart(bars: readonly InventoryBar[]): HTMLElement {
     rows.append(name, track, count, action);
   }
 
-  wrapper.append(strip, stripLabels, rows);
+  wrapper.append(...(stripTells ? [strip, stripLabels] : []), rows);
   wrapper.append(
     table(
       ["Clase", "Tags", "Certeza", "Qué comprobar"],

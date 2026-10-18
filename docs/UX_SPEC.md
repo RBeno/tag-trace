@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.64.0
+version: 0.66.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Especificación de experiencia de usuario
@@ -78,7 +78,8 @@ vez que su pestaña se enseña. Y la bandeja del Resumen necesita todas las tarj
 de la sección que las explica: construirlas dos veces costaría el doble para enseñar lo mismo.
 
 Áreas previstas que todavía no existen en el producto y que irán a su pestaña cuando lleguen:
-gestor de circuitos y preparación del análisis (Datos), casos similares, hipótesis y contramedidas de los expedientes (Línea y calles), configuración (Datos).
+gestor de circuitos y preparación del análisis (Datos) y configuración (Datos). Los casos similares, las
+hipótesis y las contramedidas de los expedientes ya están en Línea y calles (3.78.0 y 3.80.0).
 
 ## 3. Flujo de análisis
 
@@ -123,7 +124,7 @@ va en su familia y en su sitio: la banda es siempre la omisión de los tags, en 
 exterior es la WiFi, en verde azulado (propietario, 2026-10-08: «la fusión del anillo con tags y
 wifi, están todos en verde, no hay diferenciación»).
 
-## 4.1 Expediente de un AGV o de un tag
+### 4.1 Expediente de un AGV o de un tag
 
 Se entra escribiendo un identificador. Es la vía de trabajo más frecuente —«qué le pasa al 3524»,
 «quién ha dejado de leer el 58021»— y debe resolverse sin recorrer AGV por AGV.
@@ -165,7 +166,7 @@ cuando. La vía de trabajo más frecuente no puede ser la que más cuesta alcanz
 `sin datos`, diciendo cuándo llega esa primera lectura (R-GRA-010). Un silencio afirma que una
 posición conocida deja de confirmarse; antes de la primera lectura no hay ninguna.
 
-## 4.2 Destacados primero, conjunto completo a demanda
+### 4.2 Destacados primero, conjunto completo a demanda
 
 Un circuito real son ciento cincuenta tags por cincuenta vehículos: siete mil quinientas celdas.
 Enseñarlas de golpe no es informar, es esconder el hallazgo dentro de una cuadrícula. La vista se
@@ -216,7 +217,7 @@ Una matriz es bidimensional por naturaleza, así que se desplaza **dentro de su 
 contradice la regla de §5.1 —ningún gráfico exige desplazamiento para llegar a su contenido útil—
 porque el contenido útil ya está arriba, sin desplegar nada.
 
-## 4.3 Revisión en campo
+### 4.3 Revisión en campo
 
 Para ir a los puntos conflictivos con el móvil y dejar constancia de lo que se vio. Cada tarjeta de
 hallazgo lleva **un solo control de revisión**: un botón que enseña el icono y el estado actual
@@ -262,7 +263,7 @@ Lo que no hace: consolidar. Revisar es el paso «Revisión de hallazgos» del fl
 `MEMORY_CONSOLIDATION.md` §6; escribir esa revisión como versión nueva de la memoria del circuito es
 F4.
 
-## 4.4 Lenguaje de la interfaz
+### 4.4 Lenguaje de la interfaz
 
 La pantalla habla como un producto terminado, no como el proyecto que lo construye:
 
@@ -286,7 +287,7 @@ La pantalla habla como un producto terminado, no como el proyecto que lo constru
   silencio», «posible…») se conservan, en una frase, porque son lo que evita una conclusión falsa.
 - **Singular y plural reales**, nunca «tag(s)».
 
-## 4.5 Bandeja de hallazgos
+### 4.5 Bandeja de hallazgos
 
 Todas las tarjetas de hallazgo con clave de revisión viven en **una sola lista en el Resumen**, no
 repartidas por las secciones donde se calculan (3.48.0). Es la unidad de revisión (R-EVI-007), y hay
@@ -325,7 +326,7 @@ pestaña.
 Un tipo que no esté en el catálogo va a contexto y se enseña con su identificador: antes que
 esconderlo.
 
-## 4.6 Avisos
+### 4.6 Avisos
 
 Lo que no es un hallazgo del circuito pero condiciona lo que se puede afirmar de él, y que hasta
 3.70.0 se quedaba dentro de la sección que lo detectaba: un aviso que nadie ve no avisa. Desde 3.70.0
@@ -347,7 +348,7 @@ No se inventa gravedad ni orden: la lista va en el orden en que se recogen, y si
 («Ningún aviso: toda la configuración cargada se pudo usar…»). Es `div.notices-host` con `h3` «Avisos»,
 una línea de recuento y `ul.notices`.
 
-## 4.7 Problemas detectados
+### 4.7 Problemas detectados
 
 Tags, AGV y WiFi empiezan, bajo su título, con el bloque **«Problemas detectados»** (3.71.0;
 propietario, 2026-10-17: «quiero orden para poder ir directo a buscar una anomalía»): el índice de lo
@@ -359,7 +360,7 @@ sección que lo detalla y le deja el foco. Las tarjetas no se repiten: siguen en
 lo dice. Las secciones de cada pestaña van después en el orden de §2: los problemas primero y el
 contexto (inventario, flota) al final.
 
-## 4.8 Frase de estado, saltos e informe
+### 4.8 Frase de estado, saltos e informe
 
 **Referencias que lo fundan** (revisadas el 2026-10-17 a petición del propietario: «busca en otros
 programas, estudios de interfaz, de hombre-máquina y de atención»): la HMI de alto rendimiento
@@ -408,7 +409,7 @@ instantáneas, y una pantalla vacía que guíe los tres pasos (lecturas → list
 - Filtrar sin recalcular el análisis completo.
 - Degradar detalle de forma progresiva en móvil.
 
-## 5.1 Vistas de periodo y de circuito
+### 5.1 Vistas de periodo y de circuito
 
 Cuatro representaciones probadas contra una exportación real. Ninguna diagnostica: **dibujan solo lo
 observado**. Cada una lleva escrito su propio límite, porque un gráfico que no dice lo que no sabe
@@ -438,7 +439,7 @@ Reglas que se derivan de haberlas dibujado:
 que no se publican ni se alojan (ADR-0007, ADR-0014); lo que puede vivir en el repositorio es la
 misma vista contra un fixture sintético.
 
-## 5.2 Las que ya están en el producto
+### 5.2 Las que ya están en el producto
 
 Cuatro, dibujadas en SVG propio y sin ninguna dependencia (ADR-0014). Dos venían de §5.1 y dos son
 nuevas, porque al construirlas quedó claro que faltaban:
@@ -450,7 +451,7 @@ nuevas, porque al construirlas quedó claro que faltaban:
 | **Actividad por vehículo** | quién lee, cuándo, y quién no aparece | una celda vacía **dentro** de cobertura es ausencia de lecturas, no avería |
 | **Inventario de tags** | qué declara cada lista frente a lo observado | ninguna clase es un diagnóstico; la última columna dice qué hay que valorar |
 
-### 5.2.1 Calles de carga online
+#### 5.2.1 Calles de carga online
 
 Mismo criterio que la matriz de lectura: **lo notable de entrada y el conjunto plegado**. Lo que
 aparece sin desplegar nada es una calle por la que no pasó nadie, la espera más larga de cada calle,
@@ -478,7 +479,7 @@ lectura y el tiempo que estuvieron presentes. Se enseñan de entrada, con lo que
 al lado: pueden cargar en una calle no declarada o haber estado poco tiempo en la ventana, y sin SOC
 no se juzga su batería (R-CO-004). Un arranque en frío sí cuenta como entrada (R-CO-007).
 
-### 5.2.2 Rotura súbita y degradación progresiva (R-OPP-015)
+#### 5.2.2 Rotura súbita y degradación progresiva (R-OPP-015)
 
 Junto a los destacados de la matriz de lectura, no en una sección aparte: son exactamente el tipo de
 caso que esos destacados ya priorizan. Dos hallazgos, por tag y por AGV:
@@ -513,9 +514,9 @@ su `viewBox`. Un lienzo mucho más ancho que el hueco donde se pinta encoge las 
 se pisan, y ni los tipos ni las pruebas lo detectan. El lienzo se mantiene cerca del ancho real de
 pintado.
 
-## 5.3 Vistas de diagnóstico (Parte 38)
+### 5.3 Vistas de diagnóstico (3.17.0)
 
-Diez vistas llevadas a la aplicación desde la galería de propuestas (Parte 37), elegidas por el
+Diez vistas llevadas a la aplicación desde la galería de propuestas (presentada antes de 3.17.0, 2026-09-23), elegidas por el
 propietario. Ninguna calcula nada nuevo: dibujan lo que la matriz, las calles, el FIFO, los puntos
 críticos y la deriva ya calculaban y hasta ahora solo se leía en tarjetas y tablas. Cada una va
 **encima** de las tarjetas de su sección, que se quedan como vía accesible.
@@ -565,7 +566,7 @@ Tres reglas nuevas, las tres aprendidas al mirar el render con el circuito de au
   el final de la ventana; es una marca en la entrada. Un silencio que cruza un hueco de cobertura se
   dibuja solo en la parte cubierta.
 
-## 5.4 Flota del circuito (Parte 39)
+### 5.4 Flota del circuito (3.18.0)
 
 Cuántos vehículos de los asignados están en funcionamiento en cada momento, y la vida entera de cada
 uno en tramos continuos. Va justo después de la banda de actividad, que solo enseña a los que leen:
@@ -577,7 +578,7 @@ un asignado que no lee nada solo aparece aquí.
 | **Vida de cada AGV en el circuito** | cuándo leía, cargaba, callaba, faltaba o no estaba asignado cada vehículo | una fila por AGV en un único `canvas`; leer sin estar asignado es media barra, distinta también por la forma (R-AGV-015) |
 
 Cada tramo tiene su color y su leyenda. Los huecos sin carga se colorean por **cómo reapareció** el
-AGV (R-AGV-017, Parte 45), con los colores que pidió el propietario:
+AGV (R-AGV-017, 3.23.0), con los colores que pidió el propietario:
 
 - **leyendo** (azul) y **carga** inferida (violeta) cuentan como en funcionamiento. Un hueco que ese
   tramo tiene a menudo en ese turno —hasta tres veces su mediana— se dibuja leyendo: no es un hueco;
@@ -620,7 +621,7 @@ ventana y los que leen sin estar asignados. La tabla equivalente del recuento so
 vida de cada AGV, el porcentaje de su tiempo en cada estado y en cada clase de hueco, desplazable
 dentro de su caja.
 
-## 5.5 Cambios de tag y lectura por AGV (Parte 43)
+### 5.5 Cambios de tag y lectura por AGV (3.22.0)
 
 Lo que más se va a ver en planta, destacado dentro de su sección y sin bloque de resumen arriba:
 
@@ -644,7 +645,7 @@ Lo que más se va a ver en planta, destacado dentro de su sección y sin bloque 
 Ninguna tarjeta nombra una causa (memoria, lector, colocación): la diferencia medida basta para ir a
 mirarlo, y la causa la pone quien lo mira (R-EVI-006, R-AGV-016).
 
-## 5.6 Estado normal del circuito (Parte 47)
+### 5.6 Estado normal del circuito (3.25.0)
 
 Después de la composición del circuito, con su propio título. Arriba, una línea con cuánto tiempo
 cargado es producción, cuánto noche y cuánto con la producción parada, y la advertencia de que todo
@@ -725,7 +726,7 @@ lo de la sección usa solo producción (R-TIM-009). Después, destacados primero
 - **Cambios de la horquilla** entre el primer y el último periodo cargados, cuando hay dos: más lento
   o más rápido, con la mitad de antes y la de ahora, siempre en el mismo régimen (R-TIM-010).
 
-## 5.7 Mediciones por fichero (Parte 50)
+### 5.7 Mediciones por fichero (3.27.0)
 
 Después de «Estado normal del circuito», con su propio título. Una franja es un fichero (R-TIM-011).
 
@@ -754,7 +755,7 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
   múltiplos: el punto es la mitad de las pasadas y la barra del 80 % al 95 %, con acento en el fichero
   donde empieza el cambio. Con uno solo, una línea que dice que comparar necesita dos.
 
-## 5.8 Libros de Excel para rellenar e importar
+### 5.8 Libros de Excel para rellenar e importar
 
 - El selector de lecturas acepta la exportación de Vsystem en `.xlsx`, además del CSV, con el aviso
   «Leyendo el libro de Excel» mientras la abre (`DATA_CONTRACTS.md` §3.8).
@@ -771,7 +772,7 @@ Después de «Estado normal del circuito», con su propio título. Una franja es
   ficheros (`DATA_CONTRACTS.md` §3.7); en la interfaz no hay botones de descarga de Excel
   (propietario, 2026-09-25).
 
-## 5.9 Lo declarado en planta y los tags fuera de la lista (Parte 52)
+### 5.9 Lo declarado en planta y los tags fuera de la lista (3.31.0)
 
 - **Declarado en planta.** Cada tarjeta que nombra un tag concreto —lectura por tag, cambios de tag,
   deriva, puntos críticos, cuellos de botella, zonas oscuras, puntos conflictivos, paradas y el

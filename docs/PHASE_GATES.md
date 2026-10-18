@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.35.0
+version: 0.39.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -21,6 +21,8 @@ last_updated: 2026-10-18
 Una excepción necesita responsable, justificación, fecha límite y riesgo aceptado. No se acepta una frase genérica como «funciona».
 
 ## G0 — Autorizar F1
+
+**Cerrada el 2026-09-17 por el propietario** («Continúa con Fase 1», `checkpoints/F0_BASELINE_CANDIDATE.md`, `status: approved`). Las casillas se dejan como estaban: la evidencia de cada criterio es el propio checkpoint, y lo que no cumplía se declaró y pasó a G1 y G2 (abajo).
 
 - [ ] Alcance, exclusiones y principios revisados.
 - [ ] Reglas `accepted`, `candidate` y `configurable` correctamente clasificadas.
@@ -46,9 +48,10 @@ cumplir que se declaran en lugar de darse por buenos. Marcar una casilla que no 
 sería exactamente lo que `AI_DEVELOPMENT_GOVERNANCE.md` prohíbe: convertir una puerta en un trámite.
 
 - [ ] Plan de aceptación local de F1 acordado, con responsable de validación (OQ-B05, parte de F1).
-- [ ] Circuitos aislados y afinidad funcionando. **Parcial**: los circuitos están aislados y la
-      acumulación es por circuito, pero la afinidad de ALG-003 no está implementada, así que nada
-      impide hoy cargar en un circuito la exportación de otro.
+- [x] Circuitos aislados y afinidad funcionando. **Parcial al cerrar (2026-09-17)**: los circuitos estaban
+      aislados y la acumulación era por circuito, pero la afinidad de ALG-003 no estaba implementada.
+      **Cerrado el 2026-09-18** (`src/domain/affinity.ts`, `CONFIG_SCHEMA.md` §3.5): una exportación de otro
+      circuito no se acumula (`tests/e2e/vistas.spec.ts`, «afinidad de circuito»).
 - [x] Importación correcta para delimitadores y esquemas acordados.
 - [x] Procedencia hasta fila original.
 - [x] Solapes, inválidos y cuarentena demostrados.
@@ -99,6 +102,8 @@ las pruebas discriminantes que se sostienen solo con lo observado, con su incert
 Lo que dependa de la configuración queda enunciado y sin calcular, nunca estimado con un supuesto.
 
 ## G3 — Autorizar F4
+
+**Cerrada el 2026-09-26 por el propietario** («a continuación continúa con Fase 4», `history/DECISION_LOG.md` §F4 abierta), con lo que F3 dejó demostrado —diagnóstico explicable sobre el circuito de auditoría, revisión en campo, interfaz por preguntas— y lo que seguía abierto declarado, no marcado: las casillas de abajo dicen qué quedó y por qué.
 
 - [ ] Oportunidades y salud explicadas.
 - [ ] Diagnóstico individual/grupal/colectivo validado. **Con matiz**: el componente histórico de
@@ -236,6 +241,10 @@ Criterio de rechazo (OQ-B05, propietario 2026-10-17): el piloto se rechaza si oc
       cabecera, en la caché y en la etiqueta `vX.Y.Z` que deja cada publicación; retorno desde el workflow
       eligiendo la etiqueta (`VERSIONING.md` §Publicación y retorno). Falta ejecutar un retorno de verdad
       cuando haya dos versiones etiquetadas.
+- [ ] Dependencias de desarrollo sin avisos pendientes. **Condición de OQ-176** (propietario, 2026-10-18): el
+      riesgo de los tres avisos de Vitest 3.2.7 se acepta para el piloto, pero la subida a Vitest 4 o 5, en su
+      propia entrega, tiene que estar hecha antes de marcar G6. **Evidencia (3.88.4)**: Vitest 5.0.5, `npm
+      audit` sin avisos, y las mismas 962 pruebas unitarias y 82 de navegador en verde que con 3.2.7.
 - [ ] Informe de aceptación del propietario. **Plantilla (3.88.1)**: `templates/PILOT_ACCEPTANCE.md`, con la
       medida, el piloto, el criterio de rechazo y la tabla de G6; se rellena en `local/`.
 

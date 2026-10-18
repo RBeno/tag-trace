@@ -208,7 +208,7 @@ export function expectedOf(version: ConsolidatedVersion): CircuitSnapshot {
 }
 
 /** Las claves de sujeto que tocan las incidencias. */
-export function incidentSubjectSet(incidents: readonly IncidentRecord[]): ReadonlySet<string> {
+function incidentSubjectSet(incidents: readonly IncidentRecord[]): ReadonlySet<string> {
   return new Set(incidents.flatMap((incident) => incident.subjects));
 }
 
@@ -810,7 +810,7 @@ export function withConsolidated(state: LineageState, version: ConsolidatedVersi
 }
 
 /** ¿Son el mismo linaje? Mismo identificador y misma cadena de hashes, en el mismo orden. */
-export function sameLineage(a: LineageRef, b: LineageRef): boolean {
+function sameLineage(a: LineageRef, b: LineageRef): boolean {
   return a.id === b.id && a.hashes.length === b.hashes.length && a.hashes.every((hash, index) => b.hashes[index] === hash);
 }
 

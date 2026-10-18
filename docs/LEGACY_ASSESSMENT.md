@@ -1,8 +1,8 @@
 ---
 document_id: TT-LEGACY-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-10-18
 ---
 
 # Tratamiento del prototipo anterior
@@ -45,4 +45,4 @@ Para cada pieza candidata:
 
 ## Defectos aprendidos
 
-El caso de `0 lecturas válidas` en móvil debe transformarse en TC-020 y pruebas de protocolo Worker/UI. No se atribuye a potencia insuficiente sin medición. El nuevo diseño exigirá mensajes de error con esquema, causa y filas de ejemplo.
+El caso de `0 lecturas válidas` en móvil se transformó en TC-020 (`golden/TC-020-carrera-worker-interfaz.md`) y en las pruebas de protocolo Worker/UI (`tests/e2e/protocolo.spec.ts`). No se atribuye a potencia insuficiente sin medición. El nuevo diseño exigirá mensajes de error con esquema, causa y filas de ejemplo.

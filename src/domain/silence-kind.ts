@@ -106,7 +106,14 @@ export interface SilenceContext {
   readonly justification?: StopJustification | null;
 }
 
-const QUARTER_MS = 15 * 60_000;
+/**
+ * Un cuarto de hora UTC. No es un valor de planta: es el paso con que la hora local puede cambiar
+ * (todas las zonas tienen desplazamientos de cuartos de hora, y los cambios de hora caen en un
+ * cuarto), así que dentro de un cuarto la hora local —y con ella el régimen y el turno— es la misma.
+ * Lo usan la caché de `localHourReader`/`localDayReader` y los recorridos por cuartos de
+ * `regimeExposure` (`segment-bands.ts`) y `productionStops` (`flow-stops.ts`).
+ */
+export const QUARTER_MS = 15 * 60_000;
 
 /**
  * La hora local de un instante. Los cambios de hora caen siempre en un múltiplo de un cuarto de hora
@@ -225,7 +232,7 @@ export function usualSegmentTimes(
  * suma de las medianas de sus tramos. `null` si alguno de los dos no está en el anillo, si es el mismo
  * tag, o si algún tramo no tiene muestras.
  */
-export function ringUsualMs(usual: UsualTimes, fromTagId: string, toTagId: string, atUtcMs: number): number | null {
+function ringUsualMs(usual: UsualTimes, fromTagId: string, toTagId: string, atUtcMs: number): number | null {
   const from = usual.positionOf.get(fromTagId);
   const to = usual.positionOf.get(toTagId);
   const size = usual.ring.length;

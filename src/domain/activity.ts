@@ -13,6 +13,7 @@
 
 import type { Interval } from "./coverage.js";
 import type { Reading } from "./reading.js";
+import { localDayReader, localHourReader } from "./silence-kind.js";
 
 /** Lecturas por hora del día, agregadas sobre todos los días cargados. */
 export interface HourlyProfile {
@@ -36,24 +37,15 @@ export function hourlyProfile(readings: readonly Reading[], zone: string): Hourl
   const days = new Set<string>();
   if (readings.length === 0) return { counts, zone, days: 0 };
 
-  const formatter = new Intl.DateTimeFormat("es-ES", {
-    timeZone: zone,
-    hour: "2-digit",
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  // Hora y día locales con la caché por cuartos de hora de `silence-kind.ts`: `formatToParts` por
+  // lectura costaba ~300 ms cada 100.000 lecturas, dos veces por importación.
+  const hourOf = localHourReader(zone);
+  const dayOf = localDayReader(zone);
 
   for (const entry of readings) {
-    const parts = formatter.formatToParts(new Date(entry.time.utcMs));
-    const hour = Number.parseInt(parts.find((part) => part.type === "hour")?.value ?? "", 10);
-    if (Number.isNaN(hour) || hour < 0 || hour > 23) continue;
+    const hour = hourOf(entry.time.utcMs);
     counts[hour] = (counts[hour] ?? 0) + 1;
-    const year = parts.find((part) => part.type === "year")?.value ?? "";
-    const month = parts.find((part) => part.type === "month")?.value ?? "";
-    const day = parts.find((part) => part.type === "day")?.value ?? "";
-    days.add(`${year}-${month}-${day}`);
+    days.add(dayOf(entry.time.utcMs));
   }
 
   return { counts, zone, days: days.size };

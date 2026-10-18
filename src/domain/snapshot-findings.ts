@@ -58,14 +58,28 @@ export interface SnapshotFindingsInput {
   readonly abandoned?: readonly { readonly incident: Incident; readonly battery: Pick<IncidentBattery, "durationMs" | "swap"> }[];
 }
 
+// Un formateador por zona y formato: construirlo por llamada costaba unos 150 µs, y aquí se llama
+// por cada hallazgo de la tarjeta.
+const instantFormats = new Map<string, Intl.DateTimeFormat>();
+const tickFormats = new Map<string, Intl.DateTimeFormat>();
+
+function cached(cache: Map<string, Intl.DateTimeFormat>, zone: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  let format = cache.get(zone);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat("es-ES", { timeZone: zone, ...options });
+    cache.set(zone, format);
+  }
+  return format;
+}
+
 /** Mismo formato que `formatInstant` de `main.ts`: la cifra de la tarjeta tiene que coincidir. */
 function instant(zone: string, utcMs: number): string {
-  return new Intl.DateTimeFormat("es-ES", { timeZone: zone, dateStyle: "short", timeStyle: "medium" }).format(new Date(utcMs));
+  return cached(instantFormats, zone, { dateStyle: "short", timeStyle: "medium" }).format(new Date(utcMs));
 }
 
 /** Mismo formato que `formatTick` de `main.ts`: día de la semana y hora. */
 function tick(zone: string, utcMs: number): string {
-  return new Intl.DateTimeFormat("es-ES", { timeZone: zone, weekday: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(utcMs));
+  return cached(tickFormats, zone, { weekday: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(utcMs));
 }
 
 function percent(rate: number | null | undefined): string {

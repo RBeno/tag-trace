@@ -499,7 +499,7 @@ export interface StructureSet {
 }
 
 /** Agrupa instantes que distan como mucho `maxGapMs` del anterior: un mantenimiento, un grupo. */
-export function changeClusters(times: readonly number[], maxGapMs: number): readonly Interval[] {
+function changeClusters(times: readonly number[], maxGapMs: number): readonly Interval[] {
   const sorted = [...times].sort((a, b) => a - b);
   const clusters: Interval[] = [];
   for (const time of sorted) {

@@ -121,7 +121,7 @@ export interface PaceReport {
  * planta: con uno no hay nadie más; con dos, la referencia de cada uno es solo el otro, y un AGV lento
  * hace parecer «más rápido» al sano.
  */
-export const MIN_TESTED_VEHICLES = 3;
+const MIN_TESTED_VEHICLES = 3;
 
 function median(values: readonly number[]): number | null {
   if (values.length === 0) return null;

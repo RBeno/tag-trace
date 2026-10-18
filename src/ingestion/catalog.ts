@@ -20,7 +20,6 @@ import { detectDelimiter, type Delimiter } from "./delimiter.js";
 import { normaliseHeaderCell, unquoteField } from "./importer.js";
 
 export { EXPECTED_STRUCTURE, KNOWN_LISTS } from "../domain/tag-lists.js";
-export type { KnownList } from "../domain/tag-lists.js";
 
 export interface CatalogEntry {
   readonly list: string;

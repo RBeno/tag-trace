@@ -218,7 +218,7 @@ function classifyGap(
 
 /**
  * La rotación del anillo que más orden comparte con la lista. Rotar solo al primer tag de la lista que
- * aparece en el anillo (`rotateToDeclaredStart`) falla cuando ese tag es justo el que la lista tiene
+ * aparece en el anillo (lo que se hacía hasta la revisión del 2026-09-26) falla cuando ese tag es justo el que la lista tiene
  * mal colocado: la subsecuencia común pierde media vuelta y los vecinos sanos salen como «otro sitio».
  * Aquí se prueba la rotación en cada tag común y se conserva la de subsecuencia más larga; en empate,
  * la que empieza por el tag más cercano al inicio de la lista (que es lo que hacía la rotación simple).
@@ -239,29 +239,8 @@ export function alignToDeclared(
   return best ?? { aligned: ring, common: longestCommonSubsequence(declaredOrder, ring) };
 }
 
-/**
- * El anillo observado es cíclico y puede entrar cortado por cualquier punto —el ancla es inferida
- * (ciclo dominante) o declarada en un tag que no es el primero de la lista Vsystem—. La subsecuencia
- * común más larga es lineal y sensible a dónde se corta: un corte que cae en mitad de un tramo
- * idéntico lo parte en dos coincidencias más cortas en vez de reconocerlo como una sola. Rotar aquí,
- * hasta el primer tag de la lista declarada que aparece en el anillo, evita que el contraste dependa
- * de por dónde entró el ancla. Sin ningún tag en común, el anillo se deja como está: no hay alrededor
- * de qué rotar.
- */
-export function rotateToDeclaredStart(
-  ring: readonly string[],
-  declaredOrder: readonly string[],
-): readonly string[] {
-  for (const tag of declaredOrder) {
-    const index = ring.indexOf(tag);
-    if (index === -1) continue;
-    return [...ring.slice(index), ...ring.slice(0, index)];
-  }
-  return ring;
-}
-
 /** Subsecuencia común más larga, por programación dinámica clásica. O(n·m); ~200 tags es trivial. */
-export function longestCommonSubsequence(a: readonly string[], b: readonly string[]): readonly string[] {
+function longestCommonSubsequence(a: readonly string[], b: readonly string[]): readonly string[] {
   const table: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
   for (let i = a.length - 1; i >= 0; i -= 1) {
     for (let j = b.length - 1; j >= 0; j -= 1) {

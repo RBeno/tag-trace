@@ -20,7 +20,7 @@ import type { Reading } from "./reading.js";
 import { regimeReader, type RegimeThresholds } from "./segment-bands.js";
 
 /** Versión del procedimiento; viaja con cada verificación (`VERSIONING.md`). */
-export const VERIFICATION_ALGORITHM = "verificacion-1";
+const VERIFICATION_ALGORITHM = "verificacion-1";
 
 /** La métrica de una contramedida: la misma que define el síntoma. */
 export type CaseMetric =

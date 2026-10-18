@@ -5,7 +5,7 @@
 - El propietario del producto es la autoridad sobre las reglas industriales y la aceptación.
 - La documentación versionada es la fuente de verdad. Una conversación no puede contradecirla silenciosamente.
 - Ante una contradicción, detener la tarea, citar ambos requisitos y solicitar decisión.
-- No iniciar Fase 1 hasta que `docs/project_state.json` registre la aprobación explícita `CONTINÚA FASE 1`.
+- No cambiar de fase hasta que `docs/project_state.json` registre la aprobación literal que pide `nextTransition.requiredApproval`.
 
 ## Antes de cambiar algo
 

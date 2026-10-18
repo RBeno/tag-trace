@@ -23,6 +23,7 @@ import {
   ImportCancelled,
   ImportFailure,
   importReadings,
+  LIMITS,
 } from "../src/ingestion/importer.js";
 import { decodeSource } from "../src/ingestion/decode.js";
 import { rowsToDelimitedText } from "../src/ingestion/xlsx-readings.js";
@@ -201,7 +202,9 @@ import {
   saveAccumulation,
   saveCircuit,
   saveMemory,
-  saveSnapshot,
+  saveSnapshotInCircuit,
+  circuitStamp,
+  CircuitChangedError,
   saveVersion,
   type StoredCircuit,
   type StoredConnectionEvent,
@@ -337,7 +340,7 @@ function unchangedReport(
     circuitId,
     coverage: existing?.coverage ?? [],
     totalReadings: working.length,
-    sources: sources.length,
+    sources: new Set(sources.map((source) => source.sourceId)).size, // ficheros distintos, no importaciones
     shared: 0,
     disagreements: 0,
     affinity,
@@ -456,6 +459,7 @@ async function accumulate(
           ? []
           : [{ sourceId: twin.sourceId, readings: recovered }],
     drop,
+    expected: circuitStamp(existing),
   });
 
   const distinct = distinctSources(sources);
@@ -468,7 +472,7 @@ async function accumulate(
       circuitId,
       coverage,
       totalReadings: union.readings.length,
-      sources: sources.length,
+      sources: new Set(sources.map((source) => source.sourceId)).size, // ficheros distintos, no importaciones
       shared: union.shared,
       disagreements: union.disagreements,
       affinity,
@@ -1972,6 +1976,21 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
   const stages: readonly Stage[] = ["hashing", "sampling", "parsing", "ordering", "done"];
   emit({ type: "accepted", stages }, jobId);
 
+  // El tamaño se sabe antes de leer: por encima del límite (TH-006) se rechaza aquí, no después de
+  // leer, hashear y decodificar el fichero entero (medido: 42 s y 1,2 GB para 541 MB).
+  if (file.size > LIMITS.maxBytes) {
+    emit(
+      {
+        type: "error",
+        code: "LIMIT_EXCEEDED",
+        cause: `El fichero ocupa ${file.size} bytes y el límite es ${LIMITS.maxBytes}.`,
+        recovery: "Exporta un periodo más corto y vuelve a intentarlo.",
+      },
+      jobId,
+    );
+    return;
+  }
+
   let buffer: ArrayBuffer;
   try {
     emit({ type: "progress", stage: "hashing", done: 0, total: 1, note: "Leyendo el fichero" }, jobId);
@@ -1994,33 +2013,40 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
     return;
   }
 
-  const sourceHash = await hashFile(buffer);
-  // Un libro de Excel se lee directamente, primera hoja (DS-001, DS-011 en `.xlsx`); si no, es texto.
-  let text: string;
-  let encoding: string;
-  const bytes = new Uint8Array(buffer);
-  if (looksLikeZip(bytes)) {
-    emit({ type: "progress", stage: "hashing", done: 0, total: 1, note: "Leyendo el libro de Excel" }, jobId);
-    try {
-      text = rowsToDelimitedText(await readXlsxRows(bytes));
-      encoding = "xlsx";
-    } catch (error) {
-      emit(
-        {
-          type: "error",
-          code: "SOURCE_UNREADABLE",
-          cause: error instanceof XlsxError ? error.reason : "El libro de Excel no pudo leerse.",
-          recovery: "Guarda el libro de nuevo en Excel (.xlsx) o expórtalo como CSV.",
-        },
-        jobId,
-      );
-      return;
-    }
-  } else {
-    ({ text, encoding } = decodeSource(buffer));
-  }
-
+  // Desde aquí, todo dentro del `try`: un fallo al hashear o al decodificar (un fichero enorme puede no
+  // caber en una cadena) es un error del trabajo, con su mensaje, no una promesa rechazada que la
+  // página nunca ve.
+  let decodeWarning: string | undefined;
+  let readingsSaved = false;
   try {
+    const sourceHash = await hashFile(buffer);
+    // Un libro de Excel se lee directamente, primera hoja (DS-001, DS-011 en `.xlsx`); si no, es texto.
+    let text: string;
+    let encoding: string;
+    const bytes = new Uint8Array(buffer);
+    if (looksLikeZip(bytes)) {
+      emit({ type: "progress", stage: "hashing", done: 0, total: 1, note: "Leyendo el libro de Excel" }, jobId);
+      try {
+        text = rowsToDelimitedText(await readXlsxRows(bytes));
+        encoding = "xlsx";
+      } catch (error) {
+        emit(
+          {
+            type: "error",
+            code: "SOURCE_UNREADABLE",
+            cause: error instanceof XlsxError ? error.reason : "El libro de Excel no pudo leerse.",
+            recovery: "Guarda el libro de nuevo en Excel (.xlsx) o expórtalo como CSV.",
+          },
+          jobId,
+        );
+        return;
+      }
+    } else {
+      const decoded = decodeSource(buffer);
+      ({ text, encoding } = decoded);
+      decodeWarning = decoded.warning;
+    }
+
     const result = importReadings(
       text,
       {
@@ -2030,6 +2056,7 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         zone,
         encoding,
         fieldOrder: message.fieldOrder,
+        delimiter: message.delimiter,
       },
       {
         onProgress: (stage, done, total, note) =>
@@ -2061,6 +2088,8 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
       message.circuitId === undefined
         ? undefined
         : await accumulate(message.circuitId, message.circuitName ?? message.circuitId, zone, result, circuitConfig);
+    // Desde aquí las lecturas ya están guardadas: un fallo posterior tiene que decirlo así.
+    readingsSaved = accumulated?.stored !== undefined;
     // Un fichero que no se acumuló (afinidad) no es del circuito: se analiza con los provisionales.
     const inCircuit = accumulated?.stored !== undefined;
     const workingSpan = (accumulated?.workingCoverage ?? []).reduce<{ from: number; to: number } | null>(
@@ -2112,10 +2141,7 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
     // Con ella, la fuente queda marcada como «con instantánea» en el circuito.
     let accumulation = accumulated?.report;
     if (built?.snapshot !== null && built?.snapshot !== undefined && accumulated?.stored !== undefined) {
-      const own = built.snapshot;
-      await saveSnapshot(own);
-      const sources = accumulated.stored.sources.map((source) => (source.sourceHash === own.sourceHash ? { ...source, snapshot: true } : source));
-      await saveCircuit({ ...accumulated.stored, sources });
+      const { sources } = await saveSnapshotInCircuit(built.snapshot);
       const distinct = distinctSources(sources);
       accumulation = {
         ...(accumulation as AccumulationReport),
@@ -2137,7 +2163,13 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         readings: packed.columns,
         quarantine: result.quarantine,
         // Lo que no se pudo construir o comparar se dice con el resto de advertencias (R-EVI-006).
-        warnings: [...result.warnings, ...(built?.problems ?? []), ...archiveProblems, ...(largeWarning === null ? [] : [largeWarning])],
+        warnings: [
+          ...(decodeWarning === undefined ? [] : [decodeWarning]),
+          ...result.warnings,
+          ...(built?.problems ?? []),
+          ...archiveProblems,
+          ...(largeWarning === null ? [] : [largeWarning]),
+        ],
         ...(accumulation === undefined ? {} : { accumulation }),
         ...(built === undefined ? {} : { views: built.views }),
       },
@@ -2154,8 +2186,9 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
         {
           type: "error",
           code: error.code,
-          // El protocolo llama `cause` a lo que la clase llama `reason`.
-          cause: error.reason,
+          // El protocolo llama `cause` a lo que la clase llama `reason`. Si la decodificación ya avisó
+          // de letras cambiadas, va con el error: suele ser la causa de una cabecera irreconocible.
+          cause: decodeWarning === undefined ? error.reason : `${error.reason} ${decodeWarning}`,
           recovery: error.recovery,
           ...(error.detectedSchema === undefined ? {} : { detectedSchema: error.detectedSchema }),
           ...(error.sampleRows === undefined ? {} : { sampleRows: error.sampleRows }),
@@ -2164,9 +2197,35 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
       );
       return;
     }
-    // Sin espacio no es un defecto: se dice como tal y con qué hacer (`UX_SPEC.md` §8).
+    // Sin espacio no es un defecto: se dice como tal y con qué hacer (`UX_SPEC.md` §8). Si las lecturas
+    // ya estaban guardadas cuando faltó (la instantánea va después), se dice eso y no «nada escrito».
     if (isStorageFull(error)) {
-      emit({ type: "error", code: "STORAGE_FULL", cause: new StorageFullError().message, recovery: STORAGE_FULL_RECOVERY }, jobId);
+      emit(
+        {
+          type: "error",
+          code: "STORAGE_FULL",
+          cause: readingsSaved
+            ? "No queda espacio en este dispositivo: las lecturas de este fichero se guardaron en el circuito, pero su instantánea no."
+            : new StorageFullError().message,
+          recovery: STORAGE_FULL_RECOVERY,
+        },
+        jobId,
+      );
+      return;
+    }
+    // Otra pestaña escribió en el mismo circuito mientras esta preparaba la suya: no se escribe encima.
+    if (error instanceof CircuitChangedError) {
+      emit(
+        {
+          type: "error",
+          code: "CIRCUIT_CHANGED",
+          cause: readingsSaved
+            ? `Las lecturas se guardaron en el circuito «${message.circuitId ?? ""}», pero su instantánea no: el circuito cambió desde otra pestaña mientras se analizaba.`
+            : `Otra pestaña guardó en el circuito «${message.circuitId ?? ""}» mientras se preparaba esta importación; escribir encima habría perdido lo suyo, así que no se ha guardado nada.`,
+          recovery: "Deja una sola pestaña de TAG TRACE trabajando con este circuito y vuelve a cargar el fichero.",
+        },
+        jobId,
+      );
       return;
     }
     // El defecto se enseña con su nombre y su primera línea de pila: sin eso no se puede reproducir con
@@ -3622,6 +3681,26 @@ async function applyCaseAction(stored: StoredCircuit, action: CaseAction, now: n
   await appendCaseRevision(revision, newEvidence && frozen.summary.hash !== null ? { hash: frozen.summary.hash, evidence: frozen.evidence } : null);
   return { caseId: action.caseId, text: `${action.caseId}: ventana y recorte cambiados (revisión ${revision.revision}).` };
 }
+
+/**
+ * Un rechazo de promesa sin capturar dentro del Worker no llega a `worker.onerror` de la página (sí
+ * llega una excepción síncrona): la interfaz se quedaría ocupada sin mensaje. Se convierte en un
+ * `error` del trabajo vigente. El texto del fallo no lleva datos de la fuente (TH-003): aquí solo se
+ * dice que fue interno.
+ */
+scope.onunhandledrejection = (event: PromiseRejectionEvent): void => {
+  event.preventDefault();
+  if (currentJobId === null) return;
+  emit(
+    {
+      type: "error",
+      code: "INTERNAL",
+      cause: "La operación falló por un error interno del análisis.",
+      recovery: "Vuelve a intentarlo. Si se repite con el mismo fichero, informa del defecto (`GUIA_DE_DIAGNOSTICO.md` §4) sin adjuntar datos de planta.",
+    },
+    currentJobId,
+  );
+};
 
 scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   const message = event.data;

@@ -130,6 +130,16 @@ function duration(ms: number): string {
   return ms >= 120_000 ? `${(ms / 60_000).toFixed(1).replace(".", ",")} min` : `${Math.round(ms / 1000)} s`;
 }
 
+/**
+ * El contexto con que se mide cada incidencia: las lecturas de cada AGV en orden, sin repeticiones
+ * seguidas del mismo tag, y lo que hace falta de la línea, las calles y las paradas.
+ *
+ * Precondición (B-10, revisión del 2026-10-18): `readings` llega en orden canónico —`sortReadings`
+ * con el sentido de su fuente (ADR-0013)—. Las ordenaciones por instante de aquí dentro son estables y
+ * conservan ese desempate entre dos lecturas del mismo AGV en el mismo instante; no se puede rehacer
+ * aquí porque el sentido de la pila no llega a esta función, y desempatar por fila ascendente
+ * invertiría el orden de las fuentes `newest-first`.
+ */
 export function buildIncidentContext(
   readings: readonly Reading[],
   linePasses: readonly number[],

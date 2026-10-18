@@ -27,20 +27,8 @@ import {
   type PlantValuesRelation,
   type PlantValuesView,
 } from "../domain/plant-values.js";
-import { isoDay, zoneMidnight } from "./plan-ui.js";
-
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  if (className !== undefined) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
-
-function button(text: string, className?: string): HTMLButtonElement {
-  const out = node("button", className, text);
-  out.type = "button";
-  return out;
-}
+import { button, node } from "./dom.js";
+import { isoDay, zoneMidnight } from "./time-input.js";
 
 /** La relación de los valores de un `.agvproj` abierto con los locales, en una frase. */
 export function plantValuesRelationText(relation: PlantValuesRelation, added: number): string {
@@ -401,6 +389,8 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
     item.append(node("p", "plant-value-label", entry.label));
     item.append(node("p", "muted", `Provisional: ${fmt(entry, entry.provisional)}`));
     item.append(currentLine(entry, entry.current));
+    // Lo que el valor provoca y conviene saber (la noche con la misma hora de inicio y de fin, B-13).
+    for (const note of entry.notes ?? []) item.append(node("p", "plant-value-boundary", note));
     if (entry.changesWithin !== null) {
       item.append(
         node(

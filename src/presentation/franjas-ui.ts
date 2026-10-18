@@ -14,6 +14,7 @@ import { franjaCsv, type HistoryKind } from "../domain/franjas.js";
 import { paceCsv } from "../domain/vehicle-pace.js";
 import { plainTable, plural, scrollBox } from "./charts.js";
 import { ringTimeChart, segmentHistoryChart, type RingTimeRow, type SegmentHistoryPanel } from "./diagnostic-charts.js";
+import { downloadBlob, node } from "./dom.js";
 
 export interface FranjaUiDeps {
   readonly finding: (title: string, figure: string, evidence: string, review?: readonly string[]) => HTMLElement;
@@ -27,13 +28,6 @@ export interface FranjaUiDeps {
 const PER_KIND = 5;
 /** Paneles de historia dibujados, como mucho. Parámetro de pantalla. */
 const HISTORY_PANELS = 9;
-
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  if (className !== undefined) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
 
 const KIND_TEXT: Readonly<Record<HistoryKind, string>> = {
   escalon: "Un único salto que se mantiene en los ficheros siguientes: el tramo cambió en ese fichero.",
@@ -59,7 +53,7 @@ function changeLabel(change: StructureChange, gap: AnchorGapChange): string {
 }
 
 /** La suma entre las dos anclas, antes y después. */
-export function sumLine(gap: AnchorGapChange, duration: (ms: number | null) => string): string {
+function sumLine(gap: AnchorGapChange, duration: (ms: number | null) => string): string {
   const between = `entre ${gap.fromAnchor} y ${gap.toAnchor}`;
   const when = gap.regime === "noche" ? ", de noche" : "";
   switch (gap.sum) {
@@ -123,18 +117,13 @@ export function describeGap(
     evidence:
       `${gap.changes.map((change) => changeText(change, gap, duration)).join("; ")}. ` +
       `${gap.fromAnchor} y ${gap.toAnchor} siguen en su sitio a los dos lados: son las anclas, y el tiempo entre ellas se ` +
-      "conserva si solo cambia lo de en medio (R-DAT-021).",
+      "conserva si solo cambia lo de en medio.",
   };
 }
 
 function download(fileName: string, csv: string): void {
   // Con BOM y `;`: lo abre una hoja de cálculo en español sin preguntar ni romper tildes.
-  const url = URL.createObjectURL(new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(fileName, new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8" }));
 }
 
 export function renderFranjas(panel: HTMLElement, views: CircuitViews, deps: FranjaUiDeps): void {
@@ -151,8 +140,8 @@ export function renderFranjas(panel: HTMLElement, views: CircuitViews, deps: Fra
       "muted",
       `${measured.length} ${measured.length === 1 ? "fichero medido" : "ficheros medidos"}, cada uno por separado con sus ` +
         "propias lecturas: la horquilla de cada tramo y la posición en tiempo de cada tag. Se rehacen en cada " +
-        "importación y se descargan en CSV; guardarlas como referencia y compararlas mes a mes es la memoria del " +
-        "circuito (F4).",
+        "importación y se descargan en CSV; la referencia que se guarda y se compara mes a mes es la que fija la " +
+        "pestaña Memoria al consolidar.",
     ),
   );
   const repeated = sources.filter((source) => source.duplicateOf !== null);
@@ -162,7 +151,10 @@ export function renderFranjas(panel: HTMLElement, views: CircuitViews, deps: Fra
         "p",
         "muted",
         `Repetidos, medidos una sola vez: ${repeated
-          .map((source) => `«${source.fileName}» (igual que «${labelOf.get(source.duplicateOf ?? "") ?? "—"}»)`)
+          .map((source) => {
+            const original = labelOf.get(source.duplicateOf ?? "") ?? "—";
+            return original === source.fileName ? `«${source.fileName}» (cargado otra vez)` : `«${source.fileName}» (igual que «${original}»)`;
+          })
           .join(", ")}.`,
       ),
     );

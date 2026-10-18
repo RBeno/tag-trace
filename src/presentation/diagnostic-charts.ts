@@ -58,9 +58,17 @@ function seconds(ms: number): string {
  */
 function responsive(host: HTMLElement, draw: (width: number) => void): () => void {
   let last = -1;
+  const redraw = (): void => {
+    if (!host.isConnected) {
+      schemeRedraws.delete(redraw);
+      return;
+    }
+    if (last > 0) draw(last);
+  };
   const observer = new ResizeObserver(() => {
     if (!host.isConnected) {
       if (last !== -1) observer.disconnect();
+      schemeRedraws.delete(redraw);
       return;
     }
     const width = Math.round(host.clientWidth);
@@ -69,12 +77,25 @@ function responsive(host: HTMLElement, draw: (width: number) => void): () => voi
     draw(width);
   });
   observer.observe(host);
+  watchScheme(redraw);
+  return redraw;
+}
+
+/**
+ * Un solo oyente del tema claro/oscuro para todos los gráficos. Hasta 3.89.0 cada gráfico añadía el
+ * suyo a `window.matchMedia` y nadie lo quitaba: con cada resultado del Worker se volvían a crear los
+ * veinte gráficos y los oyentes de los anteriores —con sus datos— se quedaban toda la sesión.
+ */
+const schemeRedraws = new Set<() => void>();
+let schemeWatched = false;
+
+function watchScheme(redraw: () => void): void {
+  schemeRedraws.add(redraw);
+  if (schemeWatched) return;
+  schemeWatched = true;
   window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
-    if (host.isConnected && last > 0) draw(last);
+    for (const entry of [...schemeRedraws]) entry();
   });
-  return () => {
-    if (last > 0) draw(last);
-  };
 }
 
 function host(): HTMLDivElement {
@@ -308,10 +329,6 @@ export interface RingFigure {
   readonly node: HTMLElement;
   /** Redibuja con otros datos —otra instantánea— conservando la capa activa y el foco rotatorio. */
   readonly update: (data: RingData, highlight: RingHighlight) => void;
-}
-
-export function ringChart(data: RingData, options: RingOptions = {}): HTMLElement {
-  return ringFigure(data, options).node;
 }
 
 /**
@@ -804,7 +821,7 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
         return [
           sections.size > 0
             ? legendList([...[...sections].map(([name, color]) => [color, `tramo ${name}`] as const), ["var(--viz-grid)", "sin tramo declarado"]])
-            : legendList([["var(--viz-grid)", "sin lista `tramo` cargada: ningún tramo declarado"]]),
+            : legendList([["var(--viz-grid)", "sin lista «tramo» cargada: ningún tramo declarado"]]),
         ];
       case "paradas":
         return [
@@ -848,7 +865,7 @@ export function ringFigure(initial: RingData, options: RingOptions = {}): RingFi
                 [HATCH_SWATCH, "entrada de una calle en la que nadie entró"],
                 ["var(--viz-grid)", "sin calle"],
               ])
-            : legendList([["var(--viz-grid)", "sin lista `carga-online` cargada: ninguna calle declarada"]]),
+            : legendList([["var(--viz-grid)", "sin lista «carga-online» cargada: ninguna calle declarada"]]),
         ];
     }
   };
@@ -1349,7 +1366,7 @@ function stripShare(cell: Pick<HeatStripCell, "passes" | "value">): number {
  * estado de conexión (observado, DS-013), **cada uno con sus propias celdas**: una misma celda nunca
  * mezcla lo observado con lo inferido.
  */
-export function heatStripChart(spec: HeatStripSpec): HTMLElement {
+function heatStripChart(spec: HeatStripSpec): HTMLElement {
   const wrapper = figure(spec.title, spec.caption);
   const { ringTags, flagged: flaggedSites, sections } = spec;
   const byId = new Map(spec.cells.map((cell) => [cell.tagId, cell]));
@@ -1548,9 +1565,9 @@ export function deliveryHeatChart(
   return heatStripChart({
     title: "Mapa de calor de lecturas que llegaron juntas",
     caption:
-      "Inferido de las lecturas (R-DAT-020): dónde se leyeron tags cuya lectura llegó al servidor después, junta con otras " +
+      "Inferido de las lecturas: dónde se leyeron tags cuya lectura llegó al servidor después, junta con otras " +
       "tras un hueco. Cuanto más oscuro, mayor parte de las pasadas por ese tag llegó tarde. Es una firma de la entrega, " +
-      "no una medida de la señal: el estado de conexión observado está en el registro de conexiones del terminal (OQ-159).",
+      "no una medida de la señal: el estado de conexión observado está en el registro de conexiones del terminal.",
     cells: strip,
     ringTags,
     flagged: flaggedSites,
@@ -1717,7 +1734,7 @@ function connectionHeatFigure(
     caption:
       "Observado en el registro de conexiones del terminal de cada AGV: dónde se pierde la señal. Cada celda es un tag; cuanto más " +
       `oscuro, mayor parte de las pasadas que salen de él perdieron la señal justo después (${classText}). Microcortes en un mismo ` +
-      "sitio y en muchos AGV son la firma de un fallo de roaming. Sin apagados, cortes colectivos ni terminales ruidosos. Apunta a la " +
+      "sitio y en muchos AGV suelen apuntar a un fallo de roaming. Sin apagados, cortes colectivos ni terminales ruidosos. Apunta a la " +
       "cobertura de ese punto o al terminal del AGV; la causa no la dice el dato.",
     cells: strip,
     ringTags,
@@ -1733,7 +1750,7 @@ function connectionHeatFigure(
           (totals.excluded === "" ? "" : `; fuera del mapa: ${totals.excluded}`),
       ],
       ["Tiempo sin señal", hours(totals.withoutSignalMs), "sumado en la ventana cargada"],
-      ["AGV con registro", String(totals.vehicles), `${totals.files} ${totals.files === 1 ? "fichero" : "ficheros"} cargados`],
+      ["AGV con registro", String(totals.vehicles), `${totals.files} ${totals.files === 1 ? "fichero cargado" : "ficheros cargados"}`],
       [
         "Donde más se pierde",
         top === undefined ? "—" : top.tagId,
@@ -3480,7 +3497,8 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
     "Horquilla de tiempos de cada tramo",
     "Cuánto tarda cada tramo del anillo en producción: la barra va de la mitad de las pasadas al 95 %, " +
       `y la raya marca la valla. La barra gris es la noche (${nightLabel}), medida aparte. El orden es el ` +
-      "del anillo, no la distancia.",
+      "del anillo, no la distancia: el eje horizontal es la posición de cada tramo en el anillo. El vertical " +
+      "no es lineal, para que quepan a la vez tramos de segundos y de minutos: compara por sus marcas, no por la altura.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por un tramo para leer su horquilla.");

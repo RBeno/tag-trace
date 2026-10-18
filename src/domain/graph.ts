@@ -211,7 +211,7 @@ export function buildObservedGraph(
     if (transition.sameInstant) sameInstantTransitions += 1;
     outgoingByNode.set(transition.from, (outgoingByNode.get(transition.from) ?? 0) + 1);
 
-    const key = `${transition.from} ${transition.to}`;
+    const key = `${transition.from}\u0000${transition.to}`;
     let accumulator = accumulators.get(key);
     if (accumulator === undefined) {
       accumulator = {
@@ -310,10 +310,55 @@ function summariseTime(deltas: readonly number[]): EdgeTime {
   };
 }
 
-/** Cuantil por rango sobre una lista ya ordenada; lo reutilizan las horquillas por tramo. */
+/**
+ * Cuantil por rango sobre una lista ya ordenada; lo reutilizan las horquillas por tramo.
+ *
+ * **Precondición: lista no vacía.** Con una lista vacía devuelve 0, que no es un cuantil sino la
+ * ausencia de muestras (B-05, revisión del 2026-10-18). No se cambia la firma porque todos los
+ * llamadores comprueban antes la longitud (o la mínima de muestras, que es mayor que cero); quien
+ * la llame de nuevo tiene que hacer lo mismo y tratar «sin muestras» como `null`/`unknown`, nunca
+ * como cero.
+ */
 export function quantile(sorted: readonly number[], fraction: number): number {
   const index = Math.min(sorted.length - 1, Math.floor(sorted.length * fraction));
   return sorted[index] ?? 0;
+}
+
+/**
+ * Recorre una lista fija por posiciones, como `quantile` una utilidad de lista que no es del grafo.
+ *
+ * `minKeyScanner(keys)` devuelve un recorrido `(from, to, accept, visit)` que llama a `visit` con
+ * cada posición de `[from, to)` cuya clave acepta `accept`, **en orden de posición**, sin mirar una a
+ * una las que no: guarda el mínimo de cada bloque y salta los bloques cuyo mínimo no se acepta. Si
+ * `visit` devuelve `true`, el recorrido se corta ahí.
+ *
+ * Precondiciones: `accept` es monótona —si acepta una clave, acepta cualquier otra menor— y las
+ * claves son números finitos. Construirlo cuesta O(n) y cada recorrido O((k + 1) · log n) para k
+ * posiciones aceptadas. Es lo que sustituye a los «para cada uno, todos los posteriores» de FIFO,
+ * calles y cortes de conexión (B-09, revisión del 2026-10-18), con el mismo resultado y el mismo
+ * orden que la versión cuadrática (`tests/unit/equivalencia-rendimiento.test.ts`).
+ */
+export function minKeyScanner(
+  keys: readonly number[],
+): (from: number, to: number, accept: (key: number) => boolean, visit: (index: number) => boolean | void) => void {
+  const count = keys.length;
+  let size = 1;
+  while (size < count) size *= 2;
+  // Árbol de mínimos en un array: el nodo `i` tiene a `2i` y `2i + 1` por hijos; las hojas empiezan en
+  // `size`. El relleno con +∞ nunca se visita como hoja (el recorrido se acota a `count`).
+  const tree = new Float64Array(2 * size).fill(Number.POSITIVE_INFINITY);
+  for (let index = 0; index < count; index += 1) tree[size + index] = keys[index] as number;
+  for (let node = size - 1; node >= 1; node -= 1) tree[node] = Math.min(tree[2 * node] as number, tree[2 * node + 1] as number);
+  return (from, to, accept, visit) => {
+    const end = Math.min(to, count);
+    const walk = (node: number, low: number, high: number): boolean => {
+      if (high <= from || low >= end || !accept(tree[node] as number)) return false;
+      if (high - low === 1) return visit(low) === true;
+      const middle = (low + high) >> 1;
+      return walk(2 * node, low, middle) || walk(2 * node + 1, middle, high);
+    };
+    if (from < end) walk(1, 0, size);
+  };
 }
 
 function buildNodes(readings: readonly Reading[], edges: readonly Edge[]): readonly Node[] {

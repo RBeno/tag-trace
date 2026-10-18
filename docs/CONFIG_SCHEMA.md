@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.32.0
+version: 0.33.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Configuración de circuito
@@ -46,7 +46,7 @@ nunca con una media que mezcle producción y parada.
 que se mide aparte:
 
 ```text
-regimes : { night_from_hour, night_to_hour }   # hora local; puede cruzar la medianoche
+regimes : { night_from_hour, night_to_hour }   # hora local; puede cruzar la medianoche; si son iguales no hay noche (se dice al confirmar, 3.90.0)
 ```
 
 Hoy vale 22:00–05:00 para todos los circuitos, por decisión del propietario, en la configuración

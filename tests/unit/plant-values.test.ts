@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import { PROVISIONAL_CONFIG } from "../../src/domain/config.js";
 import {
   MAX_PLANT_DURATION_MS,
+  NO_NIGHT_NOTE,
   PLANT_VALUES,
   applyPlantValues,
   classifyPlantValueEvents,
@@ -179,6 +180,46 @@ describe("plantValuesView · lo que enseña la pestaña Datos", () => {
   it("sin fichero no rige ningún confirmado", () => {
     const view = plantValuesView({ events, provisional: PROVISIONAL_CONFIG, at: null, fileName: null, window: null, canConfirm: false });
     expect(view.values.every((entry) => entry.current === null)).toBe(true);
+  });
+
+  it("la noche con la misma hora de inicio y de fin se dice en los dos valores de la noche, sea el par confirmado, provisional o mezclado (B-13, TC-383)", () => {
+    const nightNotes = (view: ReturnType<typeof plantValuesView>) =>
+      view.values.filter((entry) => entry.notes !== undefined).map((entry) => [entry.key, entry.notes]);
+    // Lo provisional (22–5) tiene noche: ningún aviso, y el campo ni aparece.
+    const plain = plantValuesView({ events: [], provisional: PROVISIONAL_CONFIG, at: 6 * DAY, fileName: "f.csv", window: null, canConfirm: true });
+    expect(nightNotes(plain)).toEqual([]);
+    // Confirmado «termina a las 22» con «empieza a las 22» provisional: el par que rige es igual.
+    const mixed = plantValuesView({ events: [event(1, "noche-hasta", 22, 5 * DAY)], provisional: PROVISIONAL_CONFIG, at: 6 * DAY, fileName: "f.csv", window: null, canConfirm: true });
+    expect(nightNotes(mixed)).toEqual([
+      ["noche-desde", [NO_NIGHT_NOTE]],
+      ["noche-hasta", [NO_NIGHT_NOTE]],
+    ]);
+    expect(NO_NIGHT_NOTE).toBe("Con la misma hora de inicio y de fin no hay noche: todo el día se mide como producción.");
+    // Antes de que rija ese confirmado (fichero anterior a su fecha efectiva), no hay aviso.
+    const before = plantValuesView({ events: [event(1, "noche-hasta", 22, 5 * DAY)], provisional: PROVISIONAL_CONFIG, at: 4 * DAY, fileName: "f.csv", window: null, canConfirm: true });
+    expect(nightNotes(before)).toEqual([]);
+    // Los dos confirmados iguales, y también un provisional degenerado sin nada confirmado.
+    const confirmed = plantValuesView({
+      events: [event(1, "noche-desde", 3, 5 * DAY), event(2, "noche-hasta", 3, 5 * DAY)],
+      provisional: PROVISIONAL_CONFIG,
+      at: 6 * DAY,
+      fileName: "f.csv",
+      window: null,
+      canConfirm: true,
+    });
+    expect(nightNotes(confirmed).map(([key]) => key)).toEqual(["noche-desde", "noche-hasta"]);
+    const degenerate = { ...PROVISIONAL_CONFIG, regimes: { ...PROVISIONAL_CONFIG.regimes, nightFromHour: 5, nightToHour: 5 } };
+    expect(nightNotes(plantValuesView({ events: [], provisional: degenerate, at: null, fileName: null, window: null, canConfirm: false })).map(([key]) => key)).toEqual([
+      "noche-desde",
+      "noche-hasta",
+    ]);
+  });
+
+  it("la etiqueta de la tolerancia «a la misma hora» dice qué mide, sin comillas anidadas (D-40, TC-387)", () => {
+    const label = PLANT_VALUES.find((entry) => entry.key === "misma-hora")?.label ?? "";
+    expect(label).toBe("Margen para decir que una parada se repite a la misma hora otro día");
+    // La interfaz la cita entre comillas («Cambiar «…»»): dentro no puede llevar otras.
+    expect(label).not.toMatch(/[«»]/);
   });
 
   it("un cambio dentro de la ventana de trabajo se declara (CONFIG_SCHEMA §4), no se calla", () => {

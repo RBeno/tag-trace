@@ -52,6 +52,12 @@ export interface ReplayFrame {
  * `silenceThresholdMs` decide cuándo una última lectura sin continuación cuenta como silencio en
  * vez de "todavía en ese tag": sin valor por defecto, es la misma magnitud de planta que decide
  * inactividad en el expediente (R-OPP-006) y debe venir del mismo sitio.
+ *
+ * Precondición (B-10, revisión del 2026-10-18): `readings` llega en orden canónico —`sortReadings`
+ * con el sentido de su fuente (ADR-0013)—. Las ordenaciones por instante de aquí dentro son estables y
+ * conservan ese desempate entre dos lecturas del mismo AGV en el mismo instante; no se puede rehacer
+ * aquí porque el sentido de la pila no llega a esta función, y desempatar por fila ascendente
+ * invertiría el orden de las fuentes `newest-first`.
  */
 export function buildReplayFrames(
   readings: readonly Reading[],
@@ -157,7 +163,7 @@ function stateAt(
 // --- Replay del expediente (ALG-016, ADR-0018 D8) ----------------------------------------------------
 
 /** Versión del procedimiento; viaja con cada replay (`VERSIONING.md`). */
-export const CASE_REPLAY_ALGORITHM = "replay-caso-1";
+const CASE_REPLAY_ALGORITHM = "replay-caso-1";
 
 /**
  * Dónde debería estar un AGV según lo esperado, desde su última lectura: recorriendo el anillo con la

@@ -18,6 +18,7 @@ import {
   type ReviewState,
 } from "../domain/review.js";
 import { loadReviews, saveReview } from "../persistence/store.js";
+import { downloadBlob, node } from "./dom.js";
 
 interface CardControl {
   readonly key: string;
@@ -58,13 +59,6 @@ export interface ReviewSession {
 
 /** Lo último que se leyó del almacén, para no esperar a IndexedDB al volver a dibujar el mismo circuito. */
 let cache: { circuitId: string; entries: Map<string, ReviewEntry> } | null = null;
-
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  if (className !== undefined) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
 
 const PLURAL: Readonly<Record<ReviewState, string>> = {
   pendiente: "pendientes",
@@ -168,12 +162,7 @@ export function createReviewSession(
     const visible = [...controls.values()].map(({ key, title, figure }) => ({ key, title, figure }));
     // Con BOM y `;`: es lo que una hoja de cálculo en español abre sin preguntar ni romper tildes.
     const csv = `﻿${reviewCsv(visible, entries, formatInstant)}`;
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = node("a");
-    link.href = url;
-    link.download = `revision-${circuitId}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(`revision-${circuitId}.csv`, new Blob([csv], { type: "text/csv;charset=utf-8" }));
   });
 
   const barRow = node("div", "review-bar-row");
@@ -223,9 +212,14 @@ export function createReviewSession(
         : { key: control.key, state, note, updatedAt: Date.now(), title: control.title, figure: control.figure };
     if (entry === null) entries.delete(control.key);
     else entries.set(control.key, entry);
+    // Marcar rehace la frase de estado y las cifras de arriba, que cambian de alto: sin compensarlo,
+    // la página saltaba unos 400 px con cada marca. La tarjeta se queda donde estaba en la pantalla.
+    const before = control.card.getBoundingClientRect().top;
     paint(control);
     refresh();
     notify();
+    const shift = control.card.getBoundingClientRect().top - before;
+    if (shift !== 0) window.scrollBy(0, shift);
     saveReview(circuitId, control.key, entry).catch(() =>
       onError("La marca se ve en pantalla pero no se ha podido guardar en el dispositivo. No recargues la página hasta volver a intentarlo."),
     );

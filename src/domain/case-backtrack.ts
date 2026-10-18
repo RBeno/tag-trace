@@ -33,7 +33,7 @@ import { regimeReader, type Band, type Regime } from "./segment-bands.js";
 import { localHourReader } from "./silence-kind.js";
 
 /** Versión del procedimiento; viaja con cada cronología (`VERSIONING.md`). */
-export const BACKTRACK_ALGORITHM = "retroceso-1";
+const BACKTRACK_ALGORITHM = "retroceso-1";
 
 export type ChronologyPhase = "antes" | "durante" | "despues";
 

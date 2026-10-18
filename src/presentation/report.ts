@@ -21,6 +21,7 @@ import { drawerBuilder } from "./drawer.js";
 import type { CaseView } from "../application/protocol.js";
 import { casesSummaryHtml } from "./case-report.js";
 import { escapeHtml, formatHours, reportFileName, type Status } from "./report-text.js";
+import { downloadBlob, node } from "./dom.js";
 
 export interface ReportSection {
   /** Identificador estable (el de la pestaña): `tags`, `agv`, `wifi`… */
@@ -60,18 +61,11 @@ export interface ReportSelection {
   readonly cases: boolean;
 }
 
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  if (className !== undefined) el.className = className;
-  if (text !== undefined) el.textContent = text;
-  return el;
-}
-
 /**
  * Una copia de un trozo de la página lista para el informe: sin nada que se pulse, con los enlaces
  * convertidos en texto, los `details` abiertos, lo escondido fuera y cada `canvas` como imagen.
  */
-export function cleanClone(original: HTMLElement): HTMLElement {
+function cleanClone(original: HTMLElement): HTMLElement {
   const clone = original.cloneNode(true) as HTMLElement;
   const originalCanvases = [...original.querySelectorAll("canvas")];
   const cloneCanvases = [...clone.querySelectorAll("canvas")];
@@ -177,7 +171,9 @@ function findingsHtml(source: ReportSource, selection: ReportSelection): { html:
   let total = 0;
   for (const card of source.tray.querySelectorAll<HTMLElement>(".finding.reviewable")) {
     const tab = card.dataset["tab"] ?? "";
-    if (!selection.sections.has(tab)) continue;
+    // Las de «Más hallazgos del periodo» nacen en el Resumen, que no es una sección elegible: van
+    // siempre. Sin esto, el informe contaba 15 hallazgos menos que la barra de revisión.
+    if (tab !== "resumen" && !selection.sections.has(tab)) continue;
     const state = (card.dataset["review"] ?? "pendiente") as ReviewState;
     if (selection.review !== null && state !== selection.review) continue;
     counts[state] += 1;
@@ -238,7 +234,7 @@ function sectionHtml(section: ReportSection, withTables: boolean): string {
   return parts.join("\n");
 }
 
-export function buildReportHtml(source: ReportSource, selection: ReportSelection): string {
+function buildReportHtml(source: ReportSource, selection: ReportSelection): string {
   const now = Date.now();
   const coverage = coverageText(source);
   const findings = findingsHtml(source, selection);
@@ -276,7 +272,7 @@ export function buildReportHtml(source: ReportSource, selection: ReportSelection
   for (const section of chosen) parts.push(sectionHtml(section, selection.tables));
   parts.push(
     `<footer class="report-footer"><p>Generado por TAG TRACE ${escapeHtml(source.appVersion)} el ${escapeHtml(source.formatInstant(now))} en este dispositivo: ningún dato salió de él. ` +
-      `Los hallazgos nombran evidencia, no causas (R-EVI-006); su estado de revisión es el de la revisión en campo en el momento de generar el informe. ` +
+      `Los hallazgos nombran evidencia, no causas; su estado de revisión es el de la revisión en campo en el momento de generar el informe. ` +
       `Una exportación es una instantánea: el análisis sigue vivo en la aplicación.</p></footer>`,
   );
   parts.push("</body></html>");
@@ -284,15 +280,10 @@ export function buildReportHtml(source: ReportSource, selection: ReportSelection
 }
 
 /** Descarga el informe como fichero HTML y devuelve su nombre. */
-export function downloadReport(source: ReportSource, selection: ReportSelection): string {
+function downloadReport(source: ReportSource, selection: ReportSelection): string {
   const html = buildReportHtml(source, selection);
   const name = reportFileName(source.circuitId, new Date());
-  const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadBlob(name, new Blob([html], { type: "text/html;charset=utf-8" }));
   return name;
 }
 

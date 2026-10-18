@@ -361,10 +361,3 @@ export const PROVISIONAL_CONFIG: AnalysisConfig = {
   },
 };
 
-/** Qué decirle al usuario sobre la configuración aplicada. Nunca se calla. */
-export function describeConfig(config: AnalysisConfig): string {
-  return config.state === "draft"
-    ? `provisional (${config.configVersion}): los umbrales no los ha fijado planta todavía, así que ` +
-        "sirven para explorar y no para consolidar"
-    : `${config.configVersion} (${config.state})`;
-}

@@ -1,23 +1,24 @@
 ---
 document_id: TT-VERSION-001
-version: 0.2.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Versionado y compatibilidad
 
 ## Ejes independientes
 
-| Eje | Ejemplo | Cuándo cambia |
-|---|---|---|
-| Aplicación | `app 0.3.0` | Release de software |
-| Documentación | `docs 0.1.0` | Línea base o cambio normativo |
-| Algoritmo | `ALG-007 1.1.0` | Semántica/parámetros compatibles o incompatibles |
-| Proyecto | `.agvproj schema 1` | Contrato persistente/migración |
-| Configuración | `CIRCUIT-A config 2026-09-03.1` | Vigencia, zonas, calendario, tags o funciones |
-| Memoria | `baseline v12` | Consolidación aceptada |
-| Incidencia | `INC-... revision 4` | Evolución del expediente |
+| Eje | Ejemplo | Dónde se lee | Cuándo cambia |
+|---|---|---|---|
+| Aplicación | `3.90.1` | Primera entrada de `CHANGELOG.md`; `package.json` la repite | Cada entrega |
+| Documentación | `1.90.1` | `documentationVersion` en `project_state.json`; cada documento, en su frontmatter | Línea base o cambio normativo |
+| Algoritmo | `ALG-007 1.1.0` | El resultado guardado | Semántica/parámetros compatibles o incompatibles |
+| Proyecto | `.agvproj` esquema 6 | `AGVPROJ_SCHEMA_VERSION` | Contrato persistente/migración |
+| Almacén local | `STORE_VERSION` 12 | `src/persistence/store-schema.ts` | Tablas o índices de IndexedDB |
+| Configuración | `CIRCUIT-A config 2026-09-03.1` | La configuración del circuito | Vigencia, zonas, calendario, tags o funciones |
+| Memoria | `baseline v12` | La memoria consolidada | Consolidación aceptada |
+| Incidencia | `INC-... revision 4` | El expediente | Evolución del expediente |
 
 ## SemVer del software
 
@@ -52,10 +53,18 @@ Tienen `valid_from`, `valid_to` opcional, origen y estado. Una consolidación cr
 
 ## Tags Git
 
-- `docs-v0.2.0`: candidata documental vigente. `docs-v0.1.0` fue la primera, sin gobierno ejecutable.
-- `phase-fN-approved`: checkpoint aprobado de fase.
 - `vX.Y.Z`: versión ejecutable publicada. Desde 3.82.0 la crea el workflow de publicación en el commit
   publicado, con la versión del `CHANGELOG.md`; una etiqueta publicada no se mueve.
+- `docs-v0.1.0`: la primera base documental, sin gobierno ejecutable; se conserva como historia. La
+  `docs-v0.2.0` que pedían `ROADMAP.md` §F0 y `checkpoints/F0_BASELINE_CANDIDATE.md` no llegó a crearse:
+  la versión de la documentación se lee en `project_state.json`, no en etiquetas.
+- `phase-fN-approved`: checkpoint aprobado de fase. No se ha creado ninguna; cada aprobación queda en
+  `project_state.json`, en `PHASE_GATES.md` y en `history/DECISION_LOG.md`.
+- `archivo/<rama>`: el último commit de una rama que no se fusionó, guardado antes de borrarla (decisión
+  del propietario del 2026-10-18). Las dos primeras, que crea el propietario:
+  `archivo/agv-wifi-tags-analysis-hi22lg` (3.64.0–3.66.1 de otra línea) y `archivo/fase-5-puntos-uqfbx6`
+  (una propuesta alternativa de F5). Se leen con `git checkout archivo/<rama>`; no se publican ni se
+  fusionan.
 
 ## Publicación y retorno
 

@@ -49,6 +49,13 @@ describe("expediente de AGV", () => {
     expect(dossier.cohortSize).toBe(3);
   });
 
+  it("solo en su cohorte no hay mediana del resto: null, no 0 (TC-378)", () => {
+    const readings = Array.from({ length: 10 }, (_, index) => reading(index * 1000, "A", "0100"));
+    const alone = { cohorts: [{ id: 0, vehicles: ["A"] }], cohortOf: new Map([["A", 0]]) };
+    const dossier = buildAgvDossier("A", readings, alone, [], [{ from: 0, to: 100_000 }], 10_000, []);
+    expect(dossier.cohortMedianReadings).toBeNull();
+  });
+
   it("cuenta la inactividad solo por encima del umbral que se le pasa", () => {
     const readings = [
       reading(0, "A", "0100"),

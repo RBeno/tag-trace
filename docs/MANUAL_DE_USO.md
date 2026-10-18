@@ -1,6 +1,6 @@
 ---
 document_id: TT-MANUAL-001
-version: 0.1.0
+version: 0.4.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -18,7 +18,7 @@ dispositivo**: los ficheros no salen de él, no hay servidor ni cuenta, y funcio
 abierta. Es **solo de observación**: no se conecta a los AGV, ni a los lectores, ni al servidor de
 planta, y no da órdenes.
 
-Lo que no sabe, lo dice: «sin determinar» o «sin dato» no es un fallo, es que con lo cargado no se puede
+Lo que no sabe, lo dice: «sin determinar» o «sin datos» no es un fallo, es que con lo cargado no se puede
 afirmar. Las cifras «provisionales» son valores de partida hasta que la memoria del circuito los mida y
 una persona los confirme.
 
@@ -35,11 +35,15 @@ una persona los confirme.
 2. En **Circuito**, su nombre. Con nombre, lo importado **se acumula** en ese circuito y se guarda en el
    dispositivo; sin nombre, se analiza y no se guarda nada.
 3. Mientras importa, la barra de progreso y «Cancelar». Cancelar responde en menos de un segundo hasta
-   que empieza a guardar; desde «Guardando en este dispositivo; ya no se puede cancelar», termina sola.
+   que empieza a guardar; desde «Guardando y analizando en este dispositivo; ya no se puede cancelar», termina sola.
 4. Al terminar, el Resumen: la frase de estado, las cifras y los hallazgos.
 
 Si el fichero es de otro circuito, no se acumula y se dice por qué. Si la fecha es ambigua (día y mes
-intercambiables), se pide el formato.
+intercambiables), se pide el formato; si lo ambiguo es el separador de columnas, se pide el separador.
+
+Las listas del circuito, el historial de flota y el registro de conexiones (pestaña **Datos**) se cargan
+cuando el circuito ya existe, es decir, después de la primera importación con nombre; y se aplican al
+**volver a importar** las lecturas. El orden que funciona: importar, cargar las listas, importar otra vez.
 
 ## 4. Las pestañas
 
@@ -54,14 +58,14 @@ intercambiables), se pide el formato.
 | **Memoria** | La memoria consolidada del circuito: versiones, comparación y consolidar. |
 | **Datos** | Listas, flota, conexiones, valores de planta, **copia del circuito**, espacio, lecturas y «Medir este dispositivo». |
 
-Arriba, **Expediente** busca un AGV o un tag y enseña todo lo suyo. Cada gráfico tiene «Ver los mismos
-datos en tabla». Con el dedo, un toque fija la lectura de un gráfico.
+Arriba, **Expediente** busca un AGV o un tag y enseña todo lo suyo. El botón «Tabla» de cada gráfico
+abre los mismos datos en tabla. Con el dedo, un toque fija la lectura de un gráfico.
 
 ## 5. Revisar y consolidar
 
 1. En la bandeja del Resumen, cada hallazgo tiene **Revisión en campo**: confirmado, descartado o
    pospuesto, con nota si hace falta. «Siguiente pendiente» lleva al siguiente.
-2. Cuando el periodo es normal y no queda nada grave pendiente, en **Memoria**, «Previsualizar vN»
+2. Cuando el periodo es normal y no queda ningún hallazgo pendiente (pospuesto vale), en **Memoria**, «Previsualizar vN»
    enseña qué se guardaría; «Confirmar y consolidar» lo guarda. La consolidación la decide siempre una
    persona; el programa nunca consolida solo.
 3. Una versión se puede revocar con razón; nada se borra.
@@ -85,7 +89,7 @@ imprime a PDF; también hay CSV de la cronología y de las lecturas.
 
 - **Exportar circuito (.agvproj)** (Datos → Copia del circuito) descarga un fichero con todo lo del
   circuito salvo las lecturas en bruto: fuentes, instantáneas, memoria, plano, valores de planta,
-  revisión en campo y expedientes con sus recortes. **Hágalo después de cada consolidación.**
+  revisión en campo y expedientes con sus recortes. **Hazlo después de cada consolidación.**
 - **Abrir un circuito exportado (.agvproj)** lo incorpora sin mezclar historiales; lo que no coincide se
   dice y no se toca.
 - **Espacio en este dispositivo** dice cuánto ocupa y si el navegador lo guarda de forma persistente.
@@ -100,5 +104,5 @@ curso. Si cambia el formato de lo guardado, se pide exportar antes la copia.
 ## 9. Medir el dispositivo
 
 En **Datos → Medir este dispositivo**, «Medir los tres» genera volúmenes sintéticos, los analiza sin
-guardar nada y dice si cada cifra está dentro del presupuesto. Deje la pestaña a la vista mientras
+guardar nada y dice si cada cifra está dentro del presupuesto. Deja la pestaña a la vista mientras
 mide. «Descargar el informe (JSON)» es lo que se devuelve para el piloto.

@@ -1,6 +1,6 @@
 ---
 document_id: TT-TPL-PILOT-001
-version: 0.1.0
+version: 0.2.0
 status: template
 last_updated: 2026-10-18
 ---
@@ -82,7 +82,8 @@ El piloto se **rechaza** si ocurre cualquiera de estas. Marcar y dar la evidenci
 
 ## 7. Decisiones pendientes que entran en la aceptación
 
-- OQ-176 (dependencias de desarrollo): [ ] se acepta el riesgo hasta ____ · [ ] subir Vitest antes de G6
+- OQ-176 (dependencias de desarrollo): decidida el 2026-10-18, riesgo aceptado hasta G6. [ ] Subida de Vitest
+  hecha en su propia entrega (versión: ____); sin ella no se marca G6.
 - OQ-172 (cuándo se dice «correlaciona»): [ ] aplazada · [ ] decidida:
 
 ## 8. Decisión

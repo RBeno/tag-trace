@@ -53,7 +53,8 @@ export interface AgvDossier {
   readonly cohortSize: number;
   readonly readingCount: number;
   /** Mediana de lecturas de los demás vehículos del cohorte, para poner el recuento en contexto. */
-  readonly cohortMedianReadings: number;
+  /** `null` cuando el AGV está solo en su cohorte: no hay con quién comparar, y no se dice 0. */
+  readonly cohortMedianReadings: number | null;
   readonly laps: { readonly completas: number; readonly parciales: number; readonly desconocidas: number };
   readonly lastReading: { readonly tagId: string; readonly utcMs: number } | null;
   readonly inactivity: readonly InactivityPeriod[];
@@ -143,6 +144,15 @@ function laneSignatures(lanes: readonly CoLane[]): ReadonlyMap<string, string> {
   return signatures;
 }
 
+/**
+ * Las lecturas de cada vehículo, en orden de tiempo.
+ *
+ * Precondición (B-10, revisión del 2026-10-18): `readings` llega en orden canónico —`sortReadings`
+ * con el sentido de su fuente (ADR-0013)—. El `sort` por instante es estable y conserva ese desempate
+ * entre dos lecturas del mismo AGV en el mismo instante. Aquí no se puede rehacer: el sentido de la
+ * pila no llega a esta función, y desempatar por fila ascendente invertiría el orden de las fuentes
+ * `newest-first`.
+ */
 function groupByVehicle(readings: readonly Reading[]): ReadonlyMap<string, readonly Reading[]> {
   const groups = new Map<string, Reading[]>();
   for (const entry of readings) {
@@ -234,8 +244,8 @@ interface CohortLookup {
   readonly cohortOf: ReadonlyMap<string, number>;
 }
 
-function median(values: readonly number[]): number {
-  if (values.length === 0) return 0;
+function median(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0
@@ -327,7 +337,3 @@ function readerStatuses(
     .sort((a, b) => a.agvId.localeCompare(b.agvId));
 }
 
-/** Estado de verdad de un expediente: siempre `observed` en lo que cuenta, `inferred` en las vueltas. */
-export function dossierTruth(hasLaps: boolean): TruthState {
-  return hasLaps ? "inferred" : "observed";
-}

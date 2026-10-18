@@ -98,6 +98,21 @@ describe("INV-011 · ida y vuelta de `.agvproj`", () => {
 });
 
 describe("apertura defensiva · ADR-0012", () => {
+  it("una sección llamada «__proto__» o con una ruta dentro se rechaza, y las secciones no tienen prototipo (TC-380)", async () => {
+    const { semanticHash } = await import("../../src/domain/semantic-hash.js");
+    for (const name of ["__proto__", "mala/ruta"]) {
+      const value = { tocado: true };
+      const partial = { schema_version: AGVPROJ_SCHEMA_VERSION, circuit_id: "c1", exported_at: EXPORTED_AT, sections: [{ name, hash: await semanticHash(value), bytes: 1 }] };
+      const bytes = await writeZip([
+        { name: "manifest.json", data: new TextEncoder().encode(JSON.stringify({ ...partial, hash: await semanticHash(partial) })) },
+        { name: `sections/${name}.json`, data: new TextEncoder().encode(JSON.stringify(value)) },
+      ]);
+      await expect(readProject(bytes)).rejects.toBeInstanceOf(ProjectError);
+    }
+    const project = await readProject(await writeProject("c1", sections, EXPORTED_AT));
+    expect(Object.getPrototypeOf(project.sections)).toBeNull();
+  });
+
   it("una sección alterada invalida la carga entera, no solo esa sección", async () => {
     const bytes = await writeProject("c1", sections, EXPORTED_AT);
     // Se altera un byte del contenido comprimido.
@@ -382,5 +397,58 @@ describe("OQ-140 · esquema 5: los valores de planta confirmados viajan en la se
     expect(readPlanSection(proyecto)).toEqual(plano);
     expect(proyecto.sections["valores"]).toBeUndefined();
     expect(readPlantValuesSection(proyecto)).toBeUndefined();
+  });
+});
+
+describe("apertura defensiva · cada corrupción dice qué es (TC-393)", () => {
+  const encoder = new TextEncoder();
+  async function withManifest(manifest: unknown, extra: readonly { name: string; data: Uint8Array }[] = []): Promise<Uint8Array> {
+    return writeZip([{ name: "manifest.json", data: encoder.encode(typeof manifest === "string" ? manifest : JSON.stringify(manifest)) }, ...extra]);
+  }
+  async function signed(partial: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const { semanticHash } = await import("../../src/domain/semantic-hash.js");
+    return { ...partial, hash: await semanticHash(partial) };
+  }
+
+  it("un manifiesto que no es JSON, que es null o con el esquema como texto es un ProjectError con su texto", async () => {
+    await expect(readProject(await withManifest("{{{"))).rejects.toThrow(/El manifiesto no es JSON válido/);
+    await expect(readProject(await withManifest(null))).rejects.toThrow(/no declara un esquema reconocible/);
+    const asText = await signed({ schema_version: String(AGVPROJ_SCHEMA_VERSION), circuit_id: "c1", exported_at: EXPORTED_AT, sections: [] });
+    await expect(readProject(await withManifest(asText))).rejects.toThrow(/no declara un esquema reconocible/);
+    const noSections = await signed({ schema_version: AGVPROJ_SCHEMA_VERSION, circuit_id: "c1", exported_at: EXPORTED_AT, sections: null });
+    await expect(readProject(await withManifest(noSections))).rejects.toBeInstanceOf(ProjectError);
+  });
+
+  it("una sección que no es JSON es un ProjectError, no un SyntaxError", async () => {
+    const { semanticHash } = await import("../../src/domain/semantic-hash.js");
+    const manifest = await signed({ schema_version: AGVPROJ_SCHEMA_VERSION, circuit_id: "c1", exported_at: EXPORTED_AT, sections: [{ name: "circuito", hash: await semanticHash({}), bytes: 1 }] });
+    const bytes = await withManifest(manifest, [{ name: "sections/circuito.json", data: encoder.encode("{no es json") }]);
+    await expect(readProject(bytes)).rejects.toThrow(/La sección «circuito» no es JSON válido/);
+  });
+
+  it("un índice que apunta fuera del fichero es un ProjectError, no un RangeError", async () => {
+    const bytes = (await writeProject("c1", sections, EXPORTED_AT)).slice();
+    const view = new DataView(bytes.buffer);
+    // El fin del directorio central lleva en +16 dónde empieza el directorio: se manda fuera.
+    let end = bytes.byteLength - 22;
+    while (view.getUint32(end, true) !== 0x06054b50) end -= 1;
+    view.setUint32(end + 16, bytes.byteLength + 1000, true);
+    await expect(readProject(bytes)).rejects.toThrow(/truncado o tiene un índice que apunta fuera/);
+  });
+
+  it("una entrada que el manifiesto no declara ni se descomprime: dañada, no impide abrir el proyecto", async () => {
+    const good = await writeProject("c1", sections, EXPORTED_AT);
+    const entries = await readZip(good);
+    const withJunk = await writeZip([...entries, { name: "sections/basura.json", data: encoder.encode("x".repeat(4096)) }]);
+    // Se daña un byte del final del contenido de «basura.json», la última entrada antes del directorio.
+    const view = new DataView(withJunk.buffer, withJunk.byteOffset, withJunk.byteLength);
+    let end = withJunk.byteLength - 22;
+    while (view.getUint32(end, true) !== 0x06054b50) end -= 1;
+    const directory = view.getUint32(end + 16, true);
+    const damaged = withJunk.slice();
+    damaged[directory - 2] = (damaged[directory - 2] as number) ^ 0xff;
+    await expect(readZip(damaged)).rejects.toBeInstanceOf(ZipError);
+    const project = await readProject(damaged);
+    expect(Object.keys(project.sections).sort()).toEqual(Object.keys(sections).sort());
   });
 });
