@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.13.0
+version: 0.17.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -26,7 +26,7 @@ habitual.
 | WP-001 | Una fuente **debe** parsearse una sola vez por trabajo, y siempre dentro del Worker. La interfaz no parsea, ni siquiera para validar. |
 | WP-002 | Ningún camino de recuperación **debe** ejecutar parseo o análisis en el hilo principal. Si el Worker falla, el resultado es un error explicado, nunca un cálculo de repuesto. |
 | WP-003 | Todo mensaje **debe** llevar `job_id` y `protocol_version`. Un mensaje cuyo `job_id` no sea el trabajo vigente se descarta sin tocar el estado. |
-| WP-004 | La cancelación **debe** ser cooperativa, mediante puntos de control deterministas. `terminate()` solo se admite como último recurso tras vencer el plazo de cortesía, y deja el estado en `cancelled`, nunca en `complete`. |
+| WP-004 | La cancelación **debe** ser cooperativa, mediante puntos de control deterministas. `terminate()` solo se admite como último recurso tras vencer el plazo de cortesía, y deja el estado en `cancelled`, nunca en `complete`. **Defecto medido en 3.83.0 y corregido en 3.83.1:** durante la lectura de filas, que es síncrona, el mensaje de cancelar no llegaba y la importación terminaba entera. Ahora la importación avisa con `saving` antes de su primera escritura; hasta ese aviso, si `cancelled` no llega en 500 ms, la interfaz detiene el Worker, que no ha escrito nada; desde él, ya no se ofrece «Cancelar» (§5). |
 | WP-005 | Un resultado vacío **debe** ser un resultado legítimo y explicado, no un síntoma que la interfaz corrija. Si el Worker devuelve cero lecturas, esa es la respuesta y debe venir con causa y ejemplos. |
 | WP-006 | Los bloques grandes **deben** viajar como `Transferable`. Está prohibido clonar el contenido íntegro de una fuente en cada mensaje. |
 | WP-007 | Un resultado parcial **debe** marcarse `partial: true` y **no** puede consolidarse ni persistirse como memoria normal. |
@@ -91,8 +91,9 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `accepted` | etapas previstas | Confirma que el trabajo empezó; sirve para detectar Workers que no arrancan. |
 | `progress` | etapa, unidades hechas, unidades previstas, mensaje | Sin porcentajes inventados. |
 | `partial` | resultado incompleto | Siempre `partial: true`. |
-| `complete` | resultado, métricas, hash semántico, advertencias | Único mensaje que autoriza a persistir. |
+| `complete` | resultado, métricas, hash semántico, advertencias | Único mensaje que autoriza a persistir. Desde 3.84.0 las lecturas viajan **por columnas** (`ReadingColumns`) y sus buffers se transfieren, sin copia (`PERFORMANCE_BUDGET.md` §3.2). |
 | `error` | código, causa, esquema detectado, filas de ejemplo, acción sugerida | Ver §6. |
+| `saving` | — | Solo en una importación con circuito, justo antes de su primera escritura (3.83.1). Hasta aquí no se ha escrito nada y la interfaz puede detener el Worker; desde aquí ya no se cancela y la escritura termina entera (WP-004). |
 | `cancelled` | etapa alcanzada, recursos liberados | El estado anterior permanece intacto. |
 | `lists-loaded` | listas aceptadas, rechazos por motivo, avisos | Las vistas se recalculan en la siguiente importación. |
 | `fleet-loaded` | valor de circuito usado, filas aceptadas, rechazos por motivo, añadidas, sustituidas, periodos guardados, avisos | Como `lists-loaded`, no dispara análisis por sí mismo. |
@@ -129,7 +130,10 @@ memoria se leen con él: un tag instalado que no se lee sale «sin leer en su ub
 1. La interfaz envía `cancel` y pasa a `Cancelling`.
 2. El Worker atiende la petición en el siguiente punto de control y responde `cancelled`.
 3. Si no responde dentro del plazo de cortesía configurado, la interfaz llama a `terminate()`,
-   registra el incidente y deja el estado en `cancelled`.
+   registra el incidente y deja el estado en `cancelled`. Desde 3.83.1: el plazo es de 500 ms, el
+   incidente se dice en el aviso («El proceso auxiliar estaba leyendo las filas y no podía atender la
+   petición, así que se ha detenido.») y solo se aplica a una importación que no ha enviado `saving`.
+   Antes de escribir, el Worker da paso a la cola de mensajes y atiende una cancelación pendiente.
 4. Cancelar **no debe** dejar proyecto parcial, consolidación a medias ni memoria escrita (INV-006).
 5. Las fuentes originales permanecen intactas.
 
@@ -147,6 +151,7 @@ de ejemplo saneadas y acción de recuperación. `UX_SPEC.md` §8 lo exige y el p
 | `NO_ACCEPTED_ROWS` | Se leyeron filas pero ninguna superó la validación. Debe detallar por qué. |
 | `LIMIT_EXCEEDED` | Se superó un límite de tamaño, celdas o memoria declarado. |
 | `CIRCUIT_FOREIGN` | La huella de afinidad sitúa la fuente en otro circuito. |
+| `STORAGE_FULL` | No queda espacio en el dispositivo para guardar (3.86.0): el almacén convierte `QuotaExceededError` en `StorageFullError`; la transacción que falla no deja nada escrito. Las demás operaciones del Worker dicen lo mismo con su `error`, nunca como defecto. |
 | `INTERNAL` | Defecto del propio motor; nunca debe usarse para tapar los anteriores. |
 
 Ningún mensaje de error **debe** incluir contenido bruto sin sanear (TH-003).

@@ -33,7 +33,7 @@ import {
   inventoryChart,
   lazyTable,
   plainTable,
-  scrollBox, plural } from "./charts.js";
+  scrollBox, plural, countedLabel } from "./charts.js";
 import { closeDrawer } from "./drawer.js";
 import { appCss, openReportDialog, type ReportSource } from "./report.js";
 import { buildCaseReportHtml, caseReportFileName } from "./case-report.js";
@@ -76,15 +76,21 @@ import { bandsCsv } from "../domain/segment-bands.js";
 import { anchorSectionsCsv } from "../domain/anchor-sections.js";
 import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
 import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
-import type { QuarantinedRow, Reading } from "../domain/reading.js";
+import type { QuarantinedRow } from "../domain/reading.js";
 import { wallClockToUtc, type FieldOrder } from "../domain/time.js";
 import type { IncidentCut } from "../domain/incident-cut.js";
-import { ProjectError, readMemorySection, readPlanSection, readPlantValuesSection, readProject, writeProject } from "../persistence/agvproj.js";
+import { ProjectError, readIncidentsSection, readMemorySection, readPlanSection, readPlantValuesSection, readProject, writeProject } from "../persistence/agvproj.js";
 import { exportProjectMemory, importProjectMemory } from "../persistence/project-memory.js";
 import { exportProjectPlan, importProjectPlan } from "../persistence/project-plan.js";
 import { exportProjectPlantValues, importProjectPlantValues } from "../persistence/project-plant-values.js";
-import { ensureStore, isAvailable, loadCircuit, loadReviews, loadSnapshots } from "../persistence/store.js";
+import { exportProjectIncidents, importProjectIncidents } from "../persistence/project-incidents.js";
+import { caseImportText } from "../domain/case-transfer.js";
+import { ensureStore, isAvailable, isStorageFull, loadCircuit, loadReviews, loadSnapshots, STORE_VERSION } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
+import { createBenchPanel, type BenchObserver } from "./bench-ui.js";
+import { startUpdates } from "./update.js";
+import { createStoragePanel } from "./storage-ui.js";
+import { EMPTY_COLUMNS, filterReadings, readingRow, type ReadingColumns } from "../application/reading-columns.js";
 import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
 import { createPlanPanel, planRelationText } from "./plan-ui.js";
 import { createPlantValuesPanel, plantValuesRelationText, type PlantValueSendRequest } from "./plant-values-ui.js";
@@ -115,9 +121,11 @@ interface State {
   worker: Worker | null;
   jobId: string | null;
   summary: SourceSummary | null;
-  readings: readonly Reading[];
+  /** Las lecturas de la última importación, por columnas (3.84.0). */
+  readings: ReadingColumns;
   /** Lo que la tabla está mostrando: todas las lecturas, o las que pasan el filtro. */
-  visible: readonly Reading[];
+  /** Las posiciones que pasan el filtro de la tabla; `null`, todas. */
+  visible: Uint32Array | null;
   quarantine: readonly QuarantinedRow[];
   warnings: readonly string[];
   shown: number;
@@ -143,6 +151,8 @@ interface State {
   plantValueJob: boolean;
   /** Una acción sobre un expediente (ADR-0018) espera respuesta del Worker. */
   caseJob: boolean;
+  /** Hay una importación en curso que todavía no ha empezado a escribir: se puede detener (WP-004). */
+  importStoppable: boolean;
   /** Los expedientes del circuito tal como llegaron por última vez, para el informe del circuito. */
   cases: CaseViews | null;
 }
@@ -151,8 +161,8 @@ const state: State = {
   worker: null,
   jobId: null,
   summary: null,
-  readings: [],
-  visible: [],
+  readings: EMPTY_COLUMNS,
+  visible: null,
   quarantine: [],
   warnings: [],
   shown: 0,
@@ -167,6 +177,7 @@ const state: State = {
   planJob: false,
   plantValueJob: false,
   caseJob: false,
+  importStoppable: false,
   cases: null,
 };
 
@@ -238,7 +249,24 @@ const subtitle = element(
   "muted",
   "Diagnóstico de circuitos AGV · los datos no salen de este dispositivo",
 );
-header.append(title, subtitle);
+// La versión abierta, a la vista: lo que se publica se puede identificar (NFR-016).
+const versionNote = element("p", "muted app-version", `Versión ${APP_VERSION}`);
+header.append(title, subtitle, versionNote);
+const updates = startUpdates({ currentVersion: APP_VERSION, storeVersion: STORE_VERSION });
+/** La clave de sesión del aviso «Circuito borrado», que sobrevive a la recarga tras borrarlo. */
+const DELETED_NOTICE = "tag-trace-circuito-borrado";
+
+// El banco de medida (F6): la importación de verdad, sin circuito, observada desde la página.
+let benchObserver: BenchObserver | null = null;
+const benchPanel = createBenchPanel({
+  startImport: (file) => startImport(file, undefined, true),
+  cancel: () => cancelButton.click(),
+  observe: (observer) => {
+    benchObserver = observer;
+  },
+  appVersion: APP_VERSION,
+  saveDownload: (text, type, name) => saveDownload(text, type, name),
+});
 
 /**
  * Un selector de fichero que parece un botón propio. El `input` nativo sigue existiendo con su
@@ -290,7 +318,25 @@ cancelButton.type = "button";
 cancelButton.hidden = true;
 picker.append(fileLabel, filePicker(fileInput), circuitLabel, circuitInput, cancelButton);
 const projectPanel = element("section", "panel");
-projectPanel.append(element("h2", undefined, "Copia del circuito"), exportButton, projectLabel, filePicker(projectInput));
+// El espacio del dispositivo y borrar un circuito (`UX_SPEC.md` §8): junto a la copia, que es lo que
+// se ofrece antes de borrar.
+const storagePanel = createStoragePanel({
+  circuitName: () => circuitInput.value.trim(),
+  lock: (busy) => setBusy(busy),
+  notify: (kind, title, lines) => showMessage(kind, title, lines),
+  onDeleted: (circuitId) => {
+    // Si lo que se ve es el circuito borrado, se vuelve a la portada para no enseñar datos que ya no
+    // existen; el aviso sobrevive a la recarga.
+    if (state.circuitId !== circuitId) return;
+    try {
+      sessionStorage.setItem(DELETED_NOTICE, circuitId);
+    } catch {
+      // Sin almacenamiento de sesión, la recarga simplemente no repite el aviso.
+    }
+    window.location.reload();
+  },
+});
+projectPanel.append(element("h2", undefined, "Copia del circuito"), exportButton, projectLabel, filePicker(projectInput), storagePanel.node);
 
 const progressPanel = element("section", "panel");
 progressPanel.hidden = true;
@@ -691,13 +737,14 @@ const casesPanel = createCasesPanel({
   get("memoria").append(memoryPanel.node, planPanel.node);
   // Datos: lo que se carga y lo que entró, tal cual: listas, copia, fuente, cobertura y perfil,
   // replay y lecturas.
-  get("datos").append(listsPanel, plantValuesPanel.node, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel);
+  get("datos").append(listsPanel, plantValuesPanel.node, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel, benchPanel.node);
   const empty = element("p", "muted tab-empty", "Todavía no hay análisis: elige un fichero de lecturas y escribe el circuito.");
   get("resumen").prepend(empty);
 }
 
 app.append(
   header,
+  updates.node,
   tabsBar,
   reviewHost,
   // El selector de lecturas, el progreso y los mensajes se ven en todas las pestañas: son la
@@ -869,12 +916,7 @@ function renderSummary(summary: SourceSummary): void {
 function applyFilter(): void {
   const agv = agvFilter.value.trim();
   const tag = tagFilter.value.trim();
-  state.visible =
-    agv === "" && tag === ""
-      ? state.readings
-      : state.readings.filter(
-          (entry) => (agv === "" || entry.agvId === agv) && (tag === "" || entry.tagId === tag),
-        );
+  state.visible = filterReadings(state.readings, agv, tag);
   state.shown = 0;
   const body = tablePanel.querySelector("tbody");
   if (body !== null) body.replaceChildren();
@@ -882,11 +924,14 @@ function applyFilter(): void {
   appendRows();
 }
 
+/** Cuántas lecturas pasan el filtro. */
+const visibleCount = (): number => state.visible?.length ?? state.readings.count;
+
 function renderCount(): void {
-  const total = state.readings.length.toLocaleString("es-ES");
-  const shown = state.visible.length.toLocaleString("es-ES");
+  const total = state.readings.count.toLocaleString("es-ES");
+  const shown = visibleCount().toLocaleString("es-ES");
   filterNote.textContent =
-    state.visible.length === state.readings.length
+    state.visible === null
       ? `${total} lecturas`
       : state.visible.length === 0
         ? `Ninguna de las ${total} lecturas coincide (se compara el número entero, con sus ceros).`
@@ -927,29 +972,30 @@ function appendRows(): void {
   const body = tablePanel.querySelector("tbody");
   if (body === null) return;
 
-  const end = Math.min(state.shown + PAGE_SIZE, state.visible.length);
+  const visible = visibleCount();
+  const end = Math.min(state.shown + PAGE_SIZE, visible);
   for (let index = state.shown; index < end; index += 1) {
-    const reading = state.visible[index] as Reading;
+    const reading = readingRow(state.readings, state.visible === null ? index : (state.visible[index] as number));
     const row = element("tr");
     // La hora repetida resuelta por posición (ADR-0013, nota 2026-09-26) ordena como cualquier otra:
     // se marca aparte y no como sospechosa.
-    if (reading.time.flag === "dst_by_position") row.className = "resolved";
-    else if (reading.time.flag !== "ok") row.className = "flagged";
+    if (reading.flag === "dst_by_position") row.className = "resolved";
+    else if (reading.flag !== "ok") row.className = "flagged";
 
-    row.append(element("td", undefined, formatInstant(reading.time.utcMs)));
+    row.append(element("td", undefined, formatInstant(reading.utcMs)));
     row.append(element("td", "mono", reading.agvId));
     row.append(element("td", "mono", reading.tagId));
     // La procedencia es navegable: la fila física del fichero está siempre a la vista.
-    row.append(element("td", "mono", String(reading.provenance.sourceRow)));
-    row.append(element("td", "mono raw", reading.time.raw));
+    row.append(element("td", "mono", String(reading.sourceRow)));
+    row.append(element("td", "mono raw", reading.raw));
     body.append(row);
   }
   state.shown = end;
 
   const more = tablePanel.querySelector<HTMLButtonElement>("#show-more");
   if (more !== null) {
-    more.hidden = state.shown >= state.visible.length;
-    more.textContent = `Mostrar más (${(state.visible.length - state.shown).toLocaleString("es-ES")} restantes)`;
+    more.hidden = state.shown >= visible;
+    more.textContent = `Mostrar más (${(visible - state.shown).toLocaleString("es-ES")} restantes)`;
   }
 }
 
@@ -970,8 +1016,22 @@ function setBusy(busy: boolean): void {
   planPanel.setBusy(busy);
   plantValuesPanel.setBusy(busy);
   casesPanel.setBusy(busy);
+  benchPanel.setBusy(busy);
+  storagePanel.setBusy(busy);
   cancelButton.hidden = !busy || state.memoryJob !== null || state.planJob || state.plantValueJob || state.caseJob;
   progressPanel.hidden = !busy;
+  workerBusy = busy;
+  syncUpdateBusy();
+}
+
+/**
+ * Con un trabajo en curso no se activa una versión nueva (NFR-011): ni con el Worker ocupado ni
+ * mientras se exporta un `.agvproj`, que lee el almacén desde aquí sin pasar por el Worker.
+ */
+let workerBusy = false;
+let exportsInFlight = 0;
+function syncUpdateBusy(): void {
+  updates.setBusy(workerBusy || exportsInFlight > 0);
 }
 
 /** Lo que dice el panel cuyo botón se pulsó con otro trabajo en marcha. */
@@ -987,6 +1047,7 @@ function disposeWorker(): void {
   state.planJob = false;
   state.plantValueJob = false;
   state.caseJob = false;
+  state.importStoppable = false;
 }
 
 function handleMessage(message: FromWorker): void {
@@ -1004,12 +1065,21 @@ function handleMessage(message: FromWorker): void {
           ? `${message.note} — ${message.done.toLocaleString("es-ES")} de ${message.total.toLocaleString("es-ES")}`
           : message.note;
       progressBar.value = message.total === 0 ? 0 : message.done / message.total;
+      benchObserver?.progress(message.done, message.total);
+      return;
+
+    case "saving":
+      // Desde aquí la importación escribe: ya no se detiene, termina entera (WP-004).
+      state.importStoppable = false;
+      cancelButton.hidden = true;
+      progressNote.textContent = "Guardando en este dispositivo; ya no se puede cancelar";
       return;
 
     case "complete": {
+      benchObserver?.arrived();
       state.summary = message.summary;
       state.readings = message.readings;
-      state.visible = message.readings;
+      state.visible = null;
       state.quarantine = message.quarantine;
       state.warnings = message.warnings;
       state.shown = 0;
@@ -1050,6 +1120,9 @@ function handleMessage(message: FromWorker): void {
       appendRows();
       setBusy(false);
       disposeWorker();
+      benchObserver?.rendered();
+      // Tras guardar, se mira el espacio y se pide el guardado persistente si aún no lo hay.
+      storagePanel.refresh(message.accumulation?.accumulated === true);
       return;
     }
 
@@ -1090,6 +1163,7 @@ function handleMessage(message: FromWorker): void {
         lines.push(...message.sampleRows.map((row) => `Ejemplo: ${row}`));
       }
       showMessage("error", `No se pudo importar (${message.code})`, lines);
+      benchObserver?.failed(message.cause);
       // Una fuente ambigua no es una fuente rota: es una que el programa no puede resolver solo.
       // Se ofrece la salida en lugar de dejar al usuario con una instrucción que no puede seguir.
       if (message.code === "DATE_AMBIGUOUS" && state.file !== null) offerFieldOrder(state.file);
@@ -1198,6 +1272,7 @@ function handleMessage(message: FromWorker): void {
         showMessage("info", "Importación cancelada", [
           "No se ha cambiado nada.",
         ]);
+        benchObserver?.cancelled();
       }
       setBusy(false);
       disposeWorker();
@@ -1619,7 +1694,11 @@ function findingsStatus(): FindingsStatus | null {
   };
 }
 
-function startImport(file: File, fieldOrder?: FieldOrder): void {
+/**
+ * Arranca una importación. `withoutCircuit` la hace sin circuito aunque el campo tenga uno: se
+ * analiza y se dibuja, pero no se acumula ni se guarda nada (el banco de medida).
+ */
+function startImport(file: File, fieldOrder?: FieldOrder, withoutCircuit = false): void {
   disposeWorker();
   clearMessages();
   summaryPanel.hidden = true;
@@ -1644,13 +1723,14 @@ function startImport(file: File, fieldOrder?: FieldOrder): void {
     ]);
     setBusy(false);
     disposeWorker();
+    benchObserver?.failed("El proceso auxiliar se detuvo.");
   };
 
   setBusy(true);
   progressNote.textContent = "Preparando";
   progressBar.value = 0;
 
-  const circuitName = circuitInput.value.trim();
+  const circuitName = withoutCircuit ? "" : circuitInput.value.trim();
   const start: ToWorker = {
     type: "start",
     protocolVersion: PROTOCOL_VERSION,
@@ -1665,6 +1745,7 @@ function startImport(file: File, fieldOrder?: FieldOrder): void {
   };
   state.file = file;
   worker.postMessage(start);
+  state.importStoppable = true;
 }
 
 /** Arranca la carga de listas. Mismo Worker y mismo protocolo: el parseo no vive aquí. */
@@ -1870,16 +1951,38 @@ fileInput.addEventListener("change", () => {
   if (file !== undefined) startImport(file);
 });
 
+/**
+ * Plazo de cortesía de la cancelación (WP-004, `WORKER_PROTOCOL.md` §5). La lectura de filas es
+ * síncrona y no atiende `cancel` hasta terminar; si en este plazo no llega `cancelled` y la
+ * importación todavía no ha empezado a escribir, se detiene el Worker: no había escrito nada. Es un
+ * tiempo de la interfaz, no un valor de planta, y deja la confirmación por debajo del segundo del
+ * presupuesto (`PERFORMANCE_BUDGET.md` §3).
+ */
+const CANCEL_GRACE_MS = 500;
+
 cancelButton.addEventListener("click", () => {
   if (state.worker === null || state.jobId === null) return;
   progressNote.textContent = "Cancelando…";
+  const jobId = state.jobId;
   const cancel: ToWorker = {
     type: "cancel",
     protocolVersion: PROTOCOL_VERSION,
-    jobId: state.jobId,
+    jobId,
     reason: "petición del usuario",
   };
   state.worker.postMessage(cancel);
+  if (!state.importStoppable) return;
+  setTimeout(() => {
+    // Ya contestó, terminó o empezó a escribir: no se toca.
+    if (state.jobId !== jobId || !state.importStoppable) return;
+    disposeWorker();
+    showMessage("info", "Importación cancelada", [
+      "No se ha cambiado nada.",
+      "El proceso auxiliar estaba leyendo las filas y no podía atender la petición, así que se ha detenido.",
+    ]);
+    setBusy(false);
+    benchObserver?.cancelled();
+  }, CANCEL_GRACE_MS);
 });
 
 // --- Proyecto: acumular en el dispositivo y llevárselo ----------------------
@@ -1921,7 +2024,7 @@ function renderAccumulation(report: {
     ],
     [
       "Instantáneas",
-      `${report.snapshots.withSnapshot} de ${report.retained.distinctSources} ficheros` +
+      `${report.snapshots.withSnapshot} de ${plural(report.retained.distinctSources, "fichero", "ficheros")}` +
         (report.snapshots.withoutSnapshot === 0
           ? ""
           : `; ${report.snapshots.withoutSnapshot} sin instantánea (anteriores a esta versión o sin construir): vuelve a cargarlos para crearla`),
@@ -2453,10 +2556,10 @@ function renderListCleanup(views: CircuitViews): void {
     element(
       "p",
       undefined,
-      `${cleanup.notPhysical.length} declarados no están en el circuito físico (${critical} con función crítica: ` +
+      `${plural(cleanup.notPhysical.length, "declarado no está", "declarados no están")} en el circuito físico (${critical} con función crítica: ` +
         "comprobar si hay que colocar una copia o eliminarlos de Vsystem); " +
-        `${cleanup.moved.length} están en otra posición que en la lista; de ${cleanup.reinforcements.length} refuerzos declarados, ` +
-        `${byStatus("comprobado")} comprobados en el recorrido, ${byStatus("incompleto")} incompletos y ${byStatus("separado")} separados.`,
+        `${cleanup.moved.length} están en otra posición que en la lista; de ${plural(cleanup.reinforcements.length, "refuerzo declarado", "refuerzos declarados")}, ` +
+        `${plural(byStatus("comprobado"), "comprobado", "comprobados")} en el recorrido, ${plural(byStatus("incompleto"), "incompleto", "incompletos")} y ${plural(byStatus("separado"), "separado", "separados")}.`,
     ),
   );
   const download = element("button", undefined, "Descargar la limpieza (CSV)");
@@ -2473,19 +2576,19 @@ function renderListCleanup(views: CircuitViews): void {
   out.append(download);
   const fn = (funcion: string | null) => (funcion === null ? "—" : criticalFunctionLabel(funcion));
   out.append(
-    lazyTable(`Ver los ${cleanup.notPhysical.length} declarados que no están en el físico`, () =>
+    lazyTable(countedLabel("Ver", cleanup.notPhysical.length, false, "declarado que no está en el físico", "declarados que no están en el físico"), () =>
       plainTable(
         ["Tag", "Función", "En la lista", "Según la lista", "Acción"],
         cleanup.notPhysical.map((tag) => [tag.tagId, fn(tag.funcion), String(tag.listPosition), tag.listBetween ?? "—", tag.action]),
       ),
     ),
-    lazyTable(`Ver los ${cleanup.moved.length} en otra posición`, () =>
+    lazyTable(countedLabel("Ver", cleanup.moved.length, false, "que está en otra posición", "en otra posición"), () =>
       plainTable(
         ["Tag", "Función", "En la lista", "Según las lecturas", "Según la lista", "Leído entre"],
         cleanup.moved.map((tag) => [tag.tagId, fn(tag.funcion), String(tag.listPosition), String(tag.position), tag.listBetween ?? "—", tag.readBetween ?? "—"]),
       ),
     ),
-    lazyTable(`Ver los ${cleanup.reinforcements.length} refuerzos declarados`, () =>
+    lazyTable(countedLabel("Ver", cleanup.reinforcements.length, false, "refuerzo declarado", "refuerzos declarados"), () =>
       plainTable(
         ["Tags", "Función", "Estado", "Detalle"],
         cleanup.reinforcements.map((group) => [group.tags.join(" + "), fn(group.funcion), group.status, group.detail]),
@@ -2534,7 +2637,7 @@ function renderUndeclaredTags(views: CircuitViews): void {
   out.append(cards);
   if (tags.length > HIGHLIGHTS) {
     out.append(
-      lazyTable(`Ver los ${tags.length} tags`, () =>
+      lazyTable(countedLabel("Ver", tags.length, false, "tag", "tags"), () =>
         plainTable(
           ["Tag", "Veredicto", "Día", "Noche", "Entre", "Y", "Pasadas de día (leído)", "Pasadas de noche (leído)"],
           tags.map((tag) => [
@@ -2687,7 +2790,7 @@ function renderFlowStops(fleet: CircuitViews["fleet"]): void {
   }
   if (blockages.length > shown.length) {
     out.append(
-      lazyTable(`Ver los ${blockages.length} primeros de cola sin avanzar`, () =>
+      lazyTable(countedLabel("Ver", blockages.length, false, "primero de cola sin avanzar", "primeros de cola sin avanzar"), () =>
         plainTable(
           ["AGV", "Tag", "Desde", "Hasta", "Lo habitual", "Detrás", "Lecturas mientras tanto"],
           blockages.map((blockage) => [
@@ -2826,7 +2929,7 @@ function renderCircuitState(views: CircuitViews): void {
     const allUnexplained = [...measured.unexplained.produccion, ...measured.unexplained.noche];
     if (allUnexplained.length > PER_KIND) {
       out.append(
-        lazyTable(`Ver las ${allUnexplained.length} paradas sin explicación`, () =>
+        lazyTable(countedLabel("Ver", allUnexplained.length, true, "parada sin explicación", "paradas sin explicación"), () =>
           plainTable(
             ["AGV", "Tramo", "Desde", "Hasta", "Lo normal", "De más", "Régimen"],
             allUnexplained.map((stop) => [
@@ -3192,7 +3295,7 @@ function renderAnchorSections(views: CircuitViews): void {
   };
   if (sourceIds.length > 0) {
     out.append(
-      lazyTable(`Ver el p50 de cada sección por fichero (${sourceIds.length} ficheros) y los tags de cada sección`, () => {
+      lazyTable(`Ver el p50 de cada sección por fichero (${plural(sourceIds.length, "fichero", "ficheros")}) y los tags de cada sección`, () => {
         const body = element("div");
         body.append(
           element("p", "muted", "Tags de cada sección, en el orden del anillo:"),
@@ -3386,7 +3489,7 @@ function renderConnections(
       ),
     );
     out.append(
-      lazyTable(`Ver los ${summary.collectives.length} cortes colectivos`, () =>
+      lazyTable(countedLabel("Ver", summary.collectives.length, false, "corte colectivo", "cortes colectivos"), () =>
         plainTable(
           ["Desde", "Hasta", "AGV", "Microcortes", "Cortes medios", "Caídas", "Apagados"],
           summary.collectives.map((entry) => [
@@ -3460,7 +3563,7 @@ function renderConnections(
   }
   if (summary.notReconnecting.length > PER_KIND) {
     out.append(
-      lazyTable(`Ver los ${summary.notReconnecting.length} que no reconectaron`, () =>
+      lazyTable(countedLabel("Ver", summary.notReconnecting.length, false, "que no reconectó", "que no reconectaron"), () =>
         plainTable(
           ["AGV", "Desde", "Hasta", "Duración", "Cierre", "Última lectura"],
           summary.notReconnecting.map((entry) => [
@@ -3834,7 +3937,7 @@ function renderRing(views: CircuitViews): void {
     out.append(elsewhere);
 
     out.append(
-      lazyTable(`Ver los ${shape.tags.length} tags del anillo, en orden`, () =>
+      lazyTable(`${countedLabel("Ver", shape.tags.length, false, "tag del anillo", "tags del anillo")}, en orden`, () =>
         plainTable(
           ["Posición", "Tag", ...(shape.zones === undefined ? [] : ["Zona"]), "Leído por pasada", "Lectura"],
           shape.tags.map((tagId, index) => {
@@ -4042,7 +4145,7 @@ function groupedTagCard(item: TagHighlight, matrix: Matrix): HTMLElement {
   const key = neverSetOf(ids);
   for (const agvId of item.never) foldedVehicles.set(agvId, key);
   card.append(
-    lazyTable(`Ver los ${item.never.length} AGV con sus pasadas`, () =>
+    lazyTable(`${countedLabel("Ver", item.never.length, false, "AGV", "AGV")} con sus pasadas`, () =>
       plainTable(
         ["AGV", ...ids],
         item.never.map((agvId) => [
@@ -4103,7 +4206,7 @@ function renderVehicleReading(matrix: Matrix, reading: VehicleReadingView | unde
   const unprovenOf = new Map(matrix.vehicles.map((vehicle) => [vehicle.agvId, vehicle.unproven]));
   const extra = (agvId: string): string => {
     const unproven = unprovenOf.get(agvId) ?? 0;
-    return unproven > 0 ? ` Además, ${unproven} tramos recorridos en menos tiempo de lo normal.` : "";
+    return unproven > 0 ? ` Además, ${plural(unproven, "tramo recorrido", "tramos recorridos")} en menos tiempo de lo normal.` : "";
   };
 
   // Por tipo, para que ninguno quede escondido detrás de los demás: nunca, dejó de leer, poco en
@@ -4153,7 +4256,7 @@ function renderVehicleReading(matrix: Matrix, reading: VehicleReadingView | unde
       ["agv-nunca", ...[...group.agvIds].sort()],
     );
     card.append(
-      lazyTable(`Ver los ${group.agvIds.length} AGV con sus pasadas`, () =>
+      lazyTable(`${countedLabel("Ver", group.agvIds.length, false, "AGV", "AGV")} con sus pasadas`, () =>
         plainTable(
           ["AGV", ...tagIds],
           group.agvIds.map((agvId, index) => [agvId, ...(group.tags[index] ?? []).map((entry) => `0 de ${entry.passes}`)]),
@@ -4384,7 +4487,7 @@ function renderTagChanges(views: CircuitViews): void {
   const total = absorbed.length + changes.length;
   if (total > 0) {
     out.append(
-      lazyTable(`Ver los ${total} cambios dentro del periodo`, () =>
+      lazyTable(countedLabel("Ver", total, false, "cambio dentro del periodo", "cambios dentro del periodo"), () =>
         plainTable(["Tag", "Qué pasó", "Hora", "AGV que no lo leen como el resto"], [
           ...absorbed.map(({ gap, atUtcMs }) => [
             gap.changes
@@ -4499,7 +4602,7 @@ function renderCharging(views: CircuitViews): void {
       ),
     );
     out.append(
-      lazyTable(`Ver los ${charging.neverCharged.length} AGV que no entraron a cargar`, () =>
+      lazyTable(countedLabel("Ver", charging.neverCharged.length, false, "AGV que no entró a cargar", "AGV que no entraron a cargar"), () =>
         plainTable(
           ["AGV", "Primera lectura", "Última lectura", "Presente", "Lecturas"],
           charging.neverCharged.map((entry) => [
@@ -4603,7 +4706,7 @@ function renderCharging(views: CircuitViews): void {
 
   const usageOf = new Map(charging.usage.map((entry) => [entry.laneId, entry]));
   out.append(
-    lazyTable(`Detalle de las ${charging.lanes.length} calles`, () =>
+    lazyTable(countedLabel("Detalle de", charging.lanes.length, true, "calle", "calles"), () =>
       plainTable(
         ["Calle", "Capacidad", "Estancias", "Cuota", "Estancia habitual", "Turnos saltados"],
         charging.lanes.map((lane) => {
@@ -4718,7 +4821,7 @@ function renderDrift(views: CircuitViews): void {
   }
   if (sortedTags.length > 0) {
     out.append(
-      lazyTable(`Detalle de los ${sortedTags.length} tags con cambios`, () =>
+      lazyTable(countedLabel("Detalle de", sortedTags.length, false, "tag con cambios", "tags con cambios"), () =>
         plainTable(
           ["Tag", "Cambio", "Antes", "Ahora"],
           sortedTags.map((entry) => [
@@ -4777,7 +4880,7 @@ function renderDrift(views: CircuitViews): void {
   }
   if (sortedVehicles.length > 0) {
     out.append(
-      lazyTable(`Detalle de los ${sortedVehicles.length} AGV con cambios`, () =>
+      lazyTable(countedLabel("Detalle de", sortedVehicles.length, false, "AGV con cambios", "AGV con cambios"), () =>
         plainTable(
           ["AGV", "Tags dejados de leer", "Tags nuevos no adoptados"],
           sortedVehicles.map((entry) => [
@@ -4873,8 +4976,8 @@ function renderCriticalPoints(views: CircuitViews): void {
     const rows: DwellRow[] = [
       {
         title: "Referencia",
-        detail: `el resto del circuito · muestra de ${reference.length.toLocaleString("es-ES")} de ${cohort.referenceTotal.toLocaleString("es-ES")}`,
-        note: `mediana ${Math.round((reference[Math.floor(reference.length / 2)] ?? 0) / 1000)} s`,
+        detail: "el resto del circuito",
+        note: `muestra de ${reference.length.toLocaleString("es-ES")} de ${cohort.referenceTotal.toLocaleString("es-ES")} · mediana ${Math.round((reference[Math.floor(reference.length / 2)] ?? 0) / 1000)} s`,
         durationsMs: reference,
         isReference: true,
       },
@@ -4903,7 +5006,7 @@ function renderCriticalPoints(views: CircuitViews): void {
   }
 
   out.append(
-    lazyTable(`Detalle de los ${candidates.length} candidatos`, () =>
+    lazyTable(countedLabel("Detalle de", candidates.length, false, "candidato", "candidatos"), () =>
       plainTable(
         ["Tag", "Posible función", "Pasadas", "Detalle"],
         sorted.map((candidate) => [
@@ -4942,7 +5045,7 @@ function renderFifo(views: CircuitViews): void {
     element(
       "p",
       "muted",
-      `${spans.length} tramos de zona cargada, ${spans.filter((span) => span.evaluated).length} ` +
+      `${plural(spans.length, "tramo", "tramos")} de zona cargada, ${spans.filter((span) => span.evaluated).length} ` +
         "con pasadas suficientes. Un adelantamiento puede tener explicación (carga, maniobra " +
         "manual): hay que comprobarlo.",
     ),
@@ -4979,7 +5082,7 @@ function renderFifo(views: CircuitViews): void {
   }
 
   out.append(
-    lazyTable(`Detalle de los ${spans.length} tramos`, () =>
+    lazyTable(countedLabel("Detalle de", spans.length, false, "tramo", "tramos"), () =>
       plainTable(
         ["Tramo", "Tags", "Pasadas", "Tránsito habitual", "Adelantamientos"],
         spans.map((span) => [
@@ -6058,6 +6161,8 @@ function renderReplayFrame(): void {
 
 
 exportButton.addEventListener("click", () => {
+  exportsInFlight += 1;
+  syncUpdateBusy();
   void (async () => {
     const circuitId = circuitInput.value.trim();
     if (circuitId === "") {
@@ -6092,6 +6197,8 @@ exportButton.addEventListener("click", () => {
     const plano = await exportProjectPlan(circuitId);
     // Y los valores de planta confirmados (OQ-140, esquema 5). Sin ninguno, la sección no viaja.
     const valores = await exportProjectPlantValues(circuitId);
+    // Y los expedientes de incidencia con sus recortes (OQ-174, esquema 6): la copia para recuperarlos.
+    const incidencias = await exportProjectIncidents(circuitId);
     const bytes = await writeProject(
       circuitId,
       {
@@ -6103,6 +6210,7 @@ exportButton.addEventListener("click", () => {
         ...(memoria === undefined ? {} : { memoria }),
         ...(plano === undefined ? {} : { plano }),
         ...(valores === undefined ? {} : { valores }),
+        ...(incidencias === undefined ? {} : { incidencias }),
       },
       Date.now(),
     );
@@ -6117,6 +6225,12 @@ exportButton.addEventListener("click", () => {
       ...(memoria === undefined ? [] : [`Incluye la memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.`]),
       ...(plano === undefined ? [] : [`Incluye el plano del circuito: ${plano.eventos.length} ${plano.eventos.length === 1 ? "cambio registrado" : "cambios registrados"}.`]),
       ...(valores === undefined ? [] : [`Incluye los valores de planta confirmados: ${valores.eventos.length} ${valores.eventos.length === 1 ? "valor" : "valores"}.`]),
+      ...(incidencias === undefined
+        ? []
+        : (() => {
+            const cases = new Set(incidencias.revisiones.map((revision) => revision.caseId)).size;
+            return [`Incluye ${cases === 1 ? "el expediente de incidencia" : `los ${cases} expedientes de incidencia`}, con sus revisiones y recortes.`];
+          })()),
     ]);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
     const link = element("a");
@@ -6124,7 +6238,10 @@ exportButton.addEventListener("click", () => {
     link.download = `${circuitId}.agvproj`;
     link.click();
     URL.revokeObjectURL(url);
-  })();
+  })().finally(() => {
+    exportsInFlight -= 1;
+    syncUpdateBusy();
+  });
 });
 
 projectInput.addEventListener("change", () => {
@@ -6154,6 +6271,9 @@ projectInput.addEventListener("change", () => {
       // Y los valores de planta confirmados (OQ-140): mismo criterio que el plano, nada se mezcla.
       const valores = readPlantValuesSection(project);
       const valuesImport = isAvailable() ? await importProjectPlantValues(project.manifest.circuit_id, valores) : null;
+      // Y los expedientes (OQ-174): expediente a expediente, sin mezclar dos historiales.
+      const incidencias = readIncidentsSection(project);
+      const casesImport = isAvailable() ? await importProjectIncidents(project.manifest.circuit_id, incidencias) : null;
       showMessage("info", `Proyecto «${circuito?.nombre ?? project.manifest.circuit_id}»`, [
         `${fuentes?.length ?? 0} fuentes declaradas, exportado el ${formatInstant(project.manifest.exported_at)}.`,
         // Un proyecto del esquema 1 no traía instantáneas: se abre igual y se dice (ADR-0015 §5).
@@ -6189,6 +6309,14 @@ projectInput.addEventListener("change", () => {
             : "Trae valores de planta confirmados. Sin almacén local no se pueden comparar con los de este dispositivo."
           : plantValuesRelationText(valuesImport.relation, valuesImport.added) +
             (valuesImport.added > 0 ? " Se aplicarán al volver a importar las lecturas del circuito." : ""),
+        ...(casesImport === null
+          ? incidencias === undefined
+            ? []
+            : ["Trae expedientes de incidencia. Sin almacén local no se pueden incorporar."]
+          : [
+              ...caseImportText(casesImport.plans, casesImport.evidenceRejected),
+              ...(casesImport.plans.some((plan) => plan.missing.length > 0) ? ["Los expedientes se verán al volver a importar las lecturas del circuito."] : []),
+            ]),
         // Una revocación que llega cambia la versión vigente: se dice, versión por versión (OQ-144).
         ...(imported?.revocations ?? []).map(
           (entry) => `El proyecto trae la revocación de v${entry.version} (${formatInstant(entry.at)}): ${entry.reason}. Aquí queda revocada.`,
@@ -6215,6 +6343,13 @@ projectInput.addEventListener("change", () => {
         showMessage("error", "No se pudo abrir el proyecto", [error.reason, error.recovery]);
         return;
       }
+      if (isStorageFull(error)) {
+        showMessage("error", "No hay espacio para abrir el proyecto", [
+          "No queda espacio en este dispositivo para guardar: lo de esta operación no se ha escrito.",
+          "Libera espacio —exporta y borra los circuitos que ya no uses o libera espacio del dispositivo— y vuelve a abrirlo.",
+        ]);
+        return;
+      }
       showMessage("error", "No se pudo abrir el proyecto", [
         "El fichero no tiene la forma de un `.agvproj`.",
         "Comprueba que es el fichero correcto. El almacén local no se ha tocado.",
@@ -6225,25 +6360,26 @@ projectInput.addEventListener("change", () => {
 
 // --- Almacén: la migración pendiente se hace al abrir, no a mitad de la primera importación --------
 
+{
+  let deleted: string | null = null;
+  try {
+    deleted = sessionStorage.getItem(DELETED_NOTICE);
+    sessionStorage.removeItem(DELETED_NOTICE);
+  } catch {
+    deleted = null;
+  }
+  if (deleted !== null) {
+    showMessage("info", `Circuito «${deleted}» borrado`, ["Se ha borrado entero de este dispositivo. Las copias exportadas (.agvproj) no se tocan."]);
+  }
+}
+
 if (isAvailable()) {
   void ensureStore().catch(() => {
     // Sin almacén utilizable la aplicación sigue analizando; la primera acumulación dirá que no pudo guardar.
   });
 }
 
-// --- Sin red -----------------------------------------------------------------
+// --- Sin red y actualización ------------------------------------------------
 
-/**
- * Registra el service worker para que la aplicación abra sin conexión.
- *
- * Va al final y sin bloquear nada: si el registro falla —contexto no seguro, permisos del
- * navegador, modo privado— la aplicación sigue funcionando exactamente igual con red. Una PWA que
- * se rompe porque no pudo instalarse es peor que no tenerla.
- */
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {
-      // No se informa al usuario: no ha perdido ninguna capacidad, solo la de abrir sin red.
-    });
-  });
-}
+// El registro del service worker y el aviso de versión nueva viven en `update.ts` (NFR-011): la
+// versión nueva espera a que la persona la pida y no se activa con un trabajo en curso.

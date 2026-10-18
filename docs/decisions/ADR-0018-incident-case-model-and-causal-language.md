@@ -81,6 +81,10 @@ una lista propia.
   dispositivos se mantendrá exclusivamente en la memoria local»). El expediente vive en el almacén
   del navegador y no viaja en el `.agvproj`; no hay bifurcaciones que resolver. La sección
   `incidencias/` que ADR-0012 prevé queda sin construir mientras siga así.
+  **Enmienda (propietario, 2026-10-17, OQ-174):** los expedientes tendrán copia en el `.agvproj`, en
+  esa sección `incidencias/`, para recuperarlos si se borran los datos del navegador. Sigue habiendo
+  un solo dispositivo y no hay bifurcaciones. **Hecha en 3.88.0** (esquema 6 del `.agvproj`, sección
+  `incidencias`; `src/domain/case-transfer.ts`).
 - **Identidad**: `incident_id` es texto, `INC-<circuito>-<aaaammdd>-<nn>`, con un contador por
   circuito y día de creación. Con un solo dispositivo basta y se lee mejor que un hash.
 - **Revisión**: cada vez que una persona guarda, se añade la revisión `n+1` con el hash de la

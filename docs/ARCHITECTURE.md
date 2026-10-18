@@ -1,8 +1,8 @@
 ---
 document_id: TT-ARCH-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
-last_updated: 2026-09-03
+last_updated: 2026-10-17
 ---
 
 # Arquitectura
@@ -88,7 +88,7 @@ No se fijará DuckDB-Wasm ni otra base embebida hasta demostrar, mediante benchm
 | Área | Candidato | Estado |
 |---|---|---|
 | Lenguaje | TypeScript estricto | Proposed, alta preferencia |
-| Build/PWA | Vite + plugin PWA evaluado | Proposed |
+| Build/PWA | Vite + service worker propio, sellado al compilar con su versión y su lista de ficheros (3.82.0) | Implementado |
 | UI | React o alternativa ligera tras prototipo de rendimiento | Open |
 | Unitarias | Vitest | Proposed |
 | E2E | Playwright | Proposed |
@@ -133,6 +133,8 @@ Los algoritmos no consultan reloj, red, orden no estable ni aleatoriedad sin sem
 
 - Solo una compilación aprobada se despliega desde `main`.
 - La publicación contiene código y fixtures sintéticos, nunca datos locales.
-- El Service Worker no activa una versión mientras haya una operación crítica.
-- Cada release incluye identificador visible y posibilidad de volver a la compilación anterior.
+- El Service Worker no activa una versión mientras haya una operación crítica (desde 3.82.0: la versión nueva
+  espera y la activa la persona; `UX_SPEC.md` §9).
+- Cada release incluye identificador visible y posibilidad de volver a la compilación anterior (desde 3.82.0:
+  etiqueta `vX.Y.Z` y retorno desde el workflow, `VERSIONING.md` §Publicación y retorno).
 - La futura aplicación no dependerá en ejecución de CDN de terceros.

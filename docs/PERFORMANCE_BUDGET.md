@@ -1,6 +1,6 @@
 ---
 document_id: TT-PERF-001
-version: 0.6.0
+version: 0.10.0
 status: provisional-budget
 last_updated: 2026-10-17
 ---
@@ -18,7 +18,7 @@ Estos límites son **candidatos medibles**, no promesas definitivas. F1 establec
 | PERF-D1 | 10.000 eventos | Desarrollo rápido y perfilado frecuente |
 | PERF-D2 | 100.000 eventos, 40 AGV, 120 tags sintéticos | Regresión reproducible de escala |
 | PERF-D3 | 500.000 eventos | Prueba de escala móvil/PC |
-| PERF-D4 | 48 h, aproximadamente 40 AGV | Replay operativo |
+| PERF-D4 | 48 h, aproximadamente 40 AGV (en el banco: 120 tags y una lectura cada 15 s por AGV, unas 461.000; la cadencia la elige el banco para quedar entre D2 y D3, no viene de planta) | Replay operativo |
 | PERF-D5 | 1.000.000+ eventos sintéticos | Estrés de escritorio, no puerta de cada cambio |
 
 Los datasets del repositorio serán sintéticos y conservarán solo la forma estadística necesaria, nunca la topología real.
@@ -34,6 +34,7 @@ con y sin ceros iniciales— y no solo el volumen.
 |---|---|---|
 | Equipo | Intel de 6 núcleos y 12 hilos, 32 GB RAM, GPU dedicada | Samsung Galaxy S23 FE |
 | Papel | Medida de escritorio y desarrollo | Medida móvil y puerta de fase |
+| Navegador del piloto (OQ-173) | Chrome o Edge | Chrome |
 
 **Los dos son de gama alta, y eso sesga las medidas hacia el optimismo.** Con 32 GB de RAM el
 presupuesto de memoria de escritorio no se rozará, y el móvil tiene holgura suficiente para que un
@@ -96,6 +97,66 @@ presupuesto exige**, así que PERF-D2 sigue sin cerrarse. Lo que sí permite afi
 producto es usable en el dispositivo donde cayó el prototipo, que no es poco, y que la medida
 formal ya no está bloqueada por no tener dónde ejecutarla.
 
+### 3.2 Banco de medida en la aplicación (3.83.0)
+
+En la pestaña Datos, «Medir este dispositivo» genera PERF-D2, D3 y D4 con semilla
+(`src/application/perf-bench.ts`), los importa como un fichero de lecturas **sin circuito** —se
+analizan y se dibujan, no se guarda nada— y mide desde la página: primer progreso, huecos de
+fotograma durante todo el trabajo (p95 y máximo), lo que tarda en importar, analizar y dibujar, la
+memoria del hilo principal si el navegador la da, la primera vista y el paso del replay (PERF-D4) y la
+confirmación de cancelación (una segunda importación de PERF-D3 cancelada al 30 %). Cada volumen lleva
+su huella SHA-256, así que dos dispositivos que dan la misma han medido lo mismo. El informe se descarga
+en JSON con la versión y el equipo (núcleos, memoria declarada, pantalla, tipo de puntero) y sin nada
+de planta. Lo que no se pudo medir sale «sin medir», nunca «dentro».
+
+Límites que el informe declara: la memoria es solo la del hilo principal (el Worker no se ve desde la
+página y no hay aislamiento entre orígenes en Pages para medirla entera) y crece entre volúmenes de una
+misma tanda; y con la pestaña en segundo plano el navegador para la página, así que el informe dice si
+se vio todo el rato.
+
+**Primera tanda, en el contenedor de desarrollo** (Chromium sin aceleración; no es ningún dispositivo
+de referencia y no cierra nada):
+
+| | PERF-D2 | PERF-D3 | PERF-D4 |
+|---|---:|---:|---:|
+| Lecturas | 100.000 | 500.000 | 461.022 |
+| Primer progreso | 34 ms | 36 ms | 75 ms |
+| Importar, analizar y dibujar | 4,2 s | 19,3 s | 18,5 s |
+| Hueco de fotograma p95 / máximo | 17 / 306 ms | 17 / 1.053 ms | 18 / 1.332 ms |
+| Memoria del hilo principal | 78 MiB | 361 MiB | 648 MiB |
+| Primera vista del replay | — | — | 62 ms |
+| Paso del replay | — | — | 60 fps (el máximo que se cuenta) |
+| Confirmación de cancelación | — | **no se atendió** (15,8 s hasta acabar) | — |
+
+Dos hallazgos: el tirón máximo crece con el volumen (más de un segundo en D3 y D4, al pasar los
+resultados del Worker y dibujarlos), que es trabajo de la entrega 3; y **«Cancelar» no se atendía
+mientras se leían las filas**: la lectura es síncrona dentro del Worker, el mensaje de cancelar no
+llegaba hasta que terminaba y los puntos de control nunca lo veían, así que la importación acababa
+entera. Corregido en 3.83.1 con el plazo de cortesía de WP-004: la misma medida da ahora **501 ms**,
+dentro del segundo.
+
+**Tras la entrega 3 (3.84.0).** Medido dónde se iba el tirón: dibujar los resultados costaba unos 60 ms;
+los ~800 ms eran **copiar las lecturas como objetos** del Worker a la página, y sin ellas el tirón
+desaparecía. La página solo las usa para la tabla «Lecturas», así que ahora viajan **por columnas**
+(§4): números en `ArrayBuffer` transferidos, sin copia; AGV y tags en diccionario; los textos originales
+en una sola cadena con sus cortes (`src/application/reading-columns.ts`). La misma tanda, sola en el
+contenedor:
+
+| | PERF-D2 | PERF-D3 | PERF-D4 |
+|---|---:|---:|---:|
+| Hueco de fotograma p95 / máximo | 18 / **106 ms** (antes 306) | 17 / **113 ms** (antes 1.053) | 17 / **87 ms** (antes 1.332) |
+| Memoria del hilo principal | **41 MiB** (antes 78) | **183 MiB** (antes 361) | **156 MiB** (antes 648) |
+| Importar, analizar y dibujar | 3,6 s | 17,2 s | 15,4 s |
+| Primera vista del replay | — | — | 31 ms |
+| Confirmación de cancelación | — | 501 ms | — |
+
+Con el resto de las pruebas corriendo en paralelo, el máximo de PERF-D2 sube a 0,3–0,5 s por la carga de
+la máquina; el p95 no se mueve. **Degradación por capacidad**: sin medidas de los dispositivos no se
+inventa un umbral de capacidad; un fichero con más lecturas que el mayor volumen medido (PERF-D3,
+500.000) se importa igual y avisa de que en ese dispositivo no está comprobado, con la memoria que
+declare el navegador. Cuando lleguen los informes del propietario, esto se revisa con sus cifras.
+
+
 ## 4. Modelo de memoria
 
 La representación ingenua de una fila como varios objetos y cadenas JS puede multiplicar varias veces el tamaño del CSV. El diseño perseguirá:
@@ -106,7 +167,7 @@ La representación ingenua de una fila como varios objetos y cadenas JS puede mu
 - columnas/arrays tipados;
 - offsets de procedencia compactos;
 - índices temporales construidos bajo demanda;
-- transferencia de buffers, no copias;
+- transferencia de buffers, no copias (desde 3.84.0, las lecturas que llegan a la página: §3.2);
 - agregación por lote y liberación temprana.
 
 Presupuesto técnico candidato para la representación canónica: 16–40 bytes base por evento más índices/procedencia. El valor real se comprobará con perfiles; no incluye el `File` mantenido por el navegador ni estructuras temporales.

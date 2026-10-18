@@ -26,6 +26,11 @@
      modos (ΔE 24,7 en claro, 26,8 en oscuro): nunca va solo, siempre con rótulo o tabla. */
   --viz-accent: #eb6834;
   --viz-accent-wash: #fdebe2;
+  /* Texto, no gráfico (F6, entrega 5): el azul y el naranja de las series no llegan a 4,5:1 sobre el
+     panel (4,1 y 3,0), así que enlaces y textos de alerta usan su propio tono, comprobado contra el
+     fondo, el panel y los lavados de aviso en los dos temas (WCAG 2.2 AA, 1.4.3). */
+  --link: #1f63b8;
+  --accent-text: #b8461a;
   /* Contexto: marcas que están ahí para comparar, no para llamar la atención. */
   --viz-neutral: #b0bac2;
   /* Cómo reaparece un AGV en la vida de cada AGV (Parte 45, R-AGV-017). Los colores los pidió el
@@ -95,6 +100,8 @@
     --viz-empty: #5b6270;
     --viz-accent: #d95926;
     --viz-accent-wash: #3a2419;
+    --link: #7ab4f5;
+    --accent-text: #f08a5d;
     --viz-neutral: #4d5a64;
     /* «Parado sin nada que lo explique» era un azul marino que sobre esta superficie no llegaba a
        2,4:1 y apenas se veía. En oscuro se re-escalona al otro extremo del mismo azul —un azul
@@ -133,6 +140,7 @@
 :root { --review-bar-height: 0px; --tabs-height: 0px; --readout-height: 34px; }
 h2, h3, h4, figure.chart, .finding, details, .tray-panel {
   scroll-margin-top: calc(var(--tabs-height) + var(--review-bar-height) + 8px); }
+a { color: var(--link); }
 body { margin: 0; background: var(--bg); color: var(--ink);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 /* 1.440 px: en un portátil de 1.920 los gráficos densos (vida de cada AGV, mapa de omisión) aprovechan
@@ -140,7 +148,12 @@ body { margin: 0; background: var(--bg); color: var(--ink);
 #app { max-width: 1440px; margin: 0 auto; padding: 24px 16px 64px; }
 .panel p:not(.readout) { max-width: 90ch; }
 h1 { font-size: 1.4rem; margin: 0; letter-spacing: 0.02em; }
-h2 { font-size: 1rem; margin: 0 0 12px; }
+/* Una escala para todos los títulos (F6, entrega 4): el título de un panel (h2) por encima de sus
+   apartados (h3) y estos de los suyos (h4). Antes h2 medía 1rem y h3 se quedaba con el tamaño del
+   navegador, mayor: el apartado gritaba más que el panel que lo contiene. */
+h2 { font-size: 1.15rem; margin: 0 0 12px; }
+h3 { font-size: 1.05rem; }
+h4 { font-size: 0.95rem; }
 .muted { color: var(--muted); margin: 4px 0 0; }
 .bar { margin-bottom: 20px; }
 .panel { background: var(--panel); border: 1px solid var(--line);
@@ -162,6 +175,17 @@ label { display: block; font-weight: 600; margin-bottom: 8px; }
 button { font: inherit; padding: 8px 14px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
 button.danger { border-color: var(--error); color: var(--error); margin-top: 12px; }
+/* Un mismo aspecto para todos los campos (F6, entrega 4): antes solo el buscador del expediente lo
+   tenía y el resto —el circuito, las fechas de un expediente, los formularios— salían con el del
+   navegador. Las reglas propias de cada sitio, más abajo, siguen mandando en lo que cambien. */
+input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="time"],
+input[type="datetime-local"], select, textarea {
+  font: inherit; padding: 6px 10px; min-height: 36px; max-width: 100%; box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--viz-series); outline-offset: 1px; }
+/* El foco del teclado, igual en todo lo que se puede pulsar y en los dos temas (WCAG 2.4.7; F6, entrega
+   5): antes los botones y los enlaces dependían del anillo del navegador. */
+button:focus-visible, a:focus-visible, summary:focus-visible, label.file-button:focus-visible { outline: 2px solid var(--viz-series); outline-offset: 2px; }
 progress { width: 100%; height: 8px; }
 .message.error h2 { color: var(--error); }
 .message.warn h2 { color: var(--warn); }
@@ -337,11 +361,11 @@ table.data th { color: var(--muted); font-weight: 600; }
 /* La frase de estado (UX_SPEC §4.8): la conclusión antes de las cifras; el color solo con riesgo. */
 .status-host { margin: 0 0 16px; }
 .status { font-size: 1.15rem; font-weight: 600; margin: 0; line-height: 1.35; }
-.status-alerta { color: var(--viz-accent); }
+.status-alerta { color: var(--accent-text); }
 .status-detail { margin: 2px 0 10px; }
 .local-jumps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .local-jumps button { border-radius: 999px; padding: 6px 14px; }
-.local-jumps button.primary { margin-left: auto; font-weight: 600; border-color: var(--viz-series); color: var(--viz-series); }
+.local-jumps button.primary { margin-left: auto; font-weight: 600; border-color: var(--viz-series); color: var(--link); }
 .report-dialog { max-width: 560px; width: calc(100% - 32px); border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); padding: 20px; }
 .report-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .report-dialog h2 { margin: 0 0 6px; }
@@ -349,7 +373,7 @@ table.data th { color: var(--muted); font-weight: 600; }
 .report-dialog legend { color: var(--muted); font-size: 0.85rem; padding: 0 4px; }
 .report-option { display: block; margin: 6px 0; }
 .report-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.report-actions .primary { font-weight: 600; border-color: var(--viz-series); color: var(--viz-series); }
+.report-actions .primary { font-weight: 600; border-color: var(--viz-series); color: var(--link); }
 @media print {
   .bar .subtitle, .tabs, .review-host, .local-jumps, .findings-elsewhere, .theme-filter, .review, .drawer, .drawer-open,
   .picker, input, select, button, .tab-empty, .report-dialog { display: none !important; }
@@ -362,15 +386,15 @@ table.data th { color: var(--muted); font-weight: 600; }
 .problem-list { margin: 4px 0; padding-left: 1.2em; }
 .problem-list li { margin: 4px 0; }
 .problem-list li[data-rank="1"] strong { color: var(--accent, inherit); }
-.problem-list a { color: var(--viz-series); }
+.problem-list a { color: var(--link); }
 .notices li { margin: 4px 0; color: var(--muted); }
-.notices a { color: var(--viz-series); }
+.notices a { color: var(--link); }
 .finding[hidden] { display: none; }
 .finding-where { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 0.8rem; margin: 0 0 2px; }
 .finding-where .chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
-.finding-where .evidence { color: var(--viz-series); text-decoration: underline; text-underline-offset: 2px; }
+.finding-where .evidence { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
 .findings-elsewhere { color: var(--muted); margin: 8px 0; padding: 6px 10px; border-left: 3px solid var(--line); }
-.findings-elsewhere a { color: var(--viz-series); }
+.findings-elsewhere a { color: var(--link); }
 
 /* --- Revisión en campo (UX_SPEC §4.3) ---------------------------------------------------------
    Se usa de pie, con el móvil en una mano: botones de 40 px, por encima de los 24 px de WCAG 2.2.
@@ -472,7 +496,7 @@ table.data th { color: var(--muted); font-weight: 600; }
 .tile-label { font-size: 0.8rem; color: var(--muted); }
 .tile-value { font-size: clamp(1.35rem, 6vw, 1.9rem); font-weight: 600; line-height: 1.15; font-variant-numeric: proportional-nums; letter-spacing: -0.01em; }
 .tile-value.tile-empty { color: var(--muted); font-size: 1.2rem; font-weight: 500; line-height: 1.8; }
-.tile.attn .tile-value { color: var(--viz-accent); }
+.tile.attn .tile-value { color: var(--accent-text); }
 .tile-note { font-size: 0.8rem; color: var(--muted); line-height: 1.35; overflow-wrap: anywhere; }
 @media (min-width: 700px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 /* Siete desde F4: la memoria consolidada va en la tira, junto a las seis cifras del análisis. */
@@ -510,6 +534,12 @@ table.data th { color: var(--muted); font-weight: 600; }
 .drawer-open { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted);
   padding: 5px 10px; min-height: 30px; border-radius: 8px; margin: 8px 8px 0 0; text-align: left; }
 .drawer-open:hover { color: var(--ink); border-color: var(--muted); }
+/* Con dedo, 44 px como el resto (UX_SPEC §7). Va aquí y no en el bloque táctil de arriba porque la
+   regla base, que viene después de aquel, le ganaba con su `min-height: 30px` (F6, entrega 4). */
+@media (any-pointer: coarse) {
+  .drawer-open { min-height: 44px; }
+  a.evidence { display: inline-flex; align-items: center; min-height: 44px; }
+}
 .drawer-open svg { flex: none; }
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(33vw, 640px); min-width: 360px; max-width: 100vw;
   z-index: 6; background: var(--bg); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
@@ -592,7 +622,7 @@ table.data th { color: var(--muted); font-weight: 600; }
 .memory-checks { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
 .memory-check { display: flex; align-items: baseline; gap: 8px; }
 .memory-check-mark { flex: none; width: 1.2em; text-align: center; font-weight: 600; color: var(--muted); }
-.memory-check[data-ok="si"] .memory-check-mark { color: var(--viz-series); }
+.memory-check[data-ok="si"] .memory-check-mark { color: var(--link); }
 .memory-check[data-ok="no"] .memory-check-mark { color: var(--warn); }
 .memory-preview { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
 .memory-preview h4:first-child { margin-top: 0; }
@@ -617,7 +647,7 @@ table.data th { color: var(--muted); font-weight: 600; }
 .memory-note, .memory-revoke-reason, .memory-fork-reason { font: inherit; width: 100%; max-width: 40rem; padding: 6px 10px; min-height: 24px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg); color: var(--ink); margin: 4px 0 8px; box-sizing: border-box; }
 .memory-panel label { display: block; margin-top: 8px; }
-.link-button { border: 0; background: transparent; padding: 0; color: var(--viz-series); text-decoration: underline; text-underline-offset: 2px; min-height: 0; border-radius: 0; }
+.link-button { border: 0; background: transparent; padding: 0; color: var(--link); text-decoration: underline; text-underline-offset: 2px; min-height: 0; border-radius: 0; }
 .memory-versions { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
 .memory-version { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
 .memory-version.revoked { border-style: dashed; color: var(--muted); }
@@ -669,7 +699,7 @@ table.data th { color: var(--muted); font-weight: 600; }
 .plan-review.none { color: var(--muted); }
 .plan-review.averiado, .plan-review.no-encontrado { color: var(--warn); }
 .plan-location-actions, .plan-proposal-actions { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; }
-.plan-menu > summary { cursor: pointer; color: var(--viz-series); padding: 4px 0; list-style-position: inside; }
+.plan-menu > summary { cursor: pointer; color: var(--link); padding: 4px 0; list-style-position: inside; }
 .plan-menu-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .plan-menu-items button, .plan-location-actions > button { padding: 4px 10px; font-size: 0.9rem; }
 .plan-form { flex: 1 1 100%; margin-top: 4px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
@@ -685,7 +715,7 @@ table.data th { color: var(--muted); font-weight: 600; }
 .plan-unwritten { font-weight: 600; }
 .plan-edges td, .plan-edges th { white-space: nowrap; }
 .plan-vehicles { margin-top: 4px; font-size: 0.9rem; }
-.plan-vehicles > summary, .plan-vehicles-rest > summary { cursor: pointer; color: var(--viz-series); padding: 2px 0; }
+.plan-vehicles > summary, .plan-vehicles-rest > summary { cursor: pointer; color: var(--link); padding: 2px 0; }
 .plan-vehicle-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; }
 .plan-vehicles-rest { margin-top: 4px; }
 .plan-event-when { font-weight: 600; }
@@ -715,7 +745,7 @@ table.data th { color: var(--muted); font-weight: 600; }
 .plant-value-actions { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; }
 .plant-value-actions > button { padding: 4px 10px; font-size: 0.9rem; }
 .plant-value-history { margin-top: 4px; font-size: 0.9rem; }
-.plant-value-history > summary { cursor: pointer; color: var(--viz-series); padding: 2px 0; }
+.plant-value-history > summary { cursor: pointer; color: var(--link); padding: 2px 0; }
 @media (any-pointer: coarse) {
   .plant-value-history > summary { min-height: 44px; display: flex; align-items: center; }
   .plant-value-actions > button, .plant-value-link { min-height: 44px; }
@@ -789,3 +819,27 @@ table.data th { color: var(--muted); font-weight: 600; }
 .case-similar-table th, .case-similar-table td { text-align: left; padding: 2px 8px 2px 0; vertical-align: top; overflow-wrap: anywhere; }
 .case-repetitions { margin: 2px 0 0; padding-left: 18px; font-size: 0.9rem; }
 @media (any-pointer: coarse) { .case-similar-list summary { min-height: 44px; } }
+
+/* Versión abierta y aviso de versión nueva (F6, entrega 1). */
+.app-version { font-size: 0.85rem; }
+.update-notice { border-left: 4px solid var(--warn); }
+.update-notice h2 { margin-top: 0; }
+
+/* Banco de medida (F6, entrega 2). Lo que queda fuera del presupuesto lleva borde, no solo color. */
+.bench-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.bench-table { border-collapse: collapse; font-size: 0.9rem; width: 100%; margin-top: 12px; }
+.bench-table caption { text-align: left; font-weight: 600; padding-bottom: 4px; overflow-wrap: anywhere; }
+.bench-table th, .bench-table td { text-align: left; padding: 3px 8px 3px 0; vertical-align: top; overflow-wrap: anywhere; }
+.bench-table tr[data-verdict="fuera"] td { border-top: 2px solid var(--error); border-bottom: 2px solid var(--error); }
+.bench-table tr[data-verdict="sin-medir"] td { border-bottom: 1px dashed var(--warn); }
+.bench-note { display: block; font-size: 0.8rem; }
+.bench-failed { color: var(--error); }
+
+/* Espacio del dispositivo y borrar un circuito (F6, entrega 5): lo que se pierde, a la vista, con borde. */
+.storage { margin-top: 16px; }
+.storage h3 { margin: 0 0 4px; }
+.storage-confirm { margin-top: 12px; padding: 12px; border: 2px solid var(--error); border-radius: 10px; background: var(--bg); }
+.storage-warning { font-weight: 600; color: var(--error); margin: 0 0 6px; }
+.storage-lost { margin: 0 0 8px; padding-left: 20px; }
+.storage-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.storage-actions button.danger { margin-top: 0; }

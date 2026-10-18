@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AGVPROJ_READABLE_VERSIONS,
   AGVPROJ_SCHEMA_VERSION,
   memorySection,
   planSection,
@@ -148,10 +149,10 @@ describe("ADR-0015 §5 · el proyecto lleva las instantáneas y abre las version
   // ADR-0016 subió el esquema al 4 (sección `plano`) y los valores de planta confirmados (OQ-140) al 5
   // (sección `valores`): el número vigente cambia por decisión, no para que la prueba pase; lo que fija
   // esta prueba —que `instantaneas` viaja con su hash— no cambia.
-  it("el esquema vigente es el 5 y la sección `instantaneas` viaja como cualquier otra, con su hash", async () => {
+  it("el esquema vigente es el 6 (expedientes, OQ-174) y la sección `instantaneas` viaja como cualquier otra, con su hash", async () => {
     const instantaneas = [{ schemaVersion: 1, sourceId: "s1", ring: ["T1", "T2"], vertices: [] }];
     const project = await readProject(await writeProject("c1", { ...sections, instantaneas }, EXPORTED_AT));
-    expect(project.manifest.schema_version).toBe(5);
+    expect(project.manifest.schema_version).toBe(6);
     expect(project.sections["instantaneas"]).toEqual(instantaneas);
     expect(project.manifest.sections.map((digest) => digest.name)).toContain("instantaneas");
   });
@@ -349,7 +350,9 @@ describe("OQ-140 · esquema 5: los valores de planta confirmados viajan en la se
     expect(valores?.eventos.map((event) => event.seq)).toEqual([1, 2]);
     const project = await readProject(await writeProject("c1", { ...sections, valores }, EXPORTED_AT));
     expect(project.manifest.schema_version).toBe(AGVPROJ_SCHEMA_VERSION);
-    expect(AGVPROJ_SCHEMA_VERSION).toBe(5);
+    // El 5 era el vigente al llegar los valores; desde 3.88.0 es el 6 y el 5 se sigue abriendo.
+    expect(AGVPROJ_SCHEMA_VERSION).toBe(6);
+    expect(AGVPROJ_READABLE_VERSIONS).toContain(5);
     expect(project.manifest.sections.map((digest) => digest.name)).toContain("valores");
     expect(readPlantValuesSection(project)).toEqual({ eventos });
   });

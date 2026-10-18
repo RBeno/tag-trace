@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONTEXT-001
-version: 0.4.0
+version: 0.5.0
 status: baseline-candidate
-last_updated: 2026-09-16
+last_updated: 2026-10-18
 ---
 
 # Índice de contexto y rutas de lectura
@@ -33,6 +33,7 @@ Este documento evita que una persona o IA tenga que interpretar todo el reposito
 | Persistencia `.agvproj` | `DATA_CONTRACTS.md`, `MEMORY_CONSOLIDATION.md`, `VERSIONING.md`, ADR-0012 |
 | Seguridad/publicación | `SECURITY_PRIVACY.md`, `ARCHITECTURE.md`, ADR-0001, ADR-0007 y ADR-0014 |
 | Cambio de fase | `ROADMAP.md`, `PHASE_GATES.md`, `DEFINITION_OF_DONE.md` |
+| Uso, diagnóstico y operación | `MANUAL_DE_USO.md`, `GUIA_DE_DIAGNOSTICO.md`, `OPERACION.md`, `VERSIONING.md` |
 
 ## Estado documental
 

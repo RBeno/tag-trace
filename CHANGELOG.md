@@ -2,6 +2,220 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.88.2] - 2026-10-18
+
+### Corregido
+
+- **Permanencias en el móvil**: la fila de referencia juntaba «el resto del circuito · muestra de N de M ·
+  mediana…» en una línea que, con una fuente algo más ancha, se salía de los 360 px. Lo destapó la prueba de
+  interfaz en el CI (otra fuente que la del contenedor). Ahora, en estrecho, el detalle y la nota van en dos
+  líneas, y la muestra viaja con la mediana.
+
+## [3.88.1] - 2026-10-18
+
+Entrega 8 de F6, preparada: el piloto es del propietario.
+
+### Añadido
+
+- **`docs/templates/PILOT_ACCEPTANCE.md`**: el informe de aceptación del piloto —identificación,
+  preparación, medida con «Medir este dispositivo» en el S23 FE y el PC, piloto de 48 h con datos reales,
+  criterio de rechazo de OQ-B05, los criterios de G6 con su evidencia y las decisiones pendientes—. Se
+  rellena en `local/`, fuera del repositorio.
+
+## [3.88.0] - 2026-10-18
+
+Entrega 7 de F6.
+
+### Añadido
+
+- **Los expedientes viajan en el `.agvproj`** (OQ-174, esquema 6, sección `incidencias`): sus revisiones con
+  la cadena de hashes y los recortes que nombran con su huella. Al abrir una copia se compara expediente a
+  expediente con lo local: entra lo nuevo y las revisiones que faltan; lo que ya estaba no se toca; lo que
+  diverge se queda como estaba y se dice; una cadena rota no entra y un recorte que no cuadra con su huella
+  no se guarda. El esquema 5 se sigue abriendo. Exportar dice «Incluye … expedientes de incidencia».
+- **`MANUAL_DE_USO.md`**, **`GUIA_DE_DIAGNOSTICO.md`** (cada mensaje y síntoma con qué hacer, y cómo informar
+  de un defecto sin datos de planta) y **`OPERACION.md`** (matriz de navegadores y dispositivos, operación,
+  copia y restauración, criterios de soporte y riesgos residuales). Enlazados desde el `README.md`.
+- Pruebas: TC-371 (unitarias) y TC-372 (navegador: recuperar un expediente de la copia tras borrar el
+  circuito).
+
+### Cambiado
+
+- `agvproj.test.ts` fijaba «el esquema vigente es el 5»: ahora el 6, con el 5 entre los que se leen, por la
+  decisión de OQ-174.
+
+## [3.87.0] - 2026-10-18
+
+Entrega 6 de F6.
+
+### Cambiado
+
+- **Política de contenido publicada** (TH-002): `connect-src 'none'` y `worker-src 'self'`, sin `blob:`. La
+  aplicación no hace ninguna petición propia; la compilación la aprieta y falla si no encuentra la
+  marca. En desarrollo sigue la de `index.html`.
+- **Dependencias de desarrollo**: Vite 7.1.5 → 7.3.6 y `source-map-js` corregido, por avisos del servidor de
+  desarrollo. Nada de esto llega a lo publicado. Quedan tres avisos de Vitest 3 que solo se corrigen con
+  una versión mayor (OQ-176).
+
+### Añadido
+
+- **El flujo entero sin red**, probado: importar, listas, revisar, consolidar, expediente con replay,
+  informes y CSV, `.agvproj` de ida y vuelta y borrar, con la red cortada, sin una petición fuera del
+  origen ni un choque con la política (TC-370).
+- `SECURITY_PRIVACY.md` §9: la revisión de seguridad de F6.
+
+## [3.86.0] - 2026-10-17
+
+Entrega 5 de F6.
+
+### Añadido
+
+- **Borrar un circuito** (`UX_SPEC.md` §8), en Datos → Copia del circuito: enumera lo que se pierde
+  —contado en el almacén—, recuerda exportar la copia y pide escribir el nombre del circuito; se borra
+  entero en una sola transacción. Estaba en la especificación y no existía.
+- **Sin espacio en el dispositivo**: la importación responde `STORAGE_FULL` («No queda espacio en este
+  dispositivo para guardar: lo de esta operación no se ha escrito.») con qué hacer; las demás
+  operaciones lo dicen igual, sin llamarlo defecto. Antes acababa en «Fallo no previsto del motor».
+- **Espacio en este dispositivo**: cuánto usa la aplicación y si el guardado es persistente; tras la
+  primera importación que guarda se pide al navegador que no lo borre por falta de espacio.
+- **axe-core 4.13.0**, solo en las pruebas y con versión fija (OQ-175).
+- Pruebas: TC-367 (unitaria), TC-368 y TC-369 (navegador).
+
+### Corregido
+
+- **Contraste** (WCAG 1.4.3): enlaces, «Ver evidencia», «Generar informe…» y los textos de alerta usaban el
+  azul y el naranja de los gráficos, de 3,0 a 4,4:1 sobre el panel. Ahora `--link` y `--accent-text`, por
+  tema y de al menos 4,5:1; axe pasa de 154 infracciones a ninguna en las siete pestañas, en claro y
+  oscuro.
+- **Foco del teclado** igual en botones, enlaces, desplegables y campos; antes dependía del navegador.
+
+## [3.85.0] - 2026-10-17
+
+Entrega 4 de F6. Revisadas las siete pestañas con el circuito de auditoría en un móvil táctil (360 ×
+780) y en un portátil (1.366 × 768): nada se sale del ancho.
+
+### Corregido
+
+- «Ver los mismos datos en tabla» medía 32 px con dedo, no los 44 de `UX_SPEC.md` §7: la regla base del
+  botón, posterior al bloque táctil, le ganaba. Ahora 44 px, y «Ver evidencia» también.
+- **Títulos**: el de un panel era más pequeño que sus apartados (h2 a 1 rem, h3 con el tamaño del
+  navegador). Ahora una escala: h2 1,15 rem, h3 1,05 rem, h4 0,95 rem.
+- **Campos**: solo el buscador del expediente tenía el aspecto de la aplicación; el circuito, las fechas
+  y los desplegables salían con el del navegador. Ahora todos comparten borde, radio, fondo y foco.
+- **Concordancia con la cifra**: «Ver los 1 refuerzos declarados», «1 tramos de zona cargada», «de 1
+  ficheros»… Con uno, ahora singular y su artículo («Ver el refuerzo declarado», «Detalle del tramo»).
+  Las 19 etiquetas de tablas plegables usan `countedLabel`.
+
+### Añadido
+
+- Pruebas: TC-365 (unitaria) y TC-366 (navegador, en las siete pestañas y los dos tamaños).
+
+## [3.84.0] - 2026-10-17
+
+Entrega 3 de F6.
+
+### Cambiado
+
+- **Las lecturas llegan a la página por columnas** (`PERFORMANCE_BUDGET.md` §3.2 y §4). Medido antes de
+  cambiar nada: el tirón de más de un segundo al terminar una importación grande no era dibujar (unos
+  60 ms), sino copiar las lecturas como objetos del Worker a la página (~800 ms con 461.000). La página
+  solo las usa para la tabla «Lecturas», así que ahora viajan como números en buffers transferidos, AGV
+  y tags en diccionario y los textos originales en una sola cadena. El filtro de la tabla sigue
+  comparando el texto exacto, con sus ceros. En el banco, solo en el contenedor: el peor hueco de
+  fotograma baja de 0,3 / 1,1 / 1,3 s a 106 / 113 / 87 ms en PERF-D2, D3 y D4, y la memoria del hilo
+  principal de 78 / 361 / 648 MiB a 41 / 183 / 156 MiB.
+
+### Añadido
+
+- **Aviso de fichero mayor que lo medido**: por encima de 500.000 lecturas (PERF-D3) la importación sigue
+  y advierte de que en este dispositivo no está comprobado, con la memoria que declare el navegador.
+- Pruebas: TC-363 y TC-364 (unitarias).
+
+## [3.83.1] - 2026-10-17
+
+### Corregido
+
+- **«Cancelar» no se atendía mientras se leían las filas** de una importación (encontrado por el banco de
+  medida en 3.83.0): la lectura es síncrona en el Worker y la petición llegaba cuando ya había terminado.
+  Ahora, como prevé WP-004, si la confirmación no llega en 500 ms y la importación todavía no ha empezado
+  a escribir, se detiene el Worker, que no había escrito nada, y el aviso lo dice. Antes de su primera
+  escritura el Worker atiende una cancelación pendiente y avisa con `saving`; desde ahí ya no se ofrece
+  «Cancelar» y la línea de progreso dice «Guardando en este dispositivo; ya no se puede cancelar». En el
+  banco, la confirmación pasa de no llegar (15,8 s hasta acabar) a 501 ms.
+- Prueba: TC-362 (navegador).
+
+## [3.83.0] - 2026-10-17
+
+Entrega 2 de F6.
+
+### Añadido
+
+- **«Medir este dispositivo»** al final de la pestaña Datos (`PERFORMANCE_BUDGET.md` §3.2). Genera PERF-D2
+  (100.000 lecturas), PERF-D3 (500.000) y PERF-D4 (48 h, 40 AGV) con semilla y los importa como un fichero
+  de lecturas, pero sin circuito: se analizan y se dibujan y no se guarda nada. Mide el primer progreso,
+  los huecos de fotograma (p95 y máximo), lo que tarda en importar, analizar y dibujar, la memoria del
+  hilo principal si el navegador la da, la primera vista y el paso del replay y la confirmación de
+  cancelación. Cada cifra va contra su presupuesto; lo no medido sale «sin medir». «Descargar el informe
+  (JSON)» trae la versión, el equipo, la huella de cada volumen y las cifras, sin nada de planta.
+- Pruebas: TC-360 (unitaria) y TC-361 (navegador).
+
+### Encontrado
+
+- **«Cancelar» no se atiende mientras se leen las filas** de una importación: la lectura es síncrona en
+  el Worker, el mensaje de cancelar llega cuando ya ha terminado y la importación acaba entera (en el
+  contenedor, 15,8 s con PERF-D3). Defecto anterior a esta entrega, anotado en WP-004; no se corrige aquí.
+
+## [3.82.0] - 2026-10-17
+
+Entrega 1 de F6.
+
+### Cambiado
+
+- **Actualización segura** (NFR-011, `UX_SPEC.md` §9). Antes el service worker activaba la versión nueva
+  en el acto (`skipWaiting` al instalar). Ahora se sella al compilar con su versión, la del almacén y la
+  lista de ficheros, se instala **en espera** y la página avisa sin interrumpir: «Hay una versión nueva:
+  X (abierta: Y).», qué pasa con lo guardado y «Cambiar a X». No se activa con una importación,
+  análisis, exportación o consolidación en curso, ni si trabaja otra pestaña; una pestaña a mitad de
+  trabajo no se recarga por otra.
+- **Sin red, la versión abierta entera**: su caché `tag-trace-<versión>` guarda la compilación completa
+  al instalarse y se sirve primero; se conserva también la de la versión anterior.
+
+### Añadido
+
+- **Versión a la vista** en la cabecera (NFR-016) y **etiqueta `vX.Y.Z`** en cada publicación, con el
+  procedimiento de retorno en `VERSIONING.md` §Publicación y retorno.
+- El almacén suelta su conexión cuando otra pestaña lo migra (`onversionchange`).
+- Pruebas: TC-357 (unitaria), TC-358 y TC-359 (navegador). La prueba sin red destapó, antes de publicar,
+  que con `Vary: Origin` la caché nueva no encontraba los módulos una vez de cada pocas; se busca con
+  `ignoreVary`.
+
+## [3.81.1] - 2026-10-17
+
+### Gobierno
+
+- **Orden de entregas de F6** en `ROADMAP.md` §F6, aceptado por el propietario.
+- **Cuatro decisiones del propietario**, con la sugerencia aceptada: dispositivos y navegadores del piloto
+  (OQ-173, `PERFORMANCE_BUDGET.md` §2.1); copia de los expedientes en el `.agvproj` (OQ-174, enmienda a
+  ADR-0018 D2 y revisión de OQ-169); criterio de rechazo del piloto (OQ-B05, cerrada, `PHASE_GATES.md`
+  §G6); axe-core solo como dependencia de pruebas (OQ-175).
+- Sin cambios de código.
+
+## [3.81.0] - 2026-10-17
+
+**F6 abierta** por el propietario (`CONTINÚA FASE 6`), tras fusionar el PR #17 (3.67.1 a 3.80.1,
+`b0f527a`).
+
+### Gobierno
+
+- `docs/project_state.json` pasa a `F6 / Piloto profesional`, con `CONTINÚA FASE 7` como siguiente
+  transición (G6). La aprobación es del propietario; ninguna IA aprueba su propio cambio de fase.
+- `docs/PHASE_GATES.md` §G5: los seis criterios marcados por su orden, con la evidencia de 3.80.1. F5
+  queda cerrada. OQ-B05 (validación con datos reales y criterio de rechazo) sigue parcial y pasa a G6;
+  OQ-172 sigue abierta.
+- `README.md` decía «Fase 4»; ahora dice F6, como `project_state.json`. `CLAUDE.md` y el relevo de
+  `PROJECT_MEMORY.md`, al día.
+- Sin cambios de código: F6 (`ROADMAP.md` §F6) no tiene entregas todavía.
+
 ## [3.80.1] - 2026-10-17
 
 ### Gobierno

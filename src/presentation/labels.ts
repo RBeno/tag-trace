@@ -110,3 +110,13 @@ export const THEME_LABEL: Readonly<Record<Theme, string>> = {
   tiempos: "Tiempos",
   linea: "Línea y calles",
 };
+
+/**
+ * «Ver los 3 tramos» o, con uno, «Ver el tramo» (F6, entrega 4): antes salía «Ver los 1 tramos».
+ * `feminine` elige la/las; «Detalle de» + el se contrae en «Detalle del».
+ */
+export function countedLabel(prefix: "Ver" | "Detalle de", count: number, feminine: boolean, one: string, many: string): string {
+  const article = count === 1 ? (feminine ? "la" : "el") : `${feminine ? "las" : "los"} ${count.toLocaleString("es-ES")}`;
+  const head = prefix === "Detalle de" && article === "el" ? "Detalle del" : `${prefix} ${article}`;
+  return `${head} ${count === 1 ? one : many}`;
+}

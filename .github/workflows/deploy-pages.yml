@@ -9,6 +9,12 @@ name: Publicar en GitHub Pages
 # para medir PERF-D2 en el dispositivo de referencia (Samsung Galaxy S23 FE) — deuda declarada
 # desde G1 que no se puede cerrar sin esto. No es una aprobación de piloto: el resto de G6
 # (accesibilidad, PERF-D2–D4 completos, informe de aceptación) sigue sin cerrarse.
+#
+# Versión identificable y retorno (NFR-016, F6): cada publicación deja la etiqueta `v<versión>` del
+# `CHANGELOG.md` en el commit publicado. Para volver a una versión anterior se lanza este mismo
+# workflow a mano («Run workflow») eligiendo esa etiqueta: se verifica, compila y publica tal cual
+# estaba, y como la etiqueta ya existe no se crea otra. El procedimiento entero está en
+# `docs/VERSIONING.md` §Publicación y retorno.
 
 on:
   push:
@@ -84,3 +90,34 @@ jobs:
       - name: Desplegar en GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  etiqueta:
+    name: Etiquetar la versión publicada
+    needs: pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # La versión es la primera entrada del `CHANGELOG.md`, la misma que lleva la aplicación. Si la
+      # etiqueta ya existe —un retorno a una versión publicada antes, o volver a publicar la misma—,
+      # no se toca: una etiqueta publicada no se mueve.
+      - name: Crear la etiqueta si no existe
+        run: |
+          version="$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | tr -d '#[] ')"
+          if [ -z "$version" ]; then
+            echo "No se encuentra la versión en CHANGELOG.md" >&2
+            exit 1
+          fi
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "La etiqueta $tag ya existe en $(git rev-list -n1 "$tag"); no se cambia."
+            exit 0
+          fi
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
+          echo "Publicada $tag en $GITHUB_SHA."

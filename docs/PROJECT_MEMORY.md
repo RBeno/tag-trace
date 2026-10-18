@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.62.0
+version: 0.73.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Memoria compacta del proyecto
@@ -424,6 +424,108 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## F6, entrega 8 preparada (3.88.1, 2026-10-18)
+
+`templates/PILOT_ACCEPTANCE.md`: identificación, preparación, medida con el banco en los dos
+dispositivos, piloto de 48 h con datos reales, criterio de rechazo (OQ-B05), tabla de G6 y decisiones
+pendientes (OQ-176, OQ-172). Se rellena en `local/`. Con esto, todo lo de F6 que puede hacer la IA está
+hecho; queda del propietario: PR y publicación, medir, el piloto, OQ-176 y, si acepta, `CONTINÚA FASE 7`.
+
+## F6, entrega 7: copia de expedientes, manual y operación (3.88.0, 2026-10-18)
+
+Los expedientes viajan en el `.agvproj` (esquema 6, sección `incidencias`, OQ-174): revisiones con su
+cadena y recortes con su huella. Al abrir, expediente a expediente (`planCaseImport`): nuevo, idéntico,
+local por delante, fichero por delante, distinto o roto; nunca se mezcla, una cadena rota no entra y un
+recorte que no cuadra no se guarda. Probada la recuperación entera en el navegador: exportar, borrar,
+abrir, reimportar lecturas, mismo historial. Escritos `MANUAL_DE_USO.md`, `GUIA_DE_DIAGNOSTICO.md` y
+`OPERACION.md` (matriz de navegadores, operación, copia y restauración, soporte, riesgos residuales).
+Siguiente: entrega 8, preparar el piloto del propietario.
+
+## F6, entrega 6: sin red y seguridad (3.87.0, 2026-10-18)
+
+El flujo entero —importar, listas, revisar, consolidar, expediente con replay e informes, `.agvproj` de
+ida y vuelta, borrar— funciona con la red cortada y sin una petición fuera del origen (`sin-red.spec.ts`).
+La aplicación no hace peticiones propias, así que la compilación publica `connect-src 'none'` y
+`worker-src 'self'`. Revisión: sin `console`, sin `innerHTML` con datos, zip con límites. Dependencias:
+Vite 7.3.6 y `source-map-js` corregidos; quedan tres avisos de Vitest 3 que piden versión mayor y npm
+10 no la resuelve aquí → OQ-176 (recomendación: aceptar con fecha antes de G6). Siguiente: entrega 7.
+
+## F6, entrega 5: accesibilidad y estados de error (3.86.0, 2026-10-17)
+
+axe-core 4.13.0 fijado, solo en pruebas (OQ-175). Primer barrido: 154 fallos, todos de contraste, por
+usar el azul de los gráficos para los enlaces; ahora `--link` y `--accent-text` por tema y 0 infracciones
+en las siete pestañas, en claro y oscuro, y en lo que se abre encima. Foco visible común. De §8 faltaban
+dos estados y se hicieron: **sin espacio** (`StorageFullError` desde el almacén, `STORAGE_FULL` en la
+importación, y las demás operaciones lo dicen sin llamarlo defecto) y **borrar un circuito** (enumera lo
+que se pierde y pide escribir su nombre; una transacción). Además, el espacio usado y el **guardado
+persistente**, que se pide tras la primera importación que guarda. «Resultado parcial» no existe por
+diseño. Siguiente: entrega 6, sin red y seguridad (incluye los avisos de `npm audit` de Vite y Vitest).
+
+## F6, entrega 4: interfaz coherente (3.85.0, 2026-10-17)
+
+Auditadas las siete pestañas con el circuito de auditoría a 360 × 780 táctil y 1.366 × 768: ningún
+desborde. Corregido: «Ver los mismos datos en tabla» a 32 px con dedo (la regla base pisaba la táctil),
+títulos invertidos (h2 menor que h3), campos con el aspecto del navegador y «1» con plural en 19
+etiquetas de tablas y varios textos (`countedLabel`). `interfaz.spec.ts` lo fija en los dos tamaños.
+Aprendido: la captura de página entera de Playwright apaga la emulación táctil; se mide antes de
+capturar. Siguiente: entrega 5, accesibilidad y estados de error.
+
+## F6, entrega 3: optimización y degradación (3.84.0, 2026-10-17)
+
+Medido antes de tocar: el tirón de más de un segundo no era dibujar (60 ms) sino copiar las lecturas
+como objetos al hilo principal (~800 ms con 461.000). Ahora viajan por columnas con buffers transferidos
+y la tabla «Lecturas» lee de ahí: el máximo baja a ~0,1 s en D2, D3 y D4 y la memoria del hilo principal
+de 648 a 156 MiB en D4. Degradación: sin medidas de los dispositivos no se inventa umbral; por encima de
+500.000 lecturas (lo medido) se avisa y se importa igual. Pendiente: revisar con los informes del
+propietario. Siguiente: entrega 4, interfaz coherente.
+
+## «Cancelar» corregido (3.83.1, 2026-10-17)
+
+Por orden del propietario («Arregla cancelar»): la importación avisa con `saving` antes de escribir;
+hasta entonces, si no atiende «Cancelar» en 500 ms, la interfaz detiene el Worker (WP-004, que lo
+preveía), y como no había escrito nada no se pierde nada. Antes de escribir, el Worker da paso a la cola
+y atiende una cancelación pendiente. Desde `saving`, «Cancelar» desaparece. Banco: 501 ms (antes, 15,8 s
+sin atender). Siguiente: entrega 3.
+
+## F6, entrega 2: banco de medida (3.83.0, 2026-10-17)
+
+Hecho: «Medir este dispositivo» (Datos) genera PERF-D2, D3 y D4 con semilla, los importa sin circuito
+—nada se guarda— y mide primer progreso, huecos de fotograma, tiempo, memoria del hilo principal,
+primera vista y paso del replay y cancelación; informe JSON para que el propietario lo devuelva desde
+sus dispositivos. PERF-D4 se fija en 40 AGV, 120 tags y 15 s de cadencia (~461.000 lecturas), elegido
+por el banco. **Hallazgo**: «Cancelar» no se atiende mientras se leen las filas (lectura síncrona en el
+Worker; el `terminate()` de WP-004 no existe); en el contenedor, 15,8 s hasta acabar entera. Y el tirón
+máximo pasa de un segundo en D3 y D4. Las dos cosas van a la entrega 3, con la medida del propietario.
+
+## F6, entrega 1: actualización segura y versión identificable (3.82.0, 2026-10-17)
+
+Hecho: el service worker se sella al compilar con su versión, la del almacén y la lista de ficheros;
+la versión nueva se instala **en espera** y la página avisa con su número y qué pasa con lo guardado; se
+activa solo a petición y sin trabajo en curso, aquí ni en otra pestaña (se pregunta por
+`BroadcastChannel`). La versión abierta se sirve de su caché, también sin red. Cada publicación deja la
+etiqueta `vX.Y.Z`; el retorno es lanzar la publicación sobre una etiqueta anterior (`VERSIONING.md`).
+Encontrado al probar: la caché no encontraba los módulos con `Vary: Origin` y la aplicación no abría sin
+red una vez de cada pocas; se compara con `ignoreVary`. Siguiente: entrega 2, el banco de medida.
+
+## F6: orden de entregas y cuatro decisiones (2026-10-17)
+
+El propietario aceptó el orden de `ROADMAP.md` §F6 (actualización segura, banco de medida, optimización,
+interfaz coherente, accesibilidad y errores, sin red y seguridad, manual y operación, piloto) y las
+cuatro sugerencias: piloto en Chrome del S23 FE y Chrome o Edge del PC (OQ-173); los expedientes
+tendrán copia en el `.agvproj` (OQ-174, enmienda a ADR-0018 D2); criterio de rechazo del piloto en
+cinco puntos (OQ-B05, cerrada); axe-core solo en pruebas (OQ-175).
+
+## F5 cerrada, F6 abierta (2026-10-17)
+
+El PR #17 (3.67.1 a 3.80.1) se fusionó en `main` (`b0f527a`, *squash*, por orden del propietario: «Haz
+PR y fusiona»). El propietario escribió `CONTINÚA FASE 6`: G5 queda marcada con la evidencia de
+`PHASE_GATES.md` y `project_state.json` pasa a `F6 / Piloto profesional`, con `CONTINÚA FASE 7` como
+siguiente transición (G6). Queda abierto: el criterio de rechazo y la validación con datos reales
+(OQ-B05, ahora para G6) y cuándo se dice `correlaciona` (OQ-172). Nada de F6 está implementado
+todavía; su alcance es el de `ROADMAP.md` §F6: interfaz coherente de escritorio y móvil, accesibilidad
+y estados de error, optimización y degradación por capacidad, suite E2E, rendimiento y seguridad,
+Pages, actualización PWA segura con versionado y retorno, y manual de uso y guía de diagnóstico.
+
 ## Expedientes, entrega 6: biblioteca de casos y similitud explicada (3.80.0, 2026-10-17)
 
 Hecho: cada expediente lleva «Casos parecidos» con los demás del circuito (sin descartados),
@@ -635,13 +737,18 @@ de recepción por ese enlace, contra lo dicho el 2026-09-25 (R-DAT-020). Hasta q
 OQ-162, R-DAT-020 no se toca, el mapa de 3.64.0 sigue llamándose «lecturas que llegaron juntas» y
 no se escribe código del registro de conexiones. Los datos reales se quedaron fuera del repositorio.
 
-## Estado al 2026-09-27 (relevo a un chat nuevo)
+## Estado al 2026-10-17 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
 `project_state.json` y en `CHANGELOG.md`; lo que no esté escrito en el repositorio no existe para la
 conversación siguiente.
 
-- **Fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
+- **Fase F6** (piloto profesional), abierta el 2026-10-17 por el propietario (`CONTINÚA FASE 6`)
+  tras fusionar F5 con el PR #17 (`b0f527a`); F7 espera `CONTINÚA FASE 7` (G6). Las entregas 1 a 7 están
+  hechas (3.82.0 a 3.88.0, más 3.83.1 «Cancelar») y la 8 preparada (3.88.1), todo en la rama
+  `ccr-b6e42985-mfx1ho` hasta que el propietario pida el PR. Lo que queda es suyo: publicar, medir con el
+  banco en el S23 FE y el PC, el piloto con `templates/PILOT_ACCEPTANCE.md`, decidir OQ-176 y OQ-172.
+- Antes, **fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
   6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron
   juntas** (3.64.0) y **el registro de conexiones con su mapa de estado de conexión** (3.65.0,

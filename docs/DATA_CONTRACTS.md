@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.33.0
+version: 0.34.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Contratos de datos y procedencia
@@ -536,7 +536,11 @@ linajes archivados y los eventos de elección—; un linaje entrante sin resolve
 leen los esquemas 1, 2 y 3; el 2 es el 3 sin `memoria`, que al abrirse se clasifica como
 `sin-memoria` (`MEMORY_CONSOLIDATION.md` §10). **`schema_version` 4 desde 2026-09-27**: sección
 `plano` con los eventos del plano físico (§14). Se leen los esquemas 1 a 4; el 3 es el 4 sin
-`plano`.
+`plano`. El 5 (3.59.0) añadió `valores`. **`schema_version` 6 desde 3.88.0** (OQ-174): sección
+`incidencias` con las revisiones de cada expediente y los recortes congelados que nombran, cada uno con
+su huella. Al abrirla se compara expediente a expediente con lo local y nunca se mezclan dos historiales:
+una cadena rota no entra, un recorte que no cuadra con su huella no se guarda, y lo que diverge se queda
+como estaba (`src/domain/case-transfer.ts`). Se leen los esquemas 1 a 6.
 
 No incluirá el bruto completo por defecto. Un expediente puede conservar un recorte normalizado mínimo cuando sea necesario para reproducir una incidencia.
 
@@ -600,8 +604,9 @@ del terminal de la ventana y, por AGV, el último anterior y el primero posterio
 fichero) y `context` (anillo y horquillas del esperado vigente o, sin memoria, del fichero; régimen,
 umbrales y lo declarado en planta); su hash cubre las tres partes. Los de `recorte-1` eran solo la lista
 de lecturas y se leen igual, sin conexiones ni contexto. Ninguna
-otra operación escribe en ellas salvo borrar el circuito, que las borra. **No viajan en el
-`.agvproj`** (OQ-169): el expediente es solo de este dispositivo.
+otra operación escribe en ellas salvo borrar el circuito, que las borra. Hasta 3.87.0 **no viajaban en el
+`.agvproj`** (OQ-169); desde 3.88.0 viajan en la sección `incidencias` para poder recuperarlos (OQ-174, §9),
+y el expediente sigue siendo de un solo dispositivo.
 
 **Almacén local, versión 10 (3.59.0).** Tabla `plantValues` con clave `[circuitId, seq]`, append-only
 con `add`: los valores de planta confirmados del circuito (`CONFIG_SCHEMA.md` §3.5). Borrar el

@@ -1,8 +1,8 @@
 ---
 document_id: TT-GATES-001
-version: 0.25.0
+version: 0.35.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Puertas de fase
@@ -153,13 +153,14 @@ commit `551d4cd`), que reúne la evidencia de los siete criterios.
 ## G5 — Autorizar F6
 
 Evidencia redactada el 2026-10-17, con las seis entregas de ADR-0018 hechas (3.74.0 a 3.80.0, rama
-`ccr-b6e42985-mfx1ho`, commit `9baba66`). Las casillas las marca el propietario. Toda la evidencia es
+`ccr-b6e42985-mfx1ho`, commit `9baba66`; en `main` con el PR #17, `b0f527a`). **Aprobada por el
+propietario el 2026-10-17 con `CONTINÚA FASE 6`**: las casillas se marcan por esa orden. Toda la evidencia es
 sintética; la validación con datos reales en su dispositivo y el criterio de rechazo siguen pendientes
 (OQ-B05). La salida demostrable de F5 —investigar una ausencia de diez minutos en un punto crítico y
 conservar el caso completo sin modificar el esperado— es el caso de oro TC-012
 (`docs/golden/TC-012-punto-critico-sin-llegada.md`, escenario `tests/support/caso-punto-critico.ts`).
 
-- [ ] Incidencia reproducible con ventana antes/durante/después. **Evidencia (3.74.0, 3.75.0)**: el
+- [x] Incidencia reproducible con ventana antes/durante/después. **Evidencia (3.74.0, 3.75.0)**: el
       expediente congela su recorte (`recorte-2`: lecturas, eventos de conexión y contexto del esperado)
       con su hash, en una cadena de revisiones que no se reescribe, y propone márgenes antes y después
       desde configuración (TC-338). El recorte sale también de un original archivado cuando las
@@ -168,56 +169,75 @@ conservar el caso completo sin modificar el esperado— es el caso de oro TC-012
       primera desviación de `205` entre `71012` y `71013` a seis tags y el corte de WiFi de `207` con su
       fila, todo `precede` y nada más (TC-342, TC-343); en el navegador, de punta a punta frente al
       esperado de la versión consolidada v1 (TC-344).
-- [ ] Replay multi-AGV muestra incertidumbre. **Evidencia (3.77.0)**: ALG-016 `replay-caso-1` sobre el
+- [x] Replay multi-AGV muestra incertidumbre. **Evidencia (3.77.0)**: ALG-016 `replay-caso-1` sobre el
       recorte congelado, 200 fotogramas con su fase; cada AGV visto en un tag, entre dos tags como
       fracción de tiempo (inferido) o sin lecturas (desconocido); la banda esperada desde su última
       lectura, con el paso lento (p95) y el habitual (p50) de cada tramo, y «va por detrás incluso del
       paso lento» solo mientras está parado; la conexión según el registro o «sin registro» (TC-347,
       TC-348). Medido: 54.000 lecturas de 40 AGV en unos 0,13 s.
-- [ ] Similitud explica diferencias y no afirma causalidad. **Evidencia (3.80.0)**: ALG-017
+- [x] Similitud explica diferencias y no afirma causalidad. **Evidencia (3.80.0)**: ALG-017
       `similitud-1` compara con los demás expedientes del circuito, sin descartados, característica a
       característica (igual, parecido con su diferencia, distinto, sin dato), ordena por cuántas
       coinciden con el mismo peso y sin puntuación oculta; lo confirmado en otro caso va aparte como «no
       es evidencia para este» y no cambia el actual; un hecho repetido se cuenta sin llamarlo
       correlación (TC-355, TC-356). Ningún texto generado pasa la prueba de vocabulario causal
       (`causalWordsIn`, TC-339). Abierto, sin bloquear: cuándo se dice `correlaciona` (OQ-172).
-- [ ] Contramedida y verificación se registran. **Evidencia (3.78.0)**: hipótesis desde la cronología
+- [x] Contramedida y verificación se registran. **Evidencia (3.78.0)**: hipótesis desde la cronología
       con la evidencia en contra observada y la comprobación que las separa; la confirma o descarta una
       persona, con su comprobación o su razón (TC-349). Contramedida con la métrica del síntoma y su
       fecha de aplicación; verificación (ALG-024 `verificacion-1`) una semana antes y otra después, en
       tiempo de producción y sin las ventanas de otros expedientes, con prueba binomial y propuesta
       eficaz, parcial, ineficaz o sin exposición; la conclusión la escribe una persona (TC-350 a TC-352).
-- [ ] Informe local contiene evidencia y versiones. **Evidencia (3.79.0, 3.80.0)**: un HTML
+- [x] Informe local contiene evidencia y versiones. **Evidencia (3.79.0, 3.80.0)**: un HTML
       autocontenido, sin red ni scripts, con los diez apartados de `INCIDENTS_REPORTING.md` §8, la
       revisión y su hash, los procedimientos (`recorte-2`, `retroceso-1`…), la versión de memoria, de
       configuración y de la aplicación, y lo escrito por una persona marcado como suyo; CSV de la
       cronología y de las lecturas del recorte con fichero, huella y fila; el informe del circuito trae
       el resumen de expedientes (TC-353, TC-354).
-- [ ] Guardar/cerrar incidencia no altera memoria normal. **Evidencia (3.74.0, 3.76.0)**: INV-008 y
+- [x] Guardar/cerrar incidencia no altera memoria normal. **Evidencia (3.74.0, 3.76.0)**: INV-008 y
       TC-017. En el navegador, crear, anotar, revisar, investigar, cerrar no concluyente, reabrir y
       descartar dejan el resto del almacén byte a byte igual (TC-340); lo mismo al ver el replay, decidir
       hipótesis, registrar contramedidas y verificaciones, exportar y comparar casos (TC-348, TC-352,
       TC-354, TC-356). La ventana de un expediente solo entra en la memoria como incidencia excluida si
       la persona la deja marcada al consolidar (D5, TC-345, TC-346).
 
-Pendiente del propietario para G5: validar en su dispositivo con datos reales y fijar el criterio de
-rechazo (OQ-B05), marcar las casillas, decidir el PR y la fusión a `main`, y escribir `CONTINÚA FASE 6`.
+El propietario dio la orden sin dejar escrito el resultado de la validación con datos reales ni el
+criterio de rechazo: OQ-B05 sigue parcial y pasa a G6, cuya salida es el piloto con datos reales.
+OQ-172 sigue abierta y no bloquea. F5 queda cerrada.
 
 ## G6 — Aprobar piloto
 
-- [ ] Flujos esenciales en PC y móvil físico.
-- [ ] PERF-D2–D4 dentro de presupuesto aprobado.
-- [ ] Accesibilidad esencial y errores recuperables.
-- [ ] Pruebas de ausencia de red y datos reales.
-- [ ] Actualización PWA no interrumpe tareas críticas.
+Criterio de rechazo (OQ-B05, propietario 2026-10-17): el piloto se rechaza si ocurre cualquiera de estas: (a) un resultado que el propietario sabe falso con los datos reales —una afirmación sin respaldo o un `unknown` convertido en certeza—; (b) PERF-D2 a D4 por encima del presupuesto en su dispositivo sin desviación aceptada; (c) pérdida de datos al actualizar, reabrir o restaurar una copia; (d) cualquier petición a la red con datos de planta; (e) un flujo esencial que no se pueda completar en el móvil. Dispositivos y navegadores: OQ-173.
+
+- [ ] Flujos esenciales en PC y móvil físico. **Evidencia parcial (3.85.0)**: las siete pestañas, con el
+      circuito de auditoría, sin desbordes y con objetivos de 44 px con dedo a 360 × 780 táctil y a 1.366 ×
+      768 (TC-366). Emulado: falta el S23 FE físico.
+- [ ] PERF-D2–D4 dentro de presupuesto aprobado. **Instrumento (3.83.0)**: «Medir este dispositivo» en la
+      pestaña Datos mide los tres y descarga el informe (`PERFORMANCE_BUDGET.md` §3.2). Falta la medida del
+      propietario en Chrome del S23 FE y del PC de referencia (OQ-173). La cancelación, que en 3.83.0 no se
+      atendía, se confirma en 501 ms desde 3.83.1 (TC-362). Desde 3.84.0 el peor hueco de fotograma baja
+      de 1,3 s a ~0,1 s en PERF-D3 y D4 (`PERFORMANCE_BUDGET.md` §3.2).
+- [ ] Accesibilidad esencial y errores recuperables. **Evidencia (3.86.0)**: axe-core sin infracciones WCAG 2.2
+      AA en las siete pestañas, en claro y oscuro, y en lo que se abre encima; teclado y foco visible
+      (TC-369). Cada estado de `UX_SPEC.md` §8 con su prueba, incluidos sin espacio y borrar un circuito
+      (TC-368). Falta una revisión con lector de pantalla en el dispositivo.
+- [ ] Pruebas de ausencia de red y datos reales. **Evidencia de red (3.87.0)**: el flujo entero sin red, sin una
+      petición fuera del origen y con `connect-src 'none'` (TC-370). Los datos reales, en el piloto (entrega 8).
+- [ ] Actualización PWA no interrumpe tareas críticas. **Evidencia (3.82.0)**: la versión nueva queda en
+      espera y la activa la persona, nunca con una importación, análisis, exportación o consolidación en
+      curso, ni en otra pestaña (TC-357, TC-359). Falta probarla en el móvil físico.
 - [x] GitHub Pages publica solo builds aprobadas. **Adelantado en F3 (2026-09-20)**: no es la
       aprobación del piloto, es la infraestructura que la hace posible. `deploy-pages.yml` llama a
       los tres workflows de verificación como *reusable workflows* y solo despliega si los tres
       terminan en verde (ADR-0014), sin repetir sus pasos. Se abrió ahora porque medir PERF-D2 en el
       dispositivo de referencia (Samsung Galaxy S23 FE) —deuda declarada desde G1— exige una URL
       real, y hasta hoy no existía ninguna.
-- [ ] Release identificable, changelog y retorno verificados.
-- [ ] Informe de aceptación del propietario.
+- [ ] Release identificable, changelog y retorno verificados. **Evidencia parcial (3.82.0)**: versión en la
+      cabecera, en la caché y en la etiqueta `vX.Y.Z` que deja cada publicación; retorno desde el workflow
+      eligiendo la etiqueta (`VERSIONING.md` §Publicación y retorno). Falta ejecutar un retorno de verdad
+      cuando haya dos versiones etiquetadas.
+- [ ] Informe de aceptación del propietario. **Plantilla (3.88.1)**: `templates/PILOT_ACCEPTANCE.md`, con la
+      medida, el piloto, el criterio de rechazo y la tabla de G6; se rellena en `local/`.
 
 ## G7/G8
 

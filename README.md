@@ -2,7 +2,7 @@
 
 Sistema local y explicable de diagnóstico longitudinal y gemelo digital de circuitos AGV a partir de lecturas históricas de tags.
 
-> Estado actual: **Fase 4 — memoria longitudinal y consolidación**, en curso. La aplicación se publica en <https://rbeno.github.io/tag-trace/>. La fase vigente la registra `docs/project_state.json`.
+> Estado actual: **Fase 6 — piloto profesional**, en curso. La aplicación se publica en <https://rbeno.github.io/tag-trace/>. La fase vigente la registra `docs/project_state.json`.
 
 ## Propósito
 
@@ -49,6 +49,12 @@ Empieza por el [índice de contexto](docs/CONTEXT_INDEX.md): indica qué leer se
 - [Memoria y consolidación](docs/MEMORY_CONSOLIDATION.md)
 - [Incidencias e informes](docs/INCIDENTS_REPORTING.md)
 - [Experiencia de usuario](docs/UX_SPEC.md)
+
+**Cómo se usa**
+
+- [Manual de uso](docs/MANUAL_DE_USO.md)
+- [Guía de diagnóstico](docs/GUIA_DE_DIAGNOSTICO.md)
+- [Operación, recuperación y soporte](docs/OPERACION.md)
 
 **Cómo se verifica**
 

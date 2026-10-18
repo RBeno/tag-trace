@@ -5,7 +5,9 @@
  * el selector de `.agvproj` están apagados —antes, pulsar «Previsualizar» mataba al Worker de la
  * importación a mitad de sus escrituras—, «Cancelar» sí se ofrece, y la importación termina; y que
  * tras una acción del plano, que no ofrece «Cancelar», los botones del plano y de la memoria vuelven
- * a encenderse (el trabajo se cierra y no queda ningún panel atascado en «ocupado»).
+ * a encenderse (el trabajo se cierra y no queda ningún panel atascado en «ocupado»). Y que «Cancelar»
+ * a mitad de la lectura de filas —que el Worker no puede atender hasta acabarla— se confirma antes del
+ * segundo y deja el circuito como estaba (WP-004, INV-006).
  *
  * La importación larga es la de `rendimiento.spec.ts`: cien mil filas generadas con semilla, que no
  * se versionan. Los ficheros pequeños de `fixtures/synthetic/memoria/` preparan el circuito.
@@ -27,12 +29,12 @@ function seeded(seed: number): () => number {
 }
 
 /** Cien mil eventos, 40 AGV, 120 tags: la misma forma que PERF-D2. */
-function longSource(): Buffer {
+function longSource(events = 100_000): Buffer {
   const random = seeded(20260927);
   const lines: string[] = ["Fecha;AGV;Tag"];
   // Días por encima del 12: si no, día y mes no se distinguen y la importación pide el formato.
   const start = Date.UTC(2026, 0, 24, 4, 0, 0);
-  for (let index = 100_000 - 1; index >= 0; index -= 1) {
+  for (let index = events - 1; index >= 0; index -= 1) {
     const instant = new Date(start + index * 1000);
     const vehicle = String(Math.floor(random() * 40)).padStart(4, "0");
     const tag = String(50_000 + Math.floor(random() * 120));
@@ -162,5 +164,41 @@ test.describe("un solo trabajo a la vez", () => {
     await expect(memory.getByRole("button", { name: "Previsualizar v2" })).toBeEnabled();
     await expect(page.locator("#source-file")).toBeEnabled();
     await expect(page.locator("#project-file")).toBeEnabled();
+  });
+  test("«Cancelar» a mitad de la lectura se confirma antes del segundo y no cambia el circuito", async ({ page }) => {
+    await freshPage(page);
+    await importInto(page, "cancelar", `${MEMORIA}periodo-1.csv`);
+    const sources = (): Promise<number> =>
+      page.evaluate(
+        () =>
+          new Promise<number>((resolve) => {
+            const request = indexedDB.open("tag-trace");
+            request.onsuccess = () => {
+              const db = request.result;
+              const get = db.transaction("circuits", "readonly").objectStore("circuits").get("cancelar");
+              get.onsuccess = () => {
+                db.close();
+                resolve((get.result as { sources: unknown[] } | undefined)?.sources.length ?? -1);
+              };
+            };
+          }),
+      );
+    const before = await sources();
+    expect(before).toBe(1);
+
+    await page.locator("#source-file").setInputFiles([]);
+    await page.locator("#source-file").setInputFiles({ name: "largo.csv", mimeType: "text/csv", buffer: longSource(400_000) });
+    const cancel = page.getByRole("button", { name: "Cancelar", exact: true });
+    // Se cancela mientras lee las filas, que es justo lo que el Worker no puede atender.
+    await expect(page.getByText(/^Normalizando filas/)).toBeVisible({ timeout: 15_000 });
+    const clicked = Date.now();
+    await cancel.click();
+    await expect(page.getByRole("heading", { name: "Importación cancelada" })).toBeVisible({ timeout: 5_000 });
+    expect(Date.now() - clicked).toBeLessThan(1_500);
+    await expect(cancel).toBeHidden();
+    await expect(page.locator("#source-file")).toBeEnabled();
+    // Nada escrito: el circuito sigue con su único fichero, también un rato después.
+    await page.waitForTimeout(1_000);
+    expect(await sources()).toBe(before);
   });
 });

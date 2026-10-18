@@ -1,8 +1,8 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.9.1
+version: 0.18.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-10-18
 ---
 
 # Etapas, entregables y resultados
@@ -206,6 +206,33 @@ Investigar una ausencia de diez minutos en un punto crítico y conservar el caso
 ### Salida demostrable
 
 Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria portable e informe de aceptación.
+
+### Orden de entregas (propietario, 2026-10-17)
+
+1. **Actualización segura y versión identificable** (NFR-011, NFR-016, `UX_SPEC.md` §9): la versión nueva
+   espera y avisa; no se activa durante importación, análisis, exportación o consolidación; caché por
+   versión; cada publicación etiquetada, con su procedimiento de retorno. Va primera porque hoy el
+   service worker activa la versión nueva en el acto. **Hecha en 3.82.0.**
+2. **Banco de medida en la aplicación**: PERF-D2, D3 y D4 sintéticos generados en local, huecos de
+   fotograma, memoria, primera vista del replay y reapertura, con un informe descargable. El
+   propietario lo ejecuta en sus dispositivos (OQ-173). **Hecha en 3.83.0**; destapó que «Cancelar» no se
+   atiende mientras se leen las filas (`PERFORMANCE_BUDGET.md` §3.2).
+3. **Optimización y degradación por capacidad**, guiada por esa medida. **Hecha en 3.84.0** con las cifras del
+   contenedor (lecturas por columnas; aviso por encima de lo medido); se revisa con los informes del
+   propietario.
+4. **Interfaz coherente de escritorio y móvil**. **Hecha en 3.85.0** (`UX_SPEC.md` §7); falta el móvil físico.
+5. **Accesibilidad y estados de error completos**: WCAG 2.2 AA con axe-core en las pruebas (OQ-175) y una
+   prueba por estado de `UX_SPEC.md` §8. **Hecha en 3.86.0**: 0 infracciones; sin espacio y borrar un circuito,
+   que faltaban, hechos.
+6. **Sin red y seguridad**: el flujo entero sin conexión y sin una sola petición fuera del origen; CSP,
+   dependencias y revisión de seguridad. **Hecha en 3.87.0** (`SECURITY_PRIVACY.md` §9); queda la subida de
+   Vitest (OQ-176).
+7. **Manual de uso, guía de diagnóstico y operación**: matriz de navegadores y dispositivos, copia y
+   restauración —con los expedientes en el `.agvproj` (OQ-174)— y criterios de soporte. **Hecha en 3.88.0**
+   (`MANUAL_DE_USO.md`, `GUIA_DE_DIAGNOSTICO.md`, `OPERACION.md`).
+8. **Piloto con datos reales**, del propietario, con la plantilla del informe de aceptación y el criterio de
+   rechazo de OQ-B05. **Preparada en 3.88.1**: `templates/PILOT_ACCEPTANCE.md`, que se rellena en `local/`.
+   Lo que queda es del propietario: publicar, medir, el piloto y la decisión.
 
 ## F7 — Escalado controlado
 

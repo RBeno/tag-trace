@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.59.0
+version: 0.64.0
 status: baseline-candidate
 last_updated: 2026-10-17
 ---
@@ -38,7 +38,7 @@ defecto, Resumen. Cada pestaña es un `section[role="tabpanel"]`.
 | **Tiempos** | Estado normal del circuito (cuellos de botella, puntos conflictivos, zonas oscuras, paradas sin explicación, lecturas que llegaron juntas —por AGV y por sitio, porque nacen de la misma medida—, la noche, la horquilla de cada tramo y sus cambios); tiempos por sección entre anclas; mediciones por fichero con el anillo en tiempo; candidatos a punto crítico (tags donde el recorrido se divide, tiempo de parada); el anillo del circuito en palabras, con el enlace al dibujo del Resumen, su lista ordenada y los tags fuera del anillo. |
 | **Línea y calles** | Alimentación de la línea; incidencias y sus mediciones (el CSV sigue trayendo también los AGV que dejan de leer); calles de carga y ocupación de las calles; orden de paso en zona cargada (FIFO); al final, los **expedientes de incidencia** (§6.2, F5). |
 | **Memoria** | La memoria consolidada del circuito (§6, F4): versión vigente, lo observado frente a ella, el flujo «Consolidar periodo», la lista de versiones con su revocación, el presupuesto y, si la hay, la bifurcación de linaje; debajo, el **plano del circuito** (§6.1). |
-| **Datos** | Valores de planta del circuito (3.59.0: el provisional y el confirmado de cada uno, con su fecha y su razón, «Cambiar…» con razón obligatoria, dónde mide el programa algo relacionado e historial; aviso si un valor cambia dentro de lo cargado; desde 3.60.0, «Propuesta de la memoria: X (coincide en v4, v5 y v6)» con «Confirmar la propuesta…», o «Sin propuesta: … Introduce el valor.» con la estimación de cada versión); listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas. |
+| **Datos** | Valores de planta del circuito (3.59.0: el provisional y el confirmado de cada uno, con su fecha y su razón, «Cambiar…» con razón obligatoria, dónde mide el programa algo relacionado e historial; aviso si un valor cambia dentro de lo cargado; desde 3.60.0, «Propuesta de la memoria: X (coincide en v4, v5 y v6)» con «Confirmar la propuesta…», o «Sin propuesta: … Introduce el valor.» con la estimación de cada versión); listas del circuito; copia del circuito; fuente y lo acumulado (resumen de carga); cobertura cargada; perfil horario; actividad por vehículo; replay; lecturas; al final, **«Medir este dispositivo»** (3.83.0, `PERFORMANCE_BUDGET.md` §3.2): «Medir PERF-D2», «PERF-D3», «PERF-D4» y «Medir los tres», la línea de estado, una tabla por volumen (Métrica, Medida, Presupuesto, Resultado: dentro, fuera —con borde—, sin medir o se informa, con su nota) y «Descargar el informe (JSON)». Avisa de que lo que se ve se sustituye por el sintético, que no se guarda nada y que hay que dejar la pestaña a la vista. |
 
 **Más hallazgos del periodo (3.57.0).** Los hallazgos que guarda la instantánea del fichero y que
 ninguna sección pinta —cada sección enseña los primeros de cada tipo— van a la bandeja con su propia
@@ -266,6 +266,10 @@ F4.
 
 La pantalla habla como un producto terminado, no como el proyecto que lo construye:
 
+- **Concordancia con la cifra** (3.85.0). Con uno, singular y su artículo: «Ver el refuerzo declarado»,
+  «Detalle del tramo», «1 tramo de zona cargada»; con varios, plural con la cifra en español. Las
+  etiquetas de las tablas plegables se componen con `countedLabel` (`labels.ts`) y una prueba de
+  navegador busca en todas las pestañas cualquier «1» con el nombre en plural.
 - **Sin referencias internas.** Ningún texto visible cita reglas (`R-…`), preguntas abiertas
   (`OQ-…`), casos de prueba ni fases. Esas referencias viven en la documentación y en el código.
 - **Sin identificadores internos.** Los valores con los que trabaja el dominio (`observed`,
@@ -1048,6 +1052,28 @@ Además, en el móvil:
 
 La emulación móvil no sustituye la prueba en dispositivo físico.
 
+**Coherencia entre escritorio y móvil (3.85.0, F6 entrega 4).** Revisadas las siete pestañas con el
+circuito de auditoría a 360 × 780 táctil y a 1.366 × 768; ninguna se sale del ancho. Se corrigió:
+
+- «Ver los mismos datos en tabla» medía 32 px con dedo: su regla base, posterior al bloque táctil, le
+  ganaba con `min-height: 30px`. Ahora 44 px, y también «Ver evidencia».
+- Una escala de títulos: el de un panel (h2, 1,15 rem) mayor que sus apartados (h3, 1,05 rem) y estos
+  que los suyos (h4, 0,95 rem). Antes h2 medía 1 rem y h3 era mayor.
+- Todos los campos —texto, número, fecha, desplegables— con el aspecto de la aplicación (borde, radio
+  de 8 px, fondo y foco visibles), no el del navegador; antes solo lo tenía el buscador del expediente.
+- La concordancia con la cifra (§4.4).
+
+Lo fija `tests/e2e/interfaz.spec.ts` en cada pestaña de los dos tamaños. Falta el móvil físico (G6).
+
+**Accesibilidad (3.86.0, F6 entrega 5, NFR-013).** axe-core recorre las siete pestañas en tema claro y
+oscuro, y lo que se abre encima (cajón de tabla, cuadro del informe, formulario de expediente,
+confirmación de borrado y un error), sin ninguna infracción WCAG 2.0, 2.1 y 2.2 A y AA
+(`accesibilidad.spec.ts`). Se corrigió el contraste: enlaces y textos de alerta usan `--link` y
+`--accent-text`, distintos en cada tema y de al menos 4,5:1 sobre fondo, panel y lavados de aviso; el
+azul y el naranja de los gráficos no cambian. El foco del teclado se pinta igual en botones, enlaces,
+desplegables y campos (contorno de 2 px); en una marca de un gráfico, con su trazo. Las flechas mueven
+entre pestañas.
+
 ## 8. Estados y errores
 
 La aplicación diferencia:
@@ -1072,6 +1098,39 @@ La aplicación diferencia:
 
 Un error nunca debe mostrar `0 lecturas válidas` sin explicar esquema detectado, causa, filas de ejemplo y acción de recuperación.
 
+**Estado de cada uno (3.86.0, F6 entrega 5)** y la prueba que lo sostiene:
+
+| Estado | Cómo se ve | Prueba |
+|---|---|---|
+| Sin datos | «Todavía no hay análisis: elige un fichero de lecturas y escribe el circuito.» | `estados.spec.ts` |
+| Analizando | Progreso con etapa y cifras | `rendimiento.spec.ts`, `medida.spec.ts` |
+| Cancelando | «Cancelando…»; confirmado antes del segundo; «Guardando…» ya no se cancela | `concurrencia.spec.ts` (TC-362) |
+| Otra operación en curso | Entradas apagadas y «Hay otra operación en curso…» | `concurrencia.spec.ts` |
+| Resultado parcial | No existe: el importador es todo o nada y las filas defectuosas van a cuarentena, que se cuenta | — |
+| Fuente inválida | «No se pudo importar (código)» con causa, qué hacer, esquema y ejemplos | `estados.spec.ts` |
+| Archivo de otro circuito | Afinidad: no se acumula y se dice por qué | `vistas.spec.ts` |
+| Evidencia no disponible | El recorte sale del original archivado y lo dice | `expedientes.spec.ts` (TC-341) |
+| Proyecto incompatible | «No se pudo abrir el proyecto» y «El almacén local no se ha tocado» | `estados.spec.ts`, `memoria.spec.ts` |
+| Almacenamiento insuficiente | «No se pudo importar (STORAGE_FULL)»: no queda espacio, no se ha escrito, y qué hacer | `estados.spec.ts` |
+| Actualización disponible | Aviso con versión y compatibilidad (§9) | `actualizacion.spec.ts` |
+| Error recuperable / que invalida | El mensaje dice qué hacer; un defecto del motor, con su tipo y sin datos | `protocolo.spec.ts` |
+| Circuito en proceso de borrado | Datos → Copia del circuito → «Borrar el circuito…» | `estados.spec.ts` |
+
+**Borrar un circuito** (nuevo en 3.86.0): enumera lo que se pierde, contado en el almacén —ficheros con
+lo acumulado, originales archivados, instantáneas, versiones de memoria, cambios del plano, valores de
+planta, expedientes con sus revisiones y hallazgos revisados—, recuerda exportar la copia antes y pide
+escribir el nombre del circuito para encender «Borrar para siempre»; «No borrar» lo cierra. Se borra en
+una sola transacción. Si lo que se veía era ese circuito, la página vuelve a la portada con el aviso.
+
+**Espacio en este dispositivo** (3.86.0), en el mismo sitio: cuánto usa la aplicación de lo que le deja
+el navegador y si el guardado es persistente. Tras la primera importación que guarda, se pide al
+navegador el guardado persistente; sin él, puede borrar los datos si se queda sin espacio, y se dice.
+
+Un fichero con más lecturas que el mayor volumen medido (500.000, PERF-D3) se importa igual y trae una
+advertencia (3.84.0): cuántas tiene, que en este dispositivo no está comprobado —con la memoria que
+declare el navegador—, que si va lento o se cierra se exporte un periodo más corto y que «Medir este
+dispositivo» dice cómo responde.
+
 ## 9. Actualización PWA
 
 Si existe una versión nueva:
@@ -1080,3 +1139,15 @@ Si existe una versión nueva:
 - se bloquea su activación durante importación, análisis, exportación o consolidación;
 - se solicita guardar el proyecto;
 - se muestra la versión que se abrirá y compatibilidad esperada.
+
+**Implementado desde 3.82.0** (`src/presentation/update.ts`, `public/sw.js`): la cabecera dice «Versión
+X.Y.Z». Con una versión en espera aparece, bajo la cabecera y sin interrumpir, un aviso con
+`role="status"`: «Hay una versión nueva: X (abierta: Y).» —o «Se ha vuelto a publicar una versión
+anterior: …» en un retorno—; qué pasa con lo guardado («se abre igual»; o que se convertirá a un formato
+nuevo sin vuelta atrás, o que una versión anterior no podrá abrirlo, y en esos dos casos «exporta una
+copia de cada circuito (.agvproj)»); el botón «Cambiar a X»; y «La página se recargará con la versión
+nueva. Lo guardado en este dispositivo se conserva.». Con un trabajo en curso el botón está apagado y
+dice «Se podrá actualizar cuando termine la operación en curso.»; si trabaja otra pestaña, «Otra pestaña
+de TAG TRACE está trabajando; actualiza cuando termine.». Una pestaña a mitad de trabajo cuando otra
+actualiza no se recarga: dice «Se ha actualizado la aplicación desde otra pestaña.» y pide recargar al
+terminar.

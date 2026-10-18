@@ -12,7 +12,7 @@ import type { CircuitViews } from "../application/protocol.js";
 import type { AnchorGapChange, StructureChange } from "../domain/anchor-sums.js";
 import { franjaCsv, type HistoryKind } from "../domain/franjas.js";
 import { paceCsv } from "../domain/vehicle-pace.js";
-import { plainTable, scrollBox } from "./charts.js";
+import { plainTable, plural, scrollBox } from "./charts.js";
 import { ringTimeChart, segmentHistoryChart, type RingTimeRow, type SegmentHistoryPanel } from "./diagnostic-charts.js";
 
 export interface FranjaUiDeps {
@@ -336,7 +336,7 @@ export function renderFranjas(panel: HTMLElement, views: CircuitViews, deps: Fra
         deps.finding(
           `${history.from} → ${history.to}: ${direction}${at === null ? " poco a poco" : ` desde «${at}»`}`,
           `La mitad de las pasadas tardaba ${deps.duration(first?.p50Ms ?? null)} y ahora ${deps.duration(last?.p50Ms ?? null)} ` +
-            `(${history.points.length} ficheros)`,
+            `(${plural(history.points.length, "fichero", "ficheros")})`,
           `${KIND_TEXT[history.kind]} Comparado dentro de producción, con la regla de la horquilla: la mitad de un fichero ` +
             "frente al 80 % del otro.",
           ["tramo-entre-ficheros", `${history.from} ${history.to}`],

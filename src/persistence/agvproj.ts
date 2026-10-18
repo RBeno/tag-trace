@@ -20,11 +20,12 @@
 import { sortVersions, type ConsolidatedVersion, type LineageEvent, type LineageRef, type LineageState } from "../domain/memory.js";
 import type { PlanEvent } from "../domain/plan.js";
 import { plantValueEventProblem, type PlantValueEvent } from "../domain/plant-values.js";
+import type { CaseRevision, FrozenEvidence } from "../domain/incident-case.js";
 import { canonicalise, semanticHash } from "../domain/semantic-hash.js";
 import { readZip, writeZip, ZipError } from "./zip.js";
 
 /** Un número desconocido se rechaza sin tocar nada. Subirlo obliga a escribir su migración. */
-export const AGVPROJ_SCHEMA_VERSION = 5;
+export const AGVPROJ_SCHEMA_VERSION = 6;
 
 /**
  * Los esquemas anteriores que esta versión sigue abriendo, con lo que hay que hacer con cada uno.
@@ -33,11 +34,12 @@ export const AGVPROJ_SCHEMA_VERSION = 5;
  * instantáneas, y lo dice quien lo enseña (`instantaneas` ausente). El 2 no llevaba `memoria`: se
  * abre igual, sin memoria (`memoria` ausente, que es «sin-memoria» al clasificar el linaje). El 3 no
  * llevaba `plano`: se abre igual, sin plano (`plano` ausente, que es «sin-plano» al importarlo). El 4
- * no llevaba `valores`: se abre igual, sin valores confirmados (rigen los provisionales). No hay
+ * no llevaba `valores`: se abre igual, sin valores confirmados (rigen los provisionales). El 5 no
+ * llevaba `incidencias` (OQ-174): se abre igual, sin expedientes. No hay
  * nada que reescribir: las secciones que traían significan lo mismo. Un esquema que no esté aquí ni
  * sea el vigente se rechaza.
  */
-export const AGVPROJ_READABLE_VERSIONS: readonly number[] = [1, 2, 3, 4, AGVPROJ_SCHEMA_VERSION];
+export const AGVPROJ_READABLE_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, AGVPROJ_SCHEMA_VERSION];
 
 const MANIFEST = "manifest.json";
 
@@ -391,4 +393,54 @@ export function readPlantValuesSection(project: Project): ProjectPlantValuesSect
     if (problem !== null) throw malformed(problem);
   }
   return { eventos: eventos as readonly PlantValueEvent[] };
+}
+
+// --- Expedientes de incidencia (esquema 6, OQ-174) -----------------------------------------------------
+
+export const INCIDENTS_SECTION = "incidencias";
+
+/**
+ * Los expedientes del circuito: todas sus revisiones, con su cadena de hashes, y los recortes congelados
+ * que nombran, cada uno con su huella. Viajan para **recuperarlos** (OQ-174): sigue habiendo un solo
+ * dispositivo y al abrirlos no se mezcla nada (`case-transfer.ts`).
+ */
+export interface ProjectIncidentsSection {
+  readonly revisiones: readonly CaseRevision[];
+  readonly recortes: readonly { readonly hash: string; readonly datos: FrozenEvidence }[];
+}
+
+/** Construye la sección `incidencias`. `undefined` si el circuito no tiene expedientes. */
+export function incidentsSection(revisions: readonly CaseRevision[], evidence: readonly { readonly hash: string; readonly datos: FrozenEvidence }[]): ProjectIncidentsSection | undefined {
+  if (revisions.length === 0) return undefined;
+  return {
+    revisiones: [...revisions].sort((a, b) => (a.caseId === b.caseId ? a.revision - b.revision : a.caseId < b.caseId ? -1 : 1)),
+    recortes: [...evidence].sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0)),
+  };
+}
+
+/**
+ * La sección `incidencias` de un proyecto ya validado por hash, con su forma comprobada; `undefined` si
+ * no la trae (esquemas 1 a 5). Las cadenas y las huellas se comprueban al incorporarla, expediente a
+ * expediente. Una forma que no sea la esperada se rechaza entera.
+ */
+export function readIncidentsSection(project: Project): ProjectIncidentsSection | undefined {
+  const raw = project.sections[INCIDENTS_SECTION];
+  if (raw === undefined) return undefined;
+  const malformed = (what: string): ProjectError =>
+    new ProjectError(`La sección «${INCIDENTS_SECTION}» no tiene la forma esperada: ${what}.`, "El proyecto se creó con otra versión de la aplicación. No se ha cargado nada.");
+  if (!isRecord(raw)) throw malformed("no es un objeto");
+  const revisiones = raw["revisiones"];
+  const recortes = raw["recortes"];
+  if (!Array.isArray(revisiones) || !Array.isArray(recortes)) throw malformed("faltan las revisiones o los recortes");
+  for (const revision of revisiones as unknown[]) {
+    if (!isRecord(revision) || typeof revision["caseId"] !== "string" || typeof revision["circuitId"] !== "string" || typeof revision["revision"] !== "number" || typeof revision["hash"] !== "string") {
+      throw malformed("una revisión no tiene expediente, circuito, número o hash");
+    }
+  }
+  for (const entry of recortes as unknown[]) {
+    if (!isRecord(entry) || typeof entry["hash"] !== "string" || !isRecord(entry["datos"]) || !Array.isArray((entry["datos"] as Record<string, unknown>)["readings"])) {
+      throw malformed("un recorte no tiene huella o lecturas");
+    }
+  }
+  return { revisiones: revisiones as readonly CaseRevision[], recortes: recortes as ProjectIncidentsSection["recortes"] };
 }

@@ -1,8 +1,8 @@
 ---
 document_id: TT-SEC-001
-version: 0.3.0
+version: 0.5.0
 status: baseline-candidate
-last_updated: 2026-09-25
+last_updated: 2026-10-18
 ---
 
 # Seguridad, privacidad y separación industrial
@@ -39,7 +39,7 @@ TAG TRACE es estrictamente observacional:
 | TH-005 | Proyecto manipulado/corrupto | Esquema, hashes, límites de tamaño y carga transaccional. Un libro de Excel de listas o flota se lee con los mismos límites de zip, sin evaluar fórmulas, y se rechaza si declara un tipo de documento (expansión de entidades) |
 | TH-006 | CSV malicioso o agotamiento de memoria | Parser defensivo, límites, cuotas, cancelación y cuarentena |
 | TH-007 | XSS mediante valores importados | Renderizado como texto, sanitización, sin scripts en línea y CSP restrictiva |
-| TH-008 | Service Worker obsoleto | Versión visible, actualización controlada y retorno |
+| TH-008 | Service Worker obsoleto | Versión visible, actualización controlada y retorno (implementado en 3.82.0, `VERSIONING.md` §Publicación y retorno) |
 | TH-009 | Pérdida por limpieza del navegador | Exportación `.agvproj`, avisos de persistencia y verificación de guardado |
 | TH-010 | Mezcla de circuitos | `circuit_id`, afinidad, cuarentena y bloqueo de consolidación |
 
@@ -68,6 +68,16 @@ Durante un análisis con datos cargados:
 - una prueba automatizada deberá fallar si el flujo analítico intenta acceder a red.
 
 GitHub Pages sirve la aplicación, no recibe los archivos seleccionados por el usuario.
+
+**Comprobado de punta a punta (3.87.0, F6 entrega 6).** `sin-red.spec.ts` abre la aplicación, deja que el
+service worker guarde su versión y **corta la red**; sin ella importa dos periodos y sus listas, revisa y
+consolida, crea un expediente y ve su replay, descarga su informe, sus CSV y el informe del circuito,
+exporta y vuelve a abrir el `.agvproj` y borra el circuito. Falla si una sola petición de la página o de
+sus Workers sale del propio origen, o si una acción choca con la política de contenido. La aplicación
+no hace ninguna petición propia —ni `fetch`, ni XHR, ni sockets—, así que la política publicada niega
+toda conexión: `connect-src 'none'`, y `worker-src 'self'` sin `blob:` (la compilación la aprieta y
+falla si no encuentra la marca; en desarrollo sigue la de `index.html`, porque el servidor de Vite
+necesita su conexión).
 
 ## 5. Contenido importado
 
@@ -104,7 +114,19 @@ Abrirlo no relaja ninguna regla: la endurece, porque un error deja de ser recupe
 - la especificación es pública porque describe método; los valores de planta —takt, turnos, zonas,
   capacidades, puntos críticos, topología— no lo son y viven solo en el dispositivo.
 
-## 9. Comprobaciones antes de publicar
+## 9. Revisión de seguridad de F6 (3.87.0)
+
+| Punto | Resultado |
+|---|---|
+| Red (TH-002) | Ninguna petición propia; política publicada con `connect-src 'none'`; flujo entero sin red probado (§4). |
+| XSS (TH-007) | Todo lo importado se pinta como texto; ningún `innerHTML` con datos; los informes se componen escapando o serializando nodos hechos con texto; los enlaces son `blob:` propios o anclas fijas. |
+| Registros (TH-003) | Ningún `console.*` en la aplicación; los errores llevan tipo y texto, nunca filas. |
+| Proyecto manipulado (TH-005) | Zip con límites de entradas y de tamaño descomprimido; integridad por hashes. |
+| Pérdida por limpieza (TH-009) | Desde 3.86.0, aviso de guardado no persistente, petición de guardado persistente y espacio usado a la vista. |
+| Dependencias (TH-004) | `npm audit` tenía cinco avisos, todos en herramientas de desarrollo (servidor de Vite, Vitest), ninguno en lo publicado. Vite pasa a 7.3.6 y `source-map-js` se corrige. Quedan tres de Vitest 3 (`tinypool`, `@vitest/mocker` y su servidor de interfaz) que solo se corrigen con Vitest 4 o 5, versión mayor; no se usan ni el modo navegador ni la interfaz de Vitest, y npm 10 falla al resolver esa subida aquí. Decisión del propietario: OQ-176. |
+| Enmarcado | Sin cabeceras propias en Pages: límite aceptado (§3, ADR-0014). |
+
+## 10. Comprobaciones antes de publicar
 
 1. Árbol de Git revisado.
 2. Escaneo de secretos y extensiones prohibidas, en local y en CI.

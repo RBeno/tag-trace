@@ -13,6 +13,7 @@
  * hacia la presentación**. La interfaz no puede parsear aunque quiera.
  */
 
+import type { ReadingColumns } from "./reading-columns.js";
 import type { ActivityBand, HourlyProfile } from "../domain/activity.js";
 import type { FleetTimeline } from "../domain/fleet.js";
 import type { Blockage, ProductionStop } from "../domain/flow-stops.js";
@@ -56,7 +57,7 @@ import type { TagChangeReport } from "../domain/tag-changes.js";
 import type { VehicleReadingReport } from "../domain/vehicle-reading.js";
 import type { VehicleReplayState } from "../domain/replay.js";
 import type { VsystemComparisonRow } from "../domain/vsystem.js";
-import type { QuarantinedRow, Reading } from "../domain/reading.js";
+import type { QuarantinedRow } from "../domain/reading.js";
 import type { SourceDirection } from "../domain/order.js";
 import type { MonotonicityReport } from "../ingestion/monotonicity.js";
 import type { FieldOrder } from "../domain/time.js";
@@ -75,6 +76,8 @@ export type ImportErrorCode =
   | "DATE_AMBIGUOUS"
   | "NO_ACCEPTED_ROWS"
   | "LIMIT_EXCEEDED"
+  /** Sin espacio en el dispositivo para guardar (3.86.0). */
+  | "STORAGE_FULL"
   | "INTERNAL";
 
 export interface StartMessage {
@@ -1211,7 +1214,11 @@ export interface SerializedReplayFrame {
 export interface CompleteMessage extends Envelope {
   readonly type: "complete";
   readonly summary: SourceSummary;
-  readonly readings: readonly Reading[];
+  /**
+   * Las lecturas, por columnas y con sus buffers transferidos (3.84.0): la página solo las usa para la
+   * tabla, y copiarlas como objetos paraba el hilo principal (`PERFORMANCE_BUDGET.md` §3.2).
+   */
+  readonly readings: ReadingColumns;
   readonly quarantine: readonly QuarantinedRow[];
   readonly warnings: readonly string[];
   /** Presente solo si la importación se acumuló en un circuito. */
@@ -1235,12 +1242,22 @@ export interface CancelledMessage extends Envelope {
   readonly stage: Stage;
 }
 
+/**
+ * La importación va a empezar a escribir en el almacén (WP-004). Hasta aquí no ha escrito nada y la
+ * interfaz puede detener el Worker si no atiende la cancelación; desde aquí ya no se cancela: la
+ * escritura termina entera.
+ */
+export interface SavingMessage extends Envelope {
+  readonly type: "saving";
+}
+
 export type FromWorker =
   | AcceptedMessage
   | ProgressMessage
   | CompleteMessage
   | ErrorMessage
   | CancelledMessage
+  | SavingMessage
   | ListsLoadedMessage
   | FleetLoadedMessage
   | FleetChooseCircuitMessage
