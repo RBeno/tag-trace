@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.34.0
+version: 0.35.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -236,7 +236,8 @@ Criterio de rechazo (OQ-B05, propietario 2026-10-17): el piloto se rechaza si oc
       cabecera, en la caché y en la etiqueta `vX.Y.Z` que deja cada publicación; retorno desde el workflow
       eligiendo la etiqueta (`VERSIONING.md` §Publicación y retorno). Falta ejecutar un retorno de verdad
       cuando haya dos versiones etiquetadas.
-- [ ] Informe de aceptación del propietario.
+- [ ] Informe de aceptación del propietario. **Plantilla (3.88.1)**: `templates/PILOT_ACCEPTANCE.md`, con la
+      medida, el piloto, el criterio de rechazo y la tabla de G6; se rellena en `local/`.
 
 ## G7/G8
 

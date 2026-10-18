@@ -2,6 +2,17 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.88.1] - 2026-10-18
+
+Entrega 8 de F6, preparada: el piloto es del propietario.
+
+### Añadido
+
+- **`docs/templates/PILOT_ACCEPTANCE.md`**: el informe de aceptación del piloto —identificación,
+  preparación, medida con «Medir este dispositivo» en el S23 FE y el PC, piloto de 48 h con datos reales,
+  criterio de rechazo de OQ-B05, los criterios de G6 con su evidencia y las decisiones pendientes—. Se
+  rellena en `local/`, fuera del repositorio.
+
 ## [3.88.0] - 2026-10-18
 
 Entrega 7 de F6.

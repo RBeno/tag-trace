@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.72.0
+version: 0.73.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -424,6 +424,13 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## F6, entrega 8 preparada (3.88.1, 2026-10-18)
+
+`templates/PILOT_ACCEPTANCE.md`: identificación, preparación, medida con el banco en los dos
+dispositivos, piloto de 48 h con datos reales, criterio de rechazo (OQ-B05), tabla de G6 y decisiones
+pendientes (OQ-176, OQ-172). Se rellena en `local/`. Con esto, todo lo de F6 que puede hacer la IA está
+hecho; queda del propietario: PR y publicación, medir, el piloto, OQ-176 y, si acepta, `CONTINÚA FASE 7`.
+
 ## F6, entrega 7: copia de expedientes, manual y operación (3.88.0, 2026-10-18)
 
 Los expedientes viajan en el `.agvproj` (esquema 6, sección `incidencias`, OQ-174): revisiones con su
@@ -737,8 +744,10 @@ El trabajo sigue en otra conversación por el límite de contexto. Todo lo que d
 conversación siguiente.
 
 - **Fase F6** (piloto profesional), abierta el 2026-10-17 por el propietario (`CONTINÚA FASE 6`)
-  tras fusionar F5 con el PR #17 (`b0f527a`); F7 espera `CONTINÚA FASE 7` (G6). Lo primero de F6 es
-  leer `ROADMAP.md` §F6 y `PHASE_GATES.md` §G6 y proponer el orden de entregas al propietario.
+  tras fusionar F5 con el PR #17 (`b0f527a`); F7 espera `CONTINÚA FASE 7` (G6). Las entregas 1 a 7 están
+  hechas (3.82.0 a 3.88.0, más 3.83.1 «Cancelar») y la 8 preparada (3.88.1), todo en la rama
+  `ccr-b6e42985-mfx1ho` hasta que el propietario pida el PR. Lo que queda es suyo: publicar, medir con el
+  banco en el S23 FE y el PC, el piloto con `templates/PILOT_ACCEPTANCE.md`, decidir OQ-176 y OQ-172.
 - Antes, **fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
   6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron
