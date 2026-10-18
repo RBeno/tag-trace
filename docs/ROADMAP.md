@@ -1,6 +1,6 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.19.0
+version: 0.20.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -225,8 +225,8 @@ Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria port
    prueba por estado de `UX_SPEC.md` §8. **Hecha en 3.86.0**: 0 infracciones; sin espacio y borrar un circuito,
    que faltaban, hechos.
 6. **Sin red y seguridad**: el flujo entero sin conexión y sin una sola petición fuera del origen; CSP,
-   dependencias y revisión de seguridad. **Hecha en 3.87.0** (`SECURITY_PRIVACY.md` §9); queda la subida de
-   Vitest: riesgo aceptado hasta G6 (OQ-176), así que va en su propia entrega antes de marcar la puerta.
+   dependencias y revisión de seguridad. **Hecha en 3.87.0** (`SECURITY_PRIVACY.md` §9); la subida de
+   Vitest, con el riesgo aceptado hasta G6 (OQ-176), **hecha en 3.88.4** (Vitest 5.0.5, `npm audit` sin avisos).
 7. **Manual de uso, guía de diagnóstico y operación**: matriz de navegadores y dispositivos, copia y
    restauración —con los expedientes en el `.agvproj` (OQ-174)— y criterios de soporte. **Hecha en 3.88.0**
    (`MANUAL_DE_USO.md`, `GUIA_DE_DIAGNOSTICO.md`, `OPERACION.md`).

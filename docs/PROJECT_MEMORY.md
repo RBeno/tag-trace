@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.74.0
+version: 0.75.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -424,6 +424,14 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## Vitest 5.0.5: condición de OQ-176 cumplida (3.88.4, 2026-10-18)
+
+Vitest 3.2.7 → 5.0.5, versión exacta. Vitest 4.1.10 a 4.1.12 y 5.0.3–5.0.4 no se instalan con npm 10.9.4
+(«Cannot read properties of null (reading 'edgesOut')» al cargar sus dependencias opcionales entre pares,
+incluso en un proyecto vacío); 5.0.5 sí. `npm audit`: 0 avisos. Las 962 pruebas unitarias son las mismas,
+una a una, con 3.2.7 y con 5.0.5; las 82 de navegador pasan; `vitest.config.ts` no cambia. Nada llega a
+lo publicado.
+
 ## OQ-176 decidida: riesgo aceptado hasta G6 (3.88.3, 2026-10-18)
 
 El propietario acepta los tres avisos de Vitest 3.2.7 con fecha límite antes de G6 (la recomendación).
@@ -754,8 +762,8 @@ conversación siguiente.
   tras fusionar F5 con el PR #17 (`b0f527a`); F7 espera `CONTINÚA FASE 7` (G6). Las entregas 1 a 7 están
   hechas (3.82.0 a 3.88.0, más 3.83.1 «Cancelar») y la 8 preparada (3.88.1), todo en la rama
   `ccr-b6e42985-mfx1ho` hasta que el propietario pida el PR. Lo que queda es suyo: publicar, medir con el
-  banco en el S23 FE y el PC, el piloto con `templates/PILOT_ACCEPTANCE.md` y decidir OQ-172. OQ-176 está decidida (2026-10-18):
-  riesgo aceptado hasta G6; antes de marcar G6 hace falta una entrega propia que suba Vitest a 4 o 5.
+  banco en el S23 FE y el PC, el piloto con `templates/PILOT_ACCEPTANCE.md` y decidir OQ-172. OQ-176 está decidida (2026-10-18)
+  y su condición cumplida en 3.88.4 (Vitest 5.0.5, `npm audit` sin avisos).
 - Antes, **fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
   6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron

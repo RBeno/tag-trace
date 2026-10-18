@@ -1,6 +1,6 @@
 ---
 document_id: TT-SEC-001
-version: 0.6.0
+version: 0.7.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -123,7 +123,7 @@ Abrirlo no relaja ninguna regla: la endurece, porque un error deja de ser recupe
 | Registros (TH-003) | Ningún `console.*` en la aplicación; los errores llevan tipo y texto, nunca filas. |
 | Proyecto manipulado (TH-005) | Zip con límites de entradas y de tamaño descomprimido; integridad por hashes. |
 | Pérdida por limpieza (TH-009) | Desde 3.86.0, aviso de guardado no persistente, petición de guardado persistente y espacio usado a la vista. |
-| Dependencias (TH-004) | `npm audit` tenía cinco avisos, todos en herramientas de desarrollo (servidor de Vite, Vitest), ninguno en lo publicado. Vite pasa a 7.3.6 y `source-map-js` se corrige. Quedan tres de Vitest 3 (`tinypool`, `@vitest/mocker` y su servidor de interfaz) que solo se corrigen con Vitest 4 o 5, versión mayor; no se usan ni el modo navegador ni la interfaz de Vitest, y npm 10 falla al resolver esa subida aquí. Riesgo aceptado por el propietario hasta G6 (OQ-176, 2026-10-18): la subida va en su propia entrega y es condición para marcar G6. |
+| Dependencias (TH-004) | `npm audit` tenía cinco avisos, todos en herramientas de desarrollo (servidor de Vite, Vitest), ninguno en lo publicado. Vite pasa a 7.3.6 y `source-map-js` se corrige. Quedan tres de Vitest 3 (`tinypool`, `@vitest/mocker` y su servidor de interfaz) que solo se corrigen con Vitest 4 o 5, versión mayor; no se usan ni el modo navegador ni la interfaz de Vitest, y npm 10 falla al resolver esa subida aquí. Riesgo aceptado por el propietario hasta G6 (OQ-176, 2026-10-18) y resuelto en 3.88.4: Vitest pasa a 5.0.5 y `npm audit` queda sin avisos. Vitest 4.1.x no se pudo instalar con npm 10 (falla al cargar sus dependencias opcionales entre pares); 5.0.5 sí. |
 | Enmarcado | Sin cabeceras propias en Pages: límite aceptado (§3, ADR-0014). |
 
 ## 10. Comprobaciones antes de publicar

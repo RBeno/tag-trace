@@ -2,6 +2,18 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.88.4] - 2026-10-18
+
+Subida de Vitest, en su propia entrega (condición de G6 por OQ-176).
+
+### Cambiado
+
+- **Vitest 3.2.7 → 5.0.5**, versión exacta. Corrige los tres avisos de `npm audit` (`tinypool` y
+  `@vitest/mocker`); ahora no queda ninguno. Vitest 4.1.x no se instala con npm 10 y 5.0.5 sí. Solo es
+  herramienta de pruebas: nada cambia en lo publicado ni en `vitest.config.ts`.
+- Comprobado: las mismas 962 pruebas unitarias, una a una, pasan con las dos versiones; las 82 de
+  navegador, la compilación y la comprobación de tipos, también.
+
 ## [3.88.3] - 2026-10-18
 
 ### Gobierno

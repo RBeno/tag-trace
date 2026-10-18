@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.36.0
+version: 0.37.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -238,7 +238,8 @@ Criterio de rechazo (OQ-B05, propietario 2026-10-17): el piloto se rechaza si oc
       cuando haya dos versiones etiquetadas.
 - [ ] Dependencias de desarrollo sin avisos pendientes. **Condición de OQ-176** (propietario, 2026-10-18): el
       riesgo de los tres avisos de Vitest 3.2.7 se acepta para el piloto, pero la subida a Vitest 4 o 5, en su
-      propia entrega, tiene que estar hecha antes de marcar G6.
+      propia entrega, tiene que estar hecha antes de marcar G6. **Evidencia (3.88.4)**: Vitest 5.0.5, `npm
+      audit` sin avisos, y las mismas 962 pruebas unitarias y 82 de navegador en verde que con 3.2.7.
 - [ ] Informe de aceptación del propietario. **Plantilla (3.88.1)**: `templates/PILOT_ACCEPTANCE.md`, con la
       medida, el piloto, el criterio de rechazo y la tabla de G6; se rellena en `local/`.
 
