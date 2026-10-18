@@ -2,6 +2,15 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.88.2] - 2026-10-18
+
+### Corregido
+
+- **Permanencias en el móvil**: la fila de referencia juntaba «el resto del circuito · muestra de N de M ·
+  mediana…» en una línea que, con una fuente algo más ancha, se salía de los 360 px. Lo destapó la prueba de
+  interfaz en el CI (otra fuente que la del contenedor). Ahora, en estrecho, el detalle y la nota van en dos
+  líneas, y la muestra viaja con la mediana.
+
 ## [3.88.1] - 2026-10-18
 
 Entrega 8 de F6, preparada: el piloto es del propietario.

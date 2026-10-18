@@ -4976,8 +4976,8 @@ function renderCriticalPoints(views: CircuitViews): void {
     const rows: DwellRow[] = [
       {
         title: "Referencia",
-        detail: `el resto del circuito · muestra de ${reference.length.toLocaleString("es-ES")} de ${cohort.referenceTotal.toLocaleString("es-ES")}`,
-        note: `mediana ${Math.round((reference[Math.floor(reference.length / 2)] ?? 0) / 1000)} s`,
+        detail: "el resto del circuito",
+        note: `muestra de ${reference.length.toLocaleString("es-ES")} de ${cohort.referenceTotal.toLocaleString("es-ES")} · mediana ${Math.round((reference[Math.floor(reference.length / 2)] ?? 0) / 1000)} s`,
         durationsMs: reference,
         isReference: true,
       },

@@ -2042,23 +2042,26 @@ export function dwellChart(rows: readonly DwellRow[]): HTMLElement {
 
   responsive(area, (width) => {
     area.replaceChildren();
-    const rowHeight = 88;
+    const wide = width >= 560;
+    // En estrecho, el detalle y la nota van en dos líneas: en una no caben a 360 px (F6, entrega 4).
+    const extra = wide ? 0 : 12;
+    const rowHeight = 88 + extra;
     const plotHeight = 50;
     const axisHeight = 24;
     const height = rows.length * rowHeight + axisHeight;
-    const wide = width >= 560;
     const canvas = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Distribución de permanencias" });
     const x = (ms: number): number => (ms / maxMs) * width;
     const barWidth = width / BINS;
     rows.forEach((row, r) => {
       const top = r * rowHeight;
-      const base = top + 26 + plotHeight;
+      const base = top + 26 + extra + plotHeight;
       canvas.append(text(0, top + 13, row.title, "label id"));
       if (wide) canvas.append(text(width, top + 13, row.note, "axis", { "text-anchor": "end" }));
-      canvas.append(text(0, top + 25, wide ? row.detail : `${row.detail} · ${row.note}`, "axis"));
+      canvas.append(text(0, top + 25, row.detail, "axis"));
+      if (!wide) canvas.append(text(0, top + 37, row.note, "axis"));
       for (let tick = 0; tick * stepSeconds * 1000 <= maxMs; tick += 1) {
         const px = x(tick * stepSeconds * 1000);
-        canvas.append(svg("line", { x1: px, x2: px, y1: top + 30, y2: base, stroke: "var(--viz-grid)" }));
+        canvas.append(svg("line", { x1: px, x2: px, y1: top + 30 + extra, y2: base, stroke: "var(--viz-grid)" }));
       }
       canvas.append(svg("line", { x1: 0, x2: width, y1: base, y2: base, stroke: "var(--line)" }));
       const histogram = histograms[r];
