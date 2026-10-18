@@ -288,7 +288,16 @@ function inCircuit(segment: FleetSegment): boolean {
   return !(segment.kind === "desconexion" && !explained);
 }
 
-/** La vida de cada AGV en tramos continuos, y el recuento N de M a lo largo de la ventana. */
+/**
+ * La vida de cada AGV en tramos continuos, y el recuento N de M a lo largo de la ventana.
+ *
+ * Precondición (B-10, revisión del 2026-10-18): `input.readings` llega en orden canónico —`sortReadings`
+ * con el sentido de su fuente (ADR-0013)—. Las ordenaciones por instante de aquí dentro son estables y
+ * conservan ese desempate entre dos lecturas del mismo AGV en el mismo instante; no se puede rehacer
+ * aquí porque el sentido de la pila no llega a esta función, y desempatar por fila ascendente
+ * invertiría el orden de las fuentes `newest-first`.
+ * El tag de cada instante (`tagsOf`) es el de la última lectura de ese instante en ese orden.
+ */
 export function buildFleetTimeline(input: FleetInput): FleetTimeline {
   // Un historial sin periodos no puede decir quién está asignado: M sale de las lecturas, y se dice.
   const historySource: FleetHistorySource =
@@ -368,6 +377,10 @@ export function buildFleetTimeline(input: FleetInput): FleetTimeline {
         (sum, stop) => sum + Math.max(0, Math.min(to, stop.to) - Math.max(from, stop.from)),
         0,
       );
+      // «Un borde sin lecturas dentro de una parada de la producción es parado y justificado»
+      // (ALGORITHM_CATALOG §6.6, «En la flota»; R-AGV-018): «dentro» se lee como la mitad o más del borde
+      // en paradas de la producción, la misma mitad con que, en esa sección, un hueco del expediente
+      // toma `produccion`. Un criterio de la regla, no un valor de planta.
       if (stopped >= 0.5 * (to - from)) {
         return [from, to, "silencio", { kind: "parada", detail, justification: "produccion" }];
       }

@@ -144,6 +144,15 @@ function laneSignatures(lanes: readonly CoLane[]): ReadonlyMap<string, string> {
   return signatures;
 }
 
+/**
+ * Las lecturas de cada vehículo, en orden de tiempo.
+ *
+ * Precondición (B-10, revisión del 2026-10-18): `readings` llega en orden canónico —`sortReadings`
+ * con el sentido de su fuente (ADR-0013)—. El `sort` por instante es estable y conserva ese desempate
+ * entre dos lecturas del mismo AGV en el mismo instante. Aquí no se puede rehacer: el sentido de la
+ * pila no llega a esta función, y desempatar por fila ascendente invertiría el orden de las fuentes
+ * `newest-first`.
+ */
 function groupByVehicle(readings: readonly Reading[]): ReadonlyMap<string, readonly Reading[]> {
   const groups = new Map<string, Reading[]>();
   for (const entry of readings) {

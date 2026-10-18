@@ -1,6 +1,6 @@
 ---
 document_id: TT-GATES-001
-version: 0.38.0
+version: 0.39.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -103,7 +103,7 @@ Lo que dependa de la configuración queda enunciado y sin calcular, nunca estima
 
 ## G3 — Autorizar F4
 
-**Cerrada el 2026-09-26 por el propietario** («a continuación continúa con Fase 4», `PROJECT_MEMORY.md` §F4 abierta), con lo que F3 dejó demostrado —diagnóstico explicable sobre el circuito de auditoría, revisión en campo, interfaz por preguntas— y lo que seguía abierto declarado, no marcado: las casillas de abajo dicen qué quedó y por qué.
+**Cerrada el 2026-09-26 por el propietario** («a continuación continúa con Fase 4», `history/DECISION_LOG.md` §F4 abierta), con lo que F3 dejó demostrado —diagnóstico explicable sobre el circuito de auditoría, revisión en campo, interfaz por preguntas— y lo que seguía abierto declarado, no marcado: las casillas de abajo dicen qué quedó y por qué.
 
 - [ ] Oportunidades y salud explicadas.
 - [ ] Diagnóstico individual/grupal/colectivo validado. **Con matiz**: el componente histórico de

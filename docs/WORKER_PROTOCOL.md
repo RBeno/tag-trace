@@ -1,6 +1,6 @@
 ---
 document_id: TT-WORKER-001
-version: 0.18.0
+version: 0.19.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -70,7 +70,7 @@ type             : start | accepted | progress | partial | complete | error | ca
 
 | `type` | Carga | Nota |
 |---|---|---|
-| `start` | referencias a fuentes, configuración vigente, versiones de reglas/algoritmos, semilla | Las fuentes viajan como `File`/`ArrayBuffer` transferido, no como texto ya leído. |
+| `start` | referencias a fuentes, configuración vigente, versiones de reglas/algoritmos, semilla | Las fuentes viajan como `File`/`ArrayBuffer` transferido, no como texto ya leído. Lleva el orden de fecha y, desde 3.90.0, el separador solo si la persona los fijó tras un `DATE_AMBIGUOUS` o un `DELIMITER_AMBIGUOUS`. |
 | `cancel` | motivo | El Worker debe atenderla en el siguiente punto de control. |
 | `lists` | fichero de listas de tags, circuito | Sustituye las listas del circuito por las del fichero. |
 | `fleet` | fichero de historial de flota (DS-012), circuito, valor de `circuito` elegido si ya lo hay | Se **fusiona** con lo guardado por (AGV, `desde`); no sustituye. |
@@ -88,8 +88,8 @@ type             : start | accepted | progress | partial | complete | error | ca
 
 | `type` | Carga | Nota |
 |---|---|---|
-| `accepted` | etapas previstas | Confirma que el trabajo empezó; sirve para detectar Workers que no arrancan. |
-| `progress` | etapa, unidades hechas, unidades previstas, mensaje | Sin porcentajes inventados. |
+| `accepted` | etapas previstas | Confirma que el trabajo empezó; sirve para detectar Workers que no arrancan. Desde 3.90.0 la interfaz espera 15 s a que llegue en una importación; si no llega (un Worker de otra versión descarta el mensaje en silencio), detiene el Worker y dice «El análisis no arrancó». |
+| `progress` | etapa, unidades hechas, unidades previstas, mensaje | Sin porcentajes inventados. La interfaz reparte la barra por etapas y nunca la hace retroceder; tras `done` queda analizar (y guardar, con circuito), sin cifra, y la nota lo dice (3.90.0). |
 | `partial` | resultado incompleto | Siempre `partial: true`. |
 | `complete` | resultado, métricas, hash semántico, advertencias | Único mensaje que autoriza a persistir. Desde 3.84.0 las lecturas viajan **por columnas** (`ReadingColumns`) y sus buffers se transfieren, sin copia (`PERFORMANCE_BUDGET.md` §3.2). |
 | `error` | código, causa, esquema detectado, filas de ejemplo, acción sugerida | Ver §6. |
@@ -151,7 +151,8 @@ de ejemplo saneadas y acción de recuperación. `UX_SPEC.md` §8 lo exige y el p
 | `NO_ACCEPTED_ROWS` | Se leyeron filas pero ninguna superó la validación. Debe detallar por qué. |
 | `LIMIT_EXCEEDED` | Se superó un límite de tamaño, celdas o memoria declarado. |
 | `CIRCUIT_FOREIGN` | La huella de afinidad sitúa la fuente en otro circuito. |
-| `STORAGE_FULL` | No queda espacio en el dispositivo para guardar (3.86.0): el almacén convierte `QuotaExceededError` en `StorageFullError`; la transacción que falla no deja nada escrito. Las demás operaciones del Worker dicen lo mismo con su `error`, nunca como defecto. |
+| `STORAGE_FULL` | No queda espacio en el dispositivo para guardar (3.86.0): el almacén convierte `QuotaExceededError` en `StorageFullError`; la transacción que falla no deja nada escrito. Las demás operaciones del Worker dicen lo mismo con su `error`, nunca como defecto. Si falta espacio cuando las lecturas ya están guardadas y solo queda la instantánea, el texto lo dice así y no «no se ha escrito nada» (3.90.0). |
+| `CIRCUIT_CHANGED` | Otra pestaña escribió en el mismo circuito entre la lectura y la escritura de esta importación (3.90.0). La acumulación compara dentro de su transacción el circuito guardado con el que leyó y, si cambió, no escribe nada; la instantánea se marca sobre el circuito guardado en ese momento. El texto dice si las lecturas llegaron a guardarse. |
 | `INTERNAL` | Defecto del propio motor; nunca debe usarse para tapar los anteriores. Desde 3.89.0 lo emite también el Worker ante un rechazo de promesa sin capturar (`onunhandledrejection`), que no llega a `worker.onerror` de la página y dejaba la interfaz ocupada sin mensaje. |
 
 Ningún mensaje de error **debe** incluir contenido bruto sin sanear (TH-003).

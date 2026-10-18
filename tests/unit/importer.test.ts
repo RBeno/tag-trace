@@ -746,3 +746,77 @@ describe("hora repetida · desambiguación por posición (OQ-137)", () => {
     expect(result.summary.dstAmbiguous).toBe(5);
   });
 });
+
+describe("lo que la importación no decide sola y lo que avisa (TC-391)", () => {
+  // Una columna con coma decimal en un fichero con «;»: los dos separadores explican cada fila igual.
+  const decimal = [
+    "Fecha;AGV;Tag;Duracion",
+    ...Array.from({ length: 50 }, (_, index) => `24/01/2026 06:${String(index).padStart(2, "0")}:00;AGV-SYN-${index % 4};TAG-SYN-${index % 9};1,5`),
+  ].join("\n");
+  const options = { sourceId: "s", fileName: "decimal.csv", byteSize: decimal.length, zone: ZONE };
+
+  it("con dos separadores casi iguales no elige: pide elegir", () => {
+    expect(() => importReadings(decimal, options, silent)).toThrowError(ImportFailure);
+    try {
+      importReadings(decimal, options, silent);
+    } catch (error) {
+      expect((error as ImportFailure).code).toBe("DELIMITER_AMBIGUOUS");
+      expect((error as ImportFailure).recovery).toContain("Elige abajo el separador");
+    }
+  });
+
+  it("con el separador fijado por la persona, importa y lo dice", () => {
+    const result = importReadings(decimal, { ...options, delimiter: ";" }, silent);
+    expect(result.summary.delimiter).toBe(";");
+    expect(result.readings).toHaveLength(50);
+    expect(result.warnings.join(" ")).toContain("fijado por ti");
+  });
+
+  it("un separador fijado que deja el fichero sin columnas se rechaza diciendo por qué", () => {
+    try {
+      importReadings(decimal, { ...options, delimiter: "\t" }, silent);
+      expect.unreachable();
+    } catch (error) {
+      expect((error as ImportFailure).code).toBe("DELIMITER_AMBIGUOUS");
+      expect((error as ImportFailure).reason).toContain("no tiene columnas");
+    }
+  });
+
+  it("dos columnas que podrían ser «tag»: se usa la primera y se avisa", () => {
+    const text = ["Fecha;Tag;Tag;AGV", "24/01/2026 06:00:00;TAG-SYN-1;TAG-SYN-2;AGV-SYN-1", "24/01/2026 06:01:00;TAG-SYN-3;TAG-SYN-4;AGV-SYN-1"].join("\n");
+    const result = importReadings(text, { sourceId: "s", fileName: "dos-tag.csv", byteSize: text.length, zone: ZONE }, silent);
+    expect(result.readings.map((entry) => entry.tagId)).toEqual(["TAG-SYN-1", "TAG-SYN-3"]);
+    expect(result.warnings.join(" ")).toContain("2 columnas que podrían ser «tag»");
+  });
+});
+
+describe("codificación · lo que antes se leía mal en silencio (TC-392)", () => {
+  it("UTF-16 con BOM (el «Texto Unicode» de Excel) se lee como UTF-16", () => {
+    const text = "Fecha;Vehículo;Tag";
+    const bytes = new Uint8Array(2 + text.length * 2);
+    bytes[0] = 0xff;
+    bytes[1] = 0xfe;
+    for (let index = 0; index < text.length; index += 1) {
+      const code = text.charCodeAt(index);
+      bytes[2 + index * 2] = code & 0xff;
+      bytes[3 + index * 2] = code >> 8;
+    }
+    expect(decodeSource(bytes.buffer)).toEqual({ text, encoding: "utf-16le" });
+  });
+
+  it("un UTF-8 con un byte dañado se lee como Windows-1252, pero se avisa", () => {
+    const valid = new TextEncoder().encode("Fecha;Vehículo;Tag\n");
+    const bytes = new Uint8Array(valid.length + 1);
+    bytes.set(valid);
+    bytes[valid.length] = 0xe9; // un byte suelto que no es UTF-8
+    const result = decodeSource(bytes.buffer);
+    expect(result.encoding).toBe("windows-1252");
+    expect(result.warning).toContain("no es UTF-8 válido");
+  });
+
+  it("un Windows-1252 de verdad no avisa de nada", () => {
+    const bytes = new Uint8Array([0x4d, 0x54, 0x43, 0x20, 0x6e, 0xba, 0x3b, 0x56, 0x65, 0x68, 0xed, 0x63, 0x75, 0x6c, 0x6f]); // «MTC nº;Vehículo»
+    const result = decodeSource(bytes.buffer);
+    expect(result).toEqual({ text: "MTC nº;Vehículo", encoding: "windows-1252" });
+  });
+});

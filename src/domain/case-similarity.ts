@@ -18,7 +18,7 @@ import { CASE_STATE_TEXT, type CaseRevision } from "./incident-case.js";
 import { localHourReader } from "./silence-kind.js";
 
 /** Versión del procedimiento; viaja con cada comparación (`VERSIONING.md`). */
-export const SIMILARITY_ALGORITHM = "similitud-1";
+const SIMILARITY_ALGORITHM = "similitud-1";
 
 export type FeatureVerdict = "igual" | "parecido" | "distinto" | "sin-dato";
 

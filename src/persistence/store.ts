@@ -47,41 +47,24 @@ import type { ReviewEntry } from "../domain/review.js";
 import { normalizeEvidence, type CaseRevision, type FrozenEvidence } from "../domain/incident-case.js";
 import type { CircuitSnapshot } from "../domain/snapshot.js";
 import { gunzip, gunzipJson, gzip, gzipJson } from "./compression.js";
-import { splitLegacyCircuit, type LegacyCircuitRecord } from "./retention.js";
+import {
+  ARCHIVE,
+  CIRCUITS,
+  DATABASE,
+  INCIDENT_CASES,
+  INCIDENT_EVIDENCE,
+  MEMORY,
+  MEMORY_STATE,
+  MIGRATIONS,
+  PLAN,
+  PLANT_VALUES,
+  REVIEWS,
+  SNAPSHOTS,
+  SOURCES,
+  STORE_VERSION,
+} from "./store-schema.js";
 
-/** Subirla sin añadir su paso en `MIGRATIONS` es un error, y el propio módulo lo comprueba. */
-export const STORE_VERSION = 12;
-
-const DATABASE = "tag-trace";
-const CIRCUITS = "circuits";
-/**
- * La revisión en campo, en su propia tabla y no dentro del circuito. No es orden: el Worker
- * reescribe el circuito entero en cada importación, y una marca guardada desde la interfaz mientras
- * tanto se perdería. Aquí solo escribe la interfaz, y cada marca es su propia transacción.
- */
-const REVIEWS = "reviews";
-/** Las lecturas de cada fuente retenida, un registro por fuente: clave `[circuitId, sourceId]`. */
-const SOURCES = "sources";
-/** Una instantánea por fuente (ADR-0015): clave `[circuitId, sourceId]`. */
-const SNAPSHOTS = "snapshots";
-/** Las versiones consolidadas, append-only (F4): clave `[circuitId, hash]`. */
-const MEMORY = "memory";
-/** El estado de linaje de cada circuito (§10): clave `circuitId`. */
-const MEMORY_STATE = "memoryState";
-/** Los eventos del plano físico (ADR-0016), append-only: clave `[circuitId, seq]`. */
-const PLAN = "plan";
-/**
- * El archivo de ficheros originales, comprimidos, uno por huella (OQ-145): clave
- * `[circuitId, sourceHash]`. Es la evidencia para revisar o volver a medir el pasado con reglas
- * nuevas; no viaja en el `.agvproj` (ADR-0012: el bruto no sale del dispositivo por defecto).
- */
-const ARCHIVE = "archive";
-/** Los valores de planta confirmados (OQ-140), append-only: clave `[circuitId, seq]`. */
-const PLANT_VALUES = "plantValues";
-/** Las revisiones de los expedientes (ADR-0018), append-only: clave `[circuitId, caseId, revision]`. */
-const INCIDENT_CASES = "incidentCases";
-/** Los recortes congelados de los expedientes, comprimidos: clave `[circuitId, hash]`. */
-const INCIDENT_EVIDENCE = "incidentEvidence";
+export { STORE_VERSION } from "./store-schema.js";
 
 /** Las marcas de revisión de un circuito, por clave de hallazgo (`src/domain/review.ts`). */
 export interface StoredReviews {
@@ -284,138 +267,6 @@ function circuitRange(circuitId: string): IDBKeyRange {
   return IDBKeyRange.bound([circuitId], [circuitId, []]);
 }
 
-/**
- * La escalera de migraciones, un peldaño por versión.
- *
- * Cada paso recibe la base a medio abrir —y la transacción de actualización, que permite leer y
- * escribir— y deja el esquema en su versión destino. No se salta ninguno: abrir una base vieja
- * recorre los peldaños que le falten, en orden.
- */
-const MIGRATIONS: readonly { readonly to: number; readonly apply: (db: IDBDatabase, tx: IDBTransaction) => void }[] = [
-  {
-    to: 1,
-    apply: (db) => {
-      db.createObjectStore(CIRCUITS, { keyPath: "circuitId" });
-    },
-  },
-  {
-    to: 2,
-    // Las listas de tags entran en el circuito. No hay nada que reescribir: el campo es opcional
-    // al leer, así que un circuito de la versión 1 se abre sin listas y las gana cuando se carguen.
-    //
-    // El peldaño existe igualmente, y no es burocracia: es lo que deja constancia de que la forma
-    // cambió aquí. Sin él, la próxima persona que suba la versión no sabría en qué estado encuentra
-    // una base vieja, que es exactamente cómo el prototipo se quedó sin ruta de migración.
-    apply: () => {},
-  },
-  {
-    to: 3,
-    // Las listas ganan metadatos por tag (`entries`): papel, grupo y capacidad. Tampoco hay nada
-    // que reescribir —el campo es opcional—, y la degradación es la correcta: una lista guardada
-    // en la versión 2 sigue leyéndose, no monta calles, y R-CO-006 dice justamente eso, que sin
-    // calles configuradas la firma no se reconoce. Volver a cargar el fichero la completa.
-    apply: () => {},
-  },
-  {
-    to: 4,
-    // El historial de flota entra en el circuito (DS-012). Campo opcional: un circuito anterior se
-    // abre sin historial y su flota son los vehículos que aparecen en las lecturas, que es lo que
-    // la vista dice cuando no hay historial.
-    apply: () => {},
-  },
-  {
-    to: 5,
-    // La revisión en campo, en una tabla nueva y vacía: nada que reescribir en los circuitos.
-    apply: (db) => {
-      db.createObjectStore(REVIEWS, { keyPath: "circuitId" });
-    },
-  },
-  {
-    to: 6,
-    // El circuito deja de llevar sus lecturas (ADR-0015). Se crean `sources` y `snapshots` y, en la
-    // misma transacción de actualización, cada circuito antiguo se parte: sus lecturas van a
-    // `sources` por procedencia, se aplica la retención (R-DAT-023) y el registro queda sin
-    // `readings`. Las instantáneas de los ficheros antiguos no se pueden fabricar —no hay análisis
-    // guardado— y las fuentes quedan con `snapshot: false` hasta que se vuelvan a cargar.
-    //
-    // Se hace aquí y no «la próxima vez que se importe» porque una base a medias —unos circuitos
-    // partidos y otros no— es justo el estado que ninguna función de lectura sabría interpretar.
-    apply: (db, tx) => {
-      db.createObjectStore(SOURCES, { keyPath: ["circuitId", "sourceId"] });
-      db.createObjectStore(SNAPSHOTS, { keyPath: ["circuitId", "sourceId"] });
-      const circuits = tx.objectStore(CIRCUITS);
-      const sources = tx.objectStore(SOURCES);
-      const cursor = circuits.openCursor();
-      cursor.onsuccess = () => {
-        const current = cursor.result;
-        if (current === null) return;
-        const legacy = current.value as LegacyCircuitRecord & Record<string, unknown>;
-        const split = splitLegacyCircuit({ ...legacy, readings: legacy.readings ?? [], sources: legacy.sources ?? [] });
-        for (const entry of split.readings) {
-          sources.put({ circuitId: legacy.circuitId, sourceId: entry.sourceId, readings: entry.readings } satisfies StoredSourceReadings);
-        }
-        const { readings: _readings, ...rest } = legacy;
-        current.update({ ...rest, sources: split.sources });
-        current.continue();
-      };
-    },
-  },
-  {
-    to: 7,
-    // La memoria consolidada (F4): dos tablas nuevas y vacías. Nada que reescribir: ningún circuito
-    // anterior tiene versiones —consolidar es una acción humana que hasta ahora no existía— y el
-    // estado de linaje se crea con la primera consolidación o el primer `.agvproj` con memoria.
-    apply: (db) => {
-      db.createObjectStore(MEMORY, { keyPath: ["circuitId", "hash"] });
-      db.createObjectStore(MEMORY_STATE, { keyPath: "circuitId" });
-    },
-  },
-  {
-    to: 8,
-    // El plano físico (ADR-0016): una tabla nueva y vacía. Nada que reescribir: el plano nace con una
-    // acción humana desde una versión consolidada, y ningún circuito anterior lo tiene.
-    apply: (db) => {
-      db.createObjectStore(PLAN, { keyPath: ["circuitId", "seq"] });
-    },
-  },
-  {
-    to: 9,
-    // El archivo de ficheros originales comprimidos (OQ-145): una tabla nueva. Las lecturas retenidas
-    // y las versiones pasan a guardarse comprimidas en su próxima escritura; las de antes se leen igual.
-    apply: (db) => {
-      db.createObjectStore(ARCHIVE, { keyPath: ["circuitId", "sourceHash"] });
-    },
-  },
-  {
-    to: 10,
-    // Los valores de planta confirmados (OQ-140): una tabla nueva y vacía. Nada que reescribir: sin
-    // eventos rige el provisional, que es exactamente lo que cada circuito anterior venía usando.
-    apply: (db) => {
-      db.createObjectStore(PLANT_VALUES, { keyPath: ["circuitId", "seq"] });
-    },
-  },
-  {
-    to: 11,
-    // El registro de conexiones del terminal entra en el circuito (DS-013, ADR-0017). Campo
-    // opcional: un circuito anterior se abre sin registro y el mapa de estado de conexión dice que
-    // no hay registro cargado, que es la verdad.
-    apply: () => {},
-  },
-  {
-    to: 12,
-    // Los expedientes de incidencia (F5, ADR-0018): dos tablas nuevas y vacías. Nada que reescribir:
-    // un expediente nace de una acción humana, y ningún circuito anterior lo tiene.
-    apply: (db) => {
-      db.createObjectStore(INCIDENT_CASES, { keyPath: ["circuitId", "caseId", "revision"] });
-      db.createObjectStore(INCIDENT_EVIDENCE, { keyPath: ["circuitId", "hash"] });
-    },
-  },
-];
-
-if (MIGRATIONS[MIGRATIONS.length - 1]?.to !== STORE_VERSION) {
-  throw new Error("STORE_VERSION cambió sin añadir su migración: el almacén no se abre así.");
-}
-
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DATABASE, STORE_VERSION);
@@ -530,20 +381,57 @@ export async function saveAccumulation(input: {
   readonly circuit: StoredCircuit;
   readonly readings: readonly { readonly sourceId: string; readonly readings: readonly Reading[] }[];
   readonly drop: readonly string[];
+  /**
+   * El sello (`circuitStamp`) del circuito tal como se leyó antes de preparar la escritura. Si dentro
+   * de la transacción el guardado ya es otro —otra pestaña acumuló en él mientras tanto—, no se escribe
+   * nada y se lanza `CircuitChangedError`: escribir encima dejaba las lecturas de la otra pestaña sin
+   * dueño en el almacén, sin que nadie lo dijera (revisión 2026-10-18, C-03).
+   */
+  readonly expected: string;
 }): Promise<void> {
   // Se comprime antes de abrir la transacción: una transacción de IndexedDB se cierra sola en cuanto
   // se espera algo que no sea el propio almacén.
   const rows = await Promise.all(input.readings.map((entry) => readingsRow(input.circuit.circuitId, entry.sourceId, entry.readings)));
   const db = await open();
   try {
-    const tx = db.transaction([CIRCUITS, SOURCES], "readwrite");
-    tx.objectStore(CIRCUITS).put(input.circuit);
-    const sources = tx.objectStore(SOURCES);
-    for (const row of rows) sources.put(row);
-    for (const sourceId of input.drop) sources.delete([input.circuit.circuitId, sourceId]);
-    await settle(tx, "No se pudo guardar la importación.");
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([CIRCUITS, SOURCES], "readwrite");
+      const circuits = tx.objectStore(CIRCUITS);
+      let refused: CircuitChangedError | null = null;
+      const request = circuits.get(input.circuit.circuitId) as IDBRequest<StoredCircuit | undefined>;
+      request.onsuccess = () => {
+        if (circuitStamp(request.result) !== input.expected) {
+          refused = new CircuitChangedError();
+          tx.abort();
+          return;
+        }
+        circuits.put(input.circuit);
+        const sources = tx.objectStore(SOURCES);
+        for (const row of rows) sources.put(row);
+        for (const sourceId of input.drop) sources.delete([input.circuit.circuitId, sourceId]);
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(refused ?? writeFailure(tx.error, "No se pudo guardar la importación."));
+      tx.onabort = () => reject(refused ?? writeFailure(tx.error, "No se pudo guardar la importación. La escritura se abortó."));
+    });
   } finally {
     db.close();
+  }
+}
+
+/**
+ * Lo que identifica un estado guardado del circuito para saber si otro lo cambió: su última escritura
+ * y cuántas cargas lleva. Sin circuito, un sello propio.
+ */
+export function circuitStamp(circuit: StoredCircuit | undefined): string {
+  return circuit === undefined ? "sin circuito" : `${circuit.updatedAt}·${circuit.sources.length}`;
+}
+
+/** El circuito guardado ya no es el que se leyó antes de preparar la escritura: nada se ha escrito. */
+export class CircuitChangedError extends Error {
+  constructor() {
+    super("El circuito cambió mientras se preparaba la escritura: otra pestaña guardó en él.");
+    this.name = "CircuitChangedError";
   }
 }
 
@@ -561,12 +449,42 @@ export async function loadRetainedReadings(circuitId: string): Promise<readonly 
   }
 }
 
-export async function saveSnapshot(snapshot: CircuitSnapshot): Promise<void> {
+/**
+ * La instantánea de una fuente y su marca «con instantánea» en el circuito, en **una sola**
+ * transacción. La marca se pone sobre el circuito **tal como está guardado ahora**, no sobre el que se
+ * leyó al empezar: si otra pestaña acumuló entretanto, lo suyo se conserva. Si la fuente ya no está en
+ * el circuito, no se escribe nada (`CircuitChangedError`). Devuelve el circuito escrito.
+ *
+ * Antes eran dos escrituras: sin espacio entre ambas, quedaba una instantánea que el circuito no
+ * reclamaba, y la segunda pisaba el circuito entero con la copia leída al empezar (C-02, C-03).
+ */
+export async function saveSnapshotInCircuit(snapshot: CircuitSnapshot): Promise<StoredCircuit> {
   const db = await open();
   try {
-    const tx = db.transaction(SNAPSHOTS, "readwrite");
-    tx.objectStore(SNAPSHOTS).put({ circuitId: snapshot.circuitId, sourceId: snapshot.sourceId, snapshot } satisfies StoredSnapshot);
-    await settle(tx, "No se pudo guardar la instantánea.");
+    return await new Promise<StoredCircuit>((resolve, reject) => {
+      const tx = db.transaction([CIRCUITS, SNAPSHOTS], "readwrite");
+      const circuits = tx.objectStore(CIRCUITS);
+      let written: StoredCircuit | null = null;
+      let refused: CircuitChangedError | null = null;
+      const request = circuits.get(snapshot.circuitId) as IDBRequest<StoredCircuit | undefined>;
+      request.onsuccess = () => {
+        const current = request.result;
+        if (current === undefined || !current.sources.some((source) => source.sourceHash === snapshot.sourceHash)) {
+          refused = new CircuitChangedError();
+          tx.abort();
+          return;
+        }
+        written = {
+          ...current,
+          sources: current.sources.map((source) => (source.sourceHash === snapshot.sourceHash ? { ...source, snapshot: true } : source)),
+        };
+        circuits.put(written);
+        tx.objectStore(SNAPSHOTS).put({ circuitId: snapshot.circuitId, sourceId: snapshot.sourceId, snapshot } satisfies StoredSnapshot);
+      };
+      tx.oncomplete = () => resolve(written as StoredCircuit);
+      tx.onerror = () => reject(refused ?? writeFailure(tx.error, "No se pudo guardar la instantánea."));
+      tx.onabort = () => reject(refused ?? writeFailure(tx.error, "No se pudo guardar la instantánea. La escritura se abortó."));
+    });
   } finally {
     db.close();
   }
@@ -979,7 +897,7 @@ interface CaseEvidenceRow {
 }
 
 /** La revisión de una fila de `incidentCases`. */
-export async function caseRevisionOf(row: CaseRevisionRow): Promise<CaseRevision> {
+async function caseRevisionOf(row: CaseRevisionRow): Promise<CaseRevision> {
   return gunzipJson<CaseRevision>(row.gz);
 }
 

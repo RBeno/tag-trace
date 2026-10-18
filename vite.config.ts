@@ -9,10 +9,10 @@ function changelogVersion(): string {
   return match?.[1] ?? "dev";
 }
 
-/** La versión del almacén local, la misma que abre `src/persistence/store.ts`. */
+/** La versión del almacén local, la misma que abre `src/persistence/store-schema.ts`. */
 function storeVersion(): string {
-  const match = /^export const STORE_VERSION = (\d+);/m.exec(readFileSync(new URL("./src/persistence/store.ts", import.meta.url), "utf8"));
-  if (match?.[1] === undefined) throw new Error("No se encuentra STORE_VERSION en src/persistence/store.ts.");
+  const match = /^export const STORE_VERSION = (\d+);/m.exec(readFileSync(new URL("./src/persistence/store-schema.ts", import.meta.url), "utf8"));
+  if (match?.[1] === undefined) throw new Error("No se encuentra STORE_VERSION en src/persistence/store-schema.ts.");
   return match[1];
 }
 

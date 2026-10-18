@@ -107,7 +107,7 @@ export function franjaWindows(sources: readonly FranjaSource[]): readonly Franja
 }
 
 /** Dentro de una ventana: las dos lecturas de la transición. */
-export function insideWindow(transition: Pick<Transition, "fromTime" | "toTime">, window: Interval): boolean {
+function insideWindow(transition: Pick<Transition, "fromTime" | "toTime">, window: Interval): boolean {
   return transition.fromTime >= window.from && transition.toTime <= window.to;
 }
 
@@ -259,13 +259,23 @@ export function segmentHistories(
 ): readonly SegmentHistory[] {
   const keys = new Map<string, { from: string; to: string }>();
   for (const franja of franjas) for (const row of franja.bands) keys.set(pairKey(row.from, row.to), { from: row.from, to: row.to });
+  // Cada franja indexada por par una sola vez, en vez de buscar el par fila a fila en cada franja
+  // (B-09). Se guarda la **primera** fila de cada par, que es la que devolvía el `find` de antes.
+  const rowsByKey = franjas.map((franja) => {
+    const byKey = new Map<string, Pick<FranjaBand, "from" | "to" | "produccion" | "noche">>();
+    for (const row of franja.bands) {
+      const key = pairKey(row.from, row.to);
+      if (!byKey.has(key)) byKey.set(key, row);
+    }
+    return byKey;
+  });
 
   const histories: SegmentHistory[] = [];
   for (const [key, pair] of keys) {
     for (const regime of REGIMES) {
       const points: (SegmentHistoryPoint & { readonly band: Band })[] = [];
-      for (const franja of franjas) {
-        const band = franja.bands.find((row) => pairKey(row.from, row.to) === key)?.[regime] ?? null;
+      for (const [index, franja] of franjas.entries()) {
+        const band = rowsByKey[index]?.get(key)?.[regime] ?? null;
         if (band !== null) {
           points.push({ sourceId: franja.sourceId, p50Ms: band.p50Ms, p80Ms: band.p80Ms, p95Ms: band.p95Ms, samples: band.samples, band });
         }

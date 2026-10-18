@@ -85,7 +85,15 @@ export interface TagPlace {
   readonly successor: string | null;
 }
 
-/** Las lecturas de cada AGV en orden de tiempo. */
+/**
+ * Las lecturas de cada AGV en orden de tiempo.
+ *
+ * Precondición (B-10, revisión del 2026-10-18): `readings` llega en orden canónico —`sortReadings`
+ * con el sentido de su fuente (ADR-0013)—. El `sort` por instante es estable y conserva ese desempate
+ * entre dos lecturas del mismo AGV en el mismo instante. Aquí no se puede rehacer: el sentido de la
+ * pila no llega a esta función, y desempatar por fila ascendente invertiría el orden de las fuentes
+ * `newest-first`.
+ */
 function vehicleSteps(readings: readonly Reading[]): Map<string, Step[]> {
   const byVehicle = new Map<string, Step[]>();
   for (const entry of readings) {
@@ -121,7 +129,8 @@ function countNeighbours(
 
 /**
  * Dónde se lee cada tag: su predecesor y su sucesor dominantes en la secuencia de cada AGV. Es el
- * sitio que dan las lecturas, no la lista (R-GRA-015).
+ * sitio que dan las lecturas, no la lista (R-GRA-015). Las lecturas, en orden canónico (precondición
+ * de `vehicleSteps`, B-10): con dos del mismo AGV en el mismo instante, el vecino lo decide ese orden.
  */
 export function dominantNeighbours(readings: readonly Reading[], tagIds: ReadonlySet<string>): ReadonlyMap<string, TagPlace> {
   const { predecessors, successors } = countNeighbours(vehicleSteps(readings), (tagId) => tagIds.has(tagId));

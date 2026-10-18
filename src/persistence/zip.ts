@@ -57,20 +57,34 @@ async function inflate(data: Uint8Array, expected: number): Promise<Uint8Array> 
     .pipeThrough(new DecompressionStream("deflate-raw"))
     .getReader();
 
-  const out = new Uint8Array(expected);
+  // Por trozos y no reservando de golpe lo declarado: una cabecera que declara 256 MiB y trae cien
+  // bytes no debe costar 256 MiB de memoria antes de descubrirlo.
+  const chunks: Uint8Array[] = [];
   let written = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (written + value.byteLength > expected) {
-      await reader.cancel();
-      throw new ZipError("Una entrada descomprime más de lo que declara: contenedor rechazado.");
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (written + value.byteLength > expected) {
+        await reader.cancel();
+        throw new ZipError("Una entrada descomprime más de lo que declara: contenedor rechazado.");
+      }
+      chunks.push(value);
+      written += value.byteLength;
     }
-    out.set(value, written);
-    written += value.byteLength;
+  } catch (error) {
+    if (error instanceof ZipError) throw error;
+    // El flujo lanza un `TypeError` sin texto con un deflate dañado: se dice qué es.
+    throw new ZipError("Una entrada comprimida está dañada y no se puede descomprimir.");
   }
   if (written !== expected) {
     throw new ZipError(`Una entrada declara ${expected} bytes y descomprime ${written}.`);
+  }
+  const out = new Uint8Array(written);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
   }
   return out;
 }
@@ -151,14 +165,34 @@ export async function writeZip(entries: readonly ZipEntry[]): Promise<Uint8Array
   return out;
 }
 
+/** Una entrada del directorio, todavía sin descomprimir: `read` la descomprime y comprueba su CRC. */
+export interface ZipDirectoryEntry {
+  readonly name: string;
+  readonly read: () => Promise<Uint8Array>;
+}
+
 /**
- * Lee un zip entero aplicando los límites **antes** de descomprimir.
+ * Lee el directorio de un zip aplicando los límites **antes** de descomprimir nada.
  *
  * El orden importa: comprobar después de descomprimir es no comprobar nada, porque para entonces
- * la memoria ya se ha pedido.
+ * la memoria ya se ha pedido. Y separar el directorio de las entradas permite leer primero el
+ * manifiesto de un `.agvproj` y no descomprimir ninguna sección si el manifiesto ya lo rechaza
+ * (ADR-0012, regla 1).
+ *
+ * Cada posición que el contenedor declara se comprueba antes de leerla: un índice que apunta fuera
+ * del fichero (truncado o alterado) es un `ZipError` con su texto, no un `RangeError` del `DataView`.
  */
-export async function readZip(bytes: Uint8Array): Promise<readonly ZipEntry[]> {
+export function readZipDirectory(bytes: Uint8Array): readonly ZipDirectoryEntry[] {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const outside = (): ZipError => new ZipError("El contenedor está truncado o tiene un índice que apunta fuera de él.");
+  const u16 = (offset: number): number => {
+    if (offset < 0 || offset + 2 > bytes.byteLength) throw outside();
+    return view.getUint16(offset, true);
+  };
+  const u32 = (offset: number): number => {
+    if (offset < 0 || offset + 4 > bytes.byteLength) throw outside();
+    return view.getUint32(offset, true);
+  };
 
   let endOffset = -1;
   for (let index = bytes.byteLength - 22; index >= 0; index -= 1) {
@@ -169,27 +203,29 @@ export async function readZip(bytes: Uint8Array): Promise<readonly ZipEntry[]> {
   }
   if (endOffset < 0) throw new ZipError("No es un zip: falta el fin del directorio central.");
 
-  const count = view.getUint16(endOffset + 10, true);
+  const count = u16(endOffset + 10);
   if (count > ZIP_LIMITS.maxEntries) {
     throw new ZipError(`El contenedor declara ${count} entradas, por encima del límite.`);
   }
 
   const decoder = new TextDecoder();
-  const entries: ZipEntry[] = [];
-  let cursor = view.getUint32(endOffset + 16, true);
+  const entries: ZipDirectoryEntry[] = [];
+  let cursor = u32(endOffset + 16);
   let totalUncompressed = 0;
 
   for (let index = 0; index < count; index += 1) {
-    if (view.getUint32(cursor, true) !== CENTRAL_HEADER) {
+    if (u32(cursor) !== CENTRAL_HEADER) {
       throw new ZipError("El directorio central está corrupto.");
     }
-    const method = view.getUint16(cursor + 10, true);
-    const compressedSize = view.getUint32(cursor + 20, true);
-    const uncompressedSize = view.getUint32(cursor + 24, true);
-    const nameLength = view.getUint16(cursor + 28, true);
-    const extraLength = view.getUint16(cursor + 30, true);
-    const commentLength = view.getUint16(cursor + 32, true);
-    const localOffset = view.getUint32(cursor + 42, true);
+    const method = u16(cursor + 10);
+    const crc = u32(cursor + 16);
+    const compressedSize = u32(cursor + 20);
+    const uncompressedSize = u32(cursor + 24);
+    const nameLength = u16(cursor + 28);
+    const extraLength = u16(cursor + 30);
+    const commentLength = u16(cursor + 32);
+    const localOffset = u32(cursor + 42);
+    if (cursor + 46 + nameLength > bytes.byteLength) throw outside();
     const name = decoder.decode(bytes.subarray(cursor + 46, cursor + 46 + nameLength));
 
     totalUncompressed += uncompressedSize;
@@ -200,17 +236,29 @@ export async function readZip(bytes: Uint8Array): Promise<readonly ZipEntry[]> {
       throw new ZipError(`La entrada «${name}» usa un método de compresión no admitido.`);
     }
 
-    const localNameLength = view.getUint16(localOffset + 26, true);
-    const localExtraLength = view.getUint16(localOffset + 28, true);
+    const localNameLength = u16(localOffset + 26);
+    const localExtraLength = u16(localOffset + 28);
     const start = localOffset + 30 + localNameLength + localExtraLength;
+    if (start + compressedSize > bytes.byteLength) throw outside();
     const payload = bytes.subarray(start, start + compressedSize);
-    const data = method === METHOD_DEFLATE ? await inflate(payload, uncompressedSize) : payload;
-
-    if (crc32(data) !== view.getUint32(cursor + 16, true)) {
-      throw new ZipError(`La entrada «${name}» no supera su comprobación de integridad.`);
-    }
-    entries.push({ name, data });
+    entries.push({
+      name,
+      read: async () => {
+        const data = method === METHOD_DEFLATE ? await inflate(payload, uncompressedSize) : payload;
+        if (crc32(data) !== crc) {
+          throw new ZipError(`La entrada «${name}» no supera su comprobación de integridad.`);
+        }
+        return data;
+      },
+    });
     cursor += 46 + nameLength + extraLength + commentLength;
   }
+  return entries;
+}
+
+/** Lee un zip entero: el directorio con sus límites y después cada entrada, en orden. */
+export async function readZip(bytes: Uint8Array): Promise<readonly ZipEntry[]> {
+  const entries: ZipEntry[] = [];
+  for (const entry of readZipDirectory(bytes)) entries.push({ name: entry.name, data: await entry.read() });
   return entries;
 }

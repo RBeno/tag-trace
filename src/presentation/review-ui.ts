@@ -212,9 +212,14 @@ export function createReviewSession(
         : { key: control.key, state, note, updatedAt: Date.now(), title: control.title, figure: control.figure };
     if (entry === null) entries.delete(control.key);
     else entries.set(control.key, entry);
+    // Marcar rehace la frase de estado y las cifras de arriba, que cambian de alto: sin compensarlo,
+    // la página saltaba unos 400 px con cada marca. La tarjeta se queda donde estaba en la pantalla.
+    const before = control.card.getBoundingClientRect().top;
     paint(control);
     refresh();
     notify();
+    const shift = control.card.getBoundingClientRect().top - before;
+    if (shift !== 0) window.scrollBy(0, shift);
     saveReview(circuitId, control.key, entry).catch(() =>
       onError("La marca se ve en pantalla pero no se ha podido guardar en el dispositivo. No recargues la página hasta volver a intentarlo."),
     );

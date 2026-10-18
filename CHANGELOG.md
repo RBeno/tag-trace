@@ -2,6 +2,83 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto siguen versionado semántico (`docs/VERSIONING.md`).
 
+## [3.90.0] - 2026-10-18
+
+Lo que la revisión general dejó propuesto y no necesitaba una decisión del propietario
+(`docs/REVISION_2026-10-18.md` §8).
+
+**Para quien usa la aplicación:** si el separador de columnas es dudoso, ahora lo eliges tú; se leen los
+ficheros «Texto Unicode» de Excel; dos pestañas importando al mismo circuito ya no lo estropean; la barra
+de progreso no retrocede ni llega al final antes de tiempo; marcar un hallazgo ya no mueve la página; y
+las palabras «horquilla», «valla», «régimen» y «pulmón» tienen su explicación a un toque.
+
+### Corregido
+
+- **Dos pestañas, un circuito**: la acumulación compara dentro de su transacción el circuito guardado con
+  el que leyó y, si otra pestaña escribió entretanto, no escribe nada y lo dice (`CIRCUIT_CHANGED`); antes
+  quedaban lecturas, instantáneas y archivos sin dueño. La instantánea y su marca en el circuito van en una
+  sola transacción, sobre el circuito tal como está. Comprobado en el navegador con la prueba de carrera
+  de la revisión.
+- **Sin espacio a mitad**: si faltó al guardar la instantánea, el mensaje dice que las lecturas sí se
+  guardaron, no «no se ha escrito nada».
+- **Recuentos de hallazgos**: el informe contaba 15 menos que la barra (omitía «Más hallazgos del
+  periodo»); la memoria explica por qué su cifra es menor que la de la bandeja.
+- **El `.agvproj`** solo descomprime el manifiesto antes de validarlo y después solo las secciones que
+  declara; un índice fuera del fichero, un JSON roto o un manifiesto con otra forma son un error con su
+  texto, no un `RangeError` o un `TypeError` (TC-393). El zip descomprime por trozos sin reservar lo declarado.
+- **El análisis que no arranca**: si el Worker no confirma una importación en 15 s, la interfaz lo dice y
+  se libera. El hash y la decodificación del fichero, dentro del manejo de errores del Worker.
+- **Interfaz**: la página ya no salta al marcar un hallazgo; cambiar de pestaña no hereda el
+  desplazamiento; un fichero cargado dos veces no sale «repetido de sí mismo»; la tabla de periodos sin leer del
+  expediente de un AGV va en una caja desplazable (y enfocable con el teclado) y no se parte letra a letra
+  en el móvil.
+
+### Añadido
+
+- **Separador elegido a mano** tras un `DELIMITER_AMBIGUOUS`, como el orden de fecha (R-DAT-002, TC-391).
+- **Codificación**: UTF-16 con BOM; aviso cuando un fichero no es UTF-8 válido pero trae caracteres que sí
+  lo son (TC-392). Aviso si dos columnas de la cabecera podrían ser la misma.
+- **Palabras explicadas** en Tiempos y en Línea y calles; los campos de fecha dicen en qué hora se
+  escriben; la copia exportada se confirma junto a su botón, con nombre y tamaño.
+- **La noche sin horas se dice**: con la misma hora de inicio y de fin no hay noche, y el valor de planta
+  lo avisa (TC-383).
+- **`check_docs.py`** comprueba tablas bien formadas, el estado de cada ADR frente a `DECISIONS.md` y que
+  ninguna pregunta esté abierta y cerrada a la vez.
+
+### Cambiado
+
+- **Rendimiento del dominio sin cambiar resultados**: cortes colectivos, contraste cortes–ráfagas,
+  adelantamientos FIFO, antigüedad en calles e historia por tramo pasan de cuadráticos a ventanas e
+  índices; la salida es la misma, orden incluido, en 400 casos por función (TC-381). Con 20.000 cortes,
+  3,7 s → 27 ms; con 20.000 pasadas FIFO, 2,1 s → 64 ms.
+- **Empates de instante**: los cortes de conexión desempatan por fila (TC-382); las demás funciones
+  declaran que reciben lecturas en orden canónico. Pruebas propias para la cobertura, el orden y los
+  bordes de los cortes (TC-384 a TC-386).
+- **Progreso por etapas**, sin retroceder; tras leer las filas, «analizando».
+- **Textos**: «30,0 h»; «variación 3 %» en vez de «CV 0.03»; los botones del banco dicen qué miden; una
+  tira del inventario al 100 % ya no se pinta; la etiqueta de «a la misma hora» se entiende (TC-387).
+- **Código**: las migraciones del almacén en `store-schema.ts`; 43 símbolos dejan de exportarse y una
+  función sin uso se borra; las constantes de criterio llevan su regla.
+
+### Documentación
+
+- **`PROJECT_MEMORY.md` en 208 líneas** con lo vigente y el relevo; todo lo fechado, íntegro y en orden, en
+  el nuevo `docs/history/DECISION_LOG.md` (comprobado frase a frase).
+- `DOMAIN_MODEL.md` con la tabla del concepto al código; `RISK_REGISTER.md` con el estado de cada riesgo al
+  2026-10-18 (probabilidad e impacto, sin tocar); `ALGORITHM_CATALOG.md` y `UX_SPEC.md` con sus secciones en
+  orden y sin «Parte NN»; `CONTEXT_INDEX.md` señala la sección, no el documento entero; manual y guía en tú,
+  y la guía con los mensajes nuevos.
+- `WORKER_PROTOCOL.md` (`CIRCUIT_CHANGED`, plazo de `accepted`, progreso), `SECURITY_PRIVACY.md` §9,
+  `RULE_CATALOG.md` (R-DAT-002), `CONFIG_SCHEMA.md` §3.2.
+
+### Gobierno
+
+- Cuatro preguntas nuevas: OQ-181 («no lo lee» sin pasada probada, frente a R-OPP-008), OQ-182 (la
+  resolución de minuto decidida con una sola transición), OQ-183 (a dónde vuelve la página tras borrar un
+  circuito) y OQ-184 (R-GRA-014 «la mayoría» frente a §6.7 «la mitad o más»).
+- Dejado a propósito, con su motivo, en `REVISION_2026-10-18.md` §8.3: textos que una prueba fija
+  literalmente, cambios de diseño y los troceos grandes del código.
+
 ## [3.89.0] - 2026-10-18
 
 Revisión general del producto y de la documentación: cinco revisiones en paralelo (código, dominio,

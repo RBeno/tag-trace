@@ -86,7 +86,8 @@ export function createBenchPanel(hooks: Hooks): BenchPanel {
   status.setAttribute("role", "status");
   const results = element("div", "bench-results");
   const buttons = BENCH_SCENARIOS.map((scenario) => {
-    const button = element("button", undefined, `Medir ${scenario.id}`);
+    // El identificador (PERF-D2…) va en el informe y en la tabla; el botón dice qué mide.
+    const button = element("button", undefined, `Medir ${scenario.label.split(",")[0]}`);
     button.type = "button";
     button.title = scenario.label;
     button.addEventListener("click", () => void run([scenario]));
@@ -282,7 +283,7 @@ export function createBenchPanel(hooks: Hooks): BenchPanel {
       }
       lastReport = JSON.stringify(benchReport({ appVersion: hooks.appVersion, measuredAt: Date.now(), device: device(), visibleThroughout, runs }), null, 2);
       status.textContent = visibleThroughout
-        ? "Medida terminada. Descarga el informe y devuélvelo; lo que se ve ahora es el sintético, vuelve a cargar tu fichero para seguir."
+        ? "Medida terminada. Descarga el informe y envíalo a quien lleva el piloto. Lo que se ve ahora es el circuito sintético de la medida: vuelve a cargar tu fichero para seguir con el tuyo."
         : "Medida terminada, pero la pestaña dejó de verse en algún momento: los huecos de fotograma no valen. Repítela con la pestaña a la vista.";
     } finally {
       running = false;

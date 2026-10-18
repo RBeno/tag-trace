@@ -78,6 +78,8 @@ export type ImportErrorCode =
   | "LIMIT_EXCEEDED"
   /** Sin espacio en el dispositivo para guardar (3.86.0). */
   | "STORAGE_FULL"
+  /** Otra pestaña escribió en el mismo circuito mientras se preparaba la escritura (3.90.0). */
+  | "CIRCUIT_CHANGED"
   | "INTERNAL";
 
 export interface StartMessage {
@@ -88,6 +90,8 @@ export interface StartMessage {
   readonly zone: string;
   /** Si el usuario ya fijó el orden de campos, se respeta; si no, se detecta y puede fallar. */
   readonly fieldOrder?: FieldOrder;
+  /** Si el usuario fijó el separador tras un `DELIMITER_AMBIGUOUS`, se respeta (3.90.0). */
+  readonly delimiter?: Delimiter;
   /**
    * Circuito en el que **acumular** esta fuente, si lo hay.
    *

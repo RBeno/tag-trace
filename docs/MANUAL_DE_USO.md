@@ -1,6 +1,6 @@
 ---
 document_id: TT-MANUAL-001
-version: 0.2.0
+version: 0.4.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -35,11 +35,11 @@ una persona los confirme.
 2. En **Circuito**, su nombre. Con nombre, lo importado **se acumula** en ese circuito y se guarda en el
    dispositivo; sin nombre, se analiza y no se guarda nada.
 3. Mientras importa, la barra de progreso y «Cancelar». Cancelar responde en menos de un segundo hasta
-   que empieza a guardar; desde «Guardando en este dispositivo; ya no se puede cancelar», termina sola.
+   que empieza a guardar; desde «Guardando y analizando en este dispositivo; ya no se puede cancelar», termina sola.
 4. Al terminar, el Resumen: la frase de estado, las cifras y los hallazgos.
 
 Si el fichero es de otro circuito, no se acumula y se dice por qué. Si la fecha es ambigua (día y mes
-intercambiables), se pide el formato.
+intercambiables), se pide el formato; si lo ambiguo es el separador de columnas, se pide el separador.
 
 Las listas del circuito, el historial de flota y el registro de conexiones (pestaña **Datos**) se cargan
 cuando el circuito ya existe, es decir, después de la primera importación con nombre; y se aplican al
@@ -58,8 +58,8 @@ cuando el circuito ya existe, es decir, después de la primera importación con 
 | **Memoria** | La memoria consolidada del circuito: versiones, comparación y consolidar. |
 | **Datos** | Listas, flota, conexiones, valores de planta, **copia del circuito**, espacio, lecturas y «Medir este dispositivo». |
 
-Arriba, **Expediente** busca un AGV o un tag y enseña todo lo suyo. Cada gráfico tiene «Ver los mismos
-datos en tabla». Con el dedo, un toque fija la lectura de un gráfico.
+Arriba, **Expediente** busca un AGV o un tag y enseña todo lo suyo. El botón «Tabla» de cada gráfico
+abre los mismos datos en tabla. Con el dedo, un toque fija la lectura de un gráfico.
 
 ## 5. Revisar y consolidar
 
@@ -89,7 +89,7 @@ imprime a PDF; también hay CSV de la cronología y de las lecturas.
 
 - **Exportar circuito (.agvproj)** (Datos → Copia del circuito) descarga un fichero con todo lo del
   circuito salvo las lecturas en bruto: fuentes, instantáneas, memoria, plano, valores de planta,
-  revisión en campo y expedientes con sus recortes. **Hágalo después de cada consolidación.**
+  revisión en campo y expedientes con sus recortes. **Hazlo después de cada consolidación.**
 - **Abrir un circuito exportado (.agvproj)** lo incorpora sin mezclar historiales; lo que no coincide se
   dice y no se toca.
 - **Espacio en este dispositivo** dice cuánto ocupa y si el navegador lo guarda de forma persistente.
@@ -104,5 +104,5 @@ curso. Si cambia el formato de lo guardado, se pide exportar antes la copia.
 ## 9. Medir el dispositivo
 
 En **Datos → Medir este dispositivo**, «Medir los tres» genera volúmenes sintéticos, los analiza sin
-guardar nada y dice si cada cifra está dentro del presupuesto. Deje la pestaña a la vista mientras
+guardar nada y dice si cada cifra está dentro del presupuesto. Deja la pestaña a la vista mientras
 mide. «Descargar el informe (JSON)» es lo que se devuelve para el piloto.

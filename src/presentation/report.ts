@@ -65,7 +65,7 @@ export interface ReportSelection {
  * Una copia de un trozo de la página lista para el informe: sin nada que se pulse, con los enlaces
  * convertidos en texto, los `details` abiertos, lo escondido fuera y cada `canvas` como imagen.
  */
-export function cleanClone(original: HTMLElement): HTMLElement {
+function cleanClone(original: HTMLElement): HTMLElement {
   const clone = original.cloneNode(true) as HTMLElement;
   const originalCanvases = [...original.querySelectorAll("canvas")];
   const cloneCanvases = [...clone.querySelectorAll("canvas")];
@@ -171,7 +171,9 @@ function findingsHtml(source: ReportSource, selection: ReportSelection): { html:
   let total = 0;
   for (const card of source.tray.querySelectorAll<HTMLElement>(".finding.reviewable")) {
     const tab = card.dataset["tab"] ?? "";
-    if (!selection.sections.has(tab)) continue;
+    // Las de «Más hallazgos del periodo» nacen en el Resumen, que no es una sección elegible: van
+    // siempre. Sin esto, el informe contaba 15 hallazgos menos que la barra de revisión.
+    if (tab !== "resumen" && !selection.sections.has(tab)) continue;
     const state = (card.dataset["review"] ?? "pendiente") as ReviewState;
     if (selection.review !== null && state !== selection.review) continue;
     counts[state] += 1;
@@ -232,7 +234,7 @@ function sectionHtml(section: ReportSection, withTables: boolean): string {
   return parts.join("\n");
 }
 
-export function buildReportHtml(source: ReportSource, selection: ReportSelection): string {
+function buildReportHtml(source: ReportSource, selection: ReportSelection): string {
   const now = Date.now();
   const coverage = coverageText(source);
   const findings = findingsHtml(source, selection);
@@ -278,7 +280,7 @@ export function buildReportHtml(source: ReportSource, selection: ReportSelection
 }
 
 /** Descarga el informe como fichero HTML y devuelve su nombre. */
-export function downloadReport(source: ReportSource, selection: ReportSelection): string {
+function downloadReport(source: ReportSource, selection: ReportSelection): string {
   const html = buildReportHtml(source, selection);
   const name = reportFileName(source.circuitId, new Date());
   downloadBlob(name, new Blob([html], { type: "text/html;charset=utf-8" }));

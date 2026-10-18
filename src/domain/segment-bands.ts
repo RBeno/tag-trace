@@ -34,7 +34,7 @@
 
 import { mergeIntervals, type Interval } from "./coverage.js";
 import { quantile, type Transition } from "./graph.js";
-import { localHourReader } from "./silence-kind.js";
+import { localHourReader, QUARTER_MS } from "./silence-kind.js";
 
 export type Regime = "produccion" | "noche";
 
@@ -144,6 +144,16 @@ export function sourceResolutionMs(transitions: readonly Pick<Transition, "fromT
   return transitions.every((transition) => (transition.toTime - transition.fromTime) % 60_000 === 0) ? 60_000 : 1_000;
 }
 
+/**
+ * La horquilla de unas duraciones (p50, p80, p95, media y M2) y su valla con el margen `floorMs`.
+ * Ordena `durations` en su sitio.
+ *
+ * **Precondición: al menos una duración.** Con una lista vacía devuelve una horquilla de ceros con
+ * `samples: 0` y la valla igual al margen, que no es una horquilla sino la ausencia de muestras (B-05,
+ * revisión del 2026-10-18; CONFIG_SCHEMA §2.5 prohíbe el 0 silencioso). No se cambia la firma porque
+ * todos los llamadores comprueban antes las muestras mínimas (`minBandSamples` y equivalentes, mayores
+ * que cero); quien la llame de nuevo tiene que hacer lo mismo y dar `null` sin muestras.
+ */
 export function bandOf(durations: number[], floorMs: number): Band {
   const sorted = durations.sort((a, b) => a - b);
   const p50Ms = quantile(sorted, 0.5);
@@ -233,8 +243,10 @@ export interface RegimeExposure {
   readonly paradaMs: number;
 }
 
-const QUARTER_MS = 15 * 60_000;
-
+/**
+ * Se recorre la cobertura por cuartos de hora UTC (`QUARTER_MS`, `silence-kind.ts`): dentro de un
+ * cuarto la hora local no cambia, así que el régimen leído en su inicio vale para todo el cuarto.
+ */
 export function regimeExposure(
   coverage: readonly Interval[],
   productionStops: readonly Interval[],

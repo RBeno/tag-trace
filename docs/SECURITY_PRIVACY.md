@@ -1,6 +1,6 @@
 ---
 document_id: TT-SEC-001
-version: 0.8.0
+version: 0.9.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -121,7 +121,7 @@ Abrirlo no relaja ninguna regla: la endurece, porque un error deja de ser recupe
 | Red (TH-002) | Ninguna petición propia; política publicada con `connect-src 'none'`; flujo entero sin red probado (§4). |
 | XSS (TH-007) | Todo lo importado se pinta como texto; ningún `innerHTML` con datos; los informes se componen escapando o serializando nodos hechos con texto; los enlaces son `blob:` propios o anclas fijas. |
 | Registros (TH-003) | Ningún `console.*` en la aplicación; los errores llevan tipo y texto, nunca filas. |
-| Contenedor y límites (TH-006), revisión 2026-10-18 | Los nombres de sección del `.agvproj` se acotan (`SECTION_NAME`) y el objeto de secciones no tiene prototipo: una sección `__proto__` ya no toca nada. El límite de 512 MiB del fichero de lecturas se comprueba por `file.size` antes de leerlo (antes: tras leer, hashear y decodificar, 42 s y 1,2 GB para 541 MB). Un rechazo de promesa sin capturar en el Worker se convierte en un `error` con texto fijo, sin datos de la fuente. |
+| Contenedor y límites (TH-006), revisión 2026-10-18 | Los nombres de sección del `.agvproj` se acotan (`SECTION_NAME`) y el objeto de secciones no tiene prototipo: una sección `__proto__` ya no toca nada. El límite de 512 MiB del fichero de lecturas se comprueba por `file.size` antes de leerlo (antes: tras leer, hashear y decodificar, 42 s y 1,2 GB para 541 MB). Un rechazo de promesa sin capturar en el Worker se convierte en un `error` con texto fijo, sin datos de la fuente. Desde 3.90.0 el lector de zip comprueba cada posición antes de leerla (un índice fuera del fichero es un error con texto, no un `RangeError`), descomprime por trozos sin reservar lo declarado, y el `.agvproj` solo descomprime el manifiesto antes de validarlo y después solo las secciones que declara; un manifiesto con otra forma o un JSON roto es un `ProjectError`. |
 | Proyecto manipulado (TH-005) | Zip con límites de entradas y de tamaño descomprimido; integridad por hashes. |
 | Pérdida por limpieza (TH-009) | Desde 3.86.0, aviso de guardado no persistente, petición de guardado persistente y espacio usado a la vista. |
 | Dependencias (TH-004) | `npm audit` tenía cinco avisos, todos en herramientas de desarrollo (servidor de Vite, Vitest), ninguno en lo publicado. Vite pasa a 7.3.6 y `source-map-js` se corrige. Quedan tres de Vitest 3 (`tinypool`, `@vitest/mocker` y su servidor de interfaz) que solo se corrigen con Vitest 4 o 5, versión mayor; no se usan ni el modo navegador ni la interfaz de Vitest, y npm 10 falla al resolver esa subida aquí. Riesgo aceptado por el propietario hasta G6 (OQ-176, 2026-10-18) y resuelto en 3.88.4: Vitest pasa a 5.0.5 y `npm audit` queda sin avisos. Vitest 4.1.x no se pudo instalar con npm 10 (falla al cargar sus dependencias opcionales entre pares); 5.0.5 sí. |

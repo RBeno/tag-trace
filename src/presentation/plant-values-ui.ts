@@ -389,6 +389,8 @@ export function createPlantValuesPanel(input: PlantValuesPanelInput): PlantValue
     item.append(node("p", "plant-value-label", entry.label));
     item.append(node("p", "muted", `Provisional: ${fmt(entry, entry.provisional)}`));
     item.append(currentLine(entry, entry.current));
+    // Lo que el valor provoca y conviene saber (la noche con la misma hora de inicio y de fin, B-13).
+    for (const note of entry.notes ?? []) item.append(node("p", "plant-value-boundary", note));
     if (entry.changesWithin !== null) {
       item.append(
         node(

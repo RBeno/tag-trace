@@ -62,7 +62,7 @@ document.addEventListener("keydown", (event) => {
  * tags del anillo, en orden»), y `section` la figura o el encabezado de donde viene, para que el
  * cajón diga de qué es la tabla aunque la página de detrás se haya desplazado.
  */
-export function openDrawer(label: string, section: string, build: () => HTMLElement, from: HTMLElement): void {
+function openDrawer(label: string, section: string, build: () => HTMLElement, from: HTMLElement): void {
   if (!drawer.isConnected) document.body.append(drawer);
   opener = from;
   title.textContent = label;

@@ -50,12 +50,13 @@ const CLEAN_DELIMITER_CONSISTENCY = 0.9;
 const DELIMITER_MARGIN = 0.1;
 
 /**
- * F1a·0 no tiene todavía vista previa con elección manual de separador, así que la recuperación no
- * puede prometerla. Se dice lo que el usuario puede hacer hoy, no lo que hará la aplicación luego.
+ * Desde 3.90.0 la persona puede fijar el separador a mano, como el orden de fecha: el programa no
+ * elige por ella cuando dos explican el fichero casi igual (una columna con coma decimal en un fichero
+ * con «;», por ejemplo).
  */
-const NO_MANUAL_DELIMITER =
-  "Comprueba que la exportación usa un solo separador y que todas las filas tienen el mismo " +
-  "número de campos. Fijarlo a mano todavía no es posible.";
+const CHOOSE_DELIMITER =
+  "Elige abajo el separador que usa la exportación y vuelve a importar; el programa no lo elige " +
+  "por ti. Si ninguno funciona, comprueba que todas las filas tienen el mismo número de campos.";
 
 /** Cada cuántas filas se atiende la cancelación y se informa del progreso. */
 const CHECKPOINT_ROWS = 20_000;
@@ -79,6 +80,8 @@ export interface ImportOptions {
   readonly byteSize: number;
   readonly zone: string;
   readonly fieldOrder?: FieldOrder | undefined;
+  /** Separador fijado por la persona tras un `DELIMITER_AMBIGUOUS`; sin él, se detecta. */
+  readonly delimiter?: Delimiter | undefined;
   /**
    * Codificación con la que el llamante decodificó el texto. El núcleo recibe texto ya decodificado
    * y no puede averiguarla, así que solo la transporta. Si nadie la declara se dice «desconocida»,
@@ -187,7 +190,7 @@ export function unquoteField(field: string): string {
  * Si la cabecera no se reconoce se falla con el esquema detectado a la vista, en lugar de asumir un
  * orden posicional que produciría lecturas silenciosamente equivocadas.
  */
-export function mapColumns(header: readonly string[]): ColumnMap {
+function mapColumns(header: readonly string[]): ColumnMap {
   const normalised = header.map(normaliseHeaderCell);
   const find = (aliases: readonly string[]): number =>
     normalised.findIndex((cell) => aliases.includes(cell));
@@ -210,6 +213,30 @@ export function mapColumns(header: readonly string[]): ColumnMap {
     );
   }
   return { time, agv, tag };
+}
+
+/** El nombre de un separador en palabras, para los mensajes. */
+function delimiterName(delimiter: Delimiter): string {
+  return delimiter === "\t" ? "tabulador" : delimiter === ";" ? "punto y coma" : "coma";
+}
+
+/**
+ * Los papeles —fecha, AGV, tag— que casan con más de una columna de la cabecera. `mapColumns` toma la
+ * primera; dos columnas «Tag» no son un error, pero quien importa tiene que saber cuál se leyó.
+ */
+function repeatedColumns(header: readonly string[]): { readonly role: string; readonly columns: readonly number[] }[] {
+  const normalised = header.map(normaliseHeaderCell);
+  const roles: readonly (readonly [string, readonly string[]])[] = [
+    ["fecha/hora", HEADER_ALIASES.time],
+    ["AGV", HEADER_ALIASES.agv],
+    ["tag", HEADER_ALIASES.tag],
+  ];
+  return roles
+    .map(([role, aliases]) => ({
+      role,
+      columns: normalised.flatMap((cell, index) => (aliases.includes(cell) ? [index] : [])),
+    }))
+    .filter((entry) => entry.columns.length > 1);
 }
 
 /** Parte una línea sin usar expresiones regulares, y recorta campos desmesurados. */
@@ -269,31 +296,41 @@ export function importReadings(
   callbacks.onProgress("sampling", 0, 1, "Detectando estructura");
   const sample = lines.slice(0, Math.min(lines.length, 500));
   const ranking = rankDelimiters(sample);
+  const chosen = options.delimiter === undefined ? undefined : ranking.find((candidate) => candidate.delimiter === options.delimiter);
+  if (chosen !== undefined && chosen.fieldCount <= 1) {
+    throw new ImportFailure(
+      "DELIMITER_AMBIGUOUS",
+      `Con «${delimiterName(chosen.delimiter)}» como separador el fichero no tiene columnas.`,
+      CHOOSE_DELIMITER,
+      undefined,
+      sample.slice(0, 3).map(excerpt),
+    );
+  }
   const viable = ranking.filter(
     (candidate) =>
       candidate.fieldCount > 1 && candidate.confidence >= MIN_DELIMITER_CONSISTENCY,
   );
 
-  if (viable.length === 0) {
+  if (chosen === undefined && viable.length === 0) {
     throw new ImportFailure(
       "DELIMITER_AMBIGUOUS",
       `Ningún separador produce un número de campos consistente (mejor intento: ` +
         `${(ranking[0]?.confidence ?? 0).toFixed(2)} de consistencia).`,
-      NO_MANUAL_DELIMITER,
+      CHOOSE_DELIMITER,
       undefined,
       sample.slice(0, 3).map(excerpt),
     );
   }
 
-  const detection = viable[0] as DelimiterDetection;
+  const detection = chosen ?? (viable[0] as DelimiterDetection);
   const runnerUp = viable[1];
-  if (runnerUp !== undefined && detection.confidence - runnerUp.confidence < DELIMITER_MARGIN) {
+  if (chosen === undefined && runnerUp !== undefined && detection.confidence - runnerUp.confidence < DELIMITER_MARGIN) {
     throw new ImportFailure(
       "DELIMITER_AMBIGUOUS",
       `Dos separadores explican el fichero casi igual de bien ` +
         `(«${detection.delimiter}» ${detection.confidence.toFixed(2)} frente a ` +
         `«${runnerUp.delimiter}» ${runnerUp.confidence.toFixed(2)}): elegir uno sería adivinar.`,
-      NO_MANUAL_DELIMITER,
+      CHOOSE_DELIMITER,
       undefined,
       sample.slice(0, 3).map(excerpt),
     );
@@ -303,6 +340,7 @@ export function importReadings(
     cell.replace(/^\ufeff/, "").trim(),
   );
   const columns = mapColumns(header);
+  const repeated = repeatedColumns(header);
 
   let fieldOrder: FieldOrder;
   let fieldOrderEvidence: string;
@@ -503,6 +541,15 @@ export function importReadings(
   const sameInstant = measureSameInstant(readings);
 
   const warnings: string[] = [];
+  if (chosen !== undefined) {
+    warnings.push(`Separador «${delimiterName(chosen.delimiter)}» fijado por ti, no detectado.`);
+  }
+  for (const entry of repeated) {
+    warnings.push(
+      `La cabecera trae ${entry.columns.length} columnas que podrían ser «${entry.role}» ` +
+        `(${entry.columns.map((index) => `«${header[index]}», columna ${index + 1}`).join(" y ")}): se usa la primera.`,
+    );
+  }
   if (detection.confidence < CLEAN_DELIMITER_CONSISTENCY) {
     warnings.push(
       `El separador «${detection.delimiter}» solo produce ${detection.fieldCount} campos en el ` +

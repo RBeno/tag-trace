@@ -20,12 +20,12 @@ import { regimeLabel } from "./labels.js";
 import { button, node } from "./dom.js";
 
 /** Kilobytes con una decimal y coma, como el resto de cifras de la interfaz. */
-export function kilobytes(bytes: number): string {
+function kilobytes(bytes: number): string {
   return `${(bytes / 1024).toFixed(1).replace(".", ",")} KB`;
 }
 
 /** Cada bloqueo, en palabras que no exigen conocer el código (UX_SPEC §4.4). */
-export const BLOCKER_LABEL: Readonly<Record<BlockerCode, string>> = {
+const BLOCKER_LABEL: Readonly<Record<BlockerCode, string>> = {
   "hallazgos-pendientes": "Hallazgos pendientes de revisar",
   "periodo-de-incidencia": "Periodo de incidencia: hay hallazgos confirmados que pueden parar la planta",
   "sin-instantanea": "El fichero no tiene instantánea",
@@ -34,7 +34,7 @@ export const BLOCKER_LABEL: Readonly<Record<BlockerCode, string>> = {
 };
 
 /** Cada clase de cambio frente al esperado (§8), y si pasa al esperado. */
-export const CHANGE_CLASS_LABEL: Readonly<Record<ChangeClass, { readonly text: string; readonly adopted: boolean }>> = {
+const CHANGE_CLASS_LABEL: Readonly<Record<ChangeClass, { readonly text: string; readonly adopted: boolean }>> = {
   "cambio-confirmado": { text: "Confirmados por una persona (plano físico)", adopted: true },
   "cambio-colectivo-sostenido": { text: "Colectivos y sostenidos", adopted: true },
   "deriva-pendiente": { text: "Derivas pendientes", adopted: false },
@@ -43,7 +43,7 @@ export const CHANGE_CLASS_LABEL: Readonly<Record<ChangeClass, { readonly text: s
 };
 
 /** «3 cambios adoptados, 5 pendientes, 1 incidencia excluida». */
-export function changeSummaryLine(summary: ChangeSummary): string {
+function changeSummaryLine(summary: ChangeSummary): string {
   return (
     `${summary.adopted} ${summary.adopted === 1 ? "cambio adoptado" : "cambios adoptados"}, ` +
     `${summary.pending} ${summary.pending === 1 ? "pendiente" : "pendientes"}, ` +
@@ -52,7 +52,7 @@ export function changeSummaryLine(summary: ChangeSummary): string {
 }
 
 /** Lo que toca una incidencia, en palabras: sus tags y cuántos tramos; la de un AGV, que no toca el grafo. */
-export function incidentReach(incident: IncidentRecord): string {
+function incidentReach(incident: IncidentRecord): string {
   const tags = incident.subjects.filter((key) => key.startsWith("vertice|")).map((key) => key.slice("vertice|".length));
   // Un tramo en dos regímenes es el mismo tramo.
   const edges = new Set(incident.subjects.filter((key) => key.startsWith("arista|")).map((key) => key.split("|").slice(1, 3).join("→"))).size;
@@ -65,7 +65,7 @@ export function incidentReach(incident: IncidentRecord): string {
  * Cuándo ocurrió una incidencia (OQ-149): «de lun 12:05 a lun 12:40», «en lun 12:05» si es un instante,
  * y una por parada si hubo varias. Vacío en las incidencias guardadas antes, que no traen ventana.
  */
-export function incidentWhen(incident: IncidentRecord, format: (utcMs: number) => string): string {
+function incidentWhen(incident: IncidentRecord, format: (utcMs: number) => string): string {
   const windows = incident.windows ?? (incident.window === undefined ? [] : [incident.window]);
   return windows.map((window) => (window.from === window.to ? `en ${format(window.from)}` : `de ${format(window.from)} a ${format(window.to)}`)).join(" · ");
 }
@@ -74,7 +74,7 @@ export function incidentWhen(incident: IncidentRecord, format: (utcMs: number) =
  * Las ventanas que se ofrecen recortar de una incidencia, una fila por cada una (OQ-155, propietario
  * 2026-09-27): `windows` si las trae (una por parada), si no su `window`; ninguna si no tiene.
  */
-export function incidentWindows(incident: IncidentRecord): readonly { readonly from: number; readonly to: number }[] {
+function incidentWindows(incident: IncidentRecord): readonly { readonly from: number; readonly to: number }[] {
   return incident.windows ?? (incident.window === undefined ? [] : [incident.window]);
 }
 
@@ -84,7 +84,7 @@ function cutChoiceKey(incidentKey: string, windowIndex: number): string {
 }
 
 /** Un recorte aplicado, en palabras (OQ-148): «de lun 12:05 a lun 12:40, solo el AGV 0007: quita 3 lecturas». */
-export function cutLine(cut: AppliedCut, format: (utcMs: number) => string): string {
+function cutLine(cut: AppliedCut, format: (utcMs: number) => string): string {
   const who = cut.agvId === undefined ? "todas las lecturas del fichero" : `solo las lecturas del AGV ${cut.agvId}`;
   const count = `${cut.removed} ${cut.removed === 1 ? "lectura" : "lecturas"}`;
   return `de ${format(cut.from)} a ${format(cut.to)}, ${who}: quita ${count}`;
@@ -112,7 +112,7 @@ const CHANGE_WORDS: Readonly<Record<string, string>> = {
   "mas-rapido": "más rápido",
 };
 
-export function adoptedChangeText(key: string): string {
+function adoptedChangeText(key: string): string {
   const parts = key.split("|");
   if (parts[0] === "vertice" && parts.length === 3) return `${parts[1]} ${CHANGE_WORDS[parts[2] as string] ?? parts[2]}`;
   if (parts[0] === "arista" && parts.length === 5) {
@@ -122,7 +122,7 @@ export function adoptedChangeText(key: string): string {
 }
 
 /** «Entre medias: 2 versiones, 1 revocada.» */
-export function betweenLine(between: VersionComparison["between"]): string {
+function betweenLine(between: VersionComparison["between"]): string {
   if (between.versions === 0) return "Entre medias: ninguna versión.";
   const count = `${between.versions} ${between.versions === 1 ? "versión" : "versiones"}`;
   const revoked = between.revoked === 0 ? "ninguna revocada" : `${between.revoked} ${between.revoked === 1 ? "revocada" : "revocadas"}`;
@@ -418,7 +418,20 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
 
   function decisionsBlock(decisions: readonly MemoryDecision[]): HTMLElement {
     const box = node("div", "memory-decisions");
-    box.append(node("p", undefined, `Decisiones que viajan con la versión: ${decisions.length}.`));
+    // La bandeja revisa más de lo que viaja: las decisiones son las de los hallazgos de la instantánea
+    // que se consolida. Dicho, para que dos cifras distintas no parezcan un error.
+    const tray = input.findings();
+    const others = tray === null ? 0 : tray.total - decisions.length;
+    box.append(
+      node(
+        "p",
+        undefined,
+        `Decisiones que viajan con la versión: ${decisions.length}.` +
+          (others > 0
+            ? ` Son las de los hallazgos de la instantánea que se consolida; los otros ${others} de la bandeja no son de ella y no viajan con la versión.`
+            : ""),
+      ),
+    );
     for (const state of REVIEW_STATES as readonly ReviewState[]) {
       const group = decisions.filter((decision) => decision.state === state);
       if (group.length === 0) continue;

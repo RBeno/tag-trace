@@ -1,6 +1,6 @@
 ---
 document_id: TT-TRACE-001
-version: 0.82.0
+version: 0.83.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -125,6 +125,17 @@ regla exista: la matriz no es una lista de intenciones.
 | R-EVI-004 / TC-378 la mediana de un AGV solo es `null` | `src/domain/dossier.ts` (`median`, `cohortMedianReadings`) | `tests/unit/dossier.test.ts` |
 | R-DAT-014 / TC-379 una fecha imposible no decide el orden | `src/domain/time.ts` (`detectFieldOrder`) | `tests/unit/time.test.ts` |
 | TH-006, ADR-0012 / TC-380 nombres de sección del `.agvproj` acotados y sin prototipo | `src/persistence/agvproj.ts` (`SECTION_NAME`, `readProject`) | `tests/unit/agvproj.test.ts` |
+| B-09 / TC-381 rendimiento sin cambiar resultados | `src/domain/connection-cuts.ts` (`markCollective`, `contrastWithBursts`), `src/domain/fifo.ts` (`findOvertakes`), `src/domain/charging.ts` (`seniorityBreaches`), `src/domain/franjas.ts` (`segmentHistories`), `src/domain/graph.ts` (`minKeyScanner`) | `tests/unit/equivalencia-rendimiento.test.ts` |
+| ADR-0013, R-DAT-013, B-10 / TC-382 empates de instante: orden canónico como precondición; los cortes desempatan por fila | `src/domain/undeclared-tags.ts` (`dominantNeighbours`), `src/domain/connection-cuts.ts` (`pairCuts`, `locateCuts`); precondición en `line-feed.ts`, `dossier.ts`, `charging.ts`, `fifo.ts`, `incident-battery.ts`, `fleet.ts`, `replay.ts` | `tests/unit/empates-instante.test.ts` |
+| R-TIM-009, CONFIG_SCHEMA §3.2, B-13 / TC-383 la noche con la misma hora de inicio y de fin se dice | `src/domain/plant-values.ts` (`plantValuesView`, `NO_NIGHT_NOTE`), `src/domain/segment-bands.ts` (`regimeReader`) | `tests/unit/plant-values.test.ts`, `tests/unit/segment-bands.test.ts` |
+| R-DAT-007, B-15 / TC-384 bordes de la cobertura | `src/domain/coverage.ts` (`sourceCoverage`, `mergeIntervals`, `isCovered`, `sameSpan`, `uncoveredGaps`) | `tests/unit/coverage.test.ts` |
+| ADR-0013, B-15 / TC-385 bordes del orden canónico | `src/domain/order.ts` (`compareReadings`, `sortReadings`) | `tests/unit/order.test.ts` |
+| R-COM-004 a R-COM-008, ADR-0017, B-15 / TC-386 casos límite de los cortes | `src/domain/connection-cuts.ts` (`pairCuts`, `classifyCut`, `markCollective`, `locateCuts`, `measuresCoverage`, `summarizeConnections`) | `tests/unit/connection-cuts.test.ts` |
+| D-40 / TC-387 etiqueta de la tolerancia «a la misma hora» | `src/domain/plant-values.ts` (`PLANT_VALUES`, clave `misma-hora`) | `tests/unit/plant-values.test.ts` |
+| R-DAT-002, R-DAT-014 / TC-391 separador elegido a mano y columnas repetidas | `src/ingestion/importer.ts` (`delimiter`, `repeatedColumns`), `src/presentation/main.ts` (`offerDelimiter`) | `tests/unit/importer.test.ts` |
+| TH-006, R-DAT-001 / TC-392 codificación UTF-16 y UTF-8 dañado | `src/ingestion/decode.ts` (`decodeSource`, `decodeUtf16`, `validUtf8Sequences`) | `tests/unit/importer.test.ts` |
+| TH-005, TH-006, ADR-0012 / TC-393 contenedor: manifiesto primero, errores con texto | `src/persistence/zip.ts` (`readZipDirectory`, `inflate`), `src/persistence/agvproj.ts` (`readProject`, `isManifest`, `readJson`) | `tests/unit/agvproj.test.ts` |
+| INV-006, WP §6 (`CIRCUIT_CHANGED`, `STORAGE_FULL`) guardado veraz y concurrente | `src/persistence/store.ts` (`saveAccumulation` con `expected`, `circuitStamp`, `saveSnapshotInCircuit`), `workers/import.worker.ts` (`readingsSaved`) | Comprobado en navegador con dos pestañas (anexo C, `carrera`) |
 | NFR-010, NFR-011, NFR-016, `UX_SPEC.md` §9, F6 entrega 1 / TC-357–359 actualización segura, versión identificable y retorno | `public/sw.js` (caché por versión, espera, `version` y `activate`), `vite.config.ts` (`serviceWorkerManifest`), `src/presentation/update.ts` (`startUpdates`, `updateText`, `compareVersions`), `src/presentation/main.ts` (versión en la cabecera, `syncUpdateBusy`), `src/persistence/store.ts` (`onversionchange`), `.github/workflows/deploy-pages.yml` (etiqueta `vX.Y.Z`) | `tests/unit/update.test.ts`, `tests/e2e/actualizacion.spec.ts` |
 | ADR-0018 D10 entrega 6, ALG-017, `INCIDENTS_REPORTING.md` §6, OQ-172 / TC-355–356 biblioteca de casos y similitud explicada | `src/domain/case-similarity.ts` (`similarCases`, `VERDICT_WORD`), `src/domain/config.ts` (`incidentCase.similarityDurationRatio`), `workers/import.worker.ts` (`buildCaseViews`, en dos pasadas), `src/application/protocol.ts` (`CaseView.similar`), `src/presentation/cases-ui.ts` (`similarBlock`), `src/presentation/case-report.ts` (apartado 6) | `tests/unit/case-similarity.test.ts`, `tests/e2e/expedientes.spec.ts` |
 | ADR-0018 D11 entrega 5, FR-026, `INCIDENTS_REPORTING.md` §8 / TC-353–354 informe vivo y exportación del expediente | `src/presentation/case-report.ts` (`buildCaseReportHtml`, `casesSummaryHtml`, `caseReportFileName`), `src/domain/case-export.ts` (`chronologyCsv`, `evidenceCsv`), `src/presentation/report.ts` (sección de expedientes, `appCss`), `workers/import.worker.ts` (`runCaseEvidenceCsv`), `src/application/protocol.ts` (`case-evidence-csv`), `src/presentation/cases-ui.ts` (`exportBlock`), `src/presentation/main.ts` (`exportCase`, `saveDownload`) | `tests/unit/case-report.test.ts`, `tests/e2e/expedientes.spec.ts` |

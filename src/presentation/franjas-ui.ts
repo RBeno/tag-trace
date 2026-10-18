@@ -53,7 +53,7 @@ function changeLabel(change: StructureChange, gap: AnchorGapChange): string {
 }
 
 /** La suma entre las dos anclas, antes y después. */
-export function sumLine(gap: AnchorGapChange, duration: (ms: number | null) => string): string {
+function sumLine(gap: AnchorGapChange, duration: (ms: number | null) => string): string {
   const between = `entre ${gap.fromAnchor} y ${gap.toAnchor}`;
   const when = gap.regime === "noche" ? ", de noche" : "";
   switch (gap.sum) {
@@ -151,7 +151,10 @@ export function renderFranjas(panel: HTMLElement, views: CircuitViews, deps: Fra
         "p",
         "muted",
         `Repetidos, medidos una sola vez: ${repeated
-          .map((source) => `«${source.fileName}» (igual que «${labelOf.get(source.duplicateOf ?? "") ?? "—"}»)`)
+          .map((source) => {
+            const original = labelOf.get(source.duplicateOf ?? "") ?? "—";
+            return original === source.fileName ? `«${source.fileName}» (cargado otra vez)` : `«${source.fileName}» (igual que «${original}»)`;
+          })
           .join(", ")}.`,
       ),
     );

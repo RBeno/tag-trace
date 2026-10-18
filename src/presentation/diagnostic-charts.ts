@@ -1366,7 +1366,7 @@ function stripShare(cell: Pick<HeatStripCell, "passes" | "value">): number {
  * estado de conexión (observado, DS-013), **cada uno con sus propias celdas**: una misma celda nunca
  * mezcla lo observado con lo inferido.
  */
-export function heatStripChart(spec: HeatStripSpec): HTMLElement {
+function heatStripChart(spec: HeatStripSpec): HTMLElement {
   const wrapper = figure(spec.title, spec.caption);
   const { ringTags, flagged: flaggedSites, sections } = spec;
   const byId = new Map(spec.cells.map((cell) => [cell.tagId, cell]));
@@ -3497,7 +3497,8 @@ export function segmentBandChart(rows: readonly BandRow[], nightLabel: string): 
     "Horquilla de tiempos de cada tramo",
     "Cuánto tarda cada tramo del anillo en producción: la barra va de la mitad de las pasadas al 95 %, " +
       `y la raya marca la valla. La barra gris es la noche (${nightLabel}), medida aparte. El orden es el ` +
-      "del anillo, no la distancia.",
+      "del anillo, no la distancia: el eje horizontal es la posición de cada tramo en el anillo. El vertical " +
+      "no es lineal, para que quepan a la vez tramos de segundos y de minutos: compara por sus marcas, no por la altura.",
   );
   const area = host();
   const line = readout("Toca o pasa el puntero por un tramo para leer su horquilla.");

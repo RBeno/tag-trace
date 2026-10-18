@@ -77,7 +77,7 @@ const ORDER_READING: Readonly<Record<string, string>> = {
 };
 
 /** Los regímenes del circuito (`produccion`, `noche`) tal como se dicen en pantalla. */
-export const REGIME_WORDS: Readonly<Record<string, string>> = { produccion: "producción", noche: "noche" };
+const REGIME_WORDS: Readonly<Record<string, string>> = { produccion: "producción", noche: "noche" };
 
 const pick = (map: Readonly<Record<string, string>>) => (value: string): string => map[value] ?? value;
 

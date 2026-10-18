@@ -88,7 +88,7 @@ function minutes(ms: number): string {
 }
 
 /** Las incidencias excluidas de la versión vigente como puntos de partida. */
-export function excludedStarts(excluded: readonly ExcludedIncidentStart[]): readonly CaseStart[] {
+function excludedStarts(excluded: readonly ExcludedIncidentStart[]): readonly CaseStart[] {
   return excluded.map((entry) => ({
     origin: { kind: "incidencia-excluida", version: entry.version, versionHash: entry.versionHash, key: entry.key, label: entry.label },
     title: entry.label,
@@ -161,6 +161,8 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
     control.addEventListener("input", applyBusy);
     const box = node("div", "plan-field");
     box.append(label, control);
+    // El navegador enseña el campo en su formato y sin zona: se dice en qué hora se escribe.
+    if (type === "datetime-local") box.append(node("p", "muted plan-hint", `Hora de la planta (${input.zone}).`));
     return { box, input: control };
   }
 

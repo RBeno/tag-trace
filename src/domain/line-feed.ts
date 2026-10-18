@@ -196,7 +196,15 @@ function duration(ms: number): string {
   return ms >= 120_000 ? `${(ms / 60_000).toFixed(1).replace(".", ",")} min` : `${Math.round(ms / 1000)} s`;
 }
 
-/** Las lecturas de cada AGV en orden, con las repeticiones seguidas del mismo tag en una. */
+/**
+ * Las lecturas de cada AGV en orden, con las repeticiones seguidas del mismo tag en una.
+ *
+ * Precondición (B-10, revisión del 2026-10-18): `readings` llega en orden canónico —`sortReadings`
+ * con el sentido de su fuente (ADR-0013)—. El `sort` por instante es estable y conserva ese desempate
+ * entre dos lecturas del mismo AGV en el mismo instante. Aquí no se puede rehacer: el sentido de la
+ * pila no llega a esta función, y desempatar por fila ascendente invertiría el orden de las fuentes
+ * `newest-first`.
+ */
 function vehicleSteps(readings: readonly Reading[]): Map<string, Step[]> {
   const byVehicle = new Map<string, Step[]>();
   for (const reading of readings) {

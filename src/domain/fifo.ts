@@ -20,7 +20,7 @@
  */
 
 import { mergeIntervals, sameSpan, type Interval } from "./coverage.js";
-import { quantile } from "./graph.js";
+import { minKeyScanner, quantile } from "./graph.js";
 import type { Reading } from "./reading.js";
 
 export interface FifoThresholds {
@@ -229,24 +229,40 @@ export interface FifoReport {
  * Sale ordenado por margen descendente — el adelantamiento más nítido primero. A diferencia de
  * `seniorityBreaches` (que ordena por cuánto esperó el vehículo), aquí «esperar» no tiene el mismo
  * sentido que en una cola física: lo que importa es la claridad de la inversión, no su duración.
+ *
+ * Exportada solo para la prueba de equivalencia con la versión cuadrática (B-09); fuera de este
+ * módulo se usa a través de `buildFifoReport`.
  */
-function findOvertakes(
+export function findOvertakes(
   entered: readonly { readonly agvId: string; readonly enteredUtcMs: number; readonly leftUtcMs: number }[],
   medianTransitMs: number,
   thresholds: FifoThresholds,
 ): readonly FifoOvertake[] {
   const sorted = [...entered].sort((a, b) => a.enteredUtcMs - b.enteredUtcMs);
   const margin = Math.max(thresholds.minOvertakeMarginMs, medianTransitMs * thresholds.minOvertakeMarginRatio);
+  // Sin comparar cada pasada con todas las posteriores (B-09): las que entraron al menos `margin`
+  // después son un sufijo de la lista ordenada (búsqueda binaria con la misma resta), y de ese sufijo
+  // el índice de mínimos da, en orden, las que salieron al menos `margin` antes.
+  const scan = minKeyScanner(sorted.map((pass) => pass.leftUtcMs));
 
   const overtakes: FifoOvertake[] = [];
   for (const [index, pass] of sorted.entries()) {
-    const overtakenBy = sorted
-      .slice(index + 1)
-      .filter(
-        (other) =>
-          other.enteredUtcMs - pass.enteredUtcMs >= margin && pass.leftUtcMs - other.leftUtcMs >= margin,
-      )
-      .map((other) => other.agvId);
+    let first = index + 1;
+    let high = sorted.length;
+    while (first < high) {
+      const middle = (first + high) >> 1;
+      if ((sorted[middle] as FifoPass).enteredUtcMs - pass.enteredUtcMs >= margin) high = middle;
+      else first = middle + 1;
+    }
+    const overtakenBy: string[] = [];
+    scan(
+      first,
+      sorted.length,
+      (leftUtcMs) => pass.leftUtcMs - leftUtcMs >= margin,
+      (other) => {
+        overtakenBy.push((sorted[other] as FifoPass).agvId);
+      },
+    );
     if (overtakenBy.length > 0) {
       overtakes.push({
         overtaken: pass.agvId,
@@ -287,7 +303,15 @@ function focusWindow(completed: readonly FifoPass[], overtakes: readonly FifoOve
   return sorted.slice(from, to + 1);
 }
 
-/** Construye el informe de FIFO de un cohorte, un tramo a la vez. */
+/**
+ * Construye el informe de FIFO de un cohorte, un tramo a la vez.
+ *
+ * Precondición (B-10, revisión del 2026-10-18): `cohortReadings` llega en orden canónico —`sortReadings`
+ * con el sentido de su fuente (ADR-0013)—. Las ordenaciones por instante de aquí dentro son estables y
+ * conservan ese desempate entre dos lecturas del mismo AGV en el mismo instante; no se puede rehacer
+ * aquí porque el sentido de la pila no llega a esta función, y desempatar por fila ascendente
+ * invertiría el orden de las fuentes `newest-first`.
+ */
 export function buildFifoReport(
   cohortId: number,
   cohortReadings: readonly Reading[],
@@ -326,7 +350,7 @@ export function buildFifoReport(
   for (const span of spans) completedBySpan.set(span.spanId, []);
   for (const [key, hits] of hitsByVehicleAndSpan) {
     const [agvId, spanId] = key.split("\u0000") as [string, string];
-    hits.sort((a, b) => a.utcMs - b.utcMs);
+    hits.sort((a, b) => a.utcMs - b.utcMs); // Estable: a igual instante, el orden canónico (B-10).
     for (const pass of passesOf(hits, straddlesGap)) {
       if (pass.state === "completa" && pass.enteredUtcMs !== null && pass.leftUtcMs !== null) {
         completedBySpan.get(spanId)?.push({ agvId, enteredUtcMs: pass.enteredUtcMs, leftUtcMs: pass.leftUtcMs });

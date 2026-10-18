@@ -20,6 +20,7 @@ import {
   type MemoryViews,
   type PlanAction,
   type SourceSummary,
+  type Stage,
   type ToWorker,
 } from "../application/protocol.js";
 import { EXPECTED_STRUCTURE, FUNCTION_MEANING, LIST_PURPOSE } from "../domain/tag-lists.js";
@@ -78,6 +79,9 @@ import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
 import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow } from "../domain/reading.js";
 import type { FieldOrder } from "../domain/time.js";
+
+/** El separador, como lo describe el resumen de la fuente: la presentación no importa la ingesta. */
+type Delimiter = SourceSummary["delimiter"];
 import type { IncidentCut } from "../domain/incident-cut.js";
 import { ProjectError, readIncidentsSection, readMemorySection, readPlanSection, readPlantValuesSection, readProject, writeProject } from "../persistence/agvproj.js";
 import { exportProjectMemory, importProjectMemory } from "../persistence/project-memory.js";
@@ -119,6 +123,26 @@ const ZONE = "Europe/Madrid";
 /** Filas que se pintan de golpe. La tabla crece al desplazarse, no de una vez. */
 const PAGE_SIZE = 200;
 
+/**
+ * Lo que se espera a que el Worker confirme una importación (`accepted`, WORKER_PROTOCOL §4). Lo
+ * primero que hace es confirmarla; si en este plazo no ha dicho nada —un Worker de otra versión que
+ * descarta el mensaje, o uno que no llegó a cargar— la interfaz no se queda ocupada para siempre.
+ */
+const ACCEPTED_TIMEOUT_MS = 15_000;
+
+/**
+ * Qué tramo de la barra ocupa cada etapa de una importación. Leer las filas es casi todo; lo que queda
+ * tras «done» —guardar y analizar— no tiene cifra, así que la barra se queda ahí con su nota y no
+ * llega al final antes de tiempo. Nunca retrocede: antes pasaba de lleno a vacío al ordenar.
+ */
+const STAGE_SPAN: Readonly<Record<Stage, readonly [number, number]>> = {
+  hashing: [0, 0.05],
+  sampling: [0.05, 0.1],
+  parsing: [0.1, 0.8],
+  ordering: [0.8, 0.85],
+  done: [0.85, 0.85],
+};
+
 interface State {
   worker: Worker | null;
   jobId: string | null;
@@ -133,6 +157,10 @@ interface State {
   shown: number;
   /** El último fichero elegido, para poder reintentar con el orden de fecha que fije el usuario. */
   file: File | null;
+  /** Lo que la persona fijó a mano para ese fichero: se conserva al reintentar con otra elección. */
+  importChoice: { fieldOrder?: FieldOrder; delimiter?: Delimiter };
+  /** El plazo para que el Worker confirme la importación, mientras no lo haya hecho. */
+  acceptedTimer: ReturnType<typeof setTimeout> | null;
   /** Cobertura del circuito, que las vistas necesitan para dibujar los huecos como lo que son. */
   coverage: readonly { readonly from: number; readonly to: number }[];
   /** Últimas vistas recibidas: el expediente y el replay se consultan sobre ellas, ya calculadas. */
@@ -169,6 +197,8 @@ const state: State = {
   warnings: [],
   shown: 0,
   file: null,
+  importChoice: {},
+  acceptedTimer: null,
   coverage: [],
   views: null,
   fleetFile: null,
@@ -303,7 +333,10 @@ const storagePanel = createStoragePanel({
     window.location.reload();
   },
 });
-projectPanel.append(element("h2", undefined, "Copia del circuito"), exportButton, projectLabel, filePicker(projectInput), storagePanel.node);
+// La confirmación de la copia, junto al botón: el panel de mensajes queda arriba, fuera de la vista.
+const exportStatus = element("p", "muted export-status");
+exportStatus.setAttribute("role", "status");
+projectPanel.append(element("h2", undefined, "Copia del circuito"), exportButton, exportStatus, projectLabel, filePicker(projectInput), storagePanel.node);
 
 const progressPanel = element("section", "panel");
 progressPanel.hidden = true;
@@ -793,7 +826,36 @@ function offerFieldOrder(file: File): void {
   const retry = element("button", undefined, "Importar con este orden");
   retry.type = "button";
   retry.addEventListener("click", () => {
-    startImport(file, select.value as FieldOrder);
+    startImport(file, select.value as FieldOrder, false, state.importChoice.delimiter);
+  });
+  chooser.append(label, select, retry);
+  messagePanel.append(chooser);
+}
+
+/**
+ * La salida de una fuente cuyo separador no se puede decidir solo (3.90.0): una columna con coma
+ * decimal en un fichero con «;» hace que los dos expliquen casi igual cada fila. Como con la fecha, el
+ * programa no elige: ofrece elegir.
+ */
+function offerDelimiter(file: File): void {
+  const chooser = element("div", "chooser");
+  const select = element("select");
+  select.id = "delimiter-choice";
+  for (const [value, label] of [
+    [";", "punto y coma (;)"],
+    [",", "coma (,)"],
+    ["\t", "tabulador"],
+  ] as const) {
+    const option = element("option", undefined, label);
+    option.value = value;
+    select.append(option);
+  }
+  const label = element("label", undefined, "Separador ");
+  label.htmlFor = "delimiter-choice";
+  const retry = element("button", undefined, "Importar con este separador");
+  retry.type = "button";
+  retry.addEventListener("click", () => {
+    startImport(file, state.importChoice.fieldOrder, false, select.value as Delimiter);
   });
   chooser.append(label, select, retry);
   messagePanel.append(chooser);
@@ -835,7 +897,7 @@ function renderSummary(summary: SourceSummary): void {
     [
       "Periodo",
       `${formatInstant(summary.observedFrom)} → ${formatInstant(summary.observedTo)} ` +
-        `(${(((summary.observedTo - summary.observedFrom) / 3_600_000) || 0).toFixed(1)} h)`,
+        `(${(((summary.observedTo - summary.observedFrom) / 3_600_000) || 0).toFixed(1).replace(".", ",")} h)`,
     ],
     ["Lecturas aceptadas", `${summary.acceptedRows.toLocaleString("es-ES")} de ${summary.totalRows.toLocaleString("es-ES")} filas`],
     // Se separan a propósito: una fila sin tag no es una fila rota, y mezclarlas haría parecer
@@ -1013,6 +1075,8 @@ const BUSY_NOTICE = "Hay otra operación en curso; espera a que termine.";
 // --- Ciclo de vida del trabajo --------------------------------------------
 
 function disposeWorker(): void {
+  if (state.acceptedTimer !== null) clearTimeout(state.acceptedTimer);
+  state.acceptedTimer = null;
   state.worker?.terminate();
   state.worker = null;
   state.jobId = null;
@@ -1026,26 +1090,33 @@ function disposeWorker(): void {
 function handleMessage(message: FromWorker): void {
   // WP-003: un mensaje de un trabajo caducado se descarta sin tocar el estado.
   if (state.jobId === null || !isCurrent(message, state.jobId)) return;
+  if (state.acceptedTimer !== null) {
+    clearTimeout(state.acceptedTimer);
+    state.acceptedTimer = null;
+  }
 
   switch (message.type) {
     case "accepted":
       progressNote.textContent = "Empezando";
       return;
 
-    case "progress":
+    case "progress": {
+      // Al terminar de leer las filas aún queda analizar (y guardar, con circuito): la nota lo dice.
+      const note = message.stage === "done" ? "Lecturas leídas; analizando" : message.note;
       progressNote.textContent =
-        message.total > 1
-          ? `${message.note} — ${message.done.toLocaleString("es-ES")} de ${message.total.toLocaleString("es-ES")}`
-          : message.note;
-      progressBar.value = message.total === 0 ? 0 : message.done / message.total;
+        message.total > 1 ? `${note} — ${message.done.toLocaleString("es-ES")} de ${message.total.toLocaleString("es-ES")}` : note;
+      const [from, to] = STAGE_SPAN[message.stage];
+      const share = message.total === 0 ? 0 : message.done / message.total;
+      progressBar.value = Math.max(progressBar.value, from + (to - from) * share);
       benchObserver?.progress(message.done, message.total);
       return;
+    }
 
     case "saving":
       // Desde aquí la importación escribe: ya no se detiene, termina entera (WP-004).
       state.importStoppable = false;
       cancelButton.hidden = true;
-      progressNote.textContent = "Guardando en este dispositivo; ya no se puede cancelar";
+      progressNote.textContent = "Guardando y analizando en este dispositivo; ya no se puede cancelar";
       return;
 
     case "complete": {
@@ -1140,6 +1211,7 @@ function handleMessage(message: FromWorker): void {
       // Una fuente ambigua no es una fuente rota: es una que el programa no puede resolver solo.
       // Se ofrece la salida en lugar de dejar al usuario con una instrucción que no puede seguir.
       if (message.code === "DATE_AMBIGUOUS" && state.file !== null) offerFieldOrder(state.file);
+      if (message.code === "DELIMITER_AMBIGUOUS" && state.file !== null) offerDelimiter(state.file);
       setBusy(false);
       disposeWorker();
       return;
@@ -1666,7 +1738,7 @@ function findingsStatus(): FindingsStatus | null {
  * Arranca una importación. `withoutCircuit` la hace sin circuito aunque el campo tenga uno: se
  * analiza y se dibuja, pero no se acumula ni se guarda nada (el banco de medida).
  */
-function startImport(file: File, fieldOrder?: FieldOrder, withoutCircuit = false): void {
+function startImport(file: File, fieldOrder?: FieldOrder, withoutCircuit = false, delimiter?: Delimiter): void {
   disposeWorker();
   clearMessages();
   summaryPanel.hidden = true;
@@ -1705,15 +1777,33 @@ function startImport(file: File, fieldOrder?: FieldOrder, withoutCircuit = false
     jobId,
     file,
     zone: ZONE,
-    // Solo viaja si el usuario lo fijó: sin él, la detección manda y puede declararse incapaz.
+    // Solo viajan si el usuario los fijó: sin ellos, la detección manda y puede declararse incapaz.
     ...(fieldOrder === undefined ? {} : { fieldOrder }),
+    ...(delimiter === undefined ? {} : { delimiter }),
     // Solo el identificador: las lecturas ya guardadas las lee el Worker del almacén, para no
     // clonarlas entre hilos (defecto P4 del prototipo).
     ...(circuitName === "" ? {} : { circuitId: circuitName, circuitName }),
   };
+  // Otro fichero empieza sin elecciones; el mismo las conserva para el siguiente reintento.
+  state.importChoice = {
+    ...(state.file === file ? state.importChoice : {}),
+    ...(fieldOrder === undefined ? {} : { fieldOrder }),
+    ...(delimiter === undefined ? {} : { delimiter }),
+  };
   state.file = file;
   worker.postMessage(start);
   state.importStoppable = true;
+  state.acceptedTimer = setTimeout(() => {
+    state.acceptedTimer = null;
+    if (state.jobId !== jobId) return;
+    showMessage("error", "El análisis no arrancó", [
+      "El proceso auxiliar no respondió. Suele pasar cuando el navegador conserva una versión anterior de la aplicación.",
+      "Recarga la página y vuelve a seleccionar el fichero. No se ha guardado nada.",
+    ]);
+    setBusy(false);
+    disposeWorker();
+    benchObserver?.failed("El proceso auxiliar no respondió.");
+  }, ACCEPTED_TIMEOUT_MS);
 }
 
 /** Arranca la carga de listas. Mismo Worker y mismo protocolo: el parseo no vive aquí. */
@@ -2231,7 +2321,7 @@ function renderViews(views: CircuitViews): void {
 
   // --- Tiempos: el estado normal, las secciones, los ficheros, los críticos y el anillo ----------
   out = viewsOf.get("tiempos") as HTMLElement;
-  out.append(element("h2", undefined, "Tiempos"));
+  out.append(element("h2", undefined, "Tiempos"), wordsNote(["horquilla", "valla", "regimen"]));
   renderCircuitState(views);
   renderAnchorSections(views);
   renderFranjas(out, views, { finding, formatInstant, formatTick, duration, circuitId: state.circuitId });
@@ -2250,7 +2340,7 @@ function renderViews(views: CircuitViews): void {
 
   // --- Línea y calles ---------------------------------------------------------------------------
   out = viewsOf.get("linea") as HTMLElement;
-  out.append(element("h2", undefined, "Línea y calles"));
+  out.append(element("h2", undefined, "Línea y calles"), wordsNote(["pulmon", "valla", "regimen"]));
   renderLineFeed(views);
   renderAbandoned(views);
   renderCharging(views);
@@ -2854,7 +2944,9 @@ function renderCircuitState(views: CircuitViews): void {
         element(
           "p",
           "muted",
-          "No cuentan como zona oscura, porque su espera la explica una parada precisa o un semáforo: " +
+          // Sin ninguna zona oscura delante, la frase llegaba sin contexto: se dice primero que no hay.
+          (measured.darkZones.length === 0 ? "Zonas oscuras: ninguna. " : "") +
+            "No cuentan como zona oscura, porque su espera la explica una parada precisa o un semáforo: " +
             measured.explainedSlow.map((entry) => `${entry.tagId} (${criticalFunctionLabel(entry.function)})`).join(", ") +
             ".",
         ),
@@ -4935,7 +5027,7 @@ function renderCriticalPoints(views: CircuitViews): void {
         detail: kindLabel[candidate.kind],
         note:
           candidate.kind === "parada-precisa"
-            ? `media ${Math.round((candidate.meanDurationMs ?? 0) / 1000)} s · CV ${(candidate.coefficientOfVariation ?? 0).toFixed(2)}`
+            ? `media ${Math.round((candidate.meanDurationMs ?? 0) / 1000)} s · variación ${Math.round((candidate.coefficientOfVariation ?? 0) * 100)} %`
             : `dos grupos: ${Math.round((candidate.lowClusterMeanMs ?? 0) / 1000)} s y ${Math.round((candidate.highClusterMeanMs ?? 0) / 1000)} s`,
         durationsMs: candidate.durationsMs ?? [],
         isReference: false,
@@ -4965,7 +5057,7 @@ function renderCriticalPoints(views: CircuitViews): void {
           candidate.kind === "bifurcacion" || candidate.kind === "cruce"
             ? branchesOf(candidate)
             : candidate.kind === "parada-precisa"
-              ? `${Math.round((candidate.meanDurationMs ?? 0) / 1000)} s, cv ${(candidate.coefficientOfVariation ?? 0).toFixed(2)}`
+              ? `${Math.round((candidate.meanDurationMs ?? 0) / 1000)} s, variación ${Math.round((candidate.coefficientOfVariation ?? 0) * 100)} %`
               : `${Math.round((candidate.lowClusterMeanMs ?? 0) / 1000)} s / ${Math.round((candidate.highClusterMeanMs ?? 0) / 1000)} s`,
         ]),
       ),
@@ -5111,6 +5203,38 @@ function tagsOfReview(review: readonly string[] | undefined): readonly string[] 
     default:
       return [];
   }
+}
+
+/**
+ * Las palabras del glosario que las pestañas usan sin explicar (`GLOSSARY.md`), dichas en llano y
+ * plegadas: quien las conoce no las ve; quien no, las tiene a un toque.
+ */
+const WORDS: Readonly<Record<"horquilla" | "valla" | "regimen" | "pulmon", readonly [string, string]>> = {
+  horquilla: [
+    "Horquilla",
+    "lo que tarda normalmente un tramo, de un tag al siguiente: la mitad de las veces menos que su p50, el 80 % menos que su p80 y el 95 % menos que su p95.",
+  ],
+  valla: [
+    "Valla",
+    "el tiempo a partir del cual una espera en un tramo cuenta como parada: el p95 más la distancia entre el p95 y el p50, o un margen mínimo si esa distancia es pequeña.",
+  ],
+  regimen: [
+    "Régimen",
+    "producción o noche, según la hora local (las horas de noche están en Datos › Valores de planta). La noche tiene otro ritmo y se mide aparte.",
+  ],
+  pulmon: [
+    "Pulmón",
+    "los AGV que esperan antes de la entrada a la línea. No se declara: sale de dónde esperan cuando la línea para.",
+  ],
+};
+
+function wordsNote(keys: readonly (keyof typeof WORDS)[]): HTMLElement {
+  const box = element("details", "words-note");
+  box.append(element("summary", undefined, `Qué significan ${keys.map((key) => `«${WORDS[key][0].toLowerCase()}»`).join(", ").replace(/, ([^,]*)$/, " y $1")}`));
+  const list = element("dl");
+  for (const key of keys) list.append(element("dt", undefined, WORDS[key][0]), element("dd", undefined, WORDS[key][1]));
+  box.append(list);
+  return box;
 }
 
 function finding(title: string, figure: string, evidence: string, review?: readonly string[]): HTMLElement {
@@ -6007,7 +6131,9 @@ function renderDossier(): void {
             "Para cada uno, por dónde se fue y por dónde volvió.",
         ),
       );
-      dossierResult.append(
+      // En su caja desplazable: a 360 px las cabeceras se partían letra a letra. Se puede enfocar para
+      // desplazarla con el teclado (WCAG 2.1.1).
+      const inactivityBox = scrollBox(
         plainTable(
           ["Desde", "Hasta", "Duración", "Se fue por", "Volvió por", "Qué fue"],
           agv.inactivity.map((period) => [
@@ -6024,6 +6150,9 @@ function renderDossier(): void {
           ]),
         ),
       );
+      inactivityBox.tabIndex = 0;
+      inactivityBox.setAttribute("aria-label", "Periodos sin leer, tabla desplazable");
+      dossierResult.append(inactivityBox);
     }
   }
 
@@ -6189,6 +6318,9 @@ exportButton.addEventListener("click", () => {
             return [`Incluye ${cases === 1 ? "el expediente de incidencia" : `los ${cases} expedientes de incidencia`}, con sus revisiones y recortes.`];
           })()),
     ]);
+    exportStatus.textContent =
+      `Copia descargada como «${circuitId}.agvproj» (${(bytes.byteLength / 1_048_576).toFixed(1).replace(".", ",")} MB). ` +
+      "Las lecturas se quedan en este dispositivo.";
     downloadBlob(`${circuitId}.agvproj`, new Blob([bytes as BlobPart], { type: "application/zip" }));
   })().finally(() => {
     exportsInFlight -= 1;

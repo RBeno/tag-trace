@@ -36,7 +36,7 @@ import { button, node } from "./dom.js";
 import { isoDay, zoneMidnight } from "./time-input.js";
 
 /** Lo que encontró quien fue a mirar, en palabras. */
-export const MANUAL_RESULT_LABEL: Readonly<Record<ManualResult, string>> = {
+const MANUAL_RESULT_LABEL: Readonly<Record<ManualResult, string>> = {
   correcto: "correcto",
   averiado: "averiado",
   "no-encontrado": "no encontrado",

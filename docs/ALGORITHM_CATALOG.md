@@ -1,8 +1,8 @@
 ---
 document_id: TT-ALG-001
-version: 0.50.0
+version: 0.51.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Catálogo de algoritmos
@@ -354,7 +354,7 @@ sola ventana (`inventory.ts`): es una vista complementaria que se cruza por `tag
 
 Refina las dos comparaciones binarias `desaparecido`/`nuevo` de §6.1 en dos direcciones, sin apoyarse
 en el anillo ni en el ciclo dominante en ningún momento (`drift.ts` no depende de `laps.ts`/
-`cohort.ts` a propósito, decisión de la Parte 33 que se mantiene aquí).
+`cohort.ts` a propósito, decisión de 3.13.0 que se mantiene aquí).
 
 **Firma de vecino por secuencia cronológica.** Para cada tag y cada periodo, se recorre la secuencia
 de lecturas de cada vehículo ordenada por tiempo y se cuenta, para cada tag, qué tag lo precede y qué
@@ -422,7 +422,7 @@ pareja.
 `src/domain/vehicle-reading.ts`, sobre la matriz ya medida dentro de la vida de cada tag. Cuenta un
 tag contra un AGV solo si, entre los demás con pasadas suficientes, al menos `fleetReadsWellShare` lo
 leen a `highRate` o más. Cada celda es **nunca** (0 aciertos, con cola binomial ≤ `maxChance` frente a la tasa del resto en
-ese tag, tenga las pasadas que tenga; hasta la Parte 48 exigía además `minPassesForNever` y con menos
+ese tag, tenga las pasadas que tenga; antes de 3.25.1 exigía además `minPassesForNever` y con menos
 salía como «poco» con un 0 %),
 **desde una hora** (racha final de `minPassesForNever` tras leerlo a `highRate` o más) o **poco**
 (por debajo de `highRate` y con cola binomial inferior ≤ `maxChance` frente a la tasa del resto en ese
@@ -474,14 +474,14 @@ hora local, ±`sameTimeToleranceMs`, otro día.
 parada antes de `usualSegmentTimes` y de las firmas de parada precisa y semáforo.
 
 **Paradas de cada AGV** (`flowStops`). Solo transiciones con las dos lecturas en el mismo tramo de
-cobertura, que no toquen una calle de carga ni sean del mismo instante. Desde la Parte 47, una
+cobertura, que no toquen una calle de carga ni sean del mismo instante. Desde 3.25.0, una
 parada es una transición que **pasa de la valla de su tramo en su régimen** (§6.7); lo habitual que
 se enseña es el p50 de esa horquilla. El de delante es un AGV aguas abajo, a `reachTags` o menos según
 su último tag leído (en el mismo tag, solo si lo pasó antes). Justificación, en orden: la parada
 solapa una de la producción en la mitad de su exceso o más → `produccion`; uno que ya iba delante al
 empezar **sigue** a `reachTags` o menos en el punto medio y en ese momento va más lento que el p80 de
 su propio tramo → `cola`, con él como quien retiene; si no, `sin-explicacion`, con el más cercano por
-delante (hasta media vuelta) y cuántos tags avanzó mientras tanto. Hasta la Parte 46, `cola` exigía
+delante (hasta media vuelta) y cuántos tags avanzó mientras tanto. Hasta 3.24.0, `cola` exigía
 que el de delante tuviera él mismo una parada: detrás de un cuello de botella, donde el de delante
 tarda lo normal de ese sitio, el que esperaba salía sin explicación. Las colas se siguen hasta su cabeza; una cabeza sin
 justificar con exceso de `headStallMs` o más es un bloqueo, con las paradas encadenadas detrás y las
@@ -827,180 +827,6 @@ avanzando; si no, se quedaron; volver a leer el tag es una vuelta entera. El cam
 primera lectura de todo lo cargado es la más cercana después. `abandonedReadings`: el silencio final de
 cada AGV contra su propio hueco más largo. `incidentsCsv`, una fila por incidencia.
 
-## 7. Segmentación de vueltas y huecos
-
-Las vueltas se detectarán con anclas configurables, repetición de secuencias, dirección y límites temporales. Si el corte es incierto se conserva `partial-lap` o `unknown`; no se fuerza una vuelta completa.
-
-## 7.1 Ancla de vuelta: ciclo dominante o declarada, implementado (R-GRA-009)
-
-La topología —qué tags forman el anillo y en qué orden— la da siempre el tráfico observado:
-`findDominantCycle` sigue el sucesor mayoritario de cada tag hasta que uno se repite, y ese primer
-repetido es el ancla. Sin ninguna ancla declarada, esa es la única disponible, y una vuelta cortada
-por ella **nunca es `observed`**, aunque los datos sean perfectos: es una propiedad estadística del
-tráfico, no un punto de referencia conocido.
-
-Una ancla declarada (`CONFIG_SCHEMA.md` §3.4.2, lista `ancla`) no recalcula esa topología: solo
-**rota** el mismo ciclo para que empiece en el tag declarado. `resolveDeclaredAnchor` prueba cada
-ancla de la lista, en orden de prioridad, contra el ciclo ya reconstruido, y se queda con la primera
-que aparece. Ninguna presente deja el mecanismo tal como estaba, con su problema declarado en vez de
-inventar un corte que el dato no sostiene.
-
-**El `truth` de una vuelta depende de dos cosas, no de una.** Una vuelta `completa` con ancla
-declarada y resuelta sí pasa a `observed`: sus dos extremos son el mismo punto de referencia conocido.
-Una vuelta `parcial` **nunca** lo es, declarada o no la ancla: por definición uno de sus dos extremos
-es un corte de los datos —el borde de la cobertura o el principio/final de lo importado—, no el
-ancla, y declararla `observed` ahí inventaría una certeza que el dato no sostiene. Una vuelta
-`desconocida` (el vehículo nunca pasa por el ancla) se queda `unknown` en cualquier caso: no pasar
-nunca por el punto de referencia no se resuelve declarándolo con más fuerza.
-
-**Lo que esto no hace.** No implementa ninguna «confianza mínima» sobre el ancla: la propia
-`CONFIG_SCHEMA.md` no definía qué significaría, y no hay valores de planta que la motiven. Tampoco
-recalcula el ciclo a partir del ancla declarada — si esta no aparece en el ciclo reconstruido, el
-problema se declara y se sigue con el ancla inferida.
-
-Para un hueco:
-
-1. comprobar comunicaciones y densidad colectiva;
-2. comparar AGV anterior/posterior y orden relativo;
-3. evaluar continuidad topológica y tiempo plausible;
-4. buscar eventos de mantenimiento/asistencia o cambio de ruta;
-5. asignar estado y confianza.
-
-## 8. FIFO y carga online
-
-FIFO se evalúa como orden relativo dentro de límites versionados de zona cargada. La zona vacía, CO y movimientos manuales son contextos distintos. Cada calle CO configurada usa estados:
-
-`unknown → approaching → entering → occupied → leaving → clear`, con transiciones incompletas permitidas y señaladas.
-
-No se calcula salud de carga con SOC. Se analizan secuencias, ocupación, permanencia, rotación, ausencia de entrada/salida y relación con comunicación.
-
-## 8.1 FIFO en zona cargada, implementado (R-FLO-001)
-
-Los tramos no se configuran: se derivan. Cada tag ya declara su zona (`vacio`/`cargado`, lista
-`zona`); un tramo es una tira contigua máxima de tags cargados a lo largo del anillo, con su entrada
-y su salida en los dos extremos. El recorrido arranca desde cualquier posición no cargada, para que
-un tramo que cruza el índice 0 del array del anillo se camine entero sin partirse en dos. Un tramo de
-un solo tag se descarta y se declara: no distingue entrada de salida con una sola lectura.
-
-Dentro de cada tramo, las lecturas de cada vehículo en la entrada y la salida se emparejan en
-pasadas —la misma máquina de dos paradas que ya usa la carga online (§8), sin la parada intermedia—,
-honesta con lo que no encaja: una entrada sin salida antes de otra entrada queda `incompleta`, una
-salida sin entrada previa que es la primera lectura del vehículo en ese tramo queda `abierta al
-inicio`, y una pasada que no cierra antes de acabar la cobertura queda `abierta al final`. Solo las
-pasadas `completa` alimentan el detector.
-
-**Detección: la misma inversión de orden que R-CO-003, con una guarda que R-CO-003 no necesita.**
-Sobre pasadas ordenadas por instante de entrada, un vehículo B adelanta a A si entró después y salió
-antes. En una calle de carga, cualquier inversión así es señal fuerte porque hay una cola física real
-detrás. Un tramo de zona cargada es tránsito abierto: dos vehículos sanos muestran pequeñas
-diferencias de orden por el jitter normal de lectura, y un vehículo que vuelve de cargar —una de las
-excepciones que la propia R-FLO-001 nombra— reaparece con una fase nueva frente a sus antiguos
-vecinos, lo que puede producir una inversión grande y enteramente inocente. Por eso el adelantamiento
-exige un margen mínimo en las dos puntas —al entrar y al salir—, el mayor entre un piso absoluto y
-una fracción del tránsito mediano **del propio tramo** (R-FLO-004: cuánto tarda un tramo cargado es
-local, no una constante universal). Si el margen no se sostiene en ambos extremos, no hay
-adelantamiento que publicar: admitirlo fabricaría el mismo hallazgo con otro nombre.
-
-**Lo que esto no hace.** No cruza con la carga online para descartar automáticamente los
-adelantamientos causados por una parada de carga real, la misma limitación que R-CO-003 ya acepta
-hoy. No concluye causa: OQ-107 sigue sin el catálogo de excepciones legítimas (carga online,
-maniobra manual, excepción documentada), así que lo que se publica son candidatos.
-
-## 8.2 Candidatos a punto crítico (R-GRA-007)
-
-Distinto de §9: esto no compara llegadas contra takt ni calendario —ALG-013 sigue bloqueado por
-OQ-108—, es la mitad de R-GRA-007 que no necesita ninguno de los dos: proponer **candidatos** a tag
-crítico por la firma que deja cada clase en el dato, nunca asignar la función.
-
-De las siete clases de `CONFIG_SCHEMA.md` §3.4.1, tres no dejan firma con lo disponible hoy
-(`cambio-de-mapa`; `dejar-carro`/`recoger-carro`, indistinguibles entre sí porque ninguna lectura
-registra la dirección de la interacción con el carro; y el **cruce entre circuitos** protegido por un
-par de tags, R-AGV-009/011, bloqueado por OQ-121). Esta entrega construye las cuatro restantes:
-**bifurcación**, **cruce interno** (reconvergencia dentro del mismo cohorte — un fenómeno distinto
-del anterior, ver más abajo), **parada precisa** y **semáforo**.
-
-**Bifurcación.** Un tag cuyas salidas se reparten entre dos o más sucesores con cuota comparable,
-ninguno dominante. Es el mismo recuento de sucesores por tag que `findDominantCycle` ya reduce para
-encontrar el sucesor mayoritario — la diferencia es que aquí interesan los que **no** llegan a
-dominar.
-
-**Guarda dual de cuota y soporte**, mismo principio que `GraphThresholds` y que el margen de FIFO:
-cada rama exige una cuota mínima (una excepción rara del 5 % no es reparto) **y** un soporte mínimo
-(un 50/50 sobre dos pasadas no es consenso).
-
-**Guarda de persistencia temporal, encontrada auditando el propio detector.** Con solo la guarda de
-cuota y soporte, un tag justo antes de una rotura súbita aguas abajo sale como bifurcación falsa: casi
-todas sus salidas van al sucesor de siempre antes de la rotura y al que lo sustituye —saltando el
-tramo roto— después, y esas dos cuotas agregadas sobre toda la ventana pueden ser perfectamente
-comparables sin que exista ningún reparto real. La guarda exige que cada rama se sostenga, por
-recuento y no por tiempo, en las dos mitades de las pasadas del tag: una bifurcación real persiste en
-las dos; un cambio de régimen desaparece en una.
-
-**Cruce interno, como reclasificación de una bifurcación ya encontrada, no un detector aparte.**
-Definición fijada por el propietario: un cruce es una bifurcación cuyas ramas **reconvergen en pocos
-saltos, dentro del mismo cohorte** — dos caminos que se abren y se cierran enseguida, no una
-bifurcación que dure. Distinto del cruce **entre circuitos** protegido por un par de tags (arriba):
-ese es un fenómeno de frontera entre dos circuitos declarados; este es interno a uno solo.
-
-Para cada candidato a bifurcación, se construye un mapa de sucesor dominante por tag sobre las
-transiciones del cohorte (sin guardas de cuota: aquí solo hace falta «por dónde sigue normalmente»,
-no si es fiable como sucesor único) y se camina cada rama hasta `maxHopsToReconverge` pasos. Si dos
-ramas visitan el mismo tag dentro de ese margen, el candidato se reclasifica de `bifurcacion` a
-`cruce`, con el punto de reconvergencia y el número de saltos como evidencia. Con 2 ramas es el caso
-único que se resuelve; con 3 o más se prueba cada par y basta que uno reconverja para reclasificar —
-límite conocido y anotado, no silenciado: no se ha probado explícitamente con 4 o más ramas
-simultáneas en un mismo tag.
-
-**Parada precisa.** Sobre las duraciones de transición agrupadas por tag de origen —**excluyendo
-`sameInstant`, R-DAT-013**: un par en el mismo instante no mide ninguna duración, y contarlo como
-tránsito de 0 ms falsearía justo la varianza que se mide—, un tag es candidato si la media de sus
-duraciones supera un piso mínimo **y** su coeficiente de variación (desviación entre media) queda por
-debajo de un techo: parada consistente, no tráfico variable.
-
-**Semáforo.** Sobre las mismas duraciones, se ordenan y se busca el mayor **salto proporcional**
-entre dos consecutivas (`sorted[i+1] / sorted[i]`) que deje al menos un mínimo de muestras a cada
-lado. El candidato exige que ese salto máximo alcance un umbral **y** que cada uno de los dos grupos,
-por separado, tenga un coeficiente de variación por debajo de su propio techo — la misma disciplina
-de guarda doble que ya usan `fifo.ts` y `read-rate-trend.ts`: un hueco encontrado sin grupos
-compactos a los lados es ruido con un pico, no dos regímenes reales.
-
-**Lo que esto no hace.** No construye `cambio-de-mapa`, `dejar-carro`/`recoger-carro` ni el cruce
-entre circuitos protegido por par de tags: las tres siguen sin firma disponible o bloqueadas por
-dato de planta (OQ-121). Tampoco comprueba reconvergencia entre más de un par de ramas a la vez con
-4 o más ramas simultáneas. OQ-122 queda Parcial: responde a cuatro de las siete clases, no a las
-siete.
-
-**Con la hora al minuto, sin firmas de tiempo.** Parada precisa y semáforo se reconocen por la
-duración hasta la siguiente lectura. Si todas las duraciones son múltiplos de un minuto
-(`sourceResolutionMs`, la misma resolución que usa la horquilla), la varianza y los dos grupos salen
-del redondeo y no del vehículo: con dato real al minuto salían decenas de «paradas precisas». No se
-buscan, y la vista lo dice (`timeSignaturesMeasurable`). Bifurcación y cruce no dependen del reloj y
-se siguen buscando.
-
-## 9. Punto crítico y análisis temporal
-
-Las llegadas se comparan con el takt y calendario vigentes. Un intervalo sin llegada —por ejemplo diez minutos— activa la búsqueda hacia atrás sobre:
-
-- alimentación del tramo;
-- orden FIFO y acumulación;
-- estados de CO;
-- silencios colectivos;
-- AGV divergentes;
-- cambios respecto al esperado de ese horario.
-
-El informe distingue correlación, secuencia causal plausible y causa confirmada.
-
-## 10. Mejoras posteriores
-
-Solo tras disponer de etiquetas humanas y métricas de precisión se considerarán:
-
-- detección no supervisada de patrones nuevos;
-- modelos supervisados para priorizar hipótesis;
-- predicción temprana de saturación;
-- aprendizaje de embeddings de incidencias.
-
-Todo modelo será candidato en sombra, comparado con el algoritmo estable, explicable en sus entradas y sin alterar históricos consolidados.
-
 ## 6.18 Revisión de la lógica de medición y análisis (2026-09-26)
 
 Cinco revisiones en paralelo, módulo a módulo, con cada fallo reproducido en una prueba desechable
@@ -1304,3 +1130,176 @@ del anillo, con `heatStripChart`, la misma forma que el mapa de las lecturas que
 relativa al tag donde más se pierde, caídas en la fila inferior, acento en los sitios concentrados,
 cifras de cabecera, lectura al puntero y tablas (por tag, por AGV y la lista de cortes).
 
+## 7. Segmentación de vueltas y huecos
+
+Las vueltas se detectarán con anclas configurables, repetición de secuencias, dirección y límites temporales. Si el corte es incierto se conserva `partial-lap` o `unknown`; no se fuerza una vuelta completa.
+
+## 7.1 Ancla de vuelta: ciclo dominante o declarada, implementado (R-GRA-009)
+
+La topología —qué tags forman el anillo y en qué orden— la da siempre el tráfico observado:
+`findDominantCycle` sigue el sucesor mayoritario de cada tag hasta que uno se repite, y ese primer
+repetido es el ancla. Sin ninguna ancla declarada, esa es la única disponible, y una vuelta cortada
+por ella **nunca es `observed`**, aunque los datos sean perfectos: es una propiedad estadística del
+tráfico, no un punto de referencia conocido.
+
+Una ancla declarada (`CONFIG_SCHEMA.md` §3.4.2, lista `ancla`) no recalcula esa topología: solo
+**rota** el mismo ciclo para que empiece en el tag declarado. `resolveDeclaredAnchor` prueba cada
+ancla de la lista, en orden de prioridad, contra el ciclo ya reconstruido, y se queda con la primera
+que aparece. Ninguna presente deja el mecanismo tal como estaba, con su problema declarado en vez de
+inventar un corte que el dato no sostiene.
+
+**El `truth` de una vuelta depende de dos cosas, no de una.** Una vuelta `completa` con ancla
+declarada y resuelta sí pasa a `observed`: sus dos extremos son el mismo punto de referencia conocido.
+Una vuelta `parcial` **nunca** lo es, declarada o no la ancla: por definición uno de sus dos extremos
+es un corte de los datos —el borde de la cobertura o el principio/final de lo importado—, no el
+ancla, y declararla `observed` ahí inventaría una certeza que el dato no sostiene. Una vuelta
+`desconocida` (el vehículo nunca pasa por el ancla) se queda `unknown` en cualquier caso: no pasar
+nunca por el punto de referencia no se resuelve declarándolo con más fuerza.
+
+**Lo que esto no hace.** No implementa ninguna «confianza mínima» sobre el ancla: la propia
+`CONFIG_SCHEMA.md` no definía qué significaría, y no hay valores de planta que la motiven. Tampoco
+recalcula el ciclo a partir del ancla declarada — si esta no aparece en el ciclo reconstruido, el
+problema se declara y se sigue con el ancla inferida.
+
+Para un hueco:
+
+1. comprobar comunicaciones y densidad colectiva;
+2. comparar AGV anterior/posterior y orden relativo;
+3. evaluar continuidad topológica y tiempo plausible;
+4. buscar eventos de mantenimiento/asistencia o cambio de ruta;
+5. asignar estado y confianza.
+
+## 8. FIFO y carga online
+
+FIFO se evalúa como orden relativo dentro de límites versionados de zona cargada. La zona vacía, CO y movimientos manuales son contextos distintos. Cada calle CO configurada usa estados:
+
+`unknown → approaching → entering → occupied → leaving → clear`, con transiciones incompletas permitidas y señaladas.
+
+No se calcula salud de carga con SOC. Se analizan secuencias, ocupación, permanencia, rotación, ausencia de entrada/salida y relación con comunicación.
+
+## 8.1 FIFO en zona cargada, implementado (R-FLO-001)
+
+Los tramos no se configuran: se derivan. Cada tag ya declara su zona (`vacio`/`cargado`, lista
+`zona`); un tramo es una tira contigua máxima de tags cargados a lo largo del anillo, con su entrada
+y su salida en los dos extremos. El recorrido arranca desde cualquier posición no cargada, para que
+un tramo que cruza el índice 0 del array del anillo se camine entero sin partirse en dos. Un tramo de
+un solo tag se descarta y se declara: no distingue entrada de salida con una sola lectura.
+
+Dentro de cada tramo, las lecturas de cada vehículo en la entrada y la salida se emparejan en
+pasadas —la misma máquina de dos paradas que ya usa la carga online (§8), sin la parada intermedia—,
+honesta con lo que no encaja: una entrada sin salida antes de otra entrada queda `incompleta`, una
+salida sin entrada previa que es la primera lectura del vehículo en ese tramo queda `abierta al
+inicio`, y una pasada que no cierra antes de acabar la cobertura queda `abierta al final`. Solo las
+pasadas `completa` alimentan el detector.
+
+**Detección: la misma inversión de orden que R-CO-003, con una guarda que R-CO-003 no necesita.**
+Sobre pasadas ordenadas por instante de entrada, un vehículo B adelanta a A si entró después y salió
+antes. En una calle de carga, cualquier inversión así es señal fuerte porque hay una cola física real
+detrás. Un tramo de zona cargada es tránsito abierto: dos vehículos sanos muestran pequeñas
+diferencias de orden por el jitter normal de lectura, y un vehículo que vuelve de cargar —una de las
+excepciones que la propia R-FLO-001 nombra— reaparece con una fase nueva frente a sus antiguos
+vecinos, lo que puede producir una inversión grande y enteramente inocente. Por eso el adelantamiento
+exige un margen mínimo en las dos puntas —al entrar y al salir—, el mayor entre un piso absoluto y
+una fracción del tránsito mediano **del propio tramo** (R-FLO-004: cuánto tarda un tramo cargado es
+local, no una constante universal). Si el margen no se sostiene en ambos extremos, no hay
+adelantamiento que publicar: admitirlo fabricaría el mismo hallazgo con otro nombre.
+
+**Lo que esto no hace.** No cruza con la carga online para descartar automáticamente los
+adelantamientos causados por una parada de carga real, la misma limitación que R-CO-003 ya acepta
+hoy. No concluye causa: OQ-107 sigue sin el catálogo de excepciones legítimas (carga online,
+maniobra manual, excepción documentada), así que lo que se publica son candidatos.
+
+## 8.2 Candidatos a punto crítico (R-GRA-007)
+
+Distinto de §9: esto no compara llegadas contra takt ni calendario —ALG-013 sigue bloqueado por
+OQ-108—, es la mitad de R-GRA-007 que no necesita ninguno de los dos: proponer **candidatos** a tag
+crítico por la firma que deja cada clase en el dato, nunca asignar la función.
+
+De las siete clases de `CONFIG_SCHEMA.md` §3.4.1, tres no dejan firma con lo disponible hoy
+(`cambio-de-mapa`; `dejar-carro`/`recoger-carro`, indistinguibles entre sí porque ninguna lectura
+registra la dirección de la interacción con el carro; y el **cruce entre circuitos** protegido por un
+par de tags, R-AGV-009/011, bloqueado por OQ-121). Esta entrega construye las cuatro restantes:
+**bifurcación**, **cruce interno** (reconvergencia dentro del mismo cohorte — un fenómeno distinto
+del anterior, ver más abajo), **parada precisa** y **semáforo**.
+
+**Bifurcación.** Un tag cuyas salidas se reparten entre dos o más sucesores con cuota comparable,
+ninguno dominante. Es el mismo recuento de sucesores por tag que `findDominantCycle` ya reduce para
+encontrar el sucesor mayoritario — la diferencia es que aquí interesan los que **no** llegan a
+dominar.
+
+**Guarda dual de cuota y soporte**, mismo principio que `GraphThresholds` y que el margen de FIFO:
+cada rama exige una cuota mínima (una excepción rara del 5 % no es reparto) **y** un soporte mínimo
+(un 50/50 sobre dos pasadas no es consenso).
+
+**Guarda de persistencia temporal, encontrada auditando el propio detector.** Con solo la guarda de
+cuota y soporte, un tag justo antes de una rotura súbita aguas abajo sale como bifurcación falsa: casi
+todas sus salidas van al sucesor de siempre antes de la rotura y al que lo sustituye —saltando el
+tramo roto— después, y esas dos cuotas agregadas sobre toda la ventana pueden ser perfectamente
+comparables sin que exista ningún reparto real. La guarda exige que cada rama se sostenga, por
+recuento y no por tiempo, en las dos mitades de las pasadas del tag: una bifurcación real persiste en
+las dos; un cambio de régimen desaparece en una.
+
+**Cruce interno, como reclasificación de una bifurcación ya encontrada, no un detector aparte.**
+Definición fijada por el propietario: un cruce es una bifurcación cuyas ramas **reconvergen en pocos
+saltos, dentro del mismo cohorte** — dos caminos que se abren y se cierran enseguida, no una
+bifurcación que dure. Distinto del cruce **entre circuitos** protegido por un par de tags (arriba):
+ese es un fenómeno de frontera entre dos circuitos declarados; este es interno a uno solo.
+
+Para cada candidato a bifurcación, se construye un mapa de sucesor dominante por tag sobre las
+transiciones del cohorte (sin guardas de cuota: aquí solo hace falta «por dónde sigue normalmente»,
+no si es fiable como sucesor único) y se camina cada rama hasta `maxHopsToReconverge` pasos. Si dos
+ramas visitan el mismo tag dentro de ese margen, el candidato se reclasifica de `bifurcacion` a
+`cruce`, con el punto de reconvergencia y el número de saltos como evidencia. Con 2 ramas es el caso
+único que se resuelve; con 3 o más se prueba cada par y basta que uno reconverja para reclasificar —
+límite conocido y anotado, no silenciado: no se ha probado explícitamente con 4 o más ramas
+simultáneas en un mismo tag.
+
+**Parada precisa.** Sobre las duraciones de transición agrupadas por tag de origen —**excluyendo
+`sameInstant`, R-DAT-013**: un par en el mismo instante no mide ninguna duración, y contarlo como
+tránsito de 0 ms falsearía justo la varianza que se mide—, un tag es candidato si la media de sus
+duraciones supera un piso mínimo **y** su coeficiente de variación (desviación entre media) queda por
+debajo de un techo: parada consistente, no tráfico variable.
+
+**Semáforo.** Sobre las mismas duraciones, se ordenan y se busca el mayor **salto proporcional**
+entre dos consecutivas (`sorted[i+1] / sorted[i]`) que deje al menos un mínimo de muestras a cada
+lado. El candidato exige que ese salto máximo alcance un umbral **y** que cada uno de los dos grupos,
+por separado, tenga un coeficiente de variación por debajo de su propio techo — la misma disciplina
+de guarda doble que ya usan `fifo.ts` y `read-rate-trend.ts`: un hueco encontrado sin grupos
+compactos a los lados es ruido con un pico, no dos regímenes reales.
+
+**Lo que esto no hace.** No construye `cambio-de-mapa`, `dejar-carro`/`recoger-carro` ni el cruce
+entre circuitos protegido por par de tags: las tres siguen sin firma disponible o bloqueadas por
+dato de planta (OQ-121). Tampoco comprueba reconvergencia entre más de un par de ramas a la vez con
+4 o más ramas simultáneas. OQ-122 queda Parcial: responde a cuatro de las siete clases, no a las
+siete.
+
+**Con la hora al minuto, sin firmas de tiempo.** Parada precisa y semáforo se reconocen por la
+duración hasta la siguiente lectura. Si todas las duraciones son múltiplos de un minuto
+(`sourceResolutionMs`, la misma resolución que usa la horquilla), la varianza y los dos grupos salen
+del redondeo y no del vehículo: con dato real al minuto salían decenas de «paradas precisas». No se
+buscan, y la vista lo dice (`timeSignaturesMeasurable`). Bifurcación y cruce no dependen del reloj y
+se siguen buscando.
+
+## 9. Punto crítico y análisis temporal
+
+Las llegadas se comparan con el takt y calendario vigentes. Un intervalo sin llegada —por ejemplo diez minutos— activa la búsqueda hacia atrás sobre:
+
+- alimentación del tramo;
+- orden FIFO y acumulación;
+- estados de CO;
+- silencios colectivos;
+- AGV divergentes;
+- cambios respecto al esperado de ese horario.
+
+El informe distingue correlación, secuencia causal plausible y causa confirmada.
+
+## 10. Mejoras posteriores
+
+Solo tras disponer de etiquetas humanas y métricas de precisión se considerarán:
+
+- detección no supervisada de patrones nuevos;
+- modelos supervisados para priorizar hipótesis;
+- predicción temprana de saturación;
+- aprendizaje de embeddings de incidencias.
+
+Todo modelo será candidato en sombra, comparado con el algoritmo estable, explicable en sus entradas y sin alterar históricos consolidados.
