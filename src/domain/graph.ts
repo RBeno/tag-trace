@@ -211,7 +211,7 @@ export function buildObservedGraph(
     if (transition.sameInstant) sameInstantTransitions += 1;
     outgoingByNode.set(transition.from, (outgoingByNode.get(transition.from) ?? 0) + 1);
 
-    const key = `${transition.from} ${transition.to}`;
+    const key = `${transition.from}\u0000${transition.to}`;
     let accumulator = accumulators.get(key);
     if (accumulator === undefined) {
       accumulator = {

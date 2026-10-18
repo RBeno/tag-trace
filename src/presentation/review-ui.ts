@@ -18,6 +18,7 @@ import {
   type ReviewState,
 } from "../domain/review.js";
 import { loadReviews, saveReview } from "../persistence/store.js";
+import { downloadBlob, node } from "./dom.js";
 
 interface CardControl {
   readonly key: string;
@@ -58,13 +59,6 @@ export interface ReviewSession {
 
 /** Lo último que se leyó del almacén, para no esperar a IndexedDB al volver a dibujar el mismo circuito. */
 let cache: { circuitId: string; entries: Map<string, ReviewEntry> } | null = null;
-
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  if (className !== undefined) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
 
 const PLURAL: Readonly<Record<ReviewState, string>> = {
   pendiente: "pendientes",
@@ -168,12 +162,7 @@ export function createReviewSession(
     const visible = [...controls.values()].map(({ key, title, figure }) => ({ key, title, figure }));
     // Con BOM y `;`: es lo que una hoja de cálculo en español abre sin preguntar ni romper tildes.
     const csv = `﻿${reviewCsv(visible, entries, formatInstant)}`;
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = node("a");
-    link.href = url;
-    link.download = `revision-${circuitId}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(`revision-${circuitId}.csv`, new Blob([csv], { type: "text/csv;charset=utf-8" }));
   });
 
   const barRow = node("div", "review-bar-row");

@@ -1,6 +1,6 @@
 ---
 document_id: TT-CONTEXT-001
-version: 0.5.0
+version: 0.6.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -11,10 +11,14 @@ Este documento evita que una persona o IA tenga que interpretar todo el reposito
 
 ## Lectura mínima siempre obligatoria
 
-1. `PROJECT_MEMORY.md`: decisiones compactas vigentes.
-2. `project_state.json`: fase, estado y transición permitida.
-3. `REQUIREMENTS.md`: requisitos identificados.
-4. El documento específico según la tarea.
+El mismo orden que `CLAUDE.md`:
+
+1. `project_state.json`: fase, estado y transición permitida.
+2. `PROJECT_MEMORY.md`: decisiones vigentes y relevo entre conversaciones.
+3. Este índice y el documento específico según la tarea (tabla siguiente).
+4. `REQUIREMENTS.md` cuando la tarea toque el alcance o un requisito identificado.
+
+Quien no conozca el proyecto empieza por [`VISION_GENERAL.md`](VISION_GENERAL.md): una página en lenguaje llano.
 
 ## Rutas por tipo de trabajo
 
@@ -37,7 +41,7 @@ Este documento evita que una persona o IA tenga que interpretar todo el reposito
 
 ## Estado documental
 
-Todos los documentos `0.1.0` constituyen una **candidata de línea base**, no una especificación aprobada. Las dudas que cambien el comportamiento están centralizadas en `OPEN_QUESTIONS.md` y no deben resolverse por suposición.
+Los documentos con `status: baseline-candidate` forman la línea base aprobada en F0 (`checkpoints/F0_BASELINE_CANDIDATE.md`) y siguen evolucionando: su versión avanza con cada cambio. Las dudas que cambien el comportamiento están centralizadas en `OPEN_QUESTIONS.md` y no deben resolverse por suposición.
 
 ## Jerarquía en caso de conflicto
 

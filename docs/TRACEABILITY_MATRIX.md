@@ -1,13 +1,13 @@
 ---
 document_id: TT-TRACE-001
-version: 0.81.0
+version: 0.82.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
 
 # Matriz de trazabilidad
 
-La matriz se ampliará hasta una relación automática cuando exista código. En F0 demuestra que cada bloque de valor posee reglas, algoritmos, pruebas y puerta. Desde F1a·0 ya existe código, y la sección final relaciona cada caso cubierto con el módulo y la prueba que lo sostienen.
+La matriz relaciona cada bloque de valor con sus reglas, algoritmos, pruebas y puerta. La sección final relaciona cada caso cubierto con el módulo y la prueba que lo sostienen.
 
 | Requisitos | Reglas/decisión | Algoritmos | Pruebas | Fase/puerta |
 |---|---|---|---|---|
@@ -117,6 +117,14 @@ regla exista: la matriz no es una lista de intenciones.
 | NFR-013, `UX_SPEC.md` §7 y §8, WP §6, OQ-175, F6 entrega 5 / TC-367–369 accesibilidad y estados de error | `src/presentation/styles.css` (`--link`, `--accent-text`, foco), `src/presentation/storage-ui.ts` (`createStoragePanel`, `storageText`, `inventoryLines`), `src/persistence/store.ts` (`StorageFullError`, `isStorageFull`, `circuitInventory`), `workers/import.worker.ts` (`failureOf`, `STORAGE_FULL`), `src/application/protocol.ts` (`STORAGE_FULL`), `src/presentation/main.ts` | `tests/unit/storage-ui.test.ts`, `tests/e2e/estados.spec.ts`, `tests/e2e/accesibilidad.spec.ts` |
 | NFR-001, NFR-010, NFR-012, TH-002, TH-004, `SECURITY_PRIVACY.md` §4 y §9, OQ-176, F6 entrega 6 / TC-370 sin red y seguridad | `vite.config.ts` (`publishedCsp`), `package.json` (Vite 7.3.6, Vitest 5.0.5) | `tests/e2e/sin-red.spec.ts` |
 | NFR-007, OQ-174, ADR-0018 D2, `DATA_CONTRACTS.md` §9, `OPERACION.md`, F6 entrega 7 / TC-371–372 copia de expedientes, manual y operación | `src/domain/case-transfer.ts` (`planCaseImport`, `caseImportText`), `src/persistence/agvproj.ts` (esquema 6, `incidentsSection`, `readIncidentsSection`), `src/persistence/project-incidents.ts`, `src/persistence/store.ts` (`appendCaseRevisions`), `src/presentation/main.ts`; `docs/MANUAL_DE_USO.md`, `docs/GUIA_DE_DIAGNOSTICO.md`, `docs/OPERACION.md` | `tests/unit/case-transfer.test.ts`, `tests/unit/agvproj.test.ts`, `tests/e2e/expedientes.spec.ts` |
+| ADR-0013, R-DAT-013 / TC-373 los campos de fecha de la interfaz convierten como el dominio | `src/presentation/time-input.ts` (`toDateTimeInput`, `fromDateTimeInput`, `isoDay`, `zoneMidnight`) | `tests/unit/time-input.test.ts` |
+| R-DAT-007, R-FLO-001, R-CO-002 / TC-374 la cola cortada no es pasada ni estancia completa | `src/domain/fifo.ts`, `src/domain/charging.ts` (`straddlesGap` sobre `sameSpan`) | `tests/unit/fifo.test.ts`, `tests/unit/charging.test.ts` |
+| R-DAT-013, R-FLO-010 / TC-375 pasos por la línea en el mismo instante | `src/domain/line-feed.ts` (`measurable`, paso del recorrido) | `tests/unit/line-feed.test.ts` |
+| `ARCHITECTURE.md` §3 / TC-376 las capas que existen | `src/domain/**`, `src/application/**`, `src/persistence/**`, `workers/**` | `tests/unit/layering.test.ts` |
+| OQ-151, R-FLO-007 / TC-377 «a la misma hora» cruza la medianoche | `src/domain/flow-stops.ts` (`sameTimeRepetitions`) | `tests/unit/flow-stops.test.ts` |
+| R-EVI-004 / TC-378 la mediana de un AGV solo es `null` | `src/domain/dossier.ts` (`median`, `cohortMedianReadings`) | `tests/unit/dossier.test.ts` |
+| R-DAT-014 / TC-379 una fecha imposible no decide el orden | `src/domain/time.ts` (`detectFieldOrder`) | `tests/unit/time.test.ts` |
+| TH-006, ADR-0012 / TC-380 nombres de sección del `.agvproj` acotados y sin prototipo | `src/persistence/agvproj.ts` (`SECTION_NAME`, `readProject`) | `tests/unit/agvproj.test.ts` |
 | NFR-010, NFR-011, NFR-016, `UX_SPEC.md` §9, F6 entrega 1 / TC-357–359 actualización segura, versión identificable y retorno | `public/sw.js` (caché por versión, espera, `version` y `activate`), `vite.config.ts` (`serviceWorkerManifest`), `src/presentation/update.ts` (`startUpdates`, `updateText`, `compareVersions`), `src/presentation/main.ts` (versión en la cabecera, `syncUpdateBusy`), `src/persistence/store.ts` (`onversionchange`), `.github/workflows/deploy-pages.yml` (etiqueta `vX.Y.Z`) | `tests/unit/update.test.ts`, `tests/e2e/actualizacion.spec.ts` |
 | ADR-0018 D10 entrega 6, ALG-017, `INCIDENTS_REPORTING.md` §6, OQ-172 / TC-355–356 biblioteca de casos y similitud explicada | `src/domain/case-similarity.ts` (`similarCases`, `VERDICT_WORD`), `src/domain/config.ts` (`incidentCase.similarityDurationRatio`), `workers/import.worker.ts` (`buildCaseViews`, en dos pasadas), `src/application/protocol.ts` (`CaseView.similar`), `src/presentation/cases-ui.ts` (`similarBlock`), `src/presentation/case-report.ts` (apartado 6) | `tests/unit/case-similarity.test.ts`, `tests/e2e/expedientes.spec.ts` |
 | ADR-0018 D11 entrega 5, FR-026, `INCIDENTS_REPORTING.md` §8 / TC-353–354 informe vivo y exportación del expediente | `src/presentation/case-report.ts` (`buildCaseReportHtml`, `casesSummaryHtml`, `caseReportFileName`), `src/domain/case-export.ts` (`chronologyCsv`, `evidenceCsv`), `src/presentation/report.ts` (sección de expedientes, `appCss`), `workers/import.worker.ts` (`runCaseEvidenceCsv`), `src/application/protocol.ts` (`case-evidence-csv`), `src/presentation/cases-ui.ts` (`exportBlock`), `src/presentation/main.ts` (`exportCase`, `saveDownload`) | `tests/unit/case-report.test.ts`, `tests/e2e/expedientes.spec.ts` |

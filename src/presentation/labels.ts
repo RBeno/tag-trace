@@ -98,8 +98,8 @@ export const regimeLabel = pick(REGIME_WORDS);
  * el Worker lo necesita para bloquear la consolidación de un periodo de incidencia. Aquí se re-exporta
  * para que la presentación siga importándolo de un solo sitio.
  */
-export { FINDING_KINDS, findingKindOf, RANK_LABEL, THEMES } from "../domain/finding-kinds.js";
-export type { FindingKind, FindingRank, Theme } from "../domain/finding-kinds.js";
+export { findingKindOf, RANK_LABEL, THEMES } from "../domain/finding-kinds.js";
+export type { FindingRank, Theme } from "../domain/finding-kinds.js";
 
 import type { Theme } from "../domain/finding-kinds.js";
 

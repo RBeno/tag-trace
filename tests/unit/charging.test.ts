@@ -340,6 +340,31 @@ describe("máquina de estados de la calle (R-CO-002)", () => {
     expect(calle1?.medianStayMs).toBe(30 * MINUTE - 10_000);
   });
 
+  it("una estancia cuya entrada cae en la cola cortada de una exportación es incompleta (R-DAT-007, TC-374)", () => {
+    // La cobertura completa acaba en el minuto 60 y la cola cortada sigue hasta el 61: A entra ahí y sale
+    // en la segunda exportación, cuatro horas después. Hasta 3.89.0 era una estancia «completa» de cuatro
+    // horas que entraba en la mediana y en «permanencia larga».
+    const coverage = [
+      { from: 0, to: 60 * MINUTE },
+      { from: 300 * MINUTE, to: 540 * MINUTE },
+    ];
+    const readings = [
+      read("A", "700", 61 * MINUTE),
+      read("A", "701", 61 * MINUTE + 10_000),
+      read("A", "702", 301 * MINUTE),
+      ...["B", "C", "D", "E"].flatMap((agvId, index) => [
+        read(agvId, "700", 310 * MINUTE + index * MINUTE),
+        read(agvId, "701", 310 * MINUTE + index * MINUTE + 10_000),
+        read(agvId, "702", 310 * MINUTE + index * MINUTE + 30 * MINUTE),
+      ]),
+    ];
+    const calle1 = buildChargingReport(readings, lanes, coverage, THRESHOLDS).lanes.find((item) => item.laneId === "calle-1");
+    const a = calle1?.stays.find((stay) => stay.agvId === "A");
+    expect(a).toMatchObject({ state: "incompleta", truth: "unknown", durationMs: null });
+    expect(calle1?.longStays).toEqual([]);
+    expect(calle1?.outOfSeniority).toEqual([]);
+  });
+
   it("salir de una calle habiendo circulado antes no es arranque en frío", () => {
     const readings = [
       read("C", "999", 1 * MINUTE),

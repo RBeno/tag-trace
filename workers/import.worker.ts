@@ -23,6 +23,7 @@ import {
   ImportCancelled,
   ImportFailure,
   importReadings,
+  LIMITS,
 } from "../src/ingestion/importer.js";
 import { decodeSource } from "../src/ingestion/decode.js";
 import { rowsToDelimitedText } from "../src/ingestion/xlsx-readings.js";
@@ -337,7 +338,7 @@ function unchangedReport(
     circuitId,
     coverage: existing?.coverage ?? [],
     totalReadings: working.length,
-    sources: sources.length,
+    sources: new Set(sources.map((source) => source.sourceId)).size, // ficheros distintos, no importaciones
     shared: 0,
     disagreements: 0,
     affinity,
@@ -468,7 +469,7 @@ async function accumulate(
       circuitId,
       coverage,
       totalReadings: union.readings.length,
-      sources: sources.length,
+      sources: new Set(sources.map((source) => source.sourceId)).size, // ficheros distintos, no importaciones
       shared: union.shared,
       disagreements: union.disagreements,
       affinity,
@@ -1971,6 +1972,21 @@ async function runImport(message: Extract<ToWorker, { type: "start" }>): Promise
   const { jobId, file, zone } = message;
   const stages: readonly Stage[] = ["hashing", "sampling", "parsing", "ordering", "done"];
   emit({ type: "accepted", stages }, jobId);
+
+  // El tamaño se sabe antes de leer: por encima del límite (TH-006) se rechaza aquí, no después de
+  // leer, hashear y decodificar el fichero entero (medido: 42 s y 1,2 GB para 541 MB).
+  if (file.size > LIMITS.maxBytes) {
+    emit(
+      {
+        type: "error",
+        code: "LIMIT_EXCEEDED",
+        cause: `El fichero ocupa ${file.size} bytes y el límite es ${LIMITS.maxBytes}.`,
+        recovery: "Exporta un periodo más corto y vuelve a intentarlo.",
+      },
+      jobId,
+    );
+    return;
+  }
 
   let buffer: ArrayBuffer;
   try {
@@ -3622,6 +3638,26 @@ async function applyCaseAction(stored: StoredCircuit, action: CaseAction, now: n
   await appendCaseRevision(revision, newEvidence && frozen.summary.hash !== null ? { hash: frozen.summary.hash, evidence: frozen.evidence } : null);
   return { caseId: action.caseId, text: `${action.caseId}: ventana y recorte cambiados (revisión ${revision.revision}).` };
 }
+
+/**
+ * Un rechazo de promesa sin capturar dentro del Worker no llega a `worker.onerror` de la página (sí
+ * llega una excepción síncrona): la interfaz se quedaría ocupada sin mensaje. Se convierte en un
+ * `error` del trabajo vigente. El texto del fallo no lleva datos de la fuente (TH-003): aquí solo se
+ * dice que fue interno.
+ */
+scope.onunhandledrejection = (event: PromiseRejectionEvent): void => {
+  event.preventDefault();
+  if (currentJobId === null) return;
+  emit(
+    {
+      type: "error",
+      code: "INTERNAL",
+      cause: "La operación falló por un error interno del análisis.",
+      recovery: "Vuelve a intentarlo. Si se repite con el mismo fichero, informa del defecto (`GUIA_DE_DIAGNOSTICO.md` §4) sin adjuntar datos de planta.",
+    },
+    currentJobId,
+  );
+};
 
 scope.onmessage = (event: MessageEvent<ToWorker>): void => {
   const message = event.data;

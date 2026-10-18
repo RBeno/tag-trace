@@ -1,6 +1,6 @@
 ---
 document_id: TT-MANUAL-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -18,7 +18,7 @@ dispositivo**: los ficheros no salen de él, no hay servidor ni cuenta, y funcio
 abierta. Es **solo de observación**: no se conecta a los AGV, ni a los lectores, ni al servidor de
 planta, y no da órdenes.
 
-Lo que no sabe, lo dice: «sin determinar» o «sin dato» no es un fallo, es que con lo cargado no se puede
+Lo que no sabe, lo dice: «sin determinar» o «sin datos» no es un fallo, es que con lo cargado no se puede
 afirmar. Las cifras «provisionales» son valores de partida hasta que la memoria del circuito los mida y
 una persona los confirme.
 
@@ -41,6 +41,10 @@ una persona los confirme.
 Si el fichero es de otro circuito, no se acumula y se dice por qué. Si la fecha es ambigua (día y mes
 intercambiables), se pide el formato.
 
+Las listas del circuito, el historial de flota y el registro de conexiones (pestaña **Datos**) se cargan
+cuando el circuito ya existe, es decir, después de la primera importación con nombre; y se aplican al
+**volver a importar** las lecturas. El orden que funciona: importar, cargar las listas, importar otra vez.
+
 ## 4. Las pestañas
 
 | Pestaña | Para qué |
@@ -61,7 +65,7 @@ datos en tabla». Con el dedo, un toque fija la lectura de un gráfico.
 
 1. En la bandeja del Resumen, cada hallazgo tiene **Revisión en campo**: confirmado, descartado o
    pospuesto, con nota si hace falta. «Siguiente pendiente» lleva al siguiente.
-2. Cuando el periodo es normal y no queda nada grave pendiente, en **Memoria**, «Previsualizar vN»
+2. Cuando el periodo es normal y no queda ningún hallazgo pendiente (pospuesto vale), en **Memoria**, «Previsualizar vN»
    enseña qué se guardaría; «Confirmar y consolidar» lo guarda. La consolidación la decide siempre una
    persona; el programa nunca consolida solo.
 3. Una versión se puede revocar con razón; nada se borra.

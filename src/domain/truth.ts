@@ -12,7 +12,3 @@
  */
 export type TruthState = "observed" | "inferred" | "expected" | "unknown" | "confirmed";
 
-/** Si un estado puede presentarse al usuario como hecho. Solo dos pueden. */
-export function isFact(state: TruthState): boolean {
-  return state === "observed" || state === "confirmed";
-}

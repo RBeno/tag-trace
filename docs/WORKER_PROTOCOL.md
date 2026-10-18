@@ -1,8 +1,8 @@
 ---
 document_id: TT-WORKER-001
-version: 0.17.0
+version: 0.18.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Protocolo entre la interfaz y los Workers
@@ -103,6 +103,12 @@ type             : start | accepted | progress | partial | complete | error | ca
 | `consolidated` | la versión escrita y la memoria del circuito (`MemoryViews`: versiones resumidas, vigente, comparación, bytes, linaje) | Único mensaje que confirma una consolidación. |
 | `revoked` | número revocado y la memoria del circuito | |
 | `fork-resolved` | la memoria del circuito tras la elección | |
+| `versions-compared` | la comparación: las dos versiones, las de entre medias, lo adoptado por el camino y el delta | |
+| `plant-values-updated` | los valores de planta del circuito: provisional, vigente para el fichero de trabajo, historial y dónde se mide | |
+| `cases-updated` | lo escrito en palabras, el expediente tocado y los expedientes del circuito (`CaseViews`, con la cronología del retroceso de cada uno desde 3.75.0 y sus casos parecidos desde 3.80.0) | |
+| `case-replay-ready` | el expediente, la revisión de la que sale y el replay (`CaseReplay`: fotogramas con fase, AGV con lo visto, la banda esperada y la conexión, y los hechos de la cronología) | |
+| `case-evidence-csv-ready` | el expediente, la revisión y el CSV | |
+| `plan-updated` | los eventos escritos en palabras y el plano (`PlanViews`) leído contra el fichero de trabajo | |
 
 Las escrituras de memoria del Worker (`commit` y `resolve-fork`) pasan al almacén los hashes del
 linaje activo **tal como los leyó**; el almacén los compara con lo guardado dentro de la misma
@@ -110,12 +116,6 @@ transacción y, si el hilo principal escribió la memoria entre medias (al abrir
 escribe nada y el Worker responde `error` («La memoria cambió mientras se preparaba la escritura: no
 se ha guardado nada.»). La respuesta a un `consolidate` con `mode: "commit"` es `consolidated`,
 `error` o `cancelled`; a `revoke` y `resolve-fork`, `revoked`/`fork-resolved`, `error` o `cancelled`.
-| `versions-compared` | la comparación: las dos versiones, las de entre medias, lo adoptado por el camino y el delta | |
-| `plant-values-updated` | los valores de planta del circuito: provisional, vigente para el fichero de trabajo, historial y dónde se mide | |
-| `cases-updated` | lo escrito en palabras, el expediente tocado y los expedientes del circuito (`CaseViews`, con la cronología del retroceso de cada uno desde 3.75.0 y sus casos parecidos desde 3.80.0) | |
-| `case-replay-ready` | el expediente, la revisión de la que sale y el replay (`CaseReplay`: fotogramas con fase, AGV con lo visto, la banda esperada y la conexión, y los hechos de la cronología) | |
-| `case-evidence-csv-ready` | el expediente, la revisión y el CSV | |
-| `plan-updated` | los eventos escritos en palabras y el plano (`PlanViews`) leído contra el fichero de trabajo | |
 
 Las vistas de una importación (`complete.views`) llevan `memory` cuando el circuito tiene versiones:
 la lista resumida, la vigente, **lo observado frente a la memoria** (la instantánea del fichero de
@@ -152,7 +152,7 @@ de ejemplo saneadas y acción de recuperación. `UX_SPEC.md` §8 lo exige y el p
 | `LIMIT_EXCEEDED` | Se superó un límite de tamaño, celdas o memoria declarado. |
 | `CIRCUIT_FOREIGN` | La huella de afinidad sitúa la fuente en otro circuito. |
 | `STORAGE_FULL` | No queda espacio en el dispositivo para guardar (3.86.0): el almacén convierte `QuotaExceededError` en `StorageFullError`; la transacción que falla no deja nada escrito. Las demás operaciones del Worker dicen lo mismo con su `error`, nunca como defecto. |
-| `INTERNAL` | Defecto del propio motor; nunca debe usarse para tapar los anteriores. |
+| `INTERNAL` | Defecto del propio motor; nunca debe usarse para tapar los anteriores. Desde 3.89.0 lo emite también el Worker ante un rechazo de promesa sin capturar (`onunhandledrejection`), que no llega a `worker.onerror` de la página y dejaba la interfaz ocupada sin mensaje. |
 
 Ningún mensaje de error **debe** incluir contenido bruto sin sanear (TH-003).
 

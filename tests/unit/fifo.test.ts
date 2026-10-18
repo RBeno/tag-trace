@@ -232,6 +232,23 @@ describe("adelantamiento en un tramo (buildFifoReport, R-FLO-001)", () => {
     // Sin cobertura declarada se comporta como antes: la lectura es la única verdad.
     expect(buildFifoReport(1, readings, [SPAN], THRESHOLDS).spans[0]?.overtakes[0]?.overtaken).toBe("A");
   });
+
+  it("una pasada con la entrada en la cola cortada de una exportación tampoco es una pasada (R-DAT-007, TC-374)", () => {
+    // La cobertura completa de la primera exportación acaba en el minuto 60; su cola cortada llega al 61,
+    // fuera de ella. A entra en la cola y sale en la segunda exportación. Hasta 3.89.0 contaba como pasada
+    // completa —no «encerraba» el hueco porque su entrada caía dentro de él— y salía adelantada por seis.
+    const coverage = [
+      { from: 0, to: 60 * MINUTE },
+      { from: 300 * MINUTE, to: 540 * MINUTE },
+    ];
+    const readings = [
+      ...pass("A", 61, 301),
+      ...Array.from({ length: 6 }, (_, index) => pass(`V${index}`, 310 + index, 320 + index)).flat(),
+    ];
+    const span = buildFifoReport(1, readings, [SPAN], THRESHOLDS, coverage).spans[0];
+    expect(span?.passes).toBe(6);
+    expect(span?.overtakes).toEqual([]);
+  });
 });
 
 describe("ventana que se dibuja alrededor del adelantamiento (SpanReport.focus)", () => {

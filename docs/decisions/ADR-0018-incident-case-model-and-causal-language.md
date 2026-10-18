@@ -114,7 +114,6 @@ exige:
 | `VerifiedIneffective` → `Investigating` | persona | — |
 | `Investigating` → `Inconclusive` | persona | qué evidencia falta |
 | `VerifiedEffective` → `Closed` | persona | conclusión humana |
-
 | `Draft` / `UnderReview` → `Discarded` | persona | razón («no es una incidencia», por ejemplo una parada planificada que nadie anotó) |
 | `Closed` / `Inconclusive` → `Investigating` | persona | la evidencia nueva que lo reabre; es una revisión nueva |
 

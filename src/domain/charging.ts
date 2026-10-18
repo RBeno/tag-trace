@@ -22,7 +22,7 @@
  */
 
 import type { CoLane } from "./circuit-config.js";
-import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
+import { mergeIntervals, sameSpan, type Interval } from "./coverage.js";
 import type { Reading } from "./reading.js";
 import type { TruthState } from "./truth.js";
 
@@ -359,9 +359,11 @@ export function buildChargingReport(
   const index = roleIndex(lanes);
   const coverageStartUtcMs =
     coverage.length === 0 ? null : Math.min(...coverage.map((interval) => interval.from));
-  const gaps = uncoveredGaps(mergeIntervals([...coverage]));
-  const straddlesGap = (fromUtcMs: number, toUtcMs: number): boolean =>
-    gaps.some((gap) => fromUtcMs <= gap.from && toUtcMs >= gap.to);
+  // Los dos extremos en el mismo tramo de cobertura, o no vale (R-DAT-007). Hasta 3.89.0 se miraba si
+  // encerraba un hueco entero: la entrada leída en la cola cortada de una exportación —fuera de su
+  // tramo completo— y la salida en la siguiente pasaban por completas.
+  const covered = mergeIntervals([...coverage]);
+  const straddlesGap = (fromUtcMs: number, toUtcMs: number): boolean => !sameSpan(covered, fromUtcMs, toUtcMs);
 
   // Una pasada por las lecturas, agrupando por vehículo. El resto trabaja ya sobre lecturas de
   // calle, que son una fracción diminuta del total (WP-001: nada de recorrer el CSV varias veces).

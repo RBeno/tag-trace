@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.75.0
+version: 0.76.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -12,9 +12,10 @@ last_updated: 2026-10-18
 - Nombre: **TAG TRACE**.
 - Naturaleza: diagnóstico histórico longitudinal y gemelo digital de circuitos AGV.
 - Primer circuito piloto: PC2.
-- Estado: **F3 en curso** desde el 2026-09-20, autorizada por el propietario con «Continúa con Fase
-  3». F2 entregó el grafo observado, el inventario contrastado, las cuatro vistas, las vueltas, el
-  agrupamiento por circuito, el expediente, el contraste contra Vsystem y el replay.
+- Estado: la fase vigente la dice `project_state.json` (F6, piloto profesional, al 2026-10-18); el
+  relevo entre conversaciones está al final de este documento. F2 entregó el grafo observado, el
+  inventario contrastado, las cuatro vistas, las vueltas, el agrupamiento por circuito, el expediente,
+  el contraste contra Vsystem y el replay.
   F1 entregó el importador, la acumulación por circuito, `.agvproj`, la PWA y las pruebas de
   navegador. G1 se cerró con tres criterios sin cumplir, declarados y arrastrados a G2: el plan de
   aceptación de F1, la afinidad de circuito y PERF-D2 en el móvil de referencia. **La afinidad de
@@ -424,6 +425,24 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## Revisión general del producto y de la documentación (3.89.0, 2026-10-18)
+
+Cinco revisiones en paralelo (arquitectura, dominio, importación y persistencia, interfaz y textos,
+documentación), con cada hallazgo reproducido; el informe, con lo aplicado y lo que queda como
+propuesta, está en `REVISION_2026-10-18.md`. Aplicado: la conversión de hora de los campos de fecha
+de la interfaz pasa por `wallClockToUtc` (dos paneles la rehacían con el método que ADR-0013
+rechaza, TC-373); la cola cortada ya no fabrica pasadas FIFO ni estancias completas (R-DAT-007,
+TC-374); los pasos por la línea en el mismo instante no miden cadencia, que salía 0 y colgaba el
+Worker (TC-375); «a la misma hora» cruza la medianoche (TC-377); la mediana de un AGV solo es
+`null`, no 0 (TC-378); una fecha imposible no declara el fichero contradictorio (TC-379); el
+`.agvproj` acota los nombres de sección (TC-380); el límite de tamaño se comprueba antes de leer y
+un rechazo de promesa en el Worker llega a la interfaz; el informe lee la memoria vigente; los
+ficheros se cuentan por huella; el buscador enseña su resultado; los textos ya no muestran
+identificadores internos ni afirman causas. Vitest 5.0.5 (3.88.4) cerró OQ-176. Cuatro preguntas
+nuevas para el propietario: OQ-177 a OQ-180. Lo grande (trocear `main.ts`, `buildViews` y
+`diagnostic-charts.ts`; `PROJECT_MEMORY` en histórico; una sola transacción al acumular) queda
+propuesto, no hecho.
+
 ## Vitest 5.0.5: condición de OQ-176 cumplida (3.88.4, 2026-10-18)
 
 Vitest 3.2.7 → 5.0.5, versión exacta. Vitest 4.1.10 a 4.1.12 y 5.0.3–5.0.4 no se instalan con npm 10.9.4
@@ -763,7 +782,9 @@ conversación siguiente.
   hechas (3.82.0 a 3.88.0, más 3.83.1 «Cancelar») y la 8 preparada (3.88.1), todo en la rama
   `ccr-b6e42985-mfx1ho` hasta que el propietario pida el PR. Lo que queda es suyo: publicar, medir con el
   banco en el S23 FE y el PC, el piloto con `templates/PILOT_ACCEPTANCE.md` y decidir OQ-172. OQ-176 está decidida (2026-10-18)
-  y su condición cumplida en 3.88.4 (Vitest 5.0.5, `npm audit` sin avisos).
+  y su condición cumplida en 3.88.4 (Vitest 5.0.5, `npm audit` sin avisos). La revisión general de
+  3.89.0 (`REVISION_2026-10-18.md`) dejó cuatro preguntas nuevas, OQ-177 a OQ-180, y una lista de
+  propuestas por entregas.
 - Antes, **fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
   6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron

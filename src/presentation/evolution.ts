@@ -19,13 +19,7 @@ import { plainTable } from "./charts.js";
 import { SECTION_TONES, type EvolutionData, type RingData, type RingMark } from "./diagnostic-charts.js";
 import { tableDrawer } from "./drawer.js";
 import { criticalFunctionLabel, regimeLabel } from "./labels.js";
-
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  if (className !== undefined) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
+import { node } from "./dom.js";
 
 /** Marcas numeradas alrededor del anillo, como mucho: el mismo tope que `ringDataOf` en `main.ts`. */
 const RING_MARKS = 20;

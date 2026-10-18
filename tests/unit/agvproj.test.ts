@@ -98,6 +98,21 @@ describe("INV-011 · ida y vuelta de `.agvproj`", () => {
 });
 
 describe("apertura defensiva · ADR-0012", () => {
+  it("una sección llamada «__proto__» o con una ruta dentro se rechaza, y las secciones no tienen prototipo (TC-380)", async () => {
+    const { semanticHash } = await import("../../src/domain/semantic-hash.js");
+    for (const name of ["__proto__", "mala/ruta"]) {
+      const value = { tocado: true };
+      const partial = { schema_version: AGVPROJ_SCHEMA_VERSION, circuit_id: "c1", exported_at: EXPORTED_AT, sections: [{ name, hash: await semanticHash(value), bytes: 1 }] };
+      const bytes = await writeZip([
+        { name: "manifest.json", data: new TextEncoder().encode(JSON.stringify({ ...partial, hash: await semanticHash(partial) })) },
+        { name: `sections/${name}.json`, data: new TextEncoder().encode(JSON.stringify(value)) },
+      ]);
+      await expect(readProject(bytes)).rejects.toBeInstanceOf(ProjectError);
+    }
+    const project = await readProject(await writeProject("c1", sections, EXPORTED_AT));
+    expect(Object.getPrototypeOf(project.sections)).toBeNull();
+  });
+
   it("una sección alterada invalida la carga entera, no solo esa sección", async () => {
     const bytes = await writeProject("c1", sections, EXPORTED_AT);
     // Se altera un byte del contenido comprimido.

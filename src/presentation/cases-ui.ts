@@ -19,19 +19,8 @@ import { metricText, verificationText, type CaseMetric } from "../domain/case-ve
 import { VERDICT_WORD } from "../domain/case-similarity.js";
 import { PHASE_TEXT, type Chronology, type ChronologyPhase } from "../domain/case-backtrack.js";
 import { CASE_STATE_TEXT, type CaseOrigin, type CaseState, type TransitionOption } from "../domain/incident-case.js";
-
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  if (className !== undefined) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
-
-function button(text: string, className?: string): HTMLButtonElement {
-  const out = node("button", className, text);
-  out.type = "button";
-  return out;
-}
+import { button, node } from "./dom.js";
+import { fromDateTimeInput, toDateTimeInput } from "./time-input.js";
 
 const MIN = 60_000;
 
@@ -40,50 +29,6 @@ const CONNECTION_TEXT: Readonly<Record<ConnectionState, string>> = {
   "sin-conexion": "sin conexión (registro)",
   "sin-registro": "sin registro",
 };
-
-/** «2026-10-09T10:40» en la zona del circuito, para un `datetime-local`. */
-export function toLocalInput(utcMs: number, zone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: zone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(new Date(utcMs));
-  const part = (type: string): string => parts.find((entry) => entry.type === type)?.value ?? "00";
-  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
-}
-
-/** El instante UTC de un `datetime-local` leído en la zona del circuito, o `null` si no es una fecha. */
-export function fromLocalInput(text: string, zone: string): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(text);
-  if (match === null) return null;
-  const wall = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6] ?? "0"));
-  // Dos pasadas: la diferencia entre lo que la zona enseña y lo pedido es su desfase en ese instante.
-  let guess = wall;
-  for (let pass = 0; pass < 2; pass += 1) {
-    const shown = fromLocalParts(guess, zone);
-    guess += wall - shown;
-  }
-  return guess;
-}
-
-function fromLocalParts(utcMs: number, zone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: zone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(new Date(utcMs));
-  const part = (type: string): number => Number(parts.find((entry) => entry.type === type)?.value ?? "0");
-  return Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"));
-}
 
 /** Un punto de partida para un expediente: una incidencia medida, una excluida o un hallazgo (D1). */
 export interface CaseStart {
@@ -313,8 +258,8 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       title.input.value = chosen.title;
       agv.input.value = chosen.agvId ?? "";
       tags.input.value = chosen.tagIds.join(", ");
-      from.input.value = chosen.from === null ? "" : toLocalInput(chosen.from, input.zone);
-      to.input.value = chosen.to === null ? "" : toLocalInput(chosen.to, input.zone);
+      from.input.value = chosen.from === null ? "" : toDateTimeInput(chosen.from, input.zone, "minutes");
+      to.input.value = chosen.to === null ? "" : toDateTimeInput(chosen.to, input.zone, "minutes");
       applyBusy();
     };
     origin.input.addEventListener("change", fillStarts);
@@ -324,12 +269,12 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       context.circuitId !== null &&
       title.input.value.trim() !== "" &&
       symptom.input.value.trim() !== "" &&
-      fromLocalInput(from.input.value, input.zone) !== null &&
-      fromLocalInput(to.input.value, input.zone) !== null &&
+      fromDateTimeInput(from.input.value, input.zone) !== null &&
+      fromDateTimeInput(to.input.value, input.zone) !== null &&
       (origin.input.value === "sintoma" || chosen !== null);
     const create = sender("Crear expediente", "case-create-send", ready, () => {
-      const symptomFrom = fromLocalInput(from.input.value, input.zone) as number;
-      const symptomTo = fromLocalInput(to.input.value, input.zone) as number;
+      const symptomFrom = fromDateTimeInput(from.input.value, input.zone) as number;
+      const symptomTo = fromDateTimeInput(to.input.value, input.zone) as number;
       input.send({
         kind: "crear",
         title: title.input.value,
@@ -391,9 +336,9 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
     box.append(node("p", "plan-form-title", "Cambiar la ventana (solo en borrador)"));
     const w = view.current.window;
     const from = field("Principio del síntoma", "plan-date case-window-from", "datetime-local");
-    from.input.value = toLocalInput(w.symptomFrom, input.zone);
+    from.input.value = toDateTimeInput(w.symptomFrom, input.zone, "minutes");
     const to = field("Fin del síntoma", "plan-date case-window-to", "datetime-local");
-    to.input.value = toLocalInput(w.symptomTo, input.zone);
+    to.input.value = toDateTimeInput(w.symptomTo, input.zone, "minutes");
     const before = field("Margen antes (minutos)", "plan-date case-window-before", "number");
     before.input.min = "0";
     before.input.value = String(Math.round(w.marginBeforeMs / MIN));
@@ -401,8 +346,8 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
     after.input.min = "0";
     after.input.value = String(Math.round(w.marginAfterMs / MIN));
     const read = (): { symptomFrom: number; symptomTo: number; marginBeforeMs: number; marginAfterMs: number } | null => {
-      const a = fromLocalInput(from.input.value, input.zone);
-      const b = fromLocalInput(to.input.value, input.zone);
+      const a = fromDateTimeInput(from.input.value, input.zone);
+      const b = fromDateTimeInput(to.input.value, input.zone);
       const m1 = Number(before.input.value);
       const m2 = Number(after.input.value);
       if (a === null || b === null || !Number.isFinite(m1) || !Number.isFinite(m2) || before.input.value === "" || after.input.value === "") return null;
@@ -454,7 +399,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
         "En orden de tiempo. «Precede» solo dice que ocurrió antes del síntoma: ni que importe más ni que tenga que ver con él. " +
           "Nada de aquí dice por qué ocurrió: eso lo confirma una persona.",
       ),
-      node("p", "muted case-context", `${view.contextText} Procedimiento ${chronology.algorithm}.`),
+      node("p", "muted case-context", `${view.contextText} Método de cálculo: ${chronology.algorithm}.`),
     );
     if (chronology.declared.length > 0) {
       box.append(
@@ -576,7 +521,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       "p",
       "muted case-replay-note",
       `«Esperado» es dónde debería estar cada AGV desde su última lectura, entre el paso lento (p95) y el habitual (p50) de cada tramo, ` +
-        `${replay.expectedFrom === "memoria" ? "según el esperado de la versión consolidada" : replay.expectedFrom === "instantanea" ? "según lo habitual del propio fichero" : "y aquí no se puede decir"}: no se ha visto. Procedimiento ${replay.algorithm}.`,
+        `${replay.expectedFrom === "memoria" ? "según el esperado de la versión consolidada" : replay.expectedFrom === "instantanea" ? "según lo habitual del propio fichero" : "y aquí no se puede decir"}: no se ha visto. Método de cálculo: ${replay.algorithm}.`,
     );
     const limits = node("ul", "case-limits");
     for (const limit of replay.limits) limits.append(node("li", undefined, limit));
@@ -697,7 +642,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       item.append(details);
       list.append(item);
     }
-    box.append(list, node("p", "muted", `Procedimiento ${similarity.algorithm}.`));
+    box.append(list, node("p", "muted", `Método de cálculo: ${similarity.algorithm}.`));
     return box;
   }
 
@@ -804,16 +749,16 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       );
       if (working(view) && measure.appliedAt === null) {
         const at = field("Fecha de aplicación", "plan-date case-applied-at", "datetime-local");
-        at.input.value = toLocalInput(Date.now(), input.zone);
+        at.input.value = toDateTimeInput(Date.now(), input.zone, "minutes");
         item.append(
           at.box,
-          sender("Registrar la aplicación", "case-apply-send", () => fromLocalInput(at.input.value, input.zone) !== null, () =>
+          sender("Registrar la aplicación", "case-apply-send", () => fromDateTimeInput(at.input.value, input.zone) !== null, () =>
             input.send({
               kind: "aplicar",
               caseId: current.caseId,
               expectedRevision: current.revision,
               countermeasureId: measure.id,
-              appliedAt: fromLocalInput(at.input.value, input.zone) as number,
+              appliedAt: fromDateTimeInput(at.input.value, input.zone) as number,
               author: author.input.value,
             }),
           ),
@@ -836,7 +781,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
       verification.append(
         node("p", "case-verification-head", `Verificación de ${current.verification.countermeasureId}, medida ${input.formatInstant(current.verification.recordedAt)}:`),
         node("p", "case-verification-text", verificationText(current.verification.result)),
-        node("p", "muted", `Procedimiento ${current.verification.result.algorithm}. La conclusión se escribe al pasar el expediente a verificada eficaz o ineficaz.`),
+        node("p", "muted", `Método de cálculo: ${current.verification.result.algorithm}. La conclusión se escribe al pasar el expediente a verificada eficaz o ineficaz.`),
       );
       box.append(verification);
     }
@@ -850,7 +795,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
     const action = field("Acción", "case-cm-action", "text");
     const owner = field("Responsable", "case-cm-owner", "text");
     const planned = field("Fecha prevista", "plan-date case-cm-planned", "datetime-local");
-    planned.input.value = toLocalInput(Date.now(), input.zone);
+    planned.input.value = toDateTimeInput(Date.now(), input.zone, "minutes");
     const risk = field("Riesgo (opcional)", "case-cm-risk", "text");
     const proposal: CaseMetric | null = view.metricProposal;
     const gap = field("Episodio: hueco de al menos (minutos)", "plan-date case-cm-gap", "number");
@@ -869,7 +814,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
         : `Métrica, la del síntoma: ${metricText(proposal)}. Queda fija con la contramedida.`,
     );
     const ready = (): boolean =>
-      action.input.value.trim() !== "" && owner.input.value.trim() !== "" && fromLocalInput(planned.input.value, input.zone) !== null && metricOf() !== null;
+      action.input.value.trim() !== "" && owner.input.value.trim() !== "" && fromDateTimeInput(planned.input.value, input.zone) !== null && metricOf() !== null;
     box.append(
       action.box,
       owner.box,
@@ -887,7 +832,7 @@ export function createCasesPanel(input: CasesPanelInput): CasesPanel {
           countermeasure: {
             action: action.input.value,
             owner: owner.input.value,
-            plannedAt: fromLocalInput(planned.input.value, input.zone) as number,
+            plannedAt: fromDateTimeInput(planned.input.value, input.zone) as number,
             risk: risk.input.value,
             metric,
           },

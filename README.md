@@ -1,6 +1,6 @@
 # TAG TRACE
 
-Sistema local y explicable de diagnóstico longitudinal y gemelo digital de circuitos AGV a partir de lecturas históricas de tags.
+Una aplicación web que lee las exportaciones de lecturas de tags de un circuito de AGV y explica qué pasa en ese circuito —qué tags no se leen, qué vehículos leen peor, dónde se forman colas, dónde se pierde la WiFi y qué cambió— sin que ningún dato salga del dispositivo. En una página: [`docs/VISION_GENERAL.md`](docs/VISION_GENERAL.md).
 
 > Estado actual: **Fase 6 — piloto profesional**, en curso. La aplicación se publica en <https://rbeno.github.io/tag-trace/>. La fase vigente la registra `docs/project_state.json`.
 
@@ -27,9 +27,15 @@ El principio central es **diagnosticar desviaciones respecto al comportamiento t
 - No se usa SOC o nivel de batería como fuente diagnóstica porque no existe una señal fiable disponible.
 - Primero reglas explicables y replay determinista; modelos aprendidos solo después de demostrar valor y control.
 
+## Por dónde empezar
+
+- **Si usas la aplicación**: [Manual de uso](docs/MANUAL_DE_USO.md), [Guía de diagnóstico](docs/GUIA_DE_DIAGNOSTICO.md) y [Operación](docs/OPERACION.md).
+- **Si decides** (propietario): [Visión general](docs/VISION_GENERAL.md) §Qué le queda, [Puertas de fase](docs/PHASE_GATES.md) §G6 y las preguntas marcadas «Pendiente del propietario» en [Preguntas abiertas](docs/OPEN_QUESTIONS.md).
+- **Si desarrollas**: [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md) y el [índice de contexto](docs/CONTEXT_INDEX.md), que dice qué leer según la tarea. La última revisión completa del código y la documentación está en [`docs/REVISION_2026-10-18.md`](docs/REVISION_2026-10-18.md).
+
 ## Navegación documental
 
-Empieza por el [índice de contexto](docs/CONTEXT_INDEX.md): indica qué leer según el tipo de tarea.
+El [índice de contexto](docs/CONTEXT_INDEX.md) indica qué leer según el tipo de tarea.
 
 **Qué se construye y por qué**
 

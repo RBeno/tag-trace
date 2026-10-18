@@ -19,7 +19,7 @@
  * eso lo que este módulo produce son candidatos, nunca averías confirmadas.
  */
 
-import { mergeIntervals, uncoveredGaps, type Interval } from "./coverage.js";
+import { mergeIntervals, sameSpan, type Interval } from "./coverage.js";
 import { quantile } from "./graph.js";
 import type { Reading } from "./reading.js";
 
@@ -297,9 +297,11 @@ export function buildFifoReport(
   coverage: readonly Interval[] = [],
 ): FifoReport {
   if (spans.length === 0) return { cohortId, spans: [] };
-  const gaps = uncoveredGaps(mergeIntervals([...coverage]));
-  const straddlesGap = (fromUtcMs: number, toUtcMs: number): boolean =>
-    gaps.some((gap) => fromUtcMs <= gap.from && toUtcMs >= gap.to);
+  // Los dos extremos en el mismo tramo de cobertura, o no vale (R-DAT-007). Hasta 3.89.0 se miraba si
+  // encerraba un hueco entero: la entrada leída en la cola cortada de una exportación —fuera de su
+  // tramo completo— y la salida en la siguiente pasaban por completas.
+  const covered = mergeIntervals([...coverage]);
+  const straddlesGap = (fromUtcMs: number, toUtcMs: number): boolean => !sameSpan(covered, fromUtcMs, toUtcMs);
 
   const spanByEntryOrExit = new Map<string, { readonly span: LoadedSpan; readonly role: "entrada" | "salida" }>();
   for (const span of spans) {

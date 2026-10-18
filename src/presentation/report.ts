@@ -21,6 +21,7 @@ import { drawerBuilder } from "./drawer.js";
 import type { CaseView } from "../application/protocol.js";
 import { casesSummaryHtml } from "./case-report.js";
 import { escapeHtml, formatHours, reportFileName, type Status } from "./report-text.js";
+import { downloadBlob, node } from "./dom.js";
 
 export interface ReportSection {
   /** Identificador estable (el de la pestaña): `tags`, `agv`, `wifi`… */
@@ -58,13 +59,6 @@ export interface ReportSelection {
   readonly tables: boolean;
   /** Si va el resumen de los expedientes de incidencia. */
   readonly cases: boolean;
-}
-
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  if (className !== undefined) el.className = className;
-  if (text !== undefined) el.textContent = text;
-  return el;
 }
 
 /**
@@ -276,7 +270,7 @@ export function buildReportHtml(source: ReportSource, selection: ReportSelection
   for (const section of chosen) parts.push(sectionHtml(section, selection.tables));
   parts.push(
     `<footer class="report-footer"><p>Generado por TAG TRACE ${escapeHtml(source.appVersion)} el ${escapeHtml(source.formatInstant(now))} en este dispositivo: ningún dato salió de él. ` +
-      `Los hallazgos nombran evidencia, no causas (R-EVI-006); su estado de revisión es el de la revisión en campo en el momento de generar el informe. ` +
+      `Los hallazgos nombran evidencia, no causas; su estado de revisión es el de la revisión en campo en el momento de generar el informe. ` +
       `Una exportación es una instantánea: el análisis sigue vivo en la aplicación.</p></footer>`,
   );
   parts.push("</body></html>");
@@ -287,12 +281,7 @@ export function buildReportHtml(source: ReportSource, selection: ReportSelection
 export function downloadReport(source: ReportSource, selection: ReportSelection): string {
   const html = buildReportHtml(source, selection);
   const name = reportFileName(source.circuitId, new Date());
-  const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadBlob(name, new Blob([html], { type: "text/html;charset=utf-8" }));
   return name;
 }
 

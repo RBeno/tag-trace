@@ -17,19 +17,7 @@ import type { BlockerCode, ConsolidatedVersion, ConsolidationPreview, LineageRel
 import { REVIEW_LABEL, REVIEW_STATES, type ReviewState } from "../domain/review.js";
 import { deltaView } from "./evolution.js";
 import { regimeLabel } from "./labels.js";
-
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  if (className !== undefined) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
-
-function button(text: string, className?: string): HTMLButtonElement {
-  const out = node("button", className, text);
-  out.type = "button";
-  return out;
-}
+import { button, node } from "./dom.js";
 
 /** Kilobytes con una decimal y coma, como el resto de cifras de la interfaz. */
 export function kilobytes(bytes: number): string {
@@ -332,7 +320,7 @@ export function createMemoryPanel(input: MemoryPanelInput): MemoryPanel {
               ? "hay una bifurcación de linaje sin resolver, y mientras tanto la comparación queda incompleta."
               : context.working === null || !context.working.hasSnapshot
                 ? "el fichero de trabajo no tiene instantánea."
-                : "el Worker no la construyó; vuelve a importar el fichero.";
+                : "el análisis no la generó; vuelve a importar el fichero.";
       return [node("h3", undefined, "Lo observado frente a la memoria"), node("p", "muted", `Sin comparación: ${cause}`)];
     }
     const title = node("h3", undefined, `Lo observado frente a la memoria v${comparison.version}`);

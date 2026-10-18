@@ -113,6 +113,9 @@ export async function writeProject(
  * invalida la carga entera. Quien llama recibe un proyecto completo o una excepción, nunca un
  * proyecto a medias — que es lo que hace posible la carga transaccional.
  */
+/** Nombres de sección admitidos: letras, cifras, guiones; nunca una ruta ni `__proto__`. */
+const SECTION_NAME = /^[a-z][a-z0-9_-]*$/;
+
 export async function readProject(bytes: Uint8Array): Promise<Project> {
   let entries;
   try {
@@ -157,8 +160,16 @@ export async function readProject(bytes: Uint8Array): Promise<Project> {
   }
 
   // 4. Cada sección contra su hash declarado. Una sola que falle invalida la carga completa.
-  const sections: Record<string, unknown> = {};
+  // Sin prototipo, y con el nombre acotado: una sección llamada `__proto__` o con una ruta dentro
+  // no toca nada que no sea suya.
+  const sections = Object.create(null) as Record<string, unknown>;
   for (const digest of manifest.sections) {
+    if (!SECTION_NAME.test(digest.name)) {
+      throw new ProjectError(
+        "El manifiesto declara una sección con un nombre que no es válido.",
+        "El fichero está alterado. No se ha cargado nada.",
+      );
+    }
     const entry = entries.find((item) => item.name === `sections/${digest.name}.json`);
     if (entry === undefined) {
       throw new ProjectError(

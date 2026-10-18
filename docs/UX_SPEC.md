@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.64.0
+version: 0.65.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Especificación de experiencia de usuario
@@ -78,7 +78,8 @@ vez que su pestaña se enseña. Y la bandeja del Resumen necesita todas las tarj
 de la sección que las explica: construirlas dos veces costaría el doble para enseñar lo mismo.
 
 Áreas previstas que todavía no existen en el producto y que irán a su pestaña cuando lleguen:
-gestor de circuitos y preparación del análisis (Datos), casos similares, hipótesis y contramedidas de los expedientes (Línea y calles), configuración (Datos).
+gestor de circuitos y preparación del análisis (Datos) y configuración (Datos). Los casos similares, las
+hipótesis y las contramedidas de los expedientes ya están en Línea y calles (3.78.0 y 3.80.0).
 
 ## 3. Flujo de análisis
 

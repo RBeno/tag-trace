@@ -267,3 +267,30 @@ describe("alimentación de la línea", () => {
     expect(outsideLineStops([inQueue, elsewhere, later], exclusion)).toEqual([elsewhere, later]);
   });
 });
+
+describe("pasos por la línea en el mismo instante (R-DAT-013, TC-375)", () => {
+  it("con la mitad de los tiempos entre pasos a 0 ms la medida termina y no inventa cadencia", () => {
+    // Cuarenta AGV leídos en la entrada en el mismo instante (resolución de minuto) y uno una hora después.
+    // Hasta 3.89.0 la cadencia salía 0 y el recorrido de la parada no avanzaba nunca: el Worker se colgaba.
+    const readings: Reading[] = [];
+    for (let index = 0; index < 40; index += 1) {
+      readings.push(reading(`A${index}`, "L", 0), reading(`A${index}`, "X", 5_000));
+    }
+    readings.push(reading("A99", "L", 3_600_000));
+    const feed = measureLineFeed(readings, ["L"], [], regimeOf, { minSamples: 4, minMarginMs: 30_000 });
+    expect(feed.cadence).toBeNull();
+  });
+
+  it("los pares del mismo instante no entran en la cadencia, y la parada se recorre a su paso", () => {
+    const readings: Reading[] = [];
+    for (let minute = 0; minute < 60; minute += 1) {
+      for (const twin of ["a", "b"]) {
+        readings.push(reading(`A${minute}${twin}`, "L", minute * 60_000), reading(`A${minute}${twin}`, "X", minute * 60_000 + 5_000));
+      }
+    }
+    readings.push(reading("A99", "L", 60 * 60_000 + 5 * 3_600_000));
+    const feed = measureLineFeed(readings, ["L"], [], regimeOf, { minSamples: 4, minMarginMs: 30_000 });
+    expect(feed.cadence?.p50Ms).toBe(60_000);
+    expect(feed.stops).toHaveLength(1);
+  });
+});

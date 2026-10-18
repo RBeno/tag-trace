@@ -77,7 +77,7 @@ import { anchorSectionsCsv } from "../domain/anchor-sections.js";
 import { describeGap, gapLineFor, renderFranjas } from "./franjas-ui.js";
 import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow } from "../domain/reading.js";
-import { wallClockToUtc, type FieldOrder } from "../domain/time.js";
+import type { FieldOrder } from "../domain/time.js";
 import type { IncidentCut } from "../domain/incident-cut.js";
 import { ProjectError, readIncidentsSection, readMemorySection, readPlanSection, readPlantValuesSection, readProject, writeProject } from "../persistence/agvproj.js";
 import { exportProjectMemory, importProjectMemory } from "../persistence/project-memory.js";
@@ -95,6 +95,8 @@ import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorki
 import { createPlanPanel, planRelationText } from "./plan-ui.js";
 import { createPlantValuesPanel, plantValuesRelationText, type PlantValueSendRequest } from "./plant-values-ui.js";
 import { createCasesPanel, type CaseStart } from "./cases-ui.js";
+import { node as element, downloadBlob } from "./dom.js";
+import { fromDateTimeInput as fromDateTimeInputIn, toDateTimeInput as toDateTimeInputIn } from "./time-input.js";
 import {
   RANK_LABEL,
   THEMES,
@@ -184,61 +186,26 @@ const state: State = {
 const app = document.querySelector<HTMLElement>("#app");
 if (app === null) throw new Error("Falta el contenedor #app");
 
-function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className?: string,
-  text?: string,
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className !== undefined) node.className = className;
-  // Siempre como texto: un valor importado nunca se interpreta como marcado (TH-007).
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
+// Los formateadores se construyen una vez: crear un `Intl.DateTimeFormat` por llamada costaba unos
+// 150 µs y `formatInstant` se llama varias veces por fila de tabla.
+const INSTANT_FORMAT = new Intl.DateTimeFormat("es-ES", { timeZone: ZONE, dateStyle: "short", timeStyle: "medium" });
+const TICK_FORMAT = new Intl.DateTimeFormat("es-ES", { timeZone: ZONE, weekday: "short", hour: "2-digit", minute: "2-digit" });
+const DAY_MONTH_FORMAT = new Intl.DateTimeFormat("es-ES", { timeZone: ZONE, day: "numeric", month: "numeric" });
 
 function formatInstant(utcMs: number): string {
-  return new Intl.DateTimeFormat("es-ES", {
-    timeZone: ZONE,
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date(utcMs));
+  return INSTANT_FORMAT.format(new Date(utcMs));
 }
 
 /** El instante corto de un eje: día de la semana y hora, en la zona del circuito. */
 function formatTick(utcMs: number): string {
-  return new Intl.DateTimeFormat("es-ES", {
-    timeZone: ZONE,
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(utcMs));
+  return TICK_FORMAT.format(new Date(utcMs));
 }
 
 const FORMATS: Formats = { instant: formatInstant, tick: formatTick };
 
-/** Un instante como valor de un campo `datetime-local` (`aaaa-mm-ddThh:mm:ss`), en la zona del circuito. */
-function toDateTimeInput(utcMs: number): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: ZONE,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(new Date(utcMs));
-  const part = (type: Intl.DateTimeFormatPartTypes): string => parts.find((entry) => entry.type === type)?.value ?? "00";
-  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
-}
-
-/** El valor de un campo `datetime-local`, leído en la zona del circuito; `null` si no es una fecha. */
-function fromDateTimeInput(value: string): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(value);
-  if (match === null) return null;
-  const [year, month, day, hour, minute, second] = match.slice(1).map((field) => Number(field ?? "0")) as [number, number, number, number, number, number];
-  return wallClockToUtc({ year, month, day, hour, minute, second }, ZONE).utcMs;
-}
+/** Los campos `datetime-local` de la página, en la zona del circuito (`time-input.ts`). */
+const toDateTimeInput = (utcMs: number): string => toDateTimeInputIn(utcMs, ZONE);
+const fromDateTimeInput = (value: string): number | null => fromDateTimeInputIn(value, ZONE);
 
 // --- Regiones de la página -------------------------------------------------
 
@@ -348,6 +315,9 @@ progressPanel.append(progressNote, progressBar);
 
 const messagePanel = element("section", "panel");
 messagePanel.hidden = true;
+// Un lector de pantalla se entera de «Listas cargadas» o «No se pudo importar» sin ir a buscarlo.
+messagePanel.setAttribute("role", "status");
+messagePanel.setAttribute("aria-live", "polite");
 
 const summaryPanel = element("section", "panel");
 summaryPanel.hidden = true;
@@ -577,6 +547,7 @@ function visibleTabs(): readonly TabId[] {
 function activateTab(id: TabId): void {
   // Una pestaña escondida (WiFi sin registro) no se abre: el `hash` que la pida vuelve al Resumen.
   if (tabButtons.get(id)?.hidden === true) id = "resumen";
+  const changed = activeTab !== id;
   activeTab = id;
   for (const [tabId, button] of tabButtons) {
     const selected = tabId === id;
@@ -587,6 +558,8 @@ function activateTab(id: TabId): void {
   }
   // En el `hash` sin mover la página: `location.hash` desplazaría hasta un elemento con ese id.
   if (location.hash !== `#${id}`) history.replaceState(null, "", `#${id}`);
+  // Otra pestaña empieza arriba: conservar el desplazamiento de la anterior la abría por la mitad.
+  if (changed) window.scrollTo({ top: 0 });
   // En el móvil las pestañas se desplazan en horizontal: la activa se trae a la vista.
   tabButtons.get(id)?.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
@@ -684,7 +657,7 @@ const planPanel = createPlanPanel({
   formatInstant,
   // «12/01»: día y mes con dos cifras, en la zona del circuito.
   formatDay: (utcMs) => {
-    const parts = new Intl.DateTimeFormat("es-ES", { timeZone: ZONE, day: "numeric", month: "numeric" }).formatToParts(new Date(utcMs));
+    const parts = DAY_MONTH_FORMAT.formatToParts(new Date(utcMs));
     const part = (type: string): string => (parts.find((entry) => entry.type === type)?.value ?? "").padStart(2, "0");
     return `${part("day")}/${part("month")}`;
   },
@@ -1384,12 +1357,7 @@ function finishCaseJob(): void {
  */
 /** Descarga un fichero generado en la página: un `Blob` local, nada sale del dispositivo (NFR-001). */
 function saveDownload(content: string, type: string, fileName: string): void {
-  const url = URL.createObjectURL(new Blob([content], { type }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadBlob(fileName, new Blob([content], { type }));
 }
 
 /**
@@ -2363,12 +2331,10 @@ function renderAbandoned(views: CircuitViews): void {
     const download = element("button", undefined, "Descargar las incidencias con sus mediciones (CSV)");
     download.setAttribute("type", "button");
     download.addEventListener("click", () => {
-      const url = URL.createObjectURL(new Blob([`\ufeff${incidentsCsv(records, formatInstant)}`], { type: "text/csv;charset=utf-8" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `incidencias-${state.circuitId ?? "circuito"}.csv`;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(
+        `incidencias-${state.circuitId ?? "circuito"}.csv`,
+        new Blob([`\ufeff${incidentsCsv(records, formatInstant)}`], { type: "text/csv;charset=utf-8" }),
+      );
     });
     out.append(download);
   }
@@ -2396,13 +2362,13 @@ function renderAbandonedVehicles(views: CircuitViews): void {
       `${incident.agvId}: deja de leer en ${incident.fromTagId}`,
       `Desde ${formatInstant(incident.fromUtcMs)}${battery.swap === null ? "" : ` · empieza ${battery.swap.agvId}`}`,
       battery.reading === "adelantado"
-        ? "Los de detrás lo adelantaron: no se movía en la guía."
+        ? "Los de detrás lo adelantaron: parece que no se movía en la guía."
         : battery.reading === "fuera-o-sin-registrar"
         ? "Los de detrás pasaron su sitio y dieron vueltas enteras: salió de la guía o no registra lecturas."
         : battery.reading === "no-registra"
         ? "Los de detrás pasaron su sitio: seguía avanzando sin registrar lecturas."
         : battery.reading === "parado-con-cola"
-          ? "Los de detrás no pasaron de su sitio: estaba parado de verdad."
+          ? "Los de detrás no pasaron de su sitio: compatible con una parada real."
           : "Sin AGV detrás para saber si avanzaba.",
       ["deja-de-leer", `${incident.agvId} ${incident.fromTagId} ${incident.fromUtcMs}`],
     );
@@ -2532,12 +2498,10 @@ function renderLineFeed(views: CircuitViews): void {
   const download = element("button", undefined, "Descargar paradas de la línea (CSV)");
   download.setAttribute("type", "button");
   download.addEventListener("click", () => {
-    const url = URL.createObjectURL(new Blob([`\ufeff${lineStopsCsv(feed, formatInstant)}`], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `linea-${state.circuitId ?? "circuito"}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(
+      `linea-${state.circuitId ?? "circuito"}.csv`,
+      new Blob([`\ufeff${lineStopsCsv(feed, formatInstant)}`], { type: "text/csv;charset=utf-8" }),
+    );
   });
   out.append(download);
 }
@@ -2566,12 +2530,7 @@ function renderListCleanup(views: CircuitViews): void {
   download.setAttribute("type", "button");
   download.addEventListener("click", () => {
     // Con BOM y `;`, como las horquillas: se abre en una hoja de cálculo en español tal cual.
-    const url = URL.createObjectURL(new Blob([`\ufeff${listCleanupCsv(cleanup)}`], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `limpieza-${state.circuitId ?? "circuito"}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(`limpieza-${state.circuitId ?? "circuito"}.csv`, new Blob([`\ufeff${listCleanupCsv(cleanup)}`], { type: "text/csv;charset=utf-8" }));
   });
   out.append(download);
   const fn = (funcion: string | null) => (funcion === null ? "—" : criticalFunctionLabel(funcion));
@@ -2846,11 +2805,11 @@ function renderCircuitState(views: CircuitViews): void {
           `Cuello de botella en ${bottleneck.tagId}`,
           `${bottleneck.retentions} esperas detrás de un AGV que no avanzaba, en ${bottleneck.episodes} colas ` +
             `(la más larga, de ${bottleneck.longestQueue}); ${duration(bottleneck.waitMs)} de espera en total`,
-          `El azar daría ${chance(bottleneck.expected)} con el tiempo que los AGV pasan ahí. ` +
+          `Por azar se esperarían ${chance(bottleneck.expected)} esperas con el tiempo que los AGV pasan ahí. ` +
             (bottleneck.blockages === 0
               ? "La cola fluye: el primero siempre acaba avanzando. "
               : `${bottleneck.blockages} veces el primero no avanzó en dos minutos o más. `) +
-            "Una cola que fluye es saturación o un pulmón, no una avería.",
+            "Una cola que fluye apunta a saturación o a un pulmón, no a una avería.",
           ["cuello-de-botella", bottleneck.tagId],
         ),
       );
@@ -2862,11 +2821,11 @@ function renderCircuitState(views: CircuitViews): void {
           point.ofOneVehicle === null ? `Punto conflictivo en ${where}` : `${point.ofOneVehicle} para una y otra vez en ${where}`,
           `${point.stops} paradas sin explicación` +
             (point.ofOneVehicle === null ? ` de ${point.vehicles.length} AGV (${few(point.vehicles)})` : ", todas del mismo AGV"),
-          `El azar daría ${chance(point.expected)} con las pasadas de ese sitio. En cada una, ` +
+          `Por azar se esperarían ${chance(point.expected)} paradas con las pasadas de ese sitio. En cada una, ` +
             "nadie delante lo retenía y la producción seguía. " +
             (point.ofOneVehicle === null
               ? "Dice dónde, no por qué."
-              : "Siendo de un solo AGV, es de ese AGV y no del sitio."),
+              : "Al ser de un solo AGV, apunta a ese AGV, no al sitio."),
           ["punto-conflictivo", point.tags.join("+")],
         ),
       );
@@ -2968,7 +2927,7 @@ function renderCircuitState(views: CircuitViews): void {
           "p",
           "muted",
           "Ninguna lectura llegó junta con otras tras un hueco: no hay nada con que dibujar su mapa de calor. Eso no " +
-            "dice nada de la cobertura (R-OPP-003): el estado de conexión observado está en el registro de conexiones.",
+            "dice nada de la cobertura: el estado de conexión observado está en el registro de conexiones.",
         ),
       );
     } else {
@@ -3084,12 +3043,7 @@ function renderCircuitState(views: CircuitViews): void {
     download.addEventListener("click", () => {
       // Con BOM y `;`: lo abre una hoja de cálculo en español sin preguntar ni romper tildes.
       const csv = `\ufeff${bandsCsv(cohort.bands)}`;
-      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `horquillas-${state.circuitId ?? "circuito"}-${cohort.cohortId}.csv`;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(`horquillas-${state.circuitId ?? "circuito"}-${cohort.cohortId}.csv`, new Blob([csv], { type: "text/csv;charset=utf-8" }));
     });
     out.append(
       download,
@@ -3097,8 +3051,8 @@ function renderCircuitState(views: CircuitViews): void {
         "p",
         "muted",
         `Resolución de la fuente: ${cohort.resolutionMs >= 60_000 ? "un minuto" : "un segundo"}; la valla nunca queda a ` +
-          `menos de ${duration(cohort.marginMs)} del 95 %. Guardar una horquilla como referencia y compararla con las ` +
-          "siguientes es la memoria del circuito (F4): hoy se compara el primer periodo cargado con el último.",
+          `menos de ${duration(cohort.marginMs)} del 95 %. Estas horquillas son la referencia que guarda la pestaña ` +
+          "Memoria al consolidar; aquí se compara el primer periodo cargado con el último.",
       ),
     );
 
@@ -3227,7 +3181,7 @@ function renderAnchorSections(views: CircuitViews): void {
         "p",
         "muted",
         anchorSections.declared < 2
-          ? "Declara dos o más anclas en la lista `ancla` para medir por secciones: cada ancla del anillo corta una " +
+          ? "Declara dos o más anclas en la lista «ancla» para medir por secciones: cada ancla del anillo corta una " +
               "sección (kitting, cruce, línea…) y se mide el tiempo entre una y la siguiente."
           : `De las ${anchorSections.declared} anclas declaradas, ${anchorSections.onRing.length === 0 ? "ninguna está" : "solo una está"} ` +
               "en el anillo reconstruido: hacen falta dos o más en el anillo para medir por secciones.",
@@ -3325,12 +3279,7 @@ function renderAnchorSections(views: CircuitViews): void {
   download.setAttribute("type", "button");
   download.addEventListener("click", () => {
     // Con BOM y `;`, como las horquillas: se abre en una hoja de cálculo en español tal cual.
-    const url = URL.createObjectURL(new Blob([`\ufeff${anchorSectionsCsv(sections)}`], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `secciones-${state.circuitId ?? "circuito"}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(`secciones-${state.circuitId ?? "circuito"}.csv`, new Blob([`\ufeff${anchorSectionsCsv(sections)}`], { type: "text/csv;charset=utf-8" }));
   });
   out.append(download);
 }
@@ -3484,7 +3433,7 @@ function renderConnections(
         `Cortes colectivos: ${summary.collectives.length} ${summary.collectives.length === 1 ? "vez" : "veces"}`,
         `hasta ${biggest} AGV a la vez, de ${connections.vehicles} con registro` +
           (summary.collectives.some((entry) => entry.byClass.apagado > 0) ? "; alguno cerrado por un encendido: apagado" : ""),
-        "Varios AGV pierden la señal a la vez: apagado o infraestructura común (R-COM-003), no la cobertura de un sitio. No entran en el mapa.",
+        "Varios AGV pierden la señal a la vez: apagado o infraestructura común, no la cobertura de un sitio. No entran en el mapa.",
         ["conexion-colectivo", String(summary.collectives[0]?.fromUtcMs ?? 0)],
       ),
     );
@@ -3512,12 +3461,12 @@ function renderConnections(
     element(
       "p",
       "muted",
-      `Contraste con las lecturas que llegaron juntas (OQ-159): ${contrast.bursts} ${contrast.bursts === 1 ? "ráfaga" : "ráfagas"}, ` +
+      `Contraste con las lecturas que llegaron juntas: ${contrast.bursts} ${contrast.bursts === 1 ? "ráfaga" : "ráfagas"}, ` +
         `${contrast.burstsWithCut} con un corte del registro a menos de ${minutes(thresholds.contrastToleranceMs)}; ${contrast.cuts} cortes, ` +
         `${contrast.cutsWithBurst} con ráfaga. Lecturas con fecha dentro de una caída: ${contrast.readingsInsideFalls.toLocaleString("es-ES")} ` +
         `en ${contrast.falls} ${contrast.falls === 1 ? "caída" : "caídas"}` +
         (contrast.readingsInsideFalls > 0 && contrast.falls > 0
-          ? ". Con la hora de recepción por este enlace serían cero: la hora del fichero o el enlace de las lecturas es otro. La pregunta sigue abierta."
+          ? ". Con la hora de recepción por este enlace serían cero: la hora del fichero o el enlace de las lecturas es otro. Todavía no se sabe cuál de las dos."
           : "."),
     ),
   );
@@ -5352,7 +5301,11 @@ function renderTiles(views: CircuitViews): void {
 }
 
 /** El tile de la memoria: «vN» de la vigente o «sin consolidar»; lleva a la pestaña Memoria. */
+/** La memoria tal como se enseñó por última vez: cambia al consolidar o revocar sin importación nueva. */
+let latestMemory: MemoryViews | null = null;
+
 function renderMemoryTile(memory: MemoryViews | null): void {
+  latestMemory = memory;
   const slot = tiles.querySelector<HTMLElement>("[data-slot='memoria']");
   if (slot === null) return;
   const versions = memory?.versions.length ?? 0;
@@ -5388,11 +5341,11 @@ function renderFindingsTile(): void {
   slot.replaceChildren(
     ...tile(
       "Hallazgos",
-      cards.length === 0 ? null : `${pending} de ${cards.length}`,
+      cards.length === 0 ? null : pending === 0 ? `${cards.length} de ${cards.length}` : `${pending} de ${cards.length}`,
       cards.length === 0
         ? "ninguno que revisar"
         : pending === 0
-          ? "revisión completa"
+          ? "revisados: ninguno pendiente"
           : critical === 0
             ? "pendientes; ninguno puede parar la planta"
             : `pendientes; ${critical} ${critical === 1 ? "puede" : "pueden"} parar la planta`,
@@ -5767,7 +5720,7 @@ function reportSource(views: CircuitViews): ReportSource {
     appVersion: APP_VERSION,
     coverage: state.coverage,
     files: views.snapshots.list.map((entry) => entry.fileName),
-    memoryVersion: views.memory?.current ?? null,
+    memoryVersion: latestMemory?.current ?? views.memory?.current ?? null,
     status: currentStatus ?? statusSentence({ pendingRank1: 0, pendingRank2: 0, totalFindings: 0, reviewed: 0, notices: 0, coverageHours: null, agvInCircuit: null, agvAssigned: null }),
     tiles,
     notices: noticesHost,
@@ -5978,6 +5931,9 @@ function renderDossier(): void {
     dossierPanel.hidden = true;
     return;
   }
+  // La ficha vive al final de la pestaña AGV: si acaba de aparecer, se trae a la vista en cuanto la
+  // pestaña esté activa (el `input` activa la pestaña justo después de pintar).
+  if (dossierPanel.hidden) requestAnimationFrame(() => dossierPanel.scrollIntoView({ block: "start" }));
   dossierPanel.hidden = false;
 
   const agv = state.views.agvDossiers.find((entry) => entry.agvId === query);
@@ -5996,8 +5952,9 @@ function renderDossier(): void {
       ["Grupo del circuito", agv.cohortId === null ? "sin grupo reconocible" : `${agv.cohortSize} AGV`],
       [
         "Lecturas",
-        `${agv.readingCount.toLocaleString("es-ES")} — mediana del resto: ` +
-          agv.cohortMedianReadings.toLocaleString("es-ES"),
+        `${agv.readingCount.toLocaleString("es-ES")} — mediana del resto: ${
+          agv.cohortMedianReadings === null ? "sin otro AGV en el grupo con quien comparar" : agv.cohortMedianReadings.toLocaleString("es-ES")
+        }`,
       ],
       [
         anchorLabel,
@@ -6219,7 +6176,7 @@ exportButton.addEventListener("click", () => {
     // usuario ya ha hecho otra cosa —abrir un proyecto, por ejemplo— le pisa su mensaje con uno
     // que corresponde a la acción anterior.
     showMessage("info", "Proyecto exportado", [
-      `${circuit.sources.length} ficheros y sus periodos, con ${snapshots.length} ${snapshots.length === 1 ? "instantánea" : "instantáneas"}. ` +
+      `${plural(new Set(circuit.sources.map((source) => source.sourceId)).size, "fichero", "ficheros")} y sus periodos, con ${snapshots.length} ${snapshots.length === 1 ? "instantánea" : "instantáneas"}. ` +
         "Las lecturas se quedan en este dispositivo.",
       ...(reviews.length === 0 ? [] : [`Incluye ${reviews.length} hallazgos revisados en campo.`]),
       ...(memoria === undefined ? [] : [`Incluye la memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.`]),
@@ -6232,12 +6189,7 @@ exportButton.addEventListener("click", () => {
             return [`Incluye ${cases === 1 ? "el expediente de incidencia" : `los ${cases} expedientes de incidencia`}, con sus revisiones y recortes.`];
           })()),
     ]);
-    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
-    const link = element("a");
-    link.href = url;
-    link.download = `${circuitId}.agvproj`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(`${circuitId}.agvproj`, new Blob([bytes as BlobPart], { type: "application/zip" }));
   })().finally(() => {
     exportsInFlight -= 1;
     syncUpdateBusy();

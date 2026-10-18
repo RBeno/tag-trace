@@ -1,6 +1,80 @@
 # Registro de cambios
 
-Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
+Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto siguen versionado semántico (`docs/VERSIONING.md`).
+
+## [3.89.0] - 2026-10-18
+
+Revisión general del producto y de la documentación: cinco revisiones en paralelo (código, dominio,
+importación y guardado, interfaz y textos, documentación), cada hallazgo reproducido antes de tocarlo.
+Qué se encontró, qué se corrigió y qué queda propuesto o por decidir: `docs/REVISION_2026-10-18.md`,
+con los cinco informes completos en `docs/revisiones/2026-10-18/`.
+
+### Corregido
+
+- **El Worker podía quedarse en un bucle sin fin** si la mitad de los tiempos entre pasos por la
+  línea eran 0 ms (dos AGV en el mismo instante, normal con resolución de minuto): la cadencia salía 0 y
+  el recorrido de cada parada no avanzaba. Esos tiempos no miden cadencia (R-DAT-013) y el paso se
+  exige mayor que cero (TC-375).
+- **La cola cortada fabricaba pasadas y estancias completas**: una entrada leída fuera del tramo
+  completo de una exportación y la salida en la siguiente contaban como pasada FIFO y como estancia de
+  carga de cuatro horas. Las dos exigen ahora los dos extremos en el mismo tramo de cobertura, como el
+  grafo y las vueltas (R-DAT-007, TC-374).
+- **Los campos de fecha de la interfaz** (ventana del expediente, contramedidas, fecha del plano)
+  convertían la hora escrita con el método iterativo que ADR-0013 rechaza: en la hora repetida de
+  octubre daban un instante distinto al de las lecturas. Un solo módulo, `time-input.ts`, sobre
+  `wallClockToUtc` (TC-373).
+- **Una fila con fecha imposible** (`24/13/2026`) declaraba el fichero «contradictorio» y lo rechazaba
+  entero; ahora va a cuarentena como cualquier fecha inválida (R-DAT-014, TC-379).
+- **«A la misma hora» cruza la medianoche**: las 23:55 y las 00:05 distan diez minutos, no 1.430 (TC-377).
+- **La mediana del resto con un AGV solo** es «sin otro AGV con quien comparar», no 0 (TC-378).
+- **El `.agvproj` acota los nombres de sección** y el objeto de secciones no tiene prototipo: una sección
+  `__proto__` ya no toca nada (TC-380).
+- **El límite de 512 MiB se comprueba antes de leer el fichero**; antes, tras leerlo, hashearlo y
+  decodificarlo (42 s y 1,2 GB para 541 MB).
+- **Un rechazo de promesa sin capturar en el Worker** llega ahora a la interfaz como error; antes la
+  página se quedaba ocupada sin mensaje.
+- **El informe del circuito** leía la memoria del último análisis y decía «sin consolidar» tras
+  consolidar; **el mismo fichero cargado tres veces** contaba como «3 ficheros»; **el buscador
+  «Expediente»** dejaba la ficha fuera de la vista; **cambiar de pestaña** conservaba el desplazamiento de
+  la anterior.
+- **Fuga de oyentes**: cada gráfico añadía uno del tema claro/oscuro a `window` que nunca se quitaba.
+  **Descargas**: siete de diez revocaban el `blob:` justo tras el clic, causa conocida de descargas vacías.
+
+### Cambiado
+
+- **Textos**: fuera los identificadores internos que veía la persona (`R-DAT-020`, `OQ-159`, `R-EVI-006`,
+  «(F4)», «el Worker», «Procedimiento …»); las inferencias dichas como inferencias («parece que no se
+  movía», «compatible con una parada real», «apunta a»); «Por azar se esperarían 0,4 esperas»; «68 de
+  68 — revisados: ninguno pendiente»; «1 fichero cargado»; comillas latinas donde había acentos graves. El
+  panel de mensajes se anuncia a los lectores de pantalla.
+- **Código**: `dom.ts` (`node`, `button`, `downloadBlob`) y `time-input.ts` sustituyen las copias
+  repartidas en diez ficheros; diez símbolos sin uso borrados; formateadores de fecha construidos una
+  vez (×80) y perfil horario con la caché de cuartos de hora (300 ms → 4 ms por 100.000 lecturas); un
+  NUL literal en `graph.ts` pasa a `\u0000`. La prueba de capas codifica las reglas que el código cumple
+  (TC-376) y `ARCHITECTURE.md` describe las capas que existen.
+
+### Documentación
+
+- Tablas rotas reparadas en `RULE_CATALOG.md` (R-GRA-011 a R-GRA-021 eran texto corrido),
+  `OPEN_QUESTIONS.md` (cinco cerradas fuera de la tabla), `WORKER_PROTOCOL.md` y ADR-0018.
+- Estados caducos: `PROJECT_MEMORY.md` («F3 en curso»), `ARCHITECTURE.md` (stack «candidato»,
+  «estructura futura»), `DECISIONS.md` (ADR-0009), `UX_SPEC.md` (áreas «que no existen» y existen),
+  `CONTEXT_INDEX.md`, `AGENTS.md`, la cabecera de este fichero, `TRACEABILITY_MATRIX.md`,
+  `LEGACY_ASSESSMENT.md`. `PHASE_GATES.md`: cabeceras de cierre de G0 y G3; afinidad de G1 marcada.
+- `OPEN_QUESTIONS.md`: OQ-P05 ya no está abierta y cerrada a la vez; OQ-160 a OQ-162 pasan a cerradas
+  (lo estaban desde ADR-0017).
+- **Nuevo `docs/VISION_GENERAL.md`**: el proyecto en una página. El `README` abre con una frase llana y
+  tres puertas de entrada: usar, decidir, desarrollar.
+- `MANUAL_DE_USO.md`: consolidar exige que no quede ningún hallazgo pendiente; el orden para las listas
+  (importar, cargar, importar otra vez).
+
+### Gobierno
+
+- Cuatro preguntas nuevas para el propietario: OQ-177 (la definición de terminado exige linter y
+  pruebas de propiedades que no existen), OQ-178 (resolución asimétrica de la hora repetida), OQ-179
+  (relectura del ancla frente a vuelta sin lecturas: una corrección se probó, rompía una prueba
+  legítima y se revirtió), OQ-180 (inventario sin lista `memoria`). Dos contradicciones código↔documento
+  anotadas en el informe (§4).
 
 ## [3.88.4] - 2026-10-18
 

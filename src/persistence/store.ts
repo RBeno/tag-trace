@@ -493,17 +493,6 @@ export async function ensureStore(): Promise<void> {
   db.close();
 }
 
-export async function listCircuits(): Promise<readonly StoredCircuit[]> {
-  const db = await open();
-  try {
-    const tx = db.transaction(CIRCUITS, "readonly");
-    const store = tx.objectStore(CIRCUITS);
-    return await run(store, store.getAll() as IDBRequest<StoredCircuit[]>);
-  } finally {
-    db.close();
-  }
-}
-
 export async function loadCircuit(circuitId: string): Promise<StoredCircuit | undefined> {
   const db = await open();
   try {
@@ -567,32 +556,6 @@ export async function loadRetainedReadings(circuitId: string): Promise<readonly 
     const rows = await run(store, store.getAll(circuitRange(circuitId)) as IDBRequest<SourceReadingsRow[]>);
     db.close();
     return await Promise.all(rows.map(readingsOf));
-  } finally {
-    db.close();
-  }
-}
-
-export async function saveSourceReadings(circuitId: string, sourceId: string, readings: readonly Reading[]): Promise<void> {
-  const row = await readingsRow(circuitId, sourceId, readings);
-  const db = await open();
-  try {
-    const tx = db.transaction(SOURCES, "readwrite");
-    tx.objectStore(SOURCES).put(row);
-    await settle(tx, "No se pudieron guardar las lecturas de la fuente.");
-  } finally {
-    db.close();
-  }
-}
-
-/** Retira del almacén las lecturas de esas fuentes: dejan de estar retenidas y quedan como instantánea. */
-export async function dropSourceReadings(circuitId: string, sourceIds: readonly string[]): Promise<void> {
-  if (sourceIds.length === 0) return;
-  const db = await open();
-  try {
-    const tx = db.transaction(SOURCES, "readwrite");
-    const store = tx.objectStore(SOURCES);
-    for (const sourceId of sourceIds) store.delete([circuitId, sourceId]);
-    await settle(tx, "No se pudieron retirar las lecturas.");
   } finally {
     db.close();
   }
@@ -921,17 +884,6 @@ export async function loadMemoryState(circuitId: string): Promise<StoredMemorySt
     const tx = db.transaction(MEMORY_STATE, "readonly");
     const store = tx.objectStore(MEMORY_STATE);
     return await run(store, store.get(circuitId) as IDBRequest<StoredMemoryState | undefined>);
-  } finally {
-    db.close();
-  }
-}
-
-export async function saveMemoryState(state: StoredMemoryState): Promise<void> {
-  const db = await open();
-  try {
-    const tx = db.transaction(MEMORY_STATE, "readwrite");
-    tx.objectStore(MEMORY_STATE).put(state);
-    await settle(tx, "No se pudo guardar el estado de linaje.");
   } finally {
     db.close();
   }

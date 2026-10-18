@@ -23,6 +23,7 @@ import {
   type FlowStopThresholds,
 } from "../../src/domain/flow-stops.js";
 import type { Interval } from "../../src/domain/coverage.js";
+import { parseTimestamp } from "../../src/domain/time.js";
 import type { Transition } from "../../src/domain/graph.js";
 import type { Reading } from "../../src/domain/reading.js";
 import { buildSegmentBands, measurableTransitions, type Regime } from "../../src/domain/segment-bands.js";
@@ -389,5 +390,17 @@ describe("paradas contra la horquilla (R-FLO-007)", () => {
     const pair = bands.pairs.get("T10\u0000T11");
     expect(pair?.produccion?.p95Ms).toBe(20_000);
     expect(pair?.noche?.p50Ms).toBe(60_000);
+  });
+});
+
+describe("«a la misma hora» cruza la medianoche (TC-377)", () => {
+  it("las 23:55 y las 00:05 de otro día distan diez minutos, no 1.430", () => {
+    const at = (text: string): number => {
+      const parsed = parseTimestamp(text, { zone: ZONE, order: "day-first" });
+      if (!parsed.ok) throw new Error(text);
+      return parsed.time.utcMs;
+    };
+    const starts = [at("01/09/2026 23:55:00"), at("03/09/2026 0:05:00"), at("05/09/2026 23:50:00")];
+    expect(sameTimeRepetitions(starts, ZONE, 15 * 60_000)).toEqual([[starts[1], starts[2]], [starts[0], starts[2]], [starts[0], starts[1]]]);
   });
 });

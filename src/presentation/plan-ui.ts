@@ -32,19 +32,8 @@ import {
 import { plainTable, scrollBox } from "./charts.js";
 import type { MemoryWorkingFile } from "./memory-ui.js";
 import { truthLabel } from "./labels.js";
-
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  if (className !== undefined) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
-
-function button(text: string, className?: string): HTMLButtonElement {
-  const out = node("button", className, text);
-  out.type = "button";
-  return out;
-}
+import { button, node } from "./dom.js";
+import { isoDay, zoneMidnight } from "./time-input.js";
 
 /** Lo que encontró quien fue a mirar, en palabras. */
 export const MANUAL_RESULT_LABEL: Readonly<Record<ManualResult, string>> = {
@@ -113,31 +102,6 @@ export interface PlanPanel {
   /** Un aviso que no es un error: por ejemplo, que hay otro trabajo en curso. */
   notice(line: string): void;
   setBusy(busy: boolean): void;
-}
-
-/** «2026-01-27» del instante, en la zona del circuito: lo que un `input[type=date]` entiende. */
-export function isoDay(utcMs: number, zone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(utcMs));
-}
-
-/** Las 00:00 de un día en la zona del circuito, como instante UTC. */
-export function zoneMidnight(day: string, zone: string): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
-  if (match === null) return null;
-  const guess = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: zone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(new Date(guess));
-  const part = (type: string): number => Number(parts.find((entry) => entry.type === type)?.value ?? "0");
-  const shown = Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"));
-  return guess - (shown - guess);
 }
 
 type ManualKind = "sustituir" | "retirar" | "instalar" | "detras" | "cerrar";

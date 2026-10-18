@@ -310,7 +310,9 @@ export function sameTimeRepetitions(startsUtcMs: readonly number[], zone: string
     const own = local[index] as { day: string; minute: number };
     return startsUtcMs.filter((_, other) => {
       const them = local[other] as { day: string; minute: number };
-      return other !== index && them.day !== own.day && Math.abs(them.minute - own.minute) <= tolerance;
+      // Por el camino corto del reloj: las 23:55 y las 00:05 distan 10 minutos, no 1.430.
+      const apart = Math.abs(them.minute - own.minute);
+      return other !== index && them.day !== own.day && Math.min(apart, 24 * 60 - apart) <= tolerance;
     });
   });
 }

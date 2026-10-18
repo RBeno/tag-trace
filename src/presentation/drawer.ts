@@ -16,13 +16,7 @@
  * que lo abrió al cerrar.
  */
 
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  if (className !== undefined) element.className = className;
-  // Siempre como texto: un valor importado nunca se interpreta como marcado (TH-007).
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
+import { node } from "./dom.js";
 
 const drawer = node("aside", "drawer");
 drawer.setAttribute("role", "dialog");

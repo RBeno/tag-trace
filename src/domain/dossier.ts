@@ -53,7 +53,8 @@ export interface AgvDossier {
   readonly cohortSize: number;
   readonly readingCount: number;
   /** Mediana de lecturas de los demás vehículos del cohorte, para poner el recuento en contexto. */
-  readonly cohortMedianReadings: number;
+  /** `null` cuando el AGV está solo en su cohorte: no hay con quién comparar, y no se dice 0. */
+  readonly cohortMedianReadings: number | null;
   readonly laps: { readonly completas: number; readonly parciales: number; readonly desconocidas: number };
   readonly lastReading: { readonly tagId: string; readonly utcMs: number } | null;
   readonly inactivity: readonly InactivityPeriod[];
@@ -234,8 +235,8 @@ interface CohortLookup {
   readonly cohortOf: ReadonlyMap<string, number>;
 }
 
-function median(values: readonly number[]): number {
-  if (values.length === 0) return 0;
+function median(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0
@@ -327,7 +328,3 @@ function readerStatuses(
     .sort((a, b) => a.agvId.localeCompare(b.agvId));
 }
 
-/** Estado de verdad de un expediente: siempre `observed` en lo que cuenta, `inferred` en las vueltas. */
-export function dossierTruth(hasLaps: boolean): TruthState {
-  return hasLaps ? "inferred" : "observed";
-}
