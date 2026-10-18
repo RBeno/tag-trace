@@ -50,6 +50,12 @@ Empieza por el [índice de contexto](docs/CONTEXT_INDEX.md): indica qué leer se
 - [Incidencias e informes](docs/INCIDENTS_REPORTING.md)
 - [Experiencia de usuario](docs/UX_SPEC.md)
 
+**Cómo se usa**
+
+- [Manual de uso](docs/MANUAL_DE_USO.md)
+- [Guía de diagnóstico](docs/GUIA_DE_DIAGNOSTICO.md)
+- [Operación, recuperación y soporte](docs/OPERACION.md)
+
 **Cómo se verifica**
 
 - [Estrategia de pruebas](docs/TEST_STRATEGY.md)

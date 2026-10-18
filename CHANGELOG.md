@@ -2,6 +2,28 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.88.0] - 2026-10-18
+
+Entrega 7 de F6.
+
+### Añadido
+
+- **Los expedientes viajan en el `.agvproj`** (OQ-174, esquema 6, sección `incidencias`): sus revisiones con
+  la cadena de hashes y los recortes que nombran con su huella. Al abrir una copia se compara expediente a
+  expediente con lo local: entra lo nuevo y las revisiones que faltan; lo que ya estaba no se toca; lo que
+  diverge se queda como estaba y se dice; una cadena rota no entra y un recorte que no cuadra con su huella
+  no se guarda. El esquema 5 se sigue abriendo. Exportar dice «Incluye … expedientes de incidencia».
+- **`MANUAL_DE_USO.md`**, **`GUIA_DE_DIAGNOSTICO.md`** (cada mensaje y síntoma con qué hacer, y cómo informar
+  de un defecto sin datos de planta) y **`OPERACION.md`** (matriz de navegadores y dispositivos, operación,
+  copia y restauración, criterios de soporte y riesgos residuales). Enlazados desde el `README.md`.
+- Pruebas: TC-371 (unitarias) y TC-372 (navegador: recuperar un expediente de la copia tras borrar el
+  circuito).
+
+### Cambiado
+
+- `agvproj.test.ts` fijaba «el esquema vigente es el 5»: ahora el 6, con el 5 entre los que se leen, por la
+  decisión de OQ-174.
+
 ## [3.87.0] - 2026-10-18
 
 Entrega 6 de F6.

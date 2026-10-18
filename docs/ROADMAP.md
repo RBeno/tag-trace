@@ -1,6 +1,6 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.16.0
+version: 0.17.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -228,7 +228,8 @@ Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria port
    dependencias y revisión de seguridad. **Hecha en 3.87.0** (`SECURITY_PRIVACY.md` §9); queda la subida de
    Vitest (OQ-176).
 7. **Manual de uso, guía de diagnóstico y operación**: matriz de navegadores y dispositivos, copia y
-   restauración —con los expedientes en el `.agvproj` (OQ-174)— y criterios de soporte.
+   restauración —con los expedientes en el `.agvproj` (OQ-174)— y criterios de soporte. **Hecha en 3.88.0**
+   (`MANUAL_DE_USO.md`, `GUIA_DE_DIAGNOSTICO.md`, `OPERACION.md`).
 8. **Piloto con datos reales**, del propietario, con la plantilla del informe de aceptación y el criterio de
    rechazo de OQ-B05.
 

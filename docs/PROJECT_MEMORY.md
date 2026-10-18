@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.71.0
+version: 0.72.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -423,6 +423,16 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## F6, entrega 7: copia de expedientes, manual y operación (3.88.0, 2026-10-18)
+
+Los expedientes viajan en el `.agvproj` (esquema 6, sección `incidencias`, OQ-174): revisiones con su
+cadena y recortes con su huella. Al abrir, expediente a expediente (`planCaseImport`): nuevo, idéntico,
+local por delante, fichero por delante, distinto o roto; nunca se mezcla, una cadena rota no entra y un
+recorte que no cuadra no se guarda. Probada la recuperación entera en el navegador: exportar, borrar,
+abrir, reimportar lecturas, mismo historial. Escritos `MANUAL_DE_USO.md`, `GUIA_DE_DIAGNOSTICO.md` y
+`OPERACION.md` (matriz de navegadores, operación, copia y restauración, soporte, riesgos residuales).
+Siguiente: entrega 8, preparar el piloto del propietario.
 
 ## F6, entrega 6: sin red y seguridad (3.87.0, 2026-10-18)
 

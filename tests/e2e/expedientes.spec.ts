@@ -561,4 +561,48 @@ test.describe("expedientes de incidencia", () => {
     // Comparar no escribe nada.
     expect(await storeOutsideCases(page)).toBe(before);
   });
+  test("copia en el .agvproj: se borra el circuito, se abre la copia y el expediente vuelve entero (OQ-174)", async ({ page }) => {
+    await freshPage(page);
+    await importInto(page, "copia", `${MEMORIA}periodo-1.csv`);
+    await openTab(page, "Línea y calles");
+    await createFromSymptom(page, "Sin paso por 0300", "2026-01-24T08:01", "2026-01-24T08:02");
+    const panel = page.locator(".cases-panel");
+    await expect(panel.locator(".cases-status")).toContainText("creado en borrador", { timeout: 15_000 });
+    const caseId = (await panel.locator(".case-item").first().getAttribute("data-case-id")) ?? "";
+    const history = await panel.locator(".case-item").first().locator(".case-history").innerText();
+    expect(history).toContain("Revisión 1");
+
+    await openTab(page, "Datos");
+    const [project] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Exportar circuito (.agvproj)" }).click()]);
+    await expect(page.locator(".message")).toContainText("Incluye el expediente de incidencia, con sus revisiones y recortes.");
+    const path = await project.path();
+
+    // Se pierde todo lo del dispositivo.
+    await page.locator(".storage").getByRole("button", { name: "Borrar el circuito…" }).click();
+    await expect(page.locator(".storage-lost")).toContainText("1 expediente de incidencia (1 revisión)");
+    await page.getByLabel("Para confirmar, escribe «copia»").fill("copia");
+    await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Borrar para siempre" }).click()]);
+
+    // Se abre la copia: el expediente entra entero, con su recorte.
+    await openTab(page, "Datos");
+    await page.locator("#project-file").setInputFiles(path);
+    await expect(page.locator(".message")).toContainText("Expedientes de incidencia: 1 en el fichero; 1 nuevo");
+    await expect(page.locator(".message")).toContainText("(1 revisión añadida)");
+    await expect(page.locator(".message")).not.toContainText("cadena rota");
+    // Con las lecturas otra vez, el expediente se ve igual que antes.
+    await importInto(page, "copia", `${MEMORIA}periodo-1.csv`);
+    await openTab(page, "Línea y calles");
+    const item = panel.locator(`.case-item[data-case-id="${caseId}"]`);
+    await expect(item).toHaveCount(1);
+    await item.locator(".case-details > summary").click();
+    await expect(item.locator(".case-history")).toHaveText(history);
+    await expect(item.locator(".case-evidence")).toContainText("24 lecturas de 2 AGV");
+    await expect(item.locator(".case-integrity, .case-broken")).toHaveCount(0);
+
+    // Abrirla otra vez no duplica nada.
+    await openTab(page, "Datos");
+    await page.locator("#project-file").setInputFiles([]);
+    await page.locator("#project-file").setInputFiles(path);
+    await expect(page.locator(".message")).toContainText("1 que ya estaba (0 revisiones añadidas)");
+  });
 });

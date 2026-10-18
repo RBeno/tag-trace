@@ -79,10 +79,12 @@ import { changedTags, type AnchorGapChange } from "../domain/anchor-sums.js";
 import type { QuarantinedRow } from "../domain/reading.js";
 import { wallClockToUtc, type FieldOrder } from "../domain/time.js";
 import type { IncidentCut } from "../domain/incident-cut.js";
-import { ProjectError, readMemorySection, readPlanSection, readPlantValuesSection, readProject, writeProject } from "../persistence/agvproj.js";
+import { ProjectError, readIncidentsSection, readMemorySection, readPlanSection, readPlantValuesSection, readProject, writeProject } from "../persistence/agvproj.js";
 import { exportProjectMemory, importProjectMemory } from "../persistence/project-memory.js";
 import { exportProjectPlan, importProjectPlan } from "../persistence/project-plan.js";
 import { exportProjectPlantValues, importProjectPlantValues } from "../persistence/project-plant-values.js";
+import { exportProjectIncidents, importProjectIncidents } from "../persistence/project-incidents.js";
+import { caseImportText } from "../domain/case-transfer.js";
 import { ensureStore, isAvailable, isStorageFull, loadCircuit, loadReviews, loadSnapshots, STORE_VERSION } from "../persistence/store.js";
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
 import { createBenchPanel, type BenchObserver } from "./bench-ui.js";
@@ -6195,6 +6197,8 @@ exportButton.addEventListener("click", () => {
     const plano = await exportProjectPlan(circuitId);
     // Y los valores de planta confirmados (OQ-140, esquema 5). Sin ninguno, la sección no viaja.
     const valores = await exportProjectPlantValues(circuitId);
+    // Y los expedientes de incidencia con sus recortes (OQ-174, esquema 6): la copia para recuperarlos.
+    const incidencias = await exportProjectIncidents(circuitId);
     const bytes = await writeProject(
       circuitId,
       {
@@ -6206,6 +6210,7 @@ exportButton.addEventListener("click", () => {
         ...(memoria === undefined ? {} : { memoria }),
         ...(plano === undefined ? {} : { plano }),
         ...(valores === undefined ? {} : { valores }),
+        ...(incidencias === undefined ? {} : { incidencias }),
       },
       Date.now(),
     );
@@ -6220,6 +6225,12 @@ exportButton.addEventListener("click", () => {
       ...(memoria === undefined ? [] : [`Incluye la memoria consolidada: ${memoria.versiones.length} ${memoria.versiones.length === 1 ? "versión" : "versiones"}.`]),
       ...(plano === undefined ? [] : [`Incluye el plano del circuito: ${plano.eventos.length} ${plano.eventos.length === 1 ? "cambio registrado" : "cambios registrados"}.`]),
       ...(valores === undefined ? [] : [`Incluye los valores de planta confirmados: ${valores.eventos.length} ${valores.eventos.length === 1 ? "valor" : "valores"}.`]),
+      ...(incidencias === undefined
+        ? []
+        : (() => {
+            const cases = new Set(incidencias.revisiones.map((revision) => revision.caseId)).size;
+            return [`Incluye ${cases === 1 ? "el expediente de incidencia" : `los ${cases} expedientes de incidencia`}, con sus revisiones y recortes.`];
+          })()),
     ]);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
     const link = element("a");
@@ -6260,6 +6271,9 @@ projectInput.addEventListener("change", () => {
       // Y los valores de planta confirmados (OQ-140): mismo criterio que el plano, nada se mezcla.
       const valores = readPlantValuesSection(project);
       const valuesImport = isAvailable() ? await importProjectPlantValues(project.manifest.circuit_id, valores) : null;
+      // Y los expedientes (OQ-174): expediente a expediente, sin mezclar dos historiales.
+      const incidencias = readIncidentsSection(project);
+      const casesImport = isAvailable() ? await importProjectIncidents(project.manifest.circuit_id, incidencias) : null;
       showMessage("info", `Proyecto «${circuito?.nombre ?? project.manifest.circuit_id}»`, [
         `${fuentes?.length ?? 0} fuentes declaradas, exportado el ${formatInstant(project.manifest.exported_at)}.`,
         // Un proyecto del esquema 1 no traía instantáneas: se abre igual y se dice (ADR-0015 §5).
@@ -6295,6 +6309,14 @@ projectInput.addEventListener("change", () => {
             : "Trae valores de planta confirmados. Sin almacén local no se pueden comparar con los de este dispositivo."
           : plantValuesRelationText(valuesImport.relation, valuesImport.added) +
             (valuesImport.added > 0 ? " Se aplicarán al volver a importar las lecturas del circuito." : ""),
+        ...(casesImport === null
+          ? incidencias === undefined
+            ? []
+            : ["Trae expedientes de incidencia. Sin almacén local no se pueden incorporar."]
+          : [
+              ...caseImportText(casesImport.plans, casesImport.evidenceRejected),
+              ...(casesImport.plans.some((plan) => plan.missing.length > 0) ? ["Los expedientes se verán al volver a importar las lecturas del circuito."] : []),
+            ]),
         // Una revocación que llega cambia la versión vigente: se dice, versión por versión (OQ-144).
         ...(imported?.revocations ?? []).map(
           (entry) => `El proyecto trae la revocación de v${entry.version} (${formatInstant(entry.at)}): ${entry.reason}. Aquí queda revocada.`,

@@ -1055,6 +1055,29 @@ export async function appendCaseRevision(
   }
 }
 
+/**
+ * Añade revisiones de expedientes y sus recortes de una vez, al abrir un `.agvproj` (OQ-174): o entran
+ * todas o ninguna. Las revisiones se añaden con `add`, así que una que ya estuviera hace fallar la
+ * transacción entera en vez de pisarla.
+ */
+export async function appendCaseRevisions(
+  revisions: readonly CaseRevision[],
+  evidence: readonly { readonly circuitId: string; readonly hash: string; readonly evidence: FrozenEvidence }[],
+): Promise<void> {
+  if (revisions.length === 0 && evidence.length === 0) return;
+  const rows = await Promise.all(revisions.map(async (revision): Promise<CaseRevisionRow> => ({ circuitId: revision.circuitId, caseId: revision.caseId, revision: revision.revision, gz: await gzipJson(revision) })));
+  const evidenceRows = await Promise.all(evidence.map(async (entry): Promise<CaseEvidenceRow> => ({ circuitId: entry.circuitId, hash: entry.hash, gz: await gzipJson(entry.evidence) })));
+  const db = await open();
+  try {
+    const tx = db.transaction([INCIDENT_CASES, INCIDENT_EVIDENCE], "readwrite");
+    for (const row of rows) tx.objectStore(INCIDENT_CASES).add(row);
+    for (const row of evidenceRows) tx.objectStore(INCIDENT_EVIDENCE).put(row);
+    await settle(tx, "No se pudieron guardar los expedientes del proyecto.");
+  } finally {
+    db.close();
+  }
+}
+
 /** Todas las revisiones de todos los expedientes de un circuito, en orden de expediente y revisión. */
 export async function loadCaseRevisions(circuitId: string): Promise<readonly CaseRevision[]> {
   const db = await open();
