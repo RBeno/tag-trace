@@ -49,6 +49,32 @@ function serviceWorkerManifest(version: string): Plugin {
 }
 
 /**
+ * La política de contenido de lo que se publica, más estricta que la de desarrollo (TH-002, F6
+ * entrega 6): la aplicación no hace **ninguna** petición —ni `fetch`, ni XHR, ni sockets— y sus Workers
+ * se cargan del propio origen, así que `connect-src 'none'` y `worker-src 'self'` sin `blob:`. En
+ * desarrollo se quedan como en `index.html`, porque el servidor de Vite necesita su conexión para
+ * recargar en caliente. Si la marca cambia y no se encuentra, la compilación falla en vez de publicar
+ * una política floja sin avisar.
+ */
+function publishedCsp(): Plugin {
+  return {
+    name: "tag-trace-csp",
+    apply: "build",
+    transformIndexHtml(html) {
+      // Sobre el atributo `content` de la política, no sobre el texto: el comentario de `index.html`
+      // también la nombra, y una sustitución ciega caería ahí.
+      const policy = /(http-equiv="Content-Security-Policy"\s+content=")([^"]*)(")/;
+      const match = policy.exec(html);
+      const tightened = match?.[2]?.replace("connect-src 'self'", "connect-src 'none'").replace("worker-src 'self' blob:", "worker-src 'self'");
+      if (match === null || tightened === undefined || !tightened.includes("connect-src 'none'") || !/worker-src 'self';/.test(tightened)) {
+        throw new Error("index.html: no se encontró la política de contenido que se aprieta al publicar.");
+      }
+      return html.replace(policy, `$1${tightened}$3`);
+    },
+  };
+}
+
+/**
  * El repositorio se publica en GitHub Pages bajo `/tag-trace/`, así que lo compilado no puede
  * colgar de la raíz.
  *
@@ -62,7 +88,7 @@ export default defineConfig(({ command, isPreview }) => ({
   base: command === "build" || isPreview === true ? "/tag-trace/" : "/",
   build: { target: "es2022", sourcemap: true },
   worker: { format: "es" },
-  plugins: [serviceWorkerManifest(changelogVersion())],
+  plugins: [serviceWorkerManifest(changelogVersion()), publishedCsp()],
   // La versión sella cada instantánea (ADR-0015): `src/application/version.ts`.
   define: { __APP_VERSION__: JSON.stringify(changelogVersion()) },
 }));

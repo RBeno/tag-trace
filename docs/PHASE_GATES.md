@@ -1,8 +1,8 @@
 ---
 document_id: TT-GATES-001
-version: 0.33.0
+version: 0.34.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Puertas de fase
@@ -221,7 +221,8 @@ Criterio de rechazo (OQ-B05, propietario 2026-10-17): el piloto se rechaza si oc
       AA en las siete pestañas, en claro y oscuro, y en lo que se abre encima; teclado y foco visible
       (TC-369). Cada estado de `UX_SPEC.md` §8 con su prueba, incluidos sin espacio y borrar un circuito
       (TC-368). Falta una revisión con lector de pantalla en el dispositivo.
-- [ ] Pruebas de ausencia de red y datos reales.
+- [ ] Pruebas de ausencia de red y datos reales. **Evidencia de red (3.87.0)**: el flujo entero sin red, sin una
+      petición fuera del origen y con `connect-src 'none'` (TC-370). Los datos reales, en el piloto (entrega 8).
 - [ ] Actualización PWA no interrumpe tareas críticas. **Evidencia (3.82.0)**: la versión nueva queda en
       espera y la activa la persona, nunca con una importación, análisis, exportación o consolidación en
       curso, ni en otra pestaña (TC-357, TC-359). Falta probarla en el móvil físico.

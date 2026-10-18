@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.86.0
+version: 0.87.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Estrategia de pruebas y evaluación
@@ -418,6 +418,7 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-367 | Espacio y borrado (`storage-ui.test.ts`, `UX_SPEC.md` §8) | El espacio usado en MB con el límite del navegador, y si el guardado es persistente; sin datos del navegador, lo dice; lo que se pierde, solo lo que hay y con la concordancia de la cifra |
 | TC-368 | Navegador: estados y errores (`estados.spec.ts`, `UX_SPEC.md` §8) | Sin datos; fuente inválida con código, causa y esquema, y todo vuelve a encenderse; un fichero que no es `.agvproj` no toca el almacén; sin espacio (cuota mínima por DevTools), «STORAGE_FULL» sin decir defecto y sin circuito a medias; borrar un circuito enumera lo que se pierde, exige escribir su nombre, «No borrar» no toca nada y se va entero |
 | TC-369 | Navegador: accesibilidad (`accesibilidad.spec.ts`, NFR-013, OQ-175) | axe-core sin infracciones WCAG 2.0/2.1/2.2 A y AA en las siete pestañas en claro y en oscuro, y en el cajón de tabla, el cuadro del informe, el formulario de expediente, la confirmación de borrado y un error; flechas entre pestañas; treinta pasos de tabulador con el foco siempre visible |
+| TC-370 | Navegador: el flujo entero sin red (`sin-red.spec.ts`, NFR-001, NFR-010, TH-002) | Con la red cortada tras guardar la versión: importar dos periodos y listas, revisar y consolidar, expediente con replay, informe y CSV, informe del circuito, exportar y reabrir el `.agvproj`, borrar el circuito; ninguna petición de la página ni de sus Workers fuera del origen y ningún choque con la política publicada (`connect-src 'none'`) |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las siete pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

@@ -1,8 +1,8 @@
 ---
 document_id: TT-OPEN-001
-version: 0.67.0
+version: 0.68.0
 status: active
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Preguntas abiertas
@@ -85,6 +85,7 @@ de versiones: al repositorio vuelve la forma de cada respuesta, nunca los valore
 | OQ-167 | ¿El evento `PARADA FIJA POR TAG (11)` del informe ampliado es la traza de un tag de función `parada` («seguridad para que el AGV no se vaya por otro circuito: lo detiene y solo vuelve a funcionar a mano», `tag-lists.ts`)? En un circuito con tres recorridos que comparten tramo (propietario, 2026-10-09), ese evento aparece cuatro veces en 26 h, y siempre en el mismo segundo en que un AGV lee un tag propio de **otro** recorrido; después viene una activación manual y el AGV vuelve a su recorrido o se retira. Si lo es: ¿se conserva ese uso (hoy en cuarentena como `NO_TAG`, como en OQ-165) como evidencia **observada** de que un AGV se salió de su recorrido, y el tag leído en ese instante como candidato a punto crítico `parada` para que el propietario lo confirme (R-GRA-007: la función no se rellena sola)? | Recomendación: sí a las dos, sin nombrar causa; hasta que el propietario lo confirme, el producto no lo usa. Un salto a tags de otro recorrido sin ese evento sigue siendo `inferred`. |
 | OQ-168 | **Contradicción con OQ-162** («LECTURAS por AGV es el informe ampliado filtrado, filas idénticas»). En otro circuito (2026-10-09) LECTURAS por AGV trae lecturas que el informe ampliado del mismo periodo **no trae**: tags con acción `Sin asignar` en Vsystem. Dos AGV leen siempre, en el mismo sitio, un tag distinto del que leen los demás (uno cada uno, ambos `Sin asignar`), y en el informe ampliado esas pasadas no aparecen: parece que el tag no se leyó. ¿El informe ampliado excluye los tags que no están en el programa del circuito? Si es así: (a) ¿se admite LECTURAS por AGV como fuente complementaria para esas lecturas?; (b) un tag «no leído» en el informe ampliado no prueba omisión cuando ese AGV pudo leer en su lugar un tag sin asignar (R-OPP-001); (c) ¿qué son esos tags del mismo sitio: sustituciones sin dar de alta, tags dobles, o tags que solo detectan algunos vehículos? | Pendiente del propietario. Hasta entonces OQ-162 no se toca, el importador no cambia y, en ese sitio, la omisión de esos AGV se presenta como `unknown`, no como fallo del tag. |
 | OQ-172 | ¿Con qué frecuencia de base se dice que un hecho que precede al síntoma `correlaciona` con él (ADR-0018 D6, D10)? La biblioteca de casos (ALG-017, 3.80.0) ya cuenta en cuántos expedientes del circuito se repite cada hecho (mismo tipo, mismo AGV, mismos tags), pero repetirse en las incidencias no basta: hace falta saber cuánto ocurre ese mismo hecho fuera de ellas, en tiempo de producción, y con qué prueba de azar y qué umbral se compara. Hasta que el propietario lo decida, el programa no dice `correlaciona` en ningún sitio; dice «también precede en…» y explica por qué no basta. | F5/F6 |
+| OQ-176 | **Riesgo residual de dependencias de desarrollo** (F6, entrega 6). `npm audit` deja tres avisos de Vitest 3.2.7 —prototipo contaminable en `tinypool` desde las opciones del Worker, lectura de ficheros por `@vitest/mocker` en modo navegador y por el servidor de interfaz— que solo se corrigen subiendo a Vitest 4.1.11 o 5 (versión mayor). Ninguno llega a la aplicación publicada; las pruebas no usan ni el modo navegador ni la interfaz, y las opciones las escribe el propio repositorio. La subida falla hoy en npm 10 al resolver las dependencias opcionales de Vitest 4. ¿Se acepta el riesgo hasta hacer la subida en un cambio propio, o se hace antes del piloto? Recomendación: aceptarlo con fecha límite antes de G6 y hacer la subida en su propia entrega. | F6 |
 
 ## Preguntas cerradas
 

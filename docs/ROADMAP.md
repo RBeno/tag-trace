@@ -1,8 +1,8 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.15.0
+version: 0.16.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Etapas, entregables y resultados
@@ -225,7 +225,8 @@ Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria port
    prueba por estado de `UX_SPEC.md` §8. **Hecha en 3.86.0**: 0 infracciones; sin espacio y borrar un circuito,
    que faltaban, hechos.
 6. **Sin red y seguridad**: el flujo entero sin conexión y sin una sola petición fuera del origen; CSP,
-   dependencias y revisión de seguridad.
+   dependencias y revisión de seguridad. **Hecha en 3.87.0** (`SECURITY_PRIVACY.md` §9); queda la subida de
+   Vitest (OQ-176).
 7. **Manual de uso, guía de diagnóstico y operación**: matriz de navegadores y dispositivos, copia y
    restauración —con los expedientes en el `.agvproj` (OQ-174)— y criterios de soporte.
 8. **Piloto con datos reales**, del propietario, con la plantilla del informe de aceptación y el criterio de

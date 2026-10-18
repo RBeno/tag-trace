@@ -2,6 +2,26 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.87.0] - 2026-10-18
+
+Entrega 6 de F6.
+
+### Cambiado
+
+- **Política de contenido publicada** (TH-002): `connect-src 'none'` y `worker-src 'self'`, sin `blob:`. La
+  aplicación no hace ninguna petición propia; la compilación la aprieta y falla si no encuentra la
+  marca. En desarrollo sigue la de `index.html`.
+- **Dependencias de desarrollo**: Vite 7.1.5 → 7.3.6 y `source-map-js` corregido, por avisos del servidor de
+  desarrollo. Nada de esto llega a lo publicado. Quedan tres avisos de Vitest 3 que solo se corrigen con
+  una versión mayor (OQ-176).
+
+### Añadido
+
+- **El flujo entero sin red**, probado: importar, listas, revisar, consolidar, expediente con replay,
+  informes y CSV, `.agvproj` de ida y vuelta y borrar, con la red cortada, sin una petición fuera del
+  origen ni un choque con la política (TC-370).
+- `SECURITY_PRIVACY.md` §9: la revisión de seguridad de F6.
+
 ## [3.86.0] - 2026-10-17
 
 Entrega 5 de F6.

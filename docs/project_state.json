@@ -1,12 +1,12 @@
 {
   "project": "TAG TRACE",
   "repository": "RBeno/tag-trace",
-  "documentationVersion": "1.83.0",
+  "documentationVersion": "1.84.0",
   "currentPhase": "F6",
   "phaseName": "Piloto profesional",
   "status": "in_progress",
   "baseline": "approved",
-  "lastUpdated": "2026-10-17",
+  "lastUpdated": "2026-10-18",
   "implementationStarted": true,
   "legacyRepository": "RBeno/tag-trace-agv",
   "nextTransition": {

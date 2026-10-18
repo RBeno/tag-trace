@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.70.0
+version: 0.71.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Memoria compacta del proyecto
@@ -423,6 +423,15 @@ eso no prueba cobertura buena. El propietario pidió después que fuera «buena,
 muestre correctamente la información, intuitiva, estética»: de ahí la segunda forma, en la misma
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
+
+## F6, entrega 6: sin red y seguridad (3.87.0, 2026-10-18)
+
+El flujo entero —importar, listas, revisar, consolidar, expediente con replay e informes, `.agvproj` de
+ida y vuelta, borrar— funciona con la red cortada y sin una petición fuera del origen (`sin-red.spec.ts`).
+La aplicación no hace peticiones propias, así que la compilación publica `connect-src 'none'` y
+`worker-src 'self'`. Revisión: sin `console`, sin `innerHTML` con datos, zip con límites. Dependencias:
+Vite 7.3.6 y `source-map-js` corregidos; quedan tres avisos de Vitest 3 que piden versión mayor y npm
+10 no la resuelve aquí → OQ-176 (recomendación: aceptar con fecha antes de G6). Siguiente: entrega 7.
 
 ## F6, entrega 5: accesibilidad y estados de error (3.86.0, 2026-10-17)
 
