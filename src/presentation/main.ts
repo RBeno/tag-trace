@@ -89,6 +89,7 @@ import { ensureStore, isAvailable, isStorageFull, loadCircuit, loadReviews, load
 import { createReviewSession, type ReviewSession } from "./review-ui.js";
 import { createBenchPanel, type BenchObserver } from "./bench-ui.js";
 import { startUpdates } from "./update.js";
+import { createAnalysesPanel } from "./analyses-ui.js";
 import { createStoragePanel } from "./storage-ui.js";
 import { EMPTY_COLUMNS, filterReadings, readingRow, type ReadingColumns } from "../application/reading-columns.js";
 import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
@@ -305,6 +306,24 @@ circuitInput.id = "circuit-name";
 circuitInput.placeholder = "nombre del circuito";
 const circuitLabel = element("label", undefined, "Circuito");
 circuitLabel.htmlFor = "circuit-name";
+// Los análisis guardados y crear uno nuevo, vacío o a partir de otro (`UX_SPEC.md` §8.1). Elegir uno
+// escribe su nombre en «Circuito», que sigue mandando a dónde va cada carga.
+const analysesPanel = createAnalysesPanel({
+  selected: () => circuitInput.value.trim(),
+  select: (name) => {
+    circuitInput.value = name;
+  },
+  zone: ZONE,
+  format: formatInstant,
+  notify: (kind, title, lines) => showMessage(kind, title, lines),
+  openLists: () => {
+    activateTab("datos");
+    listsPanel.scrollIntoView({ block: "start" });
+    listsInput.focus({ preventScroll: true });
+  },
+});
+circuitInput.setAttribute("list", analysesPanel.names.id);
+circuitInput.addEventListener("input", () => analysesPanel.sync());
 const exportButton = element("button", undefined, "Exportar circuito (.agvproj)");
 exportButton.type = "button";
 const projectInput = element("input");
@@ -316,7 +335,7 @@ projectLabel.htmlFor = "project-file";
 const cancelButton = element("button", "danger", "Cancelar");
 cancelButton.type = "button";
 cancelButton.hidden = true;
-picker.append(fileLabel, filePicker(fileInput), circuitLabel, circuitInput, cancelButton);
+picker.append(analysesPanel.node, fileLabel, filePicker(fileInput), circuitLabel, circuitInput, cancelButton);
 const projectPanel = element("section", "panel");
 // El espacio del dispositivo y borrar un circuito (`UX_SPEC.md` §8): junto a la copia, que es lo que
 // se ofrece antes de borrar.
@@ -738,7 +757,7 @@ const casesPanel = createCasesPanel({
   // Datos: lo que se carga y lo que entró, tal cual: listas, copia, fuente, cobertura y perfil,
   // replay y lecturas.
   get("datos").append(listsPanel, plantValuesPanel.node, projectPanel, summaryPanel, views("datos"), replayPanel, tablePanel, benchPanel.node);
-  const empty = element("p", "muted tab-empty", "Todavía no hay análisis: elige un fichero de lecturas y escribe el circuito.");
+  const empty = element("p", "muted tab-empty", "Todavía no hay análisis a la vista: elige o crea uno en «Análisis» y añádele un fichero de lecturas.");
   get("resumen").prepend(empty);
 }
 
@@ -1018,6 +1037,7 @@ function setBusy(busy: boolean): void {
   casesPanel.setBusy(busy);
   benchPanel.setBusy(busy);
   storagePanel.setBusy(busy);
+  analysesPanel.setBusy(busy);
   cancelButton.hidden = !busy || state.memoryJob !== null || state.planJob || state.plantValueJob || state.caseJob;
   progressPanel.hidden = !busy;
   workerBusy = busy;
@@ -1123,6 +1143,8 @@ function handleMessage(message: FromWorker): void {
       benchObserver?.rendered();
       // Tras guardar, se mira el espacio y se pide el guardado persistente si aún no lo hay.
       storagePanel.refresh(message.accumulation?.accumulated === true);
+      analysesPanel.refresh();
+      analysesPanel.collapse();
       return;
     }
 
@@ -1215,6 +1237,7 @@ function handleMessage(message: FromWorker): void {
         "Historial de flota cargado",
         lines,
       );
+      analysesPanel.refresh();
       setBusy(false);
       disposeWorker();
       return;
@@ -1238,6 +1261,7 @@ function handleMessage(message: FromWorker): void {
         "Se verá al volver a importar las lecturas del circuito.",
       ];
       showMessage(failed.length > 0 || ok.some((file) => file.warnings.length > 0 || file.rejected.length > 0) ? "warn" : "info", "Registro de conexiones cargado", lines);
+      analysesPanel.refresh();
       setBusy(false);
       disposeWorker();
       return;
@@ -1259,6 +1283,7 @@ function handleMessage(message: FromWorker): void {
         "Se aplicarán al volver a importar las lecturas del circuito.",
       );
       showMessage(message.warnings.length > 0 ? "warn" : "info", "Listas cargadas", lines);
+      analysesPanel.refresh();
       setBusy(false);
       disposeWorker();
       return;

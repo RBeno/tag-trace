@@ -1,6 +1,6 @@
 ---
 document_id: TT-MANUAL-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -29,11 +29,26 @@ una persona los confirme.
   inicio». Abre igual sin red.
 - La cabecera dice la versión abierta («Versión X.Y.Z»).
 
-## 3. Primera importación
+## 3. Análisis e importación
+
+Arriba, en **Análisis**, están los análisis guardados en este dispositivo, el último usado primero, con
+cuántos ficheros, de qué fechas, cuántas listas y si tienen flota y conexiones.
+
+- **Añadir lecturas a uno guardado**: púlsalo en la lista (su nombre pasa a **Circuito**) y elige el
+  fichero. Lo nuevo se acumula en ese análisis.
+- **Nuevo análisis…**: escribe el nombre y, en **Partir de**, elige uno guardado para copiarle sus listas
+  de tags (circuito, áreas, carga online, críticos, zona cargada/vacía, tramos…) y su historial de flota,
+  o «Ninguno» para empezar vacío. Las lecturas, la memoria, la revisión y los expedientes no se copian.
+  Después ve añadiendo lo que tengas: lecturas aquí, y listas, flota o conexiones con «Cargar listas, flota
+  o conexiones…» (pestaña Datos), en cualquier orden.
+- Debajo, **Datos de «X»** dice lo que ese análisis ya tiene y lo que le falta.
+
+Para importar:
 
 1. En **Fichero de lecturas**, «Elegir fichero…» y la exportación (CSV, TXT o Excel).
-2. En **Circuito**, su nombre. Con nombre, lo importado **se acumula** en ese circuito y se guarda en el
-   dispositivo; sin nombre, se analiza y no se guarda nada.
+2. En **Circuito**, el análisis (lo rellena la lista, o se escribe). Con nombre, lo importado **se acumula**
+   en ese análisis y se guarda en el dispositivo; un nombre nuevo lo crea; sin nombre, se analiza y no se
+   guarda nada.
 3. Mientras importa, la barra de progreso y «Cancelar». Cancelar responde en menos de un segundo hasta
    que empieza a guardar; desde «Guardando en este dispositivo; ya no se puede cancelar», termina sola.
 4. Al terminar, el Resumen: la frase de estado, las cifras y los hallazgos.

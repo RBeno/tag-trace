@@ -2,6 +2,32 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.89.0] - 2026-10-18
+
+Petición del propietario en F6: los menús de carga y gestión de análisis.
+
+### Añadido
+
+- **Gestor de análisis** (`UX_SPEC.md` §8.1, FR-001): un bloque plegable «Análisis» al principio del selector
+  de lecturas con los **análisis guardados en este dispositivo** —el último tocado primero, con ficheros,
+  fechas, listas, flota, conexiones y su base—. Pulsar uno lo elige y escribe su nombre en «Circuito»; el
+  campo propone los guardados. Se pliega tras una importación.
+- **«Nuevo análisis…»**: vacío o **a partir de otro**, copiando sus listas de tags (circuito, áreas, carga
+  online, críticos, zona cargada/vacía, tramos…) y su historial de flota, cada copia con su procedencia. No
+  se copian lecturas, instantáneas, memoria, revisión, expedientes, conexiones ni valores de planta
+  (ADR-0004; OQ-177). Un nombre repetido, también solo en mayúsculas, se rechaza; crear nunca pisa otro.
+- **«Datos de «X»»**: lo que el análisis elegido tiene y lo que le falta —lecturas, listas cargadas y sin
+  cargar, flota, conexiones— con un salto a las listas de Datos.
+- Pruebas: TC-373 (unitarias) y TC-374 (navegador).
+- OQ-177 (¿se copian los valores de planta confirmados?) y OQ-178 (configuración en el `.agvproj`, carpeta
+  real y ver un análisis sin cargarle un fichero).
+
+### Cambiado
+
+- Un análisis recién creado admite **listas, flota y conexiones antes que lecturas**; antes había que
+  importar primero un fichero. El mensaje para un circuito que no existe dice ahora cómo crearlo.
+- El texto «sin datos» de la portada nombra el gestor; `estados.spec.ts` sigue el texto nuevo.
+
 ## [3.88.2] - 2026-10-18
 
 ### Corregido

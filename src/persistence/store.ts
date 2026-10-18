@@ -146,6 +146,17 @@ export interface StoredTagList {
   readonly extractedAt: number | null;
   readonly loadedAt: number;
   readonly fileName: string;
+  /** Si se copió de otro análisis al crear este (`UX_SPEC.md` §8.1): de cuál y cuándo. */
+  readonly copiedFrom?: CopiedFrom;
+}
+
+/**
+ * De dónde sale lo que se copió al crear un análisis a partir de otro. La copia es del dueño: desde
+ * ese momento cada análisis tiene la suya (ADR-0004) y cargar una lista nueva la sustituye.
+ */
+export interface CopiedFrom {
+  readonly circuitId: string;
+  readonly at: number;
 }
 
 /**
@@ -166,6 +177,8 @@ export interface StoredCircuit {
   readonly fleet?: StoredFleet;
   /** Registro de conexiones del terminal (DS-013, ADR-0017). Ausente hasta que se carga, y en circuitos anteriores a la versión 11. */
   readonly connections?: StoredConnections;
+  /** El análisis del que se copió la configuración al crearlo (`UX_SPEC.md` §8.1). Ausente si nació vacío o importando. */
+  readonly basedOn?: CopiedFrom;
   readonly updatedAt: number;
 }
 
@@ -257,6 +270,8 @@ export interface StoredFleet {
   readonly periods: readonly FleetPeriod[];
   readonly loadedAt: number;
   readonly fileNames: readonly string[];
+  /** Si se copió de otro análisis al crear este (`UX_SPEC.md` §8.1). */
+  readonly copiedFrom?: CopiedFrom;
 }
 
 /** Un evento del registro de conexiones, con la huella del fichero del que salió (procedencia). */
@@ -527,6 +542,38 @@ export async function saveCircuit(circuit: StoredCircuit): Promise<void> {
     const tx = db.transaction(CIRCUITS, "readwrite");
     tx.objectStore(CIRCUITS).put(circuit);
     await settle(tx, "No se pudo guardar el circuito.");
+  } finally {
+    db.close();
+  }
+}
+
+/** Ya hay un análisis con ese nombre: crear uno nuevo no lo pisa. */
+export class CircuitExistsError extends Error {
+  constructor(readonly circuitId: string) {
+    super(`Ya existe un análisis «${circuitId}» en este dispositivo.`);
+    this.name = "CircuitExistsError";
+  }
+}
+
+/**
+ * Crea un circuito **nuevo** sin pisar ninguno: con `add`, la comprobación y la escritura son la misma
+ * operación. Dos pestañas que crean el mismo nombre a la vez no se pisan: la segunda falla.
+ */
+export async function createCircuit(circuit: StoredCircuit): Promise<void> {
+  const db = await open();
+  try {
+    const tx = db.transaction(CIRCUITS, "readwrite");
+    const request = tx.objectStore(CIRCUITS).add(circuit);
+    // El `add` rechazado aborta la transacción; se evita que el error suba como fallo de escritura.
+    let exists = false;
+    request.onerror = (event) => {
+      if (request.error?.name === "ConstraintError") {
+        exists = true;
+        event.preventDefault();
+      }
+    };
+    await settle(tx, "No se pudo crear el análisis.");
+    if (exists) throw new CircuitExistsError(circuit.circuitId);
   } finally {
     db.close();
   }

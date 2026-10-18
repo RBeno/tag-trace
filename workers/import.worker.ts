@@ -439,6 +439,8 @@ async function accumulate(
     ...(existing?.fleet === undefined ? {} : { fleet: existing.fleet }),
     // Y el registro de conexiones (DS-013), por la misma razón.
     ...(existing?.connections === undefined ? {} : { connections: existing.connections }),
+    // Y de qué análisis se copió al crearlo (`UX_SPEC.md` §8.1), por la misma razón.
+    ...(existing?.basedOn === undefined ? {} : { basedOn: existing.basedOn }),
     updatedAt: Date.now(),
   };
   // Un repetido cuyas lecturas ya no estaban guardadas las recupera, con la procedencia de su primera
@@ -2897,7 +2899,7 @@ async function runLists(message: Extract<ToWorker, { type: "lists" }>): Promise<
           type: "error",
           code: "INTERNAL",
           cause: `El circuito «${circuitId}» todavía no existe.`,
-          recovery: "Importa al menos una fuente de lecturas en ese circuito y vuelve a intentarlo.",
+          recovery: "Créalo con «Nuevo análisis…» o importa una fuente de lecturas en él, y vuelve a intentarlo.",
         },
         jobId,
       );
@@ -2994,7 +2996,7 @@ async function runFleet(message: Extract<ToWorker, { type: "fleet" }>): Promise<
     if (existing === undefined) {
       fail(
         `El circuito «${circuitId}» todavía no existe.`,
-        "Importa al menos una fuente de lecturas en ese circuito y vuelve a intentarlo.",
+        "Créalo con «Nuevo análisis…» o importa una fuente de lecturas en él, y vuelve a intentarlo.",
       );
       return;
     }
@@ -3098,7 +3100,7 @@ async function runConnections(message: Extract<ToWorker, { type: "connections" }
     if (existing === undefined) {
       fail(
         `El circuito «${circuitId}» todavía no existe.`,
-        "Importa al menos una fuente de lecturas en ese circuito y vuelve a intentarlo.",
+        "Créalo con «Nuevo análisis…» o importa una fuente de lecturas en él, y vuelve a intentarlo.",
       );
       return;
     }

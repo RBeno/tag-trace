@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.32.0
+version: 0.33.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Configuración de circuito
@@ -404,6 +404,11 @@ no porque exista.
 R-OPP-011 impide: contiene tags obsoletos que ya no están instalados, y contarlos como oportunidad
 fabrica averías. El universo elegible es la lista de memoria **menos** lo que no existe, y lo que no
 existe se determina con dos ventanas, no con configuración.
+
+**Copiadas de otro análisis (3.89.0, `UX_SPEC.md` §8.1).** Un análisis nuevo puede nacer con una copia de
+las listas y del historial de flota de otro. La copia es suya desde ese momento —cargar una lista la
+sustituye como siempre— y lleva de qué análisis viene y cuándo (`copiedFrom`); el original no se toca. Los
+valores de planta confirmados no se copian (OQ-177).
 
 ### 3.9 Flota asignada al circuito
 

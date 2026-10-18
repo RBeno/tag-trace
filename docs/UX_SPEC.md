@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.64.0
+version: 0.65.0
 status: baseline-candidate
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Especificación de experiencia de usuario
@@ -78,7 +78,7 @@ vez que su pestaña se enseña. Y la bandeja del Resumen necesita todas las tarj
 de la sección que las explica: construirlas dos veces costaría el doble para enseñar lo mismo.
 
 Áreas previstas que todavía no existen en el producto y que irán a su pestaña cuando lleguen:
-gestor de circuitos y preparación del análisis (Datos), casos similares, hipótesis y contramedidas de los expedientes (Línea y calles), configuración (Datos).
+preparación del análisis (Datos; el gestor de análisis ya existe, §8.1), casos similares, hipótesis y contramedidas de los expedientes (Línea y calles), configuración (Datos).
 
 ## 3. Flujo de análisis
 
@@ -1102,7 +1102,7 @@ Un error nunca debe mostrar `0 lecturas válidas` sin explicar esquema detectado
 
 | Estado | Cómo se ve | Prueba |
 |---|---|---|
-| Sin datos | «Todavía no hay análisis: elige un fichero de lecturas y escribe el circuito.» | `estados.spec.ts` |
+| Sin datos | «Todavía no hay análisis a la vista: elige o crea uno en «Análisis» y añádele un fichero de lecturas.» (3.89.0) | `estados.spec.ts` |
 | Analizando | Progreso con etapa y cifras | `rendimiento.spec.ts`, `medida.spec.ts` |
 | Cancelando | «Cancelando…»; confirmado antes del segundo; «Guardando…» ya no se cancela | `concurrencia.spec.ts` (TC-362) |
 | Otra operación en curso | Entradas apagadas y «Hay otra operación en curso…» | `concurrencia.spec.ts` |
@@ -1130,6 +1130,51 @@ Un fichero con más lecturas que el mayor volumen medido (500.000, PERF-D3) se i
 advertencia (3.84.0): cuántas tiene, que en este dispositivo no está comprobado —con la memoria que
 declare el navegador—, que si va lento o se cierra se exporte un periodo más corto y que «Medir este
 dispositivo» dice cómo responde.
+
+## 8.1 Gestor de análisis (3.89.0)
+
+Petición del propietario (2026-10-18): para cargar lecturas nuevas de un circuito, poder partir de un
+análisis anterior con todo lo declarado —tags del circuito, áreas, carga online, función, zona
+cargada/vacía, tramos como picking o montaje, críticos…—, o crear un análisis nuevo e ir incluyendo los
+datos según se tengan; los análisis juntos en un mismo sitio y, al cargar, los ya creados a la vista para
+elegir uno. Responde a FR-001 (crear y abrir circuitos independientes).
+
+**Dónde.** Al principio del selector de lecturas, visible en todas las pestañas, un bloque plegable
+**«Análisis»** con el elegido en su título («Análisis — «PC2-oct»», o «— sin guardar»). Abierto al llegar;
+se pliega solo tras una importación, cuando lo que se mira es el análisis.
+
+**La carpeta es el almacén del dispositivo.** Un análisis es un circuito guardado (sus lecturas
+acumuladas, sus instantáneas, su memoria, sus expedientes y lo que se le declara). «Guardados en este
+dispositivo» los lista, el último tocado primero, cada uno como un botón con su nombre y una línea —
+«2 ficheros, de <inicio> a <fin> · 6 listas · flota · conexiones de 12 AGV · a partir de «PC2»»—; sin
+ninguno, «Todavía no hay análisis guardados en este dispositivo.». Pulsar uno lo elige (`aria-pressed`) y
+escribe su nombre en **«Circuito»**, que sigue siendo lo que manda a dónde va cada carga: escribir a mano
+un nombre nuevo sigue creando el análisis con su primer fichero, como antes, y el campo propone los
+guardados (`datalist`).
+
+**Nuevo análisis…** abre un formulario: nombre, **«Partir de»** (ninguno, o uno guardado; por defecto el
+elegido) y **«Qué se copia del análisis base»**: las listas de tags (con sus nombres y cuántos tags
+tiene cada una) y el historial de flota, marcados por defecto si el base los tiene. Debajo, lo que no se
+copia y por qué: las lecturas, las instantáneas, la memoria consolidada, la revisión en campo, los
+expedientes, el registro de conexiones y los valores de planta confirmados son del periodo de su análisis
+(ADR-0004; los valores, OQ-177). Un nombre vacío, uno que ya existe o uno que solo se distingue en
+mayúsculas de otro no se acepta y se dice junto al botón; la creación no pisa nunca otro análisis
+(`add`, no `put`). Creado, queda elegido y el mensaje dice qué se copió y qué hacer después.
+
+**Datos de «X».** Debajo de la lista, lo que el análisis elegido tiene y lo que le falta: lecturas
+(ficheros y cobertura), listas (cada una con sus tags y «copiada de «base»» si lo es), las listas
+conocidas **sin cargar**, flota y conexiones; y «Cargar listas, flota o conexiones…», que lleva a Datos →
+Listas del circuito. Un análisis vacío admite sus listas, su flota y sus conexiones **antes** que sus
+lecturas: es «ir incluyendo los datos que se disponga». Con un nombre que no está guardado, se dice que se
+creará al importar; sin nombre, que se analiza sin guardar.
+
+**Procedencia.** Cada lista y la flota copiadas llevan de qué análisis vienen y cuándo (`copiedFrom`), y
+el análisis su base (`basedOn`). Cargar después una lista la sustituye como siempre, ya sin marca de
+copia. El análisis base no se toca.
+
+**Fuera, de momento:** volver a ver un análisis guardado sin cargarle un fichero (hoy se ve al importar
+uno, aunque sea repetido), una carpeta real del sistema de ficheros con las copias `.agvproj`, y que el
+`.agvproj` lleve las listas y la flota para crear la base en otro dispositivo (OQ-178).
 
 ## 9. Actualización PWA
 

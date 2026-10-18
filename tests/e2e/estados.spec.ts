@@ -61,7 +61,7 @@ test.describe("estados y errores", () => {
 
   test("sin datos, fuente inválida y un fichero que no es un .agvproj", async ({ page }) => {
     await freshPage(page);
-    await expect(page.getByText("Todavía no hay análisis: elige un fichero de lecturas y escribe el circuito.")).toBeVisible();
+    await expect(page.getByText("Todavía no hay análisis a la vista: elige o crea uno en «Análisis» y añádele un fichero de lecturas.")).toBeVisible();
 
     await page.locator("#circuit-name").fill("roto");
     await page.locator("#source-file").setInputFiles({ name: "roto.csv", mimeType: "text/csv", buffer: Buffer.from("hola;que\ntal;estas\n", "utf8") });

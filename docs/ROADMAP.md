@@ -1,6 +1,6 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.18.0
+version: 0.19.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -233,6 +233,11 @@ Piloto estable con datos reales procesados localmente, 48 h/40 AGV, memoria port
 8. **Piloto con datos reales**, del propietario, con la plantilla del informe de aceptación y el criterio de
    rechazo de OQ-B05. **Preparada en 3.88.1**: `templates/PILOT_ACCEPTANCE.md`, que se rellena en `local/`.
    Lo que queda es del propietario: publicar, medir, el piloto y la decisión.
+
+Fuera de ese orden, por petición del propietario (2026-10-18): **gestor de análisis** (`UX_SPEC.md` §8.1,
+FR-001). Al cargar se enseñan los análisis guardados para elegir uno y añadirle lecturas, y uno nuevo se
+crea vacío o a partir de otro con sus listas y su flota. **Hecho en 3.89.0**; lo que queda (valores de planta
+al copiar, configuración en el `.agvproj`, carpeta real, ver sin cargar fichero) espera OQ-177 y OQ-178.
 
 ## F7 — Escalado controlado
 

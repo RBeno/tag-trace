@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.73.0
+version: 0.74.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -737,6 +737,19 @@ de recepción por ese enlace, contra lo dicho el 2026-09-25 (R-DAT-020). Hasta q
 OQ-162, R-DAT-020 no se toca, el mapa de 3.64.0 sigue llamándose «lecturas que llegaron juntas» y
 no se escribe código del registro de conexiones. Los datos reales se quedaron fuera del repositorio.
 
+## Gestor de análisis (3.89.0, 2026-10-18)
+
+El propietario pidió los menús de carga y gestión: cargar lecturas nuevas partiendo de un análisis
+anterior con todo lo declarado (tags, áreas, carga online, función, cargado/vacío, picking/montaje,
+críticos), o crear uno nuevo e ir incluyendo datos; los análisis juntos y, al cargar, los creados a la
+vista. Hecho (`UX_SPEC.md` §8.1): **la carpeta es el almacén del dispositivo**; «Análisis» los lista y
+elegir uno escribe su nombre en «Circuito», que sigue mandando. «Nuevo análisis…» crea uno vacío o a
+partir de otro copiando **listas y flota** con su procedencia (`copiedFrom`, `basedOn`); nada del periodo
+(lecturas, memoria, revisión, expedientes, conexiones) se copia, por ADR-0004. Un análisis vacío admite
+listas, flota y conexiones antes que lecturas. Queda para el propietario: si se copian los valores de
+planta confirmados (OQ-177) y si el `.agvproj` lleva la configuración, una carpeta real del PC y ver un
+análisis sin cargarle fichero (OQ-178).
+
 ## Estado al 2026-10-17 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
@@ -745,8 +758,9 @@ conversación siguiente.
 
 - **Fase F6** (piloto profesional), abierta el 2026-10-17 por el propietario (`CONTINÚA FASE 6`)
   tras fusionar F5 con el PR #17 (`b0f527a`); F7 espera `CONTINÚA FASE 7` (G6). Las entregas 1 a 7 están
-  hechas (3.82.0 a 3.88.0, más 3.83.1 «Cancelar») y la 8 preparada (3.88.1), todo en la rama
-  `ccr-b6e42985-mfx1ho` hasta que el propietario pida el PR. Lo que queda es suyo: publicar, medir con el
+  hechas (3.82.0 a 3.88.0, más 3.83.1 «Cancelar») y la 8 preparada (3.88.1), fusionadas con el PR #18.
+  Después, a petición suya, el gestor de análisis (3.89.0) en la rama
+  `claude/file-load-management-menus-pllpba` hasta que pida el PR. Lo que queda es suyo: publicar, medir con el
   banco en el S23 FE y el PC, el piloto con `templates/PILOT_ACCEPTANCE.md`, decidir OQ-176 y OQ-172.
 - Antes, **fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
