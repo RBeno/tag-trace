@@ -14,10 +14,11 @@ Antes de cualquier tarea, en este orden:
 
 ## Estado actual
 
-La fase vigente la dice `docs/project_state.json`, no este fichero. Al 2026-10-17: fase **F6**
+La fase vigente la dice `docs/project_state.json`, no este fichero. Al 2026-10-18: fase **F6**
 (piloto profesional), abierta por el propietario el 2026-10-17 con `CONTINÚA FASE 6` tras fusionar
-F5 (PR #17); F7 espera `CONTINÚA FASE 7` (G6). El alcance de F6 está en `docs/ROADMAP.md` §F6. El relevo entre
-conversaciones está al final de `docs/PROJECT_MEMORY.md`.
+F5 (PR #17). En `main` está hasta 3.88.2 (PR #18); de 3.88.3 a 3.90.1 esperan en el PR #19. F7 espera
+`CONTINÚA FASE 7` (G6). El alcance de F6 está en `docs/ROADMAP.md` §F6. El relevo entre conversaciones
+está al final de `docs/PROJECT_MEMORY.md`.
 
 ## Límites que no se negocian
 

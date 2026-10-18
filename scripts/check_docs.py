@@ -3,9 +3,9 @@
 
 Comprueba frontmatter obligatorio, unicidad de identificadores, enlaces internos vivos,
 la validez de docs/project_state.json contra su esquema, que las tablas Markdown estén bien
-formadas, que el estado de cada ADR en docs/DECISIONS.md coincida con su frontmatter y que
-ninguna pregunta esté a la vez abierta y cerrada en docs/OPEN_QUESTIONS.md. No necesita
-dependencias externas.
+formadas, que el estado de cada ADR en docs/DECISIONS.md coincida con su frontmatter, que
+ninguna pregunta esté a la vez abierta y cerrada en docs/OPEN_QUESTIONS.md y que package.json y
+package-lock.json repitan la versión del CHANGELOG.md. No necesita dependencias externas.
 """
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ ADR_KEYS = ("adr", "status", "date")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
 OQ_ROW_RE = re.compile(r"^\|\s*(OQ-[A-Z]?\d+)\s*\|")
+# La misma expresión con la que vite.config.ts saca la versión del producto.
+CHANGELOG_VERSION_RE = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.MULTILINE)
 
 errors: list[str] = []
 
@@ -234,6 +236,30 @@ def check_state() -> None:
         fail(state_path, "la transición desde F0 exige la aprobación literal 'CONTINÚA FASE 1'")
 
 
+def check_package_version() -> None:
+    """La versión del producto sale del CHANGELOG.md; package.json y su lock solo la repiten."""
+    changelog = ROOT / "CHANGELOG.md"
+    match = CHANGELOG_VERSION_RE.search(changelog.read_text(encoding="utf-8"))
+    if not match:
+        fail(changelog, "no tiene ninguna entrada '## [X.Y.Z]'")
+        return
+    expected = match.group(1)
+    for name in ("package.json", "package-lock.json"):
+        path = ROOT / name
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            errors.append(f"{name}: no se pudo leer ({exc})")
+            continue
+        found = [data.get("version")]
+        if name == "package-lock.json":
+            found.append(data.get("packages", {}).get("", {}).get("version"))
+        wrong = [version for version in found if version != expected]
+        if wrong:
+            fail(path, f"version {wrong[0]} no coincide con la del CHANGELOG.md ({expected}); "
+                       f"npm version {expected} --no-git-tag-version")
+
+
 def main() -> int:
     check_documents()
     check_links()
@@ -241,6 +267,7 @@ def main() -> int:
     check_adr_index()
     check_open_questions()
     check_state()
+    check_package_version()
     if errors:
         print("Verificación documental fallida:\n")
         for line in errors:

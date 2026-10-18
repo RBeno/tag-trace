@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.78.0
+version: 0.78.1
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -190,9 +190,12 @@ La conversación siguiente solo conocerá lo escrito aquí, en `project_state.js
   `npm audit` sin avisos, que cumple esa condición; 3.89.0, la revisión general
   (`REVISION_2026-10-18.md`), con sus correcciones y cuatro preguntas nuevas, OQ-177 a OQ-180; y 3.90.0,
   lo que de esa revisión no necesitaba decisión (`REVISION_2026-10-18.md` §8), con cuatro preguntas más,
-  OQ-181 a OQ-184.
+  OQ-181 a OQ-184; y 3.90.1, el repositorio puesto al día (descripciones, versión de `package.json`
+  comprobada contra el `CHANGELOG`, `VERSIONING.md` sin la etiqueta `docs-v0.2.0` que nunca existió). Todo
+  eso está en el PR #19, abierto.
 - **Lo que queda es del propietario**:
-  1. el PR de la rama de trabajo y la publicación;
+  1. revisar y fusionar el PR #19 y publicar; decidir qué ramas viejas se borran y poner al día la
+     descripción del repositorio en GitHub, que ninguna herramienta de la IA puede cambiar;
   2. medir con el banco («Datos → Medir este dispositivo») en el S23 FE y en el PC;
   3. el piloto de 48 h con datos reales siguiendo `templates/PILOT_ACCEPTANCE.md`;
   4. decidir OQ-172 (cuándo se dice `correlaciona`) y OQ-177 a OQ-184 (las dos contradicciones de la

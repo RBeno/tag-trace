@@ -2,6 +2,24 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto siguen versionado semántico (`docs/VERSIONING.md`).
 
+## [3.90.1] - 2026-10-18
+
+Repositorio ordenado: los textos que lo describen dicen lo que hay. Sin cambios en la aplicación.
+
+### Cambiado
+
+- **Versión de `package.json`**: decía 0.1.0 desde el principio; ahora repite la del `CHANGELOG.md`, que
+  sigue siendo la fuente, y `check_docs.py` falla si `package.json` o `package-lock.json` se separan de ella.
+  `package.json` lleva una descripción en llano.
+- **`VERSIONING.md`**: quitada la etiqueta `docs-v0.2.0`, que se daba por vigente y nunca se creó (la pedían
+  `ROADMAP.md` §F0 y el checkpoint F0, que se dejan como están porque son historia); la tabla de ejes dice
+  dónde se lee cada versión, con los valores de hoy, y suma el almacén local (`STORE_VERSION`).
+- **`CLAUDE.md`**: el estado actual cuenta qué hay en `main` y qué espera en el PR #19.
+- **`CONTRIBUTING.md`**: el flujo real, con la entrada en el `CHANGELOG`, todas las comprobaciones que corre
+  la integración continua y borrar la rama tras fusionar.
+- **`README.md`**: la navegación enlaza la visión general, la revisión del 2026-10-18, la historia de
+  decisiones, el `CHANGELOG` y `CONTRIBUTING`.
+
 ## [3.90.0] - 2026-10-18
 
 Lo que la revisión general dejó propuesto y no necesitaba una decisión del propietario

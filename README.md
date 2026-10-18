@@ -39,6 +39,7 @@ El [índice de contexto](docs/CONTEXT_INDEX.md) indica qué leer según el tipo 
 
 **Qué se construye y por qué**
 
+- [Visión general en una página](docs/VISION_GENERAL.md)
 - [Carta del proyecto](docs/PROJECT_CHARTER.md)
 - [Requisitos](docs/REQUIREMENTS.md)
 - [Modelo de dominio](docs/DOMAIN_MODEL.md)
@@ -69,6 +70,7 @@ El [índice de contexto](docs/CONTEXT_INDEX.md) indica qué leer según el tipo 
 - [Seguridad y privacidad](docs/SECURITY_PRIVACY.md)
 - [Definición de terminado](docs/DEFINITION_OF_DONE.md)
 - [Matriz de trazabilidad](docs/TRACEABILITY_MATRIX.md)
+- [Revisión general del 2026-10-18](docs/REVISION_2026-10-18.md)
 
 **Cómo se gobierna**
 
@@ -76,10 +78,11 @@ El [índice de contexto](docs/CONTEXT_INDEX.md) indica qué leer según el tipo 
 - [Puertas de fase](docs/PHASE_GATES.md)
 - [Decisiones](docs/DECISIONS.md)
 - [Desarrollo con IA](docs/AI_DEVELOPMENT_GOVERNANCE.md)
-- [Memoria del proyecto](docs/PROJECT_MEMORY.md)
+- [Memoria del proyecto](docs/PROJECT_MEMORY.md) y su [historia de decisiones](docs/history/DECISION_LOG.md)
 - [Registro de riesgos](docs/RISK_REGISTER.md)
 - [Preguntas abiertas](docs/OPEN_QUESTIONS.md)
-- [Versionado](docs/VERSIONING.md)
+- [Versionado](docs/VERSIONING.md) y [registro de cambios](CHANGELOG.md)
+- [Cómo contribuir](CONTRIBUTING.md)
 
 ## Versionado
 
