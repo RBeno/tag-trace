@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.73.0
+version: 0.74.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -424,12 +424,19 @@ muestre correctamente la información, intuitiva, estética»: de ahí la segund
 versión. No introduce umbral: lo destacado sigue siendo lo de `summarizeDeliveries`. Dónde, no por
 qué (R-EVI-006).
 
+## OQ-176 decidida: riesgo aceptado hasta G6 (3.88.3, 2026-10-18)
+
+El propietario acepta los tres avisos de Vitest 3.2.7 con fecha límite antes de G6 (la recomendación).
+El piloto no espera a la subida; la subida a Vitest 4 o 5 va en su propia entrega y es condición nueva
+de G6 en `PHASE_GATES.md`: sin ella no se marca. Sin cambios de código.
+
 ## F6, entrega 8 preparada (3.88.1, 2026-10-18)
 
 `templates/PILOT_ACCEPTANCE.md`: identificación, preparación, medida con el banco en los dos
 dispositivos, piloto de 48 h con datos reales, criterio de rechazo (OQ-B05), tabla de G6 y decisiones
 pendientes (OQ-176, OQ-172). Se rellena en `local/`. Con esto, todo lo de F6 que puede hacer la IA está
-hecho; queda del propietario: PR y publicación, medir, el piloto, OQ-176 y, si acepta, `CONTINÚA FASE 7`.
+hecho; queda del propietario: PR y publicación, medir, el piloto, OQ-176 (decidida después, sección de arriba) y, si
+acepta, `CONTINÚA FASE 7`.
 
 ## F6, entrega 7: copia de expedientes, manual y operación (3.88.0, 2026-10-18)
 
@@ -747,7 +754,8 @@ conversación siguiente.
   tras fusionar F5 con el PR #17 (`b0f527a`); F7 espera `CONTINÚA FASE 7` (G6). Las entregas 1 a 7 están
   hechas (3.82.0 a 3.88.0, más 3.83.1 «Cancelar») y la 8 preparada (3.88.1), todo en la rama
   `ccr-b6e42985-mfx1ho` hasta que el propietario pida el PR. Lo que queda es suyo: publicar, medir con el
-  banco en el S23 FE y el PC, el piloto con `templates/PILOT_ACCEPTANCE.md`, decidir OQ-176 y OQ-172.
+  banco en el S23 FE y el PC, el piloto con `templates/PILOT_ACCEPTANCE.md` y decidir OQ-172. OQ-176 está decidida (2026-10-18):
+  riesgo aceptado hasta G6; antes de marcar G6 hace falta una entrega propia que suba Vitest a 4 o 5.
 - Antes, **fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase
   5»), tras cerrar F4 con el PR #12 fusionado (3.50.0 a 3.62.0, `551d4cd`). F6 espera `CONTINÚA FASE
   6` (ADR-0010). **Las entregas desde entonces son el mapa de calor de lecturas que llegaron

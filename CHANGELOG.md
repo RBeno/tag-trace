@@ -2,6 +2,16 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.88.3] - 2026-10-18
+
+### Gobierno
+
+- **OQ-176 cerrada** por el propietario, con la sugerencia aceptada: el riesgo de los tres avisos de Vitest
+  3.2.7 en dependencias de desarrollo se acepta con fecha límite antes de G6. El piloto no espera; la subida
+  a Vitest 4 o 5 va en su propia entrega y pasa a ser condición de G6 (`PHASE_GATES.md`). Reflejado en
+  `SECURITY_PRIVACY.md` §9, `OPERACION.md` §5, `ROADMAP.md` §F6 y `templates/PILOT_ACCEPTANCE.md` §7.
+- Sin cambios de código.
+
 ## [3.88.2] - 2026-10-18
 
 ### Corregido

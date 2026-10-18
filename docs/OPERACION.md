@@ -1,6 +1,6 @@
 ---
 document_id: TT-OPS-001
-version: 0.1.0
+version: 0.2.0
 status: baseline-candidate
 last_updated: 2026-10-18
 ---
@@ -64,5 +64,6 @@ Nada se mezcla: si la copia y lo local divergen, se queda lo local y se dice.
 ## 5. Riesgos residuales
 
 - Sin cabeceras propias en Pages no hay protección contra el enmarcado (ADR-0014).
-- Avisos de dependencias de desarrollo pendientes de decisión (OQ-176); ninguno en lo publicado.
+- Tres avisos de Vitest 3 en dependencias de desarrollo, ninguno en lo publicado: riesgo aceptado hasta G6
+  (OQ-176); la subida a Vitest 4 o 5 va en su propia entrega antes de marcar G6.
 - Las cifras de rendimiento son del contenedor de desarrollo hasta la medida del propietario.
