@@ -129,6 +129,8 @@ test.describe("TC-376 frente al periodo anterior", () => {
     await page.locator("#source-file").setInputFiles(`${ACUMULACION}ventana-2.csv`);
     await expect(section).toContainText("«ventana-2.csv»", { timeout: 15_000 });
     await expect(section).toContainText("frente a «ventana-1.csv»");
+    // Lo primero, las modificaciones detectadas; después, los hallazgos.
+    await expect(section.locator("h4").first()).toHaveText("Modificaciones detectadas");
     await expect(section.getByRole("heading", { name: "Hallazgos" })).toBeVisible();
     await expect(section).toContainText("Sin registro de conexiones en ninguno de los dos periodos");
     await expect(section.getByRole("heading", { name: "Sustituciones de tag" })).toBeVisible();

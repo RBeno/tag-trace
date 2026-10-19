@@ -1,6 +1,6 @@
 ---
 document_id: TT-PMEM-001
-version: 0.75.0
+version: 0.76.0
 status: baseline-candidate
 last_updated: 2026-10-19
 ---
@@ -759,6 +759,10 @@ con la anterior (R-DAT-024): hallazgos ya no aparecen / siguen / nuevos / sin oc
 omisiones y WiFi por tramo, con la prueba de azar de `case-verification.ts`. La instantánea guarda ahora
 la WiFi de su ventana. **La herencia (R-GRA-023) solo se aplica a la sustitución confirmada en el plano**:
 `review.ts` dice que marcar una tarjeta no cambia cifras, y lo detectado es hipótesis; queda OQ-179.
+Precisión (3.91.0): «como siempre, pregunta» —la confirmación sigue siendo humana— y lo primero son las
+**modificaciones detectadas** vinculadas a los hallazgos del periodo anterior que tocan, con veredicto
+(resuelve, en parte, no resuelve, sin ocasión, sin problema previo) y evidencia. OQ-179 (b), el efecto
+mínimo de «mejora», sigue abierta.
 
 ## Estado al 2026-10-17 (relevo a un chat nuevo)
 
@@ -770,7 +774,7 @@ conversación siguiente.
   tras fusionar F5 con el PR #17 (`b0f527a`); F7 espera `CONTINÚA FASE 7` (G6). Las entregas 1 a 7 están
   hechas (3.82.0 a 3.88.0, más 3.83.1 «Cancelar») y la 8 preparada (3.88.1), fusionadas con el PR #18.
   Después, a petición suya, el gestor de análisis (3.89.0) y la comparación con el periodo anterior
-  (3.90.0) en la rama
+  (3.90.0 y 3.91.0) en la rama
   `claude/file-load-management-menus-pllpba` hasta que pida el PR. Lo que queda es suyo: publicar, medir con el
   banco en el S23 FE y el PC, el piloto con `templates/PILOT_ACCEPTANCE.md`, decidir OQ-176 y OQ-172.
 - Antes, **fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase

@@ -242,6 +242,11 @@ tr.resolved td:first-child { text-decoration: underline dotted; }
 .comparison-findings { margin: 4px 0; }
 .comparison-findings > summary { cursor: pointer; }
 .comparison-better, .comparison-worse { margin: 6px 0 0; font-weight: 600; }
+.comparison-mods { list-style: none; margin: 6px 0 10px; padding: 0; display: grid; gap: 8px; }
+.comparison-mod { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.comparison-mod.verdict-resuelve, .comparison-mod.verdict-resuelve-en-parte { box-shadow: inset 3px 0 0 var(--viz-series); }
+.comparison-mod-head { margin: 0; overflow-wrap: anywhere; }
+.comparison-verdict { font-weight: 600; }
 /* Una descarga por fichero (R-TIM-011): se parten en varias líneas en el móvil en vez de desbordar. */
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .button-row button { overflow-wrap: anywhere; text-align: left; }

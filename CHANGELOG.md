@@ -2,6 +2,24 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.91.0] - 2026-10-19
+
+Precisión del propietario sobre la comparación entre periodos y respuesta parcial a OQ-179.
+
+### Añadido
+
+- **Modificaciones detectadas**, lo primero de «Frente al periodo anterior» (R-DAT-024): cada sustitución,
+  cambio del anillo, tag o AGV que lee más o menos y tramo con más o menos cortes, vinculado a los
+  hallazgos del periodo anterior que toca, con su destino y su revisión en campo, los nuevos sobre los
+  mismos sujetos, la evidencia de antes y ahora y un veredicto: resuelve, resuelve en parte, no resuelve,
+  sin ocasión o sin problema previo. Lo que resuelve va primero.
+- Pruebas: TC-377.
+
+### Cambiado
+
+- OQ-179 (a): «como siempre, pregunta»: la herencia sigue esperando la confirmación de una persona en el
+  plano. (b), el efecto mínimo, sigue abierta.
+
 ## [3.90.0] - 2026-10-19
 
 Petición del propietario en F6: comparar las lecturas nuevas con el análisis y sus hallazgos.

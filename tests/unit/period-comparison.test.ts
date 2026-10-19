@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { comparePeriods, previousSnapshot, rateShift } from "../../src/domain/period-comparison.js";
 import type { CircuitSnapshot, SnapshotConnections, SnapshotFinding, SnapshotVertex } from "../../src/domain/snapshot.js";
 import { confirmedSubstitutions, inheritRoles, mergeSubstitutions, roleText } from "../../src/domain/substitution.js";
-import { cutShift, findingsLine, readShift, substitutionLine, suppliedLines } from "../../src/presentation/comparison-ui.js";
+import { cutShift, findingsLine, previousLine, readShift, substitutionLine, suppliedLines, VERDICT_TEXT } from "../../src/presentation/comparison-ui.js";
 
 const DAY = 86_400_000;
 const MAX_CHANCE = 0.01;
@@ -227,5 +227,63 @@ describe("TC-375 lo que se dice en el Resumen", () => {
   it("sin WiFi aportada se dice la última actualización, no «sin cambios»", () => {
     const lines = suppliedLines({ lists: [], fleet: null, connections: { loadedAt: 2 * DAY, until: 3 * DAY } }, format);
     expect(lines.find((line) => line.label === "WiFi")?.text).toBe("Última actualización: d2, con eventos hasta d3.");
+  });
+});
+
+describe("TC-377 modificaciones detectadas, vinculadas a lo detectado antes", () => {
+  it("una sustitución que se lleva la omisión del sustituido la resuelve, con la evidencia de los dos tags", () => {
+    const before = snapshot(1, [vertex("0100", 200, 1), vertex("0200", 200, 0.7), vertex("0300", 200, 1)], [finding("omision|0200", "70 %")]);
+    const after = snapshot(2, [vertex("0100", 200, 1), vertex("0200", 200, 0), vertex("0900", 200, 0.99), vertex("0300", 200, 1)], []);
+    const result = comparePeriods({
+      before,
+      after,
+      reviews: new Map([["omision|0200", { state: "confirmado" as const }]]),
+      maxChance: MAX_CHANCE,
+      substitutions: [{ oldTagId: "0200", newTagId: "0900", status: "detectada", at: 1.5 * DAY, locationId: null }],
+    });
+    const first = result.modifications[0];
+    expect(first).toMatchObject({ kind: "sustitucion", verdict: "resuelve", tags: ["0200", "0900"] });
+    expect(first?.title).toBe("0200 → 0900, detectada en las lecturas, sin confirmar");
+    expect(first?.previous).toEqual([{ key: "omision|0200", title: "omision|0200", figure: "70 %", fate: "ya-no-aparece", review: "confirmado" }]);
+    expect(first?.evidence.join(" ")).toContain("0900 en «f2.csv»: 198 lecturas en 200 pasadas (99 %)");
+    // El sustituido no sale además como «deja de leerse»: lo explica la sustitución.
+    expect(result.modifications.filter((entry) => entry.tags.includes("0200"))).toHaveLength(1);
+  });
+
+  it("un AGV que lee más resuelve su hallazgo anterior; un tag que lee más con su hallazgo vivo no lo resuelve", () => {
+    const cells = (misses: number): Record<string, readonly [number, number]> => ({ "007": [100, 100 - misses], "012": [100, 98] });
+    const before = snapshot(
+      1,
+      [vertex("0100", 200, 0.9, cells(20)), vertex("0200", 300, 0.6, cells(20)), vertex("0300", 200, 0.9, cells(20))],
+      [finding("lectura-agv|007", "80 %", { agvId: "007" }), finding("omision|0200", "60 %")],
+    );
+    const after = snapshot(
+      2,
+      [vertex("0100", 200, 0.99, cells(1)), vertex("0200", 300, 0.85, cells(1)), vertex("0300", 200, 0.99, cells(1))],
+      [finding("omision|0200", "85 %")],
+    );
+    const result = comparePeriods({ before, after, reviews: new Map(), maxChance: MAX_CHANCE });
+    expect(result.modifications.find((entry) => entry.kind === "agv-lee-mas")).toMatchObject({ agvId: "007", verdict: "resuelve" });
+    expect(result.modifications.find((entry) => entry.title === "0200 lee más")).toMatchObject({ verdict: "no-resuelve" });
+    // Lo que resuelve va primero.
+    expect(result.modifications[0]?.verdict).toBe("resuelve");
+  });
+
+  it("lo que no toca ningún hallazgo anterior va al final como «sin problema previo», y si trae uno nuevo lo dice", () => {
+    const before = snapshot(1, [vertex("0100", 200, 1), vertex("0200", 200, 1)], []);
+    const after = snapshot(2, [vertex("0100", 200, 1), vertex("0200", 200, 0.5)], [finding("omision|0200", "50 %")]);
+    const result = comparePeriods({ before, after, reviews: new Map(), maxChance: MAX_CHANCE });
+    const worse = result.modifications.find((entry) => entry.kind === "tag-lee-menos");
+    expect(worse).toMatchObject({ verdict: "sin-problema-previo", appeared: [{ key: "omision|0200", title: "omision|0200", figure: "50 %" }] });
+  });
+});
+
+describe("TC-377 cómo se dice", () => {
+  it("cada hallazgo anterior con su destino y su revisión; cada veredicto con su texto", () => {
+    expect(previousLine({ key: "omision|0200", title: "Omisión de 0200", figure: "70 %", fate: "ya-no-aparece", review: "confirmado" })).toBe(
+      "Omisión de 0200 (70 %): ya no aparece · revisión en campo: confirmado",
+    );
+    expect(VERDICT_TEXT.resuelve).toBe("Resuelve lo anterior");
+    expect(VERDICT_TEXT["sin-ocasion"]).toBe("Sin ocasión de comprobarlo");
   });
 });

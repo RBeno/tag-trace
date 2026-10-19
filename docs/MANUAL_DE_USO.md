@@ -1,6 +1,6 @@
 ---
 document_id: TT-MANUAL-001
-version: 0.3.0
+version: 0.4.0
 status: baseline-candidate
 last_updated: 2026-10-19
 ---
@@ -62,6 +62,10 @@ Al añadir lecturas a un análisis, el Resumen enseña **Frente al periodo anter
 aparecen, siguen o son nuevos (con lo que dijo la revisión en campo), qué tags y AGV leen más o menos,
 y qué tramos tienen menos o más cortes de WiFi. Solo se compara lo aportado: si con este periodo no se
 cargó el registro de conexiones, dice cuándo se actualizó por última vez.
+
+Arriba del todo, **Modificaciones detectadas**: cada cambio (un tag sustituido, uno que aparece o deja de
+leerse, un AGV o un tag que lee más, un tramo con menos cortes) con los hallazgos del periodo anterior
+que toca y si **los resuelve** («ya no aparece»), en parte o no, con las cifras de antes y ahora.
 
 Si se sustituyó un tag, confírmalo en **Memoria → Plano del circuito**: desde entonces el tag nuevo
 **hereda** lo declarado del antiguo (función crítica, área, zona…), salvo lo que ya declare su propia

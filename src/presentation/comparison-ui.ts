@@ -7,7 +7,7 @@
  */
 
 import type { CircuitViews } from "../application/protocol.js";
-import type { FindingComparison, RateChange } from "../domain/period-comparison.js";
+import type { FindingComparison, Modification, RateChange } from "../domain/period-comparison.js";
 import { REVIEW_LABEL } from "../domain/review.js";
 import { roleText, type InheritedRole } from "../domain/substitution.js";
 
@@ -144,6 +144,67 @@ function findingGroup(title: string, entries: readonly FindingComparison[], open
   return group;
 }
 
+/** El veredicto de una modificación frente a los hallazgos del periodo anterior, en palabras. Puro. */
+export const VERDICT_TEXT: Readonly<Record<Modification["verdict"], string>> = {
+  resuelve: "Resuelve lo anterior",
+  "resuelve-en-parte": "Resuelve en parte",
+  "no-resuelve": "No resuelve: sigue",
+  "sin-ocasion": "Sin ocasión de comprobarlo",
+  "sin-problema-previo": "Sin problema previo",
+};
+
+/** Una línea por hallazgo anterior tocado: «Omisión de 0200 (70 %): ya no aparece · confirmado en campo». Pura. */
+export function previousLine(entry: Modification["previous"][number]): string {
+  const fate = entry.fate === "ya-no-aparece" ? "ya no aparece" : entry.fate === "sigue" ? "sigue" : entry.fate === "sin-ocasion" ? "sin ocasión de repetirse" : "nuevo";
+  const review = entry.review === null ? "" : ` · revisión en campo: ${REVIEW_LABEL[entry.review].text.toLowerCase()}`;
+  return `${entry.title} (${entry.figure}): ${fate}${review}`;
+}
+
+function modificationsBlock(modifications: readonly Modification[]): HTMLElement {
+  const block = element("div", "comparison-modifications");
+  block.append(element("h4", undefined, "Modificaciones detectadas"));
+  if (modifications.length === 0) {
+    block.append(element("p", "muted", "Ninguna: ni sustituciones, ni cambios del anillo, ni tags, AGV o tramos de WiFi que cambien más de lo que da el azar."));
+    return block;
+  }
+  const resolved = modifications.filter((entry) => entry.verdict === "resuelve" || entry.verdict === "resuelve-en-parte").length;
+  block.append(
+    element(
+      "p",
+      "muted",
+      `${count(modifications.length, "modificación", "modificaciones")}; ${count(resolved, "resuelve", "resuelven")} algo del periodo anterior. Cada una con los hallazgos anteriores que toca y las cifras que la sostienen.`,
+    ),
+  );
+  const list = element("ul", "comparison-mods");
+  for (const modification of modifications.slice(0, SHOWN)) {
+    const item = element("li", `comparison-mod verdict-${modification.verdict}`);
+    const head = element("p", "comparison-mod-head");
+    head.append(element("strong", undefined, modification.title), element("span", "comparison-verdict", ` — ${VERDICT_TEXT[modification.verdict]}`));
+    item.append(head);
+    if (modification.previous.length > 0) {
+      const previous = element("ul", "comparison-list");
+      for (const entry of modification.previous) {
+        const line = element("li", undefined, `Antes: ${previousLine(entry)}`);
+        line.dataset["reviewKey"] = entry.key;
+        previous.append(line);
+      }
+      item.append(previous);
+    }
+    if (modification.appeared.length > 0) {
+      const appeared = element("ul", "comparison-list");
+      for (const entry of modification.appeared) appeared.append(element("li", undefined, `Nuevo: ${entry.title} (${entry.figure})`));
+      item.append(appeared);
+    }
+    const evidence = element("ul", "comparison-list comparison-evidence");
+    for (const line of modification.evidence) evidence.append(element("li", "muted", `Evidencia: ${line}`));
+    item.append(evidence);
+    list.append(item);
+  }
+  if (modifications.length > SHOWN) list.append(element("li", "muted", `y ${modifications.length - SHOWN} más`));
+  block.append(list);
+  return block;
+}
+
 export function comparisonSection(comparison: Comparison, format: (utcMs: number) => string): HTMLElement {
   const node = element("section", "comparison");
   node.append(element("h3", undefined, "Frente al periodo anterior"));
@@ -158,6 +219,7 @@ export function comparisonSection(comparison: Comparison, format: (utcMs: number
         `«${periods.after.fileName}» (de ${format(periods.after.from)} a ${format(periods.after.to)}) frente a «${periods.before.fileName}» (de ${format(periods.before.from)} a ${format(periods.before.to)}).`,
       ),
     );
+    node.append(modificationsBlock(periods.modifications));
     node.append(element("h4", undefined, "Hallazgos"), element("p", "muted", findingsLine(periods.findings)));
     const of = (fate: FindingComparison["fate"]): readonly FindingComparison[] => periods.findings.filter((entry) => entry.fate === fate);
     node.append(

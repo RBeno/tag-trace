@@ -1998,7 +1998,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
         periods:
           current === null || previous === null
             ? null
-            : comparePeriods({ before: previous, after: current, reviews: reviewsNow, maxChance: config.tagChanges.maxChance }),
+            : comparePeriods({ before: previous, after: current, reviews: reviewsNow, maxChance: config.tagChanges.maxChance, substitutions }),
         substitutions,
         roles: inheritRoles(declaredLists, substitutions).roles,
         supplied: {

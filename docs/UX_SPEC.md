@@ -1,6 +1,6 @@
 ---
 document_id: TT-UX-001
-version: 0.66.0
+version: 0.67.0
 status: baseline-candidate
 last_updated: 2026-10-19
 ---
@@ -413,6 +413,13 @@ inmediatamente anterior en el tiempo (R-DAT-024); en el primer periodo lo dice.
 **Qué enseña**, de arriba abajo:
 
 - «*nuevo*.csv (de … a …) frente a *anterior*.csv (de … a …)».
+- **Modificaciones detectadas** (3.91.0, lo primero): «N modificaciones; M resuelven algo del periodo
+  anterior.» y una tarjeta por modificación —sustitución, cambio del anillo, tag o AGV que lee más o
+  menos, tramo con más o menos cortes— con su título y su veredicto («Resuelve lo anterior», «Resuelve
+  en parte», «No resuelve: sigue», «Sin ocasión de comprobarlo», «Sin problema previo»); debajo, cada
+  hallazgo anterior que toca («Antes: Omisión de 0200 (70 %): ya no aparece · revisión en campo:
+  confirmado»), los nuevos sobre los mismos sujetos («Nuevo: …») y la evidencia con las cifras de antes y
+  ahora. Lo que resuelve, primero y con un filete a la izquierda; el veredicto siempre en texto.
 - **Hallazgos**: «N ya no aparecen · M siguen · K nuevos · J sin ocasión de repetirse», y cada grupo
   plegable con sus tarjetas (título, cifra antes y ahora, y lo que decidió la revisión en campo). «Ya no
   aparecen» y «Nuevos» abiertos; «Siguen» y «Sin ocasión» plegados. «Sin ocasión» dice que su sitio o su
