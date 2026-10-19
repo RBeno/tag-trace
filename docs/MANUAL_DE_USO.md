@@ -1,8 +1,8 @@
 ---
 document_id: TT-MANUAL-001
-version: 0.2.0
+version: 0.3.0
 status: baseline-candidate
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Manual de uso
@@ -55,6 +55,17 @@ Para importar:
 
 Si el fichero es de otro circuito, no se acumula y se dice por qué. Si la fecha es ambigua (día y mes
 intercambiables), se pide el formato.
+
+## 3.1 Comparar con el periodo anterior
+
+Al añadir lecturas a un análisis, el Resumen enseña **Frente al periodo anterior**: qué hallazgos ya no
+aparecen, siguen o son nuevos (con lo que dijo la revisión en campo), qué tags y AGV leen más o menos,
+y qué tramos tienen menos o más cortes de WiFi. Solo se compara lo aportado: si con este periodo no se
+cargó el registro de conexiones, dice cuándo se actualizó por última vez.
+
+Si se sustituyó un tag, confírmalo en **Memoria → Plano del circuito**: desde entonces el tag nuevo
+**hereda** lo declarado del antiguo (función crítica, área, zona…), salvo lo que ya declare su propia
+lista. Mientras no se confirme, el Resumen dice lo que heredaría.
 
 ## 4. Las pestañas
 

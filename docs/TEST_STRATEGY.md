@@ -1,8 +1,8 @@
 ---
 document_id: TT-TEST-001
-version: 0.89.0
+version: 0.90.0
 status: baseline-candidate
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Estrategia de pruebas y evaluación
@@ -423,6 +423,8 @@ Demostrar corrección industrial, trazabilidad, determinismo, privacidad, compat
 | TC-372 | Navegador: recuperar un expediente de la copia (`expedientes.spec.ts`, OQ-174) | Se exporta un circuito con un expediente, se borra entero, se abre la copia («1 nuevo», «1 revisión añadida»), se vuelven a importar las lecturas y el expediente aparece con el mismo historial y su recorte de 24 lecturas; abrirla otra vez no añade nada |
 | TC-373 | Gestor de análisis (`analyses.test.ts`, `UX_SPEC.md` §8.1, FR-001) | De cada análisis guardado: ficheros distintos (un repetido no cuenta dos veces), cobertura de punta a punta, listas, flota y conexiones, y su línea; uno vacío dice «sin lecturas todavía» sin inventar cobertura; las listas conocidas que faltan; el último tocado primero; el nombre vacío, repetido o repetido solo en mayúsculas no vale y `0040` ≠ `40`; crear a partir de otro copia las listas y la flota marcadas, con su procedencia y la zona del base, y nada del periodo (lecturas, cobertura, conexiones); sin marcar nada, solo queda la base; el base no se toca |
 | TC-374 | Navegador: gestor de análisis (`analisis.spec.ts`, `UX_SPEC.md` §8.1) | Sin guardados, lo dice; tras importar y cargar listas, al volver a abrir el guardado se enseña con «1 fichero»; «Nuevo análisis…» a partir de él copia las listas (en el almacén, con `copiedFrom` y `basedOn`, sin fuentes), queda elegido y «Datos de» dice «copiada de»; el mismo nombre en minúsculas se rechaza; uno vacío admite sus listas antes que lecturas; elegir el base en la lista y cargar un fichero lo acumula en él y no en el nuevo |
+| TC-375 | Frente al periodo anterior y herencia (`period-comparison.test.ts`, R-DAT-024, R-GRA-023) | La prueba de cambio de tasa afirma mejora y empeora con muchas pasadas y no con pocas, ni sin fallos ni sin pasadas; un hallazgo que no se repite con su sitio leído «ya no aparece» y conserva su revisión, el que sigue lleva las dos cifras, el nuevo la suya, y sin pasadas por su tag o sin su AGV queda «sin ocasión»; tag y AGV que leen más; tramo con menos cortes; sin registro en el periodo nuevo «sin datos nuevos», sin él antes «sin referencia»; el anterior es el inmediato en el tiempo; del plano salen los pares seguidos; la confirmada hereda con su nota, lo declarado del nuevo manda y el sustituido no cambia; la detectada dice lo que heredaría sin tocar las listas; una cadena hereda de su origen; los textos del Resumen | Unitaria |
+| TC-376 | Navegador: frente al periodo anterior (`analisis.spec.ts`) | Primer periodo: lo dice, y «Sin registro de conexiones.»; segundo periodo del mismo circuito: «ventana-2.csv … frente a «ventana-1.csv»», hallazgos, WiFi «Sin registro de conexiones en ninguno de los dos periodos» y sustituciones | Navegador |
 | TC-274 | Navegador: pestañas por pregunta y bandeja de hallazgos (`navegacion.spec.ts`, UX_SPEC §2, §4.3, §4.5) | Las siete pestañas existen y la activa va en el `hash`, que sobrevive a recargar; la bandeja del Resumen tiene tantas tarjetas revisables como dice «Revisados 0 de N» y ninguna queda repetida en su sección; los rangos van en orden; el filtro por tema esconde las demás; «ver en Resumen» y «Ver evidencia» llevan a la bandeja y a la sección; el control compacto cambia el estado desde el menú con ratón y con teclado y «Siguiente pendiente» deja el foco en él; sin desborde | Una tarjeta duplicada entre la bandeja y su sección; un hallazgo que cambia de estado sin abrir el menú | Navegador |
 **TC-065 estaba mal escrito, y el código lo cumplía.** Pedía `silencio` para un vehículo que aún no
 había leído nada, que es afirmar una avería donde solo hay ausencia de datos. La prueba existía, el

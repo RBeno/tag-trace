@@ -90,6 +90,7 @@ import { createReviewSession, type ReviewSession } from "./review-ui.js";
 import { createBenchPanel, type BenchObserver } from "./bench-ui.js";
 import { startUpdates } from "./update.js";
 import { createAnalysesPanel } from "./analyses-ui.js";
+import { comparisonSection } from "./comparison-ui.js";
 import { createStoragePanel } from "./storage-ui.js";
 import { EMPTY_COLUMNS, filterReadings, readingRow, type ReadingColumns } from "../application/reading-columns.js";
 import { LINEAGE_LABEL, createMemoryPanel, type FindingsStatus, type MemoryWorkingFile } from "./memory-ui.js";
@@ -2204,6 +2205,9 @@ function renderViews(views: CircuitViews): void {
   // tienen identificador: cada aviso lleva a su sitio.
   noticesHost = element("div", "notices-host");
   out.append(noticesHost);
+  // Las lecturas nuevas frente al periodo anterior del análisis (R-DAT-024): lo primero que se pregunta
+  // al cargar un periodo más.
+  if (views.comparison !== undefined) out.append(comparisonSection(views.comparison, formatInstant));
   renderRingFigure(views);
   // La evolución (ADR-0015 §3) se rellena cuando las instantáneas llegan del almacén (`loadEvolution`).
   evolutionHost = element("div", "evolution-host");

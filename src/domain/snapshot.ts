@@ -249,6 +249,16 @@ export interface SnapshotPlantMeasures {
   readonly precisePauses: { readonly declared: number; readonly measurable: boolean } & SnapshotSampleSummary;
 }
 
+/** Lo que una instantánea guarda de la WiFi de la ventana de su fichero (opcional, 3.90.0). */
+export interface SnapshotConnections {
+  /** Si el registro de conexiones tiene eventos dentro de la ventana del fichero. */
+  readonly covered: boolean;
+  /** AGV con eventos en la ventana. */
+  readonly vehicles: number;
+  /** Por tramo del anillo: pasadas de los AGV con registro y cortes que miden cobertura situados en él. */
+  readonly segments: readonly { readonly from: string; readonly to: string; readonly passes: number; readonly cuts: number }[];
+}
+
 export interface CircuitSnapshot {
   readonly schemaVersion: number;
   readonly circuitId: string;
@@ -289,6 +299,11 @@ export interface CircuitSnapshot {
    * los estimadores: esa versión no permite estimar.
    */
   readonly plantMeasures?: SnapshotPlantMeasures;
+  /**
+   * La WiFi de la ventana del fichero, del registro de conexiones (DS-013), para compararla con el
+   * periodo siguiente (R-DAT-024). Ausente sin registro cargado y en las instantáneas anteriores a 3.90.0.
+   */
+  readonly connections?: SnapshotConnections;
 }
 
 /**

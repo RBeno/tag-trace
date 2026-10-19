@@ -1,8 +1,8 @@
 ---
 document_id: TT-PMEM-001
-version: 0.74.0
+version: 0.75.0
 status: baseline-candidate
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Memoria compacta del proyecto
@@ -750,6 +750,16 @@ listas, flota y conexiones antes que lecturas. Queda para el propietario: si se 
 planta confirmados (OQ-177) y si el `.agvproj` lleva la configuración, una carpeta real del PC y ver un
 análisis sin cargarle fichero (OQ-178).
 
+## Frente al periodo anterior y herencia de la sustitución (3.90.0, 2026-10-19)
+
+El propietario: las lecturas nuevas se comparan con las del análisis y sus hallazgos (tags sustituidos que
+heredan las funciones del sustituido, AGV que mejoran, tramos con menos pérdidas WiFi); se compara lo
+aportado y, sin WiFi, figura su última actualización. Hecho: el Resumen compara la instantánea del fichero
+con la anterior (R-DAT-024): hallazgos ya no aparecen / siguen / nuevos / sin ocasión, tags y AGV por
+omisiones y WiFi por tramo, con la prueba de azar de `case-verification.ts`. La instantánea guarda ahora
+la WiFi de su ventana. **La herencia (R-GRA-023) solo se aplica a la sustitución confirmada en el plano**:
+`review.ts` dice que marcar una tarjeta no cambia cifras, y lo detectado es hipótesis; queda OQ-179.
+
 ## Estado al 2026-10-17 (relevo a un chat nuevo)
 
 El trabajo sigue en otra conversación por el límite de contexto. Todo lo que dura está aquí, en
@@ -759,7 +769,8 @@ conversación siguiente.
 - **Fase F6** (piloto profesional), abierta el 2026-10-17 por el propietario (`CONTINÚA FASE 6`)
   tras fusionar F5 con el PR #17 (`b0f527a`); F7 espera `CONTINÚA FASE 7` (G6). Las entregas 1 a 7 están
   hechas (3.82.0 a 3.88.0, más 3.83.1 «Cancelar») y la 8 preparada (3.88.1), fusionadas con el PR #18.
-  Después, a petición suya, el gestor de análisis (3.89.0) en la rama
+  Después, a petición suya, el gestor de análisis (3.89.0) y la comparación con el periodo anterior
+  (3.90.0) en la rama
   `claude/file-load-management-menus-pllpba` hasta que pida el PR. Lo que queda es suyo: publicar, medir con el
   banco en el S23 FE y el PC, el piloto con `templates/PILOT_ACCEPTANCE.md`, decidir OQ-176 y OQ-172.
 - Antes, **fase F5** (laboratorio de incidencias), abierta el 2026-09-27 por el propietario («pasa a Fase

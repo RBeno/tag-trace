@@ -106,7 +106,9 @@ import {
 } from "../src/domain/flow-stops.js";
 import { FLEET_STRUCTURE, FleetFailure, importFleetHistory, importFleetRows } from "../src/ingestion/fleet-history.js";
 import { ConnectionFailure, importConnectionLog, importConnectionRows } from "../src/ingestion/connection-log.js";
-import { locateCuts, pairCuts, summarizeConnections } from "../src/domain/connection-cuts.js";
+import { locateCuts, measuresCoverage, pairCuts, summarizeConnections, type ConnectionCut } from "../src/domain/connection-cuts.js";
+import { confirmedSubstitutions, inheritRoles, mergeSubstitutions } from "../src/domain/substitution.js";
+import { comparePeriods, previousSnapshot } from "../src/domain/period-comparison.js";
 import {
   laneEntryTags,
   readCoLanes,
@@ -661,7 +663,13 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
   // Va **antes** que el análisis y no después, como estaba: las calles cambian lo que significa un
   // hueco de media hora (R-CO-006) y las zonas cambian qué prueba el orden de convoy (R-FLO-006).
   // Leerlas al final serviría para enseñarlas, no para usarlas.
-  const lists = stored?.lists ?? [];
+  // Las sustituciones confirmadas en el plano (R-GRA-023): el tag nuevo hereda por defecto lo declarado
+  // del sustituido, salvo en las listas donde ya está. Las detectadas en las lecturas no se aplican.
+  const planEventsForLists = stored === undefined || !isAvailable() ? [] : await loadPlanEvents(stored.circuitId);
+  const windowEndForPlan = Math.max(0, ...coverage.map((span) => span.to));
+  const confirmedSubs = confirmedSubstitutions(planAt(planEventsForLists, windowEndForPlan)?.locations ?? []);
+  const declaredLists = stored?.lists ?? [];
+  const lists = inheritRoles(declaredLists, confirmedSubs).lists;
   const entriesOf = (name: string): readonly ConfigEntry[] =>
     lists.find((entry) => entry.list === name)?.entries ?? [];
   const laneConfig = readCoLanes(entriesOf("carga-online"));
@@ -1276,6 +1284,8 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
   // El estado de conexión observado (DS-013, ADR-0017): los cortes del registro, situados con las
   // lecturas de cada AGV y los anillos de los cohortes; solo los que empiezan dentro de la ventana
   // cargada, porque fuera de ella no hay lecturas con que situarlos ni pasadas con que compararlos.
+  // Los cortes situados se guardan también aquí: la instantánea toma los de la ventana de su fichero.
+  let locatedCuts: readonly ConnectionCut[] = [];
   const connectionsView = ((): NonNullable<CircuitViews["connections"]> | null => {
     const stored_ = stored?.connections;
     if (stored_ === undefined || stored_.events.length === 0) return null;
@@ -1288,6 +1298,7 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
       readings.map((reading) => ({ agvId: reading.agvId, tagId: reading.tagId, utcMs: reading.time.utcMs })),
       shapes.map((shape) => shape.tags),
     );
+    locatedCuts = cuts;
     return {
       files: stored_.files.length,
       vehicles: new Set(stored_.files.map((file) => file.agvId)).size,
@@ -1781,6 +1792,39 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     );
   }
 
+  // La WiFi de la ventana del fichero (R-DAT-024): pasadas por cada tramo del anillo de los AGV con
+  // registro en esa ventana y los cortes que miden cobertura situados en él. Sin eventos en la ventana,
+  // `covered: false`: el registro existe pero no dice nada de este periodo.
+  if (snapshot !== null && stored?.connections !== undefined && stored.connections.events.length > 0) {
+    const window = snapshot.window;
+    const inFile = (utcMs: number): boolean => utcMs >= window.from && utcMs <= window.to;
+    const logged = new Set(stored.connections.events.filter((event) => inFile(event.utcMs)).map((event) => event.agvId));
+    const ringOf = snapshot.ring;
+    const ringEdges = new Set(ringOf.map((tagId, index) => `${tagId}\u0000${ringOf[(index + 1) % ringOf.length] as string}`));
+    const segments = new Map<string, { from: string; to: string; passes: number; cuts: number }>();
+    for (const transition of transitions) {
+      if (!logged.has(transition.agvId) || !inFile(transition.fromTime)) continue;
+      const key = `${transition.from}\u0000${transition.to}`;
+      if (!ringEdges.has(key)) continue;
+      const own = segments.get(key) ?? { from: transition.from, to: transition.to, passes: 0, cuts: 0 };
+      own.passes += 1;
+      segments.set(key, own);
+    }
+    for (const cut of locatedCuts) {
+      if (!measuresCoverage(cut) || cut.location !== "tramo" || cut.lastTagId === null || cut.nextTagId === null || !inFile(cut.fromUtcMs)) continue;
+      const own = segments.get(`${cut.lastTagId}\u0000${cut.nextTagId}`);
+      if (own !== undefined) own.cuts += 1;
+    }
+    snapshot = {
+      ...snapshot,
+      connections: {
+        covered: logged.size > 0,
+        vehicles: logged.size,
+        segments: [...segments.values()].sort((a, b) => ringOf.indexOf(a.from) - ringOf.indexOf(b.from)),
+      },
+    };
+  }
+
   // --- Lo que compara ficheros se lee de las instantáneas (ADR-0015 §3) -------------------------
   const allSnapshots = sortSnapshots([
     ...context.snapshots.filter((entry) => snapshot === null || entry.sourceId !== snapshot.sourceId),
@@ -1930,8 +1974,53 @@ async function buildViews(context: ViewsContext): Promise<ViewsResult | undefine
     }
   }
 
+  // Frente al periodo anterior (R-DAT-024) y las sustituciones con lo que heredan (R-GRA-023).
+  let comparison: CircuitViews["comparison"];
+  if (stored !== undefined) {
+    try {
+      const current = snapshot ?? snapshotOf.get(importedSource.sourceId) ?? null;
+      const previous = current === null ? null : previousSnapshot(allSnapshots, current);
+      const reviewsNow = isAvailable() ? await loadReviews(stored.circuitId) : new Map();
+      const detected = [
+        ...allSnapshots.flatMap((entry) =>
+          entry.findings
+            .filter((finding) => finding.kind === "cambio-tag")
+            .map((finding) => {
+              const [, oldTagId = "", newTagId = ""] = finding.key.split("|");
+              return { oldTagId, newTagId, at: finding.window?.from ?? entry.window.from };
+            }),
+        ),
+        ...tagChanges.changes.flatMap((change) => (change.kind === "cambio" ? [{ oldTagId: change.oldTagId, newTagId: change.newTagId, at: change.newFirstUtcMs }] : [])),
+      ].filter((entry) => entry.oldTagId !== "" && entry.newTagId !== "");
+      const substitutions = mergeSubstitutions(confirmedSubs, detected);
+      const lastOf = (values: readonly number[]): number | null => (values.length === 0 ? null : Math.max(...values));
+      comparison = {
+        periods:
+          current === null || previous === null
+            ? null
+            : comparePeriods({ before: previous, after: current, reviews: reviewsNow, maxChance: config.tagChanges.maxChance }),
+        substitutions,
+        roles: inheritRoles(declaredLists, substitutions).roles,
+        supplied: {
+          lists: declaredLists.map((entry) => ({ list: entry.list, loadedAt: entry.loadedAt, fileName: entry.fileName })),
+          fleet: stored.fleet === undefined ? null : { loadedAt: stored.fleet.loadedAt },
+          connections:
+            stored.connections === undefined || stored.connections.files.length === 0
+              ? null
+              : {
+                  loadedAt: lastOf(stored.connections.files.map((file) => file.loadedAt)) ?? 0,
+                  until: lastOf(stored.connections.events.map((event) => event.utcMs)),
+                },
+        },
+      };
+    } catch (error) {
+      failures.push(`La comparación con el periodo anterior no se pudo hacer: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   const views: CircuitViews = {
     ...baseViews,
+    ...(comparison === undefined ? {} : { comparison }),
     ...(cases === undefined ? {} : { cases }),
     anchorSections: anchorSectionsFinal,
     franjas: { ...baseViews.franjas, cohorts: franjaCohortsFinal },

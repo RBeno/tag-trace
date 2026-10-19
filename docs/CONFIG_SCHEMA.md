@@ -1,8 +1,8 @@
 ---
 document_id: TT-CONFIG-001
-version: 0.33.0
+version: 0.34.0
 status: baseline-candidate
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Configuración de circuito
@@ -409,6 +409,11 @@ existe se determina con dos ventanas, no con configuración.
 las listas y del historial de flota de otro. La copia es suya desde ese momento —cargar una lista la
 sustituye como siempre— y lleva de qué análisis viene y cuándo (`copiedFrom`); el original no se toca. Los
 valores de planta confirmados no se copian (OQ-177).
+
+**Heredadas por un tag que sustituye a otro (3.90.0, R-GRA-023).** Con la sustitución confirmada en el plano,
+el análisis añade a cada lista donde estaba el sustituido una fila igual para el nuevo, con la nota «heredado
+de X», salvo en las listas donde el nuevo ya está. Las listas guardadas no se reescriben: la herencia se
+aplica al analizar.
 
 ### 3.9 Flota asignada al circuito
 

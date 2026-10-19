@@ -112,3 +112,25 @@ test.describe("TC-374 gestor de análisis", () => {
     expect((await stored(page, "SINT-NUEVO"))?.sources).toBe(0);
   });
 });
+
+const ACUMULACION = fileURLToPath(new URL("../../fixtures/synthetic/acumulacion/", import.meta.url));
+
+test.describe("TC-376 frente al periodo anterior", () => {
+  test("el primer periodo lo dice; el segundo se compara con el primero y dice cuándo se cargó cada dato", async ({ page }) => {
+    await freshPage(page);
+    await page.locator("#circuit-name").fill("SINT-PERIODOS");
+    await page.locator("#source-file").setInputFiles(`${ACUMULACION}ventana-1.csv`);
+    await expect(page.getByText("Circuito «SINT-PERIODOS»")).toBeVisible({ timeout: 15_000 });
+    const section = page.locator("section.comparison");
+    await expect(section).toContainText("Es el primer periodo con instantánea de este análisis");
+    await expect(section).toContainText("Sin registro de conexiones.");
+
+    await page.locator("#source-file").setInputFiles([]);
+    await page.locator("#source-file").setInputFiles(`${ACUMULACION}ventana-2.csv`);
+    await expect(section).toContainText("«ventana-2.csv»", { timeout: 15_000 });
+    await expect(section).toContainText("frente a «ventana-1.csv»");
+    await expect(section.getByRole("heading", { name: "Hallazgos" })).toBeVisible();
+    await expect(section).toContainText("Sin registro de conexiones en ninguno de los dos periodos");
+    await expect(section.getByRole("heading", { name: "Sustituciones de tag" })).toBeVisible();
+  });
+});

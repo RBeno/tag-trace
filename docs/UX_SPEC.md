@@ -1,8 +1,8 @@
 ---
 document_id: TT-UX-001
-version: 0.65.0
+version: 0.66.0
 status: baseline-candidate
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Especificación de experiencia de usuario
@@ -398,6 +398,35 @@ imprimen a PDF. De ahí las cuatro piezas de 3.72.0:
 Sugerido y no hecho, para cuando el propietario lo pida: atajos de teclado 1–8 para las pestañas,
 recordar la última pestaña y el último filtro, miniaturas de tendencia en los tiles con varias
 instantáneas, y una pantalla vacía que guíe los tres pasos (lecturas → listas → conexiones).
+
+## 4.9 Frente al periodo anterior (3.90.0)
+
+Petición del propietario (2026-10-19): las lecturas nuevas se comparan con las del análisis y su lista
+de hallazgos —tags sustituidos que heredan las funciones del sustituido, AGV que mejoran sus lecturas,
+tramos con menos pérdidas de WiFi—; se compara lo aportado y, si no se aporta WiFi, figura la última vez
+que se actualizó.
+
+**Dónde.** En el Resumen, tras los avisos y antes del anillo: es lo primero que se pregunta al cargar un
+periodo más. Solo con análisis guardado. Compara la instantánea del fichero cargado con la
+inmediatamente anterior en el tiempo (R-DAT-024); en el primer periodo lo dice.
+
+**Qué enseña**, de arriba abajo:
+
+- «*nuevo*.csv (de … a …) frente a *anterior*.csv (de … a …)».
+- **Hallazgos**: «N ya no aparecen · M siguen · K nuevos · J sin ocasión de repetirse», y cada grupo
+  plegable con sus tarjetas (título, cifra antes y ahora, y lo que decidió la revisión en campo). «Ya no
+  aparecen» y «Nuevos» abiertos; «Siguen» y «Sin ocasión» plegados. «Sin ocasión» dice que su sitio o su
+  AGV no tuvo pasadas y no se juzga: nunca «resuelto».
+- **Tags** y **AGV**: «Leen más (N):» y «Leen menos (N):», cada uno con «70 % → 99 % de lectura (200 →
+  180 pasadas)»; sin cambios, «Ninguno cambia más de lo que da el azar (N comparados)».
+- **WiFi**: «Tramos con menos cortes» y «con más cortes», con «13 % → 1 % de pasadas con corte»; sin
+  registro en este periodo, «no se compara, y no significa «sin cambios»» con la última actualización
+  del registro y hasta cuándo llega.
+- **Sustituciones de tag**: las confirmadas en el plano, con lo que hereda el nuevo (R-GRA-023); las
+  detectadas en las lecturas, en gris, con lo que **heredaría** al confirmarla en el plano.
+- **Información aportada**: cuándo se cargó por última vez cada lista, la flota y la WiFi.
+
+Hasta 12 por lista, con «y N más». Mejora y empeora van siempre con su texto, nunca solo con color.
 
 ## 5. Grafo y plano
 

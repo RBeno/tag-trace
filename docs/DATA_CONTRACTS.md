@@ -1,8 +1,8 @@
 ---
 document_id: TT-DATA-001
-version: 0.34.0
+version: 0.35.0
 status: baseline-candidate
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Contratos de datos y procedencia
@@ -593,6 +593,11 @@ los estimadores de los valores de planta (lecturas y cobertura por hora local, p
 con día y minuto, resúmenes de los huecos que vuelven, de las esperas del primero de cola, del
 tránsito del tramo cargado y de las paradas precisas). Unos cientos de bytes por fichero; las
 instantáneas anteriores no lo traen y esa versión no permite estimar.
+
+**WiFi en la instantánea (3.90.0, R-DAT-024).** `connections`, opcional: si el registro de conexiones
+tiene eventos en la ventana del fichero (`covered`), cuántos AGV, y por tramo del anillo las pasadas de
+esos AGV y los cortes que miden cobertura situados en él. Sin registro cargado no existe; las
+instantáneas anteriores no lo traen y su periodo no se compara en WiFi.
 
 **Almacén local, versión 12 (3.74.0, ADR-0018).** Dos tablas nuevas, aparte de todo lo demás:
 `incidentCases`, las revisiones de cada expediente de incidencia, con clave `[circuitId, caseId,

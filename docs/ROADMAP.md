@@ -1,8 +1,8 @@
 ---
 document_id: TT-ROADMAP-001
-version: 0.19.0
+version: 0.20.0
 status: baseline-candidate
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Etapas, entregables y resultados
@@ -238,6 +238,8 @@ Fuera de ese orden, por petición del propietario (2026-10-18): **gestor de aná
 FR-001). Al cargar se enseñan los análisis guardados para elegir uno y añadirle lecturas, y uno nuevo se
 crea vacío o a partir de otro con sus listas y su flota. **Hecho en 3.89.0**; lo que queda (valores de planta
 al copiar, configuración en el `.agvproj`, carpeta real, ver sin cargar fichero) espera OQ-177 y OQ-178.
+Y (2026-10-19) **frente al periodo anterior**: cada periodo nuevo se compara con el anterior y sus hallazgos,
+y el tag que sustituye a otro hereda lo declarado (R-DAT-024, R-GRA-023). **Hecho en 3.90.0**; OQ-179 abierta.
 
 ## F7 — Escalado controlado
 

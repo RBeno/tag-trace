@@ -58,6 +58,8 @@ import type { VehicleReadingReport } from "../domain/vehicle-reading.js";
 import type { VehicleReplayState } from "../domain/replay.js";
 import type { VsystemComparisonRow } from "../domain/vsystem.js";
 import type { QuarantinedRow } from "../domain/reading.js";
+import type { PeriodComparison } from "../domain/period-comparison.js";
+import type { InheritedRole, Substitution } from "../domain/substitution.js";
 import type { SourceDirection } from "../domain/order.js";
 import type { MonotonicityReport } from "../ingestion/monotonicity.js";
 import type { FieldOrder } from "../domain/time.js";
@@ -545,6 +547,21 @@ export interface SourceSummary {
  * que los produjeron.
  */
 export interface CircuitViews {
+  /**
+   * Las lecturas nuevas frente al periodo anterior del análisis (R-DAT-024), las sustituciones de tag
+   * con lo que heredan (R-GRA-023) y cuándo se cargó por última vez cada dato declarado. Solo con
+   * circuito guardado; `periods` es `null` si no hay periodo anterior con instantánea.
+   */
+  readonly comparison?: {
+    readonly periods: PeriodComparison | null;
+    readonly substitutions: readonly Substitution[];
+    readonly roles: readonly InheritedRole[];
+    readonly supplied: {
+      readonly lists: readonly { readonly list: string; readonly loadedAt: number; readonly fileName: string }[];
+      readonly fleet: { readonly loadedAt: number } | null;
+      readonly connections: { readonly loadedAt: number; readonly until: number | null } | null;
+    };
+  };
   readonly hourly: HourlyProfile;
   readonly activity: ActivityBand;
   /** Solo cuando el circuito tiene listas de planta cargadas: sin ellas no hay con qué contrastar. */

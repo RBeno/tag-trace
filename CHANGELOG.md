@@ -2,6 +2,27 @@
 
 Todos los cambios relevantes del proyecto se documentan aquí. El formato sigue *Keep a Changelog* y las versiones de producto seguirán versionado semántico cuando exista software ejecutable.
 
+## [3.90.0] - 2026-10-19
+
+Petición del propietario en F6: comparar las lecturas nuevas con el análisis y sus hallazgos.
+
+### Añadido
+
+- **Frente al periodo anterior** en el Resumen (R-DAT-024, `UX_SPEC.md` §4.9): el fichero cargado frente
+  al inmediatamente anterior del análisis. Hallazgos que **ya no aparecen**, **siguen**, son **nuevos** o
+  quedan **sin ocasión** de repetirse (sin pasadas por su sitio o sin su AGV: no se dan por resueltos),
+  con lo que dijo la revisión en campo; **tags** y **AGV** que leen más o menos; **tramos de WiFi** con
+  menos o más cortes. Solo cambia lo improbable por azar (`tag_changes.max_chance`).
+- **Solo se compara lo aportado**: sin registro de conexiones en el periodo nuevo, la WiFi no se compara,
+  se dice que no significa «sin cambios» y se enseña su última actualización; «Información aportada»
+  dice cuándo se cargó cada lista, la flota y la WiFi.
+- **Herencia de la sustitución** (R-GRA-023): un tag que sustituye a otro, confirmado en el plano, hereda
+  por defecto lo declarado del sustituido (función crítica, área, zona, calle, tramo…) salvo lo que ya
+  declare; y se usa en todo el análisis. Las detectadas en las lecturas dicen lo que heredarían.
+- La instantánea guarda la WiFi de la ventana de su fichero (`connections`, opcional; `DATA_CONTRACTS.md`).
+- Pruebas: TC-375 (unitarias) y TC-376 (navegador). OQ-179 (herencia desde la revisión en campo y efecto
+  mínimo de «mejora»).
+
 ## [3.89.0] - 2026-10-18
 
 Petición del propietario en F6: los menús de carga y gestión de análisis.
